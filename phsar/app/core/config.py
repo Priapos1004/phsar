@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     DB_PORT: int = 5432
     DB_NAME: str
 
+    ADMIN_USERNAME: str
+    ADMIN_PASSWORD: str
+
     class Config:
         env_file = ".env"  # Tell Pydantic to load from .env
 

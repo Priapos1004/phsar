@@ -50,3 +50,7 @@ Clean up docker *(database + volume)*:
 docker rm -f anime-postgres
 docker volume rm pgdata
 ```
+
+## Start with the Webapp
+
+Go into the [phsar](phsar/README.md) folder and follow the instructions of the README file.

@@ -45,7 +45,7 @@ phsar/
 
 ## Get Started
 
-### Add Credentials for Database
+### Add Credentials for Database and Admin User
 
 Add the file `.env` to the `phsar/` folder with the following content:
 
@@ -55,9 +55,11 @@ DB_PASSWORD=animepass
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=anime_db
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=supersecretpassword
 ```
 
-*Change `animeuser` and `animepass`*
+*Change `animeuser`, `animepass`, `admin`, and `supersecretpassword`*
 
 ### Use alembic to Savely Migrate Changes
 
@@ -86,4 +88,12 @@ Remove the versions saved by alembic and then drop and re-create the database:
 ```
 rm alembic/versions/*.py
 docker exec -it anime-postgres psql -U animeuser -d anime_db -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+```
+
+## Run FastAPI App
+
+When first running the FastAPI App, the genre table and the first admin user will be seeded.
+
+```
+uvicorn app.main:app --reload
 ```

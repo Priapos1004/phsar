@@ -31,4 +31,4 @@ class Ratings(BaseModel):
 
     # Relationships
     media = relationship("Media", back_populates="ratings")
-    user = relationship("Users", back_populates="ratings")
+    users = relationship("Users", back_populates="ratings")
