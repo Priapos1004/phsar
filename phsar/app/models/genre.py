@@ -6,7 +6,7 @@ from sqlalchemy.orm import relationship
 from app.models.base import BaseModel
 
 
-class GenreType(enum.Enum):
+class GenreType(str, enum.Enum):
     Genres = "genres"
     ExplicitGenres = "explicit_genres"
     Themes = "themes"

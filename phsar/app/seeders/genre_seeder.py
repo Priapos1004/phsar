@@ -41,7 +41,7 @@ async def seed_genres(db: AsyncSession):
         if not genre:
             new_genre = Genre(
                 name=name,
-                genre_type=MAL_TO_GENRETYPE[mal_type]
+                genre_type=MAL_TO_GENRETYPE.get(mal_type)
             )
             db.add(new_genre)
     await db.commit()

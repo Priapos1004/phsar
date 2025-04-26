@@ -8,17 +8,17 @@ from sqlalchemy.orm import relationship
 from app.models.base import BaseModel
 
 
-class MediaType(enum.Enum):
+class MediaType(str, enum.Enum):
     TV = "TV"
+    TVSpecial = "TV Special"
     Movie = "Movie"
     OVA = "OVA"
     ONA = "ONA"
     Special = "Special"
 
-class RelationType(enum.Enum):
+class RelationType(str, enum.Enum):
     Main = "main"
     Summary = "summary"
-    Character = "character"
     Other = "other"
 
 class Media(BaseModel):
@@ -26,6 +26,8 @@ class Media(BaseModel):
 
     anime_id = Column(Integer, ForeignKey("anime.id", ondelete="CASCADE"), nullable=False)
     mal_id = Column(Integer, nullable=False)
+    mal_url = Column(String, nullable=False)
+    title = Column(String, nullable=False)
     name_eng = Column(String)
     name_jap = Column(String)
     other_names = Column(JSONB, default=list)
