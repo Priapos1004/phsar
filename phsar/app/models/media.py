@@ -50,3 +50,4 @@ class Media(BaseModel):
     watchlist = relationship("Watchlist", back_populates="media", cascade="all, delete-orphan")
     media_genre = relationship("MediaGenre", back_populates="media", cascade="all, delete-orphan")
     media_studio = relationship("MediaStudio", back_populates="media", cascade="all, delete-orphan")
+    media_search = relationship("MediaSearch", back_populates="media", cascade="all, delete-orphan")

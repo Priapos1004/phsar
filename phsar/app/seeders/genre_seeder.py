@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.genre import Genre, GenreType
 
+# Format: (mal_id, name, mal_type)
 MAL_GENRES = [
     (1, "Action", "genre"), (2, "Adventure", "genre"), (5, "Avant Garde", "theme"), (46, "Award Winning", "theme"),
     (28, "Boys Love", "demographic"), (4, "Comedy", "genre"), (8, "Drama", "genre"), (10, "Fantasy", "genre"),

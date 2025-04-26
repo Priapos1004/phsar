@@ -4,7 +4,7 @@
 <summary>Click to see folder structur</summary>
 <!--
 Command for creating the tree graphic:
-tree phsar -a -F -I '__pycache__|*.pyc|*.pyo|*.db|*.sqlite3|*.log|*.tmp' 
+tree phsar -a -F -I '__pycache__|*.pyc|*.pyo|*.db|*.sqlite3|*.log|*.tmp'
 -->
 
 ```text
@@ -16,20 +16,25 @@ phsar/
 │   │   ├── config.py
 │   │   └── db.py
 │   ├── main.py
-│   └── models/
+│   ├── models/
+│   │   ├── __init__.py
+│   │   ├── anime.py
+│   │   ├── base.py
+│   │   ├── genre.py
+│   │   ├── media.py
+│   │   ├── media_genre.py
+│   │   ├── media_search.py
+│   │   ├── media_studio.py
+│   │   ├── ratings.py
+│   │   ├── studio.py
+│   │   ├── tag.py
+│   │   ├── users.py
+│   │   ├── watchlist.py
+│   │   └── watchlist_tag.py
+│   └── seeders/
 │       ├── __init__.py
-│       ├── anime.py
-│       ├── base.py
-│       ├── genre.py
-│       ├── media.py
-│       ├── media_genre.py
-│       ├── media_studio.py
-│       ├── ratings.py
-│       ├── studio.py
-│       ├── tag.py
-│       ├── users.py
-│       ├── watchlist.py
-│       └── watchlist_tag.py
+│       ├── genre_seeder.py
+│       └── user_seeder.py
 ├── frontend/
 ├── .env
 ├── README.md
@@ -63,14 +68,42 @@ ADMIN_PASSWORD=supersecretpassword
 
 ### Use alembic to Savely Migrate Changes
 
-After setting up the database, run the following commands to create the tables:
+#### Activate vector Extension in Database
+
+After setting up the database, we need to first activate the vector extension in the database. Fot this, run the command:
+
+```
+alembic revision -m "create pgvector extension"
+```
+
+The go to `alembic/versions/<hash value>_create_pgvector_extension.py` and change the `upgrade()` and `downgrade()` functions to:
+
+```
+def upgrade():
+    op.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+
+def downgrade():
+    op.execute("DROP EXTENSION IF EXISTS vector;")
+```
+
+Then run the command:
+
+```
+alembic upgrade head
+```
+
+#### Initial Table creation
+
+After adding the extension, run the following commands to create the tables:
 
 ```
 alembic revision --autogenerate -m "Initial migration"
 alembic upgrade head
 ```
 
-For future changes to the database schemas, run:
+#### Future Changes
+
+For future changes to the database schemas that you want to do, run the following commands after changing the `app/models/` files:
 
 ```
 alembic revision --autogenerate -m "Describe change"
