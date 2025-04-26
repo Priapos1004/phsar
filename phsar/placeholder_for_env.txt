@@ -1,0 +1,5 @@
+DB_USER=animeuser
+DB_PASSWORD=animepass
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=anime_db
