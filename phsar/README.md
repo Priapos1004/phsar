@@ -14,7 +14,8 @@ phsar/
 │   ├── core/
 │   │   ├── __init__.py
 │   │   ├── config.py
-│   │   └── db.py
+│   │   ├── db.py
+│   │   └── logging_config.py
 │   ├── main.py
 │   ├── models/
 │   │   ├── __init__.py
@@ -31,10 +32,22 @@ phsar/
 │   │   ├── users.py
 │   │   ├── watchlist.py
 │   │   └── watchlist_tag.py
-│   └── seeders/
+│   ├── routers/
+│   │   ├── __init__.py
+│   │   └── search.py
+│   ├── schemas/
+│   │   ├── __init__.py
+│   │   ├── anime_schema.py
+│   │   ├── media_schema.py
+│   │   └── search_schema.py
+│   ├── seeders/
+│   │   ├── __init__.py
+│   │   ├── genre_seeder.py
+│   │   └── user_seeder.py
+│   └── services/
 │       ├── __init__.py
-│       ├── genre_seeder.py
-│       └── user_seeder.py
+│       ├── jikan_scraper.py
+│       └── search_service.py
 ├── frontend/
 ├── .env
 ├── README.md
@@ -130,3 +143,19 @@ When first running the FastAPI App, the genre table and the first admin user wil
 ```
 uvicorn app.main:app --reload
 ```
+
+You can now open
+
+```
+http://127.0.0.1:8000
+```
+
+to see if the API is live. For using the search endpoint, open
+
+```
+http://127.0.0.1:8000/search/mal?query=MyHero
+```
+
+*Replace `MyHero` with the anime that you want to search*
+
+*Note: Big anime franchises like "Naruto" can take more than 15 minutes to run.*
