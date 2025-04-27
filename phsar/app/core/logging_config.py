@@ -4,7 +4,7 @@ import sys
 
 def setup_logging():
     logging_config = {
-        "level": logging.DEBUG,  # Set to DEBUG during development, INFO/WARNING in prod
+        "level": logging.INFO,  # Set to DEBUG during development, INFO/WARNING in prod
         "format": "%(asctime)s | %(levelname)s | %(name)s | %(message)s",
         "handlers": [
             logging.StreamHandler(sys.stdout)

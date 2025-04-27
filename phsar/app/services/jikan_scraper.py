@@ -106,7 +106,7 @@ class JikanScraper:
                 if current_mal_id in visited_ids:  # skip if visited
                     continue
                 
-                logger.info(f"Media left: {len(set(left_mal_ids) - visited_ids)}")
+                logger.info(f"Media left in recursive search: {len(set(left_mal_ids) - visited_ids)}")
                 # Mark as visited BEFORE doing anything
                 visited_ids.add(current_mal_id)
 
@@ -115,7 +115,7 @@ class JikanScraper:
 
                 if anime_info.get("media_type"):
                     if anime_info["media_type"].lower() == "music":
-                        logger.debug(f"Skipping anime music: {anime_info['title']}")
+                        logger.warning(f"Skipping anime music: {anime_info['title']}")
                         continue
 
                     all_info[anime_info["mal_id"]] = anime_info
