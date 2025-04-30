@@ -5,14 +5,11 @@ from typing import Optional
 import httpx
 from tenacity import before_sleep_log, retry, stop_after_attempt, wait_fixed
 
+from app.exceptions import AnimeNotFoundError
+
 BASE_URL = "https://api.jikan.moe/v4"
 
 logger = logging.getLogger(__name__)
-
-
-class AnimeNotFoundError(Exception):
-    def __init__(self, title: str):
-        super().__init__(f"Anime titled '{title}' not found.")
 
 
 class JikanScraper:
@@ -37,8 +34,19 @@ class JikanScraper:
         response = await self.client.get(url, params=params)
         response.raise_for_status()
         return response.json()
+    
+    @staticmethod
+    def __clean_str_field(value: str | None) -> str | None:
+        # For case: "TV Special" and "TVSpecial"
+        return value.replace(" ", "").strip() if isinstance(value, str) else None
 
     def extract_information(self, anime: dict) -> dict:
+        genres = (
+            [genre["name"] for genre in anime.get("genres", [])]
+            + [genre["name"] for genre in anime.get("explicit_genres", [])]
+            + [genre["name"] for genre in anime.get("themes", [])]
+            + [genre["name"] for genre in anime.get("demographics", [])]
+        )
         return {
             "mal_id": anime.get("mal_id"),
             "mal_url": anime.get("url"),
@@ -46,11 +54,8 @@ class JikanScraper:
             "name_eng": anime.get("title_english"),
             "name_jap": anime.get("title_japanese"),
             "other_names": anime.get("title_synonyms", []),
-            "media_type": anime.get("type"),
-            "genres": [genre["name"] for genre in anime.get("genres", [])],
-            "explicit_genres": [genre["name"] for genre in anime.get("explicit_genres", [])],
-            "themes": [genre["name"] for genre in anime.get("themes", [])],
-            "demographics": [genre["name"] for genre in anime.get("demographics", [])],
+            "media_type": JikanScraper.__clean_str_field(anime.get("type")),
+            "genres": genres,
             "studio": [studio["name"] for studio in anime.get("studios", [])],
             "fsk": anime.get("rating"),
             "description": anime.get("synopsis"),
@@ -80,7 +85,7 @@ class JikanScraper:
     def get_relation_type(self, is_main_season: bool, relation_type: Optional[str]) -> str:
         return "main" if is_main_season else (relation_type or "other")
 
-    async def search_title(self, title: str) -> tuple[list[dict], dict[int, dict]]:
+    async def search_title(self, title: str, excluded_mal_ids: set[int]) -> tuple[list[dict], dict[int, dict]]:
         search = await self._get(f"{self.base_url}/anime", params={"q": title, "limit": 3})
         results = search.get("data", [])
 
@@ -88,7 +93,7 @@ class JikanScraper:
             raise AnimeNotFoundError(title)
 
         all_info: dict[int, dict] = {}
-        visited_ids: set[int] = set()
+        visited_ids: set[int] = excluded_mal_ids
         relations: list[dict] = []
 
         for anime in results:

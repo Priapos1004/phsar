@@ -15,7 +15,17 @@ phsar/
 │   │   ├── __init__.py
 │   │   ├── config.py
 │   │   ├── db.py
+│   │   ├── dependencies.py
 │   │   └── logging_config.py
+│   ├── daos/
+│   │   ├── __init__.py
+│   │   ├── anime_dao.py
+│   │   ├── base_dao.py
+│   │   ├── base_mal_id_dao.py
+│   │   ├── genre_dao.py
+│   │   ├── media_dao.py
+│   │   └── studio_dao.py
+│   ├── exceptions.py
 │   ├── main.py
 │   ├── models/
 │   │   ├── __init__.py
@@ -34,6 +44,7 @@ phsar/
 │   │   └── watchlist_tag.py
 │   ├── routers/
 │   │   ├── __init__.py
+│   │   ├── save.py
 │   │   └── search.py
 │   ├── schemas/
 │   │   ├── __init__.py
@@ -46,8 +57,13 @@ phsar/
 │   │   └── user_seeder.py
 │   └── services/
 │       ├── __init__.py
+│       ├── anime_service.py
 │       ├── jikan_scraper.py
-│       └── search_service.py
+│       ├── media_linking_service.py
+│       ├── media_service.py
+│       ├── save_service.py
+│       ├── search_service.py
+│       └── vector_embedding_service.py
 ├── frontend/
 ├── .env
 ├── README.md
@@ -57,7 +73,18 @@ phsar/
 │   ├── script.py.mako
 │   └── versions/
 ├── alembic.ini
-└── requirements.txt
+├── pytest.ini
+├── requirements.txt
+└── tests/
+    ├── __init__.py
+    ├── routers/
+    │   ├── __init__.py
+    │   ├── conftest.py
+    │   └── test_save.py
+    └── services/
+        ├── __init__.py
+        ├── test_search_service.py
+        └── test_vector_embedding_service.py
 ```
 </details>
 
@@ -138,7 +165,7 @@ docker exec -it anime-postgres psql -U animeuser -d anime_db -c "DROP SCHEMA pub
 
 ## Run FastAPI App
 
-When first running the FastAPI App, the genre table and the first admin user will be seeded.
+When first running the FastAPI App, the genre table and the first admin user will be seeded. For running the app, use:
 
 ```
 uvicorn app.main:app --reload
@@ -150,12 +177,16 @@ You can now open
 http://127.0.0.1:8000
 ```
 
-to see if the API is live. For using the search endpoint, open
+to see if the API is live.
 
-```
-http://127.0.0.1:8000/search/mal?query=MyHero
-```
-
-*Replace `MyHero` with the anime that you want to search*
+For testing the `search/mal` and `save/search-results` endpoint, use the [test_fastAPI notebook](../notebooks/test_fastAPI.ipynb).
 
 *Note: Big anime franchises like "Naruto" can take more than 15 minutes to run.*
+
+## Testing
+
+Run the following command to use pytest *(all changes to the database during the tests are rolled-back afterwards)*:
+
+```
+pytest
+```
