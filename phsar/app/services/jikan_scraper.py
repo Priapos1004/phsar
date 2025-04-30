@@ -49,7 +49,7 @@ class JikanScraper:
             "name_eng": anime.get("title_english"),
             "name_jap": anime.get("title_japanese"),
             "other_names": anime.get("title_synonyms", []),
-            "media_type": anime.get("type"),
+            "media_type": anime.get("type").replace(" ", ""), # For case: "TV Special" and "TVSpecial"
             "genres": genres,
             "studio": [studio["name"] for studio in anime.get("studios", [])],
             "fsk": anime.get("rating"),

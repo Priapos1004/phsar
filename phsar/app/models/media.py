@@ -10,7 +10,7 @@ from app.models.base import BaseModel
 
 class MediaType(str, enum.Enum):
     TV = "TV"
-    TVSpecial = "TV Special"
+    TVSpecial = "TVSpecial"
     Movie = "Movie"
     OVA = "OVA"
     ONA = "ONA"
@@ -42,8 +42,8 @@ class Media(BaseModel):
     episodes = Column(Integer, nullable=True)
     anime_season = Column(String, nullable=True)
     airing_status = Column(String, nullable=False)
-    aired_from = Column(DateTime, nullable=True)
-    aired_to = Column(DateTime, nullable=True)
+    aired_from = Column(DateTime(timezone=True), nullable=True)
+    aired_to = Column(DateTime(timezone=True), nullable=True)
     duration = Column(String, nullable=True)
 
     # Relationships
