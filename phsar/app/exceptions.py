@@ -9,3 +9,8 @@ class AnimeNotFoundError(Exception):
     """ Error raised when an anime is not found in the MAL API. """
     def __init__(self, title: str):
         super().__init__(f"Anime titled '{title}' not found.")
+
+class MainMediaNotFoundError(Exception):
+    """ Error raised when a list of MediaUnconnected has no main media. """
+    def __init__(self, title_relation_tuple: list[tuple[str, str]]):
+        super().__init__(f"Main media not found in the list: {title_relation_tuple}.")

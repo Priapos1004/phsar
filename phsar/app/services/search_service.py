@@ -1,3 +1,4 @@
+from app.exceptions import MainMediaNotFoundError
 from app.schemas.media_schema import MediaUnconnected
 from app.schemas.search_schema import SearchResultDB
 from app.services.jikan_scraper import JikanScraper
@@ -7,7 +8,9 @@ def get_first_main_relation(media_dict: dict) -> dict | None:
     for mal_id, media in media_dict.items():
         if media.get("relation_type") == "main":
             return mal_id
-    return None  # If no main relation found
+
+    title_relation_tuple = [(media.get("title"), media.get("relation_type")) for media in media_dict.values()]
+    raise MainMediaNotFoundError(title_relation_tuple)  # If no main relation found
 
 async def search_mal_api(query: str, excluded_mal_ids: set[int]) -> list[SearchResultDB]:
     async with JikanScraper() as scraper:
