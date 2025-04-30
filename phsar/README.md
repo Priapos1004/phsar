@@ -15,7 +15,17 @@ phsar/
 │   │   ├── __init__.py
 │   │   ├── config.py
 │   │   ├── db.py
+│   │   ├── dependencies.py
 │   │   └── logging_config.py
+│   ├── daos/
+│   │   ├── __init__.py
+│   │   ├── anime_dao.py
+│   │   ├── base_dao.py
+│   │   ├── base_mal_id_dao.py
+│   │   ├── genre_dao.py
+│   │   ├── media_dao.py
+│   │   └── studio_dao.py
+│   ├── exceptions.py
 │   ├── main.py
 │   ├── models/
 │   │   ├── __init__.py
@@ -34,6 +44,7 @@ phsar/
 │   │   └── watchlist_tag.py
 │   ├── routers/
 │   │   ├── __init__.py
+│   │   ├── save.py
 │   │   └── search.py
 │   ├── schemas/
 │   │   ├── __init__.py
@@ -46,8 +57,13 @@ phsar/
 │   │   └── user_seeder.py
 │   └── services/
 │       ├── __init__.py
+│       ├── anime_service.py
 │       ├── jikan_scraper.py
-│       └── search_service.py
+│       ├── media_linking_service.py
+│       ├── media_service.py
+│       ├── save_service.py
+│       ├── search_service.py
+│       └── vector_embedding_service.py
 ├── frontend/
 ├── .env
 ├── README.md
@@ -57,7 +73,14 @@ phsar/
 │   ├── script.py.mako
 │   └── versions/
 ├── alembic.ini
-└── requirements.txt
+├── pytest.ini
+├── requirements.txt
+└── tests/
+    ├── __init__.py
+    └── routers/
+        ├── __init__.py
+        ├── conftest.py
+        └── test_save.py
 ```
 </details>
 
@@ -159,3 +182,11 @@ http://127.0.0.1:8000/search/mal?query=MyHero
 *Replace `MyHero` with the anime that you want to search*
 
 *Note: Big anime franchises like "Naruto" can take more than 15 minutes to run.*
+
+## Testing
+
+Run the following command to use pytest *(all changes to the database during the tests are rolled-back afterwards)*:
+
+```
+pytest
+```

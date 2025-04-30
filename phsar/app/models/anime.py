@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String
+from sqlalchemy import Column, Integer, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
@@ -8,6 +8,7 @@ from app.models.base import BaseModel
 class Anime(BaseModel):
     __tablename__ = "anime"
 
+    mal_id = Column(Integer, nullable=False, unique=True)
     title = Column(String, nullable=False)
     name_eng = Column(String)
     name_jap = Column(String)

@@ -25,7 +25,7 @@ class Media(BaseModel):
     __tablename__ = "media"
 
     anime_id = Column(Integer, ForeignKey("anime.id", ondelete="CASCADE"), nullable=False)
-    mal_id = Column(Integer, nullable=False)
+    mal_id = Column(Integer, nullable=False, unique=True)
     mal_url = Column(String, nullable=False)
     title = Column(String, nullable=False)
     name_eng = Column(String)

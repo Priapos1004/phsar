@@ -9,13 +9,15 @@ def get_first_main_relation(media_dict: dict) -> dict | None:
             return mal_id
     return None  # If no main relation found
 
-async def search_mal_api(query: str) -> list[SearchResultDB]:
+async def search_mal_api(query: str, excluded_mal_ids: set[int]) -> list[SearchResultDB]:
     async with JikanScraper() as scraper:
-        relations, all_info = await scraper.search_title(query)
+        relations, all_info = await scraper.search_title(query, excluded_mal_ids=excluded_mal_ids)
 
     result_list = []
     for related_anime_graph in relations:
+
         anime_mal_id = get_first_main_relation(related_anime_graph)
+
         unconnected_media_list = []
         for mal_id, relation_info in related_anime_graph.items():
             media_info = all_info[mal_id]
@@ -40,8 +42,14 @@ async def search_mal_api(query: str) -> list[SearchResultDB]:
                 aired_from=media_info.get("aired_from"),
                 aired_to=media_info.get("aired_to"),
                 duration=media_info.get("duration"),
+                genres=media_info.get("genres"),
+                studio=media_info.get("studio"),
             )
-            unconnected_media_list.append(media)
+            # Put the main anime always at the beginning of the list
+            if mal_id == anime_mal_id:
+                unconnected_media_list = [media] + unconnected_media_list
+            else:
+                unconnected_media_list.append(media)
 
         result_list.append(SearchResultDB(anime_mal_id=anime_mal_id, unconnected_media_list=unconnected_media_list))
     
