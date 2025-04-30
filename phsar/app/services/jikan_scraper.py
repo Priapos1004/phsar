@@ -1,5 +1,6 @@
 import logging
 from collections import deque
+from datetime import datetime
 from typing import Optional
 
 import httpx
@@ -39,6 +40,37 @@ class JikanScraper:
     def __clean_str_field(value: str | None) -> str | None:
         # For case: "TV Special" and "TVSpecial"
         return value.replace(" ", "").strip() if isinstance(value, str) else None
+    
+    @staticmethod
+    def __get_anime_season(anime: dict) -> str:
+        season = anime.get("season")
+        year = anime.get("year")
+        if season and year:
+            return f"{season.capitalize()} {year}"
+
+        aired_from = anime.get("aired", {}).get("from")
+        if not aired_from:
+            return "Unknown"
+
+        try:
+            date = datetime.fromisoformat(aired_from.replace("Z", "+00:00"))
+            year = date.year
+            month = date.month
+
+            if 1 <= month <= 3:
+                season = "Winter"
+            elif 4 <= month <= 6:
+                season = "Spring"
+            elif 7 <= month <= 9:
+                season = "Summer"
+            elif 10 <= month <= 12:
+                season = "Fall"
+            else:
+                season = "Unknown"
+
+            return f"{season} {year}"
+        except Exception:
+            return "Unknown"
 
     def extract_information(self, anime: dict) -> dict:
         genres = (
@@ -64,7 +96,7 @@ class JikanScraper:
             "score": anime.get("score"),
             "scored_by": anime.get("scored_by"),
             "episodes": anime.get("episodes"),
-            "anime_season": f"{anime.get('season', 'Unknown')} {anime.get('year', 'Unknown')}",
+            "anime_season": JikanScraper.__get_anime_season(anime),
             "aired_from": anime.get("aired", {}).get("from"),
             "aired_to": anime.get("aired", {}).get("to"),
             "airing_status": anime.get("status"),

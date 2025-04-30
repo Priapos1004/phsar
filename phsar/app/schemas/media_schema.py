@@ -36,6 +36,10 @@ class MediaUnconnected(MediaBase):
     genres: list[str]
     studio: list[str]
 
+class MediaConnected(MediaUnconnected):
+    anime_id: int
+    anime_title: str
+
 class MediaOut(MediaBase):
     id: int
     uuid: UUID
