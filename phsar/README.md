@@ -83,7 +83,8 @@ phsar/
     │   └── test_save.py
     └── services/
         ├── __init__.py
-        └── test_search_service.py
+        ├── test_search_service.py
+        └── test_vector_embedding_service.py
 ```
 </details>
 
