@@ -1,7 +1,8 @@
 from app.services.vector_embedding_service import generate_embedding
 
+
 def test_generate_embedding():
-    text = "Hello, world!"
+    text = "Fake Anime Title, Fake Anime English, フェイクアニメ, Fake Alt Title"
     embedding = generate_embedding(text)
 
     # Ensure it's a list
