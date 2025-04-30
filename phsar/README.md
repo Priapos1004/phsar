@@ -164,7 +164,7 @@ docker exec -it anime-postgres psql -U animeuser -d anime_db -c "DROP SCHEMA pub
 
 ## Run FastAPI App
 
-When first running the FastAPI App, the genre table and the first admin user will be seeded.
+When first running the FastAPI App, the genre table and the first admin user will be seeded. For running the app, use:
 
 ```
 uvicorn app.main:app --reload
@@ -176,13 +176,9 @@ You can now open
 http://127.0.0.1:8000
 ```
 
-to see if the API is live. For using the search endpoint, open
+to see if the API is live.
 
-```
-http://127.0.0.1:8000/search/mal?query=MyHero
-```
-
-*Replace `MyHero` with the anime that you want to search*
+For testing the `search/mal` and `save/search-results` endpoint, use the [test_fastAPI notebook](../notebooks/test_fastAPI.ipynb).
 
 *Note: Big anime franchises like "Naruto" can take more than 15 minutes to run.*
 
