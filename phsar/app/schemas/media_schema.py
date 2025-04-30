@@ -33,8 +33,8 @@ class MediaCreate(MediaBase):
     anime_id: int
 
 class MediaUnconnected(MediaBase):
-    genres: list
-    studio: list
+    genres: list[str]
+    studio: list[str]
 
 class MediaOut(MediaBase):
     id: int

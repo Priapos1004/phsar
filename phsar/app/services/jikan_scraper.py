@@ -34,6 +34,11 @@ class JikanScraper:
         response = await self.client.get(url, params=params)
         response.raise_for_status()
         return response.json()
+    
+    @staticmethod
+    def __clean_str_field(value: str | None) -> str | None:
+        # For case: "TV Special" and "TVSpecial"
+        return value.replace(" ", "").strip() if isinstance(value, str) else None
 
     def extract_information(self, anime: dict) -> dict:
         genres = (
@@ -49,7 +54,7 @@ class JikanScraper:
             "name_eng": anime.get("title_english"),
             "name_jap": anime.get("title_japanese"),
             "other_names": anime.get("title_synonyms", []),
-            "media_type": anime.get("type").replace(" ", ""), # For case: "TV Special" and "TVSpecial"
+            "media_type": JikanScraper.__clean_str_field(anime.get("type")),
             "genres": genres,
             "studio": [studio["name"] for studio in anime.get("studios", [])],
             "fsk": anime.get("rating"),
