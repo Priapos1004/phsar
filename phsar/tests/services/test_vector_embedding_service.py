@@ -1,9 +1,12 @@
+import pytest
+
 from app.services.vector_embedding_service import generate_embedding
 
 
-def test_generate_embedding():
+@pytest.mark.asyncio
+async def test_generate_embedding():
     text = "Fake Anime Title, Fake Anime English, フェイクアニメ, Fake Alt Title"
-    embedding = generate_embedding(text)
+    embedding = await generate_embedding(text)
 
     # Ensure it's a list
     assert isinstance(embedding, list), "Embedding is not a list"

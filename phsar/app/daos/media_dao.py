@@ -1,7 +1,92 @@
+from pgvector.sqlalchemy import Vector
+from sqlalchemy import and_, cast, distinct, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
 from app.daos.base_mal_id_dao import MalIdDAO
+from app.models.genre import Genre
 from app.models.media import Media
+from app.models.media_genre import MediaGenre
+from app.models.media_search import MediaSearch
+from app.models.media_studio import MediaStudio
+from app.models.studio import Studio
+from app.schemas.media_filter_schema import MediaSearchFilters
+from app.services.vector_embedding_service import generate_embedding
 
 
 class MediaDAO(MalIdDAO[Media]):
     def __init__(self):
         super().__init__(Media)
+
+    async def search_media_by_vector_with_filters(
+        self,
+        db: AsyncSession,
+        query: str,
+        filters: MediaSearchFilters,
+        limit: int = 50,
+    ) -> list[Media]:
+        embedding = await generate_embedding(query)
+
+        # If filtering by genres (HAS ALL), use subquery
+        if filters.genre_name:
+            subquery = (
+                select(Media.id)
+                .join(Media.media_genre)
+                .join(MediaGenre.genre)
+                .where(Genre.name.in_(filters.genre_name))
+                .group_by(Media.id)
+                .having(func.count(distinct(Genre.id)) == len(filters.genre_name))
+            ).subquery()
+
+            stmt = select(Media).join(MediaSearch).where(Media.id.in_(select(subquery.c.id)))
+        else:
+            stmt = select(Media).join(MediaSearch)
+
+        # Apply eager loading
+        stmt = stmt.options(
+            selectinload(Media.media_genre).selectinload(MediaGenre.genre),
+            selectinload(Media.media_studio).selectinload(MediaStudio.studio),
+            selectinload(Media.anime),
+        )
+
+        # Studio filter
+        if filters.studio_name:
+            stmt = (
+                stmt
+                .join(Media.media_studio)
+                .join(MediaStudio.studio)
+                .where(Studio.name.in_(filters.studio_name))
+            )
+
+        # Other filters
+        conditions = []
+
+        if filters.media_type:
+            conditions.append(Media.media_type.in_(filters.media_type))
+        if filters.relation_type:
+            conditions.append(Media.relation_type.in_(filters.relation_type))
+        if filters.fsk:
+            conditions.append(Media.fsk.in_(filters.fsk))
+        if filters.airing_status:
+            conditions.append(Media.airing_status.in_(filters.airing_status))
+        if filters.anime_season:
+            conditions.append(Media.anime_season.in_(filters.anime_season))
+
+        if filters.score_min is not None:
+            conditions.append((Media.score != None) & (Media.score >= filters.score_min))
+        if filters.score_max is not None:
+            conditions.append((Media.score != None) & (Media.score <= filters.score_max))
+        if filters.scored_by_min is not None:
+            conditions.append((Media.scored_by != None) & (Media.scored_by >= filters.scored_by_min))
+        if filters.episodes_min is not None:
+            conditions.append((Media.episodes != None) & (Media.episodes >= filters.episodes_min))
+        if filters.episodes_max is not None:
+            conditions.append((Media.episodes != None) & (Media.episodes <= filters.episodes_max))
+
+        if conditions:
+            stmt = stmt.where(and_(*conditions))
+
+        stmt = stmt.order_by(func.cosine_distance(MediaSearch.embedding, cast(embedding, Vector))).limit(limit)
+
+        results = (await db.execute(stmt)).scalars().all()
+        return results

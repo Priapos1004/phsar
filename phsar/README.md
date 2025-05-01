@@ -49,6 +49,7 @@ phsar/
 │   ├── schemas/
 │   │   ├── __init__.py
 │   │   ├── anime_schema.py
+│   │   ├── media_filter_schema.py
 │   │   ├── media_schema.py
 │   │   └── search_schema.py
 │   ├── seeders/
@@ -60,6 +61,7 @@ phsar/
 │       ├── anime_service.py
 │       ├── jikan_scraper.py
 │       ├── media_linking_service.py
+│       ├── media_search_service.py
 │       ├── media_service.py
 │       ├── save_service.py
 │       ├── search_service.py
@@ -80,7 +82,8 @@ phsar/
     ├── routers/
     │   ├── __init__.py
     │   ├── conftest.py
-    │   └── test_save.py
+    │   ├── test_save.py
+    │   └── test_search_media.py
     └── services/
         ├── __init__.py
         ├── test_search_service.py
@@ -179,7 +182,7 @@ http://127.0.0.1:8000
 
 to see if the API is live.
 
-For testing the `search/mal` and `save/search-results` endpoint, use the [test_fastAPI notebook](../notebooks/test_fastAPI.ipynb).
+For testing the `search/mal`, `search/media`, and `save/search-results` endpoints, use the [test_fastAPI notebook](../notebooks/test_fastAPI.ipynb).
 
 *Note: Big anime franchises like "Naruto" can take more than 15 minutes to run.*
 
