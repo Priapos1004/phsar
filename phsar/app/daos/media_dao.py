@@ -1,5 +1,5 @@
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import and_, cast, distinct, func, select
+from sqlalchemy import and_, case, cast, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -10,7 +10,7 @@ from app.models.media_genre import MediaGenre
 from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
-from app.schemas.media_filter_schema import MediaSearchFilters
+from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
 from app.services.vector_embedding_service import generate_embedding
 
 
@@ -23,19 +23,22 @@ class MediaDAO(MalIdDAO[Media]):
         db: AsyncSession,
         query: str,
         filters: MediaSearchFilters,
+        search_type: SearchType,
         limit: int = 50,
     ) -> list[Media]:
-        query_embedding = await generate_embedding(query)
+        if query != "":
+            query_embedding = await generate_embedding(query)
 
-        # If filtering by genres (HAS ALL), use subquery
+        # If filtering by genres (HAS AT LEAST ALL), use subquery
         if filters.genre_name:
+            unique_genres = set(filters.genre_name)
             subquery = (
                 select(Media.id)
                 .join(Media.media_genre)
                 .join(MediaGenre.genre)
-                .where(Genre.name.in_(filters.genre_name))
+                .where(Genre.name.in_(unique_genres))
                 .group_by(Media.id)
-                .having(func.count(distinct(Genre.id)) == len(filters.genre_name))
+                .having(func.count(distinct(Genre.id)) >= len(unique_genres))
             ).subquery()
 
             stmt = select(Media).join(MediaSearch).where(Media.id.in_(select(subquery.c.id)))
@@ -86,7 +89,28 @@ class MediaDAO(MalIdDAO[Media]):
         if conditions:
             stmt = stmt.where(and_(*conditions))
 
-        stmt = stmt.order_by(func.cosine_distance(MediaSearch.title_embedding, cast(query_embedding, Vector))).limit(limit)
+        if query != "":
+            if search_type == SearchType.TITLE:
+                stmt = stmt.order_by(
+                    func.cosine_distance(MediaSearch.title_embedding, cast(query_embedding, Vector))
+                ).limit(limit)
+            elif search_type == SearchType.DESCRIPTION:
+                stmt = stmt.order_by(
+                    func.cosine_distance(MediaSearch.description_embedding, cast(query_embedding, Vector))
+                ).limit(limit)
+        else:
+            # If no query, order by score and popularity
+            # Use weighted score if the number of votes is above a certain threshold
+            min_votes_threshold = 500
+            weighted_score = Media.score * func.log(Media.scored_by + 1)
+            popularity = Media.scored_by
+
+            stmt = stmt.order_by(
+                case(
+                    (Media.scored_by >= min_votes_threshold, weighted_score),
+                    else_=popularity
+                ).desc().nullslast()
+            ).limit(limit)
 
         results = (await db.execute(stmt)).scalars().all()
         return results

@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_db
 from app.daos.media_dao import MediaDAO
-from app.schemas.media_filter_schema import MediaSearchFilters
+from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
 from app.schemas.media_schema import MediaConnected
 from app.schemas.search_schema import SearchResultDB
 from app.services.media_search_service import search_media_by_query
@@ -24,6 +24,7 @@ async def search_mal(query: str, db: AsyncSession = Depends(get_db)):
 @router.get("/media", response_model=list[MediaConnected])
 async def search_media(
     query: str,
+    search_type: SearchType = Query(default=SearchType.TITLE),
     relation_type: Optional[list[str]] = Query(default=None),
     media_type: Optional[list[str]] = Query(default=None),
     fsk: Optional[list[str]] = Query(default=None),
@@ -57,4 +58,5 @@ async def search_media(
         db=db,
         query=query,
         filters=filters,
+        search_type=search_type,
     )

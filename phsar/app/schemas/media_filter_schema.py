@@ -1,6 +1,12 @@
+from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel
+
+
+class SearchType(str, Enum):
+    TITLE = "title"
+    DESCRIPTION = "description"
 
 
 class MediaSearchFilters(BaseModel):
