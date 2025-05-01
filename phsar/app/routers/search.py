@@ -23,7 +23,7 @@ async def search_mal(query: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/media", response_model=list[MediaConnected])
 async def search_media(
-    query: str,
+    query: str = "",
     search_type: SearchType = Query(default=SearchType.TITLE),
     relation_type: Optional[list[str]] = Query(default=None),
     media_type: Optional[list[str]] = Query(default=None),

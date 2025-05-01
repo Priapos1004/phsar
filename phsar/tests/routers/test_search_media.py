@@ -87,9 +87,16 @@ async def test_description_searchtype(client):
 
 
 @pytest.mark.asyncio
-async def test_empty_query(client):
+async def test_empty_string_query(client):
     response = await client.get("/search/media", params=[
         ("query", "")
     ])
+    assert response.status_code == 200
+    print("Empty string query:", response.json())
+
+
+@pytest.mark.asyncio
+async def test_empty_query(client):
+    response = await client.get("/search/media")
     assert response.status_code == 200
     print("Empty query:", response.json())
