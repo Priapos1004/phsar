@@ -45,6 +45,17 @@ async def test_genre_and_studio(client):
 
 
 @pytest.mark.asyncio
+async def test_duplicated_genre(client):
+    response = await client.get("/search/media", params=[
+        ("query", "Academia 2"),
+        ("genre_name", "Action"),
+        ("genre_name", "Action")
+    ])
+    assert response.status_code == 200
+    print("Duplicated genres:", response.json())
+
+
+@pytest.mark.asyncio
 async def test_score_and_episodes(client):
     response = await client.get("/search/media", params={
         "query": "Academia 2",
@@ -54,3 +65,12 @@ async def test_score_and_episodes(client):
     })
     assert response.status_code == 200
     print("Score and episodes:", response.json())
+
+
+@pytest.mark.asyncio
+async def test_empty_query(client):
+    response = await client.get("/search/media", params=[
+        ("query", "")
+    ])
+    assert response.status_code == 200
+    print("Empty query:", response.json())

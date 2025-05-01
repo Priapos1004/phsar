@@ -25,7 +25,7 @@ class MediaDAO(MalIdDAO[Media]):
         filters: MediaSearchFilters,
         limit: int = 50,
     ) -> list[Media]:
-        embedding = await generate_embedding(query)
+        query_embedding = await generate_embedding(query)
 
         # If filtering by genres (HAS ALL), use subquery
         if filters.genre_name:
@@ -86,7 +86,7 @@ class MediaDAO(MalIdDAO[Media]):
         if conditions:
             stmt = stmt.where(and_(*conditions))
 
-        stmt = stmt.order_by(func.cosine_distance(MediaSearch.embedding, cast(embedding, Vector))).limit(limit)
+        stmt = stmt.order_by(func.cosine_distance(MediaSearch.title_embedding, cast(query_embedding, Vector))).limit(limit)
 
         results = (await db.execute(stmt)).scalars().all()
         return results
