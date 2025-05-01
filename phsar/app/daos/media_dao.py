@@ -99,17 +99,11 @@ class MediaDAO(MalIdDAO[Media]):
                     func.cosine_distance(MediaSearch.description_embedding, cast(query_embedding, Vector))
                 ).limit(limit)
         else:
-            # If no query, order by score and popularity
-            # Use weighted score if the number of votes is above a certain threshold
-            min_votes_threshold = 500
             weighted_score = Media.score * func.log(Media.scored_by + 1)
-            popularity = Media.scored_by
-
             stmt = stmt.order_by(
-                case(
-                    (Media.scored_by >= min_votes_threshold, weighted_score),
-                    else_=popularity
-                ).desc().nullslast()
+                weighted_score
+                .desc()
+                .nullslast()
             ).limit(limit)
 
         results = (await db.execute(stmt)).scalars().all()
