@@ -35,7 +35,7 @@ MAL_TO_GENRETYPE = {
 }
 
 async def seed_genres(db: AsyncSession):
-    for mal_id, name, mal_type in MAL_GENRES:
+    for _, name, mal_type in MAL_GENRES:
         result = await db.execute(select(Genre).where(Genre.name == name))
         genre = result.scalars().first()
         if not genre:

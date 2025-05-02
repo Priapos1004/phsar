@@ -32,6 +32,7 @@ async def test_save_search_results(client):
                     "aired_from": "2025-04-01T00:00:00",
                     "aired_to": "2025-06-17T00:00:00",
                     "duration": "24 min per ep",
+                    "duration_seconds": 1440,
                     "genres": ["Action", "Adventure"],
                     "studio": ["Fake Studio"],
                 }

@@ -1,8 +1,9 @@
 import enum
 
 from sqlalchemy import (Column, DateTime, Enum, Float, ForeignKey, Integer,
-                        String)
+                        String, case)
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
 from sqlalchemy.orm import relationship
 
 from app.models.base import BaseModel
@@ -19,6 +20,7 @@ class MediaType(str, enum.Enum):
 class RelationType(str, enum.Enum):
     Main = "main"
     Summary = "summary"
+    Crossover = "crossover"
     Other = "other"
 
 class Media(BaseModel):
@@ -45,6 +47,23 @@ class Media(BaseModel):
     aired_from = Column(DateTime(timezone=True), nullable=True)
     aired_to = Column(DateTime(timezone=True), nullable=True)
     duration = Column(String, nullable=True)
+    duration_seconds = Column(Integer, nullable=True)
+
+    @hybrid_property
+    def total_watch_time(self):
+        if self.episodes and self.duration_seconds:
+            return self.episodes * self.duration_seconds
+        return None
+
+    @total_watch_time.expression
+    def total_watch_time(cls):
+        return case(
+            (
+                (cls.episodes != None) & (cls.duration_seconds != None),
+                cls.episodes * cls.duration_seconds
+            ),
+            else_=None # Changeable default value for total_watch_time = None
+        )
 
     # Relationships
     anime = relationship("Anime", back_populates="media")

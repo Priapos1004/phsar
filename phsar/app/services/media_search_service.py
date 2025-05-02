@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.media_dao import MediaDAO
 from app.models.media import Media
-from app.schemas.media_filter_schema import MediaSearchFilters
+from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
 from app.schemas.media_schema import MediaConnected
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,7 @@ def _map_to_connected(media: Media) -> MediaConnected:
         aired_from=media.aired_from,
         aired_to=media.aired_to,
         duration=media.duration,
+        duration_seconds=media.duration_seconds,
         genres=[g.genre.name for g in media.media_genre],
         studio=[s.studio.name for s in media.media_studio],
         anime_id=media.anime.id,
@@ -45,14 +46,17 @@ async def search_media_by_query(
     db: AsyncSession,
     query: str,
     filters: MediaSearchFilters,
+    search_type: SearchType,
 ) -> list[MediaConnected]:
     logger.info(f"Query: {query}")
     logger.info(f"Filters: {filters.model_dump()}")
+    logger.info(f"Search type: {search_type}")
     # Get ORM objects from DAO
     media_list: list[Media] = await media_dao.search_media_by_vector_with_filters(
         db=db,
         query=query,
         filters=filters,
+        search_type=search_type,
     )
 
     # Map to MediaConnected Pydantic models

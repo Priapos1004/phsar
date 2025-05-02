@@ -28,6 +28,7 @@ class MediaBase(BaseModel):
     aired_from: Optional[datetime]
     aired_to: Optional[datetime]
     duration: Optional[str]
+    duration_seconds: Optional[int]
 
 class MediaCreate(MediaBase):
     anime_id: int

@@ -10,7 +10,7 @@ from app.models.media_genre import MediaGenre
 from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
-from app.schemas.media_filter_schema import MediaSearchFilters
+from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
 from app.services.vector_embedding_service import generate_embedding
 
 
@@ -23,19 +23,22 @@ class MediaDAO(MalIdDAO[Media]):
         db: AsyncSession,
         query: str,
         filters: MediaSearchFilters,
+        search_type: SearchType,
         limit: int = 50,
     ) -> list[Media]:
-        embedding = await generate_embedding(query)
+        if query != "":
+            query_embedding = await generate_embedding(query)
 
-        # If filtering by genres (HAS ALL), use subquery
+        # If filtering by genres (HAS AT LEAST ALL), use subquery
         if filters.genre_name:
+            unique_genres = set(filters.genre_name)
             subquery = (
                 select(Media.id)
                 .join(Media.media_genre)
                 .join(MediaGenre.genre)
-                .where(Genre.name.in_(filters.genre_name))
+                .where(Genre.name.in_(unique_genres))
                 .group_by(Media.id)
-                .having(func.count(distinct(Genre.id)) == len(filters.genre_name))
+                .having(func.count(distinct(Genre.id)) >= len(unique_genres))
             ).subquery()
 
             stmt = select(Media).join(MediaSearch).where(Media.id.in_(select(subquery.c.id)))
@@ -82,11 +85,42 @@ class MediaDAO(MalIdDAO[Media]):
             conditions.append((Media.episodes != None) & (Media.episodes >= filters.episodes_min))
         if filters.episodes_max is not None:
             conditions.append((Media.episodes != None) & (Media.episodes <= filters.episodes_max))
+        if filters.duration_per_episode_min is not None:
+            conditions.append(
+                (Media.duration_seconds != None) & (Media.duration_seconds >= filters.duration_per_episode_min)
+            )
+        if filters.duration_per_episode_max is not None:
+            conditions.append(
+                (Media.duration_seconds != None) & (Media.duration_seconds <= filters.duration_per_episode_max)
+            )
+        if filters.total_watch_time_min is not None:
+            conditions.append(
+                (Media.total_watch_time != None) & (Media.total_watch_time >= filters.total_watch_time_min)
+            )
+        if filters.total_watch_time_max is not None:
+            conditions.append(
+                (Media.total_watch_time != None) & (Media.total_watch_time <= filters.total_watch_time_max)
+            )
 
         if conditions:
             stmt = stmt.where(and_(*conditions))
 
-        stmt = stmt.order_by(func.cosine_distance(MediaSearch.embedding, cast(embedding, Vector))).limit(limit)
+        if query != "":
+            if search_type == SearchType.TITLE:
+                stmt = stmt.order_by(
+                    func.cosine_distance(MediaSearch.title_embedding, cast(query_embedding, Vector))
+                ).limit(limit)
+            elif search_type == SearchType.DESCRIPTION:
+                stmt = stmt.order_by(
+                    func.cosine_distance(MediaSearch.description_embedding, cast(query_embedding, Vector))
+                ).limit(limit)
+        else:
+            weighted_score = Media.score * func.log(Media.scored_by + 1)
+            stmt = stmt.order_by(
+                weighted_score
+                .desc()
+                .nullslast()
+            ).limit(limit)
 
         results = (await db.execute(stmt)).scalars().all()
         return results

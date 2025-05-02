@@ -4,6 +4,7 @@ from app.models.media import Media
 from app.models.media_genre import MediaGenre
 from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
+from app.models.media_unwanted import MediaUnwanted
 from app.models.ratings import Ratings
 from app.models.studio import Studio
 from app.models.tag import Tag

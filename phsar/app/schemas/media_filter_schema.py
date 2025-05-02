@@ -1,6 +1,12 @@
+from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel
+
+
+class SearchType(str, Enum):
+    TITLE = "title"
+    DESCRIPTION = "description"
 
 
 class MediaSearchFilters(BaseModel):
@@ -17,3 +23,7 @@ class MediaSearchFilters(BaseModel):
     scored_by_min: Optional[int] = None
     episodes_min: Optional[int] = None
     episodes_max: Optional[int] = None
+    duration_per_episode_min: Optional[int] = None
+    duration_per_episode_max: Optional[int] = None
+    total_watch_time_min: Optional[int] = None
+    total_watch_time_max: Optional[int] = None

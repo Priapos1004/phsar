@@ -39,12 +39,13 @@ async def save_search_results(db: AsyncSession, search_results: list[SearchResul
             await create_media_embedding(
                 db,
                 media_id=media_obj.id,
-                texts=[
+                title_texts=[
                     media_in.title,
                     media_in.name_eng,
                     media_in.name_jap,
                     *media_in.other_names,
-                ]
+                ],
+                description_text=media_in.description
             )
             logger.info(f"Created embedding for Media: {media_obj.title} (ID: {media_obj.id})")
 

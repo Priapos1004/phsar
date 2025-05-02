@@ -24,6 +24,7 @@ phsar/
 │   │   ├── base_mal_id_dao.py
 │   │   ├── genre_dao.py
 │   │   ├── media_dao.py
+│   │   ├── media_unwanted_dao.py
 │   │   └── studio_dao.py
 │   ├── exceptions.py
 │   ├── main.py
@@ -36,6 +37,7 @@ phsar/
 │   │   ├── media_genre.py
 │   │   ├── media_search.py
 │   │   ├── media_studio.py
+│   │   ├── media_unwanted.py
 │   │   ├── ratings.py
 │   │   ├── studio.py
 │   │   ├── tag.py
@@ -45,7 +47,8 @@ phsar/
 │   ├── routers/
 │   │   ├── __init__.py
 │   │   ├── save.py
-│   │   └── search.py
+│   │   ├── search.py
+│   │   └── seeder.py
 │   ├── schemas/
 │   │   ├── __init__.py
 │   │   ├── anime_schema.py
@@ -55,6 +58,7 @@ phsar/
 │   ├── seeders/
 │   │   ├── __init__.py
 │   │   ├── genre_seeder.py
+│   │   ├── media_seeder.py
 │   │   └── user_seeder.py
 │   └── services/
 │       ├── __init__.py
@@ -65,6 +69,7 @@ phsar/
 │       ├── media_service.py
 │       ├── save_service.py
 │       ├── search_service.py
+│       ├── unwanted_media_service.py
 │       └── vector_embedding_service.py
 ├── frontend/
 ├── .env
@@ -86,6 +91,7 @@ phsar/
     │   └── test_search_media.py
     └── services/
         ├── __init__.py
+        ├── test_jikan_scraper.py
         ├── test_search_service.py
         └── test_vector_embedding_service.py
 ```
@@ -182,7 +188,7 @@ http://127.0.0.1:8000
 
 to see if the API is live.
 
-For testing the `search/mal`, `search/media`, and `save/search-results` endpoints, use the [test_fastAPI notebook](../notebooks/test_fastAPI.ipynb).
+For testing the `search/mal`, `search/media`, `seed/media`, and `save/search-results` endpoints, use the [test_fastAPI notebook](../notebooks/test_fastAPI.ipynb).
 
 *Note: Big anime franchises like "Naruto" can take more than 15 minutes to run.*
 
