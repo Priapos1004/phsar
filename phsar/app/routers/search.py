@@ -9,7 +9,8 @@ from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
 from app.schemas.media_schema import MediaConnected
 from app.schemas.search_schema import SearchResultDB
 from app.services.media_search_service import search_media_by_query
-from app.services.search_service import search_mal_api
+from app.services.search_service import handle_search_mal_api_results
+from app.services.unwanted_media_service import create_unwanted_media
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -17,14 +18,13 @@ media_dao = MediaDAO()
 
 @router.get("/mal", response_model=list[SearchResultDB])
 async def search_mal(query: str, db: AsyncSession = Depends(get_db)):
-    existing_mal_ids = await media_dao.get_all_mal_ids(db)
-    results = await search_mal_api(query, excluded_mal_ids=set(existing_mal_ids))
+    results = await handle_search_mal_api_results(query=query, db=db)
     return results
 
 @router.get("/media", response_model=list[MediaConnected])
 async def search_media(
-    query: str = "",
-    search_type: SearchType = Query(default=SearchType.TITLE),
+    query: str = Query(default="", description="The search query string (e.g., anime title)."),
+    search_type: SearchType = Query(default=SearchType.TITLE, description="The way to search by: title or description."),
     relation_type: Optional[list[str]] = Query(default=None),
     media_type: Optional[list[str]] = Query(default=None),
     fsk: Optional[list[str]] = Query(default=None),

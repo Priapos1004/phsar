@@ -17,9 +17,10 @@ class JikanScraper:
     def __init__(self, base_url: str = BASE_URL):
         self.base_url = base_url
         self.client: Optional[httpx.AsyncClient] = None
+        self.timeout = httpx.Timeout(connect=5.0, read=120.0, write=10.0, pool=5.0)
 
     async def __aenter__(self):
-        self.client = httpx.AsyncClient()
+        self.client = httpx.AsyncClient(timeout=self.timeout)
         return self
 
     async def __aexit__(self, exc_type, exc, tb):
@@ -38,8 +39,18 @@ class JikanScraper:
     
     @staticmethod
     def __clean_str_field(value: str | None) -> str | None:
+        # Clean and normalize the string
+        if not isinstance(value, str):
+            return None
+
         # For case: "TV Special" and "TVSpecial"
-        return value.replace(" ", "").strip() if isinstance(value, str) else None
+        cleaned = value.replace(" ", "").strip()
+
+        # Map 'Web' to 'ONA' (Handle legacy type)
+        if cleaned.lower() == "web":
+            return "ONA"
+
+        return cleaned
     
     @staticmethod
     def __get_anime_season(anime: dict) -> str:
@@ -117,8 +128,8 @@ class JikanScraper:
     def get_relation_type(self, is_main_season: bool, relation_type: Optional[str]) -> str:
         return "main" if is_main_season else (relation_type or "other")
 
-    async def search_title(self, title: str, excluded_mal_ids: set[int]) -> tuple[list[dict], dict[int, dict]]:
-        search = await self._get(f"{self.base_url}/anime", params={"q": title, "limit": 3})
+    async def search_title(self, title: str, excluded_mal_ids: set[int], initial_search_limit: int = 3) -> tuple[list[dict], dict[int, dict], set[tuple[int, str]]]:
+        search = await self._get(f"{self.base_url}/anime", params={"q": title, "limit": initial_search_limit})
         results = search.get("data", [])
 
         if not results:
@@ -127,6 +138,7 @@ class JikanScraper:
         all_info: dict[int, dict] = {}
         visited_ids: set[int] = excluded_mal_ids
         relations: list[dict] = []
+        unwanted_media: set[tuple[int, str]] = set()
 
         for anime in results:
             anime_info = self.extract_information(anime)
@@ -151,8 +163,9 @@ class JikanScraper:
                     anime_info = self.extract_information(await self.search_by_malid(current_mal_id))
 
                 if anime_info.get("media_type"):
-                    if anime_info["media_type"].lower() == "music":
-                        logger.warning(f"Skipping anime music: {anime_info['title']}")
+                    if anime_info["media_type"].lower() in ["music", "pv", "cm"]:
+                        logger.warning(f"Skipping anime {anime_info["media_type"]}: {anime_info['title']}")
+                        unwanted_media.add((current_mal_id, anime_info["media_type"]))
                         continue
 
                     all_info[anime_info["mal_id"]] = anime_info
@@ -200,4 +213,4 @@ class JikanScraper:
                 )
                 relations.append(sorted_graph)
 
-        return relations, all_info
+        return relations, all_info, unwanted_media
