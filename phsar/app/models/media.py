@@ -19,6 +19,7 @@ class MediaType(str, enum.Enum):
 class RelationType(str, enum.Enum):
     Main = "main"
     Summary = "summary"
+    Crossover = "crossover"
     Other = "other"
 
 class Media(BaseModel):
