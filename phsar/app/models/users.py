@@ -7,6 +7,7 @@ from app.models.base import BaseModel
 
 
 class RoleType(str, enum.Enum):
+    RestrictedUser = "restricted_user"
     User = "user"
     Admin = "admin"
 
