@@ -1,5 +1,5 @@
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import and_, case, cast, distinct, func, select
+from sqlalchemy import and_, cast, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -85,6 +85,22 @@ class MediaDAO(MalIdDAO[Media]):
             conditions.append((Media.episodes != None) & (Media.episodes >= filters.episodes_min))
         if filters.episodes_max is not None:
             conditions.append((Media.episodes != None) & (Media.episodes <= filters.episodes_max))
+        if filters.duration_per_episode_min is not None:
+            conditions.append(
+                (Media.duration_seconds != None) & (Media.duration_seconds >= filters.duration_per_episode_min)
+            )
+        if filters.duration_per_episode_max is not None:
+            conditions.append(
+                (Media.duration_seconds != None) & (Media.duration_seconds <= filters.duration_per_episode_max)
+            )
+        if filters.total_watch_time_min is not None:
+            conditions.append(
+                (Media.total_watch_time != None) & (Media.total_watch_time >= filters.total_watch_time_min)
+            )
+        if filters.total_watch_time_max is not None:
+            conditions.append(
+                (Media.total_watch_time != None) & (Media.total_watch_time <= filters.total_watch_time_max)
+            )
 
         if conditions:
             stmt = stmt.where(and_(*conditions))

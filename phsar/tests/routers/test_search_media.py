@@ -50,6 +50,10 @@ async def test_all_filters(client):
         ("scored_by_min", 1000),
         ("episodes_min", 12),
         ("episodes_max", 24),
+        ("duration_per_episode_min", 1200),  # 20 minutes
+        ("duration_per_episode_max", 1800),  # 30 minutes
+        ("total_watch_time_min", 14400),     # 4 hours
+        ("total_watch_time_max", 28800),     # 8 hours
     ])
     assert response.status_code == 200
     print("All filters:", response.json())
@@ -100,3 +104,36 @@ async def test_empty_query(client):
     response = await client.get("/search/media")
     assert response.status_code == 200
     print("Empty query:", response.json())
+
+
+@pytest.mark.asyncio
+async def test_duration_per_episode(client):
+    response = await client.get("/search/media", params=[
+        ("query", "Academia 2"),
+        ("duration_per_episode_min", 1200),  # 20 min
+        ("duration_per_episode_max", 1800),  # 30 min
+    ])
+    assert response.status_code == 200
+    print("Duration per episode filter:", response.json())
+
+
+@pytest.mark.asyncio
+async def test_total_watch_time(client):
+    response = await client.get("/search/media", params=[
+        ("query", "Academia 2"),
+        ("total_watch_time_min", 14400),  # 4 hours
+        ("total_watch_time_max", 28800),  # 8 hours
+    ])
+    assert response.status_code == 200
+    print("Total watch time filter:", response.json())
+
+
+@pytest.mark.asyncio
+async def test_edge_case_duration_limits(client):
+    response = await client.get("/search/media", params=[
+        ("query", "Academia 2"),
+        ("duration_per_episode_min", 0),      # allow 0 min episodes
+        ("duration_per_episode_max", 100000), # absurdly high (for edge test)
+    ])
+    assert response.status_code == 200
+    print("Edge case duration limits:", response.json())

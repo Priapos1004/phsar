@@ -37,6 +37,10 @@ async def search_media(
     scored_by_min: Optional[int] = None,
     episodes_min: Optional[int] = None,
     episodes_max: Optional[int] = None,
+    duration_per_episode_min: Optional[int] = None,
+    duration_per_episode_max: Optional[int] = None,
+    total_watch_time_min: Optional[int] = None,
+    total_watch_time_max: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
 ):
     filters = MediaSearchFilters(
@@ -52,6 +56,10 @@ async def search_media(
         scored_by_min=scored_by_min,
         episodes_min=episodes_min,
         episodes_max=episodes_max,
+        duration_per_episode_min=duration_per_episode_min,
+        duration_per_episode_max=duration_per_episode_max,
+        total_watch_time_min=total_watch_time_min,
+        total_watch_time_max=total_watch_time_max,
     )
 
     return await search_media_by_query(
