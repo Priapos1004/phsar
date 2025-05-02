@@ -1,4 +1,5 @@
 import logging
+import re
 from collections import deque
 from datetime import datetime
 from typing import Optional
@@ -82,6 +83,23 @@ class JikanScraper:
             return f"{season} {year}"
         except Exception:
             return "Unknown"
+        
+    @staticmethod
+    def __parse_duration_to_seconds(duration: Optional[str]) -> Optional[int]:
+        if not duration or "unknown" in duration.lower():
+            return None
+
+        # Match patterns like "1 hr. 30 min.", "24 min.", "2 hr.", "43 sec", etc.
+        hours_match = re.search(r"(\d+)\s*hr", duration, re.IGNORECASE)
+        minutes_match = re.search(r"(\d+)\s*min", duration, re.IGNORECASE)
+        seconds_match = re.search(r"(\d+)\s*sec", duration, re.IGNORECASE)
+
+        hours = int(hours_match.group(1)) if hours_match else 0
+        minutes = int(minutes_match.group(1)) if minutes_match else 0
+        seconds = int(seconds_match.group(1)) if seconds_match else 0
+
+        total_seconds = (hours * 3600) + (minutes * 60) + seconds
+        return total_seconds if total_seconds > 0 else None
 
     def extract_information(self, anime: dict) -> dict:
         genres = (
@@ -112,6 +130,7 @@ class JikanScraper:
             "aired_to": anime.get("aired", {}).get("to"),
             "airing_status": anime.get("status"),
             "duration": anime.get("duration"),
+            "duration_seconds": JikanScraper.__parse_duration_to_seconds(anime.get("duration")),
         }
 
     async def fetch_relations(self, mal_id: int) -> list[dict]:

@@ -55,6 +55,7 @@ async def search_mal_api(query: str, excluded_mal_ids: set[int]) -> SearchResult
                 aired_from=media_info.get("aired_from"),
                 aired_to=media_info.get("aired_to"),
                 duration=media_info.get("duration"),
+                duration_seconds=media_info.get("duration_seconds"),
                 genres=media_info.get("genres"),
                 studio=media_info.get("studio"),
             )

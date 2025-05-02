@@ -34,6 +34,7 @@ def _map_to_connected(media: Media) -> MediaConnected:
         aired_from=media.aired_from,
         aired_to=media.aired_to,
         duration=media.duration,
+        duration_seconds=media.duration_seconds,
         genres=[g.genre.name for g in media.media_genre],
         studio=[s.studio.name for s in media.media_studio],
         anime_id=media.anime.id,
