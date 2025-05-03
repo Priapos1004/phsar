@@ -37,11 +37,12 @@ def create_app() -> FastAPI:
     )
 
     # Local import avoids early dependency resolution in tests
-    from app.routers import save, search, seeder
+    from app.routers import auth, save, search, seeder
 
     app.include_router(search.router)
     app.include_router(save.router)
     app.include_router(seeder.router)
+    app.include_router(auth.router)
 
     @app.get("/")
     async def root():

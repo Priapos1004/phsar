@@ -16,7 +16,8 @@ phsar/
 │   │   ├── config.py
 │   │   ├── db.py
 │   │   ├── dependencies.py
-│   │   └── logging_config.py
+│   │   ├── logging_config.py
+│   │   └── security.py
 │   ├── daos/
 │   │   ├── __init__.py
 │   │   ├── anime_dao.py
@@ -46,12 +47,14 @@ phsar/
 │   │   └── watchlist_tag.py
 │   ├── routers/
 │   │   ├── __init__.py
+│   │   ├── auth.py
 │   │   ├── save.py
 │   │   ├── search.py
 │   │   └── seeder.py
 │   ├── schemas/
 │   │   ├── __init__.py
 │   │   ├── anime_schema.py
+│   │   ├── auth_schema.py
 │   │   ├── media_filter_schema.py
 │   │   ├── media_schema.py
 │   │   └── search_schema.py
@@ -63,6 +66,7 @@ phsar/
 │   └── services/
 │       ├── __init__.py
 │       ├── anime_service.py
+│       ├── auth_service.py
 │       ├── jikan_scraper.py
 │       ├── media_linking_service.py
 │       ├── media_search_service.py
@@ -111,15 +115,16 @@ DB_PORT=5432
 DB_NAME=anime_db
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=supersecretpassword
+SECRET_KEY=supersecretsecretkey
 ```
 
-*Change `animeuser`, `animepass`, `admin`, and `supersecretpassword`*
+*Change `animeuser`, `animepass`, `admin`, `supersecretpassword`, and `supersecretsecretkey`*
 
 ### Use alembic to Savely Migrate Changes
 
 #### Activate vector Extension in Database
 
-After setting up the database, we need to first activate the vector extension in the database. Fot this, run the command:
+After setting up the database, we need to first activate the vector extension in the database. For this, run the command:
 
 ```
 alembic revision -m "create pgvector extension"
@@ -199,3 +204,7 @@ Run the following command to use pytest *(all changes to the database during the
 ```
 pytest
 ```
+
+## Trouble-shooting
+
+- Check that the database docker container is running!
