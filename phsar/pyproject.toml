@@ -2,6 +2,7 @@
 # Paths to exclude
 exclude = [
     "alembic/versions",
-    "**/__init__.py"
+    "**/__init__.py",
+    "**/*.ipynb"
 ]
 lint.extend-select = ["I"]
