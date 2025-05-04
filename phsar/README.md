@@ -4,7 +4,7 @@
 <summary>Click to see folder structure</summary>
 <!--
 Command for creating the tree graphic:
-tree phsar -a -F -I '__pycache__|.git|.pytest_cache|.ruff_cache|*.pyc|*.pyo|*.db|*.sqlite3|*.log|*.tmp'
+tree phsar -a -F -I '__pycache__|node_modules|.git|.svelte-kit|.DS_Store|.pytest_cache|.ruff_cache|*.pyc|*.pyo|*.db|*.sqlite3|*.log|*.tmp'
 -->
 
 ```text
@@ -77,6 +77,48 @@ phsar/
 │       ├── unwanted_media_service.py
 │       └── vector_embedding_service.py
 ├── frontend/
+│   └── phsar-frontend/
+│       ├── .gitignore
+│       ├── .npmrc
+│       ├── README.md
+│       ├── package-lock.json
+│       ├── package.json
+│       ├── src/
+│       │   ├── app.css
+│       │   ├── app.d.ts
+│       │   ├── app.html
+│       │   ├── lib/
+│       │   │   ├── config.ts
+│       │   │   ├── stores/
+│       │   │   │   └── auth.ts
+│       │   │   └── styles/
+│       │   │       └── theme.css
+│       │   └── routes/
+│       │       ├── +layout.svelte
+│       │       ├── +layout.ts
+│       │       ├── +page.svelte
+│       │       └── login/
+│       │           └── +page.svelte
+│       ├── static/
+│       │   ├── favicon.png
+│       │   ├── icons/
+│       │   │   ├── logout_icon.png
+│       │   │   ├── logout_icon_hover.png
+│       │   │   ├── logout_icon_hover_transparent.png
+│       │   │   ├── logout_icon_transparent.png
+│       │   │   ├── search_icon.png
+│       │   │   ├── search_icon_hover.png
+│       │   │   ├── search_icon_hover_transparent.png
+│       │   │   ├── search_icon_transparent.png
+│       │   │   ├── user_icon.png
+│       │   │   ├── user_icon_hover.png
+│       │   │   ├── user_icon_hover_transparent.png
+│       │   │   └── user_icon_transparent.png
+│       │   ├── phsar_logo.png
+│       │   └── phsar_logo_transparent.png
+│       ├── svelte.config.js
+│       ├── tsconfig.json
+│       └── vite.config.ts
 ├── .env
 ├── README.md
 ├── alembic/
@@ -207,6 +249,16 @@ Run the following command to use pytest *(all changes to the database during the
 ```
 pytest
 ```
+
+## Run Frontend
+
+See [Svelte README](frontend/phsar-frontend/README.md) or just run in `frontend/phsar-frontend`:
+
+```
+npm run dev -- --open
+```
+
+*FastAPI and Svelte need to run at the same time in two terminals!*
 
 ## Trouble-shooting
 
