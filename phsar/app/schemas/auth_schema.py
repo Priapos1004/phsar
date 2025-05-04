@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
 from app.models.users import RoleType
@@ -27,4 +29,4 @@ class RegistrationTokenResponse(BaseModel):
     token: str
     role: RoleType
     created_by: str
-    expired: bool
+    expires_on: datetime

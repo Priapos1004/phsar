@@ -1,0 +1,6 @@
+[tool.ruff]
+# Paths to exclude
+exclude = [
+    "alembic/versions",
+    "**/__init__.py"
+]

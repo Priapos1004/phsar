@@ -38,5 +38,5 @@ DURATION_EXPECTED_PAIRS = [
 
 @pytest.mark.parametrize("duration_str, expected_seconds", DURATION_EXPECTED_PAIRS)
 def test_parse_duration_to_seconds_exact(duration_str, expected_seconds):
-    result = JikanScraper._JikanScraper__parse_duration_to_seconds(duration_str)
+    result = JikanScraper._parse_duration_to_seconds(duration_str)
     assert result == expected_seconds, f"For '{duration_str}', expected {expected_seconds} but got {result}"

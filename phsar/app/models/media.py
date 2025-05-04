@@ -3,7 +3,7 @@ import enum
 from sqlalchemy import (Column, DateTime, Enum, Float, ForeignKey, Integer,
                         String, case)
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 
 from app.models.base import BaseModel
