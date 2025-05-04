@@ -18,7 +18,7 @@ async def register(user: auth_schema.UserCreateWithToken, db: AsyncSession = Dep
         raise HTTPException(status_code=400, detail=str(e))
     
     access_token = create_access_token(data={"sub": new_user.username, "role": new_user.role.value})
-    return {"access_token": access_token}
+    return auth_schema.Token(access_token=access_token)
 
 @router.post("/login", response_model=auth_schema.Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
@@ -27,7 +27,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     
     access_token = create_access_token(data={"sub": user.username, "role": user.role.value})
-    return {"access_token": access_token}
+    return auth_schema.Token(access_token=access_token)
 
 @router.post("/issue-token", response_model=auth_schema.RegistrationTokenResponse)
 async def issue_registration_token(
@@ -40,9 +40,9 @@ async def issue_registration_token(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    return {
-        "token": new_token.token,
-        "role": new_token.role,
-        "created_by": current_user.username,
-        "expires_on": new_token.expires_on,
-    }
+    return auth_schema.RegistrationTokenResponse(
+        token=new_token.token,
+        role=new_token.role,
+        created_by=current_user.username,
+        expires_on=new_token.expires_on,
+    )

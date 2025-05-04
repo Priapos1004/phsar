@@ -1,7 +1,7 @@
 # phsar Webapp
 
 <details>
-<summary>Click to see folder structur</summary>
+<summary>Click to see folder structure</summary>
 <!--
 Command for creating the tree graphic:
 tree phsar -a -F -I '__pycache__|.git|.pytest_cache|.ruff_cache|*.pyc|*.pyo|*.db|*.sqlite3|*.log|*.tmp'
