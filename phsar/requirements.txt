@@ -16,3 +16,5 @@ pytest==8.3.5
 pytest-asyncio==0.26.0
 asgi-lifespan==2.1.0
 sentence-transformers==4.1.0
+python-jose==3.4.0
+python-multipart==0.0.20

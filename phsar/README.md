@@ -1,10 +1,10 @@
 # phsar Webapp
 
 <details>
-<summary>Click to see folder structur</summary>
+<summary>Click to see folder structure</summary>
 <!--
 Command for creating the tree graphic:
-tree phsar -a -F -I '__pycache__|*.pyc|*.pyo|*.db|*.sqlite3|*.log|*.tmp'
+tree phsar -a -F -I '__pycache__|.git|.pytest_cache|.ruff_cache|*.pyc|*.pyo|*.db|*.sqlite3|*.log|*.tmp'
 -->
 
 ```text
@@ -16,7 +16,8 @@ phsar/
 │   │   ├── config.py
 │   │   ├── db.py
 │   │   ├── dependencies.py
-│   │   └── logging_config.py
+│   │   ├── logging_config.py
+│   │   └── security.py
 │   ├── daos/
 │   │   ├── __init__.py
 │   │   ├── anime_dao.py
@@ -39,6 +40,7 @@ phsar/
 │   │   ├── media_studio.py
 │   │   ├── media_unwanted.py
 │   │   ├── ratings.py
+│   │   ├── registration_token.py
 │   │   ├── studio.py
 │   │   ├── tag.py
 │   │   ├── users.py
@@ -46,12 +48,14 @@ phsar/
 │   │   └── watchlist_tag.py
 │   ├── routers/
 │   │   ├── __init__.py
+│   │   ├── auth.py
 │   │   ├── save.py
 │   │   ├── search.py
 │   │   └── seeder.py
 │   ├── schemas/
 │   │   ├── __init__.py
 │   │   ├── anime_schema.py
+│   │   ├── auth_schema.py
 │   │   ├── media_filter_schema.py
 │   │   ├── media_schema.py
 │   │   └── search_schema.py
@@ -63,6 +67,7 @@ phsar/
 │   └── services/
 │       ├── __init__.py
 │       ├── anime_service.py
+│       ├── auth_service.py
 │       ├── jikan_scraper.py
 │       ├── media_linking_service.py
 │       ├── media_search_service.py
@@ -80,6 +85,7 @@ phsar/
 │   ├── script.py.mako
 │   └── versions/
 ├── alembic.ini
+├── pyproject.toml
 ├── pytest.ini
 ├── requirements.txt
 └── tests/
@@ -87,6 +93,7 @@ phsar/
     ├── routers/
     │   ├── __init__.py
     │   ├── conftest.py
+    │   ├── test_auth.py
     │   ├── test_save.py
     │   └── test_search_media.py
     └── services/
@@ -111,15 +118,16 @@ DB_PORT=5432
 DB_NAME=anime_db
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=supersecretpassword
+SECRET_KEY=supersecretsecretkey
 ```
 
-*Change `animeuser`, `animepass`, `admin`, and `supersecretpassword`*
+*Change `animeuser`, `animepass`, `admin`, `supersecretpassword`, and `supersecretsecretkey`*
 
 ### Use alembic to Savely Migrate Changes
 
 #### Activate vector Extension in Database
 
-After setting up the database, we need to first activate the vector extension in the database. Fot this, run the command:
+After setting up the database, we need to first activate the vector extension in the database. For this, run the command:
 
 ```
 alembic revision -m "create pgvector extension"
@@ -188,7 +196,7 @@ http://127.0.0.1:8000
 
 to see if the API is live.
 
-For testing the `search/mal`, `search/media`, `seed/media`, and `save/search-results` endpoints, use the [test_fastAPI notebook](../notebooks/test_fastAPI.ipynb).
+For testing the `auth/`, `search/mal`, `search/media`, `seed/media`, and `save/search-results` endpoints, use the [test_fastAPI notebook](../notebooks/test_fastAPI.ipynb).
 
 *Note: Big anime franchises like "Naruto" can take more than 15 minutes to run.*
 
@@ -199,3 +207,7 @@ Run the following command to use pytest *(all changes to the database during the
 ```
 pytest
 ```
+
+## Trouble-shooting
+
+- Check that the database docker container is running!

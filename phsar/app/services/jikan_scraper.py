@@ -85,7 +85,7 @@ class JikanScraper:
             return "Unknown"
         
     @staticmethod
-    def __parse_duration_to_seconds(duration: Optional[str]) -> Optional[int]:
+    def _parse_duration_to_seconds(duration: Optional[str]) -> Optional[int]:
         if not duration or "unknown" in duration.lower():
             return None
 
@@ -130,7 +130,7 @@ class JikanScraper:
             "aired_to": anime.get("aired", {}).get("to"),
             "airing_status": anime.get("status"),
             "duration": anime.get("duration"),
-            "duration_seconds": JikanScraper.__parse_duration_to_seconds(anime.get("duration")),
+            "duration_seconds": JikanScraper._parse_duration_to_seconds(anime.get("duration")),
         }
 
     async def fetch_relations(self, mal_id: int) -> list[dict]:

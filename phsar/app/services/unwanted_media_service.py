@@ -3,7 +3,6 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.media_unwanted_dao import MediaUnwantedDAO
-from app.exceptions import MalIdAlreadyExistsError
 from app.models.media_unwanted import MediaUnwanted
 
 logger = logging.getLogger(__name__)

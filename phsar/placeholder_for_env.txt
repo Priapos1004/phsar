@@ -5,3 +5,4 @@ DB_PORT=5432
 DB_NAME=anime_db
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=supersecretpassword
+SECRET_KEY=supersecretsecretkey

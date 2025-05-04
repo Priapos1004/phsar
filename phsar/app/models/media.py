@@ -1,9 +1,8 @@
 import enum
 
-from sqlalchemy import (Column, DateTime, Enum, Float, ForeignKey, Integer,
-                        String, case)
+from sqlalchemy import Column, DateTime, Enum, Float, ForeignKey, Integer, String, case
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.ext.hybrid import hybrid_method, hybrid_property
+from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 
 from app.models.base import BaseModel
@@ -59,10 +58,10 @@ class Media(BaseModel):
     def total_watch_time(cls):
         return case(
             (
-                (cls.episodes != None) & (cls.duration_seconds != None),
+                (cls.episodes.isnot(None) & cls.duration_seconds.isnot(None)),
                 cls.episodes * cls.duration_seconds
             ),
-            else_=None # Changeable default value for total_watch_time = None
+            else_=None  # Changeable default value for total_watch_time = None
         )
 
     # Relationships

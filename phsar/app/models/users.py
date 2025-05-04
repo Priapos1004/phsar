@@ -7,6 +7,7 @@ from app.models.base import BaseModel
 
 
 class RoleType(str, enum.Enum):
+    RestrictedUser = "restricted_user"
     User = "user"
     Admin = "admin"
 
@@ -22,3 +23,8 @@ class Users(BaseModel):
     ratings = relationship("Ratings", back_populates="users", cascade="all, delete-orphan")
     watchlist = relationship("Watchlist", back_populates="users", cascade="all, delete-orphan")
     tag = relationship("Tag", back_populates="users", cascade="all, delete-orphan")
+    registration_tokens = relationship(
+        "RegistrationToken",
+        back_populates="created_by",
+        foreign_keys="[RegistrationToken.created_by_user_id]" 
+    )

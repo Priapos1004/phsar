@@ -1,28 +1,37 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_db
+from app.core.dependencies import get_current_user, get_db, require_roles
 from app.daos.media_dao import MediaDAO
+from app.exceptions import AnimeNotFoundError, MainMediaNotFoundError
+from app.models.users import RoleType
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
 from app.schemas.media_schema import MediaConnected
 from app.schemas.search_schema import SearchResultDB
 from app.services.media_search_service import search_media_by_query
 from app.services.search_service import handle_search_mal_api_results
-from app.services.unwanted_media_service import create_unwanted_media
 
 router = APIRouter(prefix="/search", tags=["search"])
 
 media_dao = MediaDAO()
 
 @router.get("/mal", response_model=list[SearchResultDB])
-async def search_mal(query: str, db: AsyncSession = Depends(get_db)):
-    results = await handle_search_mal_api_results(query=query, db=db)
+async def search_mal(
+    query: str,
+    db: AsyncSession = Depends(get_db),
+    current_user = Depends(require_roles([RoleType.User.value, RoleType.Admin.value]))
+):
+    try:
+        results = await handle_search_mal_api_results(query=query, db=db)
+    except (MainMediaNotFoundError, AnimeNotFoundError) as e:
+        raise HTTPException(status_code=404, detail=str(e))
     return results
 
 @router.get("/media", response_model=list[MediaConnected])
 async def search_media(
+    current_user = Depends(get_current_user), # Any role can access this endpoint
     query: str = Query(default="", description="The search query string (e.g., anime title)."),
     search_type: SearchType = Query(default=SearchType.TITLE, description="The way to search by: title or description."),
     relation_type: Optional[list[str]] = Query(default=None),
