@@ -1,7 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import (Column, DateTime, Enum, ForeignKey, Integer, String,
-                        func)
+from sqlalchemy import Column, DateTime, Enum, ForeignKey, Integer, String, func
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 

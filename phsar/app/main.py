@@ -3,7 +3,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app import models  # Needed for Alembic to detect models
 from app.core.db import async_session_maker
 from app.core.logging_config import setup_logging
 from app.seeders.genre_seeder import seed_genres

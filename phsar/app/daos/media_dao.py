@@ -76,30 +76,30 @@ class MediaDAO(MalIdDAO[Media]):
             conditions.append(Media.anime_season.in_(filters.anime_season))
 
         if filters.score_min is not None:
-            conditions.append((Media.score != None) & (Media.score >= filters.score_min))
+            conditions.append(Media.score.isnot(None) & (Media.score >= filters.score_min))
         if filters.score_max is not None:
-            conditions.append((Media.score != None) & (Media.score <= filters.score_max))
+            conditions.append(Media.score.isnot(None) & (Media.score <= filters.score_max))
         if filters.scored_by_min is not None:
-            conditions.append((Media.scored_by != None) & (Media.scored_by >= filters.scored_by_min))
+            conditions.append(Media.scored_by.isnot(None) & (Media.scored_by >= filters.scored_by_min))
         if filters.episodes_min is not None:
-            conditions.append((Media.episodes != None) & (Media.episodes >= filters.episodes_min))
+            conditions.append(Media.episodes.isnot(None) & (Media.episodes >= filters.episodes_min))
         if filters.episodes_max is not None:
-            conditions.append((Media.episodes != None) & (Media.episodes <= filters.episodes_max))
+            conditions.append(Media.episodes.isnot(None) & (Media.episodes <= filters.episodes_max))
         if filters.duration_per_episode_min is not None:
             conditions.append(
-                (Media.duration_seconds != None) & (Media.duration_seconds >= filters.duration_per_episode_min)
+                Media.duration_seconds.isnot(None) & (Media.duration_seconds >= filters.duration_per_episode_min)
             )
         if filters.duration_per_episode_max is not None:
             conditions.append(
-                (Media.duration_seconds != None) & (Media.duration_seconds <= filters.duration_per_episode_max)
+                Media.duration_seconds.isnot(None) & (Media.duration_seconds <= filters.duration_per_episode_max)
             )
         if filters.total_watch_time_min is not None:
             conditions.append(
-                (Media.total_watch_time != None) & (Media.total_watch_time >= filters.total_watch_time_min)
+                Media.total_watch_time.isnot(None) & (Media.total_watch_time >= filters.total_watch_time_min)
             )
         if filters.total_watch_time_max is not None:
             conditions.append(
-                (Media.total_watch_time != None) & (Media.total_watch_time <= filters.total_watch_time_max)
+                Media.total_watch_time.isnot(None) & (Media.total_watch_time <= filters.total_watch_time_max)
             )
 
         if conditions:

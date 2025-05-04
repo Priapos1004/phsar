@@ -4,7 +4,7 @@
 <summary>Click to see folder structur</summary>
 <!--
 Command for creating the tree graphic:
-tree phsar -a -F -I '__pycache__|*.pyc|*.pyo|*.db|*.sqlite3|*.log|*.tmp'
+tree phsar -a -F -I '__pycache__|.git|.pytest_cache|.ruff_cache|*.pyc|*.pyo|*.db|*.sqlite3|*.log|*.tmp'
 -->
 
 ```text
@@ -40,6 +40,7 @@ phsar/
 │   │   ├── media_studio.py
 │   │   ├── media_unwanted.py
 │   │   ├── ratings.py
+│   │   ├── registration_token.py
 │   │   ├── studio.py
 │   │   ├── tag.py
 │   │   ├── users.py
@@ -84,6 +85,7 @@ phsar/
 │   ├── script.py.mako
 │   └── versions/
 ├── alembic.ini
+├── pyproject.toml
 ├── pytest.ini
 ├── requirements.txt
 └── tests/
@@ -91,6 +93,7 @@ phsar/
     ├── routers/
     │   ├── __init__.py
     │   ├── conftest.py
+    │   ├── test_auth.py
     │   ├── test_save.py
     │   └── test_search_media.py
     └── services/
@@ -193,7 +196,7 @@ http://127.0.0.1:8000
 
 to see if the API is live.
 
-For testing the `search/mal`, `search/media`, `seed/media`, and `save/search-results` endpoints, use the [test_fastAPI notebook](../notebooks/test_fastAPI.ipynb).
+For testing the `auth/`, `search/mal`, `search/media`, `seed/media`, and `save/search-results` endpoints, use the [test_fastAPI notebook](../notebooks/test_fastAPI.ipynb).
 
 *Note: Big anime franchises like "Naruto" can take more than 15 minutes to run.*
 

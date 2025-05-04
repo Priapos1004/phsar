@@ -4,8 +4,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.search_schema import SearchResultDB
 from app.services.anime_service import create_anime_from_media
-from app.services.media_linking_service import (link_genres_to_media,
-                                                link_studios_to_media)
+from app.services.media_linking_service import (
+    link_genres_to_media,
+    link_studios_to_media,
+)
 from app.services.media_service import create_media
 from app.services.vector_embedding_service import create_media_embedding
 

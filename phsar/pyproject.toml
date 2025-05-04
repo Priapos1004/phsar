@@ -4,3 +4,4 @@ exclude = [
     "alembic/versions",
     "**/__init__.py"
 ]
+lint.extend-select = ["I"]

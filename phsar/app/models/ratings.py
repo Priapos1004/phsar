@@ -1,5 +1,13 @@
-from sqlalchemy import (Boolean, CheckConstraint, Column, Float, ForeignKey,
-                        Integer, String, UniqueConstraint)
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Column,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
 
 from app.models.base import BaseModel

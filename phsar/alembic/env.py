@@ -10,7 +10,7 @@ from alembic import context
 # Add your app directory to sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'app')))
 
-from app import models  # Import models so Alembic sees them
+from app import models  # Import models so Alembic sees them  # noqa: F401
 from app.core.config import settings
 from app.core.db import Base
 
