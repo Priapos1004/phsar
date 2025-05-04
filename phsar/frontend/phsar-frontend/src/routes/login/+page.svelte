@@ -13,30 +13,30 @@
         loading = true;
 
         try {
-        const response = await fetch(`${API_URL}/auth/login`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({
-            username,
-            password
-            })
-        });
+            const response = await fetch(`${API_URL}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                username,
+                password
+                })
+            });
 
-        if (!response.ok) {
+            if (!response.ok) {
+                const data = await response.json();
+                error = data.detail || 'Login failed';
+                return;
+            }
+
             const data = await response.json();
-            error = data.detail || 'Login failed';
-            return;
-        }
+            token.set(data.access_token); // updates store + localStorage
 
-        const data = await response.json();
-        token.set(data.access_token); // ✅ updates store + localStorage
-
-        goto('/'); // 🚀 redirect after login
+            goto('/'); // redirect after login
         } catch (err) {
-        console.error(err);
-        error = 'An unexpected error occurred.';
+            console.error(err);
+            error = 'An unexpected error occurred.';
         } finally {
-        loading = false;
+            loading = false;
         }
     }
 </script>
