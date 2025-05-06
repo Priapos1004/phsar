@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_db, require_roles
+from app.core.dependencies import get_current_user, get_db, require_roles
 from app.core.security import create_access_token
 from app.models.users import RoleType
 from app.schemas import auth_schema
@@ -46,3 +46,7 @@ async def issue_registration_token(
         created_by=current_user.username,
         expires_on=new_token.expires_on,
     )
+
+@router.get("/validate", response_model=auth_schema.TokenValidationResponse)
+async def validate_token(current_user = Depends(get_current_user)):
+    return auth_schema.TokenValidationResponse(is_valid=True)

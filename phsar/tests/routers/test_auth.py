@@ -87,3 +87,39 @@ async def test_issue_token_requires_admin(client, create_user_with_role):
     )
     assert issue_resp_non_admin.status_code == 403
     print("Non-admin trying to issue token response:", issue_resp_non_admin.json())
+
+@pytest.mark.asyncio
+async def test_validate_with_valid_token(client, create_user_with_role):
+    # Create and login a user
+    await create_user_with_role(username=TEST_USERNAME, password=TEST_PASSWORD, role=RoleType.User)
+
+    login_resp = await login_user(client, TEST_USERNAME, TEST_PASSWORD)
+    assert login_resp.status_code == 200
+    token_value = login_resp.json()["access_token"]
+
+    # Validate token
+    validate_resp = await client.get(
+        "/auth/validate",
+        headers={"Authorization": f"Bearer {token_value}"}
+    )
+    assert validate_resp.status_code == 200
+    data = validate_resp.json()
+    assert data.get("is_valid") is True
+    print("Validate with valid token response:", data)
+
+@pytest.mark.asyncio
+async def test_validate_without_token(client):
+    # Call validate with no token
+    validate_resp = await client.get("/auth/validate")
+    assert validate_resp.status_code == 401
+    print("Validate without token response:", validate_resp.json())
+
+@pytest.mark.asyncio
+async def test_validate_with_invalid_token(client):
+    # Call validate with an invalid token
+    validate_resp = await client.get(
+        "/auth/validate",
+        headers={"Authorization": f"Bearer {TEST_INVALID_TOKEN}"}
+    )
+    assert validate_resp.status_code == 401
+    print("Validate with invalid token response:", validate_resp.json())

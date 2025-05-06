@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     # JWT / Security settings
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60  # Default 1 hour expiry
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30  # Default 30 minutes expiry
 
     class Config:
         env_file = ".env"  # Tell Pydantic to load from .env
