@@ -12,11 +12,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=auth_schema.Token)
 async def register(user: auth_schema.UserCreateWithToken, db: AsyncSession = Depends(get_db)):
-    try:
-        new_user = await AuthService.register(user, db)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    
+    new_user = await AuthService.register(user, db)
     access_token = create_access_token(data={"sub": new_user.username, "role": new_user.role.value})
     return auth_schema.Token(access_token=access_token)
 
@@ -35,11 +31,7 @@ async def issue_registration_token(
     db: AsyncSession = Depends(get_db),
     current_user = Depends(require_roles(RoleType.Admin.value))
 ):
-    try:
-        new_token = await AuthService.create_registration_token(token_data.role, current_user, db)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
+    new_token = await AuthService.create_registration_token(token_data.role, current_user, db)
     return auth_schema.RegistrationTokenResponse(
         token=new_token.token,
         role=new_token.role,
