@@ -2,6 +2,7 @@
     import { goto } from '$app/navigation';
     import { token } from '$lib/stores/auth';
     import { API_URL } from '$lib/config';
+    import { fly } from 'svelte/transition';
 
     let username: string = '';
     let password: string = '';
@@ -38,7 +39,7 @@
 </script>
 
 <div class="fixed inset-0 bg-gradient-to-br from-purple-300 via-purple-500 to-purple-800 flex justify-center items-start pt-20">
-    <div class="w-full max-w-md bg-white rounded-lg shadow-lg p-8">
+    <div in:fly={{ y: 20, duration: 2000 }} class="w-full max-w-md bg-white rounded-lg shadow-lg p-8">
         <h2 class="text-2xl font-bold mb-6 text-center text-gray-800">Login</h2>
         <form on:submit|preventDefault={handleLogin} class="space-y-4">
             <div>

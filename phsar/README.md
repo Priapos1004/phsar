@@ -88,11 +88,12 @@ phsar/
 │       │   ├── app.d.ts
 │       │   ├── app.html
 │       │   ├── lib/
+│       │   │   ├── components/
+│       │   │   │   ├── LoadingScreen.svelte
+│       │   │   │   └── NavBar.svelte
 │       │   │   ├── config.ts
-│       │   │   ├── stores/
-│       │   │   │   └── auth.ts
-│       │   │   └── styles/
-│       │   │       └── theme.css
+│       │   │   └── stores/
+│       │   │       └── auth.ts
 │       │   └── routes/
 │       │       ├── +layout.svelte
 │       │       ├── +layout.ts
@@ -100,7 +101,6 @@ phsar/
 │       │       └── login/
 │       │           └── +page.svelte
 │       ├── static/
-│       │   ├── favicon.png
 │       │   ├── icons/
 │       │   │   ├── logout_icon.png
 │       │   │   ├── logout_icon_hover.png
@@ -115,6 +115,7 @@ phsar/
 │       │   │   ├── user_icon_hover_transparent.png
 │       │   │   └── user_icon_transparent.png
 │       │   ├── phsar_logo.png
+│       │   ├── phsar_logo_inverted.png
 │       │   └── phsar_logo_transparent.png
 │       ├── svelte.config.js
 │       ├── tsconfig.json
