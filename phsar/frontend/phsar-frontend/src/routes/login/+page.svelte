@@ -16,10 +16,7 @@
             const response = await fetch(`${API_URL}/auth/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({
-                username,
-                password
-                })
+                body: new URLSearchParams({ username, password })
             });
 
             if (!response.ok) {
@@ -29,9 +26,8 @@
             }
 
             const data = await response.json();
-            token.set(data.access_token); // updates store + localStorage
-
-            goto('/'); // redirect after login
+            token.set(data.access_token);
+            goto('/');
         } catch (err) {
             console.error(err);
             error = 'An unexpected error occurred.';
@@ -41,63 +37,44 @@
     }
 </script>
 
-<style>
-    .login-container {
-        max-width: 400px;
-        margin: 100px auto;
-        padding: 2rem;
-        border: 1px solid #ddd;
-        border-radius: 8px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    }
-    input {
-        width: 100%;
-        padding: 0.5rem;
-        margin-top: 0.5rem;
-        margin-bottom: 1rem;
-        border-radius: 4px;
-        border: 1px solid #ccc;
-    }
-    button {
-        width: 100%;
-        padding: 0.75rem;
-        background-color: #0070f3;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-    }
-    button:disabled {
-        background-color: #aaa;
-    }
-    .error {
-        color: red;
-        margin-top: 1rem;
-        text-align: center;
-    }
-</style>
-
-<div class="login-container">
-    <h2>Login</h2>
-    <form on:submit|preventDefault={handleLogin}>
-        <label>
-        Username:
-        <input type="text" bind:value={username} required />
-        </label>
-        <label>
-        Password:
-        <input type="password" bind:value={password} required />
-        </label>
-        <button type="submit" disabled={loading}>
-        {#if loading}
-            Logging in...
-        {:else}
-            Login
+<div class="fixed inset-0 bg-gradient-to-br from-purple-300 via-purple-500 to-purple-800 flex justify-center items-start pt-20">
+    <div class="w-full max-w-md bg-white rounded-lg shadow-lg p-8">
+        <h2 class="text-2xl font-bold mb-6 text-center text-gray-800">Login</h2>
+        <form on:submit|preventDefault={handleLogin} class="space-y-4">
+            <div>
+                <label for="username" class="block text-sm font-medium text-gray-700">Username</label>
+                <input 
+                    id="username"
+                    type="text"
+                    bind:value={username}
+                    required
+                    class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 focus:outline-none focus:ring-purple-500 focus:border-purple-500"
+                />
+            </div>
+            <div>
+                <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
+                <input 
+                    id="password"
+                    type="password"
+                    bind:value={password}
+                    required
+                    class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 focus:outline-none focus:ring-purple-500 focus:border-purple-500"
+                />
+            </div>
+            <button
+                type="submit"
+                disabled={loading}
+                class="w-full py-2 px-4 bg-purple-700 text-white font-semibold rounded-md shadow hover:bg-purple-600 transition disabled:opacity-50"
+            >
+                {#if loading}
+                    Logging in...
+                {:else}
+                    Login
+                {/if}
+            </button>
+        </form>
+        {#if error}
+            <div class="mt-4 text-center text-red-600 text-sm">{error}</div>
         {/if}
-        </button>
-    </form>
-
-    {#if error}
-        <div class="error">{error}</div>
-    {/if}
+    </div>
 </div>
