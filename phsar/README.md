@@ -49,6 +49,7 @@ phsar/
 │   ├── routers/
 │   │   ├── __init__.py
 │   │   ├── auth.py
+│   │   ├── filters.py
 │   │   ├── save.py
 │   │   ├── search.py
 │   │   └── seeder.py
@@ -68,6 +69,7 @@ phsar/
 │       ├── __init__.py
 │       ├── anime_service.py
 │       ├── auth_service.py
+│       ├── filter_service.py
 │       ├── jikan_scraper.py
 │       ├── media_linking_service.py
 │       ├── media_search_service.py
@@ -90,10 +92,13 @@ phsar/
 │       │   ├── lib/
 │       │   │   ├── components/
 │       │   │   │   ├── LoadingScreen.svelte
-│       │   │   │   └── NavBar.svelte
+│       │   │   │   ├── NavBar.svelte
+│       │   │   │   └── SearchBar.svelte
 │       │   │   ├── config.ts
-│       │   │   └── stores/
-│       │   │       └── auth.ts
+│       │   │   ├── stores/
+│       │   │   │   └── auth.ts
+│       │   │   └── utils/
+│       │   │       └── getSeason.ts
 │       │   └── routes/
 │       │       ├── +layout.svelte
 │       │       ├── +layout.ts
@@ -239,7 +244,7 @@ http://127.0.0.1:8000
 
 to see if the API is live.
 
-For testing the `auth/`, `search/mal`, `search/media`, `seed/media`, and `save/search-results` endpoints, use the [test_fastAPI notebook](../notebooks/test_fastAPI.ipynb).
+For testing the `auth/`, `filters/`, `search/mal`, `search/media`, `seed/media`, and `save/search-results` endpoints, use the [test_fastAPI notebook](../notebooks/test_fastAPI.ipynb).
 
 *Note: Big anime franchises like "Naruto" can take more than 15 minutes to run.*
 

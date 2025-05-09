@@ -27,3 +27,26 @@ class MediaSearchFilters(BaseModel):
     duration_per_episode_max: Optional[int] = None
     total_watch_time_min: Optional[int] = None
     total_watch_time_max: Optional[int] = None
+
+
+class MediaFilterValues(BaseModel):
+    # Categorical fields
+    relation_type: list[str]
+    media_type: list[str]
+    fsk: list[str]
+    airing_status: list[str]
+    anime_season: list[str]
+    genre_name: list[str]
+    studio_name: list[str]
+
+    # Numerical limits
+    score_min: Optional[float]
+    score_max: Optional[float]
+    scored_by_min: Optional[int]
+    scored_by_max: Optional[int]
+    episodes_min: Optional[int]
+    episodes_max: Optional[int]
+    duration_per_episode_min: Optional[int]
+    duration_per_episode_max: Optional[int]
+    total_watch_time_min: Optional[int]
+    total_watch_time_max: Optional[int]
