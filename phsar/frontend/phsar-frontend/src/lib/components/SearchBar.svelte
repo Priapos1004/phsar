@@ -35,6 +35,7 @@
 
     function handleSubmit(e: Event) {
         e.preventDefault();
+        console.debug("Searchbar form submitted");
         onSearch({ query, genre: selectedGenres, season: selectedSeasons });
     }
 
@@ -71,6 +72,8 @@
             <SlidersHorizontal class="w-5 h-5" />
         </button>
     </div>
+
+    <button type="submit" class="hidden">Submit</button>
 
     {#if showFilters}
         <div class="mt-3 bg-white/80 backdrop-blur rounded-xl p-4 shadow space-y-4">

@@ -1,8 +1,14 @@
 <script lang="ts">
     import { getCurrentSeason } from '$lib/utils/getSeason';
     import SearchBar from '$lib/components/SearchBar.svelte';
+    import { navigateToSearch } from '$lib/utils/navigation';
+    import type { SearchParams } from '$lib/utils/search';
 
     const currentSeason = getCurrentSeason();
+
+    function handleSearch(data: SearchParams) {
+        navigateToSearch(data);
+    }
 </script>
 
 <div class="max-w-5xl mx-auto px-4 pb-10 space-y-8">
@@ -14,7 +20,7 @@
     </div>
 
     <!-- Search bar -->
-    <SearchBar onSearch={(data) => console.log('Received search:', data)} />
+    <SearchBar onSearch={handleSearch} />
 
     <!-- Sections below -->
     <div class="space-y-8">
