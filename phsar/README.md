@@ -93,17 +93,22 @@ phsar/
 │       │   │   ├── components/
 │       │   │   │   ├── LoadingScreen.svelte
 │       │   │   │   ├── NavBar.svelte
-│       │   │   │   └── SearchBar.svelte
+│       │   │   │   ├── SearchBar.svelte
+│       │   │   │   └── TagSelect.svelte
 │       │   │   ├── config.ts
 │       │   │   ├── stores/
 │       │   │   │   └── auth.ts
 │       │   │   └── utils/
-│       │   │       └── getSeason.ts
+│       │   │       ├── getSeason.ts
+│       │   │       ├── navigation.ts
+│       │   │       └── search.ts
 │       │   └── routes/
 │       │       ├── +layout.svelte
 │       │       ├── +layout.ts
 │       │       ├── +page.svelte
-│       │       └── login/
+│       │       ├── login/
+│       │       │   └── +page.svelte
+│       │       └── search/
 │       │           └── +page.svelte
 │       ├── static/
 │       │   ├── icons/
@@ -142,7 +147,8 @@ phsar/
     │   ├── __init__.py
     │   ├── conftest.py
     │   ├── test_auth.py
-    │   ├── test_filters.py
+    │   ├── test_filters_options.py
+    │   ├── test_filters_token.py
     │   ├── test_save.py
     │   └── test_search_media.py
     └── services/
@@ -168,9 +174,12 @@ DB_NAME=anime_db
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=supersecretpassword
 SECRET_KEY=supersecretsecretkey
+SEARCH_SECRET_KEY=supersecretsearchsecretkey
 ```
 
-*Change `animeuser`, `animepass`, `admin`, `supersecretpassword`, and `supersecretsecretkey`*
+*Change `animeuser`, `animepass`, `admin`, `supersecretpassword`, `supersecretsecretkey`, and `supersecretsearchsecretkey`*
+
+`SECRET_KEY` and `SEARCH_SECRET_KEY` should be random generated and at least 256 bit *(≈43 characters)*, as they are used to encode the access tokens and url search parameter.
 
 ### Use alembic to Savely Migrate Changes
 

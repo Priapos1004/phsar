@@ -5,7 +5,7 @@
     import TagSelect from '$lib/components/TagSelect.svelte';
 
     export let placeholder = "Search anime...";
-    export let onSearch: (params: { query: string; genre: string[]; season: string[] }) => void = () => {};
+    export let onSearch: (params: { query: string; genre_name: string[]; anime_season: string[] }) => void = () => {};
 
     let query = '';
     let showFilters = false;
@@ -20,7 +20,7 @@
             const token = localStorage.getItem('token');
             if (!token) return;
 
-            const res = await fetch(`${API_URL}/filters/`, {
+            const res = await fetch(`${API_URL}/filters/options`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
 
@@ -36,7 +36,7 @@
     function handleSubmit(e: Event) {
         e.preventDefault();
         console.debug("Searchbar form submitted");
-        onSearch({ query, genre: selectedGenres, season: selectedSeasons });
+        onSearch({ query, genre_name: selectedGenres, anime_season: selectedSeasons });
     }
 
     function handleAdd(items: string[], item: string, setItems: (val: string[]) => void) {

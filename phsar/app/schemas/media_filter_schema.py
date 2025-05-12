@@ -28,6 +28,9 @@ class MediaSearchFilters(BaseModel):
     total_watch_time_min: Optional[int] = None
     total_watch_time_max: Optional[int] = None
 
+class ExtendedMediaSearchFilters(MediaSearchFilters):
+    query: str = ""
+    search_type: SearchType = SearchType.TITLE
 
 class MediaFilterValues(BaseModel):
     # Categorical fields

@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30  # Default 30 minutes expiry
 
+    SEARCH_SECRET_KEY: str
+    CURRENT_SEARCH_API_VERSION: str = "v1.0.0" # Used to expire tokens when API changes
+
     class Config:
         env_file = ".env"  # Tell Pydantic to load from .env
 

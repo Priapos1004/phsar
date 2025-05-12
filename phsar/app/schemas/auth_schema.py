@@ -22,6 +22,9 @@ class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
 
+class TokenPayload(BaseModel):
+    token: str
+
 class TokenValidationResponse(BaseModel):
     is_valid: bool
 

@@ -8,7 +8,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
 from app.core.db import async_session_maker
-from app.core.security import ALGORITHM, SECRET_KEY
+from app.core.security import (
+    ALGORITHM,
+    CURRENT_SEARCH_API_VERSION,
+    SEARCH_SECRET_KEY,
+    SECRET_KEY,
+)
 from app.models.users import Users
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -47,3 +52,19 @@ def require_roles(allowed_roles: Union[str, list[str]]):
         return current_user
 
     return role_checker
+
+def verify_url_token(token: str) -> dict:
+    try:
+        payload = jwt.decode(
+            token,
+            SEARCH_SECRET_KEY,
+            algorithms=[ALGORITHM]
+        )
+
+        if payload.get("ver") != CURRENT_SEARCH_API_VERSION:
+            raise HTTPException(status_code=400, detail="Search token version mismatch")
+
+        return payload
+
+    except JWTError:
+        raise HTTPException(status_code=400, detail="Invalid or malformed search token")
