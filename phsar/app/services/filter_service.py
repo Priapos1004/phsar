@@ -22,14 +22,14 @@ def sort_seasons(seasons: list[str]) -> list[str]:
             return (int(year), season_order.get(season, 99))
         return (9999, 99)  # put unparseable items at the end
 
-    return sorted(seasons, key=season_sort_key)
+    return sorted(seasons, key=season_sort_key, reverse=True)
 
 async def fetch_filter_values(db: AsyncSession) -> dict:
     relation_types = await media_dao.get_unique_in_field(db, field_name="relation_type")
     media_types = await media_dao.get_unique_in_field(db, field_name="media_type")
     fsk_values = await media_dao.get_unique_in_field(db, field_name="fsk")
     airing_status = await media_dao.get_unique_in_field(db, field_name="airing_status")
-    
+
     anime_seasons = await media_dao.get_unique_in_field(db, field_name="anime_season")
     anime_seasons = sort_seasons(anime_seasons)
 
