@@ -4,8 +4,7 @@
     import { fetchSearchResults } from '$lib/utils/search';
     import { navigateToSearch } from '$lib/utils/navigation';
     import type { SearchParams } from '$lib/utils/search';
-    import LZString from 'lz-string';
-    const { decompressFromEncodedURIComponent } = LZString;
+    import { API_URL } from '$lib/config';
 
     let searchResults: any[] = [];
     let isLoading = false;
@@ -13,33 +12,51 @@
 
     $: {
         const searchParams = $page.url.searchParams;
-        const encoded = searchParams.get('q');
+        const tokenParam = searchParams.get('q');
 
-        if (encoded) {
-            try {
-                const decoded: SearchParams = JSON.parse(decompressFromEncodedURIComponent(encoded) || '{}');
-                if (decoded) {
-                    loadSearchResults(decoded);
-                }
-            } catch (err) {
-                error = 'Invalid search parameters';
-            }
+        if (tokenParam) {
+            loadSearchParamsFromToken(tokenParam);
         }
     }
 
-    async function loadSearchResults(params: SearchParams) {
+    async function loadSearchParamsFromToken(token: string) {
         isLoading = true;
         error = '';
         searchResults = [];
 
+        try {
+            const authToken = localStorage.getItem('token');
+
+            const verifyResponse = await fetch(`${API_URL}/filters/verify-token`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${authToken}`
+                },
+                body: JSON.stringify({ token })
+            });
+
+            if (!verifyResponse.ok) {
+                throw new Error('Failed to verify search token');
+            }
+
+            const decodedParams: SearchParams = await verifyResponse.json();
+            await loadSearchResults(decodedParams);
+
+        } catch (err) {
+            error = err instanceof Error ? err.message : 'An unexpected error occurred';
+        } finally {
+            isLoading = false;
+        }
+    }
+
+    async function loadSearchResults(params: SearchParams) {
         try {
             const token = localStorage.getItem('token');
             const results = await fetchSearchResults(params, token);
             searchResults = results;
         } catch (err) {
             error = err instanceof Error ? err.message : 'An unexpected error occurred';
-        } finally {
-            isLoading = false;
         }
     }
 

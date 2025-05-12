@@ -1,15 +1,26 @@
 import { goto } from '$app/navigation';
 import type { SearchParams } from '$lib/utils/search';
-import LZString from 'lz-string';
-const { compressToEncodedURIComponent } = LZString;
+import { API_URL } from '$lib/config';
 
-export function buildSearchUrl(params: SearchParams): string {
-    const encoded = compressToEncodedURIComponent(JSON.stringify(params));
-    return `/search?q=${encoded}`;
-}
+export async function navigateToSearch(params: SearchParams) {
+    const token = localStorage.getItem('token');
 
-export function navigateToSearch(params: SearchParams) {
-    const search_url = buildSearchUrl(params);
-    console.debug(search_url);
-    goto(search_url);
+    const res = await fetch(`${API_URL}/filters/create-token`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(params)
+    });
+
+    if (!res.ok) {
+        throw new Error('Failed to create search token');
+    }
+
+    const { token: searchToken } = await res.json();
+
+    const searchUrl = `/search?q=${encodeURIComponent(searchToken)}`;
+    console.debug('Navigating to:', searchUrl);
+    goto(searchUrl);
 }
