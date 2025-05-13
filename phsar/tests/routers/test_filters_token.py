@@ -90,6 +90,7 @@ async def test_create_token_too_many_items(client, admin_auth_headers):
 async def test_verify_token_missing_search_data(client, admin_auth_headers):
     # Create a valid token with missing 'data' field manually
     from jose import jwt
+
     from app.core.config import settings
 
     bad_payload = {
