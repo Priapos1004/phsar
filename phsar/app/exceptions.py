@@ -1,3 +1,6 @@
+from app.core.config import settings
+
+
 class PhsarBaseError(Exception):
     """Base class for all custom exceptions in the PHSAR project."""
     pass
@@ -37,4 +40,64 @@ class NonNumericFieldError(PhsarBaseError):
     def __init__(self, field_name: str):
         self.field_name = field_name
         message = f"The field '{field_name}' is not a numeric type."
+        super().__init__(message)
+
+class FieldExceedsMaximumNumberOfItemsError(PhsarBaseError):
+    """Raised when a field in the search filter exceeds the maximum number of items allowed."""
+
+    def __init__(self, field_name: str, item_count: int):
+        self.item_count = item_count
+        self.field_name = field_name
+        message = f"'{field_name}' exceeds maximum allowed items ({item_count} > {settings.MAX_ITEMS}) to keep token size manageable."
+        super().__init__(message)
+
+class TokenTooLongError(PhsarBaseError):
+    """Raised when the generated search token exceeds the maximum length."""
+
+    def __init__(self, token_length: int):
+        self.token_length = token_length
+        message = f"Generated token is too long (size {token_length} > {settings.MAX_TOKEN_LENGTH}). Please reduce the number of filters."
+        super().__init__(message)
+
+class DecompressionError(PhsarBaseError):
+    """Raised when decompression of a search token fails."""
+
+    def __init__(self):
+        message = "Failed to decompress search token"
+        super().__init__(message)
+
+class TokenVersionMismatchError(PhsarBaseError):
+    """Raised when the token version does not match the current search API version."""
+
+    def __init__(self, token_version: str):
+        self.token_version = token_version
+        message = f"Token version '{token_version}' does not match current search API version '{settings.CURRENT_SEARCH_API_VERSION}'."
+        super().__init__(message)
+
+class MalformedTokenError(PhsarBaseError):
+    """Raised when the search token is malformed."""
+
+    def __init__(self):
+        message = "Invalid or malformed search token"
+        super().__init__(message)
+
+class CouldNotValidateCredentialsError(PhsarBaseError):
+    """Raised when credentials cannot be validated."""
+
+    def __init__(self):
+        message = "Could not validate credentials"
+        super().__init__(message)
+
+class InsufficientPermissionsError(PhsarBaseError):
+    """Raised when a user does not have sufficient permissions to access a resource."""
+
+    def __init__(self):
+        message = "Insufficient permissions"
+        super().__init__(message)
+
+class MissingSearchDataError(PhsarBaseError):
+    """Raised when the search data is missing in the token."""
+
+    def __init__(self):
+        message = "Missing search data in token"
         super().__init__(message)

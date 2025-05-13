@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     SEARCH_SECRET_KEY: str
     CURRENT_SEARCH_API_VERSION: str = "v1.0.0" # Used to expire tokens when API changes
 
+    # Filter settings
+    MAX_ITEMS: int = 5  # Maximum number of items to keep search token size manageable
+    MAX_TOKEN_LENGTH: int = 1400  # Safe for URLs
+
     class Config:
         env_file = ".env"  # Tell Pydantic to load from .env
 

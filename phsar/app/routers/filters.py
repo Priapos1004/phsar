@@ -2,13 +2,13 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_db, verify_url_token
-from app.core.security import create_url_token
 from app.schemas.auth_schema import TokenPayload
 from app.schemas.media_filter_schema import (
     ExtendedMediaSearchFilters,
     MediaFilterValues,
 )
 from app.services.filter_service import fetch_filter_values
+from app.services.token_service import generate_search_token
 
 router = APIRouter(prefix="/filters", tags=["filters"])
 
@@ -28,8 +28,7 @@ async def create_search_token(
     """
     Create a signed token for the given search filters.
     """
-    token = create_url_token(filters.model_dump(exclude_unset=True))
-    return TokenPayload(token=token)
+    return generate_search_token(filters)
 
 @router.post("/verify-token", response_model=ExtendedMediaSearchFilters)
 async def verify_search_token(

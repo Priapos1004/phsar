@@ -9,6 +9,8 @@ from app.core.db import async_session_maker
 from app.core.logging_config import setup_logging
 from app.exceptions import (
     AnimeNotFoundError,
+    CouldNotValidateCredentialsError,
+    InsufficientPermissionsError,
     MainMediaNotFoundError,
     MalIdAlreadyExistsError,
     PhsarBaseError,
@@ -55,6 +57,14 @@ def create_app() -> FastAPI:
     @app.exception_handler(ValueError)
     async def value_error_exception_handler(request: Request, exc: ValueError):
         return JSONResponse(status_code=400, content={"detail": str(exc)})
+    
+    @app.exception_handler(CouldNotValidateCredentialsError)
+    async def could_not_validate_credentials_exception_handler(request: Request, exc: CouldNotValidateCredentialsError):
+        return JSONResponse(status_code=401, content={"detail": str(exc)})
+    
+    @app.exception_handler(InsufficientPermissionsError)
+    async def insufficient_permissions_exception_handler(request: Request, exc: InsufficientPermissionsError):
+        return JSONResponse(status_code=403, content={"detail": str(exc)})
     
     @app.exception_handler(MainMediaNotFoundError)
     async def main_media_not_found_exception_handler(request: Request, exc: MainMediaNotFoundError):

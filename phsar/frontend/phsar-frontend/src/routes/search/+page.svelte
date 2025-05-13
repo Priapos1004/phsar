@@ -9,10 +9,13 @@
     let searchResults: any[] = [];
     let isLoading = false;
     let error = '';
+    let hasToken = false;
 
     $: {
         const searchParams = $page.url.searchParams;
         const tokenParam = searchParams.get('q');
+
+        hasToken = !!tokenParam;
 
         if (tokenParam) {
             loadSearchParamsFromToken(tokenParam);
@@ -87,6 +90,10 @@
             {/each}
         </div>
     {:else if !isLoading && !error}
-        <div class="text-center text-gray-400">No results yet. Try searching!</div>
+        {#if hasToken}
+            <div class="text-center text-gray-400">No results found :-(</div>
+        {:else}
+            <div class="text-center text-gray-400">Start searching!!!</div>
+        {/if}
     {/if}
 </div>
