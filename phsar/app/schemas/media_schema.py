@@ -38,13 +38,9 @@ class MediaUnconnected(MediaBase):
     studio: list[str]
 
 class MediaConnected(MediaUnconnected):
-    anime_id: int
+    anime_uuid: UUID
     anime_title: str
-
-class MediaOut(MediaBase):
-    id: int
+    anime_name_eng: Optional[str]
+    anime_name_jap: Optional[str]
+    anime_other_names: list[str] = []
     uuid: UUID
-    anime_id: int
-
-    class Config:
-        orm_mode = True

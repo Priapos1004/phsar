@@ -4,6 +4,8 @@
     import { fetchSearchResults } from '$lib/utils/search';
     import { navigateToSearch } from '$lib/utils/navigation';
     import type { SearchParams } from '$lib/utils/search';
+    import { calculateWatchtime } from '$lib/utils/getMediaInfo';
+    import { formatDuration } from '$lib/utils/formatString';
     import { API_URL } from '$lib/config';
     import * as cls from '$lib/styles/classes';
     import MediaInfo from '$lib/components/MediaInfo.svelte';
@@ -60,6 +62,7 @@
             const token = localStorage.getItem('token');
             const results = await fetchSearchResults(params, token);
             searchResults = results;
+            console.debug('Found search results:', searchResults);
         } catch (err) {
             error = err instanceof Error ? err.message : 'An unexpected error occurred';
         }
@@ -84,10 +87,21 @@
     {#if searchResults.length}
         <div class="grid grid-cols-1 gap-4">
             {#each searchResults as result}
+                {@const watchtime = calculateWatchtime(result.episodes, result.duration_seconds)}
                 <MediaInfo
-                    title={result.title}
+                    info_type={"media"}
+                    title={result.name_eng ?? result.title}
                     score={result.score}
                     scoredBy={result.scored_by}
+                    anime_season={result.anime_season}
+                    airing_status={result.airing_status}
+                    genres={result.genres}
+                    media_type={result.media_type}
+                    relation_type={result.relation_type}
+                    watchtime={watchtime !== null ? formatDuration(watchtime) : null}
+                    imageUrl={result.cover_image}
+                    on_watchlist={false}
+                    media_uuid={result.uuid}
                 />
             {/each}
         </div>
