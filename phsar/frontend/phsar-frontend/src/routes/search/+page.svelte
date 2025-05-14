@@ -5,6 +5,8 @@
     import { navigateToSearch } from '$lib/utils/navigation';
     import type { SearchParams } from '$lib/utils/search';
     import { API_URL } from '$lib/config';
+    import * as cls from '$lib/styles/classes';
+    import MediaInfo from '$lib/components/MediaInfo.svelte';
 
     let searchResults: any[] = [];
     let isLoading = false;
@@ -68,7 +70,7 @@
     }
 </script>
 
-<div class="max-w-5xl mx-auto p-4 space-y-4">
+<div class={`${cls.container} p-4 space-y-4`}>
     <SearchBar onSearch={handleSearch} />
 
     {#if isLoading}
@@ -80,13 +82,13 @@
     {/if}
 
     {#if searchResults.length}
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div class="grid grid-cols-1 gap-4">
             {#each searchResults as result}
-                <div class="bg-white/80 backdrop-blur rounded-xl p-4 shadow">
-                    <h3 class="font-bold text-lg">{result.title}</h3>
-                    <p class="text-sm text-gray-700">{result.description}</p>
-                    <p class="text-xs text-gray-500">Score: {result.score} By: {result.scored_by}</p>
-                </div>
+                <MediaInfo
+                    title={result.title}
+                    score={result.score}
+                    scoredBy={result.scored_by}
+                />
             {/each}
         </div>
     {:else if !isLoading && !error}

@@ -1,48 +1,27 @@
 <script lang="ts">
-    import { getCurrentSeason } from '$lib/utils/getSeason';
-    import SearchBar from '$lib/components/SearchBar.svelte';
-    import { navigateToSearch } from '$lib/utils/navigation';
-    import type { SearchParams } from '$lib/utils/search';
+	import SearchBar from '$lib/components/SearchBar.svelte';
+	import { navigateToSearch } from '$lib/utils/navigation';
+	import type { SearchParams } from '$lib/utils/search';
+	import * as cls from '$lib/styles/classes';
+    import ScrollableCard from '$lib/components/ScrollableCard.svelte';
+    import InfoDiashow from '$lib/components/InfoDiashow.svelte';
 
-    const currentSeason = getCurrentSeason();
-
-    function handleSearch(data: SearchParams) {
-        navigateToSearch(data);
-    }
+	function handleSearch(data: SearchParams) {
+		navigateToSearch(data);
+	}
 </script>
 
-<div class="max-w-5xl mx-auto px-4 pb-10 space-y-8">
-    <!-- Top section: Season box -->
-    <div class="bg-purple-700 text-white rounded-2xl p-6 shadow-lg flex flex-col items-center">
-        <h2 class="text-3xl font-bold mb-2">Current Season</h2>
-        <p class="text-3xl">{currentSeason}</p>
-        <!-- (Optional later) slideshow or image goes here -->
-    </div>
+<div class={`${cls.container} pb-10 ${cls.sectionSpacing}`}>
+	<!-- Top section: InfoDiashow -->
+	<InfoDiashow />
 
-    <!-- Search bar -->
-    <SearchBar onSearch={handleSearch} />
+	<!-- Search bar -->
+	<SearchBar onSearch={handleSearch} />
 
-    <!-- Sections below -->
-    <div class="space-y-8">
-        <section>
-            <h3 class="text-2xl font-semibold mb-4 text-white">Recommended</h3>
-            <div class="bg-white/80 backdrop-blur rounded-xl p-4 shadow">
-                <p class="text-gray-700">Your recommended anime will appear here.</p>
-            </div>
-        </section>
-    
-        <section>
-            <h3 class="text-2xl font-semibold mb-4 text-white">Lucky Find</h3>
-            <div class="bg-white/80 backdrop-blur rounded-xl p-4 shadow">
-                <p class="text-gray-700">Surprise anime picks coming soon!</p>
-            </div>
-        </section>
-    
-        <section>
-            <h3 class="text-2xl font-semibold mb-4 text-white">Upcoming</h3>
-            <div class="bg-white/80 backdrop-blur rounded-xl p-4 shadow">
-                <p class="text-gray-700">Upcoming anime will be listed here.</p>
-            </div>
-        </section>
+	<!-- Sections below -->
+	<div class={cls.sectionSpacing}>
+        <ScrollableCard title="Recommended" text="Your recommended anime will appear here." />
+        <ScrollableCard title="Lucky Find" text="Surprise anime picks coming soon!" />
+        <ScrollableCard title="Upcoming" text="Upcoming anime will be listed here." />
     </div>
 </div>
