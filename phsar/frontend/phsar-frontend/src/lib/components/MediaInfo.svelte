@@ -22,10 +22,15 @@
 	href={`/${info_type}?uuid=${media_uuid}`}
 	class="block transition duration-200 transform hover:scale-[1.015]"
 >
-	<div class="flex gap-4 bg-white/80 backdrop-blur rounded-xl p-4 shadow-md">
+	<div class="h-full flex gap-4 bg-white/80 backdrop-blur rounded-xl p-4 shadow">
 		<!-- Cover Image -->
 		{#if imageUrl}
-			<img src={imageUrl} alt={`Cover of ${title}`} class="w-24 h-36 object-cover rounded-lg shadow-sm" />
+        <img
+            src={imageUrl}
+            alt={`Cover of ${title}`}
+            class="w-24 h-36 object-cover rounded-lg shadow-sm"
+            loading="lazy"
+        />
 		{:else}
 			<div class="w-24 h-36 bg-gray-200 rounded-lg flex items-center justify-center text-gray-400 text-sm italic">
 				No image
