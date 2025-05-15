@@ -22,7 +22,7 @@
 	href={`/${info_type}?uuid=${media_uuid}`}
 	class="block transition duration-200 transform hover:scale-[1.015]"
 >
-	<div class="h-full flex gap-4 bg-white/80 backdrop-blur rounded-xl p-4 shadow">
+	<div class="h-full flex gap-4 bg-white/80 backdrop-blur rounded-xl p-4 shadow-md">
 		<!-- Cover Image -->
 		{#if imageUrl}
         <img

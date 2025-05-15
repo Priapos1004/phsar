@@ -49,6 +49,12 @@
 		setItems(items.filter(i => i !== item));
 	}
 
+    function clearFilters() {
+        selectedGenres = [];
+        selectedSeasons = [];
+        // optionally clear other filters too
+    }
+
 	onMount(() => {
 		showFilters = false;
 		fetchFilters();
@@ -77,7 +83,20 @@
 	<button type="submit" class="hidden">Submit</button>
 
 	{#if showFilters}
-		<div class={cls.blurBox}>
+		<div class="{cls.blurBox} relative z-10">
+            <div class="flex justify-between items-center mb-2">
+                <h2 class="text-lg font-semibold text-gray-800">Filters</h2>
+            
+                {#if selectedGenres.length || selectedSeasons.length}
+                <button
+                    on:click={clearFilters}
+                    class="text-sm text-red-600 font-medium px-2 py-1 rounded hover:bg-red-50 transition"
+                >
+                    Clear all
+                </button>
+                {/if}
+            </div>
+
 			<TagSelect
 				placeholder="Search genres..."
 				options={genres}
