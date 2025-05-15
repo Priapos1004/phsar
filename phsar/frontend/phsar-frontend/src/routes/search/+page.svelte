@@ -2,8 +2,8 @@
 	import SearchBar from '$lib/components/SearchBar.svelte';
 	import { page } from '$app/stores';
 	import { fetchSearchResults } from '$lib/utils/search';
+    import type { MediaSearchFilters } from '$lib/utils/search';
 	import { navigateToSearch } from '$lib/utils/navigation';
-	import type { SearchParams } from '$lib/utils/search';
 	import { calculateWatchtime } from '$lib/utils/getMediaInfo';
 	import { formatDuration } from '$lib/utils/formatString';
 	import { API_URL } from '$lib/config';
@@ -16,7 +16,7 @@
 	let error = '';
 	let hasToken = false;
 
-	let decodedParams: Partial<SearchParams> = {};
+	let decodedParams: Partial<MediaSearchFilters> = {};
 
 	let visibleCount = 20;
 
@@ -56,7 +56,7 @@
 				throw new Error('Failed to verify search token');
 			}
 
-			const parsed: SearchParams = await verifyResponse.json();
+			const parsed: MediaSearchFilters = await verifyResponse.json();
 			decodedParams = parsed;
 			await loadSearchResults(parsed);
 		} catch (err) {
@@ -66,7 +66,7 @@
 		}
 	}
 
-	async function loadSearchResults(params: SearchParams) {
+	async function loadSearchResults(params: MediaSearchFilters) {
 		try {
 			const token = localStorage.getItem('token');
 			const results = await fetchSearchResults(params, token);
@@ -78,7 +78,7 @@
 		}
 	}
 
-	function handleSearch(params: SearchParams) {
+	function handleSearch(params: MediaSearchFilters) {
 		navigateToSearch(params);
 	}
 </script>

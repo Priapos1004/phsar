@@ -1,12 +1,12 @@
 <script lang="ts">
 	import SearchBar from '$lib/components/SearchBar.svelte';
 	import { navigateToSearch } from '$lib/utils/navigation';
-	import type { SearchParams } from '$lib/utils/search';
+	import type { MediaSearchFilters } from '$lib/utils/search';
 	import * as cls from '$lib/styles/classes';
     import ScrollableCard from '$lib/components/ScrollableCard.svelte';
     import InfoDiashow from '$lib/components/InfoDiashow.svelte';
 
-	function handleSearch(data: SearchParams) {
+	function handleSearch(data: MediaSearchFilters) {
 		navigateToSearch(data);
 	}
 </script>

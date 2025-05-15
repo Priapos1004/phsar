@@ -1,8 +1,8 @@
 import { goto } from '$app/navigation';
-import type { SearchParams } from '$lib/utils/search';
+import type { MediaSearchFilters } from '$lib/utils/search';
 import { API_URL } from '$lib/config';
 
-export async function navigateToSearch(params: SearchParams) {
+export async function navigateToSearch(params: MediaSearchFilters) {
     const token = localStorage.getItem('token');
 
     const res = await fetch(`${API_URL}/filters/create-token`, {
