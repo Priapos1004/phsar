@@ -16,6 +16,8 @@
 	let error = '';
 	let hasToken = false;
 
+	let decodedParams: Partial<SearchParams> = {};
+
 	let visibleCount = 20;
 
 	function showMore() {
@@ -54,8 +56,9 @@
 				throw new Error('Failed to verify search token');
 			}
 
-			const decodedParams: SearchParams = await verifyResponse.json();
-			await loadSearchResults(decodedParams);
+			const parsed: SearchParams = await verifyResponse.json();
+			decodedParams = parsed;
+			await loadSearchResults(parsed);
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'An unexpected error occurred';
 		} finally {
@@ -81,7 +84,7 @@
 </script>
 
 <div class={`${cls.container} p-4 space-y-4`}>
-	<SearchBar onSearch={handleSearch} />
+	<SearchBar onSearch={handleSearch} searchParams={decodedParams} />
 
 	{#if isLoading}
         <div class={cls.mediaInfoGrid}>

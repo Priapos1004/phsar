@@ -4,17 +4,26 @@
 	import { API_URL } from '$lib/config';
 	import TagSelect from '$lib/components/TagSelect.svelte';
 	import * as cls from '$lib/styles/classes';
+	import type { SearchParams } from '$lib/utils/search';
 
 	export let placeholder = "Search anime...";
 	export let onSearch: (params: { query: string; genre_name: string[]; anime_season: string[] }) => void = () => {};
 
-	let query = '';
+	export let searchParams: Partial<SearchParams> = {};
+    
 	let showFilters = false;
-
 	let genres: string[] = [];
 	let seasons: string[] = [];
+
+	let query = '';
 	let selectedGenres: string[] = [];
 	let selectedSeasons: string[] = [];
+
+	$: if (searchParams) {
+		query = searchParams.query ?? '';
+		selectedGenres = [...(searchParams.genre_name ?? [])];
+		selectedSeasons = [...(searchParams.anime_season ?? [])];
+	}
 
 	async function fetchFilters() {
 		try {
@@ -88,12 +97,12 @@
                 <h2 class="text-lg font-semibold text-gray-800">Filters</h2>
             
                 {#if selectedGenres.length || selectedSeasons.length}
-                <button
-                    on:click={clearFilters}
-                    class="text-sm text-red-600 font-medium px-2 py-1 rounded hover:bg-red-50 transition"
-                >
-                    Clear all
-                </button>
+                    <button
+                        on:click={clearFilters}
+                        class="text-sm text-red-600 font-medium px-2 py-1 rounded hover:bg-red-50 transition"
+                    >
+                        Clear all
+                    </button>
                 {/if}
             </div>
 
