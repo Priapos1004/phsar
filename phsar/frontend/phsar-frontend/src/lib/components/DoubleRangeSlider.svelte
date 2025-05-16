@@ -69,18 +69,18 @@
 			min={minValue}
 			max={maxValue}
 			step={step}
-			bind:value={minInput}
+			bind:value={maxInput}
 			on:input={validateInputs}
-			class="slider thumb-left"
+			class="slider thumb-right"
 		/>
 		<input
 			type="range"
 			min={minValue}
 			max={maxValue}
 			step={step}
-			bind:value={maxInput}
+			bind:value={minInput}
 			on:input={validateInputs}
-			class="slider thumb-right"
+			class="slider thumb-left"
 		/>
 	</div>
 </div>

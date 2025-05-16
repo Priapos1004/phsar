@@ -16,6 +16,7 @@ export interface MediaSearchFilters {
 	score_min?: number;
 	score_max?: number;
 	scored_by_min?: number;
+	scored_by_max?: number;
 	episodes_min?: number;
 	episodes_max?: number;
 
@@ -50,23 +51,21 @@ export async function fetchSearchResults(params: MediaSearchFilters, token: stri
 		}
 	}
 
-	// Range filters
-	const rangeKeys: (keyof MediaSearchFilters)[] = [
+	// Number filters
+	const numberKeys: (keyof MediaSearchFilters)[] = [
 		'score_min',
 		'score_max',
 		'scored_by_min',
+        'scored_by_max',
 		'episodes_min',
-		'episodes_max'
-	];
-
-	const timeKeys: (keyof MediaSearchFilters)[] = [
-		'duration_per_episode_min',
+		'episodes_max',
+        'duration_per_episode_min',
 		'duration_per_episode_max',
 		'total_watch_time_min',
 		'total_watch_time_max'
 	];
 
-	for (const key of [...rangeKeys, ...timeKeys]) {
+	for (const key of numberKeys) {
 		const value = params[key];
 		if (typeof value === 'number') {
 			searchParams.append(key, value.toString());
