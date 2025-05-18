@@ -21,6 +21,7 @@ class MediaSearchFilters(BaseModel):
     score_min: Optional[float] = None
     score_max: Optional[float] = None
     scored_by_min: Optional[int] = None
+    scored_by_max: Optional[int] = None
     episodes_min: Optional[int] = None
     episodes_max: Optional[int] = None
     duration_per_episode_min: Optional[int] = None
