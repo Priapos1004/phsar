@@ -29,3 +29,16 @@ export function formatDuration(seconds: number): string {
 
 	return parts.join(' ');
 }
+
+/**
+ * Format a number to have a fixed number of digits after the decimal point.
+ * Pads with trailing zeros or rounds as needed.
+ *
+ * Examples:
+ *  formatDecimalDigits(5, 2)        -> "5.00"
+ *  formatDecimalDigits(3.14159, 2)  -> "3.14"
+ *  formatDecimalDigits(7.8, 4)      -> "7.8000"
+ */
+export function formatDecimalDigits(value: number, digits: number): string {
+	return value.toFixed(digits);
+}

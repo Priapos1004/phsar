@@ -6,6 +6,7 @@
 	export let from: number = minValue;
 	export let to: number = maxValue;
 	export let onChange: (val: { from: number; to: number }) => void = () => {};
+	export let formatDisplay: (val: number) => string = (val) => `${val}`;
 
 	let minInput: number = from;
 	let maxInput: number = to;
@@ -19,6 +20,9 @@
 		maxInput = to;
 		prevTo = to;
 	}
+
+	$: highlightStyle = `left: ${(100 * (minInput - minValue)) / (maxValue - minValue)}%;
+		width: ${(100 * (maxInput - minInput)) / (maxValue - minValue)}%;`;
 
 	let prevFrom = from;
 	let prevTo = to;
@@ -41,29 +45,14 @@
 	<span class="range-label">{label}</span>
 
 	<div class="range-inputs">
-		<input
-			type="number"
-			bind:value={minInput}
-			min={minValue}
-			max={maxInput}
-			step={step}
-			on:input={validateInputs}
-			class="range-field"
-		/>
+		<div class="range-field">{formatDisplay(minInput)}</div>
 		<span class="range-separator">–</span>
-		<input
-			type="number"
-			bind:value={maxInput}
-			min={minInput}
-			max={maxValue}
-			step={step}
-			on:input={validateInputs}
-			class="range-field"
-		/>
+		<div class="range-field">{formatDisplay(maxInput)}</div>
 	</div>
 
 	<div class="slider-container">
 		<div class="slider-track"></div>
+		<div class="range-highlight" style={highlightStyle}></div>
 		<input
 			type="range"
 			min={minValue}
@@ -110,6 +99,16 @@
 		gap: 0.5rem;
 	}
 
+	.range-highlight {
+		position: absolute;
+		height: 6px;
+		top: 50%;
+		transform: translateY(-50%);
+		background-color: #d8b4fe;
+		border-radius: 4px;
+		pointer-events: none;
+	}
+
 	.range-field {
 		flex: 1;
 		padding: 0.5rem 0.75rem;
@@ -136,15 +135,6 @@
 		color: #9ca3af;
 	}
 
-	input[type='number']::-webkit-inner-spin-button,
-	input[type='number']::-webkit-outer-spin-button {
-		-webkit-appearance: none;
-		margin: 0;
-	}
-	input[type='number'] {
-		-moz-appearance: textfield;
-	}
-
 	.slider-container {
 		position: relative;
 		height: 1.5rem;
@@ -169,6 +159,7 @@
 		height: 1.5rem;
 		background: none;
 		-webkit-appearance: none;
+		appearance: none;
 		pointer-events: none;
 	}
 

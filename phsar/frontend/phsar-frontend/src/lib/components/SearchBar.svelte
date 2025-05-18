@@ -6,6 +6,7 @@
 	import DoubleRangeSlider from '$lib/components/DoubleRangeSlider.svelte';
 	import * as cls from '$lib/styles/classes';
 	import type { MediaSearchFilters } from '$lib/utils/search';
+    import { formatDecimalDigits, formatDuration, formatNumber } from '$lib/utils/formatString';
 
 	export let placeholder = "Search anime...";
 	export let onSearch: (params: MediaSearchFilters) => void = () => {};
@@ -16,8 +17,7 @@
 
 	type UnifiedFilterConfig =
 		| { type: 'list'; key: keyof Pick<MediaSearchFilters, 'genre_name' | 'anime_season' | 'studio_name' | 'airing_status' | 'relation_type' | 'media_type' | 'fsk'>; label: string; placeholder: string }
-		| { type: 'singleRange'; minKey: keyof Pick<MediaSearchFilters, 'scored_by_min'>; maxKey: keyof Pick<MediaSearchFilters, 'scored_by_max'>; label: string; step: number }
-		| { type: 'doubleRange'; minKey: keyof Pick<MediaSearchFilters, 'episodes_min' | 'score_min'>; maxKey: keyof Pick<MediaSearchFilters, 'episodes_max' | 'score_max'>; label: string; step: number }
+		| { type: 'Range'; minKey: keyof Pick<MediaSearchFilters, 'episodes_min' | 'score_min' | 'scored_by_min'>; maxKey: keyof Pick<MediaSearchFilters, 'episodes_max' | 'score_max' | 'scored_by_max'>; label: string; step: number, large_number: boolean }
 		| { type: 'timeRange'; minKey: keyof Pick<MediaSearchFilters, 'duration_per_episode_min' | 'total_watch_time_min'>; maxKey: keyof Pick<MediaSearchFilters, 'duration_per_episode_max' | 'total_watch_time_max'>; label: string;  step: number };
 
 	const filterConfig: UnifiedFilterConfig[] = [
@@ -28,20 +28,62 @@
 		{ type: 'list', key: 'relation_type', label: 'Relation Type', placeholder: 'Search relation types...' },
 		{ type: 'list', key: 'media_type', label: 'Media Type', placeholder: 'Search media types...' },
 		{ type: 'list', key: 'fsk', label: 'FSK', placeholder: 'Search FSK ratings...' },
-		{ type: 'singleRange', minKey: 'scored_by_min', maxKey: 'scored_by_max', label: 'Scored By', step: 1000 },
-		{ type: 'doubleRange', minKey: 'episodes_min', maxKey: 'episodes_max', label: 'Episodes', step: 1 },
-		{ type: 'doubleRange', minKey: 'score_min', maxKey: 'score_max', label: 'Score', step: 0.01 },
-		{ type: 'timeRange', minKey: 'duration_per_episode_min', maxKey: 'duration_per_episode_max', label: 'Duration per Episode', step: 60 },
+		{ type: 'Range', minKey: 'episodes_min', maxKey: 'episodes_max', label: 'Episodes', step: 1, large_number: false },
+		{ type: 'Range', minKey: 'score_min', maxKey: 'score_max', label: 'Score', step: 0.01, large_number: false },
+        { type: 'Range', minKey: 'scored_by_min', maxKey: 'scored_by_max', label: 'Scored By', step: 100, large_number: true },
+		{ type: 'timeRange', minKey: 'duration_per_episode_min', maxKey: 'duration_per_episode_max', label: 'Average Duration per Episode', step: 60 },
 		{ type: 'timeRange', minKey: 'total_watch_time_min', maxKey: 'total_watch_time_max', label: 'Total Watch Time', step: 60 },
 	];
 
 	// Filter state
 	let listFilters: Partial<Record<string, string[]>> = {};
-	let numberFilters: Partial<Record<string, number>> = {};
+	let numberFilters: Partial<Record<string, number | undefined>> = {};
 
 	// Options loaded from API
 	let listFilterOptions: Partial<Record<string, string[]>> = {};
     let numberFilterOptions: Partial<Record<string, number>> = {};
+
+    // Helper functions
+    function calculate_min_max_timerange(
+        min: number | undefined | null,
+        max: number | undefined | null,
+        base_value: number
+    ): [number | undefined, number | undefined] {
+        if (typeof min !== 'number' || typeof max !== 'number') {
+            return [undefined, undefined];
+        }
+
+        const new_min = Math.floor(min / base_value) * base_value;
+        const new_max = Math.ceil(max / base_value) * base_value;
+        return [new_min, new_max];
+    }
+
+    function handleRangeChange(
+        minKey: string,
+        maxKey: string,
+        from: number,
+        to: number,
+    ): void {
+        const minDefault = numberFilterOptions[minKey];
+        const maxDefault = numberFilterOptions[maxKey];
+
+        numberFilters[minKey] = from === minDefault ? undefined : from;
+        numberFilters[maxKey] = to === maxDefault ? undefined : to;
+    }
+
+    function getFormatDisplay(config: UnifiedFilterConfig): (val: number) => string {
+        if (config.type === 'timeRange') {
+            return (val) => formatDuration(val);
+        }
+
+        if (config.type === 'Range') {
+            const digits = (config.step.toString().split('.')[1] || '').length;
+            return (val) => formatNumber(formatDecimalDigits(val, digits));
+        }
+
+        // Fallback — should never happen
+        return (val) => String(val);
+    }
 
 	// --- Reactivity ---
 	function syncFiltersFromParams() {
@@ -50,6 +92,10 @@
 		filterConfig.forEach(config => {
 			if (config.type === 'list') {
 				listFilters[config.key] = [...(searchParams[config.key] ?? [])];
+            } else if (config.type === 'timeRange' || config.large_number === true) {
+                const [newMin, newMax] = calculate_min_max_timerange(searchParams[config.minKey], searchParams[config.maxKey], config.step);
+                numberFilters[config.minKey] = newMin;
+                numberFilters[config.maxKey] = newMax;
 			} else {
 				numberFilters[config.minKey] = searchParams[config.minKey] ?? undefined;
 				numberFilters[config.maxKey] = searchParams[config.maxKey] ?? undefined;
@@ -57,7 +103,11 @@
 		});
 	}
 
-	$: syncFiltersFromParams();
+	let hasSynced = false;
+    $: if (!hasSynced && Object.keys(searchParams).length) {
+        syncFiltersFromParams();
+        hasSynced = true;
+    }
 
 	onMount(fetchFilters);
 
@@ -76,6 +126,10 @@
 			filterConfig.forEach(config => {
                 if (config.type === 'list') {
                     listFilterOptions[config.key] = data[config.key] ?? [];
+                } else if (config.type === 'timeRange' || config.large_number === true) {
+                    const [newMin, newMax] = calculate_min_max_timerange(data[config.minKey], data[config.maxKey], config.step);
+                    numberFilterOptions[config.minKey] = newMin;
+                    numberFilterOptions[config.maxKey] = newMax;
                 } else {
                     numberFilterOptions[config.minKey] = data[config.minKey];
                     numberFilterOptions[config.maxKey] = data[config.maxKey];
@@ -156,28 +210,19 @@
 						onAdd={(item) => listFilters[config.key] = [...(listFilters[config.key] ?? []), item]}
 						onRemove={(item) => listFilters[config.key] = (listFilters[config.key] ?? []).filter(i => i !== item)}
 					/>
-				{:else if config.type === 'doubleRange'}
-					<DoubleRangeSlider
-						label={config.label}
-						minValue={numberFilterOptions[config.minKey]}
-						maxValue={numberFilterOptions[config.maxKey]}
-						step={config.step}
-						from={numberFilters[config.minKey] ?? numberFilterOptions[config.minKey]}
-						to={numberFilters[config.maxKey] ?? numberFilterOptions[config.maxKey]}
-						onChange={({ from, to }) => {
-                            const minDefault = numberFilterOptions[config.minKey];
-                            const maxDefault = numberFilterOptions[config.maxKey];
-                    
-                            numberFilters[config.minKey] = from === minDefault ? undefined : from;
-                            numberFilters[config.maxKey] = to === maxDefault ? undefined : to;
-                        }}
-					/>
-				{:else if config.type === 'singleRange'}
-					<!-- Placeholder — implement SingleRangeSlider if available -->
-					<div class="text-sm text-gray-500 italic">{config.label} filter coming soon...</div>
-				{:else if config.type === 'timeRange'}
-					<!-- Placeholder — implement TimeSlider if available -->
-					<div class="text-sm text-gray-500 italic">{config.label} filter coming soon...</div>
+                    {:else if config.type === 'Range' || config.type === 'timeRange'}
+                        <DoubleRangeSlider
+                            label={config.label}
+                            minValue={numberFilterOptions[config.minKey]}
+                            maxValue={numberFilterOptions[config.maxKey]}
+                            step={config.step}
+                            from={numberFilters[config.minKey] ?? numberFilterOptions[config.minKey]}
+                            to={numberFilters[config.maxKey] ?? numberFilterOptions[config.maxKey]}
+                            onChange={({ from, to }) =>
+                                handleRangeChange(config.minKey, config.maxKey, from, to)
+                            }
+                            formatDisplay={getFormatDisplay(config)}
+                        />
 				{/if}
 			{/each}
 		</div>
