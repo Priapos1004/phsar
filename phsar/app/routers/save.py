@@ -1,8 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_db, require_roles
-from app.exceptions import MalIdAlreadyExistsError
 from app.models.users import RoleType
 from app.schemas.search_schema import SearchResultDB
 from app.services.save_service import save_search_results
@@ -15,8 +14,5 @@ async def save_search_results_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user = Depends(require_roles([RoleType.User.value, RoleType.Admin.value]))
 ):
-    try:
-        await save_search_results(db, search_results)
-    except MalIdAlreadyExistsError as e:
-        raise HTTPException(status_code=409, detail=str(e))
+    await save_search_results(db, search_results)
     return {"status": "success"}

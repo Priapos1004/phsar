@@ -1,6 +1,10 @@
+import logging
+
 import pytest
 
 from app.models.users import RoleType
+
+logger = logging.getLogger(__name__)
 
 # Constants for test users
 TEST_USERNAME = "testuser1"
@@ -23,7 +27,7 @@ async def test_register_and_login_flow(client, create_user_with_role):
     # Login as the new user
     login_resp = await login_user(client, TEST_USERNAME, TEST_PASSWORD)
     assert login_resp.status_code == 200
-    print("Login token:", login_resp.json())
+    logger.debug(f"Login token: {login_resp.json()}")
 
 @pytest.mark.asyncio
 async def test_register_with_invalid_token(client):
@@ -33,7 +37,7 @@ async def test_register_with_invalid_token(client):
         "registration_token": TEST_INVALID_TOKEN
     })
     assert reg_resp.status_code == 400
-    print("Invalid token register response:", reg_resp.json())
+    logger.debug(f"Invalid token register response: {reg_resp.json()}")
 
 @pytest.mark.asyncio
 async def test_register_with_used_token(client, create_user_with_role, get_admin_token):
@@ -62,7 +66,7 @@ async def test_register_with_used_token(client, create_user_with_role, get_admin
         "registration_token": reg_token
     })
     assert reg_resp_2.status_code == 400
-    print("Re-used token register response:", reg_resp_2.json())
+    logger.debug(f"Re-used token register response: {reg_resp_2.json()}")
 
 @pytest.mark.asyncio
 async def test_login_with_wrong_password(client, create_user_with_role):
@@ -72,7 +76,7 @@ async def test_login_with_wrong_password(client, create_user_with_role):
     # Attempt login with wrong password
     login_resp = await login_user(client, "wrongpassuser", "wrongpass")
     assert login_resp.status_code == 401
-    print("Wrong password login response:", login_resp.json())
+    logger.debug(f"Wrong password login response: {login_resp.json()}")
 
 @pytest.mark.asyncio
 async def test_issue_token_requires_admin(client, create_user_with_role):
@@ -86,4 +90,40 @@ async def test_issue_token_requires_admin(client, create_user_with_role):
         headers={"Authorization": f"Bearer {token}"}
     )
     assert issue_resp_non_admin.status_code == 403
-    print("Non-admin trying to issue token response:", issue_resp_non_admin.json())
+    logger.debug(f"Non-admin trying to issue token response: {issue_resp_non_admin.json()}")
+
+@pytest.mark.asyncio
+async def test_validate_with_valid_token(client, create_user_with_role):
+    # Create and login a user
+    await create_user_with_role(username=TEST_USERNAME, password=TEST_PASSWORD, role=RoleType.User)
+
+    login_resp = await login_user(client, TEST_USERNAME, TEST_PASSWORD)
+    assert login_resp.status_code == 200
+    token_value = login_resp.json()["access_token"]
+
+    # Validate token
+    validate_resp = await client.get(
+        "/auth/validate",
+        headers={"Authorization": f"Bearer {token_value}"}
+    )
+    assert validate_resp.status_code == 200
+    data = validate_resp.json()
+    assert data.get("is_valid") is True
+    logger.debug(f"Validate with valid token response: {data}")
+
+@pytest.mark.asyncio
+async def test_validate_without_token(client):
+    # Call validate with no token
+    validate_resp = await client.get("/auth/validate")
+    assert validate_resp.status_code == 401
+    logger.debug(f"Validate without token response: {validate_resp.json()}")
+
+@pytest.mark.asyncio
+async def test_validate_with_invalid_token(client):
+    # Call validate with an invalid token
+    validate_resp = await client.get(
+        "/auth/validate",
+        headers={"Authorization": f"Bearer {TEST_INVALID_TOKEN}"}
+    )
+    assert validate_resp.status_code == 401
+    logger.debug(f"Validate with invalid token response: {validate_resp.json()}")

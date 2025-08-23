@@ -81,6 +81,8 @@ class MediaDAO(MalIdDAO[Media]):
             conditions.append(Media.score.isnot(None) & (Media.score <= filters.score_max))
         if filters.scored_by_min is not None:
             conditions.append(Media.scored_by.isnot(None) & (Media.scored_by >= filters.scored_by_min))
+        if filters.scored_by_max is not None:
+            conditions.append(Media.scored_by.isnot(None) & (Media.scored_by <= filters.scored_by_max))
         if filters.episodes_min is not None:
             conditions.append(Media.episodes.isnot(None) & (Media.episodes >= filters.episodes_min))
         if filters.episodes_max is not None:

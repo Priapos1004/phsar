@@ -1,4 +1,8 @@
+import logging
+
 import pytest
+
+logger = logging.getLogger(__name__)
 
 # Fake anime data (shared)
 FAKE_ANIME_MAL_ID = -54321
@@ -56,14 +60,14 @@ async def test_save_search_results_twice(client, user_auth_headers):
     # Save result the second time — should fail (Conflict)
     response = await client.post("/save/search-results", json=FAKE_SEARCH_RESULTS, headers=user_auth_headers)
     assert response.status_code == 409, f"User: Expected 409 Conflict, got {response.status_code}"
-    print("Duplicate save attempt response:", response.status_code, response.json())
+    logger.debug(f"Duplicate save attempt response: {response.status_code} {response.json()}")
 
 @pytest.mark.asyncio
 async def test_save_search_results_as_restricted_user(client, restricted_user_auth_headers):
     # Save as restricted user — should fail (Forbidden)
     response = await client.post("/save/search-results", json=FAKE_SEARCH_RESULTS, headers=restricted_user_auth_headers)
     assert response.status_code == 403, f"Restricted user: Expected 403 Forbidden, got {response.status_code}"
-    print("Restricted user save attempt response:", response.status_code, response.json())
+    logger.debug(f"Restricted user save attempt response: {response.status_code} {response.json()}")
 
 @pytest.mark.asyncio
 async def test_save_search_results_without_token(client):

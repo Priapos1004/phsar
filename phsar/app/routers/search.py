@@ -1,11 +1,10 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_db, require_roles
 from app.daos.media_dao import MediaDAO
-from app.exceptions import AnimeNotFoundError, MainMediaNotFoundError
 from app.models.users import RoleType
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
 from app.schemas.media_schema import MediaConnected
@@ -23,10 +22,7 @@ async def search_mal(
     db: AsyncSession = Depends(get_db),
     current_user = Depends(require_roles([RoleType.User.value, RoleType.Admin.value]))
 ):
-    try:
-        results = await handle_search_mal_api_results(query=query, db=db)
-    except (MainMediaNotFoundError, AnimeNotFoundError) as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    results = await handle_search_mal_api_results(query=query, db=db)
     return results
 
 @router.get("/media", response_model=list[MediaConnected])
@@ -44,6 +40,7 @@ async def search_media(
     score_min: Optional[float] = None,
     score_max: Optional[float] = None,
     scored_by_min: Optional[int] = None,
+    scored_by_max: Optional[int] = None,
     episodes_min: Optional[int] = None,
     episodes_max: Optional[int] = None,
     duration_per_episode_min: Optional[int] = None,
@@ -63,6 +60,7 @@ async def search_media(
         score_min=score_min,
         score_max=score_max,
         scored_by_min=scored_by_min,
+        scored_by_max=scored_by_max,
         episodes_min=episodes_min,
         episodes_max=episodes_max,
         duration_per_episode_min=duration_per_episode_min,
