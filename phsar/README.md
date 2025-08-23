@@ -92,14 +92,23 @@ phsar/
 │       │   ├── app.html
 │       │   ├── lib/
 │       │   │   ├── components/
+│       │   │   │   ├── DoubleRangeSlider.svelte
+│       │   │   │   ├── InfoDiashow.svelte
 │       │   │   │   ├── LoadingScreen.svelte
+│       │   │   │   ├── MediaInfo.svelte
 │       │   │   │   ├── NavBar.svelte
+│       │   │   │   ├── ScrollableCard.svelte
 │       │   │   │   ├── SearchBar.svelte
+│       │   │   │   ├── SkeletonMediaInfo.svelte
 │       │   │   │   └── TagSelect.svelte
 │       │   │   ├── config.ts
 │       │   │   ├── stores/
 │       │   │   │   └── auth.ts
+│       │   │   ├── styles/
+│       │   │   │   └── classes.ts
 │       │   │   └── utils/
+│       │   │       ├── formatString.ts
+│       │   │       ├── getMediaInfo.ts
 │       │   │       ├── getSeason.ts
 │       │   │       ├── navigation.ts
 │       │   │       └── search.ts
@@ -112,20 +121,6 @@ phsar/
 │       │       └── search/
 │       │           └── +page.svelte
 │       ├── static/
-│       │   ├── icons/
-│       │   │   ├── logout_icon.png
-│       │   │   ├── logout_icon_hover.png
-│       │   │   ├── logout_icon_hover_transparent.png
-│       │   │   ├── logout_icon_transparent.png
-│       │   │   ├── search_icon.png
-│       │   │   ├── search_icon_hover.png
-│       │   │   ├── search_icon_hover_transparent.png
-│       │   │   ├── search_icon_transparent.png
-│       │   │   ├── user_icon.png
-│       │   │   ├── user_icon_hover.png
-│       │   │   ├── user_icon_hover_transparent.png
-│       │   │   └── user_icon_transparent.png
-│       │   ├── phsar_logo.png
 │       │   ├── phsar_logo_inverted.png
 │       │   └── phsar_logo_transparent.png
 │       ├── svelte.config.js
