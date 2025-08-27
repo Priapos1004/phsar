@@ -44,3 +44,5 @@ class MediaConnected(MediaUnconnected):
     anime_name_jap: Optional[str]
     anime_other_names: list[str] = []
     uuid: UUID
+    total_watch_time: Optional[int]
+    age_rating_numeric: Optional[int]

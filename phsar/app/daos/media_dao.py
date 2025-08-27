@@ -45,6 +45,12 @@ class MediaDAO(MalIdDAO[Media]):
         else:
             stmt = select(Media).join(MediaSearch)
 
+        # Add hybrid properties to the SELECT statement
+        stmt = stmt.add_columns(
+            Media.total_watch_time.label("total_watch_time"),
+            Media.age_rating_numeric.label("age_rating_numeric"),
+        )
+
         # Apply eager loading
         stmt = stmt.options(
             selectinload(Media.media_genre).selectinload(MediaGenre.genre),

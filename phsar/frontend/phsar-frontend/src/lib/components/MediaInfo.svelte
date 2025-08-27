@@ -9,6 +9,7 @@
 	export let scoredBy: number | null = null;
 	export let anime_season: string | null = null;
     export let airing_status: string;
+    export let age_rating_numeric: number | null = null;
 	export let genres: string[] | null = null;
     export let media_type: string;
     export let relation_type: string;
@@ -45,9 +46,19 @@
                     <h3 class="text-lg font-bold text-gray-800">{title}</h3>
                     {#if anime_season || airing_status === 'Not yet aired' || airing_status === 'Currently Airing'}
                         <p class="text-sm text-purple-700">
+                            <!-- Anime Season -->
                             {#if anime_season}
                                 {anime_season}
                             {/if}
+
+                            <!-- Age Rating Numeric -->
+                            {#if age_rating_numeric !== null}
+                                <span class="text-gray-700 px-1 py-0.5">
+                                    {age_rating_numeric}+
+                                </span>
+                            {/if}
+
+                            <!-- Airing Status -->
                             {#if airing_status === 'Not yet aired' || airing_status === 'Currently Airing'}
                                 <span class="ml-2 text-xs text-purple-500">({airing_status})</span>
                             {/if}
@@ -80,7 +91,7 @@
 			<div class="flex justify-between text-xs text-gray-600">
 				<span>{watchtime ? `Watch time: ${watchtime}` : 'Watch time: N/A'}</span>
 				{#if score !== null && scoredBy !== null}
-					<span>⭐ {score} — {formatNumber(scoredBy)} users</span>
+					<span>⭐ {score} — {formatNumber(scoredBy)} ratings</span>
 				{:else}
 					<span>No rating</span>
 				{/if}

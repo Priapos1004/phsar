@@ -43,6 +43,8 @@ def _map_to_connected(media: Media) -> MediaConnected:
         anime_name_jap=media.anime.name_jap,
         anime_other_names=media.anime.other_names,
         uuid=media.uuid,
+        total_watch_time=media.total_watch_time,
+        age_rating_numeric=media.age_rating_numeric,
     )
 
 

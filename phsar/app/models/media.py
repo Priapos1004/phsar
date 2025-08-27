@@ -22,6 +22,15 @@ class RelationType(str, enum.Enum):
     Crossover = "crossover"
     Other = "other"
 
+# Define ordered mapping to ensure correct prefix priority
+AGE_RATING_MAP = [
+    ("PG-13", 13),   # Must come before PG
+    ("R+", 18),      # Must come before R
+    ("R", 17),
+    ("PG", 6),
+    ("G", 0),
+]
+
 class Media(BaseModel):
     __tablename__ = "media"
 
@@ -47,6 +56,26 @@ class Media(BaseModel):
     aired_to = Column(DateTime(timezone=True), nullable=True)
     duration = Column(String, nullable=True)
     duration_seconds = Column(Integer, nullable=True)
+
+    @hybrid_property
+    def age_rating_numeric(self):
+        """Returns numeric age rating based on MAL's age rating strings."""
+        if not self.age_rating:
+            return None
+
+        normalized = self.age_rating.strip()
+        for prefix, value in AGE_RATING_MAP:
+            if normalized.startswith(prefix):
+                return value
+        return None
+
+    @age_rating_numeric.expression
+    def age_rating_numeric(cls):
+        """SQL expression to compute numeric age rating using prefix matching."""
+        return case(
+            *[(cls.age_rating.startswith(prefix), value) for prefix, value in AGE_RATING_MAP],
+            else_=None
+        )
 
     @hybrid_property
     def total_watch_time(self):

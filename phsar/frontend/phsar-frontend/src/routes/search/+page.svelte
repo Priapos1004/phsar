@@ -101,7 +101,6 @@
 	{#if searchResults.length}
 		<div class={cls.mediaInfoGrid}>
 			{#each searchResults.slice(0, visibleCount) as result}
-				{@const watchtime = calculateWatchtime(result.episodes, result.duration_seconds)}
 				<MediaInfo
 					info_type="media"
 					title={result.name_eng ?? result.title}
@@ -109,10 +108,11 @@
 					scoredBy={result.scored_by}
 					anime_season={result.anime_season}
 					airing_status={result.airing_status}
+					age_rating_numeric={result.age_rating_numeric}
 					genres={result.genres}
 					media_type={result.media_type}
 					relation_type={result.relation_type}
-					watchtime={watchtime !== null ? formatDuration(watchtime) : null}
+					watchtime={result.total_watch_time !== null ? formatDuration(result.total_watch_time) : null}
 					imageUrl={result.cover_image}
 					on_watchlist={false}
 					media_uuid={result.uuid}
