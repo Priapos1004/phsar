@@ -31,7 +31,7 @@ TOO_LONG_FILTER_PAYLOAD = {
         "Winter 2023"],
     "media_type": ["TV", "Movie", "OVA", "ONA", "TVSpecial"],
     "relation_type": ["main", "summary", "crossover", "other"],
-    "fsk": [
+    "age_rating": [
         "G - All Ages",
         "PG - Children",
         "PG-13 - Teens 13 or older",

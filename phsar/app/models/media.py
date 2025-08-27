@@ -34,7 +34,7 @@ class Media(BaseModel):
     other_names = Column(JSONB, default=list)
     media_type = Column(Enum(MediaType), nullable=False)
     relation_type = Column(Enum(RelationType), nullable=False)
-    fsk = Column(String)
+    age_rating = Column(String)
     description = Column(String)
     original_source = Column(String)
     cover_image = Column(String)

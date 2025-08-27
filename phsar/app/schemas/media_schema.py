@@ -16,7 +16,7 @@ class MediaBase(BaseModel):
     other_names: list[str] = []
     media_type: MediaType
     relation_type: RelationType
-    fsk: Optional[str]
+    age_rating: Optional[str]
     description: Optional[str]
     original_source: Optional[str]
     cover_image: Optional[str]

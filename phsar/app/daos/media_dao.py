@@ -68,8 +68,8 @@ class MediaDAO(MalIdDAO[Media]):
             conditions.append(Media.media_type.in_(filters.media_type))
         if filters.relation_type:
             conditions.append(Media.relation_type.in_(filters.relation_type))
-        if filters.fsk:
-            conditions.append(Media.fsk.in_(filters.fsk))
+        if filters.age_rating:
+            conditions.append(Media.age_rating.in_(filters.age_rating))
         if filters.airing_status:
             conditions.append(Media.airing_status.in_(filters.airing_status))
         if filters.anime_season:

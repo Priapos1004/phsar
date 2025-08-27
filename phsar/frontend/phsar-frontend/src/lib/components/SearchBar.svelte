@@ -16,7 +16,7 @@
 	let showFilters = false;
 
 	type UnifiedFilterConfig =
-		| { type: 'list'; key: keyof Pick<MediaSearchFilters, 'genre_name' | 'anime_season' | 'studio_name' | 'airing_status' | 'relation_type' | 'media_type' | 'fsk'>; label: string; placeholder: string }
+		| { type: 'list'; key: keyof Pick<MediaSearchFilters, 'genre_name' | 'anime_season' | 'studio_name' | 'airing_status' | 'relation_type' | 'media_type' | 'age_rating'>; label: string; placeholder: string }
 		| { type: 'Range'; minKey: keyof Pick<MediaSearchFilters, 'episodes_min' | 'score_min' | 'scored_by_min'>; maxKey: keyof Pick<MediaSearchFilters, 'episodes_max' | 'score_max' | 'scored_by_max'>; label: string; step: number, large_number: boolean }
 		| { type: 'timeRange'; minKey: keyof Pick<MediaSearchFilters, 'duration_per_episode_min' | 'total_watch_time_min'>; maxKey: keyof Pick<MediaSearchFilters, 'duration_per_episode_max' | 'total_watch_time_max'>; label: string;  step: number };
 
@@ -27,7 +27,7 @@
 		{ type: 'list', key: 'airing_status', label: 'Airing Status', placeholder: 'Search airing status...' },
 		{ type: 'list', key: 'relation_type', label: 'Relation Type', placeholder: 'Search relation types...' },
 		{ type: 'list', key: 'media_type', label: 'Media Type', placeholder: 'Search media types...' },
-		{ type: 'list', key: 'fsk', label: 'FSK', placeholder: 'Search FSK ratings...' },
+		{ type: 'list', key: 'age_rating', label: 'Age Rating', placeholder: 'Search age ratings...' },
 		{ type: 'Range', minKey: 'episodes_min', maxKey: 'episodes_max', label: 'Episodes', step: 1, large_number: false },
 		{ type: 'Range', minKey: 'score_min', maxKey: 'score_max', label: 'Score', step: 0.01, large_number: false },
         { type: 'Range', minKey: 'scored_by_min', maxKey: 'scored_by_max', label: 'Scored By', step: 100, large_number: true },

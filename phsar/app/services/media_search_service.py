@@ -22,7 +22,7 @@ def _map_to_connected(media: Media) -> MediaConnected:
         other_names=media.other_names,
         media_type=media.media_type,
         relation_type=media.relation_type,
-        fsk=media.fsk,
+        age_rating=media.age_rating,
         description=media.description,
         original_source=media.original_source,
         cover_image=media.cover_image,

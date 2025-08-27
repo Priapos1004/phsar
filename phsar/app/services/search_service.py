@@ -43,7 +43,7 @@ async def search_mal_api(query: str, excluded_mal_ids: set[int]) -> SearchResult
                 other_names=media_info.get("other_names"),
                 media_type=media_info.get("media_type"),
                 relation_type=relation_info.get("relation_type"),
-                fsk=media_info.get("fsk"),
+                age_rating=media_info.get("age_rating"),
                 description=media_info.get("description"),
                 original_source=media_info.get("original_source"),
                 cover_image=media_info.get("cover_image"),

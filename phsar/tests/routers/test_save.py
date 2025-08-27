@@ -19,7 +19,7 @@ FAKE_SEARCH_RESULTS = [
                 "other_names": ["Fake Alt Title"],
                 "media_type": "TV",
                 "relation_type": "main",
-                "fsk": "PG-13",
+                "age_rating": "PG-13",
                 "description": "A fake anime used for testing.",
                 "original_source": "Manga",
                 "cover_image": "https://cdn.fake/fakeanime.jpg",

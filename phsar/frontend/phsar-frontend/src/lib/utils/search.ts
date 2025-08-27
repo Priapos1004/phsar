@@ -6,7 +6,7 @@ export interface MediaSearchFilters {
 	// List filters
 	relation_type?: string[];
 	media_type?: string[];
-	fsk?: string[];
+	age_rating?: string[];
 	airing_status?: string[];
 	anime_season?: string[];
 	genre_name?: string[];
@@ -41,7 +41,7 @@ export async function fetchSearchResults(params: MediaSearchFilters, token: stri
 		'airing_status',
 		'relation_type',
 		'media_type',
-		'fsk'
+		'age_rating'
 	];
 
 	for (const key of listKeys) {

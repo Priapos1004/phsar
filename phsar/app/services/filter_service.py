@@ -20,14 +20,14 @@ def sort_seasons(seasons: list[str]) -> list[str]:
         if len(parts) == 2:
             season, year = parts
             return (int(year), season_order.get(season, 99))
-        return (9999, 99)  # put unparseable items at the end
+        return (9999, 99)  # Put unparseable items at the end
 
     return sorted(seasons, key=season_sort_key, reverse=True)
 
 async def fetch_filter_values(db: AsyncSession) -> dict:
     relation_types = await media_dao.get_unique_in_field(db, field_name="relation_type")
     media_types = await media_dao.get_unique_in_field(db, field_name="media_type")
-    fsk_values = await media_dao.get_unique_in_field(db, field_name="fsk")
+    age_rating_values = await media_dao.get_unique_in_field(db, field_name="age_rating")
     airing_status = await media_dao.get_unique_in_field(db, field_name="airing_status")
 
     anime_seasons = await media_dao.get_unique_in_field(db, field_name="anime_season")
@@ -42,10 +42,10 @@ async def fetch_filter_values(db: AsyncSession) -> dict:
     duration_min, duration_max = await media_dao.get_min_max(db, "duration_seconds")
     watch_time_min, watch_time_max = await media_dao.get_min_max(db, "total_watch_time")
 
-    return {
+    filter_values = {
         "relation_type": relation_types,
         "media_type": media_types,
-        "fsk": fsk_values,
+        "age_rating": age_rating_values,
         "airing_status": airing_status,
         "anime_season": anime_seasons,
         "genre_name": genre_names,
@@ -61,3 +61,5 @@ async def fetch_filter_values(db: AsyncSession) -> dict:
         "total_watch_time_min": watch_time_min,
         "total_watch_time_max": watch_time_max,
     }
+    logger.debug(f"Filter values:\n{filter_values}")
+    return filter_values

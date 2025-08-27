@@ -118,7 +118,7 @@ class JikanScraper:
             "media_type": JikanScraper.__clean_str_field(anime.get("type")),
             "genres": genres,
             "studio": [studio["name"] for studio in anime.get("studios", [])],
-            "fsk": anime.get("rating"),
+            "age_rating": anime.get("rating"),
             "description": anime.get("synopsis"),
             "original_source": anime.get("source"),
             "cover_image": anime.get("images", {}).get("jpg", {}).get("large_image_url"),
