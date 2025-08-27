@@ -10,7 +10,7 @@ MAL_GENRES = [
     (26, "Girls Love", "demographic"), (47, "Gourmet", "theme"), (14, "Horror", "genre"), (7, "Mystery", "genre"),
     (22, "Romance", "genre"), (24, "Sci-Fi", "genre"), (36, "Slice of Life", "theme"), (30, "Sports", "genre"),
     (37, "Supernatural", "genre"), (41, "Suspense", "theme"), (9, "Ecchi", "explicit_genre"), (49, "Erotica", "explicit_genre"),
-    (12, "Hentai", "explicit_genre"), (50, "Adult Cast", "theme"), (51, "Anthropomorphic", "theme"), (52, "CGDCT", "theme"),
+    (50, "Adult Cast", "theme"), (51, "Anthropomorphic", "theme"), (52, "CGDCT", "theme"),
     (53, "Childcare", "theme"), (54, "Combat Sports", "theme"), (81, "Crossdressing", "theme"), (55, "Delinquents", "theme"),
     (39, "Detective", "theme"), (56, "Educational", "theme"), (57, "Gag Humor", "theme"), (58, "Gore", "theme"),
     (35, "Harem", "theme"), (59, "High Stakes Game", "theme"), (13, "Historical", "genre"), (60, "Idols (Female)", "theme"),

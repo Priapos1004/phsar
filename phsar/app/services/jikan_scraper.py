@@ -147,7 +147,7 @@ class JikanScraper:
     def get_relation_type(self, is_main_story: bool, relation_type: Optional[str]) -> str:
         return "main" if is_main_story else (relation_type or "other")
 
-    async def search_title(self, title: str, excluded_mal_ids: set[int], initial_search_limit: int = 3) -> tuple[list[dict], dict[int, dict], set[tuple[int, str]]]:
+    async def search_title(self, title: str, excluded_mal_ids: set[int], initial_search_limit: int = 3) -> tuple[list[dict], dict[int, dict], set[tuple[int, str, str]]]:
         search = await self._get(f"{self.base_url}/anime", params={"q": title, "limit": initial_search_limit})
         results = search.get("data", [])
 
@@ -157,7 +157,7 @@ class JikanScraper:
         all_info: dict[int, dict] = {}
         visited_ids: set[int] = excluded_mal_ids
         relations: list[dict] = []
-        unwanted_media: set[tuple[int, str]] = set()
+        unwanted_media: set[tuple[int, str, str]] = set()
 
         for anime in results:
             anime_info = self.extract_information(anime)
@@ -190,9 +190,12 @@ class JikanScraper:
                 if anime_info.get("media_type"):
                     if anime_info["media_type"].lower() in ["music", "pv", "cm"]:
                         logger.warning(f"Skipping anime {anime_info['media_type']}: {anime_info['title']}")
-                        unwanted_media.add((current_mal_id, anime_info["media_type"]))
+                        unwanted_media.add((current_mal_id, anime_info["title"], anime_info["media_type"]))
                         continue
-                    
+                    elif any("hentai" == genre_name.lower() for genre_name in anime_info["genres"]):
+                        logger.warning(f"Skipping anime hentai: {anime_info['title']}")
+                        unwanted_media.add((current_mal_id, anime_info["title"], "Hentai"))
+                        continue
                     
                     all_info[current_mal_id] = anime_info
 
@@ -247,7 +250,7 @@ class JikanScraper:
                             is_first_relation = False
                 else:
                     logger.warning(f"Anime without media_type:\n{anime_info}")
-                    unwanted_media.add((current_mal_id, "Unknown"))
+                    unwanted_media.add((current_mal_id, anime_info["title"], "Unknown"))
             
                 # Case that the original anime was not found organically again
                 if (len(left_mal_ids) == 0) and (mal_id not in visited_ids):

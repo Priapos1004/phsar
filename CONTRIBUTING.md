@@ -17,3 +17,13 @@ ruff check . --fix
 ```
 
 *BUT ALWAYS CHECK THE CHANGES MADE BY RUFF!*
+
+### Code Checks 📋
+
+Run `pytest` to check code correctness:
+
+```shell
+pytest
+```
+
+*For this, the docker image with the database needs to run!*
