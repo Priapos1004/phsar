@@ -107,6 +107,7 @@ class JikanScraper:
             + [genre["name"] for genre in anime.get("demographics", [])]
         )
         anime_season_name, anime_season_year = JikanScraper.__get_anime_season(anime)
+        scored_by = anime.get("scored_by") or 0
         return {
             "mal_id": anime.get("mal_id"),
             "mal_url": anime.get("url"),
@@ -122,7 +123,7 @@ class JikanScraper:
             "original_source": anime.get("source"),
             "cover_image": anime.get("images", {}).get("jpg", {}).get("large_image_url"),
             "score": anime.get("score"),
-            "scored_by": anime.get("scored_by"),
+            "scored_by": scored_by,
             "episodes": anime.get("episodes"),
             "anime_season_name": anime_season_name,
             "anime_season_year": anime_season_year,

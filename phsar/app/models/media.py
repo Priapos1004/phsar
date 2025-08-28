@@ -65,7 +65,7 @@ class Media(BaseModel):
     original_source = Column(String)
     cover_image = Column(String)
     score = Column(Float, nullable=True)
-    scored_by = Column(Integer, nullable=True)
+    scored_by = Column(Integer, nullable=False)
     episodes = Column(Integer, nullable=True)
     anime_season_name = Column(Enum(SeasonType), nullable=True)
     anime_season_year = Column(Integer, nullable=True)

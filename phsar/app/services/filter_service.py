@@ -48,7 +48,7 @@ async def fetch_filter_values(db: AsyncSession) -> dict:
     studio_names = await studio_dao.get_distinct_used_studios(db)
 
     score_min, score_max = 0.0, 10.0 # Set score range to full possible range
-    scored_by_min, scored_by_max = 1, (await media_dao.get_min_max(db, "scored_by"))[1]
+    scored_by_min, scored_by_max = 0, (await media_dao.get_min_max(db, "scored_by"))[1]
     episodes_min, episodes_max = await media_dao.get_min_max(db, "episodes")
     duration_min, duration_max = await media_dao.get_min_max(db, "duration_seconds")
     watch_time_min, watch_time_max = await media_dao.get_min_max(db, "total_watch_time")

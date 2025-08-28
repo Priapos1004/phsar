@@ -21,7 +21,7 @@ class MediaBase(BaseModel):
     original_source: Optional[str]
     cover_image: Optional[str]
     score: Optional[float]
-    scored_by: Optional[int]
+    scored_by: int
     episodes: Optional[int]
     anime_season_name: Optional[str]
     anime_season_year: Optional[int]

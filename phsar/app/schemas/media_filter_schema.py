@@ -46,8 +46,8 @@ class MediaFilterValues(BaseModel):
     # Numerical limits
     score_min: Optional[float]
     score_max: Optional[float]
-    scored_by_min: Optional[int]
-    scored_by_max: Optional[int]
+    scored_by_min: int
+    scored_by_max: int
     episodes_min: Optional[int]
     episodes_max: Optional[int]
     duration_per_episode_min: Optional[int]
