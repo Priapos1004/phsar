@@ -24,10 +24,21 @@ def sort_seasons(seasons: list[str]) -> list[str]:
 
     return sorted(seasons, key=season_sort_key, reverse=True)
 
+def sort_age_ratings(age_rating_tuples: list[tuple[str, int]]) -> list[str]:
+    """Sort by numeric value first, then return string value."""
+    sorted_pairs = sorted(
+        age_rating_tuples,
+        key=lambda t: (t[1] is None, t[1])  # None sorts last
+    )
+    return [s for s, _ in sorted_pairs if s is not None]
+
 async def fetch_filter_values(db: AsyncSession) -> dict:
     relation_types = await media_dao.get_unique_in_field(db, field_name="relation_type")
     media_types = await media_dao.get_unique_in_field(db, field_name="media_type")
-    age_rating_values = await media_dao.get_unique_in_field(db, field_name="age_rating")
+
+    age_rating_tuples = await media_dao.get_unique_in_fields(db, field_names=["age_rating", "age_rating_numeric"])
+    age_rating_values = sort_age_ratings(age_rating_tuples)
+
     airing_status = await media_dao.get_unique_in_field(db, field_name="airing_status")
 
     anime_seasons_tuple = await media_dao.get_unique_in_fields(db, field_names=["anime_season_name", "anime_season_year"])
