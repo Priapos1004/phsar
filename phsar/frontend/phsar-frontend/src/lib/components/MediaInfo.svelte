@@ -93,7 +93,7 @@
 				{#if score !== null && scoredBy !== null}
 					<span>⭐ {score} — {formatNumber(scoredBy)} ratings</span>
 				{:else}
-					<span>No rating</span>
+					<span>No ratings</span>
 				{/if}
 			</div>
 		</div>
