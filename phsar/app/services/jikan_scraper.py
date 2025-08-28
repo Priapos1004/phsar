@@ -54,15 +54,15 @@ class JikanScraper:
         return cleaned
     
     @staticmethod
-    def __get_anime_season(anime: dict) -> str:
+    def __get_anime_season(anime: dict) -> tuple[Optional[str], Optional[int]]:
         season = anime.get("season")
         year = anime.get("year")
         if season and year:
-            return f"{season.capitalize()} {year}"
+            return season.capitalize(), int(year)
 
         aired_from = anime.get("aired", {}).get("from")
         if not aired_from:
-            return "Unknown"
+            return None, None
 
         try:
             date = datetime.fromisoformat(aired_from.replace("Z", "+00:00"))
@@ -75,15 +75,13 @@ class JikanScraper:
                 season = "Spring"
             elif 7 <= month <= 9:
                 season = "Summer"
-            elif 10 <= month <= 12:
+            else:  # 10 <= month <= 12
                 season = "Fall"
-            else:
-                season = "Unknown"
 
-            return f"{season} {year}"
+            return season, year
         except Exception:
-            return "Unknown"
-        
+            return None, None
+
     @staticmethod
     def _parse_duration_to_seconds(duration: Optional[str]) -> Optional[int]:
         if not duration or "unknown" in duration.lower():
@@ -108,6 +106,7 @@ class JikanScraper:
             + [genre["name"] for genre in anime.get("themes", [])]
             + [genre["name"] for genre in anime.get("demographics", [])]
         )
+        anime_season_name, anime_season_year = JikanScraper.__get_anime_season(anime)
         return {
             "mal_id": anime.get("mal_id"),
             "mal_url": anime.get("url"),
@@ -125,7 +124,8 @@ class JikanScraper:
             "score": anime.get("score"),
             "scored_by": anime.get("scored_by"),
             "episodes": anime.get("episodes"),
-            "anime_season": JikanScraper.__get_anime_season(anime),
+            "anime_season_name": anime_season_name,
+            "anime_season_year": anime_season_year,
             "aired_from": anime.get("aired", {}).get("from"),
             "aired_to": anime.get("aired", {}).get("to"),
             "airing_status": anime.get("status"),

@@ -106,7 +106,7 @@
 					title={result.name_eng ?? result.title}
 					score={result.score}
 					scoredBy={result.scored_by}
-					anime_season={result.anime_season}
+					anime_season={result.anime_season_name + " " + result.anime_season_year}
 					airing_status={result.airing_status}
 					age_rating_numeric={result.age_rating_numeric}
 					genres={result.genres}

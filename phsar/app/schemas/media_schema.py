@@ -23,7 +23,8 @@ class MediaBase(BaseModel):
     score: Optional[float]
     scored_by: Optional[int]
     episodes: Optional[int]
-    anime_season: Optional[str]
+    anime_season_name: Optional[str]
+    anime_season_year: Optional[int]
     airing_status: str
     aired_from: Optional[datetime]
     aired_to: Optional[datetime]

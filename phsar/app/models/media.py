@@ -1,6 +1,17 @@
 import enum
 
-from sqlalchemy import Column, DateTime, Enum, Float, ForeignKey, Integer, String, case
+from sqlalchemy import (
+    CheckConstraint,
+    Column,
+    DateTime,
+    Enum,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    case,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
@@ -21,6 +32,12 @@ class RelationType(str, enum.Enum):
     Summary = "summary"
     Crossover = "crossover"
     Other = "other"
+
+class SeasonType(str, enum.Enum):
+    Winter = "Winter"
+    Spring = "Spring"
+    Summer = "Summer"
+    Fall   = "Fall"
 
 # Define ordered mapping to ensure correct prefix priority
 AGE_RATING_MAP = [
@@ -50,7 +67,8 @@ class Media(BaseModel):
     score = Column(Float, nullable=True)
     scored_by = Column(Integer, nullable=True)
     episodes = Column(Integer, nullable=True)
-    anime_season = Column(String, nullable=True)
+    anime_season_name = Column(Enum(SeasonType), nullable=True)
+    anime_season_year = Column(Integer, nullable=True)
     airing_status = Column(String, nullable=False)
     aired_from = Column(DateTime(timezone=True), nullable=True)
     aired_to = Column(DateTime(timezone=True), nullable=True)
@@ -92,6 +110,18 @@ class Media(BaseModel):
             ),
             else_=None  # Changeable default value for total_watch_time = None
         )
+    
+    __table_args__ = (
+        CheckConstraint(
+            "anime_season_year >= 1900 AND anime_season_year <= 2200",
+            name="check_season_year_4_digits"
+        ),
+        CheckConstraint(
+            "(anime_season_name IS NULL AND anime_season_year IS NULL) "
+            "OR (anime_season_name IS NOT NULL AND anime_season_year IS NOT NULL)",
+            name="check_season_parts_both_or_none",
+        ),
+    )
 
     # Relationships
     anime = relationship("Anime", back_populates="media")
@@ -100,3 +130,10 @@ class Media(BaseModel):
     media_genre = relationship("MediaGenre", back_populates="media", cascade="all, delete-orphan")
     media_studio = relationship("MediaStudio", back_populates="media", cascade="all, delete-orphan")
     media_search = relationship("MediaSearch", back_populates="media", cascade="all, delete-orphan")
+
+# Index to optimize queries filtering or ordering by season year and name
+Index(
+    "ix_media_year_season",
+    Media.anime_season_year,
+    Media.anime_season_name,
+)

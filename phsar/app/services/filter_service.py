@@ -30,8 +30,8 @@ async def fetch_filter_values(db: AsyncSession) -> dict:
     age_rating_values = await media_dao.get_unique_in_field(db, field_name="age_rating")
     airing_status = await media_dao.get_unique_in_field(db, field_name="airing_status")
 
-    anime_seasons = await media_dao.get_unique_in_field(db, field_name="anime_season")
-    anime_seasons = sort_seasons(anime_seasons)
+    anime_seasons_tuple = await media_dao.get_unique_in_fields(db, field_names=["anime_season_name", "anime_season_year"])
+    anime_seasons = sort_seasons([f"{name.value} {year}" for name, year in anime_seasons_tuple if name and year])
 
     genre_names = await genre_dao.get_distinct_used_genres(db)
     studio_names = await studio_dao.get_distinct_used_studios(db)

@@ -1,11 +1,11 @@
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import and_, cast, distinct, func, select
+from sqlalchemy import and_, cast, distinct, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.daos.base_mal_id_dao import MalIdDAO
 from app.models.genre import Genre
-from app.models.media import Media
+from app.models.media import Media, SeasonType
 from app.models.media_genre import MediaGenre
 from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
@@ -79,8 +79,13 @@ class MediaDAO(MalIdDAO[Media]):
         if filters.airing_status:
             conditions.append(Media.airing_status.in_(filters.airing_status))
         if filters.anime_season:
-            conditions.append(Media.anime_season.in_(filters.anime_season))
-
+            filter_pairs = [
+                (int(year), SeasonType[season])  # convert to (year:int, SeasonType:enum)
+                for season, year in (part.split(" ") for part in filters.anime_season)
+            ]
+            conditions.append(
+                tuple_(Media.anime_season_year, Media.anime_season_name).in_(filter_pairs)
+            )
         if filters.score_min is not None:
             conditions.append(Media.score.isnot(None) & (Media.score >= filters.score_min))
         if filters.score_max is not None:
