@@ -191,7 +191,7 @@
 			<div class="flex justify-between items-center mb-2">
 				<h2 class="text-lg font-semibold text-gray-800">Filters</h2>
 				{#if Object.values(listFilters).some(arr => arr?.length)
-					|| Object.values(numberFilters).some(Boolean)}
+					|| Object.values(numberFilters).some(v => v !== undefined)}
 					<button
 						on:click={clearFilters}
 						class="text-sm text-red-600 font-medium px-2 py-1 rounded hover:bg-red-50 transition"
