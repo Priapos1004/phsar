@@ -13,6 +13,7 @@
 	export let searchParams: Partial<MediaSearchFilters> = {};
 
 	let query = '';
+	let useDescription = false; // Vector search not only on title but description as well
 	let showFilters = false;
 
 	const logBase = 2;
@@ -189,6 +190,7 @@
 		e.preventDefault();
 		const params: MediaSearchFilters = {
 			query,
+			search_type: useDescription ? 'description' : 'title',
 			...listFilters,
 			...numberFilters
 		};
@@ -198,6 +200,7 @@
 
 	function clearFilters() {
         query = '';
+		useDescription = false;
 
         // Reset list filters to empty arrays
         filterConfig.forEach(config => {
@@ -236,7 +239,9 @@
 			<div class="flex justify-between items-center mb-2">
 				<h2 class="text-lg font-semibold text-gray-800">Filters</h2>
 				{#if Object.values(listFilters).some(arr => arr?.length)
-					|| Object.values(numberFilters).some(v => v !== undefined)}
+					|| Object.values(numberFilters).some(v => v !== undefined)
+					|| useDescription
+				}
 					<button
 						on:click={clearFilters}
 						class="text-sm text-red-600 font-medium px-2 py-1 rounded hover:bg-red-50 transition"
@@ -244,6 +249,18 @@
 						Clear all
 					</button>
 				{/if}
+			</div>
+
+			<div class="flex items-center gap-2 mb-2">
+				<input
+					id="use-description"
+					type="checkbox"
+					bind:checked={useDescription}
+					class="h-4 w-4 accent-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
+				/>
+				<label for="use-description" class="text-sm text-gray-700 cursor-pointer select-none">
+					Expand search to descriptions
+				</label>
 			</div>
 
 			{#each filterConfig as config}

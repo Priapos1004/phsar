@@ -2,6 +2,7 @@ import { API_URL } from '$lib/config';
 
 export interface MediaSearchFilters {
 	query: string;
+	search_type: string;
 
 	// List filters
 	relation_type?: string[];
@@ -32,6 +33,7 @@ export async function fetchSearchResults(params: MediaSearchFilters, token: stri
 
 	// Base query
 	if (params.query) searchParams.append('query', params.query);
+	if (params.search_type) searchParams.append('search_type', params.search_type);
 
 	// List filters
 	const listKeys: (keyof MediaSearchFilters)[] = [
