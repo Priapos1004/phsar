@@ -15,10 +15,32 @@
 	let query = '';
 	let showFilters = false;
 
+	const logBase = 2;
+	const logStep = 0.1;
+
 	type UnifiedFilterConfig =
-		| { type: 'list'; key: keyof Pick<MediaSearchFilters, 'genre_name' | 'anime_season' | 'studio_name' | 'airing_status' | 'relation_type' | 'media_type' | 'age_rating'>; label: string; placeholder: string }
-		| { type: 'Range'; minKey: keyof Pick<MediaSearchFilters, 'episodes_min' | 'score_min' | 'scored_by_min'>; maxKey: keyof Pick<MediaSearchFilters, 'episodes_max' | 'score_max' | 'scored_by_max'>; label: string; step: number, large_number: boolean }
-		| { type: 'timeRange'; minKey: keyof Pick<MediaSearchFilters, 'duration_per_episode_min' | 'total_watch_time_min'>; maxKey: keyof Pick<MediaSearchFilters, 'duration_per_episode_max' | 'total_watch_time_max'>; label: string;  step: number };
+		| { 
+			type: 'list';
+			key: keyof Pick<MediaSearchFilters, 'genre_name' | 'anime_season' | 'studio_name' | 'airing_status' | 'relation_type' | 'media_type' | 'age_rating'>;
+			label: string;
+			placeholder: string;
+		  }
+		| {
+			type: 'Range';
+			minKey: keyof Pick<MediaSearchFilters, 'episodes_min' | 'score_min' | 'scored_by_min'>;
+			maxKey: keyof Pick<MediaSearchFilters, 'episodes_max' | 'score_max' | 'scored_by_max'>;
+			label: string;
+			step: number;
+			large_number: boolean;
+			scale?: 'linear' | 'log'; // Default is 'linear'
+		  }
+		| {
+			type: 'timeRange';
+			minKey: keyof Pick<MediaSearchFilters, 'duration_per_episode_min' | 'total_watch_time_min'>;
+			maxKey: keyof Pick<MediaSearchFilters, 'duration_per_episode_max' | 'total_watch_time_max'>;
+			label: string;
+			step: number;
+		};
 
 	const filterConfig: UnifiedFilterConfig[] = [
 		{ type: 'list', key: 'genre_name', label: 'Genres', placeholder: 'Search genres...' },
@@ -30,7 +52,7 @@
 		{ type: 'list', key: 'age_rating', label: 'Age Rating', placeholder: 'Search age ratings...' },
 		{ type: 'Range', minKey: 'episodes_min', maxKey: 'episodes_max', label: 'Episodes', step: 1, large_number: false },
 		{ type: 'Range', minKey: 'score_min', maxKey: 'score_max', label: 'Score', step: 0.01, large_number: false },
-        { type: 'Range', minKey: 'scored_by_min', maxKey: 'scored_by_max', label: 'Scored By', step: 100, large_number: true },
+        { type: 'Range', minKey: 'scored_by_min', maxKey: 'scored_by_max', label: 'Scored By', step: 100, large_number: true, scale: 'log' },
 		{ type: 'timeRange', minKey: 'duration_per_episode_min', maxKey: 'duration_per_episode_max', label: 'Average Duration per Episode', step: 60 },
 		{ type: 'timeRange', minKey: 'total_watch_time_min', maxKey: 'total_watch_time_max', label: 'Total Watch Time', step: 60 },
 	];
@@ -59,17 +81,30 @@
     }
 
     function handleRangeChange(
-        minKey: string,
-        maxKey: string,
-        from: number,
-        to: number,
-    ): void {
-        const minDefault = numberFilterOptions[minKey];
-        const maxDefault = numberFilterOptions[maxKey];
+		minKey: string,
+		maxKey: string,
+		from: number,
+		to: number,
+		config?: UnifiedFilterConfig
+	): void {
+		const tolerance = 1e-6;
+		const minDefault = numberFilterOptions[minKey] ?? 0;
+		const maxDefault = numberFilterOptions[maxKey] ?? 0;
 
-        numberFilters[minKey] = from === minDefault ? undefined : from;
-        numberFilters[maxKey] = to === maxDefault ? undefined : to;
-    }
+		let actualFrom = from;
+		let actualTo = to;
+
+		if (config && config.type === 'Range' && config.scale === 'log') {
+			actualFrom = fromLog(from);
+			actualTo   = fromLog(to);
+		}
+
+		// Small tolerance when comparing floating/rounded ints
+		numberFilters[minKey] =
+			Math.abs(actualFrom - minDefault) <= tolerance ? undefined : actualFrom;
+		numberFilters[maxKey] =
+			Math.abs(actualTo - maxDefault) <= tolerance ? undefined : actualTo;
+	}
 
     function getFormatDisplay(config: UnifiedFilterConfig): (val: number) => string {
         if (config.type === 'timeRange') {
@@ -84,6 +119,16 @@
         // Fallback — should never happen
         return (val) => String(val);
     }
+
+	function toLog(value: number): number {
+		// +1 avoids log(0), ensure value >= 0
+		return Math.log(Math.max(value, 0) + 1) / Math.log(logBase);
+	}
+
+	function fromLog(logValue: number): number {
+		// Convert back and round to integer
+		return Math.round(Math.pow(logBase, logValue) - 1);
+	}
 
 	// --- Reactivity ---
 	function syncFiltersFromParams() {
@@ -210,19 +255,28 @@
 						onAdd={(item) => listFilters[config.key] = [...(listFilters[config.key] ?? []), item]}
 						onRemove={(item) => listFilters[config.key] = (listFilters[config.key] ?? []).filter(i => i !== item)}
 					/>
-                    {:else if config.type === 'Range' || config.type === 'timeRange'}
-                        <DoubleRangeSlider
-                            label={config.label}
-                            minValue={numberFilterOptions[config.minKey]}
-                            maxValue={numberFilterOptions[config.maxKey]}
-                            step={config.step}
-                            from={numberFilters[config.minKey] ?? numberFilterOptions[config.minKey]}
-                            to={numberFilters[config.maxKey] ?? numberFilterOptions[config.maxKey]}
-                            onChange={({ from, to }) =>
-                                handleRangeChange(config.minKey, config.maxKey, from, to)
-                            }
-                            formatDisplay={getFormatDisplay(config)}
-                        />
+                {:else if config.type === 'Range' || config.type === 'timeRange'}
+					{@const isLog = config.type === 'Range' && config.scale === 'log'}
+					{@const minOpt = numberFilterOptions[config.minKey] ?? 1}
+					{@const maxOpt = numberFilterOptions[config.maxKey] ?? 1}
+					{@const fromVal = numberFilters[config.minKey] ?? minOpt}
+					{@const toVal = numberFilters[config.maxKey] ?? maxOpt}
+
+					<DoubleRangeSlider
+						label={config.label}
+						minValue={isLog ? toLog(minOpt) : minOpt}
+						maxValue={isLog ? toLog(maxOpt) : maxOpt}
+						step={isLog ? logStep : config.step}
+						from={isLog ? toLog(fromVal) : fromVal}
+						to={isLog ? toLog(toVal) : toVal}
+						onChange={({ from, to }) =>
+							handleRangeChange(config.minKey, config.maxKey, from, to, config)
+						}
+						formatDisplay={(val) => {
+							const displayVal = isLog ? fromLog(val) : val;
+							return getFormatDisplay(config)(displayVal);
+						}}
+					/>
 				{/if}
 			{/each}
 		</div>
