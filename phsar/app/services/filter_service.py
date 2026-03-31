@@ -72,5 +72,5 @@ async def fetch_filter_values(db: AsyncSession) -> dict:
         "total_watch_time_min": watch_time_min,
         "total_watch_time_max": watch_time_max,
     }
-    logger.debug(f"Filter values:\n{filter_values}")
+    logger.debug("Filter values:\n%s", filter_values)
     return filter_values

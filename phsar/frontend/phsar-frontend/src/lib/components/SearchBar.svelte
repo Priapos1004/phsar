@@ -134,6 +134,7 @@
 	// --- Reactivity ---
 	function syncFiltersFromParams() {
 		query = searchParams.query ?? '';
+		useDescription = searchParams.search_type === 'description';
 
 		filterConfig.forEach(config => {
 			if (config.type === 'list') {

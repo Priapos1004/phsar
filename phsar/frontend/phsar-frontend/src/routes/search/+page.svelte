@@ -4,7 +4,6 @@
 	import { fetchSearchResults } from '$lib/utils/search';
     import type { MediaSearchFilters } from '$lib/utils/search';
 	import { navigateToSearch } from '$lib/utils/navigation';
-	import { calculateWatchtime } from '$lib/utils/getMediaInfo';
 	import { formatDuration } from '$lib/utils/formatString';
 	import { API_URL } from '$lib/config';
 	import * as cls from '$lib/styles/classes';
@@ -106,7 +105,7 @@
 					title={result.name_eng ?? result.title}
 					score={result.score}
 					scoredBy={result.scored_by}
-					anime_season={result.anime_season_name + " " + result.anime_season_year}
+					anime_season={result.anime_season_name && result.anime_season_year ? result.anime_season_name + " " + result.anime_season_year : null}
 					airing_status={result.airing_status}
 					age_rating_numeric={result.age_rating_numeric}
 					genres={result.genres}

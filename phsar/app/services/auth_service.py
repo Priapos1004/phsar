@@ -3,6 +3,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import (
@@ -89,10 +90,12 @@ class AuthService:
                     user.hashed_password = new_hash
                     logger.info("Password hash rehashed for user_name=%s", user.username)
                 await db.commit()
-            except Exception:
-                # If anything goes wrong, don’t block login — just roll back the upgrade
+            except SQLAlchemyError:
+                # If DB fails, don’t block login — roll back and re-fetch user
                 await db.rollback()
                 logger.exception("Failed to rehash password for user_name=%s", user.username)
+                result = await db.execute(select(Users).filter_by(id=user.id))
+                user = result.scalars().first()
 
         return user
     

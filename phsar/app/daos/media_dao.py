@@ -1,3 +1,5 @@
+import logging
+
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import and_, cast, distinct, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +14,8 @@ from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
 from app.services.vector_embedding_service import generate_embedding
+
+logger = logging.getLogger(__name__)
 
 
 class MediaDAO(MalIdDAO[Media]):
@@ -45,12 +49,6 @@ class MediaDAO(MalIdDAO[Media]):
         else:
             stmt = select(Media).join(MediaSearch)
 
-        # Add hybrid properties to the SELECT statement
-        stmt = stmt.add_columns(
-            Media.total_watch_time.label("total_watch_time"),
-            Media.age_rating_numeric.label("age_rating_numeric"),
-        )
-
         # Apply eager loading
         stmt = stmt.options(
             selectinload(Media.media_genre).selectinload(MediaGenre.genre),
@@ -79,13 +77,17 @@ class MediaDAO(MalIdDAO[Media]):
         if filters.airing_status:
             conditions.append(Media.airing_status.in_(filters.airing_status))
         if filters.anime_season:
-            filter_pairs = [
-                (int(year), SeasonType[season])  # convert to (year:int, SeasonType:enum)
-                for season, year in (part.split(" ") for part in filters.anime_season)
-            ]
-            conditions.append(
-                tuple_(Media.anime_season_year, Media.anime_season_name).in_(filter_pairs)
-            )
+            filter_pairs = []
+            for part in filters.anime_season:
+                try:
+                    season, year = part.split(" ", 1)
+                    filter_pairs.append((int(year), SeasonType[season]))
+                except (ValueError, KeyError):
+                    logger.warning("Ignoring malformed anime_season filter: %s", part)
+            if filter_pairs:
+                conditions.append(
+                    tuple_(Media.anime_season_year, Media.anime_season_name).in_(filter_pairs)
+                )
         if filters.score_min is not None:
             conditions.append(Media.score.isnot(None) & (Media.score >= filters.score_min))
         if filters.score_max is not None:
