@@ -1,5 +1,8 @@
 # phsar
-Repository for Code of phsar website + backend
+
+[![Code Quality Checks](https://github.com/priapos1004/phsar/actions/workflows/lint.yml/badge.svg)](https://github.com/Priapos1004/phsar/actions/workflows/lint.yml)
+
+Repository for Code of phsar website + backend.
 
 ## Setup environment
 

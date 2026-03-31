@@ -10,4 +10,4 @@ class SearchResultDB(BaseModel):
 
 class SearchResultDBExtended(BaseModel):
    search_result_db_list: list[SearchResultDB]
-   unwanted_media: set[tuple[int, str]]
+   unwanted_media: set[tuple[int, str, str]]

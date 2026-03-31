@@ -44,7 +44,7 @@ async def test_all_filters(client, user_auth_headers):
         ("query", "Academia 2"),
         ("relation_type", "main"),
         ("media_type", "TV"),
-        ("fsk", "PG-13 - Teens 13 or older"),
+        ("age_rating", "PG-13 - Teens 13 or older"),
         ("airing_status", "Finished Airing"),
         ("anime_season", "Spring 2022"),
         ("genre_name", "Action"),

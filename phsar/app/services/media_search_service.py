@@ -22,14 +22,15 @@ def _map_to_connected(media: Media) -> MediaConnected:
         other_names=media.other_names,
         media_type=media.media_type,
         relation_type=media.relation_type,
-        fsk=media.fsk,
+        age_rating=media.age_rating,
         description=media.description,
         original_source=media.original_source,
         cover_image=media.cover_image,
         score=media.score,
         scored_by=media.scored_by,
         episodes=media.episodes,
-        anime_season=media.anime_season,
+        anime_season_name=media.anime_season_name,
+        anime_season_year=media.anime_season_year,
         airing_status=media.airing_status,
         aired_from=media.aired_from,
         aired_to=media.aired_to,
@@ -43,6 +44,8 @@ def _map_to_connected(media: Media) -> MediaConnected:
         anime_name_jap=media.anime.name_jap,
         anime_other_names=media.anime.other_names,
         uuid=media.uuid,
+        total_watch_time=media.total_watch_time,
+        age_rating_numeric=media.age_rating_numeric,
     )
 
 

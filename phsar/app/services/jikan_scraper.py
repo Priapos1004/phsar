@@ -54,15 +54,15 @@ class JikanScraper:
         return cleaned
     
     @staticmethod
-    def __get_anime_season(anime: dict) -> str:
+    def __get_anime_season(anime: dict) -> tuple[Optional[str], Optional[int]]:
         season = anime.get("season")
         year = anime.get("year")
         if season and year:
-            return f"{season.capitalize()} {year}"
+            return season.capitalize(), int(year)
 
         aired_from = anime.get("aired", {}).get("from")
         if not aired_from:
-            return "Unknown"
+            return None, None
 
         try:
             date = datetime.fromisoformat(aired_from.replace("Z", "+00:00"))
@@ -75,15 +75,13 @@ class JikanScraper:
                 season = "Spring"
             elif 7 <= month <= 9:
                 season = "Summer"
-            elif 10 <= month <= 12:
+            else:  # 10 <= month <= 12
                 season = "Fall"
-            else:
-                season = "Unknown"
 
-            return f"{season} {year}"
+            return season, year
         except Exception:
-            return "Unknown"
-        
+            return None, None
+
     @staticmethod
     def _parse_duration_to_seconds(duration: Optional[str]) -> Optional[int]:
         if not duration or "unknown" in duration.lower():
@@ -108,6 +106,8 @@ class JikanScraper:
             + [genre["name"] for genre in anime.get("themes", [])]
             + [genre["name"] for genre in anime.get("demographics", [])]
         )
+        anime_season_name, anime_season_year = JikanScraper.__get_anime_season(anime)
+        scored_by = anime.get("scored_by") or 0
         return {
             "mal_id": anime.get("mal_id"),
             "mal_url": anime.get("url"),
@@ -118,14 +118,15 @@ class JikanScraper:
             "media_type": JikanScraper.__clean_str_field(anime.get("type")),
             "genres": genres,
             "studio": [studio["name"] for studio in anime.get("studios", [])],
-            "fsk": anime.get("rating"),
+            "age_rating": anime.get("rating"),
             "description": anime.get("synopsis"),
             "original_source": anime.get("source"),
             "cover_image": anime.get("images", {}).get("jpg", {}).get("large_image_url"),
             "score": anime.get("score"),
-            "scored_by": anime.get("scored_by"),
+            "scored_by": scored_by,
             "episodes": anime.get("episodes"),
-            "anime_season": JikanScraper.__get_anime_season(anime),
+            "anime_season_name": anime_season_name,
+            "anime_season_year": anime_season_year,
             "aired_from": anime.get("aired", {}).get("from"),
             "aired_to": anime.get("aired", {}).get("to"),
             "airing_status": anime.get("status"),
@@ -147,7 +148,7 @@ class JikanScraper:
     def get_relation_type(self, is_main_story: bool, relation_type: Optional[str]) -> str:
         return "main" if is_main_story else (relation_type or "other")
 
-    async def search_title(self, title: str, excluded_mal_ids: set[int], initial_search_limit: int = 3) -> tuple[list[dict], dict[int, dict], set[tuple[int, str]]]:
+    async def search_title(self, title: str, excluded_mal_ids: set[int], initial_search_limit: int = 3) -> tuple[list[dict], dict[int, dict], set[tuple[int, str, str]]]:
         search = await self._get(f"{self.base_url}/anime", params={"q": title, "limit": initial_search_limit})
         results = search.get("data", [])
 
@@ -157,7 +158,7 @@ class JikanScraper:
         all_info: dict[int, dict] = {}
         visited_ids: set[int] = excluded_mal_ids
         relations: list[dict] = []
-        unwanted_media: set[tuple[int, str]] = set()
+        unwanted_media: set[tuple[int, str, str]] = set()
 
         for anime in results:
             anime_info = self.extract_information(anime)
@@ -190,9 +191,12 @@ class JikanScraper:
                 if anime_info.get("media_type"):
                     if anime_info["media_type"].lower() in ["music", "pv", "cm"]:
                         logger.warning(f"Skipping anime {anime_info['media_type']}: {anime_info['title']}")
-                        unwanted_media.add((current_mal_id, anime_info["media_type"]))
+                        unwanted_media.add((current_mal_id, anime_info["title"], anime_info["media_type"]))
                         continue
-                    
+                    elif any("hentai" == genre_name.lower() for genre_name in anime_info["genres"]):
+                        logger.warning(f"Skipping anime hentai: {anime_info['title']}")
+                        unwanted_media.add((current_mal_id, anime_info["title"], "Hentai"))
+                        continue
                     
                     all_info[current_mal_id] = anime_info
 
@@ -247,7 +251,7 @@ class JikanScraper:
                             is_first_relation = False
                 else:
                     logger.warning(f"Anime without media_type:\n{anime_info}")
-                    unwanted_media.add((current_mal_id, "Unknown"))
+                    unwanted_media.add((current_mal_id, anime_info["title"], "Unknown"))
             
                 # Case that the original anime was not found organically again
                 if (len(left_mal_ids) == 0) and (mal_id not in visited_ids):

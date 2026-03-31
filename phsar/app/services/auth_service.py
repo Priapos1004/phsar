@@ -1,14 +1,22 @@
+import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import select, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import get_password_hash, verify_password
+from app.core.security import (
+    DUMMY_HASH,
+    get_password_hash,
+    needs_rehash,
+    verify_password,
+)
 from app.models.registration_token import RegistrationToken
 from app.models.users import RoleType, Users
 from app.schemas.auth_schema import UserCreateWithToken
 
+logger = logging.getLogger(__name__)
 
 class AuthService:
     @staticmethod
@@ -49,10 +57,46 @@ class AuthService:
 
     @staticmethod
     async def authenticate(username: str, password: str, db: AsyncSession):
+        # Fetch user
         result = await db.execute(select(Users).filter_by(username=username))
         user = result.scalars().first()
-        if not user or not verify_password(password, user.hashed_password):
+
+        # Choose which hash to verify against (real or dummy), then verify ONCE
+        hash_to_check = user.hashed_password if user else DUMMY_HASH
+        ok = verify_password(password, hash_to_check)
+
+        # Single rejection check
+        if (not ok) or (user is None):
             return None
+
+        # Optional: seamless rehash if your policy changed
+        if needs_rehash(user.hashed_password):
+            new_hash = get_password_hash(password)
+            try:
+                # Conditional UPDATE to avoid clobbering if another request already rehashed
+                stmt = (
+                    update(Users)
+                    .where(
+                        Users.id == user.id,
+                        Users.hashed_password == user.hashed_password,  # Race guard
+                    )
+                    .values(
+                        hashed_password=new_hash
+                    )
+                )
+                result = await db.execute(stmt)
+                # If exactly one row updated, reflect the change in the in-memory object
+                if getattr(result, "rowcount", None) == 1:
+                    user.hashed_password = new_hash
+                    logger.info("Password hash rehashed for user_name=%s", user.username)
+                await db.commit()
+            except SQLAlchemyError:
+                # If DB fails, don’t block login — roll back and re-fetch user
+                await db.rollback()
+                logger.exception("Failed to rehash password for user_name=%s", user.username)
+                result = await db.execute(select(Users).filter_by(id=user.id))
+                user = result.scalars().first()
+
         return user
     
     @staticmethod

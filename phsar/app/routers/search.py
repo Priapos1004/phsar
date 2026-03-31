@@ -32,7 +32,7 @@ async def search_media(
     search_type: SearchType = Query(default=SearchType.TITLE, description="The way to search by: title or description."),
     relation_type: Optional[list[str]] = Query(default=None),
     media_type: Optional[list[str]] = Query(default=None),
-    fsk: Optional[list[str]] = Query(default=None),
+    age_rating: Optional[list[str]] = Query(default=None),
     airing_status: Optional[list[str]] = Query(default=None),
     anime_season: Optional[list[str]] = Query(default=None),
     genre_name: Optional[list[str]] = Query(default=None),
@@ -52,7 +52,7 @@ async def search_media(
     filters = MediaSearchFilters(
         relation_type=relation_type,
         media_type=media_type,
-        fsk=fsk,
+        age_rating=age_rating,
         airing_status=airing_status,
         anime_season=anime_season,
         genre_name=genre_name,

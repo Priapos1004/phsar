@@ -28,10 +28,30 @@
 	let prevTo = to;
 
 	function validateInputs() {
-		const clampedMin = Math.max(minValue, Math.min(minInput, maxValue));
-		const clampedMax = Math.max(clampedMin, Math.min(maxInput, maxValue));
+		let clampedMin = Math.max(minValue, Math.min(minInput, maxValue));
+		let clampedMax = Math.max(clampedMin, Math.min(maxInput, maxValue));
 
-		// only update if needed to avoid loops
+		// Set the highest possible step to the maximum
+		if (clampedMax > maxValue - step) {
+			clampedMax = maxValue;
+		}
+		if (clampedMin > maxValue - step) {
+			clampedMin = maxValue;
+		}
+		// Exactly the same for the minimum
+		if (clampedMin < minValue + step) {
+			clampedMin = minValue;
+		}
+		if (clampedMax < minValue + step) {
+			clampedMax = minValue;
+		}
+
+		// Maintain order (no crossing)
+		if (clampedMin > clampedMax) {
+			clampedMin = clampedMax;
+		}
+
+		// Only update if needed to avoid loops
 		if (clampedMin !== minInput || clampedMax !== maxInput) {
 			minInput = clampedMin;
 			maxInput = clampedMax;

@@ -16,14 +16,15 @@ class MediaBase(BaseModel):
     other_names: list[str] = []
     media_type: MediaType
     relation_type: RelationType
-    fsk: Optional[str]
+    age_rating: Optional[str]
     description: Optional[str]
     original_source: Optional[str]
     cover_image: Optional[str]
     score: Optional[float]
-    scored_by: Optional[int]
+    scored_by: int
     episodes: Optional[int]
-    anime_season: Optional[str]
+    anime_season_name: Optional[str]
+    anime_season_year: Optional[int]
     airing_status: str
     aired_from: Optional[datetime]
     aired_to: Optional[datetime]
@@ -44,3 +45,5 @@ class MediaConnected(MediaUnconnected):
     anime_name_jap: Optional[str]
     anime_other_names: list[str] = []
     uuid: UUID
+    total_watch_time: Optional[int]
+    age_rating_numeric: Optional[int]

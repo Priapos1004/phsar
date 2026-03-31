@@ -12,7 +12,7 @@ class SearchType(str, Enum):
 class MediaSearchFilters(BaseModel):
     relation_type: Optional[list[str]] = None
     media_type: Optional[list[str]] = None
-    fsk: Optional[list[str]] = None
+    age_rating: Optional[list[str]] = None
     airing_status: Optional[list[str]] = None
     anime_season: Optional[list[str]] = None
     genre_name: Optional[list[str]] = None
@@ -37,7 +37,7 @@ class MediaFilterValues(BaseModel):
     # Categorical fields
     relation_type: list[str]
     media_type: list[str]
-    fsk: list[str]
+    age_rating: list[str]
     airing_status: list[str]
     anime_season: list[str]
     genre_name: list[str]
@@ -46,8 +46,8 @@ class MediaFilterValues(BaseModel):
     # Numerical limits
     score_min: Optional[float]
     score_max: Optional[float]
-    scored_by_min: Optional[int]
-    scored_by_max: Optional[int]
+    scored_by_min: int
+    scored_by_max: int
     episodes_min: Optional[int]
     episodes_max: Optional[int]
     duration_per_episode_min: Optional[int]

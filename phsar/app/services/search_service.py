@@ -19,7 +19,7 @@ def get_first_main_relation(media_dict: dict[int, dict]) -> int:
         if media.get("relation_type") == "main":
             return mal_id
 
-    title_relation_tuple = [(media.get("title"), media.get("relation_type")) for media in media_dict.values()]
+    title_relation_tuple = [(media.get("title", ""), media.get("relation_type", "")) for media in media_dict.values()]
     raise MainMediaNotFoundError(title_relation_tuple)  # If no main relation found
 
 async def search_mal_api(query: str, excluded_mal_ids: set[int]) -> SearchResultDBExtended:
@@ -43,14 +43,15 @@ async def search_mal_api(query: str, excluded_mal_ids: set[int]) -> SearchResult
                 other_names=media_info.get("other_names"),
                 media_type=media_info.get("media_type"),
                 relation_type=relation_info.get("relation_type"),
-                fsk=media_info.get("fsk"),
+                age_rating=media_info.get("age_rating"),
                 description=media_info.get("description"),
                 original_source=media_info.get("original_source"),
                 cover_image=media_info.get("cover_image"),
                 score=media_info.get("score"),
                 scored_by=media_info.get("scored_by"),
                 episodes=media_info.get("episodes"),
-                anime_season=media_info.get("anime_season"),
+                anime_season_name=media_info.get("anime_season_name"),
+                anime_season_year=media_info.get("anime_season_year"),
                 airing_status=media_info.get("airing_status"),
                 aired_from=media_info.get("aired_from"),
                 aired_to=media_info.get("aired_to"),
@@ -85,5 +86,6 @@ async def handle_search_mal_api_results(
             logger.error(f"Failed to save unwanted media: {e}")
 
     logger.info(f"/search/mal query='{query}' returned {len(result.search_result_db_list)} results, {len(result.unwanted_media)} unwanted media.")
+    await db.commit()  # Single commit at the end!
     
     return result.search_result_db_list

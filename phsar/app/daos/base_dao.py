@@ -50,6 +50,18 @@ class BaseDAO(Generic[T]):
         result = await db.execute(stmt)
         return [row[0] for row in result.fetchall()]
     
+    async def get_unique_in_fields(self, db: AsyncSession, field_names: list[str], order: bool = True) -> list[tuple]:
+        """
+        Get distinct values from specific fields in the model.
+        Optionally order the results (default: True).
+        """
+        fields = [getattr(self.model, field_name) for field_name in field_names]
+        stmt = select(*fields).distinct()
+        if order:
+            stmt = stmt.order_by(*fields)
+        result = await db.execute(stmt)
+        return [tuple(row) for row in result.fetchall()]
+    
     async def get_field_stats(self, db: AsyncSession, field_name: str) -> dict:
         """
         Get min, max, avg, stddev, median for a numeric field.

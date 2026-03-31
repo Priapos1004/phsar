@@ -20,8 +20,8 @@
 
 	<!-- Sections below -->
 	<div class={cls.sectionSpacing}>
-        <ScrollableCard title="Recommended" text="Your recommended anime will appear here." />
+        <ScrollableCard title="Recommended" text="Your recommended animes will appear here." />
         <ScrollableCard title="Lucky Find" text="Surprise anime picks coming soon!" />
-        <ScrollableCard title="Upcoming" text="Upcoming anime will be listed here." />
+        <ScrollableCard title="Upcoming" text="Upcoming animes will be listed here." />
     </div>
 </div>
