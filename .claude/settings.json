@@ -18,7 +18,10 @@
       "Bash(pwd)",
       "Bash(cd *)",
       "Bash(tail *)",
-      "Bash(cat *)"
+      "Bash(cat *)",
+      "Bash(git checkout:*)",
+      "Bash(gh run view:*)",
+      "Bash(gh run list:*)"
     ],
     "deny": [
       "Bash(git push --force *)",
