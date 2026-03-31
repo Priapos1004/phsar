@@ -51,8 +51,19 @@ jobs:
     - name: Install dependencies
       run: pip install -r requirements.txt
 
-    - name: Run Alembic migrations
-      run: alembic upgrade head
+    - name: Create database schema
+      run: |
+        python -c "
+        import asyncio
+        from sqlalchemy import text
+        from app.core.db import engine, Base
+        from app.models import users, anime, media, genre, studio, ratings, watchlist, tag, media_search, media_unwanted, registration_token
+        async def setup():
+            async with engine.begin() as conn:
+                await conn.execute(text('CREATE EXTENSION IF NOT EXISTS vector'))
+                await conn.run_sync(Base.metadata.create_all)
+        asyncio.run(setup())
+        "
 
     - name: Run tests
       run: pytest --tb=short -q
