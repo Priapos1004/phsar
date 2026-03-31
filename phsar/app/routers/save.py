@@ -12,7 +12,7 @@ router = APIRouter(prefix="/save", tags=["save"])
 async def save_search_results_endpoint(
     search_results: list[SearchResultDB],
     db: AsyncSession = Depends(get_db),
-    current_user = Depends(require_roles([RoleType.User.value, RoleType.Admin.value]))
+    current_user = Depends(require_roles([RoleType.User, RoleType.Admin]))
 ):
     await save_search_results(db, search_results)
     return {"status": "success"}

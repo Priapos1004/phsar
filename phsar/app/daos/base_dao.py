@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import DeclarativeMeta
 from sqlalchemy.sql.sqltypes import Float, Integer, Numeric
 
-from app.exceptions import NonNumericFieldError
+from app.exceptions import FieldDoesNotExistError, NonNumericFieldError
 
 T = TypeVar("T", bound=DeclarativeMeta)  # any SQLAlchemy model
 
@@ -69,7 +69,7 @@ class BaseDAO(Generic[T]):
         """
         mapper = inspect(self.model)
         if field_name not in mapper.columns and not hasattr(self.model, field_name):
-            raise ValueError(f"Field '{field_name}' does not exist in model {self.model.__name__}")
+            raise FieldDoesNotExistError(field_name, self.model.__name__)
 
         field = getattr(self.model, field_name)
         field_type = type(field.type)

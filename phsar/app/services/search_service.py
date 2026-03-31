@@ -82,8 +82,8 @@ async def handle_search_mal_api_results(
     if result.unwanted_media:
         try:
             await create_unwanted_media(db, result.unwanted_media)
-        except Exception as e:
-            logger.error(f"Failed to save unwanted media: {e}")
+        except Exception:
+            logger.exception("Failed to save unwanted media")
 
     logger.info(f"/search/mal query='{query}' returned {len(result.search_result_db_list)} results, {len(result.unwanted_media)} unwanted media.")
     await db.commit()  # Single commit at the end!

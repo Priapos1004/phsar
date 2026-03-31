@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     MAX_ITEMS: int = 5  # Maximum number of items to keep search token size manageable
     MAX_TOKEN_LENGTH: int = 1400  # Safe for URLs
 
+    # App settings
+    DEBUG: bool = False
+    CORS_ORIGINS: list[str] = ["http://localhost:5173"]
+
     model_config = ConfigDict(env_file=".env")  # Tell Pydantic to load from .env
 
 settings = Settings()
