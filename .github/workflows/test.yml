@@ -51,17 +51,22 @@ jobs:
     - name: Install dependencies
       run: pip install -r requirements.txt
 
-    - name: Create database schema
+    - name: Create database schema and seed
       run: |
         python -c "
         import asyncio
+        from app.core.db import engine, async_session_maker, Base
         from sqlalchemy import text
-        from app.core.db import engine, Base
         from app.models import users, anime, media, genre, studio, ratings, watchlist, tag, media_search, media_unwanted, registration_token
+        from app.seeders.user_seeder import seed_admin_user
+        from app.seeders.genre_seeder import seed_genres
         async def setup():
             async with engine.begin() as conn:
                 await conn.execute(text('CREATE EXTENSION IF NOT EXISTS vector'))
                 await conn.run_sync(Base.metadata.create_all)
+            async with async_session_maker() as session:
+                await seed_genres(session)
+                await seed_admin_user(session)
         asyncio.run(setup())
         "
 
