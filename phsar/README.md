@@ -1,8 +1,5 @@
 # phsar Webapp
 
-![Tests](https://github.com/Priapos1004/phsar/actions/workflows/test.yml/badge.svg)
-![Lint](https://github.com/Priapos1004/phsar/actions/workflows/lint.yml/badge.svg)
-
 <details>
 <summary>Click to see folder structure</summary>
 
