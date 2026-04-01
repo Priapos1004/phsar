@@ -3,11 +3,15 @@
     import { token } from '$lib/stores/auth';
     import { API_URL } from '$lib/config';
     import { fly } from 'svelte/transition';
+    import { Button } from '$lib/components/ui/button';
+    import { Input } from '$lib/components/ui/input';
+    import { Label } from '$lib/components/ui/label';
+    import * as Card from '$lib/components/ui/card';
 
-    let username: string = '';
-    let password: string = '';
-    let error: string = '';
-    let loading: boolean = false;
+    let username = $state('');
+    let password = $state('');
+    let error = $state('');
+    let loading = $state(false);
 
     async function handleLogin() {
         error = '';
@@ -39,43 +43,50 @@
 </script>
 
 <div class="fixed inset-0 bg-gradient-to-br from-purple-300 via-purple-500 to-purple-800 flex justify-center items-start pt-20">
-    <div in:fly={{ y: 20, duration: 2000 }} class="w-full max-w-md bg-white rounded-lg shadow-lg p-8">
-        <h2 class="text-2xl font-bold mb-6 text-center text-gray-800">Login</h2>
-        <form on:submit|preventDefault={handleLogin} class="space-y-4">
-            <div>
-                <label for="username" class="block text-sm font-medium text-gray-700">Username</label>
-                <input 
-                    id="username"
-                    type="text"
-                    bind:value={username}
-                    required
-                    class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 focus:outline-none focus:ring-purple-500 focus:border-purple-500"
-                />
-            </div>
-            <div>
-                <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
-                <input 
-                    id="password"
-                    type="password"
-                    bind:value={password}
-                    required
-                    class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm text-gray-900 focus:outline-none focus:ring-purple-500 focus:border-purple-500"
-                />
-            </div>
-            <button
-                type="submit"
-                disabled={loading}
-                class="w-full py-2 px-4 bg-purple-700 text-white font-semibold rounded-md shadow hover:bg-purple-600 transition disabled:opacity-50"
-            >
-                {#if loading}
-                    Logging in...
-                {:else}
-                    Login
+    <div in:fly={{ y: 20, duration: 2000 }} class="w-full max-w-md">
+        <Card.Root>
+            <Card.Header>
+                <h2 class="text-2xl font-bold text-center text-card-foreground">Login</h2>
+            </Card.Header>
+            <Card.Content>
+                <form onsubmit={handleLogin} class="space-y-4">
+                    <div class="space-y-2">
+                        <Label for="username">Username</Label>
+                        <Input
+                            id="username"
+                            type="text"
+                            bind:value={username}
+                            required
+                            class="h-10"
+                        />
+                    </div>
+                    <div class="space-y-2">
+                        <Label for="password">Password</Label>
+                        <Input
+                            id="password"
+                            type="password"
+                            bind:value={password}
+                            required
+                            class="h-10"
+                        />
+                    </div>
+                    <Button
+                        type="submit"
+                        disabled={loading}
+                        class="w-full"
+                        size="lg"
+                    >
+                        {#if loading}
+                            Logging in...
+                        {:else}
+                            Login
+                        {/if}
+                    </Button>
+                </form>
+                {#if error}
+                    <div class="mt-4 text-center text-destructive text-sm">{error}</div>
                 {/if}
-            </button>
-        </form>
-        {#if error}
-            <div class="mt-4 text-center text-red-600 text-sm">{error}</div>
-        {/if}
+            </Card.Content>
+        </Card.Root>
     </div>
 </div>
