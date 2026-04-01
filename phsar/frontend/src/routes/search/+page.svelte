@@ -6,11 +6,12 @@
 	import { navigateToSearch } from '$lib/utils/navigation';
 	import { formatDuration } from '$lib/utils/formatString';
 	import { api } from '$lib/api';
+	import type { MediaConnected } from '$lib/types/api';
 	import * as cls from '$lib/styles/classes';
 	import MediaInfo from '$lib/components/MediaInfo.svelte';
 	import SkeletonCard from '$lib/components/SkeletonMediaInfo.svelte';
 
-	let searchResults: any[] = [];
+	let searchResults: MediaConnected[] = [];
 	let isLoading = false;
 	let error = '';
 	let hasToken = false;

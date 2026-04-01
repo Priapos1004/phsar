@@ -3,6 +3,7 @@
     import { token } from '$lib/stores/auth';
     import { fly } from 'svelte/transition';
     import { api, ApiError } from '$lib/api';
+    import type { TokenResponse } from '$lib/types/api';
     import { Button } from '$lib/components/ui/button';
     import { Input } from '$lib/components/ui/input';
     import { Label } from '$lib/components/ui/label';
@@ -18,7 +19,7 @@
         loading = true;
 
         try {
-            const data = await api.postForm<{ access_token: string }>(
+            const data = await api.postForm<TokenResponse>(
                 '/auth/login',
                 new URLSearchParams({ username, password })
             );

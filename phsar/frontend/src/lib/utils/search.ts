@@ -1,4 +1,5 @@
 import { api } from '$lib/api';
+import type { MediaConnected } from '$lib/types/api';
 
 export interface MediaSearchFilters {
 	query: string;
@@ -28,7 +29,7 @@ export interface MediaSearchFilters {
 	total_watch_time_max?: number;
 }
 
-export async function fetchSearchResults(params: MediaSearchFilters): Promise<unknown[]> {
+export async function fetchSearchResults(params: MediaSearchFilters): Promise<MediaConnected[]> {
 	const searchParams = new URLSearchParams();
 
 	if (params.query) searchParams.append('query', params.query);
@@ -59,5 +60,5 @@ export async function fetchSearchResults(params: MediaSearchFilters): Promise<un
 		}
 	}
 
-	return api.get<unknown[]>('/search/media', { params: searchParams });
+	return api.get<MediaConnected[]>('/search/media', { params: searchParams });
 }

@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { SlidersHorizontal } from 'lucide-svelte';
 	import { api } from '$lib/api';
+	import type { FilterOptions } from '$lib/types/api';
 	import TagSelect from '$lib/components/TagSelect.svelte';
 	import DoubleRangeSlider from '$lib/components/DoubleRangeSlider.svelte';
 	import { Input } from '$lib/components/ui/input';
@@ -163,7 +164,7 @@
 
 	async function fetchFilters() {
 		try {
-			const data: Record<string, any> = await api.get('/filters/options');
+			const data = await api.get<FilterOptions>('/filters/options');
 
 			filterConfig.forEach((config) => {
 				if (config.type === 'list') {
@@ -175,8 +176,8 @@
 					numberFilterOptions[config.minKey] = newMin;
 					numberFilterOptions[config.maxKey] = newMax;
 				} else {
-					numberFilterOptions[config.minKey] = data[config.minKey];
-					numberFilterOptions[config.maxKey] = data[config.maxKey];
+					numberFilterOptions[config.minKey] = data[config.minKey] ?? undefined;
+					numberFilterOptions[config.maxKey] = data[config.maxKey] ?? undefined;
 				}
 			});
 		} catch (err) {
