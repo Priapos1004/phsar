@@ -15,17 +15,17 @@
             <img src="/phsar_logo_transparent.png" alt="Phsar Logo" class="w-8 h-8" />
             <span class="ml-1 text-xl font-bold text-white">PHSAR</span>
         </a>
-        <a href="/ratings" class="text-white hover:text-purple-400 transition text-sm md:text-base">
+        <a href="/ratings" class="text-white hover:text-primary/70 transition text-sm md:text-base">
             Ratings
         </a>
-        <a href="/watchlist" class="text-white hover:text-purple-400 transition text-sm md:text-base">
+        <a href="/watchlist" class="text-white hover:text-primary/70 transition text-sm md:text-base">
             Watchlist
         </a>
     </div>
 
     {#if isAuthenticated}
         <DropdownMenu.Root>
-            <DropdownMenu.Trigger class="ml-4 w-8 h-8 rounded-full bg-purple-700 hover:bg-purple-600 flex items-center justify-center transition">
+            <DropdownMenu.Trigger class="ml-4 w-8 h-8 rounded-full bg-primary hover:bg-primary/80 flex items-center justify-center transition">
                 <span class="text-white text-sm font-semibold">U</span>
             </DropdownMenu.Trigger>
             <DropdownMenu.Content class="w-48" align="end">

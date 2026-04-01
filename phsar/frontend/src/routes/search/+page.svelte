@@ -94,7 +94,7 @@
     {/if}
 
 	{#if error}
-		<div class="text-center text-red-500">{error}</div>
+		<div class="text-center text-destructive">{error}</div>
 	{/if}
 
 	{#if searchResults.length}
@@ -123,7 +123,7 @@
 			<div class="text-center">
 				<button
 					on:click={showMore}
-					class="mt-4 px-4 py-2 bg-purple-600 text-white rounded-full hover:bg-purple-700 transition"
+					class="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-full hover:bg-primary/80 transition"
 				>
 					Show More
 				</button>
@@ -131,9 +131,9 @@
 		{/if}
 	{:else if !isLoading && !error}
 		{#if hasToken}
-			<div class="text-center text-gray-400">No results found :-(</div>
+			<div class="text-center text-muted-foreground">No results found :-(</div>
 		{:else}
-			<div class="text-center text-gray-400">Start searching!!!</div>
+			<div class="text-center text-muted-foreground">Start searching!!!</div>
 		{/if}
 	{/if}
 </div>

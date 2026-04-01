@@ -6,12 +6,3 @@ export const sectionSpacing = 'space-y-8';
 
 // MediaInfo
 export const mediaInfoGrid = 'grid grid-cols-1 lg:grid-cols-2 gap-4 auto-rows-fr';
-
-// Input
-export const input = 'w-full px-5 py-3 rounded-full bg-white/80 backdrop-blur border border-gray-300 focus:outline-none focus:ring-2 focus:ring-purple-500 pr-12';
-
-// Button
-export const iconButton = 'text-purple-700 hover:text-purple-500';
-
-// Blur wrapper
-export const blurBox = 'mt-3 bg-white/80 backdrop-blur rounded-xl p-4 shadow space-y-4';
