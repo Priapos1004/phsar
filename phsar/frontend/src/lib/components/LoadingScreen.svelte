@@ -1,3 +1,3 @@
-<div class="flex justify-center items-center min-h-screen text-xl text-gray-400">
+<div class="flex justify-center items-center min-h-screen text-xl text-muted-foreground">
     Loading...
 </div>

@@ -1,16 +1,22 @@
 <script lang="ts">
-	import * as cls from '$lib/styles/classes';
+	import * as Card from '$lib/components/ui/card';
 
-	export let title: string;
-	export let text: string;
-	export let className: string = '';
+	interface Props {
+		title: string;
+		text: string;
+		class?: string;
+	}
+
+	let { title, text, class: className = '' }: Props = $props();
 </script>
 
 {#if title}
-    <h3 class={cls.sectionHeader}>{title}</h3>
+    <h3 class="text-2xl font-semibold mb-4 text-foreground">{title}</h3>
 {/if}
-<div class={`${cls.card} space-y-2 ${className}`}>
-	{#if text}
-		<p class="text-gray-700">{text}</p>
-	{/if}
-</div>
+<Card.Root class={`bg-card/80 backdrop-blur ${className}`}>
+	<Card.Content>
+		{#if text}
+			<p class="text-card-foreground">{text}</p>
+		{/if}
+	</Card.Content>
+</Card.Root>
