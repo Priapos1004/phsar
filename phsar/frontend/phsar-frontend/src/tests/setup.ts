@@ -1,6 +1,11 @@
 import '@testing-library/jest-dom/vitest';
 import { vi } from 'vitest';
 
+// Polyfill Web Animations API for jsdom
+if (typeof Element.prototype.animate === 'undefined') {
+	Element.prototype.animate = () => ({ cancel: () => {}, finished: Promise.resolve() }) as any;
+}
+
 // Mock $app/navigation
 vi.mock('$app/navigation', () => ({
 	goto: vi.fn(),
