@@ -21,7 +21,11 @@
       "Bash(cat *)",
       "Bash(git checkout:*)",
       "Bash(gh run view:*)",
-      "Bash(gh run list:*)"
+      "Bash(gh run list:*)",
+      "WebFetch(domain:shadcn-svelte.com)",
+      "Bash(yes)",
+      "Bash(npx shadcn-svelte@latest add *)",
+      "Bash(npm list:*)"
     ],
     "deny": [
       "Bash(git push --force *)",
