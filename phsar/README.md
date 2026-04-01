@@ -264,7 +264,7 @@ pytest
 
 ## Run Frontend
 
-See [Svelte README](frontend/phsar-frontend/README.md) or just run in `frontend/phsar-frontend`:
+See [Svelte README](frontend/README.md) or just run in `frontend/`:
 
 ```
 npm run dev -- --open

@@ -33,7 +33,7 @@ alembic upgrade head
 
 ### Frontend
 ```bash
-cd phsar/frontend/phsar-frontend
+cd phsar/frontend
 npm install
 npm run dev -- --open   # dev server at localhost:5173
 ```
@@ -69,7 +69,7 @@ Layered architecture with strict dependency flow: **routers → services → DAO
 - **seeders/** — Run at app startup via lifespan; seed genres and admin user.
 - **exceptions.py** — Custom exception hierarchy rooted at `PhsarBaseError`, mapped to HTTP status codes in `main.py`.
 
-### Frontend (phsar/frontend/phsar-frontend/)
+### Frontend (phsar/frontend/)
 
 SvelteKit with file-based routing, Svelte 5, Tailwind CSS 4.
 
