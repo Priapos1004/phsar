@@ -1,8 +1,8 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
     import { token } from '$lib/stores/auth';
-    import { API_URL } from '$lib/config';
     import { fly } from 'svelte/transition';
+    import { api, ApiError } from '$lib/api';
     import { Button } from '$lib/components/ui/button';
     import { Input } from '$lib/components/ui/input';
     import { Label } from '$lib/components/ui/label';
@@ -18,24 +18,19 @@
         loading = true;
 
         try {
-            const response = await fetch(`${API_URL}/auth/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: new URLSearchParams({ username, password })
-            });
-
-            if (!response.ok) {
-                const data = await response.json();
-                error = data.detail || 'Login failed';
-                return;
-            }
-
-            const data = await response.json();
+            const data = await api.postForm<{ access_token: string }>(
+                '/auth/login',
+                new URLSearchParams({ username, password })
+            );
             token.set(data.access_token);
             goto('/');
         } catch (err) {
-            console.error(err);
-            error = 'An unexpected error occurred.';
+            if (err instanceof ApiError) {
+                error = err.detail;
+            } else {
+                console.error(err);
+                error = 'An unexpected error occurred.';
+            }
         } finally {
             loading = false;
         }

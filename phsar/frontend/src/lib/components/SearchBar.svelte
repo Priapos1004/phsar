@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { SlidersHorizontal } from 'lucide-svelte';
-	import { API_URL } from '$lib/config';
+	import { api } from '$lib/api';
 	import TagSelect from '$lib/components/TagSelect.svelte';
 	import DoubleRangeSlider from '$lib/components/DoubleRangeSlider.svelte';
 	import { Input } from '$lib/components/ui/input';
@@ -163,15 +163,7 @@
 
 	async function fetchFilters() {
 		try {
-			const token = localStorage.getItem('token');
-			if (!token) return;
-
-			const res = await fetch(`${API_URL}/filters/options`, {
-				headers: { Authorization: `Bearer ${token}` },
-			});
-
-			if (!res.ok) throw new Error('Failed to load filters');
-			const data = await res.json();
+			const data: Record<string, any> = await api.get('/filters/options');
 
 			filterConfig.forEach((config) => {
 				if (config.type === 'list') {

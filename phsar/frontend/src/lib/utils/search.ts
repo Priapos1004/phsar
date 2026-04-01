@@ -1,4 +1,4 @@
-import { API_URL } from '$lib/config';
+import { api } from '$lib/api';
 
 export interface MediaSearchFilters {
 	query: string;
@@ -28,22 +28,15 @@ export interface MediaSearchFilters {
 	total_watch_time_max?: number;
 }
 
-export async function fetchSearchResults(params: MediaSearchFilters, token: string | null) {
+export async function fetchSearchResults(params: MediaSearchFilters): Promise<unknown[]> {
 	const searchParams = new URLSearchParams();
 
-	// Base query
 	if (params.query) searchParams.append('query', params.query);
 	if (params.search_type) searchParams.append('search_type', params.search_type);
 
-	// List filters
 	const listKeys: (keyof MediaSearchFilters)[] = [
-		'genre_name',
-		'anime_season',
-		'studio_name',
-		'airing_status',
-		'relation_type',
-		'media_type',
-		'age_rating'
+		'genre_name', 'anime_season', 'studio_name', 'airing_status',
+		'relation_type', 'media_type', 'age_rating',
 	];
 
 	for (const key of listKeys) {
@@ -53,18 +46,10 @@ export async function fetchSearchResults(params: MediaSearchFilters, token: stri
 		}
 	}
 
-	// Number filters
 	const numberKeys: (keyof MediaSearchFilters)[] = [
-		'score_min',
-		'score_max',
-		'scored_by_min',
-        'scored_by_max',
-		'episodes_min',
-		'episodes_max',
-        'duration_per_episode_min',
-		'duration_per_episode_max',
-		'total_watch_time_min',
-		'total_watch_time_max'
+		'score_min', 'score_max', 'scored_by_min', 'scored_by_max',
+		'episodes_min', 'episodes_max', 'duration_per_episode_min',
+		'duration_per_episode_max', 'total_watch_time_min', 'total_watch_time_max',
 	];
 
 	for (const key of numberKeys) {
@@ -74,13 +59,5 @@ export async function fetchSearchResults(params: MediaSearchFilters, token: stri
 		}
 	}
 
-	const res = await fetch(`${API_URL}/search/media?${searchParams.toString()}`, {
-		headers: { Authorization: `Bearer ${token}` }
-	});
-
-	if (!res.ok) {
-		throw new Error('Failed to fetch search results');
-	}
-
-	return res.json();
+	return api.get<unknown[]>('/search/media', { params: searchParams });
 }

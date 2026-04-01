@@ -1,17 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import SearchBar from '$lib/components/SearchBar.svelte';
+import { token } from '$lib/stores/auth';
 
 describe('SearchBar', () => {
 	const originalFetch = global.fetch;
 
 	afterEach(() => {
 		global.fetch = originalFetch;
+		token.set(null);
 	});
 
 	beforeEach(() => {
-		// Mock localStorage for token
-		localStorage.setItem('token', 'test-token');
+		// Set token in store (used by api client)
+		token.set('test-token');
 
 		// Mock the filter options API call
 		global.fetch = vi.fn().mockResolvedValue({

@@ -2,10 +2,10 @@
 	import SearchBar from '$lib/components/SearchBar.svelte';
 	import { page } from '$app/stores';
 	import { fetchSearchResults } from '$lib/utils/search';
-    import type { MediaSearchFilters } from '$lib/utils/search';
+	import type { MediaSearchFilters } from '$lib/utils/search';
 	import { navigateToSearch } from '$lib/utils/navigation';
 	import { formatDuration } from '$lib/utils/formatString';
-	import { API_URL } from '$lib/config';
+	import { api } from '$lib/api';
 	import * as cls from '$lib/styles/classes';
 	import MediaInfo from '$lib/components/MediaInfo.svelte';
 	import SkeletonCard from '$lib/components/SkeletonMediaInfo.svelte';
@@ -40,22 +40,7 @@
 		searchResults = [];
 
 		try {
-			const authToken = localStorage.getItem('token');
-
-			const verifyResponse = await fetch(`${API_URL}/filters/verify-token`, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${authToken}`
-				},
-				body: JSON.stringify({ token })
-			});
-
-			if (!verifyResponse.ok) {
-				throw new Error('Failed to verify search token');
-			}
-
-			const parsed: MediaSearchFilters = await verifyResponse.json();
+			const parsed = await api.post<MediaSearchFilters>('/filters/verify-token', { token });
 			decodedParams = parsed;
 			await loadSearchResults(parsed);
 		} catch (err) {
@@ -67,10 +52,8 @@
 
 	async function loadSearchResults(params: MediaSearchFilters) {
 		try {
-			const token = localStorage.getItem('token');
-			const results = await fetchSearchResults(params, token);
+			const results = await fetchSearchResults(params);
 			searchResults = results;
-			console.debug('Found search results:', searchResults);
 			visibleCount = 20;
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'An unexpected error occurred';
