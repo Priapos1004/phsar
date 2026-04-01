@@ -1,6 +1,6 @@
 <script lang="ts">
 	import SearchBar from '$lib/components/SearchBar.svelte';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { fetchSearchResults } from '$lib/utils/search';
 	import type { MediaSearchFilters } from '$lib/utils/search';
 	import { navigateToSearch } from '$lib/utils/navigation';
@@ -11,29 +11,28 @@
 	import MediaInfo from '$lib/components/MediaInfo.svelte';
 	import SkeletonCard from '$lib/components/SkeletonMediaInfo.svelte';
 
-	let searchResults: MediaConnected[] = [];
-	let isLoading = false;
-	let error = '';
-	let hasToken = false;
+	let searchResults: MediaConnected[] = $state([]);
+	let isLoading = $state(false);
+	let error = $state('');
+	let hasToken = $state(false);
 
-	let decodedParams: Partial<MediaSearchFilters> = {};
+	let decodedParams: Partial<MediaSearchFilters> = $state({});
 
-	let visibleCount = 20;
+	let visibleCount = $state(20);
 
 	function showMore() {
 		visibleCount = Math.min(visibleCount + 20, searchResults.length);
 	}
 
-	$: {
-		const searchParams = $page.url.searchParams;
-		const tokenParam = searchParams.get('q');
+	$effect(() => {
+		const tokenParam = page.url.searchParams.get('q');
 
 		hasToken = !!tokenParam;
 
 		if (tokenParam) {
 			loadSearchParamsFromToken(tokenParam);
 		}
-	}
+	});
 
 	async function loadSearchParamsFromToken(token: string) {
 		isLoading = true;
@@ -106,7 +105,7 @@
 		{#if searchResults.length > visibleCount}
 			<div class="text-center">
 				<button
-					on:click={showMore}
+					onclick={showMore}
 					class="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-full hover:bg-primary/80 transition"
 				>
 					Show More

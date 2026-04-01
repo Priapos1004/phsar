@@ -14,7 +14,8 @@
     let error = $state('');
     let loading = $state(false);
 
-    async function handleLogin() {
+    async function handleLogin(e: Event) {
+        e.preventDefault();
         error = '';
         loading = true;
 
