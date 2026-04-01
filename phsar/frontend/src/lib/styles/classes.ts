@@ -14,14 +14,6 @@ export const input = 'w-full px-5 py-3 rounded-full bg-white/80 backdrop-blur bo
 export const tag = 'bg-purple-600 text-white px-3 py-1 rounded-full flex items-center text-sm';
 export const tagClose = 'ml-1 focus:outline-none';
 
-// === Tag base style (shared across media_type, genre, relation_type) ===
-export const tagBase = 'text-xs px-2 py-1 rounded-full';
-
-// === Tag type styles ===
-export const tagGenre = 'bg-purple-100 text-purple-800';
-export const tagMediaType = 'bg-green-100 text-green-800';
-export const tagRelation = 'bg-blue-100 text-blue-800';
-
 // Button
 export const iconButton = 'text-purple-700 hover:text-purple-500';
 
