@@ -6,10 +6,6 @@ export interface TokenResponse {
 	token_type: string;
 }
 
-export interface TokenValidationResponse {
-	is_valid: boolean;
-}
-
 // Media
 export interface MediaConnected {
 	mal_id: number;
