@@ -2,153 +2,160 @@
 
 <details>
 <summary>Click to see folder structure</summary>
-<!--
-Command for creating the tree graphic:
-tree phsar -a -F -I '__pycache__|node_modules|.git|.svelte-kit|.DS_Store|.pytest_cache|.ruff_cache|*.pyc|*.pyo|*.db|*.sqlite3|*.log|*.tmp'
--->
+
+<!-- To regenerate: git ls-files phsar/ | grep -v 'package-lock' | tree --fromfile -n --charset utf-8 -->
+<!-- Then collapse ui/ subdirectories to keep it readable -->
 
 ```text
 phsar/
 ├── app/
-│   ├── __init__.py
-│   ├── core/
-│   │   ├── __init__.py
-│   │   ├── config.py
-│   │   ├── db.py
-│   │   ├── dependencies.py
-│   │   ├── logging_config.py
-│   │   └── security.py
-│   ├── daos/
-│   │   ├── __init__.py
-│   │   ├── anime_dao.py
-│   │   ├── base_dao.py
-│   │   ├── base_mal_id_dao.py
-│   │   ├── genre_dao.py
-│   │   ├── media_dao.py
-│   │   ├── media_unwanted_dao.py
-│   │   └── studio_dao.py
-│   ├── exceptions.py
-│   ├── main.py
-│   ├── models/
-│   │   ├── __init__.py
-│   │   ├── anime.py
-│   │   ├── base.py
-│   │   ├── genre.py
-│   │   ├── media.py
-│   │   ├── media_genre.py
-│   │   ├── media_search.py
-│   │   ├── media_studio.py
-│   │   ├── media_unwanted.py
-│   │   ├── ratings.py
-│   │   ├── registration_token.py
-│   │   ├── studio.py
-│   │   ├── tag.py
-│   │   ├── users.py
-│   │   ├── watchlist.py
-│   │   └── watchlist_tag.py
-│   ├── routers/
-│   │   ├── __init__.py
-│   │   ├── auth.py
-│   │   ├── filters.py
-│   │   ├── save.py
-│   │   ├── search.py
-│   │   └── seeder.py
-│   ├── schemas/
-│   │   ├── __init__.py
-│   │   ├── anime_schema.py
-│   │   ├── auth_schema.py
-│   │   ├── media_filter_schema.py
-│   │   ├── media_schema.py
-│   │   └── search_schema.py
-│   ├── seeders/
-│   │   ├── __init__.py
-│   │   ├── genre_seeder.py
-│   │   ├── media_seeder.py
-│   │   └── user_seeder.py
-│   └── services/
-│       ├── __init__.py
-│       ├── anime_service.py
-│       ├── auth_service.py
-│       ├── filter_service.py
-│       ├── jikan_scraper.py
-│       ├── media_linking_service.py
-│       ├── media_search_service.py
-│       ├── media_service.py
-│       ├── save_service.py
-│       ├── search_service.py
-│       ├── token_service.py
-│       ├── unwanted_media_service.py
-│       └── vector_embedding_service.py
+│   ├── core/
+│   │   ├── config.py
+│   │   ├── db.py
+│   │   ├── dependencies.py
+│   │   ├── logging_config.py
+│   │   └── security.py
+│   ├── daos/
+│   │   ├── anime_dao.py
+│   │   ├── base_dao.py
+│   │   ├── base_mal_id_dao.py
+│   │   ├── genre_dao.py
+│   │   ├── media_dao.py
+│   │   ├── media_unwanted_dao.py
+│   │   ├── registration_token_dao.py
+│   │   ├── studio_dao.py
+│   │   └── user_dao.py
+│   ├── exceptions.py
+│   ├── main.py
+│   ├── models/
+│   │   ├── anime.py
+│   │   ├── base.py
+│   │   ├── genre.py
+│   │   ├── media.py
+│   │   ├── media_genre.py
+│   │   ├── media_search.py
+│   │   ├── media_studio.py
+│   │   ├── media_unwanted.py
+│   │   ├── ratings.py
+│   │   ├── registration_token.py
+│   │   ├── studio.py
+│   │   ├── tag.py
+│   │   ├── users.py
+│   │   ├── watchlist.py
+│   │   └── watchlist_tag.py
+│   ├── routers/
+│   │   ├── auth.py
+│   │   ├── filters.py
+│   │   ├── save.py
+│   │   ├── search.py
+│   │   └── seeder.py
+│   ├── schemas/
+│   │   ├── anime_schema.py
+│   │   ├── auth_schema.py
+│   │   ├── media_filter_schema.py
+│   │   ├── media_schema.py
+│   │   └── search_schema.py
+│   ├── seeders/
+│   │   ├── genre_seeder.py
+│   │   ├── media_seeder.py
+│   │   └── user_seeder.py
+│   └── services/
+│       ├── anime_service.py
+│       ├── auth_service.py
+│       ├── filter_service.py
+│       ├── jikan_scraper.py
+│       ├── media_linking_service.py
+│       ├── media_search_service.py
+│       ├── media_service.py
+│       ├── save_service.py
+│       ├── search_service.py
+│       ├── token_service.py
+│       ├── unwanted_media_service.py
+│       └── vector_embedding_service.py
 ├── frontend/
-│   └── phsar-frontend/
-│       ├── .gitignore
-│       ├── .npmrc
-│       ├── README.md
-│       ├── package-lock.json
-│       ├── package.json
-│       ├── src/
-│       │   ├── app.css
-│       │   ├── app.d.ts
-│       │   ├── app.html
-│       │   ├── lib/
-│       │   │   ├── components/
-│       │   │   │   ├── DoubleRangeSlider.svelte
-│       │   │   │   ├── InfoDiashow.svelte
-│       │   │   │   ├── LoadingScreen.svelte
-│       │   │   │   ├── MediaInfo.svelte
-│       │   │   │   ├── NavBar.svelte
-│       │   │   │   ├── ScrollableCard.svelte
-│       │   │   │   ├── SearchBar.svelte
-│       │   │   │   ├── SkeletonMediaInfo.svelte
-│       │   │   │   └── TagSelect.svelte
-│       │   │   ├── config.ts
-│       │   │   ├── stores/
-│       │   │   │   └── auth.ts
-│       │   │   ├── styles/
-│       │   │   │   └── classes.ts
-│       │   │   └── utils/
-│       │   │       ├── formatString.ts
-│       │   │       ├── getMediaInfo.ts
-│       │   │       ├── getSeason.ts
-│       │   │       ├── navigation.ts
-│       │   │       └── search.ts
-│       │   └── routes/
-│       │       ├── +layout.svelte
-│       │       ├── +layout.ts
-│       │       ├── +page.svelte
-│       │       ├── login/
-│       │       │   └── +page.svelte
-│       │       └── search/
-│       │           └── +page.svelte
-│       ├── static/
-│       │   ├── phsar_logo_inverted.png
-│       │   └── phsar_logo_transparent.png
-│       ├── svelte.config.js
-│       ├── tsconfig.json
-│       └── vite.config.ts
-├── .env
-├── README.md
+│   ├── components.json
+│   ├── package.json
+│   ├── USER_FLOWS.md
+│   ├── src/
+│   │   ├── app.css
+│   │   ├── app.html
+│   │   ├── lib/
+│   │   │   ├── api.ts
+│   │   │   ├── config.ts
+│   │   │   ├── utils.ts
+│   │   │   ├── components/
+│   │   │   │   ├── DoubleRangeSlider.svelte
+│   │   │   │   ├── InfoDiashow.svelte
+│   │   │   │   ├── LoadingScreen.svelte
+│   │   │   │   ├── MediaInfo.svelte
+│   │   │   │   ├── NavBar.svelte
+│   │   │   │   ├── ScrollableCard.svelte
+│   │   │   │   ├── SearchBar.svelte
+│   │   │   │   ├── SkeletonMediaInfo.svelte
+│   │   │   │   ├── TagSelect.svelte
+│   │   │   │   └── ui/           # shadcn-svelte components
+│   │   │   │       ├── badge/
+│   │   │   │       ├── button/
+│   │   │   │       ├── card/
+│   │   │   │       ├── checkbox/
+│   │   │   │       ├── command/
+│   │   │   │       ├── dialog/
+│   │   │   │       ├── dropdown-menu/
+│   │   │   │       ├── input/
+│   │   │   │       ├── label/
+│   │   │   │       ├── popover/
+│   │   │   │       ├── slider/
+│   │   │   │       └── textarea/
+│   │   │   ├── stores/
+│   │   │   │   └── auth.ts
+│   │   │   ├── styles/
+│   │   │   │   └── classes.ts
+│   │   │   ├── types/
+│   │   │   │   └── api.ts
+│   │   │   └── utils/
+│   │   │       ├── cn.ts
+│   │   │       ├── formatString.ts
+│   │   │       ├── getMediaInfo.ts
+│   │   │       ├── getSeason.ts
+│   │   │       ├── navigation.ts
+│   │   │       └── search.ts
+│   │   ├── routes/
+│   │   │   ├── +layout.svelte
+│   │   │   ├── +layout.ts
+│   │   │   ├── +page.svelte
+│   │   │   ├── login/
+│   │   │   │   └── +page.svelte
+│   │   │   └── search/
+│   │   │       └── +page.svelte
+│   │   └── tests/
+│   │       ├── setup.ts
+│   │       ├── auth-store.test.ts
+│   │       ├── format-string.test.ts
+│   │       ├── login.test.ts
+│   │       ├── navbar.test.ts
+│   │       └── searchbar.test.ts
+│   ├── static/
+│   │   ├── phsar_logo_inverted.png
+│   │   └── phsar_logo_transparent.png
+│   ├── svelte.config.js
+│   ├── tsconfig.json
+│   └── vite.config.ts
 ├── alembic/
-│   ├── README
-│   ├── env.py
-│   ├── script.py.mako
-│   └── versions/
+│   ├── env.py
+│   └── script.py.mako
 ├── alembic.ini
 ├── pyproject.toml
 ├── pytest.ini
 ├── requirements.txt
 └── tests/
-    ├── __init__.py
     ├── routers/
-    │   ├── __init__.py
-    │   ├── conftest.py
-    │   ├── test_auth.py
-    │   ├── test_filters_options.py
-    │   ├── test_filters_token.py
-    │   ├── test_save.py
-    │   └── test_search_media.py
+    │   ├── conftest.py
+    │   ├── test_auth.py
+    │   ├── test_filters_options.py
+    │   ├── test_filters_token.py
+    │   ├── test_save.py
+    │   └── test_search_media.py
     └── services/
-        ├── __init__.py
         ├── test_jikan_scraper.py
         ├── test_search_service.py
         └── test_vector_embedding_service.py
@@ -177,7 +184,7 @@ SEARCH_SECRET_KEY=supersecretsearchsecretkey
 
 `SECRET_KEY` and `SEARCH_SECRET_KEY` should be random generated and at least 256 bit *(≈43 characters)*, as they are used to encode the access tokens and url search parameter.
 
-### Use alembic to Savely Migrate Changes
+### Use alembic to Safely Migrate Changes
 
 #### Activate vector Extension in Database
 
@@ -187,7 +194,7 @@ After setting up the database, we need to first activate the vector extension in
 alembic revision -m "create pgvector extension"
 ```
 
-The go to `alembic/versions/<hash value>_create_pgvector_extension.py` and change the `upgrade()` and `downgrade()` functions to:
+Then go to `alembic/versions/<hash value>_create_pgvector_extension.py` and change the `upgrade()` and `downgrade()` functions to:
 
 ```
 def upgrade():
@@ -242,36 +249,40 @@ When first running the FastAPI App, the genre table and the first admin user wil
 uvicorn app.main:app --reload
 ```
 
-You can now open
-
-```
-http://127.0.0.1:8000
-```
-
-to see if the API is live.
-
-For testing the `auth/`, `filters/`, `search/mal`, `search/media`, `seed/media`, and `save/search-results` endpoints, use the [test_fastAPI notebook](../notebooks/test_fastAPI.ipynb).
-
-*Note: Big anime franchises like "Naruto" can take more than 15 minutes to run.*
-
-## Testing
-
-Run the following command to use pytest *(all changes to the database during the tests are rolled-back afterwards)*:
-
-```
-pytest
-```
+You can now open `http://127.0.0.1:8000` to see if the API is live.
 
 ## Run Frontend
 
-See [Svelte README](frontend/phsar-frontend/README.md) or just run in `frontend/phsar-frontend`:
+From `frontend/`:
 
 ```
+npm install
 npm run dev -- --open
 ```
 
 *FastAPI and Svelte need to run at the same time in two terminals!*
 
+## Testing
+
+### Backend
+
+```
+pytest
+```
+
+All changes to the database during the tests are rolled back afterwards.
+
+### Frontend
+
+```
+cd frontend
+npm run test
+```
+
 ## Trouble-shooting
 
 - Check that the database docker container is running!
+
+## License
+
+[PolyForm Noncommercial 1.0.0](../LICENSE) — free for personal, educational, and non-commercial use.

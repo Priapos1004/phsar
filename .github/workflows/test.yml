@@ -1,0 +1,74 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: ankane/pgvector
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U testuser -d testdb"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    defaults:
+      run:
+        working-directory: phsar/
+
+    env:
+      DB_USER: testuser
+      DB_PASSWORD: testpassword
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_NAME: testdb
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: adminpassword
+      SECRET_KEY: ci-test-secret-key
+      SEARCH_SECRET_KEY: ci-test-search-secret-key
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: pip install -r requirements.txt
+
+    - name: Create database schema and seed
+      run: |
+        python -c "
+        import asyncio
+        from app.core.db import engine, async_session_maker, Base
+        from sqlalchemy import text
+        from app.models import users, anime, media, genre, studio, ratings, watchlist, tag, media_search, media_unwanted, registration_token
+        from app.seeders.user_seeder import seed_admin_user
+        from app.seeders.genre_seeder import seed_genres
+        async def setup():
+            async with engine.begin() as conn:
+                await conn.execute(text('CREATE EXTENSION IF NOT EXISTS vector'))
+                await conn.run_sync(Base.metadata.create_all)
+            async with async_session_maker() as session:
+                await seed_genres(session)
+                await seed_admin_user(session)
+        asyncio.run(setup())
+        "
+
+    - name: Run tests
+      run: pytest --tb=short -q

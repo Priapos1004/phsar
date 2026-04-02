@@ -33,9 +33,10 @@ alembic upgrade head
 
 ### Frontend
 ```bash
-cd phsar/frontend/phsar-frontend
+cd phsar/frontend
 npm install
 npm run dev -- --open   # dev server at localhost:5173
+npm run test            # vitest component tests
 ```
 
 Backend and frontend must run simultaneously in separate terminals.
@@ -61,31 +62,38 @@ docker exec -it anime-postgres psql -U <DB_USER> -d <DB_NAME> \
 Layered architecture with strict dependency flow: **routers → services → DAOs → models**
 
 - **routers/** — FastAPI endpoint definitions. Each router maps to an API prefix (`/auth`, `/search`, `/filters`, `/save`, `/seed`).
-- **services/** — Business logic. Key services: `jikan_scraper.py` (MAL API client with retry), `vector_embedding_service.py` (sentence-transformers embeddings), `media_search_service.py` (filtered DB search), `token_service.py` (compressed JWT for shareable filter URLs).
-- **daos/** — Data access layer. `BaseDAO` provides generic async CRUD; specialized DAOs (media, anime, genre, studio) add complex queries with vector similarity, filtering, and aggregation.
+- **services/** — Business logic as module-level async functions. Key services: `jikan_scraper.py` (MAL API client with retry), `vector_embedding_service.py` (sentence-transformers embeddings), `media_search_service.py` (filtered DB search), `token_service.py` (compressed JWT for shareable filter URLs), `auth_service.py` (registration, authentication, token issuance).
+- **daos/** — Data access layer. `BaseDAO` provides generic async CRUD; specialized DAOs (media, anime, genre, studio, user, registration_token) add domain-specific queries with vector similarity, filtering, and aggregation.
 - **models/** — SQLAlchemy ORM models mapped to PostgreSQL tables. `media_search.py` stores pgvector embeddings for title and description.
 - **schemas/** — Pydantic request/response DTOs.
 - **core/** — Config (`config.py` loads from `.env`), database engine (`db.py`), auth dependencies (`dependencies.py`), JWT/password security (`security.py`).
 - **seeders/** — Run at app startup via lifespan; seed genres and admin user.
-- **exceptions.py** — Custom exception hierarchy rooted at `PhsarBaseError`, mapped to HTTP status codes in `main.py`.
+- **exceptions.py** — Custom exception hierarchy rooted at `PhsarBaseError` with `status_code` attribute. Single exception handler in `main.py` reads the status code from each exception class.
 
-### Frontend (phsar/frontend/phsar-frontend/)
+### Frontend (phsar/frontend/)
 
-SvelteKit with file-based routing, Svelte 5, Tailwind CSS 4.
+SvelteKit with file-based routing, Svelte 5 runes, Tailwind CSS 4, shadcn-svelte component library.
 
 - **routes/** — Pages: home (`/`), login (`/login`), search (`/search`).
-- **lib/components/** — Reusable components (SearchBar, MediaInfo, DoubleRangeSlider, TagSelect, etc.).
-- **lib/stores/** — Svelte stores for auth state (JWT token).
-- **lib/utils/** — API call helpers, string formatting, season logic, navigation.
-- **lib/config.ts** — Backend API base URL.
+- **lib/components/** — App components (SearchBar, MediaInfo, NavBar, TagSelect, DoubleRangeSlider, etc.) using Svelte 5 `$props()`, `$state()`, `$derived()`, `$effect()`.
+- **lib/components/ui/** — shadcn-svelte base components (button, card, input, badge, slider, dropdown-menu, popover, checkbox, label, etc.).
+- **lib/api.ts** — Centralized API client with `get`/`post`/`postForm` methods, `ApiError` class, and automatic auth header injection from the token store.
+- **lib/types/api.ts** — TypeScript interfaces mirroring backend Pydantic schemas (`MediaConnected`, `FilterOptions`, `TokenResponse`, etc.).
+- **lib/stores/** — Svelte stores for auth state (JWT token persisted to localStorage).
+- **lib/utils/** — String formatting, season logic, search params, navigation.
+- **lib/config.ts** — Backend API base URL (consumed only by `api.ts`).
+- **src/app.css** — Custom theme (`@theme inline`) with light elevated surfaces on dark purple gradient background. Dark mode locked to class-based only.
+- **tests/** — Vitest + @testing-library/svelte component tests.
 
 ### Key Patterns
 
-- **Dependency injection**: FastAPI `Depends()` for DB sessions, current user extraction, role-based access (`require_roles()`).
+- **Dependency injection**: FastAPI `Depends()` for DB sessions, current user extraction, role-based access (`require_roles()` accepts `RoleType` enum).
 - **Role-based access**: Three roles — `admin`, `user`, `restricted_user`.
 - **Async throughout**: asyncpg driver, SQLAlchemy AsyncSession, async service/DAO methods.
 - **Vector search**: `paraphrase-multilingual-MiniLM-L12-v2` model generates embeddings stored via pgvector; similarity search on title and description vectors.
-- **CORS**: Backend only allows `http://localhost:5173`.
+- **Domain exceptions**: All custom exceptions extend `PhsarBaseError` with a `status_code` class attribute. One handler in `main.py` serves all.
+- **Theme system**: CSS custom properties (`--color-*`) define the palette. Components use semantic tokens (`bg-card`, `text-primary`, `text-destructive`) instead of hardcoded Tailwind colors.
+- **CORS**: Backend allows origins from `settings.CORS_ORIGINS` (defaults to `http://localhost:5173`).
 
 ## Working With Me
 
@@ -96,15 +104,29 @@ SvelteKit with file-based routing, Svelte 5, Tailwind CSS 4.
 
 The backend requires a `phsar/.env` file with: `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `SECRET_KEY`, `SEARCH_SECRET_KEY`.
 
+Optional: `DEBUG` (enables SQL echo), `CORS_ORIGINS` (JSON list of allowed origins).
+
 ## CI
 
-GitHub Actions runs `ruff check .` in `phsar/` on every push and PR.
+GitHub Actions runs on every push and PR:
+- **Lint** (`lint.yml`): `ruff check .` in `phsar/`
+- **Tests** (`test.yml`): `pytest` against a pgvector service container with schema created from models
 
 ## Linting Config (pyproject.toml)
 
 Ruff excludes `alembic/versions` and `__init__.py` files. Import sorting is enabled (`extend-select = ["I"]`).
 
-## Test Config (pytest.ini)
+## Test Config
 
+### Backend (pytest.ini)
 - `asyncio_mode = auto` — no need for `@pytest.mark.asyncio` decorators.
 - Tests use the real database (not mocks); all changes are rolled back after each test.
+
+### Frontend (vite.config.ts)
+- Vitest with jsdom environment and `@testing-library/svelte`.
+- `resolve.conditions: ['browser']` for Svelte 5 compatibility.
+- Tests mock SvelteKit modules (`$app/navigation`, `$app/environment`, `$app/state`) in `src/tests/setup.ts`.
+
+## License
+
+PolyForm Noncommercial 1.0.0 — free for personal, educational, and non-commercial use.

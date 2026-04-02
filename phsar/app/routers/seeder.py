@@ -10,7 +10,7 @@ router = APIRouter(prefix="/seed", tags=["seeder"])
 @router.post("/media")
 async def seed_media(
     db: AsyncSession = Depends(get_db),
-    current_user = Depends(require_roles(RoleType.Admin.value)),
+    current_user = Depends(require_roles(RoleType.Admin)),
 ):
     await seed_popular_anime(db)
     return {"status": "success", "message": "Media seeding completed."}

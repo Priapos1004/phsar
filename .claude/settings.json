@@ -6,6 +6,7 @@
       "Grep",
       "Bash(ruff check *)",
       "Bash(pytest *)",
+      "Bash(python -m pytest *)",
       "Bash(git status *)",
       "Bash(git diff *)",
       "Bash(git log *)",
@@ -17,7 +18,14 @@
       "Bash(pwd)",
       "Bash(cd *)",
       "Bash(tail *)",
-      "Bash(cat *)"
+      "Bash(cat *)",
+      "Bash(git checkout:*)",
+      "Bash(gh run view:*)",
+      "Bash(gh run list:*)",
+      "WebFetch(domain:shadcn-svelte.com)",
+      "Bash(yes)",
+      "Bash(npx shadcn-svelte@latest add *)",
+      "Bash(npm list:*)"
     ],
     "deny": [
       "Bash(git push --force *)",

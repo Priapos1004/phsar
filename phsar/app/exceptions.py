@@ -3,11 +3,12 @@ from app.core.config import settings
 
 class PhsarBaseError(Exception):
     """Base class for all custom exceptions in the PHSAR project."""
-    pass
+    status_code: int = 400
 
 
 class MalIdAlreadyExistsError(PhsarBaseError):
     """Raised when a media/anime with the same mal_id already exists in the database."""
+    status_code = 409
 
     def __init__(self, mal_id: int, title: str):
         self.mal_id = mal_id
@@ -18,6 +19,7 @@ class MalIdAlreadyExistsError(PhsarBaseError):
 
 class AnimeNotFoundError(PhsarBaseError):
     """Raised when an anime is not found in the MAL API."""
+    status_code = 404
 
     def __init__(self, title: str):
         self.title = title
@@ -27,6 +29,7 @@ class AnimeNotFoundError(PhsarBaseError):
 
 class MainMediaNotFoundError(PhsarBaseError):
     """Raised when a list of MediaUnconnected has no main media."""
+    status_code = 404
 
     def __init__(self, title_relation_tuple: list[tuple[str, str]]):
         self.title_relation_tuple = title_relation_tuple
@@ -81,8 +84,53 @@ class MalformedTokenError(PhsarBaseError):
         message = "Invalid or malformed search token"
         super().__init__(message)
 
+class UserAlreadyExistsError(PhsarBaseError):
+    """Raised when a user tries to register with a username that already exists."""
+    status_code = 409
+
+    def __init__(self, username: str):
+        self.username = username
+        message = f"Username '{username}' already registered."
+        super().__init__(message)
+
+
+class InvalidRegistrationTokenError(PhsarBaseError):
+    """Raised when a registration token is not found."""
+
+    def __init__(self):
+        message = "Invalid registration token."
+        super().__init__(message)
+
+
+class RegistrationTokenAlreadyUsedError(PhsarBaseError):
+    """Raised when a registration token has already been used."""
+
+    def __init__(self):
+        message = "This registration token has already been used."
+        super().__init__(message)
+
+
+class RegistrationTokenExpiredError(PhsarBaseError):
+    """Raised when a registration token has expired."""
+
+    def __init__(self):
+        message = "This registration token has expired."
+        super().__init__(message)
+
+
+class FieldDoesNotExistError(PhsarBaseError):
+    """Raised when a requested field does not exist on a model."""
+
+    def __init__(self, field_name: str, model_name: str):
+        self.field_name = field_name
+        self.model_name = model_name
+        message = f"Field '{field_name}' does not exist in model {model_name}"
+        super().__init__(message)
+
+
 class CouldNotValidateCredentialsError(PhsarBaseError):
     """Raised when credentials cannot be validated."""
+    status_code = 401
 
     def __init__(self):
         message = "Could not validate credentials"
@@ -90,6 +138,7 @@ class CouldNotValidateCredentialsError(PhsarBaseError):
 
 class InsufficientPermissionsError(PhsarBaseError):
     """Raised when a user does not have sufficient permissions to access a resource."""
+    status_code = 403
 
     def __init__(self):
         message = "Insufficient permissions"

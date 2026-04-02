@@ -1,15 +1,14 @@
 from typing import AsyncGenerator, Union
 
-# app/core/dependencies.py
 from fastapi import Depends
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
 
 from app.core.config import settings
 from app.core.db import async_session_maker
 from app.core.security import decompress_and_decode
+from app.daos.user_dao import UserDAO
 from app.exceptions import (
     CouldNotValidateCredentialsError,
     InsufficientPermissionsError,
@@ -17,7 +16,9 @@ from app.exceptions import (
     MissingSearchDataError,
     TokenVersionMismatchError,
 )
-from app.models.users import Users
+from app.models.users import RoleType, Users
+
+user_dao = UserDAO()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
@@ -35,18 +36,17 @@ async def get_current_user(
             raise CouldNotValidateCredentialsError()
     except JWTError:
         raise CouldNotValidateCredentialsError()
-    result = await db.execute(select(Users).filter_by(username=username))
-    user = result.scalars().first()
+    user = await user_dao.get_by_username(db, username)
     if user is None:
         raise CouldNotValidateCredentialsError()
     return user
 
-def require_roles(allowed_roles: Union[str, list[str]]):
-    if isinstance(allowed_roles, str):
+def require_roles(allowed_roles: Union[RoleType, list[RoleType]]):
+    if isinstance(allowed_roles, RoleType):
         allowed_roles = [allowed_roles]
 
     async def role_checker(current_user = Depends(get_current_user)):
-        if current_user.role.value not in allowed_roles:
+        if current_user.role not in allowed_roles:
             raise InsufficientPermissionsError()
         return current_user
 

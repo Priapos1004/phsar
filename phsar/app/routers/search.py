@@ -20,7 +20,7 @@ media_dao = MediaDAO()
 async def search_mal(
     query: str,
     db: AsyncSession = Depends(get_db),
-    current_user = Depends(require_roles([RoleType.User.value, RoleType.Admin.value]))
+    current_user = Depends(require_roles([RoleType.User, RoleType.Admin]))
 ):
     results = await handle_search_mal_api_results(query=query, db=db)
     return results

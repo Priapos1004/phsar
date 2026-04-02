@@ -1,0 +1,131 @@
+@import "tailwindcss";
+
+@theme inline {
+  --radius: 0.625rem;
+
+  /* Page-level: dark bg (gradient applied via background-image on body) */
+  --color-background: oklch(0.141 0.005 285.823);
+  --color-foreground: oklch(0.985 0 0);
+
+  /* Elevated surfaces: light frosted-glass */
+  --color-card: oklch(1 0 0);
+  --color-card-foreground: oklch(0.278 0.033 256.848);
+  --color-popover: oklch(1 0 0);
+  --color-popover-foreground: oklch(0.278 0.033 256.848);
+
+  /* Primary accent: purple */
+  --color-primary: oklch(0.558 0.288 302.321);
+  --color-primary-foreground: oklch(1 0 0);
+
+  /* Secondary: neutral light */
+  --color-secondary: oklch(0.967 0.003 264.542);
+  --color-secondary-foreground: oklch(0.21 0.034 264.665);
+
+  /* Muted: subtle backgrounds */
+  --color-muted: oklch(0.928 0.006 264.531);
+  --color-muted-foreground: oklch(0.551 0.027 264.364);
+
+  /* Accent: hover/focus states inside surfaces */
+  --color-accent: oklch(0.967 0.003 264.542);
+  --color-accent-foreground: oklch(0.21 0.034 264.665);
+
+  /* Destructive: danger actions */
+  --color-destructive: oklch(0.577 0.245 27.325);
+
+  /* Borders and inputs */
+  --color-border: oklch(0.872 0.01 258.338);
+  --color-input: oklch(0.872 0.01 258.338);
+
+  /* Focus ring: purple */
+  --color-ring: oklch(0.627 0.265 303.9);
+
+  /* Charts */
+  --color-chart-1: oklch(0.558 0.288 302.321);
+  --color-chart-2: oklch(0.696 0.17 162.48);
+  --color-chart-3: oklch(0.769 0.188 70.08);
+  --color-chart-4: oklch(0.627 0.265 303.9);
+  --color-chart-5: oklch(0.645 0.246 16.439);
+
+  /* Sidebar */
+  --color-sidebar: oklch(1 0 0 / 80%);
+  --color-sidebar-foreground: oklch(0.278 0.033 256.848);
+  --color-sidebar-primary: oklch(0.558 0.288 302.321);
+  --color-sidebar-primary-foreground: oklch(1 0 0);
+  --color-sidebar-accent: oklch(0.967 0.003 264.542);
+  --color-sidebar-accent-foreground: oklch(0.21 0.034 264.665);
+  --color-sidebar-border: oklch(0.872 0.01 258.338);
+  --color-sidebar-ring: oklch(0.627 0.265 303.9);
+}
+
+/* Lock dark: variants to class-based only (prevent OS dark mode interference) */
+@custom-variant dark (&:is(.dark *));
+
+body {
+  @apply bg-gradient-to-br from-[#352558] via-[#261845] to-[#1C1038] text-white;
+}
+
+a {
+  @apply outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm;
+}
+
+@custom-variant data-open {
+	&:where([data-state="open"]), &:where([data-open]:not([data-open="false"])) {
+		@slot;
+  }
+}
+
+@custom-variant data-closed {
+	&:where([data-state="closed"]), &:where([data-closed]:not([data-closed="false"])) {
+		@slot;
+  }
+}
+
+@custom-variant data-checked {
+	&:where([data-state="checked"]), &:where([data-checked]:not([data-checked="false"])) {
+		@slot;
+  }
+}
+
+@custom-variant data-unchecked {
+	&:where([data-state="unchecked"]), &:where([data-unchecked]:not([data-unchecked="false"])) {
+		@slot;
+  }
+}
+
+@custom-variant data-selected {
+	&:where([data-selected]) {
+		@slot;
+  }
+}
+
+@custom-variant data-disabled {
+	&:where([data-disabled="true"]), &:where([data-disabled]:not([data-disabled="false"])) {
+		@slot;
+  }
+}
+
+@custom-variant data-active {
+	&:where([data-state="active"]), &:where([data-active]:not([data-active="false"])) {
+		@slot;
+  }
+}
+
+@custom-variant data-horizontal {
+	&:where([data-orientation="horizontal"]) {
+		@slot;
+  }
+}
+
+@custom-variant data-vertical {
+	&:where([data-orientation="vertical"]) {
+		@slot;
+  }
+}
+
+@utility no-scrollbar {
+	-ms-overflow-style: none;
+	scrollbar-width: none;
+	&::-webkit-scrollbar {
+		display: none;
+  }
+}
