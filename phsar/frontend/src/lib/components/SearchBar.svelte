@@ -141,7 +141,7 @@
 		filterConfig.forEach((config) => {
 			if (config.type === 'list') {
 				listFilters[config.key] = [...(searchParams[config.key] ?? [])];
-			} else if (config.type === 'timeRange' || config.large_number === true) {
+			} else if (config.type === 'timeRange' || (config.type === 'range' && config.large_number)) {
 				const [newMin, newMax] = calculate_min_max_timerange(
 					searchParams[config.minKey], searchParams[config.maxKey], config.step
 				);
@@ -169,7 +169,7 @@
 			filterConfig.forEach((config) => {
 				if (config.type === 'list') {
 					listFilterOptions[config.key] = data[config.key] ?? [];
-				} else if (config.type === 'timeRange' || config.large_number === true) {
+				} else if (config.type === 'timeRange' || (config.type === 'range' && config.large_number)) {
 					const [newMin, newMax] = calculate_min_max_timerange(
 						data[config.minKey], data[config.maxKey], config.step
 					);
