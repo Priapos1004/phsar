@@ -163,8 +163,10 @@ phsar/
     │   ├── test_auth.py
     │   ├── test_filters_options.py
     │   ├── test_filters_token.py
+    │   ├── test_ratings.py
     │   ├── test_save.py
-    │   └── test_search_media.py
+    │   ├── test_search_media.py
+    │   └── test_search_ratings.py
     └── services/
         ├── test_jikan_scraper.py
         ├── test_search_service.py
