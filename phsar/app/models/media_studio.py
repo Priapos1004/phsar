@@ -13,5 +13,5 @@ class MediaStudio(BaseModel):
         UniqueConstraint('media_id', 'studio_id', name='unique_media_studio'),
     )
     # Relationships
-    media = relationship("Media", back_populates="media_studio")
-    studio = relationship("Studio", back_populates="media_studio")
+    media = relationship("Media", back_populates="media_studio", lazy="raise")
+    studio = relationship("Studio", back_populates="media_studio", lazy="raise")

@@ -27,5 +27,5 @@ class RegistrationToken(BaseModel):
         return cls.expires_on < func.now()
 
     # Relationships
-    created_by = relationship("Users", foreign_keys=[created_by_user_id], back_populates="registration_tokens")
-    used_for_user = relationship("Users", foreign_keys=[was_used_for_user_id])
+    created_by = relationship("Users", foreign_keys=[created_by_user_id], back_populates="registration_tokens", lazy="raise")
+    used_for_user = relationship("Users", foreign_keys=[was_used_for_user_id], lazy="raise")

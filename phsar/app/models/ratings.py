@@ -114,6 +114,6 @@ class Ratings(BaseModel):
     originality = Column(Enum(Originality), nullable=True)
 
     # Relationships
-    media = relationship("Media", back_populates="ratings")
-    users = relationship("Users", back_populates="ratings")
-    rating_search = relationship("RatingSearch", back_populates="rating", cascade="all, delete-orphan", uselist=False)
+    media = relationship("Media", back_populates="ratings", lazy="raise")
+    users = relationship("Users", back_populates="ratings", lazy="raise")
+    rating_search = relationship("RatingSearch", back_populates="rating", cascade="all, delete-orphan", uselist=False, lazy="raise")

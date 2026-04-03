@@ -13,5 +13,5 @@ class MediaGenre(BaseModel):
         UniqueConstraint('media_id', 'genre_id', name='unique_media_genre'),
     )
     # Relationships
-    media = relationship("Media", back_populates="media_genre")
-    genre = relationship("Genre", back_populates="media_genre")
+    media = relationship("Media", back_populates="media_genre", lazy="raise")
+    genre = relationship("Genre", back_populates="media_genre", lazy="raise")

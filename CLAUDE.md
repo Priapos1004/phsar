@@ -89,7 +89,7 @@ SvelteKit with file-based routing, Svelte 5 runes, Tailwind CSS 4, shadcn-svelte
 
 - **Dependency injection**: FastAPI `Depends()` for DB sessions, current user extraction, role-based access (`require_roles()` accepts `RoleType` enum).
 - **Role-based access**: Three roles — `admin`, `user`, `restricted_user`.
-- **Async throughout**: asyncpg driver, SQLAlchemy AsyncSession, async service/DAO methods.
+- **Async throughout**: asyncpg driver, SQLAlchemy AsyncSession, async service/DAO methods. All ORM relationships use `lazy="raise"` to prevent implicit lazy loading — every relationship access must go through explicit `selectinload` in the DAO query.
 - **Vector search**: `paraphrase-multilingual-MiniLM-L12-v2` model generates embeddings stored via pgvector; similarity search on title, description, and rating note vectors. `SearchType` enum (`title`, `description`, `rating_notes`) selects the target. Search filter schemas use inheritance: `MediaSearchFilters` (base) → `RatingSearchFilters` (adds rating-specific filters).
 - **Domain exceptions**: All custom exceptions extend `PhsarBaseError` with a `status_code` class attribute. One handler in `main.py` serves all.
 - **Theme system**: CSS custom properties (`--color-*`) define the palette. Components use semantic tokens (`bg-card`, `text-primary`, `text-destructive`) instead of hardcoded Tailwind colors.

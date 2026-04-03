@@ -33,8 +33,6 @@ _EXCLUDE_BULK = {"media_uuids"}
 
 
 def _rating_to_out(r: Ratings) -> RatingOut:
-    # Flatten eagerly-loaded media/anime relationships into the flat response schema.
-    # Direct ORM fields are read automatically via from_attributes=True.
     return RatingOut.model_validate(r, update={
         "media_uuid": r.media.uuid,
         "media_title": r.media.title,
@@ -44,11 +42,24 @@ def _rating_to_out(r: Ratings) -> RatingOut:
     })
 
 
-async def _resolve_media_uuid(db: AsyncSession, media_uuid: UUID) -> Media:
-    media = await media_dao.get_by_field(db, uuid=media_uuid)
-    if not media:
-        raise MediaNotFoundError(str(media_uuid))
-    return media
+async def _resolve_media_uuids(db: AsyncSession, media_uuids: list[UUID]) -> list[Media]:
+    """Batch-fetch media by UUIDs in input order. Raises MediaNotFoundError if any UUID is missing."""
+    all_media = await media_dao.get_all_by_field(db, "uuid", media_uuids)
+    media_by_uuid = {m.uuid: m for m in all_media}
+
+    media_list = []
+    for uuid in media_uuids:
+        media = media_by_uuid.get(uuid)
+        if not media:
+            raise MediaNotFoundError(str(uuid))
+        media_list.append(media)
+    return media_list
+
+
+async def _create_note_embedding(db: AsyncSession, rating_id: int, note: str):
+    """Generate an embedding for a note and create a RatingSearch record."""
+    embedding = await generate_embedding(note)
+    db.add(RatingSearch(rating_id=rating_id, note_embedding=embedding))
 
 
 async def _upsert_note_embedding(db: AsyncSession, rating: Ratings, note: str | None):
@@ -59,11 +70,9 @@ async def _upsert_note_embedding(db: AsyncSession, rating: Ratings, note: str | 
         if rating.rating_search:
             rating.rating_search.note_embedding = embedding
         else:
-            rating_search = RatingSearch(rating_id=rating.id, note_embedding=embedding)
-            db.add(rating_search)
+            db.add(RatingSearch(rating_id=rating.id, note_embedding=embedding))
     elif rating.rating_search:
         await db.delete(rating.rating_search)
-    await db.flush()
 
 
 async def _upsert_single_rating(
@@ -88,8 +97,9 @@ async def _upsert_single_rating(
         rating = Ratings(user_id=user_id, media_id=media.id, note=note, **fields)
         await rating_dao.create(db, rating)
 
+        # New rating has no rating_search yet — create embedding directly
         if note:
-            await _upsert_note_embedding(db, rating, note)
+            await _create_note_embedding(db, rating.id, note)
 
         return rating.uuid
 
@@ -99,7 +109,7 @@ async def upsert_rating(db: AsyncSession, user_id: int, media_uuid: UUID, data: 
     the existing rating is updated instead of raising an error."""
     logger.debug(f"DB session: {id(db)}")
 
-    media = await _resolve_media_uuid(db, media_uuid)
+    media = (await _resolve_media_uuids(db, [media_uuid]))[0]
     fields = data.model_dump()
     note = fields.pop("note")
 
@@ -169,10 +179,7 @@ async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCr
     This is intentional: bulk-rating means 'rate the whole anime with one note.'"""
     logger.debug(f"DB session: {id(db)}")
 
-    media_list = []
-    for media_uuid in data.media_uuids:
-        media = await _resolve_media_uuid(db, media_uuid)
-        media_list.append(media)
+    media_list = await _resolve_media_uuids(db, data.media_uuids)
 
     # Note goes on the last (newest) media so anime page can show notes chronologically
     note_index = len(media_list) - 1
@@ -186,9 +193,7 @@ async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCr
 
     await db.commit()
 
-    # Re-fetch with eager loading for media/anime relationships needed by _rating_to_out
-    results = []
-    for uuid in rating_uuids:
-        rating = await rating_dao.get_by_uuid_and_user(db, uuid, user_id)
-        results.append(_rating_to_out(rating))
-    return results
+    # Batch re-fetch with eager loading for _rating_to_out
+    ratings = await rating_dao.get_by_uuids_and_user(db, rating_uuids, user_id)
+    rating_by_uuid = {r.uuid: r for r in ratings}
+    return [_rating_to_out(rating_by_uuid[uuid]) for uuid in rating_uuids]

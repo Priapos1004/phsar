@@ -12,4 +12,4 @@ class RatingSearch(BaseModel):
     note_embedding = Column(Vector(384), nullable=False)
 
     # Relationships
-    rating = relationship("Ratings", back_populates="rating_search")
+    rating = relationship("Ratings", back_populates="rating_search", lazy="raise")

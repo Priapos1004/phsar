@@ -43,9 +43,12 @@ class RatingDAO(BaseDAO[Ratings]):
         return result.scalars().first()
 
     async def get_by_user_and_media(self, db: AsyncSession, user_id: int, media_id: int) -> Ratings | None:
-        result = await db.execute(
-            select(self.model).filter_by(user_id=user_id, media_id=media_id)
+        stmt = (
+            select(self.model)
+            .filter_by(user_id=user_id, media_id=media_id)
+            .options(selectinload(Ratings.rating_search))
         )
+        result = await db.execute(stmt)
         return result.scalars().first()
 
     async def get_by_media_uuid_and_user(self, db: AsyncSession, media_uuid: UUID, user_id: int) -> Ratings | None:
@@ -57,6 +60,17 @@ class RatingDAO(BaseDAO[Ratings]):
         )
         result = await db.execute(stmt)
         return result.scalars().first()
+
+    async def get_by_uuids_and_user(
+        self, db: AsyncSession, uuids: list[UUID], user_id: int
+    ) -> list[Ratings]:
+        stmt = (
+            select(self.model)
+            .where(self.model.uuid.in_(uuids), self.model.user_id == user_id)
+            .options(*self._eager_load_options())
+        )
+        result = await db.execute(stmt)
+        return result.scalars().all()
 
     async def get_all_by_user(
         self, db: AsyncSession, user_id: int, limit: int = 50, offset: int = 0

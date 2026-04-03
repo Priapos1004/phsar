@@ -29,6 +29,6 @@ class Watchlist(BaseModel):
     )
 
     # Relationships
-    media = relationship("Media", back_populates="watchlist")
-    users = relationship("Users", back_populates="watchlist")
-    watchlist_tag = relationship("WatchlistTag", back_populates="watchlist", cascade="all, delete-orphan")
+    media = relationship("Media", back_populates="watchlist", lazy="raise")
+    users = relationship("Users", back_populates="watchlist", lazy="raise")
+    watchlist_tag = relationship("WatchlistTag", back_populates="watchlist", cascade="all, delete-orphan", lazy="raise")

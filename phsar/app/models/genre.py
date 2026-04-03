@@ -20,4 +20,4 @@ class Genre(BaseModel):
     description = Column(Text, nullable=True)
 
     # Relationships
-    media_genre = relationship("MediaGenre", back_populates="genre", cascade="all, delete-orphan")
+    media_genre = relationship("MediaGenre", back_populates="genre", cascade="all, delete-orphan", lazy="raise")

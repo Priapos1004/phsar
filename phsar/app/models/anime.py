@@ -17,4 +17,4 @@ class Anime(BaseModel):
     cover_image = Column(String)
 
     # One-to-many relationship: Anime has many Media
-    media = relationship("Media", back_populates="anime", cascade="all, delete-orphan")
+    media = relationship("Media", back_populates="anime", cascade="all, delete-orphan", lazy="raise")

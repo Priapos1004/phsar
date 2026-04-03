@@ -13,4 +13,4 @@ class MediaSearch(BaseModel):
     description_embedding = Column(Vector(384), nullable=False)  # Specified vector length
 
     # Relationships
-    media = relationship("Media", back_populates="media_search")
+    media = relationship("Media", back_populates="media_search", lazy="raise")
