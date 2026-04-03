@@ -37,14 +37,14 @@ def apply_media_filters(stmt, filters: MediaSearchFilters):
         ).subquery()
         stmt = stmt.where(Media.id.in_(select(subquery.c.id)))
 
-    # Studio filter
+    # Studio filter: subquery avoids duplicate rows when media has multiple matching studios
     if filters.studio_name:
-        stmt = (
-            stmt
-            .join(Media.media_studio)
+        studio_subquery = (
+            select(MediaStudio.media_id)
             .join(MediaStudio.studio)
             .where(Studio.name.in_(filters.studio_name))
-        )
+        ).subquery()
+        stmt = stmt.where(Media.id.in_(select(studio_subquery.c.media_id)))
 
     # Scalar conditions on media columns
     conditions = []
