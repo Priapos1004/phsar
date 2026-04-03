@@ -152,6 +152,14 @@ class MissingSearchDataError(PhsarBaseError):
         super().__init__(message)
 
 
+class InvalidSearchTypeError(PhsarBaseError):
+    """Raised when a search type is not supported for the given endpoint."""
+
+    def __init__(self, search_type: str):
+        message = f"Search type '{search_type}' is not supported on this endpoint."
+        super().__init__(message)
+
+
 class RatingNotFoundError(PhsarBaseError):
     """Raised when a rating is not found or not owned by the user."""
     status_code = 404

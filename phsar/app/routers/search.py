@@ -1,9 +1,10 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user, get_db, require_roles
+from app.core.dependencies import get_current_user, get_db, require_user_or_admin
+from app.exceptions import InvalidSearchTypeError
 from app.models.media import MediaType, RelationType
 from app.models.ratings import (
     AnimationQuality,
@@ -18,7 +19,6 @@ from app.models.ratings import (
     ThreeDAnimation,
     WatchedFormat,
 )
-from app.models.users import RoleType
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
 from app.schemas.media_schema import MediaConnected
 from app.schemas.rating_schema import RatedMediaResult, RatingSearchFilters
@@ -106,15 +106,11 @@ def get_rating_filters(
     )
 
 
-# Restricted users are read-only guests — they cannot access ratings
-_rating_roles = require_roles([RoleType.User, RoleType.Admin])
-
-
 @router.get("/mal", response_model=list[SearchResultDB])
 async def search_mal(
     query: str,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_roles([RoleType.User, RoleType.Admin])),
+    current_user=Depends(require_user_or_admin),
 ):
     return await handle_search_mal_api_results(query=query, db=db)
 
@@ -128,7 +124,7 @@ async def search_media(
     db: AsyncSession = Depends(get_db),
 ):
     if search_type == SearchType.RATING_NOTES:
-        raise HTTPException(status_code=400, detail="Use /search/ratings for rating note search")
+        raise InvalidSearchTypeError(search_type.value)
 
     return await search_media_by_query(
         db=db,
@@ -144,7 +140,7 @@ async def search_ratings(
     search_type: SearchType = Query(default=SearchType.TITLE, description="What to search: title, description, or rating_notes."),
     filters: RatingSearchFilters = Depends(get_rating_filters),
     limit: int = Query(default=50, ge=1, le=200),
-    current_user=Depends(_rating_roles),
+    current_user=Depends(require_user_or_admin),
     db: AsyncSession = Depends(get_db),
 ):
     """Search within the current user's ratings. Supports all media filters

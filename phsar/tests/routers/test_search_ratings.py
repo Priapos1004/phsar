@@ -3,6 +3,12 @@ import pytest
 from app.models.anime import Anime
 from app.models.media import Media, MediaType, RelationType
 
+_RATED_MEDIA_DATA = [
+    ("Action Search Media", 9.0, "fast"),
+    ("Drama Search Media", 6.0, "slow"),
+    ("Comedy Search Media", 7.5, None),
+]
+
 
 @pytest.fixture
 async def rated_media(client, user_auth_headers, db_session):
@@ -12,11 +18,7 @@ async def rated_media(client, user_auth_headers, db_session):
     await db_session.flush()
 
     media_items = []
-    for i, (title, rating, pace) in enumerate([
-        ("Action Search Media", 9.0, "fast"),
-        ("Drama Search Media", 6.0, "slow"),
-        ("Comedy Search Media", 7.5, None),
-    ]):
+    for i, (title, rating, pace) in enumerate(_RATED_MEDIA_DATA):
         media = Media(
             anime_id=anime.id,
             mal_id=77770 + i,
@@ -32,12 +34,7 @@ async def rated_media(client, user_auth_headers, db_session):
         media_items.append(media)
     await db_session.flush()
 
-    # Rate each media via the API
-    for media, (_, rating, pace) in zip(media_items, [
-        ("Action Search Media", 9.0, "fast"),
-        ("Drama Search Media", 6.0, "slow"),
-        ("Comedy Search Media", 7.5, None),
-    ]):
+    for media, (_, rating, pace) in zip(media_items, _RATED_MEDIA_DATA):
         body = {"rating": rating}
         if pace:
             body["pace"] = pace

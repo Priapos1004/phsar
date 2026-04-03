@@ -112,4 +112,6 @@ def apply_vector_ordering(stmt, search_type: SearchType, query_embedding, extra_
     column = columns.get(search_type)
     if column is not None:
         stmt = stmt.order_by(func.cosine_distance(column, cast(query_embedding, Vector)))
+    else:
+        logger.warning("No embedding column for search_type=%s; results will not be relevance-ordered", search_type)
     return stmt

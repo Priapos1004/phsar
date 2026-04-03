@@ -50,6 +50,13 @@ class RatingBase(RatingAttributes):
             raise ValueError("Rating must be between 0 and 10")
         return v
 
+    @field_validator("episodes_watched")
+    @classmethod
+    def episodes_watched_non_negative(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v < 0:
+            raise ValueError("Episodes watched must be non-negative")
+        return v
+
     @field_validator("note")
     @classmethod
     def note_max_length(cls, v: Optional[str]) -> Optional[str]:

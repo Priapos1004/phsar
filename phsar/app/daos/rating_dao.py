@@ -19,8 +19,11 @@ from app.services.vector_embedding_service import generate_embedding
 
 logger = logging.getLogger(__name__)
 
-# Used to apply rating enum filters dynamically (avoids 11 repetitive if-blocks)
+# Used to apply rating enum filters dynamically (avoids 11 repetitive if-blocks).
+# Derived from the schema; the assertion below ensures they stay in sync with the ORM model.
 _RATING_ATTR_FIELDS = list(RatingAttributes.model_fields.keys())
+for _f in _RATING_ATTR_FIELDS:
+    assert hasattr(Ratings, _f), f"RatingAttributes field '{_f}' missing from Ratings model"
 
 
 class RatingDAO(BaseDAO[Ratings]):

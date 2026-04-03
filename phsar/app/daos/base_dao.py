@@ -33,7 +33,9 @@ class BaseDAO(Generic[T]):
     async def get_all_by_field(self, db: AsyncSession, field_name: str, values: list) -> list[T]:
         if not values:
             return []
-        field = getattr(self.model, field_name)
+        field = getattr(self.model, field_name, None)
+        if field is None:
+            raise FieldDoesNotExistError(field_name, self.model.__name__)
         result = await db.execute(select(self.model).where(field.in_(values)))
         return result.scalars().all()
 

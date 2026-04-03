@@ -7,6 +7,7 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     UniqueConstraint,
@@ -117,3 +118,6 @@ class Ratings(BaseModel):
     media = relationship("Media", back_populates="ratings", lazy="raise")
     users = relationship("Users", back_populates="ratings", lazy="raise")
     rating_search = relationship("RatingSearch", back_populates="rating", cascade="all, delete-orphan", uselist=False, lazy="raise")
+
+# Composite index for paginated listing: WHERE user_id = ? ORDER BY modified_at DESC
+Index("ix_ratings_user_modified", Ratings.user_id, Ratings.modified_at.desc())
