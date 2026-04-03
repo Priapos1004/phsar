@@ -61,10 +61,10 @@ docker exec -it anime-postgres psql -U <DB_USER> -d <DB_NAME> \
 
 Layered architecture with strict dependency flow: **routers → services → DAOs → models**
 
-- **routers/** — FastAPI endpoint definitions. Each router maps to an API prefix (`/auth`, `/search`, `/filters`, `/save`, `/seed`).
-- **services/** — Business logic as module-level async functions. Key services: `jikan_scraper.py` (MAL API client with retry), `vector_embedding_service.py` (sentence-transformers embeddings), `media_search_service.py` (filtered DB search), `token_service.py` (compressed JWT for shareable filter URLs), `auth_service.py` (registration, authentication, token issuance).
-- **daos/** — Data access layer. `BaseDAO` provides generic async CRUD; specialized DAOs (media, anime, genre, studio, user, registration_token) add domain-specific queries with vector similarity, filtering, and aggregation.
-- **models/** — SQLAlchemy ORM models mapped to PostgreSQL tables. `media_search.py` stores pgvector embeddings for title and description.
+- **routers/** — FastAPI endpoint definitions. Each router maps to an API prefix (`/auth`, `/search`, `/filters`, `/save`, `/seed`, `/ratings`).
+- **services/** — Business logic as module-level async functions. Key services: `jikan_scraper.py` (MAL API client with retry), `vector_embedding_service.py` (sentence-transformers embeddings), `media_search_service.py` (filtered DB search), `rating_service.py` (rating CRUD + search), `token_service.py` (compressed JWT for shareable filter URLs), `auth_service.py` (registration, authentication, token issuance).
+- **daos/** — Data access layer. `BaseDAO` provides generic async CRUD; specialized DAOs (media, anime, genre, studio, user, registration_token, rating) add domain-specific queries with vector similarity, filtering, and aggregation. `search_filters.py` provides shared filter/ordering helpers used by both media and rating search.
+- **models/** — SQLAlchemy ORM models mapped to PostgreSQL tables. `media_search.py` stores pgvector embeddings for title and description; `rating_search.py` stores note embeddings for rating note search.
 - **schemas/** — Pydantic request/response DTOs.
 - **core/** — Config (`config.py` loads from `.env`), database engine (`db.py`), auth dependencies (`dependencies.py`), JWT/password security (`security.py`).
 - **seeders/** — Run at app startup via lifespan; seed genres and admin user.
@@ -90,7 +90,7 @@ SvelteKit with file-based routing, Svelte 5 runes, Tailwind CSS 4, shadcn-svelte
 - **Dependency injection**: FastAPI `Depends()` for DB sessions, current user extraction, role-based access (`require_roles()` accepts `RoleType` enum).
 - **Role-based access**: Three roles — `admin`, `user`, `restricted_user`.
 - **Async throughout**: asyncpg driver, SQLAlchemy AsyncSession, async service/DAO methods.
-- **Vector search**: `paraphrase-multilingual-MiniLM-L12-v2` model generates embeddings stored via pgvector; similarity search on title and description vectors.
+- **Vector search**: `paraphrase-multilingual-MiniLM-L12-v2` model generates embeddings stored via pgvector; similarity search on title, description, and rating note vectors. `SearchType` enum (`title`, `description`, `rating_notes`) selects the target. Search filter schemas use inheritance: `MediaSearchFilters` (base) → `RatingSearchFilters` (adds rating-specific filters).
 - **Domain exceptions**: All custom exceptions extend `PhsarBaseError` with a `status_code` class attribute. One handler in `main.py` serves all.
 - **Theme system**: CSS custom properties (`--color-*`) define the palette. Components use semantic tokens (`bg-card`, `text-primary`, `text-destructive`) instead of hardcoded Tailwind colors.
 - **CORS**: Backend allows origins from `settings.CORS_ORIGINS` (defaults to `http://localhost:5173`).

@@ -24,7 +24,9 @@ phsar/
 │   │   ├── genre_dao.py
 │   │   ├── media_dao.py
 │   │   ├── media_unwanted_dao.py
+│   │   ├── rating_dao.py
 │   │   ├── registration_token_dao.py
+│   │   ├── search_filters.py
 │   │   ├── studio_dao.py
 │   │   └── user_dao.py
 │   ├── exceptions.py
@@ -38,6 +40,7 @@ phsar/
 │   │   ├── media_search.py
 │   │   ├── media_studio.py
 │   │   ├── media_unwanted.py
+│   │   ├── rating_search.py
 │   │   ├── ratings.py
 │   │   ├── registration_token.py
 │   │   ├── studio.py
@@ -49,6 +52,7 @@ phsar/
 │   │   ├── auth.py
 │   │   ├── filters.py
 │   │   ├── save.py
+│   │   ├── ratings.py
 │   │   ├── search.py
 │   │   └── seeder.py
 │   ├── schemas/
@@ -56,6 +60,7 @@ phsar/
 │   │   ├── auth_schema.py
 │   │   ├── media_filter_schema.py
 │   │   ├── media_schema.py
+│   │   ├── rating_schema.py
 │   │   └── search_schema.py
 │   ├── seeders/
 │   │   ├── genre_seeder.py
@@ -69,6 +74,7 @@ phsar/
 │       ├── media_linking_service.py
 │       ├── media_search_service.py
 │       ├── media_service.py
+│       ├── rating_service.py
 │       ├── save_service.py
 │       ├── search_service.py
 │       ├── token_service.py

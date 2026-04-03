@@ -12,11 +12,16 @@ from app.exceptions import (
 from app.models.media import Media
 from app.models.rating_search import RatingSearch
 from app.models.ratings import Ratings
+from app.schemas.media_filter_schema import SearchType
 from app.schemas.rating_schema import (
+    RatedMediaResult,
+    RatingAttributes,
     RatingBulkCreate,
     RatingCreate,
     RatingOut,
+    RatingSearchFilters,
 )
+from app.services.media_search_service import media_to_dict
 from app.services.vector_embedding_service import generate_embedding
 
 logger = logging.getLogger(__name__)
@@ -126,6 +131,36 @@ async def delete_rating(db: AsyncSession, user_id: int, rating_uuid: UUID) -> No
         raise RatingNotFoundError(str(rating_uuid))
     await rating_dao.delete(db, rating)
     await db.commit()
+
+
+def _rating_to_rated_media_result(r: Ratings) -> RatedMediaResult:
+    rating_data = {
+        "rating_uuid": r.uuid,
+        "user_rating": r.rating,
+        "dropped": r.dropped,
+        "episodes_watched": r.episodes_watched,
+        "note": r.note,
+        "rating_created_at": r.created_at,
+        "rating_modified_at": r.modified_at,
+    }
+    for field in RatingAttributes.model_fields:
+        rating_data[field] = getattr(r, field)
+
+    return RatedMediaResult(**media_to_dict(r.media), **rating_data)
+
+
+async def search_user_ratings(
+    db: AsyncSession,
+    user_id: int,
+    query: str,
+    filters: RatingSearchFilters,
+    search_type: SearchType,
+    limit: int = 50,
+) -> list[RatedMediaResult]:
+    ratings = await rating_dao.search_ratings_with_filters(
+        db, user_id, query, filters, search_type, limit
+    )
+    return [_rating_to_rated_media_result(r) for r in ratings]
 
 
 async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCreate) -> list[RatingOut]:

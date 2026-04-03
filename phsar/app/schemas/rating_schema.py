@@ -17,6 +17,8 @@ from app.models.ratings import (
     ThreeDAnimation,
     WatchedFormat,
 )
+from app.schemas.media_filter_schema import MediaSearchFilters
+from app.schemas.media_schema import MediaConnected
 
 
 class RatingAttributes(BaseModel):
@@ -90,3 +92,33 @@ class RatingBulkCreate(RatingBase):
         if not v:
             raise ValueError("At least one media UUID is required")
         return v
+
+
+class RatingSearchFilters(MediaSearchFilters):
+    """Extends media filters with rating-specific filters for searching within a user's ratings."""
+    user_rating_min: Optional[float] = None
+    user_rating_max: Optional[float] = None
+    dropped: Optional[bool] = None
+    pace: Optional[list[Pace]] = None
+    animation_quality: Optional[list[AnimationQuality]] = None
+    has_3d_animation: Optional[list[ThreeDAnimation]] = None
+    watched_format: Optional[list[WatchedFormat]] = None
+    fan_service: Optional[list[FanService]] = None
+    dialogue_quality: Optional[list[DialogueQuality]] = None
+    character_depth: Optional[list[CharacterDepth]] = None
+    ending_type: Optional[list[EndingType]] = None
+    ending_quality: Optional[list[EndingQuality]] = None
+    story_quality: Optional[list[StoryQuality]] = None
+    originality: Optional[list[Originality]] = None
+
+
+class RatedMediaResult(MediaConnected, RatingAttributes):
+    """Media search result enriched with the user's rating data.
+    Inherits media fields from MediaConnected and enum fields from RatingAttributes."""
+    rating_uuid: UUID
+    user_rating: float
+    dropped: bool
+    episodes_watched: Optional[int] = None
+    note: Optional[str] = None
+    rating_created_at: datetime
+    rating_modified_at: datetime
