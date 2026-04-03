@@ -154,7 +154,7 @@ async def test_list_user_ratings(client, user_auth_headers, test_media_list):
             headers=user_auth_headers,
         )
 
-    response = await client.get("/ratings/", headers=user_auth_headers)
+    response = await client.get("/ratings", headers=user_auth_headers)
     assert response.status_code == 200
     assert len(response.json()) == 3
 
@@ -168,20 +168,20 @@ async def test_list_user_ratings_pagination(client, user_auth_headers, test_medi
         )
 
     response = await client.get(
-        "/ratings/", params={"limit": 2, "offset": 0}, headers=user_auth_headers
+        "/ratings", params={"limit": 2, "offset": 0}, headers=user_auth_headers
     )
     assert response.status_code == 200
     assert len(response.json()) == 2
 
     response = await client.get(
-        "/ratings/", params={"limit": 2, "offset": 2}, headers=user_auth_headers
+        "/ratings", params={"limit": 2, "offset": 2}, headers=user_auth_headers
     )
     assert response.status_code == 200
     assert len(response.json()) == 1
 
 
 async def test_list_user_ratings_empty(client, user_auth_headers):
-    response = await client.get("/ratings/", headers=user_auth_headers)
+    response = await client.get("/ratings", headers=user_auth_headers)
     assert response.status_code == 200
     assert response.json() == []
 
@@ -283,7 +283,7 @@ async def test_restricted_user_cannot_rate(client, restricted_user_auth_headers,
 
 
 async def test_restricted_user_cannot_list_ratings(client, restricted_user_auth_headers):
-    response = await client.get("/ratings/", headers=restricted_user_auth_headers)
+    response = await client.get("/ratings", headers=restricted_user_auth_headers)
     assert response.status_code == 403
 
 

@@ -33,13 +33,23 @@ _EXCLUDE_BULK = {"media_uuids"}
 
 
 def _rating_to_out(r: Ratings) -> RatingOut:
-    return RatingOut.model_validate(r, update={
+    data = {
+        "uuid": r.uuid,
+        "rating": r.rating,
+        "dropped": r.dropped,
+        "episodes_watched": r.episodes_watched,
+        "note": r.note,
         "media_uuid": r.media.uuid,
         "media_title": r.media.title,
         "media_cover_image": r.media.cover_image,
         "anime_uuid": r.media.anime.uuid,
         "anime_title": r.media.anime.title,
-    })
+        "created_at": r.created_at,
+        "modified_at": r.modified_at,
+    }
+    for field in RatingAttributes.model_fields:
+        data[field] = getattr(r, field)
+    return RatingOut(**data)
 
 
 async def _resolve_media_uuids(db: AsyncSession, media_uuids: list[UUID]) -> list[Media]:
