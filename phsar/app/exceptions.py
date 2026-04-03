@@ -150,3 +150,21 @@ class MissingSearchDataError(PhsarBaseError):
     def __init__(self):
         message = "Missing search data in token"
         super().__init__(message)
+
+
+class RatingNotFoundError(PhsarBaseError):
+    """Raised when a rating is not found or not owned by the user."""
+    status_code = 404
+
+    def __init__(self, identifier: str):
+        message = f"Rating not found: '{identifier}'."
+        super().__init__(message)
+
+
+class MediaNotFoundError(PhsarBaseError):
+    """Raised when a media UUID does not resolve to an existing media."""
+    status_code = 404
+
+    def __init__(self, media_identifier: str):
+        message = f"Media not found: '{media_identifier}'."
+        super().__init__(message)
