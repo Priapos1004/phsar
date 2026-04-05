@@ -60,8 +60,25 @@
 /* Lock dark: variants to class-based only (prevent OS dark mode interference) */
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Type scale — two primary sizes plus headings:
+ *   text-sm   = 0.8125rem (13px) — small elements: carousel, counters, muted secondary info
+ *   (base)    = 0.9375rem (15px) — everything else: body, labels, stats, descriptions
+ *   text-lg   = 1.125rem  — section headings
+ *   text-xl   = 1.25rem   — featured numbers, logo
+ *   text-2xl  = 1.5rem    — page titles
+ *   text-3xl  = 1.875rem  — hero titles
+ */
 body {
   @apply bg-gradient-to-br from-[#352558] via-[#261845] to-[#1C1038] text-white;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+/* Override text-sm to 13px — the only "small" size in the app */
+@utility text-sm {
+  font-size: 0.8125rem;
+  line-height: 1.5;
 }
 
 a {

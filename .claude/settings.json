@@ -23,6 +23,7 @@
       "Bash(gh run view:*)",
       "Bash(gh run list:*)",
       "Bash(gh issue view:*)",
+      "Bash(gh issue list:*)",
       "Bash(gh milestone list:*)",
       "WebFetch(domain:shadcn-svelte.com)",
       "Bash(yes)",

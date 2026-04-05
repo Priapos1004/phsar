@@ -88,7 +88,7 @@
 		/>
 
 		{#if showLimitHint}
-			<div class="absolute top-[-1.5rem] right-0 text-xs bg-destructive text-white px-3 py-1 rounded-lg shadow z-50">
+			<div class="absolute top-[-1.5rem] right-0 text-sm bg-destructive text-white px-3 py-1 rounded-lg shadow z-50">
 				Max {MAX_ITEMS} items
 			</div>
 		{/if}

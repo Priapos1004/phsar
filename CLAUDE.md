@@ -61,7 +61,7 @@ docker exec -it anime-postgres psql -U <DB_USER> -d <DB_NAME> \
 
 Layered architecture with strict dependency flow: **routers → services → DAOs → models**
 
-- **routers/** — FastAPI endpoint definitions. Each router maps to an API prefix (`/auth`, `/search`, `/filters`, `/save`, `/seed`, `/ratings`).
+- **routers/** — FastAPI endpoint definitions. Each router maps to an API prefix (`/auth`, `/search`, `/filters`, `/media`, `/save`, `/seed`, `/ratings`).
 - **services/** — Business logic as module-level async functions. Key services: `jikan_scraper.py` (MAL API client with retry), `vector_embedding_service.py` (sentence-transformers embeddings), `media_search_service.py` (filtered DB search), `rating_service.py` (rating CRUD + search), `token_service.py` (compressed JWT for shareable filter URLs), `auth_service.py` (registration, authentication, token issuance).
 - **daos/** — Data access layer. `BaseDAO` provides generic async CRUD; specialized DAOs (media, anime, genre, studio, user, registration_token, rating) add domain-specific queries with vector similarity, filtering, and aggregation. `search_filters.py` provides shared filter/ordering helpers used by both media and rating search.
 - **models/** — SQLAlchemy ORM models mapped to PostgreSQL tables. `media_search.py` stores pgvector embeddings for title and description; `rating_search.py` stores note embeddings for rating note search.
@@ -74,10 +74,10 @@ Layered architecture with strict dependency flow: **routers → services → DAO
 
 SvelteKit with file-based routing, Svelte 5 runes, Tailwind CSS 4, shadcn-svelte component library.
 
-- **routes/** — Pages: home (`/`), login (`/login`), search (`/search`).
-- **lib/components/** — App components (SearchBar, MediaInfo, NavBar, TagSelect, DoubleRangeSlider, etc.) using Svelte 5 `$props()`, `$state()`, `$derived()`, `$effect()`.
-- **lib/components/ui/** — shadcn-svelte base components (button, card, input, badge, slider, dropdown-menu, popover, checkbox, label, etc.).
-- **lib/api.ts** — Centralized API client with `get`/`post`/`postForm` methods, `ApiError` class, and automatic auth header injection from the token store.
+- **routes/** — Pages: home (`/`), login (`/login`), search (`/search`), media detail (`/media`).
+- **lib/components/** — App components (SearchBar, MediaInfo, NavBar, TagSelect, DoubleRangeSlider, RatingCard, RelatedMediaCarousel, etc.) using Svelte 5 `$props()`, `$state()`, `$derived()`, `$effect()`.
+- **lib/components/ui/** — shadcn-svelte base components (button, card, input, badge, slider, dropdown-menu, popover, checkbox, label, select, separator, etc.).
+- **lib/api.ts** — Centralized API client with `get`/`post`/`postForm`/`put`/`del` methods, `ApiError` class, and automatic auth header injection from the token store.
 - **lib/types/api.ts** — TypeScript interfaces mirroring backend Pydantic schemas (`MediaConnected`, `FilterOptions`, `TokenResponse`, etc.).
 - **lib/stores/** — Svelte stores for auth state (JWT token persisted to localStorage).
 - **lib/utils/** — String formatting, season logic, search params, navigation.

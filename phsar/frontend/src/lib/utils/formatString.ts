@@ -31,6 +31,32 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
+ * Format anime season name and year into a display string.
+ * Returns null if either part is missing.
+ */
+export function formatSeason(name: string | null, year: number | null): string | null {
+	if (name && year) return `${name} ${year}`;
+	return null;
+}
+
+/**
+ * Strip MAL attribution tags (e.g. "[Written by MAL Rewrite]") from description text.
+ */
+export function cleanDescription(text: string): string {
+	return text.replace(/\s*\[Written by MAL Rewrite\]\s*/g, '').trim();
+}
+
+/**
+ * Clamp a score to [0, 10] and round to the nearest step.
+ * Examples (step=0.5): 6.6 -> 6.5, 9.656 -> 9.5, -1 -> 0, 15 -> 10, 7.25 -> 7.5
+ * Examples (step=1):   6.6 -> 7, 9.3 -> 9, 0.4 -> 0
+ */
+export function clampAndSnapScore(val: number, step: number): number {
+	const clamped = Math.min(10, Math.max(0, val));
+	return Math.round(clamped / step) * step;
+}
+
+/**
  * Format a number to have a fixed number of digits after the decimal point.
  * Pads with trailing zeros or rounds as needed.
  *

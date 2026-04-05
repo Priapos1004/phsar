@@ -4,7 +4,7 @@
 	import { fetchSearchResults } from '$lib/utils/search';
 	import type { MediaSearchFilters } from '$lib/utils/search';
 	import { navigateToSearch } from '$lib/utils/navigation';
-	import { formatDuration } from '$lib/utils/formatString';
+	import { formatDuration, formatSeason } from '$lib/utils/formatString';
 	import { api } from '$lib/api';
 	import type { MediaConnected } from '$lib/types/api';
 	import * as cls from '$lib/styles/classes';
@@ -17,6 +17,7 @@
 	let hasToken = $state(false);
 
 	let decodedParams: Partial<MediaSearchFilters> = $state({});
+	let searchToken = $derived(page.url.searchParams.get('q'));
 
 	let visibleCount = $state(20);
 
@@ -88,7 +89,7 @@
 					title={result.name_eng ?? result.title}
 					score={result.score}
 					scoredBy={result.scored_by}
-					anime_season={result.anime_season_name && result.anime_season_year ? result.anime_season_name + " " + result.anime_season_year : null}
+					anime_season={formatSeason(result.anime_season_name, result.anime_season_year)}
 					airing_status={result.airing_status}
 					age_rating_numeric={result.age_rating_numeric}
 					genres={result.genres}
@@ -98,6 +99,7 @@
 					imageUrl={result.cover_image}
 					on_watchlist={false}
 					media_uuid={result.uuid}
+					{searchToken}
 				/>
 			{/each}
 		</div>

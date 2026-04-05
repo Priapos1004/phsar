@@ -32,7 +32,22 @@ async function handleResponse<T>(res: Response): Promise<T> {
 		}
 		throw new ApiError(res.status, detail);
 	}
+	if (res.status === 204) {
+		return undefined as T;
+	}
 	return res.json();
+}
+
+async function jsonRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
+	const res = await fetch(`${API_URL}${path}`, {
+		method,
+		headers: {
+			'Content-Type': 'application/json',
+			...getAuthHeaders(),
+		},
+		body: body ? JSON.stringify(body) : undefined,
+	});
+	return handleResponse<T>(res);
 }
 
 export const api = {
@@ -45,15 +60,7 @@ export const api = {
 	},
 
 	async post<T = unknown>(path: string, body?: unknown): Promise<T> {
-		const res = await fetch(`${API_URL}${path}`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				...getAuthHeaders(),
-			},
-			body: body ? JSON.stringify(body) : undefined,
-		});
-		return handleResponse<T>(res);
+		return jsonRequest<T>('POST', path, body);
 	},
 
 	async postForm<T = unknown>(path: string, body: URLSearchParams): Promise<T> {
@@ -64,6 +71,18 @@ export const api = {
 				...getAuthHeaders(),
 			},
 			body,
+		});
+		return handleResponse<T>(res);
+	},
+
+	async put<T = unknown>(path: string, body?: unknown): Promise<T> {
+		return jsonRequest<T>('PUT', path, body);
+	},
+
+	async del<T = void>(path: string): Promise<T> {
+		const res = await fetch(`${API_URL}${path}`, {
+			method: 'DELETE',
+			headers: getAuthHeaders(),
 		});
 		return handleResponse<T>(res);
 	},

@@ -1,11 +1,13 @@
 import logging
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.media_dao import MediaDAO
+from app.exceptions import MediaNotFoundError
 from app.models.media import Media
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
-from app.schemas.media_schema import MediaConnected
+from app.schemas.media_schema import MediaConnected, MediaDetail, MediaSibling
 
 logger = logging.getLogger(__name__)
 
@@ -74,3 +76,30 @@ async def search_media_by_query(
 
     # Map to MediaConnected Pydantic models
     return [map_media_to_connected(m) for m in media_list]
+
+
+def _media_to_sibling(media: Media) -> MediaSibling:
+    return MediaSibling(
+        uuid=media.uuid,
+        title=media.title,
+        name_eng=media.name_eng,
+        cover_image=media.cover_image,
+        media_type=media.media_type,
+        relation_type=media.relation_type,
+        episodes=media.episodes,
+        airing_status=media.airing_status,
+        anime_season_name=media.anime_season_name,
+        anime_season_year=media.anime_season_year,
+    )
+
+
+async def get_media_detail(db: AsyncSession, media_uuid: UUID) -> MediaDetail:
+    media = await media_dao.get_by_uuid_with_relations(db, media_uuid)
+    if not media:
+        raise MediaNotFoundError(str(media_uuid))
+
+    siblings = [
+        _media_to_sibling(m) for m in media.anime.media if m.id != media.id
+    ]
+
+    return MediaDetail(**media_to_dict(media), sibling_media=siblings)

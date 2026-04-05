@@ -170,6 +170,9 @@ Once all features are discussed, this becomes the basis for GitHub issues and mi
 - Theme color derived from profile picture, not a separate setting
 - Settings created with defaults when user account is created
 
+### Implementation Note (from v0.10.0)
+- When `rating_step` changes, existing ratings may have precision that doesn't match the new step (e.g. a score of 7.25 saved with step 0.25, then user switches to step 0.5). Decide on display behavior: show the stored value as-is (preserving precision), or round to the current step for display consistency. The score input already uses `clampAndSnapScore(val, step)` which will snap on edit, but read-only display needs a policy.
+
 ---
 
 ## Feature 4: Content Pipeline (Add Anime, Updates, Seasonal Scraping)
@@ -345,6 +348,7 @@ Eye-catching landing page — light version of browse, serves new and returning 
 - Recommendation section uses same algo as browse page top section
 - Home page sections reuse browse page components (lighter presentation)
 - For logged-out / new users: show season diashow, popular, recently added (skip personalized sections)
+- `RelatedMediaCarousel` (from v0.10.0) is a starting point — generalize it into a reusable horizontal card carousel component that accepts any card content (anime covers, media cards, recommendations) for both browse and home page sections
 
 ---
 
@@ -465,7 +469,7 @@ Eye-catching landing page — light version of browse, serves new and returning 
 | **v0.13.0** | Deployment (Coolify) + switch to bun + DB backup/restore | Deployment-ready: Coolify config for db/frontend/backend services. Switch frontend from npm to bun. pg_dump backup system (automated + local download). Prerequisite for content pipeline cron jobs. |
 | **v0.14.0** | Content pipeline (scraper jobs, dedup, updates, seasonal) | User-triggered scraping with job tracking. Automated daily/weekly updates. Seasonal scraping. Dedup + admin merge notifications. |
 | **v0.15.0** | Watchlist backend + UI | Watchlist CRUD, tags, priority. Watchlist page with filtering. Watchlist icons in search results. |
-| **v0.15.1** | Search enhancements + design polish | "In watchlist"/"already watched" search filters. Search filter QoL improvements. Component design polish. |
+| **v0.15.1** | Search enhancements + design polish | "In watchlist"/"already watched" search filters. Search filter QoL improvements. Component design polish. Note: consider enlarging the watchlist bookmark icon on the media detail page for better tap target and visual presence. |
 | **v0.16.0** | Browse page + home page redesign | Crunchyroll-style horizontal card rows. Browse sections with algo selector. Home page as light version. Get-started page. |
 | **v0.17.0** | Statistics & analytics (v1) | Standard graphs (watch history, genre distribution, score histogram, etc.). Statistics page route. |
 | **v0.18.0+** | Advanced recommendations, achievements, advanced analytics | HDBSCAN clustering, pattern prediction, "love it or hate it", achievements system with titles. Iterative. |

@@ -51,8 +51,9 @@ phsar/
 │   ├── routers/
 │   │   ├── auth.py
 │   │   ├── filters.py
-│   │   ├── save.py
+│   │   ├── media.py
 │   │   ├── ratings.py
+│   │   ├── save.py
 │   │   ├── search.py
 │   │   └── seeder.py
 │   ├── schemas/
@@ -97,6 +98,8 @@ phsar/
 │   │   │   │   ├── LoadingScreen.svelte
 │   │   │   │   ├── MediaInfo.svelte
 │   │   │   │   ├── NavBar.svelte
+│   │   │   │   ├── RatingCard.svelte
+│   │   │   │   ├── RelatedMediaCarousel.svelte
 │   │   │   │   ├── ScrollableCard.svelte
 │   │   │   │   ├── SearchBar.svelte
 │   │   │   │   ├── SkeletonMediaInfo.svelte
@@ -113,6 +116,8 @@ phsar/
 │   │   │   │       ├── input-group/
 │   │   │   │       ├── label/
 │   │   │   │       ├── popover/
+│   │   │   │       ├── select/
+│   │   │   │       ├── separator/
 │   │   │   │       ├── slider/
 │   │   │   │       └── textarea/
 │   │   │   ├── stores/
@@ -134,6 +139,8 @@ phsar/
 │   │   │   ├── +page.svelte
 │   │   │   ├── login/
 │   │   │   │   └── +page.svelte
+│   │   │   ├── media/
+│   │   │   │   └── +page.svelte
 │   │   │   └── search/
 │   │   │       └── +page.svelte
 │   │   └── tests/
@@ -141,7 +148,9 @@ phsar/
 │   │       ├── auth-store.test.ts
 │   │       ├── format-string.test.ts
 │   │       ├── login.test.ts
+│   │       ├── media-detail.test.ts
 │   │       ├── navbar.test.ts
+│   │       ├── rating-modal.test.ts
 │   │       └── searchbar.test.ts
 │   ├── static/
 │   │   ├── phsar_logo_inverted.png
@@ -163,6 +172,7 @@ phsar/
     │   ├── test_auth.py
     │   ├── test_filters_options.py
     │   ├── test_filters_token.py
+    │   ├── test_media_detail.py
     │   ├── test_ratings.py
     │   ├── test_save.py
     │   ├── test_search_media.py
