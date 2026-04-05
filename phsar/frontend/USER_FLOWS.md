@@ -161,11 +161,11 @@ Each search result card shows:
 - **API calls**: `PUT /ratings/media/{uuid}` to create/update, `DELETE /ratings/{uuid}` to delete
 
 ### 6.5 Related Media Carousel
-- Only shown when sibling media exist (other media in the same anime)
-- Shows parent anime name
-- Horizontal scrollable row of compact cards (snap scrolling)
-- Each card: cover image (with fallback), title, media type + relation type badges, season or episode count
-- Clicking a sibling card navigates to that media's detail page
+- Always shown — displays parent anime name as context
+- If sibling media exist: horizontal scrollable row of compact cards (snap scrolling)
+  - Each card: cover image (with fallback), title, media type + relation type badges, season or episode count
+  - Clicking a sibling card navigates to that media's detail page
+- If no siblings: "No other media in this anime" message
 
 ### 6.6 Back Navigation
 - "Back to search" link appears when `q` search token is present in URL

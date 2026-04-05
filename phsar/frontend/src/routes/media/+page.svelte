@@ -285,16 +285,18 @@
 			</Card.Root>
 		{/if}
 
-		{#if media.sibling_media.length}
-			<Card.Root class={cls.cardGlass}>
-				<Card.Content>
-					<h2 class="text-lg font-semibold text-card-foreground mb-1">Related Media</h2>
-					<p class="text-muted-foreground mb-3">
-						Part of anime: <span class="text-primary font-medium">{media.anime_name_eng ?? media.anime_title}</span>
-					</p>
+		<Card.Root class={cls.cardGlass}>
+			<Card.Content>
+				<h2 class="text-lg font-semibold text-card-foreground mb-1">Related Media</h2>
+				<p class="text-muted-foreground {media.sibling_media.length ? 'mb-3' : ''}">
+					Part of anime: <span class="text-primary font-medium">{media.anime_name_eng ?? media.anime_title}</span>
+				</p>
+				{#if media.sibling_media.length}
 					<RelatedMediaCarousel siblings={media.sibling_media} />
-				</Card.Content>
-			</Card.Root>
-		{/if}
+				{:else}
+					<p class="text-muted-foreground/70 text-sm mt-2">No other media in this anime</p>
+				{/if}
+			</Card.Content>
+		</Card.Root>
 	{/if}
 </div>
