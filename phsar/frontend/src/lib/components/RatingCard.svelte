@@ -112,7 +112,8 @@
 	});
 
 	$effect(() => {
-		if (!dropped && totalEpisodes !== null) {
+		// Only auto-fill episodes when creating a new rating (not editing existing)
+		if (!existingRating && !dropped && totalEpisodes !== null) {
 			episodesWatched = totalEpisodes.toString();
 		}
 	});

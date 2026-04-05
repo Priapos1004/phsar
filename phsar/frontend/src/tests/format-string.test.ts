@@ -101,7 +101,7 @@ describe('clampAndSnapScore', () => {
 			expect(clampAndSnapScore(0, step)).toBe(0.0);
 		});
 
-		it('handles NaN as 0', () => {
+		it('propagates NaN', () => {
 			expect(clampAndSnapScore(NaN, step)).toBeNaN();
 		});
 

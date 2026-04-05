@@ -32,6 +32,9 @@
 		const uuid = page.url.searchParams.get('uuid');
 		if (uuid) {
 			loadMedia(uuid);
+		} else {
+			loading = false;
+			error = 'No media UUID provided';
 		}
 	});
 
