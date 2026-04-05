@@ -3,15 +3,18 @@ from typing import Optional
 
 from pydantic import BaseModel
 
+from app.models.media import MediaType, RelationType
+
 
 class SearchType(str, Enum):
     TITLE = "title"
     DESCRIPTION = "description"
+    RATING_NOTES = "rating_notes"
 
 
 class MediaSearchFilters(BaseModel):
-    relation_type: Optional[list[str]] = None
-    media_type: Optional[list[str]] = None
+    relation_type: Optional[list[RelationType]] = None
+    media_type: Optional[list[MediaType]] = None
     age_rating: Optional[list[str]] = None
     airing_status: Optional[list[str]] = None
     anime_season: Optional[list[str]] = None

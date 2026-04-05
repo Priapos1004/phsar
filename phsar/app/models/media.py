@@ -124,12 +124,12 @@ class Media(BaseModel):
     )
 
     # Relationships
-    anime = relationship("Anime", back_populates="media")
-    ratings = relationship("Ratings", back_populates="media", cascade="all, delete-orphan")
-    watchlist = relationship("Watchlist", back_populates="media", cascade="all, delete-orphan")
-    media_genre = relationship("MediaGenre", back_populates="media", cascade="all, delete-orphan")
-    media_studio = relationship("MediaStudio", back_populates="media", cascade="all, delete-orphan")
-    media_search = relationship("MediaSearch", back_populates="media", cascade="all, delete-orphan")
+    anime = relationship("Anime", back_populates="media", lazy="raise")
+    ratings = relationship("Ratings", back_populates="media", cascade="all, delete-orphan", lazy="raise")
+    watchlist = relationship("Watchlist", back_populates="media", cascade="all, delete-orphan", lazy="raise")
+    media_genre = relationship("MediaGenre", back_populates="media", cascade="all, delete-orphan", lazy="raise")
+    media_studio = relationship("MediaStudio", back_populates="media", cascade="all, delete-orphan", lazy="raise")
+    media_search = relationship("MediaSearch", back_populates="media", cascade="all, delete-orphan", lazy="raise")
 
 # Index to optimize queries filtering or ordering by season year and name
 Index(

@@ -10,4 +10,4 @@ class Studio(BaseModel):
     name = Column(String, unique=True, nullable=False)
 
     # Relationships
-    media_studio = relationship("MediaStudio", back_populates="studio", cascade="all, delete-orphan")
+    media_studio = relationship("MediaStudio", back_populates="studio", cascade="all, delete-orphan", lazy="raise")

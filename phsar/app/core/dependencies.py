@@ -53,6 +53,10 @@ def require_roles(allowed_roles: Union[RoleType, list[RoleType]]):
     return role_checker
 
 
+# Shared role dependency: User and Admin (excludes RestrictedUser)
+require_user_or_admin = require_roles([RoleType.User, RoleType.Admin])
+
+
 def verify_url_token(token: str) -> dict:
     try:
         # Decode and verify JWT signature

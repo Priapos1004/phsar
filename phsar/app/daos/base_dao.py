@@ -30,6 +30,15 @@ class BaseDAO(Generic[T]):
         await db.delete(obj)
         await db.flush()
 
+    async def get_all_by_field(self, db: AsyncSession, field_name: str, values: list) -> list[T]:
+        if not values:
+            return []
+        field = getattr(self.model, field_name, None)
+        if field is None:
+            raise FieldDoesNotExistError(field_name, self.model.__name__)
+        result = await db.execute(select(self.model).where(field.in_(values)))
+        return result.scalars().all()
+
     async def delete_all_by_field(self, db: AsyncSession, field_name: str, values: list) -> None:
         if not values:
             return

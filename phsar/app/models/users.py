@@ -20,11 +20,12 @@ class Users(BaseModel):
     role = Column(Enum(RoleType), nullable=False, default=RoleType.User)
 
     # Relationships
-    ratings = relationship("Ratings", back_populates="users", cascade="all, delete-orphan")
-    watchlist = relationship("Watchlist", back_populates="users", cascade="all, delete-orphan")
-    tag = relationship("Tag", back_populates="users", cascade="all, delete-orphan")
+    ratings = relationship("Ratings", back_populates="users", cascade="all, delete-orphan", lazy="raise")
+    watchlist = relationship("Watchlist", back_populates="users", cascade="all, delete-orphan", lazy="raise")
+    tag = relationship("Tag", back_populates="users", cascade="all, delete-orphan", lazy="raise")
     registration_tokens = relationship(
         "RegistrationToken",
         back_populates="created_by",
-        foreign_keys="[RegistrationToken.created_by_user_id]" 
+        foreign_keys="[RegistrationToken.created_by_user_id]",
+        lazy="raise",
     )

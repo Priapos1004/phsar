@@ -23,6 +23,6 @@ Batch of cross-cutting improvements: Argon2 password migration with transparent 
 ## Future Work
 
 - Hardcoded CORS origin and frontend API URL block non-localhost deployment (address in v0.8.0)
-- `fetch_filter_values` issues 12+ sequential DB queries — could use `asyncio.gather`
-- N+1 pattern in `create_unwanted_media` (same fix as genre seeder)
+- ~~`fetch_filter_values` issues 12+ sequential DB queries — could use `asyncio.gather`~~ **Dropped**: requires separate AsyncSession per gathered coroutine; complexity outweighs ~30ms gain on non-hot-path queries
+- ~~N+1 pattern in `create_unwanted_media` (same fix as genre seeder)~~ **Done** (v0.9.0): batch lookup via `get_all_by_field` + `add_all`/`flush`
 - `passlib` replacement with direct `argon2-cffi`

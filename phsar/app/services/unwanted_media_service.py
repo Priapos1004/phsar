@@ -11,19 +11,18 @@ media_unwanted_dao = MediaUnwantedDAO()
 
 async def create_unwanted_media(db: AsyncSession, unwanted_media: set[tuple[int, str, str]]) -> None:
     logger.debug(f"DB session: {id(db)}")
-    inserted = 0
-    for mal_id, title, reason in unwanted_media:
-        existing = await media_unwanted_dao.get_by_mal_id(db, mal_id)
-        if existing:
-            logger.info(f"Unwanted media with mal_id={mal_id} already exists (title={title}, reason={reason}). Skipping.")
-            continue
-        
-        unwanted_media_obj = MediaUnwanted(
-            mal_id=mal_id,
-            title=title,
-            reason=reason
-        )
-        await media_unwanted_dao.create(db, unwanted_media_obj)
-        inserted += 1
 
-    logger.info(f"Finished inserting {inserted} unwanted media items.")
+    incoming_mal_ids = [mal_id for mal_id, _, _ in unwanted_media]
+    existing_records = await media_unwanted_dao.get_all_by_field(db, "mal_id", incoming_mal_ids)
+    existing_mal_ids = {r.mal_id for r in existing_records}
+
+    new_items = [
+        MediaUnwanted(mal_id=mal_id, title=title, reason=reason)
+        for mal_id, title, reason in unwanted_media
+        if mal_id not in existing_mal_ids
+    ]
+    if new_items:
+        db.add_all(new_items)
+        await db.flush()
+
+    logger.info(f"Inserted {len(new_items)} unwanted media items, skipped {len(existing_mal_ids)} existing.")

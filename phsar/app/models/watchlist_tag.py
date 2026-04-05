@@ -13,5 +13,5 @@ class WatchlistTag(BaseModel):
         UniqueConstraint('watchlist_id', 'tag_id', name='unique_watchlist_tag'),
     )
     # Relationships
-    watchlist = relationship("Watchlist", back_populates="watchlist_tag")
-    tag = relationship("Tag", back_populates="watchlist_tag")
+    watchlist = relationship("Watchlist", back_populates="watchlist_tag", lazy="raise")
+    tag = relationship("Tag", back_populates="watchlist_tag", lazy="raise")
