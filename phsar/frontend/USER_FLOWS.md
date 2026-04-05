@@ -45,6 +45,7 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 | `/` | Home (search bar + placeholders) | Yes |
 | `/login` | Login form | No |
 | `/search?q=<token>` | Search results | Yes |
+| `/media?uuid=<uuid>` | Media detail + rating | Yes |
 | `/ratings` | (placeholder) | Yes |
 | `/watchlist` | (placeholder) | Yes |
 | `/settings` | (placeholder) | Yes |
@@ -115,10 +116,64 @@ Each search result card shows:
 - Relation type tag
 - Total watch time
 - Bookmark/watchlist indicator icon
+- Clicking a card navigates to `/media?uuid=<uuid>` (with `&q=<token>` preserved for back navigation)
 
 ---
 
-## 6. API Endpoints Used by Frontend
+## 6. Media Detail Page
+
+### 6.1 Loading
+- Page reads `uuid` param from URL
+- Fetches media detail (`GET /media/{uuid}`) and user rating (`GET /ratings/media/{uuid}`) in parallel
+- While loading: centered "Loading..." pulse animation
+- On error: centered red error message
+
+### 6.2 Hero Card
+- Blurred cover image background with card overlay
+- Cover image (with fallback placeholder if missing or load fails)
+- Title (English preferred, falls back to default title)
+- Japanese title and romaji subtitle (if different from displayed title)
+- Airing status badge: green pulsing dot for "Currently Airing", yellow for "Not yet aired", muted for finished
+- MAL score with star icon and rating count
+- Badges: media type (green), relation type (blue), age rating (orange)
+- Genre badges (purple)
+- Stats grid: episodes, duration per episode, season, total watch time
+- Studio names
+- Disabled bookmark button (placeholder for watchlist, wired in v0.15.0)
+
+### 6.3 Synopsis
+- Collapsible description card (4-line clamp by default)
+- "Read more" / "Show less" toggle for descriptions over 300 characters
+- HTML entities cleaned from description text
+
+### 6.4 Rating Card
+- **No rating exists, not editing**: CTA card with star icon and "Rate This" button
+- **Restricted users**: Disabled "Rate This" button with "Upgrade your account" message
+- **Rating exists, not editing**: Display card showing score circle, dropped/completed status, episodes watched (with total if known), filled attribute badges, and note (if any). Edit and Delete buttons.
+- **Editing mode** (new or existing):
+  - Score: editable circle with direct text input + slider (0-10, step 0.5)
+  - Dropped checkbox + episodes watched input (auto-filled with total episodes when not dropped; editable when dropped)
+  - Note textarea (max 1000 chars with counter)
+  - Collapsible "Details" section with 11 attribute selectors (pace, animation quality, 3D animation, watched format, fan service, dialogue quality, character depth, ending type, ending quality, story quality, originality) — shows set/total count badge
+  - Submit/Update button (disabled when no changes detected on existing rating)
+  - Cancel button returns to display mode
+  - Error message display on save/delete failure
+- **API calls**: `PUT /ratings/media/{uuid}` to create/update, `DELETE /ratings/{uuid}` to delete
+
+### 6.5 Related Media Carousel
+- Only shown when sibling media exist (other media in the same anime)
+- Shows parent anime name
+- Horizontal scrollable row of compact cards (snap scrolling)
+- Each card: cover image (with fallback), title, media type + relation type badges, season or episode count
+- Clicking a sibling card navigates to that media's detail page
+
+### 6.6 Back Navigation
+- "Back to search" link appears when `q` search token is present in URL
+- Preserves search context when navigating from search results to media detail and back
+
+---
+
+## 7. API Endpoints Used by Frontend
 
 | Endpoint | Method | When |
 |----------|--------|------|
@@ -128,10 +183,14 @@ Each search result card shows:
 | `/filters/create-token` | POST | Search submission |
 | `/filters/verify-token` | POST | Search page load |
 | `/search/media` | GET | After token verification |
+| `/media/{uuid}` | GET | Media detail page load |
+| `/ratings/media/{uuid}` | GET | Media detail page load (fetch user's rating) |
+| `/ratings/media/{uuid}` | PUT | Create or update a rating |
+| `/ratings/{uuid}` | DELETE | Delete a rating |
 
 ---
 
-## 7. Error States
+## 8. Error States
 
 | Scenario | Expected Behavior |
 |----------|-------------------|
@@ -140,3 +199,7 @@ Each search result card shows:
 | Expired/invalid token on page load | Redirect to `/login` |
 | Search API failure | Red error message on search page |
 | Filter options fetch failure | Logged to console, search still works |
+| Media detail load failure | Red error message centered on page |
+| Rating save failure | Red error message below rating form |
+| Rating delete failure | Red error message below rating card |
+| Rating fetch returns 404 | No rating displayed (expected for unrated media) |
