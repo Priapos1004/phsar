@@ -32,8 +32,8 @@
 	}: Props = $props();
 
 	/** Safely index into a typed object by dynamic attribute key. */
-	function getAttr(obj: RatingOut | RatingCreate): (key: string) => string | null {
-		return (key: string) => (obj as unknown as Record<string, string | null>)[key] ?? null;
+	function getAttr(obj: RatingOut | RatingCreate, key: string): string | null {
+		return (obj as unknown as Record<string, string | null>)[key] ?? null;
 	}
 
 	let editing = $state(false);
@@ -44,6 +44,7 @@
 	let showAttributes = $state(false);
 	let saving = $state(false);
 	let deleting = $state(false);
+	let confirmingDelete = $state(false);
 	let error = $state('');
 	let attributes = $state<Record<string, string | null>>({});
 
@@ -55,18 +56,18 @@
 		if (epVal !== existingRating.episodes_watched) return true;
 		if ((note.trim() || null) !== (existingRating.note ?? null)) return true;
 		for (const key of Object.keys(RATING_ATTRIBUTE_OPTIONS)) {
-			if ((attributes[key] || null) !== (getAttr(existingRating!)(key))) return true;
+			if ((attributes[key] || null) !== (getAttr(existingRating!, key))) return true;
 		}
 		return false;
 	});
 
 	let filledAttributes = $derived(
 		existingRating ? Object.entries(RATING_ATTRIBUTE_OPTIONS)
-			.filter(([key]) => getAttr(existingRating!)(key))
+			.filter(([key]) => getAttr(existingRating!, key))
 			.map(([key, config]) => ({
 				label: config.label,
-				value: config.options.find(o => o.value === getAttr(existingRating!)(key))?.label
-					?? String(getAttr(existingRating!)(key)),
+				value: config.options.find(o => o.value === getAttr(existingRating!, key))?.label
+					?? String(getAttr(existingRating!, key)),
 			}))
 		: []
 	);
@@ -90,7 +91,7 @@
 			episodesWatched = existingRating.episodes_watched?.toString() ?? '';
 			note = existingRating.note ?? '';
 			for (const key of Object.keys(RATING_ATTRIBUTE_OPTIONS)) {
-				attributes[key] = getAttr(existingRating!)(key);
+				attributes[key] = getAttr(existingRating!, key);
 			}
 		} else {
 			score = 5.0;
@@ -155,6 +156,14 @@
 		}
 	}
 
+	function requestDelete() {
+		confirmingDelete = true;
+	}
+
+	function cancelDelete() {
+		confirmingDelete = false;
+	}
+
 	async function handleDelete() {
 		if (!existingRating) return;
 		deleting = true;
@@ -168,6 +177,7 @@
 			error = err instanceof ApiError ? err.detail : 'Failed to delete rating';
 		} finally {
 			deleting = false;
+			confirmingDelete = false;
 		}
 	}
 </script>
@@ -196,9 +206,18 @@
 						<Button variant="secondary" size="sm" onclick={startEditing}>
 							<Pencil class="size-3.5 mr-1" /> Edit
 						</Button>
-						<Button variant="destructive" size="sm" onclick={handleDelete} disabled={deleting}>
-							<Trash2 class="size-3.5 mr-1" /> {deleting ? '...' : 'Delete'}
-						</Button>
+						{#if confirmingDelete}
+							<Button variant="secondary" size="sm" onclick={cancelDelete} disabled={deleting}>
+								Cancel
+							</Button>
+							<Button variant="destructive" size="sm" onclick={handleDelete} disabled={deleting}>
+								{deleting ? '...' : 'Confirm'}
+							</Button>
+						{:else}
+							<Button variant="destructive" size="sm" onclick={requestDelete}>
+								<Trash2 class="size-3.5 mr-1" /> Delete
+							</Button>
+						{/if}
 					</div>
 				</div>
 

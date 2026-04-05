@@ -13,7 +13,6 @@
     let loading = $state(true);
     let isAuthenticated = $state(false);
     let userRole = $state<string | null>(null);
-    let isAdmin = $derived(userRole === 'admin');
 
     setContext('userRole', () => userRole);
 

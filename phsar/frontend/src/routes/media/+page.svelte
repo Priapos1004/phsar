@@ -20,6 +20,7 @@
 	let error = $state('');
 	let descriptionExpanded = $state(false);
 	let coverFailed = $state(false);
+	let loadRequestId = 0;
 
 	let isRestricted = $derived(getUserRole() === 'restricted_user');
 	let searchToken = $derived(page.url.searchParams.get('q'));
@@ -35,6 +36,7 @@
 	});
 
 	async function loadMedia(uuid: string) {
+		const thisRequest = ++loadRequestId;
 		loading = true;
 		error = '';
 		media = null;
@@ -47,20 +49,28 @@
 				api.get<RatingOut>(`/ratings/media/${uuid}`),
 			]);
 
+			// Discard stale response if user navigated to a different media
+			if (thisRequest !== loadRequestId) return;
+
 			if (mediaResult.status === 'rejected') throw mediaResult.reason;
 			media = mediaResult.value;
 
 			if (ratingResult.status === 'fulfilled') {
 				userRating = ratingResult.value;
-			} else if (ratingResult.reason instanceof ApiError && ratingResult.reason.status === 404) {
+			} else if (
+				ratingResult.reason instanceof ApiError &&
+				(ratingResult.reason.status === 404 || ratingResult.reason.status === 403)
+			) {
+				// 404 = no rating yet, 403 = restricted user (can't rate)
 				userRating = null;
 			} else {
 				throw ratingResult.reason;
 			}
 		} catch (err) {
+			if (thisRequest !== loadRequestId) return;
 			error = err instanceof ApiError ? err.detail : 'Failed to load media';
 		} finally {
-			loading = false;
+			if (thisRequest === loadRequestId) loading = false;
 		}
 	}
 
