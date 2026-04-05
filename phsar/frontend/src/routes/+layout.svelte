@@ -56,7 +56,7 @@
       <NavBar {isAuthenticated} onLogout={handleLogout} />
     {/if}
 
-    <main class="min-h-screen p-8">
+    <main class="min-h-screen px-8 pt-4 pb-8">
       {@render children()}
     </main>
 {/if}

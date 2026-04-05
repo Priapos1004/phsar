@@ -20,28 +20,38 @@
 		imageUrl?: string | null;
 		on_watchlist: boolean;
 		media_uuid: string;
+		searchToken?: string | null;
 	}
 
 	let {
 		info_type, title, score = null, scoredBy = null,
 		anime_season = null, airing_status, age_rating_numeric = null,
 		genres = null, media_type, relation_type, watchtime = null,
-		imageUrl = null, on_watchlist, media_uuid
+		imageUrl = null, on_watchlist, media_uuid, searchToken = null
 	}: Props = $props();
+
+	let imgFailed = $state(false);
+
+	let href = $derived(
+		searchToken
+			? `/${info_type}?uuid=${media_uuid}&q=${encodeURIComponent(searchToken)}`
+			: `/${info_type}?uuid=${media_uuid}`
+	);
 </script>
 
 <a
-	href={`/${info_type}?uuid=${media_uuid}`}
+	{href}
 	class="block transition duration-200 transform hover:scale-[1.015]"
 >
 	<Card.Root class="h-full bg-card/80 backdrop-blur">
 		<Card.Content class="flex gap-4">
-			{#if imageUrl}
+			{#if imageUrl && !imgFailed}
 			<img
 				src={imageUrl}
 				alt={`Cover of ${title}`}
 				class="w-24 h-36 object-cover rounded-lg shadow-sm"
 				loading="lazy"
+				onerror={() => { imgFailed = true; }}
 			/>
 			{:else}
 				<div class="w-24 h-36 bg-muted rounded-lg flex items-center justify-center text-muted-foreground text-sm italic">
@@ -54,7 +64,7 @@
 					<div>
 						<h3 class="text-lg font-bold text-card-foreground">{title}</h3>
 						{#if anime_season || airing_status === 'Not yet aired' || airing_status === 'Currently Airing'}
-							<p class="text-sm text-primary">
+							<p class="text-primary">
 								{#if anime_season}
 									{anime_season}
 								{/if}
@@ -66,7 +76,7 @@
 								{/if}
 
 								{#if airing_status === 'Not yet aired' || airing_status === 'Currently Airing'}
-									<span class="ml-2 text-xs text-primary/70">({airing_status})</span>
+									<span class="ml-2 text-sm text-primary/70">({airing_status})</span>
 								{/if}
 							</p>
 						{/if}
@@ -92,7 +102,7 @@
 					</div>
 				{/if}
 
-				<div class="flex justify-between text-xs text-muted-foreground">
+				<div class="flex justify-between text-sm text-muted-foreground">
 					<span>{watchtime ? `Watch time: ${watchtime}` : 'Watch time: N/A'}</span>
 					{#if score !== null && scoredBy !== null}
 						<span>⭐ {score} — {formatNumber(scoredBy)} ratings</span>

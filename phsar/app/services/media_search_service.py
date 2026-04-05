@@ -86,9 +86,10 @@ def _media_to_sibling(media: Media) -> MediaSibling:
         cover_image=media.cover_image,
         media_type=media.media_type,
         relation_type=media.relation_type,
-        score=media.score,
         episodes=media.episodes,
         airing_status=media.airing_status,
+        anime_season_name=media.anime_season_name,
+        anime_season_year=media.anime_season_year,
     )
 
 

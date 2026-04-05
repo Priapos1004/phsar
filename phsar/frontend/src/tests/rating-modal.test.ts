@@ -1,9 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
-import RatingModal from '$lib/components/RatingModal.svelte';
+import RatingCard from '$lib/components/RatingCard.svelte';
 import type { RatingOut } from '$lib/types/api';
 
-// Mock API
 vi.mock('$lib/api', () => ({
 	api: {
 		get: vi.fn(),
@@ -49,78 +48,68 @@ const mockExistingRating: RatingOut = {
 	modified_at: '2024-01-01T00:00:00',
 };
 
-describe('RatingModal', () => {
-	it('renders in create mode with Save and Cancel buttons', () => {
-		render(RatingModal, {
+describe('RatingCard', () => {
+	it('shows "Rate This" button when no rating exists', () => {
+		render(RatingCard, {
 			props: {
-				open: true,
 				mediaUuid: 'media-uuid-1',
-				mediaTitle: 'Test Anime',
+	
 				totalEpisodes: 12,
 				existingRating: null,
 				onSaved: vi.fn(),
 				onDeleted: vi.fn(),
-
 			},
 		});
 
-		expect(screen.getByText(/Rate.*Test Anime/)).toBeInTheDocument();
-		expect(screen.getByText('Save')).toBeInTheDocument();
-		expect(screen.getByText('Cancel')).toBeInTheDocument();
-		// No delete button in create mode
-		expect(screen.queryByText('Delete')).not.toBeInTheDocument();
+		expect(screen.getByText('Rate This')).toBeInTheDocument();
+		expect(screen.getByText('Share your thoughts')).toBeInTheDocument();
 	});
 
-	it('renders in edit mode with Delete button', () => {
-		render(RatingModal, {
+	it('shows rating display with Edit and Delete buttons when rated', () => {
+		render(RatingCard, {
 			props: {
-				open: true,
 				mediaUuid: 'media-uuid-1',
-				mediaTitle: 'Test Anime',
+	
 				totalEpisodes: 12,
 				existingRating: mockExistingRating,
 				onSaved: vi.fn(),
 				onDeleted: vi.fn(),
-
 			},
 		});
 
-		expect(screen.getByText(/Edit Rating.*Test Anime/)).toBeInTheDocument();
-		expect(screen.getByText('Delete')).toBeInTheDocument();
-		expect(screen.getByText('Save')).toBeInTheDocument();
+		expect(screen.getByText('8.5')).toBeInTheDocument();
+		expect(screen.getByText(/Edit/)).toBeInTheDocument();
+		expect(screen.getByText(/Delete/)).toBeInTheDocument();
 	});
 
-	it('renders score label', () => {
-		render(RatingModal, {
+	it('displays filled attributes as badges', () => {
+		render(RatingCard, {
 			props: {
-				open: true,
 				mediaUuid: 'media-uuid-1',
-				mediaTitle: 'Test Anime',
-				totalEpisodes: null,
-				existingRating: null,
-				onSaved: vi.fn(),
-				onDeleted: vi.fn(),
-
-			},
-		});
-
-		expect(screen.getByText(/Score:/)).toBeInTheDocument();
-	});
-
-	it('renders note textarea', () => {
-		render(RatingModal, {
-			props: {
-				open: true,
-				mediaUuid: 'media-uuid-1',
-				mediaTitle: 'Test Anime',
+	
 				totalEpisodes: 12,
-				existingRating: null,
+				existingRating: mockExistingRating,
 				onSaved: vi.fn(),
 				onDeleted: vi.fn(),
-
 			},
 		});
 
-		expect(screen.getByPlaceholderText('Your thoughts on this anime...')).toBeInTheDocument();
+		expect(screen.getByText('Pace: Fast')).toBeInTheDocument();
+		expect(screen.getByText('Animation Quality: Good')).toBeInTheDocument();
+	});
+
+	it('displays note with quote styling', () => {
+		render(RatingCard, {
+			props: {
+				mediaUuid: 'media-uuid-1',
+	
+				totalEpisodes: 12,
+				existingRating: mockExistingRating,
+				onSaved: vi.fn(),
+				onDeleted: vi.fn(),
+			},
+		});
+
+		expect(screen.getByText(/"Great anime"/)).toBeInTheDocument();
 	});
 });

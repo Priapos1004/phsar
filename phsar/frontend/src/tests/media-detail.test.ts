@@ -68,9 +68,10 @@ const mockMediaDetail: MediaDetail = {
 			cover_image: null,
 			media_type: 'OVA',
 			relation_type: 'other',
-			score: 7.0,
 			episodes: 2,
 			airing_status: 'Finished Airing',
+			anime_season_name: 'Fall',
+			anime_season_year: 2024,
 		},
 	],
 };

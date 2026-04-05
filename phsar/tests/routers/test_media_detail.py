@@ -100,6 +100,12 @@ async def test_get_media_detail(client, user_auth_headers, test_anime_with_sibli
     sibling_titles = {s["title"] for s in data["sibling_media"]}
     assert sibling_titles == {"Test Anime OVA", "Test Anime Movie"}
 
+    # Sibling schema includes season fields, not score
+    for sibling in data["sibling_media"]:
+        assert "anime_season_name" in sibling
+        assert "anime_season_year" in sibling
+        assert "score" not in sibling
+
 
 async def test_get_media_detail_not_found(client, user_auth_headers):
     fake_uuid = uuid.uuid4()

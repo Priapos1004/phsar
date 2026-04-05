@@ -17,6 +17,7 @@
 	let hasToken = $state(false);
 
 	let decodedParams: Partial<MediaSearchFilters> = $state({});
+	let searchToken = $derived(page.url.searchParams.get('q'));
 
 	let visibleCount = $state(20);
 
@@ -98,6 +99,7 @@
 					imageUrl={result.cover_image}
 					on_watchlist={false}
 					media_uuid={result.uuid}
+					{searchToken}
 				/>
 			{/each}
 		</div>

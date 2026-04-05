@@ -57,9 +57,10 @@ class MediaSibling(BaseModel):
     cover_image: Optional[str]
     media_type: MediaType
     relation_type: RelationType
-    score: Optional[float]
     episodes: Optional[int]
     airing_status: str
+    anime_season_name: Optional[str]
+    anime_season_year: Optional[int]
 
 
 class MediaDetail(MediaConnected):

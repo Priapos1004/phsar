@@ -71,9 +71,10 @@ export interface MediaSibling {
 	cover_image: string | null;
 	media_type: string;
 	relation_type: string;
-	score: number | null;
 	episodes: number | null;
 	airing_status: string;
+	anime_season_name: string | null;
+	anime_season_year: number | null;
 }
 
 export interface MediaDetail extends MediaConnected {
