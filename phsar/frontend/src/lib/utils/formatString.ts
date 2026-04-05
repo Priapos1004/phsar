@@ -31,6 +31,15 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
+ * Format anime season name and year into a display string.
+ * Returns null if either part is missing.
+ */
+export function formatSeason(name: string | null, year: number | null): string | null {
+	if (name && year) return `${name} ${year}`;
+	return null;
+}
+
+/**
  * Format a number to have a fixed number of digits after the decimal point.
  * Pads with trailing zeros or rounds as needed.
  *

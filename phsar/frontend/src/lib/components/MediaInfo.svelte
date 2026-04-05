@@ -3,6 +3,7 @@
 	import { Bookmark } from 'lucide-svelte';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
+	import * as cls from '$lib/styles/classes';
 
 	interface Props {
 		info_type: string;
@@ -78,15 +79,15 @@
 				{#if media_type || relation_type || genres?.length}
 					<div class="flex flex-wrap gap-2">
 						{#if media_type}
-							<Badge variant="secondary" class="bg-green-100 text-green-800">{media_type}</Badge>
+							<Badge variant="secondary" class={cls.badgeMediaType}>{media_type}</Badge>
 						{/if}
 
 						{#if relation_type}
-							<Badge variant="secondary" class="bg-blue-100 text-blue-800">{relation_type}</Badge>
+							<Badge variant="secondary" class={cls.badgeRelationType}>{relation_type}</Badge>
 						{/if}
 
 						{#each genres ?? [] as genre}
-							<Badge variant="secondary" class="bg-purple-100 text-purple-800">{genre}</Badge>
+							<Badge variant="secondary" class={cls.badgeGenre}>{genre}</Badge>
 						{/each}
 					</div>
 				{/if}

@@ -47,3 +47,21 @@ class MediaConnected(MediaUnconnected):
     uuid: UUID
     total_watch_time: Optional[int]
     age_rating_numeric: Optional[int]
+
+
+class MediaSibling(BaseModel):
+    """Lightweight media representation for the related media carousel."""
+    uuid: UUID
+    title: str
+    name_eng: Optional[str]
+    cover_image: Optional[str]
+    media_type: MediaType
+    relation_type: RelationType
+    score: Optional[float]
+    episodes: Optional[int]
+    airing_status: str
+
+
+class MediaDetail(MediaConnected):
+    """Full media detail with sibling media from the same anime."""
+    sibling_media: list[MediaSibling] = []

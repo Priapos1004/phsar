@@ -1,7 +1,7 @@
 <script lang="ts">
     import { page } from '$app/state';
     import { token } from '$lib/stores/auth';
-    import { onMount } from 'svelte';
+    import { onMount, setContext } from 'svelte';
     import { jwtDecode } from 'jwt-decode';
     import NavBar from '$lib/components/NavBar.svelte';
     import LoadingScreen from '$lib/components/LoadingScreen.svelte';
@@ -12,7 +12,10 @@
 
     let loading = $state(true);
     let isAuthenticated = $state(false);
-    let isAdmin = $state(false);
+    let userRole = $state<string | null>(null);
+    let isAdmin = $derived(userRole === 'admin');
+
+    setContext('userRole', () => userRole);
 
     interface DecodedToken {
       sub: string;
@@ -26,13 +29,13 @@
         if (val) {
           try {
             const decoded = jwtDecode<DecodedToken>(val);
-            isAdmin = decoded.role === 'admin';
+            userRole = decoded.role;
           } catch {
             token.set(null);
-            isAdmin = false;
+            userRole = null;
           }
         } else {
-          isAdmin = false;
+          userRole = null;
         }
         loading = false;
       });
