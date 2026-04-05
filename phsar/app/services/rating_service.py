@@ -86,11 +86,11 @@ async def _upsert_note_embedding(db: AsyncSession, rating: Ratings, note: str | 
 
 
 async def _upsert_single_rating(
-    db: AsyncSession, user_id: int, media: Media, fields: dict, note: str | None
+    db: AsyncSession, user_id: int, media: Media, fields: dict, note: str | None,
+    existing: Ratings | None,
 ) -> UUID:
     """Core upsert logic: create or update one rating and manage its note embedding.
     Returns the rating UUID. Does not commit — caller manages the transaction."""
-    existing = await rating_dao.get_by_user_and_media(db, user_id, media.id)
 
     if existing:
         old_note = existing.note
@@ -120,10 +120,11 @@ async def upsert_rating(db: AsyncSession, user_id: int, media_uuid: UUID, data: 
     logger.debug(f"DB session: {id(db)}")
 
     media = (await _resolve_media_uuids(db, [media_uuid]))[0]
+    existing = await rating_dao.get_by_user_and_media(db, user_id, media.id)
     fields = data.model_dump()
     note = fields.pop("note")
 
-    uuid = await _upsert_single_rating(db, user_id, media, fields, note)
+    uuid = await _upsert_single_rating(db, user_id, media, fields, note, existing)
     await db.commit()
 
     # Re-fetch with eager loading for media/anime relationships needed by _rating_to_out
@@ -191,6 +192,11 @@ async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCr
 
     media_list = await _resolve_media_uuids(db, data.media_uuids)
 
+    # Batch-fetch existing ratings to avoid N+1 queries in the upsert loop
+    media_ids = [m.id for m in media_list]
+    existing_ratings = await rating_dao.get_by_user_and_media_ids(db, user_id, media_ids)
+    existing_by_media_id = {r.media_id: r for r in existing_ratings}
+
     # Note goes on the last (newest) media so anime page can show notes chronologically
     note_index = len(media_list) - 1
     shared_fields = data.model_dump(exclude=_EXCLUDE_BULK | {"note"})
@@ -198,7 +204,8 @@ async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCr
 
     for i, media in enumerate(media_list):
         note = data.note if i == note_index else None
-        uuid = await _upsert_single_rating(db, user_id, media, shared_fields, note)
+        existing = existing_by_media_id.get(media.id)
+        uuid = await _upsert_single_rating(db, user_id, media, shared_fields, note, existing)
         rating_uuids.append(uuid)
 
     await db.commit()

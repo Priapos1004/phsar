@@ -54,6 +54,19 @@ class RatingDAO(BaseDAO[Ratings]):
         result = await db.execute(stmt)
         return result.scalars().first()
 
+    async def get_by_user_and_media_ids(
+        self, db: AsyncSession, user_id: int, media_ids: list[int]
+    ) -> list[Ratings]:
+        if not media_ids:
+            return []
+        stmt = (
+            select(self.model)
+            .where(self.model.user_id == user_id, self.model.media_id.in_(media_ids))
+            .options(selectinload(Ratings.rating_search))
+        )
+        result = await db.execute(stmt)
+        return result.scalars().all()
+
     async def get_by_media_uuid_and_user(self, db: AsyncSession, media_uuid: UUID, user_id: int) -> Ratings | None:
         stmt = (
             select(self.model)
