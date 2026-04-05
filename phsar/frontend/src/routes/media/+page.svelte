@@ -213,7 +213,7 @@
 						{#if media.duration_seconds}
 							<div class="flex items-center gap-2 text-card-foreground">
 								<Clock class="size-4 text-primary shrink-0" />
-								<span>{Math.round(media.duration_seconds / 60)} min per ep</span>
+								<span>{formatDuration(media.duration_seconds)} per ep</span>
 							</div>
 						{/if}
 						{#if mediaSeason}
