@@ -35,6 +35,7 @@ Create a new GitHub release for the phsar project.
 - Omit any section that has no entries.
 - The one-line summary should capture the overall theme, not list everything.
 - Keep bullet points concise and feature/fix-level (not commit-level).
+- Only list as "Bug Fixes" issues that existed in a previous release. Bugs introduced and fixed within the same release cycle are not user-facing fixes — fold them into the related feature or omit them.
 
 ## Arguments
 
