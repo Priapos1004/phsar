@@ -348,6 +348,7 @@ Eye-catching landing page — light version of browse, serves new and returning 
 - Recommendation section uses same algo as browse page top section
 - Home page sections reuse browse page components (lighter presentation)
 - For logged-out / new users: show season diashow, popular, recently added (skip personalized sections)
+- `RelatedMediaCarousel` (from v0.10.0) is a starting point — generalize it into a reusable horizontal card carousel component that accepts any card content (anime covers, media cards, recommendations) for both browse and home page sections
 
 ---
 
