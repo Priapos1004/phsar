@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { api, ApiError } from '$lib/api';
-	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, formatSeasonRange, cleanDescription, formatAiringStatus } from '$lib/utils/formatString';
+	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, formatAiringStatus } from '$lib/utils/formatString';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -31,7 +31,7 @@
 	let searchToken = $derived(page.url.searchParams.get('q'));
 
 	let cleanedDescription = $derived(anime?.description ? cleanDescription(anime.description) : null);
-	let seasonRange = $derived(anime ? formatSeasonRange(anime.season_start, anime.season_end) : null);
+
 	let displayStatus = $derived(
 		anime ? formatAiringStatus(anime.airing_status, anime.has_upcoming) : ''
 	);
@@ -244,10 +244,18 @@
 							<Layers class="size-4 text-primary shrink-0" />
 							<span>{anime.media.length} media</span>
 						</div>
-						{#if seasonRange}
-							<div class="flex items-center gap-2 text-card-foreground">
-								<Calendar class="size-4 text-primary shrink-0" />
-								<span>{seasonRange}</span>
+						{#if anime.season_start}
+							{@const isRange = anime.season_end && anime.season_end !== anime.season_start}
+							<div class="flex items-start gap-2 text-card-foreground">
+								<Calendar class="size-4 text-primary shrink-0 {isRange ? 'mt-0.5' : ''}" />
+								{#if isRange}
+									<div class="flex flex-col leading-tight">
+										<span>{anime.season_start}</span>
+										<span class="text-muted-foreground">{anime.season_end}</span>
+									</div>
+								{:else}
+									<span>{anime.season_start}</span>
+								{/if}
 							</div>
 						{/if}
 						{#if anime.total_watch_time !== null}
