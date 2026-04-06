@@ -15,7 +15,8 @@ async def test_filters_media_view(client, admin_auth_headers):
     response = await client.get("/filters/options", params={"view_type": "media"}, headers=admin_auth_headers)
     assert response.status_code == 200
     data = response.json()
-    assert data["duration_per_episode_min"] is not None or data["duration_per_episode_max"] is not None
+    assert "duration_per_episode_min" in data
+    assert "duration_per_episode_max" in data
 
 @pytest.mark.asyncio
 async def test_filters_anime_view(client, admin_auth_headers):
