@@ -1,12 +1,13 @@
 import logging
 from uuid import UUID
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.daos.base_dao import BaseDAO
 from app.daos.search_filters import apply_media_filters, apply_vector_ordering
+from app.models.anime import Anime
 from app.models.media import Media
 from app.models.media_genre import MediaGenre
 from app.models.media_search import MediaSearch
@@ -67,6 +68,20 @@ class RatingDAO(BaseDAO[Ratings]):
         result = await db.execute(stmt)
         return result.scalars().all()
 
+    async def bulk_delete_by_user_and_media_ids(
+        self, db: AsyncSession, user_id: int, media_ids: list[int]
+    ) -> int:
+        """Single-statement bulk delete. DB-level ON DELETE CASCADE handles rating_search rows."""
+        if not media_ids:
+            return 0
+        stmt = (
+            delete(self.model)
+            .where(self.model.user_id == user_id, self.model.media_id.in_(media_ids))
+        )
+        result = await db.execute(stmt)
+        await db.flush()
+        return result.rowcount
+
     async def get_by_media_uuid_and_user(self, db: AsyncSession, media_uuid: UUID, user_id: int) -> Ratings | None:
         stmt = (
             select(self.model)
@@ -83,6 +98,19 @@ class RatingDAO(BaseDAO[Ratings]):
         stmt = (
             select(self.model)
             .where(self.model.uuid.in_(uuids), self.model.user_id == user_id)
+            .options(*self._eager_load_options())
+        )
+        result = await db.execute(stmt)
+        return result.scalars().all()
+
+    async def get_by_user_and_anime_uuid(
+        self, db: AsyncSession, user_id: int, anime_uuid: UUID
+    ) -> list[Ratings]:
+        stmt = (
+            select(self.model)
+            .join(Media, self.model.media_id == Media.id)
+            .join(Anime, Media.anime_id == Anime.id)
+            .where(Anime.uuid == anime_uuid, self.model.user_id == user_id)
             .options(*self._eager_load_options())
         )
         result = await db.execute(stmt)

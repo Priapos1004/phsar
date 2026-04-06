@@ -34,6 +34,7 @@ async def test_media_list(db_session):
     await db_session.flush()
 
     media_items = []
+    episode_counts = [12, 24, 6]
     for i in range(3):
         media = Media(
             anime_id=anime.id,
@@ -42,6 +43,7 @@ async def test_media_list(db_session):
             title=f"Bulk Test Media {i + 1}",
             media_type=MediaType.TV,
             relation_type=RelationType.Main,
+            episodes=episode_counts[i],
             scored_by=0,
             airing_status="Finished Airing",
         )
@@ -238,6 +240,99 @@ async def test_bulk_upsert(client, user_auth_headers, test_media_list):
     assert data[0]["note"] is None
     assert data[1]["note"] is None
     assert data[2]["note"] == "Solid series overall"
+    # Episodes watched auto-filled from each media's episode count
+    assert data[0]["episodes_watched"] == 12
+    assert data[1]["episodes_watched"] == 24
+    assert data[2]["episodes_watched"] == 6
+
+
+async def test_bulk_upsert_note_on_last_main_media(client, user_auth_headers, db_session):
+    """Note should land on the last 'main' media, not the last media overall."""
+    anime = Anime(mal_id=77777, title="Mixed Relation Anime")
+    db_session.add(anime)
+    await db_session.flush()
+
+    media_items = []
+    relation_types = [RelationType.Main, RelationType.Main, RelationType.Other]
+    for i, rt in enumerate(relation_types):
+        media = Media(
+            anime_id=anime.id,
+            mal_id=77770 + i,
+            mal_url=f"https://myanimelist.net/anime/{77770 + i}",
+            title=f"Mixed Media {i + 1}",
+            media_type=MediaType.TV,
+            relation_type=rt,
+            scored_by=0,
+            airing_status="Finished Airing",
+        )
+        db_session.add(media)
+        media_items.append(media)
+    await db_session.flush()
+
+    uuids = [str(m.uuid) for m in media_items]
+    response = await client.put(
+        "/ratings/bulk",
+        json={"rating": 8.0, "media_uuids": uuids, "note": "Great anime"},
+        headers=user_auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    # Note on index 1 (last main), not index 2 (last overall, which is "other")
+    assert data[0]["note"] is None
+    assert data[1]["note"] == "Great anime"
+    assert data[2]["note"] is None
+
+
+async def test_get_ratings_for_anime(client, user_auth_headers, test_media_list):
+    """GET /ratings/anime/{uuid} returns all user ratings for media in that anime."""
+    # Rate 2 of the 3 media
+    for media in test_media_list[:2]:
+        await client.put(
+            f"/ratings/media/{media.uuid}",
+            json={"rating": 7.5},
+            headers=user_auth_headers,
+        )
+
+    # Fetch the anime UUID via the media detail endpoint (requires auth)
+    media_resp = await client.get(
+        f"/media/{test_media_list[0].uuid}",
+        headers=user_auth_headers,
+    )
+    anime_uuid = media_resp.json()["anime_uuid"]
+
+    response = await client.get(
+        f"/ratings/anime/{anime_uuid}",
+        headers=user_auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data) == 2
+    assert all(r["rating"] == 7.5 for r in data)
+
+
+async def test_bulk_delete(client, user_auth_headers, test_media_list):
+    """DELETE /ratings/bulk removes ratings for selected media."""
+    # First, bulk-rate all 3
+    uuids = [str(m.uuid) for m in test_media_list]
+    await client.put(
+        "/ratings/bulk",
+        json={"rating": 7.0, "media_uuids": uuids},
+        headers=user_auth_headers,
+    )
+
+    # Delete ratings for the first 2 media
+    response = await client.post(
+        "/ratings/bulk-delete",
+        json={"media_uuids": uuids[:2]},
+        headers=user_auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["deleted"] == 2
+
+    # Only 1 rating should remain
+    list_resp = await client.get("/ratings", headers=user_auth_headers)
+    assert len(list_resp.json()) == 1
+    assert list_resp.json()[0]["media_title"] == "Bulk Test Media 3"
 
 
 # --- Validation ---

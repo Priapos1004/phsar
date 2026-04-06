@@ -30,6 +30,15 @@ async def get_rating_for_media(
     return await rating_service.get_rating_for_media(db, current_user.id, media_uuid)
 
 
+@router.get("/anime/{anime_uuid}", response_model=list[rating_schema.RatingOut])
+async def get_ratings_for_anime(
+    anime_uuid: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_user_or_admin),
+):
+    return await rating_service.get_ratings_for_anime(db, current_user.id, anime_uuid)
+
+
 @router.get("", response_model=list[rating_schema.RatingOut])
 async def get_user_ratings(
     db: AsyncSession = Depends(get_db),
@@ -57,3 +66,14 @@ async def bulk_upsert_ratings(
 ):
     """Create or update ratings for multiple media at once."""
     return await rating_service.bulk_upsert_ratings(db, current_user.id, data)
+
+
+@router.post("/bulk-delete", status_code=status.HTTP_200_OK)
+async def bulk_delete_ratings(
+    data: rating_schema.RatingBulkDelete,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_user_or_admin),
+):
+    """Delete ratings for multiple media at once. Returns the count of deleted ratings."""
+    count = await rating_service.bulk_delete_ratings(db, current_user.id, data.media_uuids)
+    return {"deleted": count}

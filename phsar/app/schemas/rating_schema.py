@@ -86,19 +86,27 @@ class RatingOut(RatingAttributes):
     model_config = ConfigDict(from_attributes=True)
 
 
-class RatingBulkCreate(RatingBase):
+class _BulkMediaUuids(BaseModel):
+    """Shared base for bulk operations: validates the media_uuids list."""
     media_uuids: list[UUID]
-    # Note is attached to the last (newest) media; earlier media get note cleared
-    note: Optional[str] = None
 
     @field_validator("media_uuids")
     @classmethod
-    def at_least_one_media(cls, v: list[UUID]) -> list[UUID]:
+    def validate_media_uuids(cls, v: list[UUID]) -> list[UUID]:
         if len(v) > 50:
-            raise ValueError("Cannot bulk-rate more than 50 media at once")
+            raise ValueError("Cannot bulk-operate on more than 50 media at once")
         if not v:
             raise ValueError("At least one media UUID is required")
         return v
+
+
+class RatingBulkCreate(RatingBase, _BulkMediaUuids):
+    # Note is attached to the last main media; earlier media get note cleared
+    note: Optional[str] = None
+
+
+class RatingBulkDelete(_BulkMediaUuids):
+    pass
 
 
 class RatingSearchFilters(MediaSearchFilters):

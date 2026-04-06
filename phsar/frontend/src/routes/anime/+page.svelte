@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from '$app/state';
+	import { getContext } from 'svelte';
 	import { api, ApiError } from '$lib/api';
 	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, formatAiringStatus } from '$lib/utils/formatString';
 	import { buildDetailHref } from '$lib/utils/navigation';
@@ -8,9 +9,17 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { ArrowLeft, Bookmark, BookmarkX, Star, Tv, Calendar, Film, Layers, X, ListChecks, BookmarkPlus } from 'lucide-svelte';
+	import { Label } from '$lib/components/ui/label';
+	import * as Select from '$lib/components/ui/select';
+	import { Slider } from '$lib/components/ui/slider';
+	import { Textarea } from '$lib/components/ui/textarea';
+	import { ArrowLeft, Bookmark, BookmarkX, Star, Tv, Calendar, Film, Layers, X, ListChecks, BookmarkPlus, ChevronDown, ChevronUp, Trash2 } from 'lucide-svelte';
 	import * as cls from '$lib/styles/classes';
-	import type { AnimeDetail, AnimeMediaItem } from '$lib/types/api';
+	import { clampAndSnapScore } from '$lib/utils/formatString';
+	import { RATING_ATTRIBUTE_OPTIONS } from '$lib/types/api';
+	import type { AnimeDetail, AnimeMediaItem, RatingOut } from '$lib/types/api';
+
+	const getUserRole = getContext<() => string | null>('userRole');
 
 	let anime = $state<AnimeDetail | null>(null);
 	let loading = $state(true);
@@ -19,15 +28,104 @@
 	let coverFailed = $state(false);
 	let loadRequestId = 0;
 
-	// Select mode
+	let userRatings = $state<Map<string, number>>(new Map());
 	let selectMode = $state(false);
 	let selectedUuids = $state<Set<string>>(new Set());
 
-	// Stub dialog state
 	let showRateDialog = $state(false);
+	let showDeleteDialog = $state(false);
 	let showWatchlistDialog = $state(false);
 	let showRemoveWatchlistDialog = $state(false);
 
+	let bulkDeleting = $state(false);
+	let bulkDeleteError = $state('');
+
+	const SCORE_STEP = 0.5;
+	const SCORE_DECIMALS = SCORE_STEP < 1 ? 1 : 0;
+	let bulkScore = $state<number>(5.0);
+	let bulkNote = $state('');
+	let bulkShowAttributes = $state(false);
+	let bulkAttributes = $state<Record<string, string | null>>({});
+	let bulkSaving = $state(false);
+	let bulkError = $state('');
+
+	let snappedBulkScore = $derived(clampAndSnapScore(bulkScore, SCORE_STEP));
+	let bulkSetAttrCount = $derived(Object.keys(RATING_ATTRIBUTE_OPTIONS).filter(k => bulkAttributes[k]).length);
+	let totalAttrCount = Object.keys(RATING_ATTRIBUTE_OPTIONS).length;
+
+	let alreadyRatedCount = $derived(
+		[...selectedUuids].filter(uuid => userRatings.has(uuid)).length
+	);
+
+	let showNoteDialog = $state(false);
+	let noteDialogMedia = $state('');
+
+	function resetBulkForm() {
+		bulkScore = 5.0;
+		bulkNote = '';
+		bulkShowAttributes = false;
+		bulkAttributes = Object.fromEntries(Object.keys(RATING_ATTRIBUTE_OPTIONS).map(k => [k, null]));
+		bulkError = '';
+	}
+
+	function openBulkRateDialog() {
+		resetBulkForm();
+		showRateDialog = true;
+	}
+
+	async function handleBulkRate() {
+		bulkSaving = true;
+		bulkError = '';
+
+		const payload = {
+			media_uuids: [...selectedUuids],
+			rating: snappedBulkScore,
+			note: bulkNote.trim() || null,
+			...bulkAttributes,
+		};
+
+		try {
+			const results = await api.put<RatingOut[]>('/ratings/bulk', payload);
+			showRateDialog = false;
+			selectMode = false;
+			selectedUuids = new Set();
+
+			// Show which media got the note
+			if (bulkNote.trim()) {
+				const noteRating = results.find(r => r.note);
+				if (noteRating) {
+					const mediaItem = anime?.media.find(m => m.uuid === noteRating.media_uuid);
+					noteDialogMedia = mediaItem?.name_eng ?? noteRating.media_title;
+					showNoteDialog = true;
+				}
+			}
+
+			await refreshUserRatings();
+		} catch (err) {
+			bulkError = err instanceof ApiError ? err.detail : 'Failed to save ratings';
+		} finally {
+			bulkSaving = false;
+		}
+	}
+
+	async function handleBulkDelete() {
+		bulkDeleting = true;
+		bulkDeleteError = '';
+
+		try {
+			await api.post('/ratings/bulk-delete', { media_uuids: [...selectedUuids] });
+			showDeleteDialog = false;
+			selectMode = false;
+			selectedUuids = new Set();
+			await refreshUserRatings();
+		} catch (err) {
+			bulkDeleteError = err instanceof ApiError ? err.detail : 'Failed to delete ratings';
+		} finally {
+			bulkDeleting = false;
+		}
+	}
+
+	let isRestricted = $derived(getUserRole() === 'restricted_user');
 	let searchToken = $derived(page.url.searchParams.get('q'));
 
 	let cleanedDescription = $derived(anime?.description ? cleanDescription(anime.description) : null);
@@ -54,18 +152,41 @@
 		loading = true;
 		error = '';
 		anime = null;
+		userRatings = new Map();
 		coverFailed = false;
 		selectMode = false;
 		selectedUuids = new Set();
 
 		try {
-			anime = await api.get<AnimeDetail>(`/media/anime/${uuid}`);
+			const [animeResult, ratingsResult] = await Promise.allSettled([
+				api.get<AnimeDetail>(`/media/anime/${uuid}`),
+				api.get<RatingOut[]>(`/ratings/anime/${uuid}`),
+			]);
+
 			if (thisRequest !== loadRequestId) return;
+
+			if (animeResult.status === 'rejected') throw animeResult.reason;
+			anime = animeResult.value;
+
+			if (ratingsResult.status === 'fulfilled') {
+				userRatings = new Map(ratingsResult.value.map(r => [r.media_uuid, r.rating]));
+			}
+			// 403/401 = not logged in or restricted — silently ignore
 		} catch (err) {
 			if (thisRequest !== loadRequestId) return;
 			error = err instanceof ApiError ? err.detail : 'Failed to load anime';
 		} finally {
 			if (thisRequest === loadRequestId) loading = false;
+		}
+	}
+
+	async function refreshUserRatings() {
+		if (!anime) return;
+		try {
+			const ratings = await api.get<RatingOut[]>(`/ratings/anime/${anime.uuid}`);
+			userRatings = new Map(ratings.map(r => [r.media_uuid, r.rating]));
+		} catch {
+			// silently ignore — user may not be logged in
 		}
 	}
 
@@ -345,8 +466,8 @@
 
 						<Button
 							size="sm"
-							disabled={!someSelected}
-							onclick={() => { showRateDialog = true; }}
+							disabled={!someSelected || isRestricted}
+							onclick={openBulkRateDialog}
 						>
 							<Star class="size-3.5 mr-1.5" />
 							Rate
@@ -360,6 +481,16 @@
 							<BookmarkPlus class="size-3.5 mr-1.5" />
 							Watchlist
 						</Button>
+						{#if alreadyRatedCount > 0}
+							<Button
+								size="sm"
+								variant="destructive"
+								onclick={() => { bulkDeleteError = ''; showDeleteDialog = true; }}
+							>
+								<Trash2 class="size-3.5 mr-1.5" />
+								Delete Ratings
+							</Button>
+						{/if}
 					</div>
 				{/if}
 
@@ -429,10 +560,10 @@
 								{formatSeason(item.anime_season_name, item.anime_season_year) ?? ''}
 							</div>
 
-							<!-- Score -->
+							<!-- User rating -->
 							<div class="text-sm text-card-foreground whitespace-nowrap w-12 text-right">
-								{#if item.score !== null}
-									<span class="font-medium">{item.score}</span>
+								{#if userRatings.has(item.uuid)}
+									<span class="font-medium">{formatDecimalDigits(userRatings.get(item.uuid)!, 1)}</span>
 								{:else}
 									<span class="text-muted-foreground">--</span>
 								{/if}
@@ -452,18 +583,120 @@
 			</Card.Content>
 		</Card.Root>
 
-		<!-- Stub dialogs -->
+		<!-- Bulk rating dialog -->
 		<Dialog.Root bind:open={showRateDialog}>
-			<Dialog.Content>
+			<Dialog.Content class="bg-card text-card-foreground max-h-[85vh] overflow-y-auto sm:max-w-md">
 				<Dialog.Header>
-					<Dialog.Title>Rate Selected Media</Dialog.Title>
-					<Dialog.Description>
-						Bulk rating will be available in a future update. You'll be able to apply the same rating to all {selectedUuids.size} selected media at once.
+					<Dialog.Title class="text-card-foreground">Rate {selectedUuids.size} Media</Dialog.Title>
+					<Dialog.Description class="text-muted-foreground">
+						Score and attributes are applied to all selected media.
 					</Dialog.Description>
 				</Dialog.Header>
-				<Dialog.Footer>
-					<Button onclick={() => { showRateDialog = false; }}>OK</Button>
-				</Dialog.Footer>
+
+				<div class="space-y-4 py-2">
+					{#if alreadyRatedCount > 0}
+						<div class="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
+							This will overwrite {alreadyRatedCount} existing rating{alreadyRatedCount > 1 ? 's' : ''}.
+						</div>
+					{/if}
+
+					<!-- Score: editable circle + slider -->
+					<div class="flex flex-col items-center py-2 space-y-3">
+						<div class="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center">
+							<input
+								type="text"
+								inputmode="decimal"
+								value={snappedBulkScore.toFixed(SCORE_DECIMALS)}
+								onblur={(e) => {
+									const parsed = parseFloat(e.currentTarget.value.replace(',', '.')) || 0;
+									bulkScore = clampAndSnapScore(parsed, SCORE_STEP);
+									e.currentTarget.value = clampAndSnapScore(parsed, SCORE_STEP).toFixed(SCORE_DECIMALS);
+								}}
+								onkeydown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+								class="w-14 text-center text-2xl font-bold text-card-foreground bg-transparent outline-none"
+							/>
+						</div>
+						<div class="w-full max-w-xs">
+							<Slider type="single" bind:value={bulkScore} min={0} max={10} step={SCORE_STEP} />
+						</div>
+					</div>
+
+					<div class="bg-muted/40 rounded-lg p-4 space-y-4">
+						<!-- Note -->
+						<div class="space-y-1">
+							<Label class="text-card-foreground">Note <span class="text-muted-foreground font-normal">({bulkNote.length}/1000)</span></Label>
+							<Textarea
+								bind:value={bulkNote}
+								maxlength={1000}
+								rows={3}
+								placeholder="Your thoughts on this anime..."
+								class="bg-card"
+							/>
+							<p class="text-xs text-muted-foreground">Applied to the last main media only.</p>
+						</div>
+
+						<!-- Attributes -->
+						<div>
+							<button
+								type="button"
+								class="flex items-center gap-2 text-primary group"
+								onclick={() => (bulkShowAttributes = !bulkShowAttributes)}
+							>
+								{#if bulkShowAttributes}
+									<ChevronUp class="size-4" />
+								{:else}
+									<ChevronDown class="size-4" />
+								{/if}
+								<span class="group-hover:underline">Details</span>
+								<span class="text-sm font-normal px-1.5 py-0.5 rounded-full {bulkSetAttrCount > 0 ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'}">
+									{bulkSetAttrCount}/{totalAttrCount}
+								</span>
+							</button>
+
+							{#if bulkShowAttributes}
+								<div class="grid grid-cols-2 gap-3 mt-3">
+									{#each Object.entries(RATING_ATTRIBUTE_OPTIONS) as [key, config]}
+										<div class="space-y-1">
+											<Label class={bulkAttributes[key] ? 'text-card-foreground font-medium' : 'text-muted-foreground'}>
+												{config.label}
+											</Label>
+											<Select.Root
+												type="single"
+												value={bulkAttributes[key] ?? undefined}
+												onValueChange={(val: string) => { bulkAttributes[key] = val || null; }}
+											>
+												<Select.Trigger class="w-full {bulkAttributes[key] ? 'bg-primary/5 border-2 border-primary/40' : 'bg-card'}">
+													{#if bulkAttributes[key]}
+														{config.options.find(o => o.value === bulkAttributes[key])?.label ?? 'Select...'}
+													{:else}
+														<span class="text-muted-foreground">Not set</span>
+													{/if}
+												</Select.Trigger>
+												<Select.Content>
+													{#each config.options as option}
+														<Select.Item value={option.value}>{option.label}</Select.Item>
+													{/each}
+												</Select.Content>
+											</Select.Root>
+										</div>
+									{/each}
+								</div>
+							{/if}
+						</div>
+					</div>
+
+					{#if bulkError}
+						<p class="text-destructive">{bulkError}</p>
+					{/if}
+
+					<Button class="w-full" onclick={handleBulkRate} disabled={bulkSaving}>
+						{#if bulkSaving}
+							Saving...
+						{:else}
+							Rate {selectedUuids.size} Media
+						{/if}
+					</Button>
+				</div>
 			</Dialog.Content>
 		</Dialog.Root>
 
@@ -491,6 +724,44 @@
 				</Dialog.Header>
 				<Dialog.Footer>
 					<Button onclick={() => { showRemoveWatchlistDialog = false; }}>OK</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
+
+		<!-- Note placement info dialog -->
+		<Dialog.Root bind:open={showNoteDialog}>
+			<Dialog.Content class="bg-card text-card-foreground">
+				<Dialog.Header>
+					<Dialog.Title class="text-card-foreground">Note Added</Dialog.Title>
+					<Dialog.Description class="text-muted-foreground">
+						Your note was added to: <span class="font-medium text-card-foreground">{noteDialogMedia}</span>
+					</Dialog.Description>
+				</Dialog.Header>
+				<Dialog.Footer>
+					<Button onclick={() => { showNoteDialog = false; }}>OK</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
+
+		<!-- Bulk delete confirmation dialog -->
+		<Dialog.Root bind:open={showDeleteDialog}>
+			<Dialog.Content class="bg-card text-card-foreground">
+				<Dialog.Header>
+					<Dialog.Title class="text-card-foreground">Delete Ratings</Dialog.Title>
+					<Dialog.Description class="text-muted-foreground">
+						This will permanently delete {alreadyRatedCount} rating{alreadyRatedCount !== 1 ? 's' : ''} from the selected media. This cannot be undone.
+					</Dialog.Description>
+				</Dialog.Header>
+				{#if bulkDeleteError}
+					<p class="text-destructive text-sm">{bulkDeleteError}</p>
+				{/if}
+				<Dialog.Footer>
+					<Button variant="secondary" onclick={() => { showDeleteDialog = false; }} disabled={bulkDeleting}>
+						Cancel
+					</Button>
+					<Button variant="destructive" onclick={handleBulkDelete} disabled={bulkDeleting}>
+						{bulkDeleting ? 'Deleting...' : 'Delete'}
+					</Button>
 				</Dialog.Footer>
 			</Dialog.Content>
 		</Dialog.Root>
