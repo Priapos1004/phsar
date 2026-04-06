@@ -154,6 +154,83 @@ export const RATING_ATTRIBUTE_OPTIONS: Record<string, { label: string; options: 
 	originality: { label: 'Originality', options: [{ value: 'conventional', label: 'Conventional' }, { value: 'unique', label: 'Unique' }, { value: 'experimental', label: 'Experimental' }] },
 };
 
+// Anime search result (aggregated)
+export interface RelationTypeSummary {
+	relation_type: string;
+	count: number;
+}
+
+export interface MediaTypeSummary {
+	media_type: string;
+	count: number;
+}
+
+export interface AnimeSearchResult {
+	uuid: string;
+	title: string;
+	name_eng: string | null;
+	name_jap: string | null;
+	cover_image: string | null;
+	avg_score: number | null;
+	avg_scored_by: number;
+	total_episodes: number | null;
+	total_watch_time: number | null;
+	media_count: number;
+	relation_types: RelationTypeSummary[];
+	media_types: MediaTypeSummary[];
+	genres: string[];
+	studios: string[];
+	season_start: string | null;
+	season_end: string | null;
+	airing_status: string;
+	has_upcoming: boolean;
+	age_rating_numeric: number | null;
+}
+
+// Anime detail
+export interface AnimeMediaItem {
+	uuid: string;
+	title: string;
+	name_eng: string | null;
+	cover_image: string | null;
+	media_type: string;
+	relation_type: string;
+	score: number | null;
+	scored_by: number;
+	episodes: number | null;
+	airing_status: string;
+	anime_season_name: string | null;
+	anime_season_year: number | null;
+	total_watch_time: number | null;
+	age_rating_numeric: number | null;
+	genres: string[];
+	studios: string[];
+}
+
+export interface AnimeDetail {
+	uuid: string;
+	title: string;
+	name_eng: string | null;
+	name_jap: string | null;
+	other_names: string[];
+	description: string | null;
+	cover_image: string | null;
+	avg_score: number | null;
+	avg_scored_by: number;
+	total_episodes: number | null;
+	total_watch_time: number | null;
+	age_rating_numeric: number | null;
+	relation_types: RelationTypeSummary[];
+	media_types: MediaTypeSummary[];
+	genres: string[];
+	studios: string[];
+	airing_status: string;
+	has_upcoming: boolean;
+	season_start: string | null;
+	season_end: string | null;
+	media: AnimeMediaItem[];
+}
+
 // Search token (POST /filters/create-token)
 export interface SearchTokenResponse {
 	token: string;
