@@ -355,7 +355,7 @@
 							<div class="grid grid-cols-2 gap-3 mt-3">
 								{#each Object.entries(RATING_ATTRIBUTE_OPTIONS) as [key, config]}
 									<div class="space-y-1">
-										<Label class="{attributes[key] ? 'text-card-foreground font-medium' : 'text-muted-foreground'}">
+										<Label class={attributes[key] ? 'text-card-foreground font-medium' : 'text-muted-foreground'}>
 											{config.label}
 										</Label>
 										<Select.Root

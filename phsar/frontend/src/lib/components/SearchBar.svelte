@@ -71,10 +71,12 @@
 		{ type: 'timeRange', minKey: 'total_watch_time_min', maxKey: 'total_watch_time_max', label: 'Total Watch Time', step: 60 },
 	];
 
-	// Hide duration-per-episode for anime view (not meaningful at aggregated level)
+	// Adapt filters for anime view: hide duration-per-episode, clarify scored-by label
 	let activeFilterConfig = $derived(
 		viewType === 'anime'
-			? filterConfig.filter(c => !(c.type === 'timeRange' && c.minKey === 'duration_per_episode_min'))
+			? filterConfig
+				.filter(c => !(c.type === 'timeRange' && c.minKey === 'duration_per_episode_min'))
+				.map(c => 'minKey' in c && c.minKey === 'scored_by_min' ? { ...c, label: 'Scored By (per Media)' } : c)
 			: filterConfig
 	);
 
@@ -168,16 +170,16 @@
 	});
 
 	// Re-fetch filter options when viewType changes
-	let prevViewType = viewType;
+	let prevViewType: string | undefined;
 	$effect(() => {
-		if (viewType !== prevViewType) {
-			prevViewType = viewType;
+		if (prevViewType !== undefined && viewType !== prevViewType) {
 			clearFilters();
 			// Reset slider bounds so they don't show stale ranges during fetch
 			listFilterOptions = {};
 			numberFilterOptions = {};
 			fetchFilters();
 		}
+		prevViewType = viewType;
 	});
 
 	onMount(fetchFilters);
