@@ -67,6 +67,8 @@ class MediaDAO(MalIdDAO[Media]):
         if query != "":
             stmt = apply_vector_ordering(stmt, search_type, query_embedding)
         else:
+            # log10 chosen over ln to dampen the scored_by weight — prevents very popular
+            # but mediocre-scored media from outranking higher-scored niche media
             weighted_score = Media.score * func.log(Media.scored_by + 1)
             stmt = stmt.order_by(weighted_score.desc().nullslast())
 
