@@ -61,26 +61,26 @@ docker exec -it anime-postgres psql -U <DB_USER> -d <DB_NAME> \
 
 Layered architecture with strict dependency flow: **routers → services → DAOs → models**
 
-- **routers/** — FastAPI endpoint definitions. Each router maps to an API prefix (`/auth`, `/search`, `/filters`, `/media`, `/save`, `/seed`, `/ratings`).
-- **services/** — Business logic as module-level async functions. Key services: `jikan_scraper.py` (MAL API client with retry), `vector_embedding_service.py` (sentence-transformers embeddings), `media_search_service.py` (filtered DB search), `rating_service.py` (rating CRUD + search), `token_service.py` (compressed JWT for shareable filter URLs), `auth_service.py` (registration, authentication, token issuance).
-- **daos/** — Data access layer. `BaseDAO` provides generic async CRUD; specialized DAOs (media, anime, genre, studio, user, registration_token, rating) add domain-specific queries with vector similarity, filtering, and aggregation. `search_filters.py` provides shared filter/ordering helpers used by both media and rating search.
-- **models/** — SQLAlchemy ORM models mapped to PostgreSQL tables. `media_search.py` stores pgvector embeddings for title and description; `rating_search.py` stores note embeddings for rating note search.
+- **routers/** — FastAPI endpoint definitions. Each router maps to an API prefix (`/auth`, `/search`, `/filters`, `/media`, `/save`, `/seed`, `/ratings`). `/search` handles both `/search/media` (per-media) and `/search/anime` (aggregated by anime). `/media` handles both `/media/{uuid}` and `/media/anime/{uuid}`.
+- **services/** — Business logic as module-level async functions. Key services: `jikan_scraper.py` (MAL API client with retry), `vector_embedding_service.py` (sentence-transformers embeddings), `media_search_service.py` (filtered DB search), `anime_search_service.py` (anime aggregated search + detail with majority genre logic), `rating_service.py` (rating CRUD + search), `token_service.py` (compressed JWT for shareable filter URLs), `auth_service.py` (registration, authentication, token issuance), `filter_service.py` (filter option values, view-type-aware for anime vs media ranges).
+- **daos/** — Data access layer. `BaseDAO` provides generic async CRUD; specialized DAOs (media, anime, genre, studio, user, registration_token, rating) add domain-specific queries with vector similarity, filtering, and aggregation. `AnimeDAO.search_anime_aggregated` uses two-phase query: SQL GROUP BY with HAVING for filtering/ordering, then detail fetch. `search_filters.py` provides shared filter/ordering helpers for media, anime pre-aggregation (WHERE), and anime post-aggregation (HAVING) filters.
+- **models/** — SQLAlchemy ORM models mapped to PostgreSQL tables. `media_search.py` stores pgvector embeddings for title and description; `anime_search.py` stores anime-level embeddings; `rating_search.py` stores note embeddings for rating note search.
 - **schemas/** — Pydantic request/response DTOs.
 - **core/** — Config (`config.py` loads from `.env`), database engine (`db.py`), auth dependencies (`dependencies.py`), JWT/password security (`security.py`).
-- **seeders/** — Run at app startup via lifespan; seed genres and admin user.
+- **seeders/** — Run at app startup via lifespan; seed genres, admin user, and backfill anime embeddings.
 - **exceptions.py** — Custom exception hierarchy rooted at `PhsarBaseError` with `status_code` attribute. Single exception handler in `main.py` reads the status code from each exception class.
 
 ### Frontend (phsar/frontend/)
 
 SvelteKit with file-based routing, Svelte 5 runes, Tailwind CSS 4, shadcn-svelte component library.
 
-- **routes/** — Pages: home (`/`), login (`/login`), search (`/search`), media detail (`/media`).
+- **routes/** — Pages: home (`/`), login (`/login`), search (`/search`), media detail (`/media`), anime detail (`/anime`).
 - **lib/components/** — App components (SearchBar, MediaInfo, NavBar, TagSelect, DoubleRangeSlider, RatingCard, RelatedMediaCarousel, etc.) using Svelte 5 `$props()`, `$state()`, `$derived()`, `$effect()`.
 - **lib/components/ui/** — shadcn-svelte base components (button, card, input, badge, slider, dropdown-menu, popover, checkbox, label, select, separator, etc.).
 - **lib/api.ts** — Centralized API client with `get`/`post`/`postForm`/`put`/`del` methods, `ApiError` class, and automatic auth header injection from the token store.
 - **lib/types/api.ts** — TypeScript interfaces mirroring backend Pydantic schemas (`MediaConnected`, `FilterOptions`, `TokenResponse`, etc.).
 - **lib/stores/** — Svelte stores for auth state (JWT token persisted to localStorage).
-- **lib/utils/** — String formatting, season logic, search params, navigation.
+- **lib/utils/** — String formatting (`formatAiringStatus`, `formatSeasonRange`, `formatDuration`), season logic, search params (`fetchSearchResults`, `fetchAnimeSearchResults`), navigation (`navigateToSearch`, `buildDetailHref`).
 - **lib/config.ts** — Backend API base URL (consumed only by `api.ts`).
 - **src/app.css** — Custom theme (`@theme inline`) with light elevated surfaces on dark purple gradient background. Dark mode locked to class-based only.
 - **tests/** — Vitest + @testing-library/svelte component tests.
@@ -90,7 +90,7 @@ SvelteKit with file-based routing, Svelte 5 runes, Tailwind CSS 4, shadcn-svelte
 - **Dependency injection**: FastAPI `Depends()` for DB sessions, current user extraction, role-based access (`require_roles()` accepts `RoleType` enum).
 - **Role-based access**: Three roles — `admin`, `user`, `restricted_user`.
 - **Async throughout**: asyncpg driver, SQLAlchemy AsyncSession, async service/DAO methods. All ORM relationships use `lazy="raise"` to prevent implicit lazy loading — every relationship access must go through explicit `selectinload` in the DAO query.
-- **Vector search**: `paraphrase-multilingual-MiniLM-L12-v2` model generates embeddings stored via pgvector; similarity search on title, description, and rating note vectors. `SearchType` enum (`title`, `description`, `rating_notes`) selects the target. Search filter schemas use inheritance: `MediaSearchFilters` (base) → `RatingSearchFilters` (adds rating-specific filters).
+- **Vector search**: `paraphrase-multilingual-MiniLM-L12-v2` model generates embeddings stored via pgvector; similarity search on title, description, and rating note vectors. `SearchType` enum (`title`, `description`, `rating_notes`) selects the target. Search filter schemas use inheritance: `MediaSearchFilters` (base) → `RatingSearchFilters` (adds rating-specific filters). Anime-level title search uses `AnimeSearch` embeddings directly; description search averages cosine distances across media. `ViewType` enum (`anime`, `media`) selects the search mode. `/filters/options?view_type=anime` returns anime-appropriate filter ranges (aggregated episodes/watch time, majority genres).
 - **Domain exceptions**: All custom exceptions extend `PhsarBaseError` with a `status_code` class attribute. One handler in `main.py` serves all.
 - **Theme system**: CSS custom properties (`--color-*`) define the palette. Components use semantic tokens (`bg-card`, `text-primary`, `text-destructive`) instead of hardcoded Tailwind colors.
 - **CORS**: Backend allows origins from `settings.CORS_ORIGINS` (defaults to `http://localhost:5173`).
