@@ -14,13 +14,13 @@
 	import { formatDecimalDigits, formatDuration, formatNumber } from '$lib/utils/formatString';
 
 	interface Props {
-		placeholder?: string;
+		viewType?: 'anime' | 'media';
 		onSearch?: (params: MediaSearchFilters) => void;
 		searchParams?: Partial<MediaSearchFilters>;
 	}
 
 	let {
-		placeholder = 'Search anime...',
+		viewType = 'anime',
 		onSearch = () => {},
 		searchParams = {},
 	}: Props = $props();
@@ -70,6 +70,13 @@
 		{ type: 'timeRange', minKey: 'duration_per_episode_min', maxKey: 'duration_per_episode_max', label: 'Average Duration per Episode', step: 60 },
 		{ type: 'timeRange', minKey: 'total_watch_time_min', maxKey: 'total_watch_time_max', label: 'Total Watch Time', step: 60 },
 	];
+
+	// Hide duration-per-episode for anime view (not meaningful at aggregated level)
+	let activeFilterConfig = $derived(
+		viewType === 'anime'
+			? filterConfig.filter(c => !(c.type === 'timeRange' && c.minKey === 'duration_per_episode_min'))
+			: filterConfig
+	);
 
 	let listFilters: Partial<Record<string, string[]>> = $state({});
 	let numberFilters: Partial<Record<string, number | undefined>> = $state({});
@@ -160,11 +167,25 @@
 		}
 	});
 
+	// Re-fetch filter options when viewType changes
+	let prevViewType = viewType;
+	$effect(() => {
+		if (viewType !== prevViewType) {
+			prevViewType = viewType;
+			clearFilters();
+			// Reset slider bounds so they don't show stale ranges during fetch
+			listFilterOptions = {};
+			numberFilterOptions = {};
+			fetchFilters();
+		}
+	});
+
 	onMount(fetchFilters);
 
 	async function fetchFilters() {
 		try {
-			const data = await api.get<FilterOptions>('/filters/options');
+			const params = new URLSearchParams({ view_type: viewType });
+			const data = await api.get<FilterOptions>('/filters/options', { params });
 
 			filterConfig.forEach((config) => {
 				if (config.type === 'list') {
@@ -223,7 +244,7 @@
 		<Input
 			type="text"
 			bind:value={query}
-			{placeholder}
+			placeholder={viewType === 'anime' ? 'Search anime...' : 'Search media...'}
 			class="w-full h-12 px-5 rounded-full bg-card/80 backdrop-blur border-input pr-12"
 		/>
 		<Button
@@ -268,7 +289,7 @@
 					</Label>
 				</div>
 
-				{#each filterConfig as config}
+				{#each activeFilterConfig as config}
 					{#if config.type === 'list'}
 						<TagSelect
 							placeholder={config.placeholder}

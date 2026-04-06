@@ -46,9 +46,9 @@ describe('SearchBar', () => {
 		expect(screen.getByPlaceholderText('Search anime...')).toBeInTheDocument();
 	});
 
-	it('renders with custom placeholder', () => {
-		render(SearchBar, { props: { placeholder: 'Find something...' } });
-		expect(screen.getByPlaceholderText('Find something...')).toBeInTheDocument();
+	it('renders with media placeholder when viewType is media', () => {
+		render(SearchBar, { props: { viewType: 'media' } });
+		expect(screen.getByPlaceholderText('Search media...')).toBeInTheDocument();
 	});
 
 	it('has a filter toggle button', () => {
@@ -116,7 +116,7 @@ describe('SearchBar', () => {
 
 		await vi.waitFor(() => {
 			expect(global.fetch).toHaveBeenCalledWith(
-				'http://localhost:8000/filters/options',
+				'http://localhost:8000/filters/options?view_type=anime',
 				expect.objectContaining({
 					headers: { Authorization: 'Bearer test-token' },
 				})
