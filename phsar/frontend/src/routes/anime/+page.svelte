@@ -18,6 +18,7 @@
 	import { clampAndSnapScore } from '$lib/utils/formatString';
 	import { RATING_ATTRIBUTE_OPTIONS } from '$lib/types/api';
 	import type { AnimeDetail, AnimeMediaItem, RatingOut } from '$lib/types/api';
+	import RatingsOverview from '$lib/components/RatingsOverview.svelte';
 
 	const getUserRole = getContext<() => string | null>('userRole');
 
@@ -28,7 +29,8 @@
 	let coverFailed = $state(false);
 	let loadRequestId = 0;
 
-	let userRatings = $state<Map<string, number>>(new Map());
+	let userRatingsList = $state<RatingOut[]>([]);
+	let userRatings = $derived(new Map(userRatingsList.map(r => [r.media_uuid, r.rating])));
 	let selectMode = $state(false);
 	let selectedUuids = $state<Set<string>>(new Set());
 
@@ -152,7 +154,7 @@
 		loading = true;
 		error = '';
 		anime = null;
-		userRatings = new Map();
+		userRatingsList = [];
 		coverFailed = false;
 		selectMode = false;
 		selectedUuids = new Set();
@@ -169,7 +171,7 @@
 			anime = animeResult.value;
 
 			if (ratingsResult.status === 'fulfilled') {
-				userRatings = new Map(ratingsResult.value.map(r => [r.media_uuid, r.rating]));
+				userRatingsList = ratingsResult.value;
 			}
 			// 403/401 = not logged in or restricted — silently ignore
 		} catch (err) {
@@ -184,7 +186,7 @@
 		if (!anime) return;
 		try {
 			const ratings = await api.get<RatingOut[]>(`/ratings/anime/${anime.uuid}`);
-			userRatings = new Map(ratings.map(r => [r.media_uuid, r.rating]));
+			userRatingsList = ratings;
 		} catch {
 			// silently ignore — user may not be logged in
 		}
@@ -423,6 +425,10 @@
 			</Card.Root>
 		{/if}
 
+		{#if userRatingsList.length > 0 && anime}
+			<RatingsOverview ratings={userRatingsList} media={anime.media} />
+		{/if}
+
 		<!-- Media table -->
 		<Card.Root class={cls.cardGlass}>
 			<Card.Content>
@@ -447,7 +453,7 @@
 
 				<!-- Floating action bar — slides in when items are selected -->
 				{#if selectMode}
-					<div class="flex items-center gap-3 mb-4 px-3 py-2.5 rounded-lg bg-primary/10 border border-primary/20 transition-all">
+					<div class="flex items-center gap-3 mb-4 px-3 py-2.5 rounded-lg bg-primary/10 border border-primary/20">
 						<button
 							class="flex items-center gap-1.5 text-sm font-medium text-card-foreground hover:text-primary transition"
 							onclick={toggleAll}
@@ -464,32 +470,33 @@
 
 						<div class="flex-1"></div>
 
-						<Button
-							size="sm"
-							disabled={!someSelected || isRestricted}
-							onclick={openBulkRateDialog}
-						>
-							<Star class="size-3.5 mr-1.5" />
-							Rate
-						</Button>
-						<Button
-							size="sm"
-							variant="secondary"
-							disabled={!someSelected}
-							onclick={() => { showWatchlistDialog = true; }}
-						>
-							<BookmarkPlus class="size-3.5 mr-1.5" />
-							Watchlist
-						</Button>
-						{#if alreadyRatedCount > 0}
+						{#if someSelected}
 							<Button
 								size="sm"
-								variant="destructive"
-								onclick={() => { bulkDeleteError = ''; showDeleteDialog = true; }}
+								disabled={isRestricted}
+								onclick={openBulkRateDialog}
 							>
-								<Trash2 class="size-3.5 mr-1.5" />
-								Delete Ratings
+								<Star class="size-3.5 mr-1.5" />
+								Rate
 							</Button>
+							<Button
+								size="sm"
+								variant="secondary"
+								onclick={() => { showWatchlistDialog = true; }}
+							>
+								<BookmarkPlus class="size-3.5 mr-1.5" />
+								Watchlist
+							</Button>
+							{#if alreadyRatedCount > 0}
+								<Button
+									size="sm"
+									variant="destructive"
+									onclick={() => { bulkDeleteError = ''; showDeleteDialog = true; }}
+								>
+									<Trash2 class="size-3.5 mr-1.5" />
+									Delete Ratings
+								</Button>
+							{/if}
 						{/if}
 					</div>
 				{/if}

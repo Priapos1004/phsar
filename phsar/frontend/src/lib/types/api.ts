@@ -139,6 +139,11 @@ export interface RatingCreate {
 	originality?: Originality | null;
 }
 
+/** Read a dynamic attribute key from a rating object (needed because attribute keys are iterated at runtime). */
+export function getRatingAttr(obj: RatingOut | RatingCreate, key: string): string | null {
+	return (obj as unknown as Record<string, string | null>)[key] ?? null;
+}
+
 /** Maps each rating attribute to its display label and possible values. */
 export const RATING_ATTRIBUTE_OPTIONS: Record<string, { label: string; options: { value: string; label: string }[] }> = {
 	pace: { label: 'Pace', options: [{ value: 'slow', label: 'Slow' }, { value: 'normal', label: 'Normal' }, { value: 'fast', label: 'Fast' }] },
