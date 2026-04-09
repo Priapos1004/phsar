@@ -9,21 +9,31 @@
     import { Label } from '$lib/components/ui/label';
     import * as Card from '$lib/components/ui/card';
 
+    let registrationToken = $state('');
     let username = $state('');
     let password = $state('');
+    let confirmPassword = $state('');
     let error = $state('');
     let loading = $state(false);
 
-    async function handleLogin(e: Event) {
+    let passwordMismatch = $derived(confirmPassword !== '' && password !== confirmPassword);
+
+    async function handleRegister(e: Event) {
         e.preventDefault();
         error = '';
-        loading = true;
 
+        if (password !== confirmPassword) {
+            error = 'Passwords do not match.';
+            return;
+        }
+
+        loading = true;
         try {
-            const data = await api.postForm<TokenResponse>(
-                '/auth/login',
-                new URLSearchParams({ username, password })
-            );
+            const data = await api.post<TokenResponse>('/auth/register', {
+                registration_token: registrationToken,
+                username,
+                password,
+            });
             token.set(data.access_token);
             goto('/');
         } catch (err) {
@@ -43,10 +53,21 @@
     <div in:fly={{ y: 20, duration: 2000 }} class="w-full max-w-md">
         <Card.Root>
             <Card.Header>
-                <h2 class="text-2xl font-bold text-center text-card-foreground">Login</h2>
+                <h2 class="text-2xl font-bold text-center text-card-foreground">Register</h2>
             </Card.Header>
             <Card.Content>
-                <form onsubmit={handleLogin} class="space-y-4">
+                <form onsubmit={handleRegister} class="space-y-4">
+                    <div class="space-y-2">
+                        <Label for="registration-token">Registration Token</Label>
+                        <Input
+                            id="registration-token"
+                            type="text"
+                            bind:value={registrationToken}
+                            required
+                            class="h-10"
+                            placeholder="Paste your registration token"
+                        />
+                    </div>
                     <div class="space-y-2">
                         <Label for="username">Username</Label>
                         <Input
@@ -67,16 +88,29 @@
                             class="h-10"
                         />
                     </div>
+                    <div class="space-y-2">
+                        <Label for="confirm-password">Confirm Password</Label>
+                        <Input
+                            id="confirm-password"
+                            type="password"
+                            bind:value={confirmPassword}
+                            required
+                            class="h-10 {passwordMismatch ? 'border-destructive' : ''}"
+                        />
+                        {#if passwordMismatch}
+                            <p class="text-xs text-destructive">Passwords do not match</p>
+                        {/if}
+                    </div>
                     <Button
                         type="submit"
-                        disabled={loading}
+                        disabled={loading || passwordMismatch}
                         class="w-full"
                         size="lg"
                     >
                         {#if loading}
-                            Logging in...
+                            Registering...
                         {:else}
-                            Login
+                            Register
                         {/if}
                     </Button>
                 </form>
@@ -84,7 +118,7 @@
                     <div class="mt-4 text-center text-destructive text-sm">{error}</div>
                 {/if}
                 <p class="mt-4 text-center text-sm text-muted-foreground">
-                    Have a registration token? <a href="/register" class="text-primary hover:underline">Register</a>
+                    Already have an account? <a href="/login" class="text-primary hover:underline">Login</a>
                 </p>
             </Card.Content>
         </Card.Root>

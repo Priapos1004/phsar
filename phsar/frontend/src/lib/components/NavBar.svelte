@@ -3,10 +3,11 @@
 
     interface Props {
         isAuthenticated: boolean;
+        username: string | null;
         onLogout: () => void;
     }
 
-    let { isAuthenticated, onLogout }: Props = $props();
+    let { isAuthenticated, username = null, onLogout }: Props = $props();
 </script>
 
 <nav class="sticky top-0 z-50 h-16 flex justify-between items-center px-8 py-4 bg-black/10 backdrop-blur">
@@ -26,7 +27,7 @@
     {#if isAuthenticated}
         <DropdownMenu.Root>
             <DropdownMenu.Trigger class="ml-4 w-8 h-8 rounded-full bg-primary hover:bg-primary/80 flex items-center justify-center transition">
-                <span class="text-white text-sm font-semibold">U</span>
+                <span class="text-white text-sm font-semibold">{username ? username[0].toUpperCase() : 'U'}</span>
             </DropdownMenu.Trigger>
             <DropdownMenu.Content class="w-48" align="end">
                 <DropdownMenu.Item>
