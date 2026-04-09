@@ -247,6 +247,10 @@
 								<span class="inline-block mt-1.5 px-2.5 py-1 rounded-md font-semibold bg-yellow-100 text-yellow-800 border border-yellow-200">
 									{displayStatus}
 								</span>
+							{:else if anime.has_upcoming}
+								<span class="inline-block mt-1.5 px-2.5 py-1 rounded-md font-semibold bg-blue-100 text-blue-800 border border-blue-200">
+									{displayStatus}
+								</span>
 							{:else}
 								<span class="inline-block mt-1.5 px-2.5 py-1 rounded-md font-medium bg-muted text-muted-foreground">
 									{displayStatus}

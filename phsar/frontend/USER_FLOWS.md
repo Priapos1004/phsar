@@ -125,7 +125,7 @@ Each media search result card shows:
 Each anime search result card shows:
 - Cover image (from anime, lazy-loaded with fallback)
 - Title, average score + average scored-by ("ratings/media"), season range (e.g., "Spring 2017 - Winter 2024")
-- Airing status with "+ upcoming" suffix when applicable
+- Airing status for active/upcoming anime ("Currently Airing + upcoming content", "Not yet aired", or "upcoming content" for finished anime with announced sequels)
 - Age rating (max across media)
 - Genre tags (strict majority rule: genre must be on >50% of media)
 - Relation type badges with counts (e.g., "main: 5", "other: 2")
@@ -137,15 +137,15 @@ Each anime search result card shows:
 
 ## 6. Anime Detail Page
 
-### 7.1 Loading
+### 6.1 Loading
 - Page reads `uuid` param from URL
 - Fetches anime detail (`GET /media/anime/{uuid}`)
 - While loading: centered "Loading..." pulse animation
 - On error: centered red error message
 
-### 7.2 Hero Card
+### 6.2 Hero Card
 - Same blurred cover background pattern as media detail
-- Title (English preferred), alternate titles, airing status badge with "+ upcoming" when applicable
+- Title (English preferred), alternate titles, airing status badge: green (Currently Airing), yellow (Not yet aired), blue (upcoming content), grey (Finished Airing)
 - Average MAL score with "ratings/media" label
 - Relation type badges with counts (e.g., "main: 5"), media type badges with counts (e.g., "TV: 3")
 - Age rating badge (max across media), genre badges (strict majority rule)
@@ -153,7 +153,7 @@ Each anime search result card shows:
 - Studio names
 - Watchlist bookmark buttons (add all / remove all — stub dialogs, wired in v0.15.0)
 
-### 7.3 Synopsis
+### 6.3 Synopsis
 - Same collapsible description card as media detail (from anime description)
 
 ### 6.4 Media Table

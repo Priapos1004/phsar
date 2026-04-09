@@ -2,7 +2,8 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_filters_default_media(client, admin_auth_headers):
+async def test_filters_default_anime(client, admin_auth_headers):
+    """Default view_type is anime — verify core filter keys are present."""
     response = await client.get("/filters/options", headers=admin_auth_headers)
     assert response.status_code == 200
     data = response.json()

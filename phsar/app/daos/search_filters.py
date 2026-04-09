@@ -160,8 +160,10 @@ def apply_anime_having_filters(stmt, filters: MediaSearchFilters, agg_columns: d
     if filters.total_watch_time_max is not None:
         conditions.append(agg_columns["total_watch_time"].isnot(None) & (agg_columns["total_watch_time"] <= filters.total_watch_time_max))
 
-    # Genre majority: for each genre, a correlated subquery counts matching media.
-    # The denominator uses the already-computed media_count aggregate from the GROUP BY.
+    # Genre majority filter: for each selected genre, a correlated subquery checks
+    # if >50% of the anime's media have that genre. This mirrors the threshold in
+    # filter_service._get_anime_majority_genres, which uses the same formula to
+    # determine which genres appear in the dropdown.
     if filters.genre_name:
         for genre_name in filters.genre_name:
             genre_count_subq = (

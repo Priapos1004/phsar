@@ -53,7 +53,9 @@ export function formatSeasonRange(start: string | null, end: string | null): str
  * Format an airing status string, appending "+ upcoming" when applicable.
  */
 export function formatAiringStatus(status: string, hasUpcoming: boolean): string {
-	return hasUpcoming ? `${status} + upcoming` : status;
+	if (status === 'Not yet aired') return status;
+	if (status === 'Finished Airing') return hasUpcoming ? 'upcoming content' : status;
+	return hasUpcoming ? `${status} + upcoming content` : status;
 }
 
 /**

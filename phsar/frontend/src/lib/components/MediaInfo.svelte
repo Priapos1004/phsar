@@ -70,7 +70,7 @@
 				<div class="flex items-start justify-between">
 					<div>
 						<h3 class="text-lg font-bold text-card-foreground">{title}</h3>
-						{#if displaySeason || airing_status === 'Not yet aired' || airing_status === 'Currently Airing'}
+						{#if displaySeason || airing_status === 'Not yet aired' || airing_status === 'Currently Airing' || has_upcoming}
 							<p class="text-primary">
 								{#if displaySeason}
 									{displaySeason}
@@ -82,7 +82,7 @@
 									</span>
 								{/if}
 
-								{#if airing_status === 'Not yet aired' || airing_status === 'Currently Airing'}
+								{#if airing_status === 'Not yet aired' || airing_status === 'Currently Airing' || has_upcoming}
 									<span class="ml-2 text-sm text-primary/70">({displayStatus})</span>
 								{/if}
 							</p>

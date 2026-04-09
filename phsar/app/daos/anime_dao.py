@@ -118,7 +118,7 @@ class AnimeDAO(MalIdDAO[Anime]):
                     func.cosine_distance(MediaSearch.description_embedding, cast(query_embedding, Vector))
                 ).label("avg_distance")
                 stmt = stmt.add_columns(avg_distance)
-                stmt = stmt.order_by(avg_distance)
+                stmt = stmt.order_by(avg_distance.asc().nullslast())
         else:
             # Default ordering: weighted score = avg(score) * log10(avg(scored_by) + 1)
             # log10 chosen over ln to dampen the scored_by weight — prevents very popular

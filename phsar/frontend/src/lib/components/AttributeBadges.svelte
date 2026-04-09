@@ -1,3 +1,4 @@
+<!-- TODO(v0.15.1): Verify mobile layout — orbital pills may overlap on narrow viewports -->
 <script lang="ts">
 	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr } from '$lib/types/api';
 	import type { RatingOut } from '$lib/types/api';

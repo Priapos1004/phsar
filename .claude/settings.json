@@ -25,6 +25,7 @@
       "Bash(gh issue view:*)",
       "Bash(gh issue list:*)",
       "Bash(gh milestone list:*)",
+      "Bash(gh pr list:*)",
       "WebFetch(domain:shadcn-svelte.com)",
       "Bash(yes)",
       "Bash(npx shadcn-svelte@latest add *)",
