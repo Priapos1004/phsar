@@ -35,7 +35,8 @@ class UserSettings(BaseModel):
 
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
 
-    profile_picture = Column(String, nullable=False, default="bunny_01")
+    # Stores the color key only (character/version-independent); enables future theme mapping
+    profile_picture = Column(String, nullable=False, default="rainbow")
     name_language = Column(Enum(NameLanguage), nullable=False, default=NameLanguage.english)
     default_search_view = Column(Enum(DefaultSearchView), nullable=False, default=DefaultSearchView.anime)
     rating_step = Column(Enum(RatingStep), nullable=False, default=RatingStep.half)
