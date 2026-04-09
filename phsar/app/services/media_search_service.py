@@ -83,6 +83,7 @@ def _media_to_sibling(media: Media) -> MediaSibling:
         uuid=media.uuid,
         title=media.title,
         name_eng=media.name_eng,
+        name_jap=media.name_jap,
         cover_image=media.cover_image,
         media_type=media.media_type,
         relation_type=media.relation_type,

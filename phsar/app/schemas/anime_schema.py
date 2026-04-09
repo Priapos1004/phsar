@@ -74,6 +74,7 @@ class AnimeMediaItem(BaseModel):
     uuid: UUID
     title: str
     name_eng: Optional[str] = None
+    name_jap: Optional[str] = None
     cover_image: Optional[str] = None
     media_type: str
     relation_type: str

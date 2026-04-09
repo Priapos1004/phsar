@@ -54,6 +54,7 @@ class MediaSibling(BaseModel):
     uuid: UUID
     title: str
     name_eng: Optional[str]
+    name_jap: Optional[str]
     cover_image: Optional[str]
     media_type: MediaType
     relation_type: RelationType
