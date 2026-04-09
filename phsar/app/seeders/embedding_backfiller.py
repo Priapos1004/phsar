@@ -28,16 +28,21 @@ async def _backfill_anime_embeddings(db: AsyncSession):
     result = await db.execute(stmt)
     missing = result.scalars().all()
 
+    count = 0
     for anime in missing:
-        await create_anime_embedding(
-            db,
-            anime_id=anime.id,
-            title_texts=anime_title_texts(anime),
-            description_text=anime.description or "",
-        )
-        logger.info(f"Backfilled embedding for Anime: {anime.title} (ID: {anime.id})")
+        try:
+            await create_anime_embedding(
+                db,
+                anime_id=anime.id,
+                title_texts=anime_title_texts(anime),
+                description_text=anime.description or "",
+            )
+            count += 1
+            logger.info(f"Backfilled embedding for Anime: {anime.title} (ID: {anime.id})")
+        except Exception:
+            logger.exception(f"Failed to backfill embedding for Anime: {anime.title} (ID: {anime.id})")
 
-    return len(missing)
+    return count
 
 
 async def _backfill_media_embeddings(db: AsyncSession):
@@ -49,16 +54,21 @@ async def _backfill_media_embeddings(db: AsyncSession):
     result = await db.execute(stmt)
     missing = result.scalars().all()
 
+    count = 0
     for media in missing:
-        await create_media_embedding(
-            db,
-            media_id=media.id,
-            title_texts=[media.title, media.name_eng, media.name_jap, *(media.other_names or [])],
-            description_text=media.description or "",
-        )
-        logger.info(f"Backfilled embedding for Media: {media.title} (ID: {media.id})")
+        try:
+            await create_media_embedding(
+                db,
+                media_id=media.id,
+                title_texts=[media.title, media.name_eng, media.name_jap, *(media.other_names or [])],
+                description_text=media.description or "",
+            )
+            count += 1
+            logger.info(f"Backfilled embedding for Media: {media.title} (ID: {media.id})")
+        except Exception:
+            logger.exception(f"Failed to backfill embedding for Media: {media.title} (ID: {media.id})")
 
-    return len(missing)
+    return count
 
 
 async def _backfill_rating_embeddings(db: AsyncSession):
@@ -70,11 +80,16 @@ async def _backfill_rating_embeddings(db: AsyncSession):
     result = await db.execute(stmt)
     missing = result.scalars().all()
 
+    count = 0
     for rating in missing:
-        await create_rating_embedding(db, rating_id=rating.id, note=rating.note)
-        logger.info(f"Backfilled embedding for Rating ID: {rating.id}")
+        try:
+            await create_rating_embedding(db, rating_id=rating.id, note=rating.note)
+            count += 1
+            logger.info(f"Backfilled embedding for Rating ID: {rating.id}")
+        except Exception:
+            logger.exception(f"Failed to backfill embedding for Rating ID: {rating.id}")
 
-    return len(missing)
+    return count
 
 
 async def backfill_embeddings(db: AsyncSession):

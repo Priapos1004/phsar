@@ -9,16 +9,11 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select';
-	import { Slider } from '$lib/components/ui/slider';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import { ArrowLeft, Bookmark, Star, Tv, Calendar, Film, Layers, X, ListChecks, BookmarkPlus, ChevronDown, ChevronUp, Trash2 } from 'lucide-svelte';
+	import { ArrowLeft, Bookmark, Star, Tv, Calendar, Film, Layers, X, ListChecks, BookmarkPlus, Trash2 } from 'lucide-svelte';
 	import * as cls from '$lib/styles/classes';
-	import { clampAndSnapScore } from '$lib/utils/formatString';
-	import { RATING_ATTRIBUTE_OPTIONS } from '$lib/types/api';
 	import type { AnimeDetail, AnimeMediaItem, RatingOut } from '$lib/types/api';
 	import RatingsOverview from '$lib/components/RatingsOverview.svelte';
+	import BulkRateDialog from '$lib/components/BulkRateDialog.svelte';
 
 	const getUserRole = getContext<() => string | null>('userRole');
 
@@ -41,19 +36,6 @@
 	let bulkDeleting = $state(false);
 	let bulkDeleteError = $state('');
 
-	const SCORE_STEP = 0.5;
-	const SCORE_DECIMALS = SCORE_STEP < 1 ? 1 : 0;
-	let bulkScore = $state<number>(5.0);
-	let bulkNote = $state('');
-	let bulkShowAttributes = $state(false);
-	let bulkAttributes = $state<Record<string, string | null>>({});
-	let bulkSaving = $state(false);
-	let bulkError = $state('');
-
-	let snappedBulkScore = $derived(clampAndSnapScore(bulkScore, SCORE_STEP));
-	let bulkSetAttrCount = $derived(Object.keys(RATING_ATTRIBUTE_OPTIONS).filter(k => bulkAttributes[k]).length);
-	let totalAttrCount = Object.keys(RATING_ATTRIBUTE_OPTIONS).length;
-
 	let alreadyRatedCount = $derived(
 		[...selectedUuids].filter(uuid => userRatings.has(uuid)).length
 	);
@@ -61,52 +43,29 @@
 	let showNoteDialog = $state(false);
 	let noteDialogMedia = $state('');
 
-	function resetBulkForm() {
-		bulkScore = 5.0;
-		bulkNote = '';
-		bulkShowAttributes = false;
-		bulkAttributes = Object.fromEntries(Object.keys(RATING_ATTRIBUTE_OPTIONS).map(k => [k, null]));
-		bulkError = '';
-	}
+	let bulkRateDialog = $state<BulkRateDialog>();
 
 	function openBulkRateDialog() {
-		resetBulkForm();
+		bulkRateDialog?.reset();
 		showRateDialog = true;
 	}
 
-	async function handleBulkRate() {
-		bulkSaving = true;
-		bulkError = '';
+	function handleBulkRateSaved(results: RatingOut[], note: string) {
+		showRateDialog = false;
+		selectMode = false;
+		selectedUuids = new Set();
 
-		const payload = {
-			media_uuids: [...selectedUuids],
-			rating: snappedBulkScore,
-			note: bulkNote.trim() || null,
-			...bulkAttributes,
-		};
-
-		try {
-			const results = await api.put<RatingOut[]>('/ratings/bulk', payload);
-			showRateDialog = false;
-			selectMode = false;
-			selectedUuids = new Set();
-
-			// Show which media got the note
-			if (bulkNote.trim()) {
-				const noteRating = results.find(r => r.note);
-				if (noteRating) {
-					const mediaItem = anime?.media.find(m => m.uuid === noteRating.media_uuid);
-					noteDialogMedia = mediaItem?.name_eng ?? noteRating.media_title;
-					showNoteDialog = true;
-				}
+		// Show which media got the note
+		if (note) {
+			const noteRating = results.find(r => r.note);
+			if (noteRating) {
+				const mediaItem = anime?.media.find(m => m.uuid === noteRating.media_uuid);
+				noteDialogMedia = mediaItem?.name_eng ?? noteRating.media_title;
+				showNoteDialog = true;
 			}
-
-			await refreshUserRatings();
-		} catch (err) {
-			bulkError = err instanceof ApiError ? err.detail : 'Failed to save ratings';
-		} finally {
-			bulkSaving = false;
 		}
+
+		refreshUserRatings();
 	}
 
 	async function handleBulkDelete() {
@@ -581,121 +540,13 @@
 		</Card.Root>
 
 		<!-- Bulk rating dialog -->
-		<Dialog.Root bind:open={showRateDialog}>
-			<Dialog.Content class="bg-card text-card-foreground max-h-[85vh] overflow-y-auto sm:max-w-md">
-				<Dialog.Header>
-					<Dialog.Title class="text-card-foreground">Rate {selectedUuids.size} Media</Dialog.Title>
-					<Dialog.Description class="text-muted-foreground">
-						Score and attributes are applied to all selected media.
-					</Dialog.Description>
-				</Dialog.Header>
-
-				<div class="space-y-4 py-2">
-					{#if alreadyRatedCount > 0}
-						<div class="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
-							This will overwrite {alreadyRatedCount} existing rating{alreadyRatedCount > 1 ? 's' : ''}.
-						</div>
-					{/if}
-
-					<!-- Score: editable circle + slider -->
-					<div class="flex flex-col items-center py-2 space-y-3">
-						<div class="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center">
-							<input
-								type="text"
-								inputmode="decimal"
-								value={snappedBulkScore.toFixed(SCORE_DECIMALS)}
-								onblur={(e) => {
-									const parsed = parseFloat(e.currentTarget.value.replace(',', '.')) || 0;
-									bulkScore = clampAndSnapScore(parsed, SCORE_STEP);
-									e.currentTarget.value = clampAndSnapScore(parsed, SCORE_STEP).toFixed(SCORE_DECIMALS);
-								}}
-								onkeydown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-								class="w-14 text-center text-2xl font-bold text-card-foreground bg-transparent outline-none"
-							/>
-						</div>
-						<div class="w-full max-w-xs">
-							<Slider type="single" bind:value={bulkScore} min={0} max={10} step={SCORE_STEP} />
-						</div>
-					</div>
-
-					<div class="bg-muted/40 rounded-lg p-4 space-y-4">
-						<!-- Note -->
-						<div class="space-y-1">
-							<Label class="text-card-foreground">Note <span class="text-muted-foreground font-normal">({bulkNote.length}/1000)</span></Label>
-							<Textarea
-								bind:value={bulkNote}
-								maxlength={1000}
-								rows={3}
-								placeholder="Your thoughts on this anime..."
-								class="bg-card"
-							/>
-							<p class="text-xs text-muted-foreground">Applied to the last main media only.</p>
-						</div>
-
-						<!-- Attributes -->
-						<div>
-							<button
-								type="button"
-								class="flex items-center gap-2 text-primary group"
-								onclick={() => (bulkShowAttributes = !bulkShowAttributes)}
-							>
-								{#if bulkShowAttributes}
-									<ChevronUp class="size-4" />
-								{:else}
-									<ChevronDown class="size-4" />
-								{/if}
-								<span class="group-hover:underline">Details</span>
-								<span class="text-sm font-normal px-1.5 py-0.5 rounded-full {bulkSetAttrCount > 0 ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'}">
-									{bulkSetAttrCount}/{totalAttrCount}
-								</span>
-							</button>
-
-							{#if bulkShowAttributes}
-								<div class="grid grid-cols-2 gap-3 mt-3">
-									{#each Object.entries(RATING_ATTRIBUTE_OPTIONS) as [key, config]}
-										<div class="space-y-1">
-											<Label class={bulkAttributes[key] ? 'text-card-foreground font-medium' : 'text-muted-foreground'}>
-												{config.label}
-											</Label>
-											<Select.Root
-												type="single"
-												value={bulkAttributes[key] ?? undefined}
-												onValueChange={(val: string) => { bulkAttributes[key] = val || null; }}
-											>
-												<Select.Trigger class="w-full {bulkAttributes[key] ? 'bg-primary/5 border-2 border-primary/40' : 'bg-card'}">
-													{#if bulkAttributes[key]}
-														{config.options.find(o => o.value === bulkAttributes[key])?.label ?? 'Select...'}
-													{:else}
-														<span class="text-muted-foreground">Not set</span>
-													{/if}
-												</Select.Trigger>
-												<Select.Content>
-													{#each config.options as option}
-														<Select.Item value={option.value}>{option.label}</Select.Item>
-													{/each}
-												</Select.Content>
-											</Select.Root>
-										</div>
-									{/each}
-								</div>
-							{/if}
-						</div>
-					</div>
-
-					{#if bulkError}
-						<p class="text-destructive">{bulkError}</p>
-					{/if}
-
-					<Button class="w-full" onclick={handleBulkRate} disabled={bulkSaving}>
-						{#if bulkSaving}
-							Saving...
-						{:else}
-							Rate {selectedUuids.size} Media
-						{/if}
-					</Button>
-				</div>
-			</Dialog.Content>
-		</Dialog.Root>
+		<BulkRateDialog
+			bind:this={bulkRateDialog}
+			bind:open={showRateDialog}
+			{selectedUuids}
+			{alreadyRatedCount}
+			onSaved={handleBulkRateSaved}
+		/>
 
 		<Dialog.Root bind:open={showWatchlistDialog}>
 			<Dialog.Content>

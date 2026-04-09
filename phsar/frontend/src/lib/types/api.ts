@@ -170,7 +170,8 @@ export interface MediaTypeSummary {
 	count: number;
 }
 
-export interface AnimeSearchResult {
+/** Shared aggregated fields for anime search results and detail views. */
+export interface AnimeAggregatedBase {
 	uuid: string;
 	title: string;
 	name_eng: string | null;
@@ -192,6 +193,8 @@ export interface AnimeSearchResult {
 	age_rating_numeric: number | null;
 }
 
+export interface AnimeSearchResult extends AnimeAggregatedBase {}
+
 // Anime detail
 export interface AnimeMediaItem {
 	uuid: string;
@@ -212,27 +215,9 @@ export interface AnimeMediaItem {
 	studios: string[];
 }
 
-export interface AnimeDetail {
-	uuid: string;
-	title: string;
-	name_eng: string | null;
-	name_jap: string | null;
+export interface AnimeDetail extends AnimeAggregatedBase {
 	other_names: string[];
 	description: string | null;
-	cover_image: string | null;
-	avg_score: number | null;
-	avg_scored_by: number;
-	total_episodes: number | null;
-	total_watch_time: number | null;
-	age_rating_numeric: number | null;
-	relation_types: RelationTypeSummary[];
-	media_types: MediaTypeSummary[];
-	genres: string[];
-	studios: string[];
-	airing_status: string;
-	has_upcoming: boolean;
-	season_start: string | null;
-	season_end: string | null;
 	media: AnimeMediaItem[];
 }
 

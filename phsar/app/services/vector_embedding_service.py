@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
 async def generate_embedding(text: str) -> list[float]:
-    return await to_thread.run_sync(lambda: model.encode(text).tolist())
+    return await to_thread.run_sync(lambda: model.encode(text).tolist(), abandon_on_cancel=True)
 
 
 async def _create_search_embedding(db: AsyncSession, model_class, fk_kwargs: dict, title_texts: list[str], description_text: str):

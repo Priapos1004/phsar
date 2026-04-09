@@ -89,7 +89,9 @@ class AnimeDAO(MalIdDAO[Anime]):
             if search_type == SearchType.TITLE:
                 stmt = stmt.join(AnimeSearch, AnimeSearch.anime_id == Anime.id)
             elif search_type == SearchType.DESCRIPTION:
-                stmt = stmt.join(MediaSearch, MediaSearch.media_id == Media.id)
+                # LEFT JOIN so anime with some media missing embeddings still appear;
+                # avg() naturally ignores NULLs from the outer join
+                stmt = stmt.outerjoin(MediaSearch, MediaSearch.media_id == Media.id)
 
         # Pre-aggregation WHERE filters (any-match semantics)
         stmt = apply_anime_pre_filters(stmt, filters)
@@ -118,7 +120,7 @@ class AnimeDAO(MalIdDAO[Anime]):
                 stmt = stmt.add_columns(avg_distance)
                 stmt = stmt.order_by(avg_distance)
         else:
-            # Default ordering: weighted score = avg(score) * ln(sum(scored_by) + 1)
+            # Default ordering: weighted score = avg(score) * log10(avg(scored_by) + 1)
             # log10 chosen over ln to dampen the scored_by weight — prevents very popular
             # but mediocre-scored anime from outranking higher-scored niche anime
             weighted = avg_score * func.log(avg_scored_by + 1)

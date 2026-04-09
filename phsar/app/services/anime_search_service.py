@@ -1,5 +1,6 @@
 import logging
 from collections import Counter
+from typing import TypedDict
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,7 +56,24 @@ def _compute_season_range(
     return start, end
 
 
-def _compute_anime_aggregates(media_list: list[Media]) -> dict:
+class AnimeAggregates(TypedDict):
+    avg_score: float | None
+    avg_scored_by: int
+    total_episodes: int | None
+    total_watch_time: int | None
+    media_count: int
+    relation_types: list[RelationTypeSummary]
+    media_types: list[MediaTypeSummary]
+    genres: list[str]
+    studios: list[str]
+    season_start: str | None
+    season_end: str | None
+    airing_status: str
+    has_upcoming: bool
+    age_rating_numeric: int | None
+
+
+def _compute_anime_aggregates(media_list: list[Media]) -> AnimeAggregates:
     """Compute aggregated metadata from a list of media belonging to one anime.
     Used by both search results and detail page."""
     genre_counts: Counter[str] = Counter()
@@ -77,9 +95,12 @@ def _compute_anime_aggregates(media_list: list[Media]) -> dict:
         for g in genres:
             genre_counts[g] += 1
         all_studios.update(studios)
-        all_statuses.append(m.airing_status)
-        relation_type_counts[m.relation_type.value] += 1
-        media_type_counts[m.media_type.value] += 1
+        if m.airing_status:
+            all_statuses.append(m.airing_status)
+        if m.relation_type:
+            relation_type_counts[m.relation_type.value] += 1
+        if m.media_type:
+            media_type_counts[m.media_type.value] += 1
 
         if m.anime_season_name and m.anime_season_year:
             all_seasons.append((m.anime_season_name.value, m.anime_season_year))
@@ -180,7 +201,16 @@ async def get_anime_detail(db: AsyncSession, anime_uuid: UUID) -> AnimeDetail:
     if not anime:
         raise AnimeNotFoundByUuidError(str(anime_uuid))
 
-    media_list = list(anime.media)
+    # Deterministic ordering: by season, then mal_id as tiebreaker.
+    # Ensures timeline chart "release order" is reliable regardless of DB row order.
+    media_list = sorted(
+        anime.media,
+        key=lambda m: (
+            m.anime_season_year or 9999,
+            SEASON_ORDER.get(m.anime_season_name.value if m.anime_season_name else "", 0),
+            m.mal_id,
+        ),
+    )
     agg = _compute_anime_aggregates(media_list)
     media_items = [_media_to_anime_media_item(m) for m in media_list]
 

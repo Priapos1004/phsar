@@ -22,6 +22,7 @@
 	let chartOption = $derived({
 		tooltip: {
 			trigger: 'item' as const,
+			confine: true,
 			formatter: (params: unknown) => {
 				const p = params as { dataIndex: number };
 				const mr = mediaWithRatings[p.dataIndex];

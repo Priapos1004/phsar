@@ -59,13 +59,11 @@ async def _resolve_media_uuids(db: AsyncSession, media_uuids: list[UUID]) -> lis
     all_media = await media_dao.get_all_by_field(db, "uuid", media_uuids)
     media_by_uuid = {m.uuid: m for m in all_media}
 
-    media_list = []
-    for uuid in media_uuids:
-        media = media_by_uuid.get(uuid)
-        if not media:
-            raise MediaNotFoundError(str(uuid))
-        media_list.append(media)
-    return media_list
+    missing_uuids = [uuid for uuid in media_uuids if uuid not in media_by_uuid]
+    if missing_uuids:
+        raise MediaNotFoundError(", ".join(str(u) for u in missing_uuids))
+
+    return [media_by_uuid[uuid] for uuid in media_uuids]
 
 
 async def _upsert_note_embedding(db: AsyncSession, rating: Ratings, note: str | None):

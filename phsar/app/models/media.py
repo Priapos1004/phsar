@@ -51,7 +51,7 @@ AGE_RATING_MAP = [
 class Media(BaseModel):
     __tablename__ = "media"
 
-    anime_id = Column(Integer, ForeignKey("anime.id", ondelete="CASCADE"), nullable=False)
+    anime_id = Column(Integer, ForeignKey("anime.id", ondelete="CASCADE"), nullable=False, index=True)
     mal_id = Column(Integer, nullable=False, unique=True)
     mal_url = Column(String, nullable=False)
     title = Column(String, nullable=False)
