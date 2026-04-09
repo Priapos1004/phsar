@@ -10,7 +10,6 @@ from app.exceptions import (
     RatingNotFoundError,
 )
 from app.models.media import Media
-from app.models.rating_search import RatingSearch
 from app.models.ratings import Ratings
 from app.schemas.media_filter_schema import SearchType
 from app.schemas.rating_schema import (
@@ -22,7 +21,10 @@ from app.schemas.rating_schema import (
     RatingSearchFilters,
 )
 from app.services.media_search_service import media_to_dict
-from app.services.vector_embedding_service import generate_embedding
+from app.services.vector_embedding_service import (
+    create_rating_embedding,
+    generate_embedding,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,21 +68,14 @@ async def _resolve_media_uuids(db: AsyncSession, media_uuids: list[UUID]) -> lis
     return media_list
 
 
-async def _create_note_embedding(db: AsyncSession, rating_id: int, note: str):
-    """Generate an embedding for a note and create a RatingSearch record."""
-    embedding = await generate_embedding(note)
-    db.add(RatingSearch(rating_id=rating_id, note_embedding=embedding))
-
-
 async def _upsert_note_embedding(db: AsyncSession, rating: Ratings, note: str | None):
     """Create, update, or delete the RatingSearch embedding when a note changes.
     Deletes the embedding when note is cleared so orphaned vectors don't persist."""
     if note:
-        embedding = await generate_embedding(note)
         if rating.rating_search:
-            rating.rating_search.note_embedding = embedding
+            rating.rating_search.note_embedding = await generate_embedding(note)
         else:
-            db.add(RatingSearch(rating_id=rating.id, note_embedding=embedding))
+            await create_rating_embedding(db, rating_id=rating.id, note=note)
     elif rating.rating_search:
         await db.delete(rating.rating_search)
 
@@ -107,9 +102,8 @@ async def _upsert_single_rating(
         rating = Ratings(user_id=user_id, media_id=media.id, note=note, **fields)
         await rating_dao.create(db, rating)
 
-        # New rating has no rating_search yet — create embedding directly
         if note:
-            await _create_note_embedding(db, rating.id, note)
+            await create_rating_embedding(db, rating_id=rating.id, note=note)
 
         return rating.uuid
 
