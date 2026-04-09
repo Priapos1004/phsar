@@ -13,7 +13,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Slider } from '$lib/components/ui/slider';
 	import { Textarea } from '$lib/components/ui/textarea';
-	import { ArrowLeft, Bookmark, BookmarkX, Star, Tv, Calendar, Film, Layers, X, ListChecks, BookmarkPlus, ChevronDown, ChevronUp, Trash2 } from 'lucide-svelte';
+	import { ArrowLeft, Bookmark, Star, Tv, Calendar, Film, Layers, X, ListChecks, BookmarkPlus, ChevronDown, ChevronUp, Trash2 } from 'lucide-svelte';
 	import * as cls from '$lib/styles/classes';
 	import { clampAndSnapScore } from '$lib/utils/formatString';
 	import { RATING_ATTRIBUTE_OPTIONS } from '$lib/types/api';
@@ -37,7 +37,6 @@
 	let showRateDialog = $state(false);
 	let showDeleteDialog = $state(false);
 	let showWatchlistDialog = $state(false);
-	let showRemoveWatchlistDialog = $state(false);
 
 	let bulkDeleting = $state(false);
 	let bulkDeleteError = $state('');
@@ -302,23 +301,14 @@
 							{/if}
 						</div>
 
-						<!-- Watchlist actions -->
-						<div class="shrink-0 flex gap-1">
-							<button
-								class="p-2 rounded-lg hover:bg-accent transition group"
-								title="Add all to watchlist"
-								onclick={() => { showWatchlistDialog = true; }}
-							>
-								<Bookmark class="size-6 text-muted-foreground group-hover:text-card-foreground transition" />
-							</button>
-							<button
-								class="p-2 rounded-lg hover:bg-accent transition group"
-								title="Remove all from watchlist"
-								onclick={() => { showRemoveWatchlistDialog = true; }}
-							>
-								<BookmarkX class="size-6 text-muted-foreground group-hover:text-destructive transition" />
-							</button>
-						</div>
+						<!-- Watchlist bookmark placeholder -->
+						<button
+							class="shrink-0 p-2 rounded-lg opacity-50 cursor-not-allowed"
+							disabled
+							title="Coming soon"
+						>
+							<Bookmark class="size-6 text-muted-foreground" />
+						</button>
 					</div>
 
 					{#if anime.avg_score !== null}
@@ -717,20 +707,6 @@
 				</Dialog.Header>
 				<Dialog.Footer>
 					<Button onclick={() => { showWatchlistDialog = false; }}>OK</Button>
-				</Dialog.Footer>
-			</Dialog.Content>
-		</Dialog.Root>
-
-		<Dialog.Root bind:open={showRemoveWatchlistDialog}>
-			<Dialog.Content>
-				<Dialog.Header>
-					<Dialog.Title>Remove All from Watchlist</Dialog.Title>
-					<Dialog.Description>
-						Watchlist features will be available in a future update.
-					</Dialog.Description>
-				</Dialog.Header>
-				<Dialog.Footer>
-					<Button onclick={() => { showRemoveWatchlistDialog = false; }}>OK</Button>
 				</Dialog.Footer>
 			</Dialog.Content>
 		</Dialog.Root>

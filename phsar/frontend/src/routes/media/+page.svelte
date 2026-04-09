@@ -163,13 +163,13 @@
 							{/if}
 						</div>
 
-						<!-- Watchlist bookmark — wired up in v0.15.0 -->
+						<!-- Watchlist bookmark placeholder -->
 						<button
-							class="shrink-0 p-2 rounded-lg hover:bg-accent transition group"
+							class="shrink-0 p-2 rounded-lg opacity-50 cursor-not-allowed"
 							disabled
 							title="Coming soon"
 						>
-							<Bookmark class="size-6 text-muted-foreground group-hover:text-card-foreground transition" />
+							<Bookmark class="size-6 text-muted-foreground" />
 						</button>
 					</div>
 
