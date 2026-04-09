@@ -1,10 +1,13 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
-	import { formatSeason } from '$lib/utils/formatString';
+	import { formatSeason, resolveTitle } from '$lib/utils/formatString';
 	import { buildDetailHref } from '$lib/utils/navigation';
+	import { userSettings } from '$lib/stores/userSettings';
 	import * as cls from '$lib/styles/classes';
 	import type { MediaSibling } from '$lib/types/api';
+
+	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
 
 	interface Props {
 		siblings: MediaSibling[];
@@ -39,7 +42,7 @@
 					{/if}
 
 					<p class="text-xs font-semibold text-card-foreground line-clamp-2 leading-tight">
-						{sibling.name_eng ?? sibling.title}
+						{resolveTitle(sibling.title, sibling.name_eng, sibling.name_jap, nameLanguage)}
 					</p>
 
 					<div class="flex flex-wrap gap-1">

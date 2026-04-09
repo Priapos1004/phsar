@@ -4,12 +4,15 @@
 	import { fetchSearchResults, fetchAnimeSearchResults } from '$lib/utils/search';
 	import type { MediaSearchFilters } from '$lib/utils/search';
 	import { navigateToSearch } from '$lib/utils/navigation';
-	import { formatDuration, formatSeason, formatSeasonRange } from '$lib/utils/formatString';
+	import { formatDuration, formatSeason, formatSeasonRange, resolveTitle } from '$lib/utils/formatString';
 	import { api } from '$lib/api';
+	import { userSettings } from '$lib/stores/userSettings';
 	import type { MediaConnected, AnimeSearchResult } from '$lib/types/api';
 	import * as cls from '$lib/styles/classes';
 	import MediaInfo from '$lib/components/MediaInfo.svelte';
 	import SkeletonCard from '$lib/components/SkeletonMediaInfo.svelte';
+
+	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
 
 	let mediaResults: MediaConnected[] = $state([]);
 	let animeResults: AnimeSearchResult[] = $state([]);
@@ -17,7 +20,10 @@
 	let error = $state('');
 	let hasToken = $state(false);
 
+	let defaultView = $derived($userSettings?.default_search_view ?? 'anime');
 	let viewType = $state<'anime' | 'media'>('anime');
+	// Apply default search view from settings on initial load (before any token overrides)
+	$effect(() => { if (!hasToken) viewType = defaultView; });
 	let decodedParams: Partial<MediaSearchFilters> = $state({});
 	let searchToken = $derived(page.url.searchParams.get('q'));
 
@@ -139,7 +145,7 @@
 				{#each animeResults.slice(0, visibleCount) as result}
 					<MediaInfo
 						info_type="anime"
-						title={result.name_eng ?? result.title}
+						title={resolveTitle(result.title, result.name_eng, result.name_jap, nameLanguage)}
 						score={result.avg_score}
 						scoredBy={result.avg_scored_by}
 						season_range={formatSeasonRange(result.season_start, result.season_end)}
@@ -160,7 +166,7 @@
 				{#each mediaResults.slice(0, visibleCount) as result}
 					<MediaInfo
 						info_type="media"
-						title={result.name_eng ?? result.title}
+						title={resolveTitle(result.title, result.name_eng, result.name_jap, nameLanguage)}
 						score={result.score}
 						scoredBy={result.scored_by}
 						anime_season={formatSeason(result.anime_season_name, result.anime_season_year)}

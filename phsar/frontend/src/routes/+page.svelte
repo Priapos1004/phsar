@@ -1,13 +1,16 @@
 <script lang="ts">
 	import SearchBar from '$lib/components/SearchBar.svelte';
 	import { navigateToSearch } from '$lib/utils/navigation';
+	import { userSettings } from '$lib/stores/userSettings';
 	import type { MediaSearchFilters } from '$lib/utils/search';
 	import * as cls from '$lib/styles/classes';
     import ScrollableCard from '$lib/components/ScrollableCard.svelte';
     import InfoDiashow from '$lib/components/InfoDiashow.svelte';
 
+	let defaultView = $derived($userSettings?.default_search_view ?? 'anime');
+
 	function handleSearch(data: MediaSearchFilters) {
-		navigateToSearch(data);
+		navigateToSearch({ ...data, view_type: defaultView });
 	}
 </script>
 
@@ -16,7 +19,7 @@
 	<InfoDiashow />
 
 	<!-- Search bar -->
-	<SearchBar onSearch={handleSearch} />
+	<SearchBar viewType={defaultView} onSearch={handleSearch} />
 
 	<!-- Sections below -->
 	<div class={cls.sectionSpacing}>

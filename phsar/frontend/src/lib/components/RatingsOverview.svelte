@@ -10,9 +10,11 @@
 	interface Props {
 		ratings: RatingOut[];
 		media: AnimeMediaItem[];
+		scoreDecimals: number;
+		minScoreDecimals: number;
 	}
 
-	let { ratings, media }: Props = $props();
+	let { ratings, media, scoreDecimals, minScoreDecimals }: Props = $props();
 
 	let ratingsMap = $derived(new Map(ratings.map((r) => [r.media_uuid, r])));
 
@@ -61,12 +63,12 @@
 			{totalEpisodesAvailable}
 		/>
 
-		<RatingsOverviewTimeline {mediaWithRatings} />
+		<RatingsOverviewTimeline {mediaWithRatings} {minScoreDecimals} />
 
 		<RatingsOverviewAttributes {ratings} />
 
 		{#if notesInOrder.length > 0}
-			<RatingsOverviewNotes notes={notesInOrder} />
+			<RatingsOverviewNotes notes={notesInOrder} {scoreDecimals} />
 		{/if}
 	</Card.Content>
 </Card.Root>

@@ -11,7 +11,8 @@
 	import { api, ApiError } from '$lib/api';
 	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr } from '$lib/types/api';
 	import type { RatingOut, RatingCreate } from '$lib/types/api';
-	import { formatDecimalDigits, clampAndSnapScore } from '$lib/utils/formatString';
+	import { formatDecimalDigits, clampAndSnapScore, decimalPlaces } from '$lib/utils/formatString';
+	import { userSettings } from '$lib/stores/userSettings';
 	import * as cls from '$lib/styles/classes';
 	import { ChevronDown, ChevronUp, Star, Pencil, Trash2 } from 'lucide-svelte';
 
@@ -71,9 +72,13 @@
 		: []
 	);
 
-	// Step size for score — hardcoded to 0.5 until user settings in v0.12.0
-	const SCORE_STEP = 0.5;
-	const SCORE_DECIMALS = SCORE_STEP < 1 ? 1 : 0;
+	let SCORE_STEP = $derived(parseFloat($userSettings?.rating_step ?? '0.5'));
+	// Edit form: precision matches current step (user inputs at this precision)
+	let STEP_DECIMALS = $derived(decimalPlaces(SCORE_STEP));
+	// Display: enough decimals to accurately show the stored value (may exceed current step)
+	let DISPLAY_DECIMALS = $derived(
+		existingRating ? Math.max(STEP_DECIMALS, decimalPlaces(existingRating.rating)) : STEP_DECIMALS
+	);
 
 	function clampAndSnap(val: number): number {
 		return clampAndSnapScore(val, SCORE_STEP);
@@ -233,7 +238,7 @@
 				<div class="flex items-center gap-4">
 					<div class="w-16 h-16 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center shrink-0">
 						<span class="text-xl font-bold text-card-foreground">
-							{formatDecimalDigits(existingRating.rating, SCORE_DECIMALS)}
+							{formatDecimalDigits(existingRating.rating, DISPLAY_DECIMALS)}
 						</span>
 					</div>
 					<div class="space-y-1">
@@ -287,11 +292,11 @@
 						<input
 							type="text"
 							inputmode="decimal"
-							value={snappedScore.toFixed(SCORE_DECIMALS)}
+							value={snappedScore.toFixed(STEP_DECIMALS)}
 							onblur={(e) => {
 								const parsed = parseFloat(e.currentTarget.value.replace(',', '.')) || 0;
 								score = clampAndSnap(parsed);
-								e.currentTarget.value = clampAndSnap(parsed).toFixed(SCORE_DECIMALS);
+								e.currentTarget.value = clampAndSnap(parsed).toFixed(STEP_DECIMALS);
 							}}
 							onkeydown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
 							class="w-14 text-center text-2xl font-bold text-card-foreground bg-transparent outline-none"

@@ -65,6 +65,7 @@ const mockMediaDetail: MediaDetail = {
 			uuid: 'sibling-uuid-1',
 			title: 'Test OVA',
 			name_eng: null,
+			name_jap: null,
 			cover_image: null,
 			media_type: 'OVA',
 			relation_type: 'other',

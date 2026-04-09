@@ -61,7 +61,7 @@
 					fontSize: 22,
 					fontWeight: 'bold' as const,
 					color: scoreColor(avgScore),
-					formatter: (val: number) => formatDecimalDigits(val, 1),
+					formatter: (val: number) => formatDecimalDigits(val, 2),
 				},
 				data: [{ value: avgScore }],
 			},

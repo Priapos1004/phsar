@@ -76,6 +76,16 @@ export function clampAndSnapScore(val: number, step: number): number {
 }
 
 /**
+ * Number of decimal places in a number.
+ * Examples: 0.5 -> 1, 0.25 -> 2, 0.1 -> 1, 0.01 -> 2, 1 -> 0, 6.25 -> 2
+ */
+export function decimalPlaces(value: number): number {
+	const str = value.toString();
+	const dot = str.indexOf('.');
+	return dot === -1 ? 0 : str.length - dot - 1;
+}
+
+/**
  * Format a number to have a fixed number of digits after the decimal point.
  * Pads with trailing zeros or rounds as needed.
  *
@@ -86,4 +96,42 @@ export function clampAndSnapScore(val: number, step: number): number {
  */
 export function formatDecimalDigits(value: number, digits: number): string {
 	return value.toFixed(digits);
+}
+
+/**
+ * Resolve the display title based on user's name language preference.
+ * Falls back through: preferred language → english name → romaji title.
+ */
+export function resolveTitle(
+	title: string,
+	nameEng: string | null | undefined,
+	nameJap: string | null | undefined,
+	language: 'english' | 'japanese' | 'romaji'
+): string {
+	if (language === 'japanese' && nameJap) return nameJap;
+	if (language === 'english' && nameEng) return nameEng;
+	if (language === 'romaji') return title;
+	// Fallback: english name → romaji title
+	return nameEng ?? title;
+}
+
+/**
+ * Get subtitle titles for the hero card — the names NOT used as the main heading.
+ * Returns up to 2 subtitle strings, skipping duplicates and the main title.
+ */
+export function resolveSubtitles(
+	title: string,
+	nameEng: string | null | undefined,
+	nameJap: string | null | undefined,
+	language: 'english' | 'japanese' | 'romaji'
+): string[] {
+	const main = resolveTitle(title, nameEng, nameJap, language);
+	const candidates: string[] = [];
+
+	// Add the other two name variants (not the selected language)
+	if (language !== 'english' && nameEng && nameEng !== main) candidates.push(nameEng);
+	if (language !== 'romaji' && title !== main) candidates.push(title);
+	if (language !== 'japanese' && nameJap && nameJap !== main && !candidates.includes(nameJap)) candidates.push(nameJap);
+
+	return candidates;
 }
