@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30  # Default 30 minutes expiry
 
     SEARCH_SECRET_KEY: str
-    CURRENT_SEARCH_API_VERSION: str = "v1.0.0" # Used to expire tokens when API changes
+    CURRENT_SEARCH_API_VERSION: str = "v1.1.0" # Used to expire tokens when API changes
 
     # Filter settings
     MAX_ITEMS: int = 5  # Maximum number of items to keep search token size manageable

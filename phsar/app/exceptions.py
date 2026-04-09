@@ -176,3 +176,12 @@ class MediaNotFoundError(PhsarBaseError):
     def __init__(self, media_identifier: str):
         message = f"Media not found: '{media_identifier}'."
         super().__init__(message)
+
+
+class AnimeNotFoundByUuidError(PhsarBaseError):
+    """Raised when an anime UUID does not resolve to an existing anime."""
+    status_code = 404
+
+    def __init__(self, uuid: str):
+        message = f"Anime not found: '{uuid}'."
+        super().__init__(message)

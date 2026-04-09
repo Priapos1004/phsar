@@ -2,14 +2,16 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { formatSeason } from '$lib/utils/formatString';
+	import { buildDetailHref } from '$lib/utils/navigation';
 	import * as cls from '$lib/styles/classes';
 	import type { MediaSibling } from '$lib/types/api';
 
 	interface Props {
 		siblings: MediaSibling[];
+		searchToken?: string | null;
 	}
 
-	let { siblings }: Props = $props();
+	let { siblings, searchToken = null }: Props = $props();
 
 	let imgFailed = $state<Record<string, boolean>>({});
 </script>
@@ -17,7 +19,7 @@
 <div class="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2 no-scrollbar">
 	{#each siblings as sibling}
 		<a
-			href={`/media?uuid=${sibling.uuid}`}
+			href={buildDetailHref('media', sibling.uuid, searchToken)}
 			class="snap-start shrink-0 w-40 transition duration-200 transform hover:scale-[1.03]"
 		>
 			<Card.Root class="h-full {cls.cardGlass}">

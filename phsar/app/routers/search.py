@@ -19,10 +19,12 @@ from app.models.ratings import (
     ThreeDAnimation,
     WatchedFormat,
 )
+from app.schemas.anime_schema import AnimeSearchResult
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
 from app.schemas.media_schema import MediaConnected
 from app.schemas.rating_schema import RatedMediaResult, RatingSearchFilters
 from app.schemas.search_schema import SearchResultDB
+from app.services.anime_search_service import search_anime_by_query
 from app.services.media_search_service import search_media_by_query
 from app.services.rating_service import search_user_ratings
 from app.services.search_service import handle_search_mal_api_results
@@ -103,6 +105,25 @@ def get_rating_filters(
         ending_quality=ending_quality,
         story_quality=story_quality,
         originality=originality,
+    )
+
+
+@router.get("/anime", response_model=list[AnimeSearchResult])
+async def search_anime(
+    query: str = Query(default="", description="Search query string."),
+    search_type: SearchType = Query(default=SearchType.TITLE, description="Search by title or description."),
+    filters: MediaSearchFilters = Depends(get_media_filters),
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if search_type == SearchType.RATING_NOTES:
+        raise InvalidSearchTypeError(search_type.value)
+
+    return await search_anime_by_query(
+        db=db,
+        query=query,
+        filters=filters,
+        search_type=search_type,
     )
 
 

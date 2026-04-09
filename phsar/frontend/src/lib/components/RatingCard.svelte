@@ -9,7 +9,7 @@
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Badge } from '$lib/components/ui/badge';
 	import { api, ApiError } from '$lib/api';
-	import { RATING_ATTRIBUTE_OPTIONS } from '$lib/types/api';
+	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr } from '$lib/types/api';
 	import type { RatingOut, RatingCreate } from '$lib/types/api';
 	import { formatDecimalDigits, clampAndSnapScore } from '$lib/utils/formatString';
 	import * as cls from '$lib/styles/classes';
@@ -31,10 +31,6 @@
 		onDeleted,
 	}: Props = $props();
 
-	/** Safely index into a typed object by dynamic attribute key. */
-	function getAttr(obj: RatingOut | RatingCreate, key: string): string | null {
-		return (obj as unknown as Record<string, string | null>)[key] ?? null;
-	}
 
 	let editing = $state(false);
 	let score = $state<number>(5.0);
@@ -56,18 +52,21 @@
 		if (epVal !== existingRating.episodes_watched) return true;
 		if ((note.trim() || null) !== (existingRating.note ?? null)) return true;
 		for (const key of Object.keys(RATING_ATTRIBUTE_OPTIONS)) {
-			if ((attributes[key] || null) !== (getAttr(existingRating!, key))) return true;
+			if ((attributes[key] || null) !== (getRatingAttr(existingRating!, key))) return true;
 		}
 		return false;
 	});
 
 	let filledAttributes = $derived(
 		existingRating ? Object.entries(RATING_ATTRIBUTE_OPTIONS)
-			.filter(([key]) => getAttr(existingRating!, key))
+			.filter(([key]) => {
+				const val = getRatingAttr(existingRating!, key);
+				return val && !(key === 'ending_quality' && val === 'not_applicable');
+			})
 			.map(([key, config]) => ({
 				label: config.label,
-				value: config.options.find(o => o.value === getAttr(existingRating!, key))?.label
-					?? String(getAttr(existingRating!, key)),
+				value: config.options.find(o => o.value === getRatingAttr(existingRating!, key))?.label
+					?? String(getRatingAttr(existingRating!, key)),
 			}))
 		: []
 	);
@@ -91,7 +90,7 @@
 			episodesWatched = existingRating.episodes_watched?.toString() ?? '';
 			note = existingRating.note ?? '';
 			for (const key of Object.keys(RATING_ATTRIBUTE_OPTIONS)) {
-				attributes[key] = getAttr(existingRating!, key);
+				attributes[key] = getRatingAttr(existingRating!, key);
 			}
 		} else {
 			score = 5.0;
@@ -115,6 +114,15 @@
 		// Only auto-fill episodes when creating a new rating (not editing existing)
 		if (!existingRating && !dropped && totalEpisodes !== null) {
 			episodesWatched = totalEpisodes.toString();
+		}
+	});
+
+	$effect(() => {
+		// Dropped → ending_quality is not ratable; not dropped → clear auto-set value
+		if (dropped) {
+			attributes['ending_quality'] = 'not_applicable';
+		} else if (attributes['ending_quality'] === 'not_applicable') {
+			attributes['ending_quality'] = null;
 		}
 	});
 
@@ -354,14 +362,20 @@
 						{#if showAttributes}
 							<div class="grid grid-cols-2 gap-3 mt-3">
 								{#each Object.entries(RATING_ATTRIBUTE_OPTIONS) as [key, config]}
+									{@const isEndingQuality = key === 'ending_quality'}
+									{@const isDisabled = isEndingQuality && dropped}
+									{@const visibleOptions = isEndingQuality && !dropped
+										? config.options.filter(o => o.value !== 'not_applicable')
+										: config.options}
 									<div class="space-y-1">
-										<Label class="{attributes[key] ? 'text-card-foreground font-medium' : 'text-muted-foreground'}">
+										<Label class={attributes[key] ? 'text-card-foreground font-medium' : 'text-muted-foreground'}>
 											{config.label}
 										</Label>
 										<Select.Root
 											type="single"
 											value={attributes[key] ?? undefined}
 											onValueChange={(val: string) => { attributes[key] = val || null; }}
+											disabled={isDisabled}
 										>
 											<Select.Trigger class="w-full {attributes[key] ? 'bg-primary/5 border-2 border-primary/40' : 'bg-card'}">
 												{#if attributes[key]}
@@ -371,7 +385,7 @@
 												{/if}
 											</Select.Trigger>
 											<Select.Content>
-												{#each config.options as option}
+												{#each visibleOptions as option}
 													<Select.Item value={option.value}>{option.label}</Select.Item>
 												{/each}
 											</Select.Content>

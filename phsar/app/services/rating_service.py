@@ -10,7 +10,6 @@ from app.exceptions import (
     RatingNotFoundError,
 )
 from app.models.media import Media
-from app.models.rating_search import RatingSearch
 from app.models.ratings import Ratings
 from app.schemas.media_filter_schema import SearchType
 from app.schemas.rating_schema import (
@@ -22,7 +21,10 @@ from app.schemas.rating_schema import (
     RatingSearchFilters,
 )
 from app.services.media_search_service import media_to_dict
-from app.services.vector_embedding_service import generate_embedding
+from app.services.vector_embedding_service import (
+    create_rating_embedding,
+    generate_embedding,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,30 +59,21 @@ async def _resolve_media_uuids(db: AsyncSession, media_uuids: list[UUID]) -> lis
     all_media = await media_dao.get_all_by_field(db, "uuid", media_uuids)
     media_by_uuid = {m.uuid: m for m in all_media}
 
-    media_list = []
-    for uuid in media_uuids:
-        media = media_by_uuid.get(uuid)
-        if not media:
-            raise MediaNotFoundError(str(uuid))
-        media_list.append(media)
-    return media_list
+    missing_uuids = [uuid for uuid in media_uuids if uuid not in media_by_uuid]
+    if missing_uuids:
+        raise MediaNotFoundError(", ".join(str(u) for u in missing_uuids))
 
-
-async def _create_note_embedding(db: AsyncSession, rating_id: int, note: str):
-    """Generate an embedding for a note and create a RatingSearch record."""
-    embedding = await generate_embedding(note)
-    db.add(RatingSearch(rating_id=rating_id, note_embedding=embedding))
+    return [media_by_uuid[uuid] for uuid in media_uuids]
 
 
 async def _upsert_note_embedding(db: AsyncSession, rating: Ratings, note: str | None):
     """Create, update, or delete the RatingSearch embedding when a note changes.
     Deletes the embedding when note is cleared so orphaned vectors don't persist."""
     if note:
-        embedding = await generate_embedding(note)
         if rating.rating_search:
-            rating.rating_search.note_embedding = embedding
+            rating.rating_search.note_embedding = await generate_embedding(note)
         else:
-            db.add(RatingSearch(rating_id=rating.id, note_embedding=embedding))
+            await create_rating_embedding(db, rating_id=rating.id, note=note)
     elif rating.rating_search:
         await db.delete(rating.rating_search)
 
@@ -107,9 +100,8 @@ async def _upsert_single_rating(
         rating = Ratings(user_id=user_id, media_id=media.id, note=note, **fields)
         await rating_dao.create(db, rating)
 
-        # New rating has no rating_search yet — create embedding directly
         if note:
-            await _create_note_embedding(db, rating.id, note)
+            await create_rating_embedding(db, rating_id=rating.id, note=note)
 
         return rating.uuid
 
@@ -146,12 +138,29 @@ async def get_user_ratings(
     return [_rating_to_out(r) for r in ratings]
 
 
+async def get_ratings_for_anime(
+    db: AsyncSession, user_id: int, anime_uuid: UUID
+) -> list[RatingOut]:
+    ratings = await rating_dao.get_by_user_and_anime_uuid(db, user_id, anime_uuid)
+    return [_rating_to_out(r) for r in ratings]
+
+
 async def delete_rating(db: AsyncSession, user_id: int, rating_uuid: UUID) -> None:
     rating = await rating_dao.get_by_uuid_and_user(db, rating_uuid, user_id)
     if not rating:
         raise RatingNotFoundError(str(rating_uuid))
     await rating_dao.delete(db, rating)
     await db.commit()
+
+
+async def bulk_delete_ratings(db: AsyncSession, user_id: int, media_uuids: list[UUID]) -> int:
+    """Delete ratings for multiple media at once. Returns the number of ratings deleted.
+    Silently skips media that have no rating (not an error)."""
+    media_list = await _resolve_media_uuids(db, media_uuids)
+    media_ids = [m.id for m in media_list]
+    count = await rating_dao.bulk_delete_by_user_and_media_ids(db, user_id, media_ids)
+    await db.commit()
+    return count
 
 
 def _rating_to_rated_media_result(r: Ratings) -> RatedMediaResult:
@@ -186,7 +195,8 @@ async def search_user_ratings(
 
 async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCreate) -> list[RatingOut]:
     """Create or update ratings for multiple media at once. Existing ratings are updated.
-    Note is placed on the last (newest) media only; earlier media have their note cleared.
+    Note is placed on the last 'main' media (by relation_type); falls back to the last
+    media overall if none are main. Earlier media have their note cleared.
     This is intentional: bulk-rating means 'rate the whole anime with one note.'"""
     logger.debug(f"DB session: {id(db)}")
 
@@ -197,15 +207,18 @@ async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCr
     existing_ratings = await rating_dao.get_by_user_and_media_ids(db, user_id, media_ids)
     existing_by_media_id = {r.media_id: r for r in existing_ratings}
 
-    # Note goes on the last (newest) media so anime page can show notes chronologically
-    note_index = len(media_list) - 1
-    shared_fields = data.model_dump(exclude=_EXCLUDE_BULK | {"note"})
+    # Note goes on the last "main" media; falls back to last media if no main exists
+    main_indices = [i for i, m in enumerate(media_list) if m.relation_type.value == "main"]
+    note_index = main_indices[-1] if main_indices else len(media_list) - 1
+    shared_fields = data.model_dump(exclude=_EXCLUDE_BULK | {"note", "episodes_watched"})
     rating_uuids = []
 
     for i, media in enumerate(media_list):
         note = data.note if i == note_index else None
+        # Auto-fill episodes_watched per media from its total episodes
+        per_media_fields = {**shared_fields, "episodes_watched": media.episodes}
         existing = existing_by_media_id.get(media.id)
-        uuid = await _upsert_single_rating(db, user_id, media, shared_fields, note, existing)
+        uuid = await _upsert_single_rating(db, user_id, media, per_media_fields, note, existing)
         rating_uuids.append(uuid)
 
     await db.commit()

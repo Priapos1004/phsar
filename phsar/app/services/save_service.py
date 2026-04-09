@@ -3,13 +3,17 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.schemas.search_schema import SearchResultDB
+from app.services.anime_search_service import anime_title_texts
 from app.services.anime_service import create_anime_from_media
 from app.services.media_linking_service import (
     link_genres_to_media,
     link_studios_to_media,
 )
 from app.services.media_service import create_media
-from app.services.vector_embedding_service import create_media_embedding
+from app.services.vector_embedding_service import (
+    create_anime_embedding,
+    create_media_embedding,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +27,15 @@ async def save_search_results(db: AsyncSession, search_results: list[SearchResul
         anime_as_media_in = result.unconnected_media_list[0]
         anime = await create_anime_from_media(db, anime_as_media_in)
         logger.info(f"Created Anime: {anime.title} (ID: {anime.id})")
+
+        # Create anime-level vector embeddings
+        await create_anime_embedding(
+            db,
+            anime_id=anime.id,
+            title_texts=anime_title_texts(anime),
+            description_text=anime.description or "",
+        )
+        logger.info(f"Created embedding for Anime: {anime.title} (ID: {anime.id})")
 
         # Create all Media attached to that Anime
         for media_in in result.unconnected_media_list:

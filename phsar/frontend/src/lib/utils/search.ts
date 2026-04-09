@@ -1,9 +1,10 @@
 import { api } from '$lib/api';
-import type { MediaConnected } from '$lib/types/api';
+import type { AnimeSearchResult, MediaConnected } from '$lib/types/api';
 
 export interface MediaSearchFilters {
 	query: string;
 	search_type: string;
+	view_type?: 'anime' | 'media';
 
 	// List filters
 	relation_type?: string[];
@@ -29,7 +30,7 @@ export interface MediaSearchFilters {
 	total_watch_time_max?: number;
 }
 
-export async function fetchSearchResults(params: MediaSearchFilters): Promise<MediaConnected[]> {
+function buildSearchParams(params: MediaSearchFilters): URLSearchParams {
 	const searchParams = new URLSearchParams();
 
 	if (params.query) searchParams.append('query', params.query);
@@ -60,5 +61,13 @@ export async function fetchSearchResults(params: MediaSearchFilters): Promise<Me
 		}
 	}
 
-	return api.get<MediaConnected[]>('/search/media', { params: searchParams });
+	return searchParams;
+}
+
+export async function fetchSearchResults(params: MediaSearchFilters): Promise<MediaConnected[]> {
+	return api.get<MediaConnected[]>('/search/media', { params: buildSearchParams(params) });
+}
+
+export async function fetchAnimeSearchResults(params: MediaSearchFilters): Promise<AnimeSearchResult[]> {
+	return api.get<AnimeSearchResult[]>('/search/anime', { params: buildSearchParams(params) });
 }

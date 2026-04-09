@@ -139,6 +139,11 @@ export interface RatingCreate {
 	originality?: Originality | null;
 }
 
+/** Read a dynamic attribute key from a rating object (needed because attribute keys are iterated at runtime). */
+export function getRatingAttr(obj: RatingOut | RatingCreate, key: string): string | null {
+	return (obj as unknown as Record<string, string | null>)[key] ?? null;
+}
+
 /** Maps each rating attribute to its display label and possible values. */
 export const RATING_ATTRIBUTE_OPTIONS: Record<string, { label: string; options: { value: string; label: string }[] }> = {
 	pace: { label: 'Pace', options: [{ value: 'slow', label: 'Slow' }, { value: 'normal', label: 'Normal' }, { value: 'fast', label: 'Fast' }] },
@@ -149,10 +154,72 @@ export const RATING_ATTRIBUTE_OPTIONS: Record<string, { label: string; options: 
 	dialogue_quality: { label: 'Dialogue Quality', options: [{ value: 'flat', label: 'Flat' }, { value: 'normal', label: 'Normal' }, { value: 'deep', label: 'Deep' }] },
 	character_depth: { label: 'Character Depth', options: [{ value: 'flat', label: 'Flat' }, { value: 'normal', label: 'Normal' }, { value: 'complex', label: 'Complex' }] },
 	ending_type: { label: 'Ending Type', options: [{ value: 'open', label: 'Open' }, { value: 'closed', label: 'Closed' }, { value: 'cliffhanger', label: 'Cliffhanger' }] },
-	ending_quality: { label: 'Ending Quality', options: [{ value: 'unsatisfying', label: 'Unsatisfying' }, { value: 'satisfying', label: 'Satisfying' }, { value: 'exceptional', label: 'Exceptional' }, { value: 'not_applicable', label: 'N/A' }] },
+	ending_quality: { label: 'Ending Quality', options: [{ value: 'unsatisfying', label: 'Unsatisfying' }, { value: 'satisfying', label: 'Satisfying' }, { value: 'exceptional', label: 'Exceptional' }, { value: 'not_applicable', label: 'Not Applicable' }] },
 	story_quality: { label: 'Story Quality', options: [{ value: 'weak', label: 'Weak' }, { value: 'average', label: 'Average' }, { value: 'good', label: 'Good' }, { value: 'outstanding', label: 'Outstanding' }] },
 	originality: { label: 'Originality', options: [{ value: 'conventional', label: 'Conventional' }, { value: 'unique', label: 'Unique' }, { value: 'experimental', label: 'Experimental' }] },
 };
+
+// Anime search result (aggregated)
+export interface RelationTypeSummary {
+	relation_type: string;
+	count: number;
+}
+
+export interface MediaTypeSummary {
+	media_type: string;
+	count: number;
+}
+
+/** Shared aggregated fields for anime search results and detail views. */
+export interface AnimeAggregatedBase {
+	uuid: string;
+	title: string;
+	name_eng: string | null;
+	name_jap: string | null;
+	cover_image: string | null;
+	avg_score: number | null;
+	avg_scored_by: number;
+	total_episodes: number | null;
+	total_watch_time: number | null;
+	media_count: number;
+	relation_types: RelationTypeSummary[];
+	media_types: MediaTypeSummary[];
+	genres: string[];
+	studios: string[];
+	season_start: string | null;
+	season_end: string | null;
+	airing_status: string;
+	has_upcoming: boolean;
+	age_rating_numeric: number | null;
+}
+
+export interface AnimeSearchResult extends AnimeAggregatedBase {}
+
+// Anime detail
+export interface AnimeMediaItem {
+	uuid: string;
+	title: string;
+	name_eng: string | null;
+	cover_image: string | null;
+	media_type: string;
+	relation_type: string;
+	score: number | null;
+	scored_by: number;
+	episodes: number | null;
+	airing_status: string;
+	anime_season_name: string | null;
+	anime_season_year: number | null;
+	total_watch_time: number | null;
+	age_rating_numeric: number | null;
+	genres: string[];
+	studios: string[];
+}
+
+export interface AnimeDetail extends AnimeAggregatedBase {
+	other_names: string[];
+	description: string | null;
+	media: AnimeMediaItem[];
+}
 
 // Search token (POST /filters/create-token)
 export interface SearchTokenResponse {

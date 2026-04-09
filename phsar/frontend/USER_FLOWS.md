@@ -44,7 +44,8 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 |-------|------|---------------|
 | `/` | Home (search bar + placeholders) | Yes |
 | `/login` | Login form | No |
-| `/search?q=<token>` | Search results | Yes |
+| `/search?q=<token>` | Search results (anime or media view) | Yes |
+| `/anime?uuid=<uuid>` | Anime detail (aggregated metadata + media table) | Yes |
 | `/media?uuid=<uuid>` | Media detail + rating | Yes |
 | `/ratings` | (placeholder) | Yes |
 | `/watchlist` | (placeholder) | Yes |
@@ -64,71 +65,136 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 
 ## 4. Search Flow
 
-### 4.1 Submitting a Search
+### 4.1 Anime/Media View Toggle
+- A small pill-shaped toggle sits in the top-right corner of the search page, below the navbar
+- Default view: **Anime** (aggregated search grouping media by parent anime)
+- Switching toggle: clears all filters and results, reloads filter options for the new view, auto-submits an empty search
+- The `view_type` is encoded in the search token, so "Back to search" restores the correct toggle state
+- SearchBar placeholder changes: "Search anime..." / "Search media..."
+
+### 4.2 Submitting a Search
 1. User types a query in the SearchBar text input
 2. Optionally toggles "Expand search to descriptions" checkbox
 3. Optionally opens the filter panel and sets filters
 4. Submits the form (Enter key)
-5. Frontend POSTs filter params to `/filters/create-token` → receives a search token
+5. Frontend POSTs filter params (including `view_type`) to `/filters/create-token` → receives a search token
 6. Navigates to `/search?q=<token>`
 
-### 4.2 Search Results Page
+### 4.3 Search Results Page
 1. Page reads `q` param from URL
-2. POSTs token to `/filters/verify-token` → receives decoded filter params
-3. SearchBar is pre-populated with the decoded filters
-4. `GET /search/media?...` fetches results with all filter params as query string
-5. Results display as cards in a grid
-6. "Show More" button loads 20 more results per click
-7. If no results: "No results found :-("
-8. If no search performed yet: "Start searching!!!"
+2. POSTs token to `/filters/verify-token` → receives decoded filter params (including `view_type`)
+3. View toggle is set to match the decoded `view_type`
+4. SearchBar is pre-populated with the decoded filters
+5. `GET /search/anime?...` or `GET /search/media?...` fetches results based on view type
+6. Results display as cards in a grid
+7. "Show More" button loads 20 more results per click
+8. If no results: "No results found :-("
+9. If no search performed yet: "Start searching!!!"
 
-### 4.3 Search Filters
-Filters appear in a collapsible panel below the search input.
+### 4.4 Search Filters
+Filters appear in a collapsible panel below the search input. Filter options adapt to the current view type.
 
 **List filters** (searchable tag-select dropdowns, max 5 items each):
-- Genres, Seasons, Studios, Airing Status, Relation Type, Media Type, Age Rating
+- Genres (anime view shows only majority-qualifying genres), Seasons, Studios, Airing Status, Relation Type, Media Type, Age Rating
 
 **Range filters** (dual-thumb sliders):
-- Episodes (integer, linear)
+- Episodes (integer, linear — aggregated sum for anime view)
 - Score (decimal, linear)
-- Scored By (logarithmic scale)
-- Average Duration per Episode (time display)
-- Total Watch Time (time display)
+- Scored By (logarithmic scale — average per media for anime view)
+- Average Duration per Episode (time display — hidden in anime view)
+- Total Watch Time (time display — aggregated sum for anime view)
 
 **Behavior:**
-- Filter options are fetched from `GET /filters/options` on component mount
+- Filter options are fetched from `GET /filters/options?view_type=anime|media` on component mount and on view toggle
 - "Clear all" button resets all filters and query to defaults
 - Modifying filters and resubmitting creates a new search token and navigates
 
 ---
 
-## 5. Media Card Display
+## 5. Search Result Cards
 
-Each search result card shows:
+### 5.1 Media Card (media view)
+Each media search result card shows:
 - Cover image (lazy-loaded, with fallback)
-- Title
-- Score + scored-by count
-- Anime season
-- Airing status
-- Age rating
-- Genre tags
-- Media type tag
-- Relation type tag
+- Title, score + scored-by count, anime season, airing status, age rating
+- Genre tags, media type tag, relation type tag
 - Total watch time
-- Bookmark/watchlist indicator icon
-- Clicking a card navigates to `/media?uuid=<uuid>` (with `&q=<token>` preserved for back navigation)
+- Clicking navigates to `/media?uuid=<uuid>` (with `&q=<token>` preserved for back navigation)
+
+### 5.2 Anime Card (anime view)
+Each anime search result card shows:
+- Cover image (from anime, lazy-loaded with fallback)
+- Title, average score + average scored-by ("ratings/media"), season range (e.g., "Spring 2017 - Winter 2024")
+- Airing status for active/upcoming anime ("Currently Airing + upcoming content", "Not yet aired", or "upcoming content" for finished anime with announced sequels)
+- Age rating (max across media)
+- Genre tags (strict majority rule: genre must be on >50% of media)
+- Relation type badges with counts (e.g., "main: 5", "other: 2")
+- Media type badges with counts (e.g., "TV: 3", "Movie: 1")
+- Total watch time (summed across media)
+- Clicking navigates to `/anime?uuid=<uuid>` (with `&q=<token>` preserved)
 
 ---
 
-## 6. Media Detail Page
+## 6. Anime Detail Page
 
 ### 6.1 Loading
+- Page reads `uuid` param from URL
+- Fetches anime detail (`GET /media/anime/{uuid}`)
+- While loading: centered "Loading..." pulse animation
+- On error: centered red error message
+
+### 6.2 Hero Card
+- Same blurred cover background pattern as media detail
+- Title (English preferred), alternate titles, airing status badge: green (Currently Airing), yellow (Not yet aired), blue (upcoming content), grey (Finished Airing)
+- Average MAL score with "ratings/media" label
+- Relation type badges with counts (e.g., "main: 5"), media type badges with counts (e.g., "TV: 3")
+- Age rating badge (max across media), genre badges (strict majority rule)
+- Stats grid: total episodes, media count, season range, total watch time
+- Studio names
+- Watchlist bookmark buttons (add all / remove all — stub dialogs, wired in v0.15.0)
+
+### 6.3 Synopsis
+- Same collapsible description card as media detail (from anime description)
+
+### 6.4 Media Table
+- Compact table with rows for each media in the anime
+- Each row: small cover thumbnail (40x56px), title + relation/media type badges, season, score, airing status dot
+- Clicking a row navigates to `/media?uuid=<uuid>` (with search token preserved)
+- **Select mode**: "Select" button in table header toggles select mode
+  - Checkboxes appear on left of each row
+  - Clicking rows toggles selection instead of navigating
+  - Action bar slides in: "Select all/Deselect all", selected count, "Rate" button, "Watchlist" button
+  - "Delete Ratings" button appears when any selected media have existing ratings
+  - **Rate** opens BulkRateDialog: score circle + slider, note (applied to last main media), collapsible attributes grid. Overwrite warning shown if any selected media already rated. On save: exits select mode, shows "Note Added" info dialog naming which media received the note.
+  - **Delete Ratings** opens a destructive confirmation dialog, then `POST /ratings/bulk-delete`
+  - **Watchlist** opens a stub dialog (wired in v0.15.0)
+  - "Cancel" exits select mode and clears selection
+
+### 6.5 Ratings Overview ("Your Ratings")
+- Appears when the user has rated at least one media in the anime
+- **Stats gauge**: Average score displayed in a gauge chart (formatted to 1 decimal), progress bars for media rated / total and episodes watched / total, dropped count badge
+- **Rating Timeline**: Bar chart with one bar per media in release order, colored by relation type (Main Story = purple, Summary = green, Crossover = yellow, Side Story = red). Dropped items at 50% opacity. HTML legend showing active relation types. Tooltip shows title, media type, relation type, season, and score.
+- **Attribute Summary** (side-by-side on desktop, stacked on mobile):
+  - *Quality Radar* (pentagon): 5 quality axes (animation quality, dialogue quality, character depth, story quality, ending quality) normalized to 0–1 scale with 3 split rings. Tooltip shows closest label per axis or "--" for no data. `ending_quality: not_applicable` is excluded from averaging.
+  - *Descriptive Pills* (orbital): 6 descriptive attributes (pace, 3D animation, watched format, fan service, ending type, originality) displayed as tilted pills arranged in an elliptical orbit. Each shows "Label: Majority Value" or "--" for no data. Hover straightens and scales the pill. Click triggers a color-burst glow animation cycling through the chart palette.
+  - *Collapsible details*: "Show attribute details" toggle expands stacked distribution bars for all 11 attributes. Unrated attributes shown greyed out with "No data" label.
+- **Notes**: Collapsible list of user notes per media (first note visible, "Show all N notes" to expand)
+
+### 6.6 Back Navigation
+- "Back to search" link appears when `q` search token is present in URL
+- Restores the correct anime/media toggle and filters on the search page
+
+---
+
+## 7. Media Detail Page
+
+### 7.1 Loading
 - Page reads `uuid` param from URL
 - Fetches media detail (`GET /media/{uuid}`) and user rating (`GET /ratings/media/{uuid}`) in parallel
 - While loading: centered "Loading..." pulse animation
 - On error: centered red error message
 
-### 6.2 Hero Card
+### 7.2 Hero Card
 - Blurred cover image background with card overlay
 - Cover image (with fallback placeholder if missing or load fails)
 - Title (English preferred, falls back to default title)
@@ -141,56 +207,62 @@ Each search result card shows:
 - Studio names
 - Disabled bookmark button (placeholder for watchlist, wired in v0.15.0)
 
-### 6.3 Synopsis
+### 7.3 Synopsis
 - Collapsible description card (4-line clamp by default)
 - "Read more" / "Show less" toggle for descriptions over 300 characters
 - HTML entities cleaned from description text
 
-### 6.4 Rating Card
+### 7.4 Rating Card
 - **No rating exists, not editing**: CTA card with star icon and "Rate This" button
 - **Restricted users**: Disabled "Rate This" button with "Upgrade your account" message
-- **Rating exists, not editing**: Display card showing score circle, dropped/completed status, episodes watched (with total if known), filled attribute badges, and note (if any). Edit and Delete buttons.
+- **Rating exists, not editing**: Display card showing score circle, dropped/completed status, episodes watched (with total if known), filled attribute badges (ending quality hidden when "Not Applicable"), and note (if any). Edit and Delete buttons.
 - **Editing mode** (new or existing):
   - Score: editable circle with direct text input + slider (0-10, step 0.5)
   - Dropped checkbox + episodes watched input (auto-filled with total episodes when not dropped; editable when dropped)
   - Note textarea (max 1000 chars with counter)
-  - Collapsible "Details" section with 11 attribute selectors (pace, animation quality, 3D animation, watched format, fan service, dialogue quality, character depth, ending type, ending quality, story quality, originality) — shows set/total count badge
+  - Collapsible "Details" section with 11 attribute selectors (pace, animation quality, 3D animation, watched format, fan service, dialogue quality, character depth, ending type, ending quality, story quality, originality) — shows set/total count badge. Ending quality: when dropped, auto-set to "Not Applicable" and disabled; when not dropped, only 3 quality options shown (Unsatisfying, Satisfying, Exceptional)
   - Submit/Update button (disabled when no changes detected on existing rating)
   - Cancel button returns to display mode
   - Error message display on save/delete failure
 - **API calls**: `PUT /ratings/media/{uuid}` to create/update, `DELETE /ratings/{uuid}` to delete
 
-### 6.5 Related Media Carousel
-- Always shown — displays parent anime name as context
+### 7.5 Related Media Carousel
+- Always shown — displays parent anime name as a clickable link to the anime detail page
 - If sibling media exist: horizontal scrollable row of compact cards (snap scrolling)
   - Each card: cover image (with fallback), title, media type + relation type badges, season or episode count
-  - Clicking a sibling card navigates to that media's detail page
+  - Clicking a sibling card navigates to that media's detail page (search token preserved)
 - If no siblings: "No other media in this anime" message
 
-### 6.6 Back Navigation
+### 7.6 Back Navigation
 - "Back to search" link appears when `q` search token is present in URL
-- Preserves search context when navigating from search results to media detail and back
+- Search token is preserved across the entire navigation chain: search → anime → media → sibling media → back to search
+- Token includes `view_type`, so returning to search restores the correct anime/media toggle
 
 ---
 
-## 7. API Endpoints Used by Frontend
+## 8. API Endpoints Used by Frontend
 
 | Endpoint | Method | When |
 |----------|--------|------|
 | `/auth/login` | POST | Login form submission |
 | `/auth/validate` | GET | Every page load (layout) |
-| `/filters/options` | GET | SearchBar mount |
+| `/filters/options?view_type=anime\|media` | GET | SearchBar mount and view toggle |
 | `/filters/create-token` | POST | Search submission |
 | `/filters/verify-token` | POST | Search page load |
-| `/search/media` | GET | After token verification |
+| `/search/anime` | GET | Anime-view search after token verification |
+| `/search/media` | GET | Media-view search after token verification |
+| `/media/anime/{uuid}` | GET | Anime detail page load |
 | `/media/{uuid}` | GET | Media detail page load |
 | `/ratings/media/{uuid}` | GET | Media detail page load (fetch user's rating) |
+| `/ratings/anime/{uuid}` | GET | Anime detail page load (fetch user's ratings for all media) |
 | `/ratings/media/{uuid}` | PUT | Create or update a rating |
+| `/ratings/bulk` | PUT | Bulk rate selected media from anime detail |
+| `/ratings/bulk-delete` | POST | Bulk delete ratings from anime detail |
 | `/ratings/{uuid}` | DELETE | Delete a rating |
 
 ---
 
-## 8. Error States
+## 9. Error States
 
 | Scenario | Expected Behavior |
 |----------|-------------------|

@@ -3,6 +3,7 @@
 	import { getContext } from 'svelte';
 	import { api, ApiError } from '$lib/api';
 	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription } from '$lib/utils/formatString';
+	import { buildDetailHref } from '$lib/utils/navigation';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -162,13 +163,13 @@
 							{/if}
 						</div>
 
-						<!-- Watchlist bookmark — wired up in v0.15.0 -->
+						<!-- Watchlist bookmark placeholder -->
 						<button
-							class="shrink-0 p-2 rounded-lg hover:bg-accent transition group"
+							class="shrink-0 p-2 rounded-lg opacity-50 cursor-not-allowed"
 							disabled
 							title="Coming soon"
 						>
-							<Bookmark class="size-6 text-muted-foreground group-hover:text-card-foreground transition" />
+							<Bookmark class="size-6 text-muted-foreground" />
 						</button>
 					</div>
 
@@ -289,10 +290,14 @@
 			<Card.Content>
 				<h2 class="text-lg font-semibold text-card-foreground mb-1">Related Media</h2>
 				<p class="text-muted-foreground {media.sibling_media.length ? 'mb-3' : ''}">
-					Part of anime: <span class="text-primary font-medium">{media.anime_name_eng ?? media.anime_title}</span>
+					Part of anime:
+					<a
+						href={buildDetailHref('anime', media.anime_uuid, searchToken)}
+						class="text-primary font-medium hover:underline"
+					>{media.anime_name_eng ?? media.anime_title}</a>
 				</p>
 				{#if media.sibling_media.length}
-					<RelatedMediaCarousel siblings={media.sibling_media} />
+					<RelatedMediaCarousel siblings={media.sibling_media} {searchToken} />
 				{:else}
 					<p class="text-muted-foreground/70 text-sm mt-2">No other media in this anime</p>
 				{/if}

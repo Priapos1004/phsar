@@ -40,6 +40,25 @@ export function formatSeason(name: string | null, year: number | null): string |
 }
 
 /**
+ * Format a season range string from start and end seasons.
+ * Returns the single season if they are the same or end is null.
+ */
+export function formatSeasonRange(start: string | null, end: string | null): string | null {
+	if (!start) return null;
+	if (!end) return start;
+	return `${start} - ${end}`;
+}
+
+/**
+ * Format an airing status string, appending "+ upcoming" when applicable.
+ */
+export function formatAiringStatus(status: string, hasUpcoming: boolean): string {
+	if (status === 'Not yet aired') return status;
+	if (status === 'Finished Airing') return hasUpcoming ? 'upcoming content' : status;
+	return hasUpcoming ? `${status} + upcoming content` : status;
+}
+
+/**
  * Strip MAL attribution tags (e.g. "[Written by MAL Rewrite]") from description text.
  */
 export function cleanDescription(text: string): string {

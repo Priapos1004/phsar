@@ -33,6 +33,7 @@ phsar/
 │   ├── main.py
 │   ├── models/
 │   │   ├── anime.py
+│   │   ├── anime_search.py
 │   │   ├── base.py
 │   │   ├── genre.py
 │   │   ├── media.py
@@ -64,10 +65,12 @@ phsar/
 │   │   ├── rating_schema.py
 │   │   └── search_schema.py
 │   ├── seeders/
+│   │   ├── embedding_backfiller.py
 │   │   ├── genre_seeder.py
 │   │   ├── media_seeder.py
 │   │   └── user_seeder.py
 │   └── services/
+│       ├── anime_search_service.py
 │       ├── anime_service.py
 │       ├── auth_service.py
 │       ├── filter_service.py
@@ -91,14 +94,25 @@ phsar/
 │   │   ├── lib/
 │   │   │   ├── api.ts
 │   │   │   ├── config.ts
+│   │   │   ├── echarts.ts
 │   │   │   ├── utils.ts
 │   │   │   ├── components/
+│   │   │   │   ├── AttributeBadges.svelte
+│   │   │   │   ├── AttributeDetailBars.svelte
+│   │   │   │   ├── AttributeRadar.svelte
+│   │   │   │   ├── BulkRateDialog.svelte
 │   │   │   │   ├── DoubleRangeSlider.svelte
+│   │   │   │   ├── EChart.svelte
 │   │   │   │   ├── InfoDiashow.svelte
 │   │   │   │   ├── LoadingScreen.svelte
 │   │   │   │   ├── MediaInfo.svelte
 │   │   │   │   ├── NavBar.svelte
 │   │   │   │   ├── RatingCard.svelte
+│   │   │   │   ├── RatingsOverview.svelte
+│   │   │   │   ├── RatingsOverviewAttributes.svelte
+│   │   │   │   ├── RatingsOverviewNotes.svelte
+│   │   │   │   ├── RatingsOverviewStats.svelte
+│   │   │   │   ├── RatingsOverviewTimeline.svelte
 │   │   │   │   ├── RelatedMediaCarousel.svelte
 │   │   │   │   ├── ScrollableCard.svelte
 │   │   │   │   ├── SearchBar.svelte
@@ -127,6 +141,7 @@ phsar/
 │   │   │   ├── types/
 │   │   │   │   └── api.ts
 │   │   │   └── utils/
+│   │   │       ├── chartColors.ts
 │   │   │       ├── cn.ts
 │   │   │       ├── formatString.ts
 │   │   │       ├── getSeason.ts
@@ -137,6 +152,8 @@ phsar/
 │   │   │   ├── +layout.svelte
 │   │   │   ├── +layout.ts
 │   │   │   ├── +page.svelte
+│   │   │   ├── anime/
+│   │   │   │   └── +page.svelte
 │   │   │   ├── login/
 │   │   │   │   └── +page.svelte
 │   │   │   ├── media/
@@ -169,12 +186,14 @@ phsar/
 └── tests/
     ├── routers/
     │   ├── conftest.py
+    │   ├── test_anime_detail.py
     │   ├── test_auth.py
     │   ├── test_filters_options.py
     │   ├── test_filters_token.py
     │   ├── test_media_detail.py
     │   ├── test_ratings.py
     │   ├── test_save.py
+    │   ├── test_search_anime.py
     │   ├── test_search_media.py
     │   └── test_search_ratings.py
     └── services/

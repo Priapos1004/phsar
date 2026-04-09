@@ -12,6 +12,11 @@ class SearchType(str, Enum):
     RATING_NOTES = "rating_notes"
 
 
+class ViewType(str, Enum):
+    ANIME = "anime"
+    MEDIA = "media"
+
+
 class MediaSearchFilters(BaseModel):
     relation_type: Optional[list[RelationType]] = None
     media_type: Optional[list[MediaType]] = None
@@ -35,6 +40,7 @@ class MediaSearchFilters(BaseModel):
 class ExtendedMediaSearchFilters(MediaSearchFilters):
     query: str = ""
     search_type: SearchType = SearchType.TITLE
+    view_type: ViewType = ViewType.ANIME
 
 class MediaFilterValues(BaseModel):
     # Categorical fields
