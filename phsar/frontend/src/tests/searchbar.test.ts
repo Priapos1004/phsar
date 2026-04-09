@@ -4,10 +4,10 @@ import SearchBar from '$lib/components/SearchBar.svelte';
 import { token } from '$lib/stores/auth';
 
 describe('SearchBar', () => {
-	const originalFetch = global.fetch;
+	const originalFetch = globalThis.fetch;
 
 	afterEach(() => {
-		global.fetch = originalFetch;
+		globalThis.fetch = originalFetch;
 		token.set(null);
 	});
 
@@ -16,7 +16,7 @@ describe('SearchBar', () => {
 		token.set('test-token');
 
 		// Mock the filter options API call
-		global.fetch = vi.fn().mockResolvedValue({
+		globalThis.fetch = vi.fn().mockResolvedValue({
 			ok: true,
 			json: () =>
 				Promise.resolve({
@@ -115,7 +115,7 @@ describe('SearchBar', () => {
 		render(SearchBar);
 
 		await vi.waitFor(() => {
-			expect(global.fetch).toHaveBeenCalledWith(
+			expect(globalThis.fetch).toHaveBeenCalledWith(
 				'http://localhost:8000/filters/options?view_type=anime',
 				expect.objectContaining({
 					headers: { Authorization: 'Bearer test-token' },

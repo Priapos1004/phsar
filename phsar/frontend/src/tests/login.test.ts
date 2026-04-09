@@ -9,14 +9,14 @@ vi.mock('$lib/stores/auth', async () => {
 });
 
 describe('Login page', () => {
-	const originalFetch = global.fetch;
+	const originalFetch = globalThis.fetch;
 
 	beforeEach(() => {
 		vi.restoreAllMocks();
 	});
 
 	afterEach(() => {
-		global.fetch = originalFetch;
+		globalThis.fetch = originalFetch;
 	});
 
 	it('renders login form with username, password, and submit button', () => {
@@ -46,7 +46,7 @@ describe('Login page', () => {
 	});
 
 	it('shows error message on failed login', async () => {
-		global.fetch = vi.fn().mockResolvedValueOnce({
+		globalThis.fetch = vi.fn().mockResolvedValueOnce({
 			ok: false,
 			json: () => Promise.resolve({ detail: 'Invalid credentials' }),
 		});
@@ -67,7 +67,7 @@ describe('Login page', () => {
 	});
 
 	it('shows generic error on network failure', async () => {
-		global.fetch = vi.fn().mockRejectedValueOnce(new Error('Network error'));
+		globalThis.fetch = vi.fn().mockRejectedValueOnce(new Error('Network error'));
 
 		render(LoginPage);
 		await fireEvent.input(screen.getByLabelText('Username'), { target: { value: 'user' } });
@@ -80,7 +80,7 @@ describe('Login page', () => {
 	});
 
 	it('calls fetch with correct URL and body on submit', async () => {
-		global.fetch = vi.fn().mockResolvedValueOnce({
+		globalThis.fetch = vi.fn().mockResolvedValueOnce({
 			ok: true,
 			json: () => Promise.resolve({ access_token: 'jwt-token' }),
 		});
@@ -91,7 +91,7 @@ describe('Login page', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Login' }));
 
 		await vi.waitFor(() => {
-			expect(global.fetch).toHaveBeenCalledWith(
+			expect(globalThis.fetch).toHaveBeenCalledWith(
 				'http://localhost:8000/auth/login',
 				expect.objectContaining({
 					method: 'POST',
