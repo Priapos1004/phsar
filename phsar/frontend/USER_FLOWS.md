@@ -33,8 +33,9 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 ### 2.1 NavBar
 - Sticky bar at the top of every page except `/login`
 - Left: logo + "PHSAR" text linking to `/`, "Ratings" link, "Watchlist" link
-- Right (when authenticated): user button ("U") toggling a dropdown with:
+- Right (when authenticated): user button (first letter of username) toggling a dropdown with:
   - User Settings → `/settings`
+  - Admin → `/admin` (visible only to admin role)
   - Statistics → `/statistics`
   - Getting Started → `/getting-started`
   - Logout (red) → clears token, redirects to `/login`
@@ -44,12 +45,14 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 |-------|------|---------------|
 | `/` | Home (search bar + placeholders) | Yes |
 | `/login` | Login form | No |
+| `/register` | Registration form (requires token) | No |
 | `/search?q=<token>` | Search results (anime or media view) | Yes |
 | `/anime?uuid=<uuid>` | Anime detail (aggregated metadata + media table) | Yes |
 | `/media?uuid=<uuid>` | Media detail + rating | Yes |
 | `/ratings` | (placeholder) | Yes |
 | `/watchlist` | (placeholder) | Yes |
-| `/settings` | (placeholder) | Yes |
+| `/settings` | User preferences (profile picture, language, rating step, spoiler level, data export) | Yes |
+| `/admin` | Registration token management (admin only) | Yes (admin) |
 | `/statistics` | (placeholder) | Yes |
 | `/getting-started` | (placeholder) | Yes |
 
@@ -240,7 +243,27 @@ Each anime search result card shows:
 
 ---
 
-## 8. API Endpoints Used by Frontend
+## 8. Admin Page
+
+### 8.1 Access
+- Only accessible to users with `admin` role
+- Non-admin users are redirected to `/` on mount
+- NavBar dropdown shows "Admin" link only for admin users
+
+### 8.2 Create Registration Token
+- Form with role selector (User / Restricted User) and expiry dropdown (1 day / 7 days / 30 days)
+- "Create" button POSTs to `/admin/registration-tokens`
+- On success: token string shown in a highlighted banner with copy button and toast feedback
+- Changing the role or expiry selector dismisses the success banner
+
+### 8.3 Token List
+- Displays all registration tokens with: truncated token (click to copy), status badge (active/used/expired), role badge, creation date, expiry date, used-by username
+- **Sort options** (dropdown): By Status (default: active → used → expired), Newest First, Expiring Soon (active tokens first by soonest expiry), Recently Used
+- **Delete**: trash icon on unused/expired tokens opens confirm/cancel inline buttons. Used tokens cannot be deleted. DELETE returns 204.
+
+---
+
+## 9. API Endpoints Used by Frontend
 
 | Endpoint | Method | When |
 |----------|--------|------|
@@ -259,10 +282,17 @@ Each anime search result card shows:
 | `/ratings/bulk` | PUT | Bulk rate selected media from anime detail |
 | `/ratings/bulk-delete` | POST | Bulk delete ratings from anime detail |
 | `/ratings/{uuid}` | DELETE | Delete a rating |
+| `/users/settings` | GET | Layout auth (fetch user settings) |
+| `/users/settings` | PUT | Settings page (update preferences) |
+| `/users/export?format=json\|csv` | GET | Settings page (data export download) |
+| `/admin/registration-tokens` | GET | Admin page (list all tokens) |
+| `/admin/registration-tokens` | POST | Admin page (create token) |
+| `/admin/registration-tokens/{uuid}` | DELETE | Admin page (delete unused token) |
+| `/auth/register` | POST | Registration page |
 
 ---
 
-## 9. Error States
+## 10. Error States
 
 | Scenario | Expected Behavior |
 |----------|-------------------|

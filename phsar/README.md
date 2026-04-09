@@ -52,6 +52,7 @@ phsar/
 │   │   ├── watchlist.py
 │   │   └── watchlist_tag.py
 │   ├── routers/
+│   │   ├── admin.py
 │   │   ├── auth.py
 │   │   ├── filters.py
 │   │   ├── media.py
@@ -61,6 +62,7 @@ phsar/
 │   │   ├── seeder.py
 │   │   └── users.py
 │   ├── schemas/
+│   │   ├── admin_schema.py
 │   │   ├── anime_schema.py
 │   │   ├── auth_schema.py
 │   │   ├── media_filter_schema.py
@@ -74,6 +76,7 @@ phsar/
 │   │   ├── media_seeder.py
 │   │   └── user_seeder.py
 │   └── services/
+│       ├── admin_service.py
 │       ├── anime_search_service.py
 │       ├── anime_service.py
 │       ├── auth_service.py
@@ -124,6 +127,7 @@ phsar/
 │   │   │   │   ├── SearchBar.svelte
 │   │   │   │   ├── SkeletonMediaInfo.svelte
 │   │   │   │   ├── TagSelect.svelte
+│   │   │   │   ├── TokenExpiryDialog.svelte
 │   │   │   │   └── ui/           # shadcn-svelte components
 │   │   │   │       ├── badge/
 │   │   │   │       ├── button/
@@ -141,7 +145,8 @@ phsar/
 │   │   │   │       ├── slider/
 │   │   │   │       └── textarea/
 │   │   │   ├── stores/
-│   │   │   │   └── auth.ts
+│   │   │   │   ├── auth.ts
+│   │   │   │   └── userSettings.ts
 │   │   │   ├── styles/
 │   │   │   │   └── classes.ts
 │   │   │   ├── types/
@@ -158,13 +163,19 @@ phsar/
 │   │   │   ├── +layout.svelte
 │   │   │   ├── +layout.ts
 │   │   │   ├── +page.svelte
+│   │   │   ├── admin/
+│   │   │   │   └── +page.svelte
 │   │   │   ├── anime/
 │   │   │   │   └── +page.svelte
 │   │   │   ├── login/
 │   │   │   │   └── +page.svelte
 │   │   │   ├── media/
 │   │   │   │   └── +page.svelte
-│   │   │   └── search/
+│   │   │   ├── register/
+│   │   │   │   └── +page.svelte
+│   │   │   ├── search/
+│   │   │   │   └── +page.svelte
+│   │   │   └── settings/
 │   │   │       └── +page.svelte
 │   │   └── tests/
 │   │       ├── setup.ts
@@ -193,6 +204,7 @@ phsar/
 └── tests/
     ├── routers/
     │   ├── conftest.py
+    │   ├── test_admin.py
     │   ├── test_anime_detail.py
     │   ├── test_auth.py
     │   ├── test_filters_options.py
