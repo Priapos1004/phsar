@@ -185,3 +185,12 @@ class AnimeNotFoundByUuidError(PhsarBaseError):
     def __init__(self, uuid: str):
         message = f"Anime not found: '{uuid}'."
         super().__init__(message)
+
+
+class UserSettingsNotFoundError(PhsarBaseError):
+    """Raised when user settings are not found (should not happen if seeding is correct)."""
+    status_code = 404
+
+    def __init__(self):
+        message = "User settings not found."
+        super().__init__(message)

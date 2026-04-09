@@ -22,6 +22,7 @@ from app.exceptions import (
 from app.models.registration_token import RegistrationToken
 from app.models.users import RoleType, Users
 from app.schemas.auth_schema import UserCreateWithToken
+from app.services import user_settings_service
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +50,7 @@ async def register(user_data: UserCreateWithToken, db: AsyncSession):
         role=token_obj.role,
     )
     await user_dao.create(db, new_user)
+    await user_settings_service.create_default_settings(db, new_user.id)
 
     token_obj.was_used_for_user_id = new_user.id
     token_obj.used_at = datetime.now(timezone.utc)

@@ -29,3 +29,4 @@ class Users(BaseModel):
         foreign_keys="[RegistrationToken.created_by_user_id]",
         lazy="raise",
     )
+    settings = relationship("UserSettings", back_populates="users", uselist=False, cascade="all, delete-orphan", lazy="raise")

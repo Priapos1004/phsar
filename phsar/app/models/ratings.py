@@ -101,7 +101,7 @@ class Ratings(BaseModel):
     # Explicitly track whether the user dropped the anime
     dropped = Column(Boolean, default=False)
 
-    # Rating attributes (all optional)
+    # Rating attributes (all optional) — keep ATTRIBUTE_FIELDS in sync
     pace = Column(Enum(Pace), nullable=True)
     animation_quality = Column(Enum(AnimationQuality), nullable=True)
     has_3d_animation = Column(Enum(ThreeDAnimation), nullable=True)
@@ -113,6 +113,12 @@ class Ratings(BaseModel):
     ending_quality = Column(Enum(EndingQuality), nullable=True)
     story_quality = Column(Enum(StoryQuality), nullable=True)
     originality = Column(Enum(Originality), nullable=True)
+
+    ATTRIBUTE_FIELDS: tuple[str, ...] = (
+        "pace", "animation_quality", "has_3d_animation", "watched_format",
+        "fan_service", "dialogue_quality", "character_depth",
+        "ending_type", "ending_quality", "story_quality", "originality",
+    )
 
     # Relationships
     media = relationship("Media", back_populates="ratings", lazy="raise")

@@ -61,13 +61,13 @@ docker exec -it anime-postgres psql -U <DB_USER> -d <DB_NAME> \
 
 Layered architecture with strict dependency flow: **routers → services → DAOs → models**
 
-- **routers/** — FastAPI endpoint definitions. Each router maps to an API prefix (`/auth`, `/search`, `/filters`, `/media`, `/save`, `/seed`, `/ratings`). `/search` handles both `/search/media` (per-media) and `/search/anime` (aggregated by anime). `/media` handles both `/media/{uuid}` and `/media/anime/{uuid}`.
-- **services/** — Business logic as module-level async functions. Key services: `jikan_scraper.py` (MAL API client with retry), `vector_embedding_service.py` (sentence-transformers embeddings), `media_search_service.py` (filtered DB search), `anime_search_service.py` (anime aggregated search + detail with majority genre logic), `rating_service.py` (rating CRUD + search), `token_service.py` (compressed JWT for shareable filter URLs), `auth_service.py` (registration, authentication, token issuance), `filter_service.py` (filter option values, view-type-aware for anime vs media ranges).
-- **daos/** — Data access layer. `BaseDAO` provides generic async CRUD; specialized DAOs (media, anime, genre, studio, user, registration_token, rating) add domain-specific queries with vector similarity, filtering, and aggregation. `AnimeDAO.search_anime_aggregated` uses two-phase query: SQL GROUP BY with HAVING for filtering/ordering, then detail fetch. `search_filters.py` provides shared filter/ordering helpers for media, anime pre-aggregation (WHERE), and anime post-aggregation (HAVING) filters.
-- **models/** — SQLAlchemy ORM models mapped to PostgreSQL tables. `media_search.py` stores pgvector embeddings for title and description; `anime_search.py` stores anime-level embeddings; `rating_search.py` stores note embeddings for rating note search.
+- **routers/** — FastAPI endpoint definitions. Each router maps to an API prefix (`/auth`, `/search`, `/filters`, `/media`, `/save`, `/seed`, `/ratings`, `/users`). `/search` handles both `/search/media` (per-media) and `/search/anime` (aggregated by anime). `/media` handles both `/media/{uuid}` and `/media/anime/{uuid}`. `/users` handles settings CRUD and data export.
+- **services/** — Business logic as module-level async functions. Key services: `jikan_scraper.py` (MAL API client with retry), `vector_embedding_service.py` (sentence-transformers embeddings), `media_search_service.py` (filtered DB search), `anime_search_service.py` (anime aggregated search + detail with majority genre logic), `rating_service.py` (rating CRUD + search), `token_service.py` (compressed JWT for shareable filter URLs), `auth_service.py` (registration, authentication, token issuance), `filter_service.py` (filter option values, view-type-aware for anime vs media ranges), `user_settings_service.py` (user settings CRUD + default creation), `export_service.py` (user data export with ratings + watchlist).
+- **daos/** — Data access layer. `BaseDAO` provides generic async CRUD; specialized DAOs (media, anime, genre, studio, user, user_settings, registration_token, rating) add domain-specific queries with vector similarity, filtering, and aggregation. `AnimeDAO.search_anime_aggregated` uses two-phase query: SQL GROUP BY with HAVING for filtering/ordering, then detail fetch. `search_filters.py` provides shared filter/ordering helpers for media, anime pre-aggregation (WHERE), and anime post-aggregation (HAVING) filters.
+- **models/** — SQLAlchemy ORM models mapped to PostgreSQL tables. `media_search.py` stores pgvector embeddings for title and description; `anime_search.py` stores anime-level embeddings; `rating_search.py` stores note embeddings for rating note search. `user_settings.py` stores per-user preferences (one-to-one with Users) with enums for name language, search view, rating step, and spoiler level.
 - **schemas/** — Pydantic request/response DTOs.
 - **core/** — Config (`config.py` loads from `.env`), database engine (`db.py`), auth dependencies (`dependencies.py`), JWT/password security (`security.py`).
-- **seeders/** — Run at app startup via lifespan; seed genres and admin user. `embedding_backfiller.py` detects and regenerates any missing anime, media, or rating embeddings (enables seamless embedding model swaps via Alembic migration + restart).
+- **seeders/** — Run at app startup via lifespan; seed genres, admin user, and optional guest user (restricted_user role). `backfill_user_settings` ensures all users have a UserSettings row. `embedding_backfiller.py` detects and regenerates any missing anime, media, or rating embeddings (enables seamless embedding model swaps via Alembic migration + restart).
 - **exceptions.py** — Custom exception hierarchy rooted at `PhsarBaseError` with `status_code` attribute. Single exception handler in `main.py` reads the status code from each exception class.
 
 ### Frontend (phsar/frontend/)
@@ -105,7 +105,7 @@ SvelteKit with file-based routing, Svelte 5 runes, Tailwind CSS 4, shadcn-svelte
 
 The backend requires a `phsar/.env` file with: `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `SECRET_KEY`, `SEARCH_SECRET_KEY`.
 
-Optional: `DEBUG` (enables SQL echo), `CORS_ORIGINS` (JSON list of allowed origins).
+Optional: `DEBUG` (enables SQL echo), `CORS_ORIGINS` (JSON list of allowed origins), `GUEST_USERNAME` + `GUEST_PASSWORD` (seeds a read-only guest account with `restricted_user` role).
 
 ## CI
 

@@ -28,7 +28,8 @@ phsar/
 │   │   ├── registration_token_dao.py
 │   │   ├── search_filters.py
 │   │   ├── studio_dao.py
-│   │   └── user_dao.py
+│   │   ├── user_dao.py
+│   │   └── user_settings_dao.py
 │   ├── exceptions.py
 │   ├── main.py
 │   ├── models/
@@ -46,6 +47,7 @@ phsar/
 │   │   ├── registration_token.py
 │   │   ├── studio.py
 │   │   ├── tag.py
+│   │   ├── user_settings.py
 │   │   ├── users.py
 │   │   ├── watchlist.py
 │   │   └── watchlist_tag.py
@@ -56,14 +58,16 @@ phsar/
 │   │   ├── ratings.py
 │   │   ├── save.py
 │   │   ├── search.py
-│   │   └── seeder.py
+│   │   ├── seeder.py
+│   │   └── users.py
 │   ├── schemas/
 │   │   ├── anime_schema.py
 │   │   ├── auth_schema.py
 │   │   ├── media_filter_schema.py
 │   │   ├── media_schema.py
 │   │   ├── rating_schema.py
-│   │   └── search_schema.py
+│   │   ├── search_schema.py
+│   │   └── user_settings_schema.py
 │   ├── seeders/
 │   │   ├── embedding_backfiller.py
 │   │   ├── genre_seeder.py
@@ -73,6 +77,7 @@ phsar/
 │       ├── anime_search_service.py
 │       ├── anime_service.py
 │       ├── auth_service.py
+│       ├── export_service.py
 │       ├── filter_service.py
 │       ├── jikan_scraper.py
 │       ├── media_linking_service.py
@@ -83,6 +88,7 @@ phsar/
 │       ├── search_service.py
 │       ├── token_service.py
 │       ├── unwanted_media_service.py
+│       ├── user_settings_service.py
 │       └── vector_embedding_service.py
 ├── frontend/
 │   ├── components.json
@@ -171,7 +177,8 @@ phsar/
 │   │       └── searchbar.test.ts
 │   ├── static/
 │   │   ├── phsar_logo_inverted.png
-│   │   └── phsar_logo_transparent.png
+│   │   ├── phsar_logo_transparent.png
+│   │   └── profile_pics/    # 13 anime character avatars for user profiles
 │   ├── svelte.config.js
 │   ├── tsconfig.json
 │   └── vite.config.ts
@@ -195,7 +202,8 @@ phsar/
     │   ├── test_save.py
     │   ├── test_search_anime.py
     │   ├── test_search_media.py
-    │   └── test_search_ratings.py
+    │   ├── test_search_ratings.py
+    │   └── test_user_settings.py
     └── services/
         ├── test_jikan_scraper.py
         ├── test_search_service.py
@@ -219,6 +227,9 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=supersecretpassword
 SECRET_KEY=supersecretsecretkey
 SEARCH_SECRET_KEY=supersecretsearchsecretkey
+# Optional: seeded guest account (restricted_user role, read-only)
+# GUEST_USERNAME=guest
+# GUEST_PASSWORD=guestpassword
 ```
 
 *Change `animeuser`, `animepass`, `admin`, `supersecretpassword`, `supersecretsecretkey`, and `supersecretsearchsecretkey`*
@@ -284,7 +295,7 @@ docker exec -it anime-postgres psql -U animeuser -d anime_db -c "DROP SCHEMA pub
 
 ## Run FastAPI App
 
-When first running the FastAPI App, the genre table and the first admin user will be seeded. For running the app, use:
+When first running the FastAPI App, the genre table, admin user, and optional guest user will be seeded. All users get default settings. For running the app, use:
 
 ```
 uvicorn app.main:app --reload

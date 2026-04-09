@@ -11,7 +11,11 @@ from app.core.logging_config import setup_logging
 from app.exceptions import PhsarBaseError
 from app.seeders.embedding_backfiller import backfill_embeddings
 from app.seeders.genre_seeder import seed_genres
-from app.seeders.user_seeder import seed_admin_user
+from app.seeders.user_seeder import (
+    backfill_user_settings,
+    seed_admin_user,
+    seed_guest_user,
+)
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -23,6 +27,8 @@ async def lifespan(app: FastAPI):
     async with async_session_maker() as session:
         await seed_genres(session)
         await seed_admin_user(session)
+        await seed_guest_user(session)
+        await backfill_user_settings(session)
         await backfill_embeddings(session)
 
     yield  # Startup complete
@@ -50,7 +56,7 @@ def create_app() -> FastAPI:
     
 
     # Local import to avoid early dependency resolution in tests
-    from app.routers import auth, filters, media, ratings, save, search, seeder
+    from app.routers import auth, filters, media, ratings, save, search, seeder, users
 
     app.include_router(auth.router)
     app.include_router(filters.router)
@@ -59,6 +65,7 @@ def create_app() -> FastAPI:
     app.include_router(save.router)
     app.include_router(search.router)
     app.include_router(seeder.router)
+    app.include_router(users.router)
 
     @app.get("/")
     async def root():
