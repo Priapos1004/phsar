@@ -238,3 +238,16 @@ export interface UserSettings {
 }
 
 export type UserSettingsUpdate = Partial<UserSettings>;
+
+// Admin — Registration tokens
+export interface RegistrationTokenListItem {
+	uuid: string;
+	token: string;
+	role: string;
+	status: 'active' | 'used' | 'expired';
+	created_by: string;
+	created_at: string;
+	expires_on: string;
+	used_by: string | null;
+	used_at: string | null;
+}

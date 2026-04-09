@@ -4,10 +4,11 @@
     interface Props {
         isAuthenticated: boolean;
         username: string | null;
+        isAdmin: boolean;
         onLogout: () => void;
     }
 
-    let { isAuthenticated, username = null, onLogout }: Props = $props();
+    let { isAuthenticated, username = null, isAdmin = false, onLogout }: Props = $props();
 </script>
 
 <nav class="sticky top-0 z-50 h-16 flex justify-between items-center px-8 py-4 bg-black/10 backdrop-blur">
@@ -33,6 +34,11 @@
                 <DropdownMenu.Item>
                     <a href="/settings" class="w-full">User Settings</a>
                 </DropdownMenu.Item>
+                {#if isAdmin}
+                    <DropdownMenu.Item>
+                        <a href="/admin" class="w-full">Admin</a>
+                    </DropdownMenu.Item>
+                {/if}
                 <DropdownMenu.Item>
                     <a href="/statistics" class="w-full">Statistics</a>
                 </DropdownMenu.Item>

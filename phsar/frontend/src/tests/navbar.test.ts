@@ -4,28 +4,28 @@ import NavBar from '$lib/components/NavBar.svelte';
 
 describe('NavBar', () => {
 	it('renders logo and brand text', () => {
-		render(NavBar, { props: { isAuthenticated: false, username: null, onLogout: vi.fn() } });
+		render(NavBar, { props: { isAuthenticated: false, username: null, isAdmin: false, onLogout: vi.fn() } });
 		expect(screen.getByText('PHSAR')).toBeInTheDocument();
 	});
 
 	it('renders Ratings and Watchlist links', () => {
-		render(NavBar, { props: { isAuthenticated: false, username: null, onLogout: vi.fn() } });
+		render(NavBar, { props: { isAuthenticated: false, username: null, isAdmin: false, onLogout: vi.fn() } });
 		expect(screen.getByText('Ratings')).toBeInTheDocument();
 		expect(screen.getByText('Watchlist')).toBeInTheDocument();
 	});
 
 	it('hides user dropdown when not authenticated', () => {
-		render(NavBar, { props: { isAuthenticated: false, username: null, onLogout: vi.fn() } });
+		render(NavBar, { props: { isAuthenticated: false, username: null, isAdmin: false, onLogout: vi.fn() } });
 		expect(screen.queryByText('T')).not.toBeInTheDocument();
 	});
 
 	it('shows user button when authenticated', () => {
-		render(NavBar, { props: { isAuthenticated: true, username: 'testuser', onLogout: vi.fn() } });
+		render(NavBar, { props: { isAuthenticated: true, username: 'testuser', isAdmin: false, onLogout: vi.fn() } });
 		expect(screen.getByText('T')).toBeInTheDocument();
 	});
 
 	it('toggles dropdown on user button click', async () => {
-		render(NavBar, { props: { isAuthenticated: true, username: 'testuser', onLogout: vi.fn() } });
+		render(NavBar, { props: { isAuthenticated: true, username: 'testuser', isAdmin: false, onLogout: vi.fn() } });
 
 		// Dropdown not visible initially
 		expect(screen.queryByText('User Settings')).not.toBeInTheDocument();
@@ -44,7 +44,7 @@ describe('NavBar', () => {
 
 	it('calls onLogout when logout is clicked', async () => {
 		const onLogout = vi.fn();
-		render(NavBar, { props: { isAuthenticated: true, username: 'testuser', onLogout } });
+		render(NavBar, { props: { isAuthenticated: true, username: 'testuser', isAdmin: false, onLogout } });
 
 		await fireEvent.click(screen.getByText('T'));
 		await fireEvent.click(screen.getByText('Logout'));
@@ -53,7 +53,7 @@ describe('NavBar', () => {
 	});
 
 	it('has correct link targets', () => {
-		render(NavBar, { props: { isAuthenticated: true, username: 'testuser', onLogout: vi.fn() } });
+		render(NavBar, { props: { isAuthenticated: true, username: 'testuser', isAdmin: false, onLogout: vi.fn() } });
 
 		const ratingsLink = screen.getByText('Ratings').closest('a');
 		const watchlistLink = screen.getByText('Watchlist').closest('a');

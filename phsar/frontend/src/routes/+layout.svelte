@@ -91,7 +91,7 @@
     <LoadingScreen />
 {:else}
     {#if page.url.pathname !== '/login' && page.url.pathname !== '/register'}
-      <NavBar {isAuthenticated} {username} onLogout={handleLogout} />
+      <NavBar {isAuthenticated} {username} isAdmin={userRole === 'admin'} onLogout={handleLogout} />
     {/if}
 
     <main class="min-h-screen px-8 pt-4 pb-8">
