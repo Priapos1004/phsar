@@ -167,7 +167,17 @@ Each anime search result card shows:
   - Rate and Watchlist buttons open stub dialogs (will be functional in future versions)
   - "Cancel" exits select mode and clears selection
 
-### 6.5 Back Navigation
+### 6.5 Ratings Overview ("Your Ratings")
+- Appears when the user has rated at least one media in the anime
+- **Stats gauge**: Average score displayed in a gauge chart (formatted to 1 decimal), progress bars for media rated / total and episodes watched / total, dropped count badge
+- **Rating Timeline**: Bar chart with one bar per media in release order, colored by relation type (Main Story = purple, Summary = green, Crossover = yellow, Side Story = red). Dropped items at 50% opacity. HTML legend showing active relation types. Tooltip shows title, media type, relation type, season, and score.
+- **Attribute Summary** (side-by-side on desktop, stacked on mobile):
+  - *Quality Radar* (pentagon): 5 quality axes (animation quality, dialogue quality, character depth, story quality, ending quality) normalized to 0–1 scale with 3 split rings. Tooltip shows closest label per axis or "--" for no data. `ending_quality: not_applicable` is excluded from averaging.
+  - *Descriptive Pills* (orbital): 6 descriptive attributes (pace, 3D animation, watched format, fan service, ending type, originality) displayed as tilted pills arranged in an elliptical orbit. Each shows "Label: Majority Value" or "--" for no data. Hover straightens and scales the pill. Click triggers a color-burst glow animation cycling through the chart palette.
+  - *Collapsible details*: "Show attribute details" toggle expands stacked distribution bars for all 11 attributes. Unrated attributes shown greyed out with "No data" label.
+- **Notes**: Collapsible list of user notes per media (first note visible, "Show all N notes" to expand)
+
+### 6.6 Back Navigation
 - "Back to search" link appears when `q` search token is present in URL
 - Restores the correct anime/media toggle and filters on the search page
 
@@ -202,12 +212,12 @@ Each anime search result card shows:
 ### 7.4 Rating Card
 - **No rating exists, not editing**: CTA card with star icon and "Rate This" button
 - **Restricted users**: Disabled "Rate This" button with "Upgrade your account" message
-- **Rating exists, not editing**: Display card showing score circle, dropped/completed status, episodes watched (with total if known), filled attribute badges, and note (if any). Edit and Delete buttons.
+- **Rating exists, not editing**: Display card showing score circle, dropped/completed status, episodes watched (with total if known), filled attribute badges (ending quality hidden when "Not Applicable"), and note (if any). Edit and Delete buttons.
 - **Editing mode** (new or existing):
   - Score: editable circle with direct text input + slider (0-10, step 0.5)
   - Dropped checkbox + episodes watched input (auto-filled with total episodes when not dropped; editable when dropped)
   - Note textarea (max 1000 chars with counter)
-  - Collapsible "Details" section with 11 attribute selectors (pace, animation quality, 3D animation, watched format, fan service, dialogue quality, character depth, ending type, ending quality, story quality, originality) — shows set/total count badge
+  - Collapsible "Details" section with 11 attribute selectors (pace, animation quality, 3D animation, watched format, fan service, dialogue quality, character depth, ending type, ending quality, story quality, originality) — shows set/total count badge. Ending quality: when dropped, auto-set to "Not Applicable" and disabled; when not dropped, only 3 quality options shown (Unsatisfying, Satisfying, Exceptional)
   - Submit/Update button (disabled when no changes detected on existing rating)
   - Cancel button returns to display mode
   - Error message display on save/delete failure

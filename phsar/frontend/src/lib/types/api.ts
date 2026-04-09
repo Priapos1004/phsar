@@ -154,7 +154,7 @@ export const RATING_ATTRIBUTE_OPTIONS: Record<string, { label: string; options: 
 	dialogue_quality: { label: 'Dialogue Quality', options: [{ value: 'flat', label: 'Flat' }, { value: 'normal', label: 'Normal' }, { value: 'deep', label: 'Deep' }] },
 	character_depth: { label: 'Character Depth', options: [{ value: 'flat', label: 'Flat' }, { value: 'normal', label: 'Normal' }, { value: 'complex', label: 'Complex' }] },
 	ending_type: { label: 'Ending Type', options: [{ value: 'open', label: 'Open' }, { value: 'closed', label: 'Closed' }, { value: 'cliffhanger', label: 'Cliffhanger' }] },
-	ending_quality: { label: 'Ending Quality', options: [{ value: 'unsatisfying', label: 'Unsatisfying' }, { value: 'satisfying', label: 'Satisfying' }, { value: 'exceptional', label: 'Exceptional' }, { value: 'not_applicable', label: 'N/A' }] },
+	ending_quality: { label: 'Ending Quality', options: [{ value: 'unsatisfying', label: 'Unsatisfying' }, { value: 'satisfying', label: 'Satisfying' }, { value: 'exceptional', label: 'Exceptional' }, { value: 'not_applicable', label: 'Not Applicable' }] },
 	story_quality: { label: 'Story Quality', options: [{ value: 'weak', label: 'Weak' }, { value: 'average', label: 'Average' }, { value: 'good', label: 'Good' }, { value: 'outstanding', label: 'Outstanding' }] },
 	originality: { label: 'Originality', options: [{ value: 'conventional', label: 'Conventional' }, { value: 'unique', label: 'Unique' }, { value: 'experimental', label: 'Experimental' }] },
 };

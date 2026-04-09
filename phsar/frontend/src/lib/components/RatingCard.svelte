@@ -59,7 +59,10 @@
 
 	let filledAttributes = $derived(
 		existingRating ? Object.entries(RATING_ATTRIBUTE_OPTIONS)
-			.filter(([key]) => getRatingAttr(existingRating!, key))
+			.filter(([key]) => {
+				const val = getRatingAttr(existingRating!, key);
+				return val && !(key === 'ending_quality' && val === 'not_applicable');
+			})
 			.map(([key, config]) => ({
 				label: config.label,
 				value: config.options.find(o => o.value === getRatingAttr(existingRating!, key))?.label
@@ -111,6 +114,15 @@
 		// Only auto-fill episodes when creating a new rating (not editing existing)
 		if (!existingRating && !dropped && totalEpisodes !== null) {
 			episodesWatched = totalEpisodes.toString();
+		}
+	});
+
+	$effect(() => {
+		// Dropped → ending_quality is not ratable; not dropped → clear auto-set value
+		if (dropped) {
+			attributes['ending_quality'] = 'not_applicable';
+		} else if (attributes['ending_quality'] === 'not_applicable') {
+			attributes['ending_quality'] = null;
 		}
 	});
 
@@ -350,6 +362,11 @@
 						{#if showAttributes}
 							<div class="grid grid-cols-2 gap-3 mt-3">
 								{#each Object.entries(RATING_ATTRIBUTE_OPTIONS) as [key, config]}
+									{@const isEndingQuality = key === 'ending_quality'}
+									{@const isDisabled = isEndingQuality && dropped}
+									{@const visibleOptions = isEndingQuality && !dropped
+										? config.options.filter(o => o.value !== 'not_applicable')
+										: config.options}
 									<div class="space-y-1">
 										<Label class={attributes[key] ? 'text-card-foreground font-medium' : 'text-muted-foreground'}>
 											{config.label}
@@ -358,6 +375,7 @@
 											type="single"
 											value={attributes[key] ?? undefined}
 											onValueChange={(val: string) => { attributes[key] = val || null; }}
+											disabled={isDisabled}
 										>
 											<Select.Trigger class="w-full {attributes[key] ? 'bg-primary/5 border-2 border-primary/40' : 'bg-card'}">
 												{#if attributes[key]}
@@ -367,7 +385,7 @@
 												{/if}
 											</Select.Trigger>
 											<Select.Content>
-												{#each config.options as option}
+												{#each visibleOptions as option}
 													<Select.Item value={option.value}>{option.label}</Select.Item>
 												{/each}
 											</Select.Content>

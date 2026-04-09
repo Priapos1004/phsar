@@ -1,7 +1,7 @@
 <script lang="ts">
 	import EChart from '$lib/components/EChart.svelte';
-	import { formatSeason } from '$lib/utils/formatString';
-	import { scoreColor } from '$lib/utils/chartColors';
+	import { formatSeason, formatDecimalDigits } from '$lib/utils/formatString';
+	import { RELATION_TYPE_COLORS, RELATION_TYPE_LABELS, CHART_COLORS } from '$lib/utils/chartColors';
 	import type { AnimeMediaItem, RatingOut } from '$lib/types/api';
 
 	interface MediaWithRating {
@@ -15,6 +15,10 @@
 
 	let { mediaWithRatings }: Props = $props();
 
+	let activeRelationTypes = $derived(
+		[...new Set(mediaWithRatings.map((mr) => mr.media.relation_type))],
+	);
+
 	let chartOption = $derived({
 		tooltip: {
 			trigger: 'item' as const,
@@ -22,12 +26,13 @@
 				const p = params as { dataIndex: number };
 				const mr = mediaWithRatings[p.dataIndex];
 				const title = mr.media.name_eng ?? mr.media.title;
+				const relation = RELATION_TYPE_LABELS[mr.media.relation_type] ?? mr.media.relation_type;
 				const season = formatSeason(mr.media.anime_season_name, mr.media.anime_season_year) ?? '';
 				if (mr.rating) {
 					const dropped = mr.rating.dropped ? ' <span style="color:#ef4444">(Dropped)</span>' : '';
-					return `<strong>${title}</strong>${dropped}<br/>${mr.media.media_type} · ${season}<br/>Your score: <strong>${mr.rating.rating.toFixed(1)}</strong>`;
+					return `<strong>${title}</strong>${dropped}<br/>${mr.media.media_type} · ${relation} · ${season}<br/>Your score: <strong>${formatDecimalDigits(mr.rating.rating, 1)}</strong>`;
 				}
-				return `<strong>${title}</strong><br/>${mr.media.media_type} · ${season}<br/><span style="opacity:0.6">Not rated</span>`;
+				return `<strong>${title}</strong><br/>${mr.media.media_type} · ${relation} · ${season}<br/><span style="opacity:0.6">Not rated</span>`;
 			},
 		},
 		grid: {
@@ -65,7 +70,7 @@
 						return {
 							value: mr.rating.rating,
 							itemStyle: {
-								color: scoreColor(mr.rating.rating),
+								color: RELATION_TYPE_COLORS[mr.media.relation_type] ?? CHART_COLORS.chart4,
 								borderRadius: [3, 3, 0, 0],
 								opacity: mr.rating.dropped ? 0.5 : 1,
 							},
@@ -89,6 +94,17 @@
 <div>
 	<h3 class="text-sm font-medium text-muted-foreground mb-2">Rating Timeline</h3>
 	<EChart option={chartOption} height="176px" />
+	<div class="flex justify-center gap-3 mt-1">
+		{#each activeRelationTypes as type}
+			<span class="text-xs text-muted-foreground">
+				<span
+					class="inline-block w-2 h-2 rounded-full mr-0.5"
+					style="background: {RELATION_TYPE_COLORS[type] ?? CHART_COLORS.chart4}"
+				></span>
+				{RELATION_TYPE_LABELS[type] ?? type}
+			</span>
+		{/each}
+	</div>
 	<p class="text-sm text-muted-foreground text-center mt-1">
 		Media in release order (1 = earliest)
 	</p>

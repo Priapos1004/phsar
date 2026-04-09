@@ -63,10 +63,10 @@
 
 		<RatingsOverviewTimeline {mediaWithRatings} />
 
+		<RatingsOverviewAttributes {ratings} />
+
 		{#if notesInOrder.length > 0}
 			<RatingsOverviewNotes notes={notesInOrder} />
 		{/if}
-
-		<RatingsOverviewAttributes {ratings} />
 	</Card.Content>
 </Card.Root>

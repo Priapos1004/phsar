@@ -2,6 +2,7 @@
 	import EChart from '$lib/components/EChart.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { scoreColor } from '$lib/utils/chartColors';
+	import { formatDecimalDigits } from '$lib/utils/formatString';
 
 	interface Props {
 		avgScore: number;
@@ -60,7 +61,7 @@
 					fontSize: 22,
 					fontWeight: 'bold' as const,
 					color: scoreColor(avgScore),
-					formatter: '{value}',
+					formatter: (val: number) => formatDecimalDigits(val, 1),
 				},
 				data: [{ value: avgScore }],
 			},

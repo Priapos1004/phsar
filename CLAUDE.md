@@ -75,12 +75,12 @@ Layered architecture with strict dependency flow: **routers → services → DAO
 SvelteKit with file-based routing, Svelte 5 runes, Tailwind CSS 4, shadcn-svelte component library.
 
 - **routes/** — Pages: home (`/`), login (`/login`), search (`/search`), media detail (`/media`), anime detail (`/anime`).
-- **lib/components/** — App components (SearchBar, MediaInfo, NavBar, TagSelect, DoubleRangeSlider, RatingCard, RelatedMediaCarousel, etc.) using Svelte 5 `$props()`, `$state()`, `$derived()`, `$effect()`.
+- **lib/components/** — App components (SearchBar, MediaInfo, NavBar, TagSelect, DoubleRangeSlider, RatingCard, RelatedMediaCarousel, RatingsOverview with sub-components for Stats/Timeline/Notes/Attributes, AttributeRadar, AttributeBadges, AttributeDetailBars, etc.) using Svelte 5 `$props()`, `$state()`, `$derived()`, `$effect()`.
 - **lib/components/ui/** — shadcn-svelte base components (button, card, input, badge, slider, dropdown-menu, popover, checkbox, label, select, separator, etc.).
 - **lib/api.ts** — Centralized API client with `get`/`post`/`postForm`/`put`/`del` methods, `ApiError` class, and automatic auth header injection from the token store.
 - **lib/types/api.ts** — TypeScript interfaces mirroring backend Pydantic schemas (`MediaConnected`, `FilterOptions`, `TokenResponse`, etc.).
 - **lib/stores/** — Svelte stores for auth state (JWT token persisted to localStorage).
-- **lib/utils/** — String formatting (`formatAiringStatus`, `formatSeasonRange`, `formatDuration`), season logic, search params (`fetchSearchResults`, `fetchAnimeSearchResults`), navigation (`navigateToSearch`, `buildDetailHref`).
+- **lib/utils/** — String formatting (`formatAiringStatus`, `formatSeasonRange`, `formatDuration`, `formatDecimalDigits`), season logic, search params (`fetchSearchResults`, `fetchAnimeSearchResults`), navigation (`navigateToSearch`, `buildDetailHref`), chart colors (`CHART_COLORS`, `scoreColor`, `RELATION_TYPE_COLORS`, `RELATION_TYPE_LABELS`).
 - **lib/config.ts** — Backend API base URL (consumed only by `api.ts`).
 - **src/app.css** — Custom theme (`@theme inline`) with light elevated surfaces on dark purple gradient background. Dark mode locked to class-based only.
 - **tests/** — Vitest + @testing-library/svelte component tests.

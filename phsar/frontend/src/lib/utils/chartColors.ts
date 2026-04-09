@@ -28,3 +28,19 @@ export function scoreColor(score: number): string {
 	if (score < 8) return CHART_COLORS.chart2;
 	return CHART_COLORS.chart1;
 }
+
+/** Maps relation types to chart colors for visual grouping. */
+export const RELATION_TYPE_COLORS: Record<string, string> = {
+	main: CHART_COLORS.chart1,
+	summary: CHART_COLORS.chart2,
+	crossover: CHART_COLORS.chart3,
+	other: CHART_COLORS.chart5,
+};
+
+/** User-friendly display labels for relation types. */
+export const RELATION_TYPE_LABELS: Record<string, string> = {
+	main: 'Main Story',
+	summary: 'Summary',
+	crossover: 'Crossover',
+	other: 'Side Story',
+};
