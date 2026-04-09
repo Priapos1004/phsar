@@ -94,14 +94,25 @@ phsar/
 │   │   ├── lib/
 │   │   │   ├── api.ts
 │   │   │   ├── config.ts
+│   │   │   ├── echarts.ts
 │   │   │   ├── utils.ts
 │   │   │   ├── components/
+│   │   │   │   ├── AttributeBadges.svelte
+│   │   │   │   ├── AttributeDetailBars.svelte
+│   │   │   │   ├── AttributeRadar.svelte
+│   │   │   │   ├── BulkRateDialog.svelte
 │   │   │   │   ├── DoubleRangeSlider.svelte
+│   │   │   │   ├── EChart.svelte
 │   │   │   │   ├── InfoDiashow.svelte
 │   │   │   │   ├── LoadingScreen.svelte
 │   │   │   │   ├── MediaInfo.svelte
 │   │   │   │   ├── NavBar.svelte
 │   │   │   │   ├── RatingCard.svelte
+│   │   │   │   ├── RatingsOverview.svelte
+│   │   │   │   ├── RatingsOverviewAttributes.svelte
+│   │   │   │   ├── RatingsOverviewNotes.svelte
+│   │   │   │   ├── RatingsOverviewStats.svelte
+│   │   │   │   ├── RatingsOverviewTimeline.svelte
 │   │   │   │   ├── RelatedMediaCarousel.svelte
 │   │   │   │   ├── ScrollableCard.svelte
 │   │   │   │   ├── SearchBar.svelte
@@ -130,6 +141,7 @@ phsar/
 │   │   │   ├── types/
 │   │   │   │   └── api.ts
 │   │   │   └── utils/
+│   │   │       ├── chartColors.ts
 │   │   │       ├── cn.ts
 │   │   │       ├── formatString.ts
 │   │   │       ├── getSeason.ts

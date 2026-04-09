@@ -164,7 +164,10 @@ Each anime search result card shows:
   - Checkboxes appear on left of each row
   - Clicking rows toggles selection instead of navigating
   - Action bar slides in: "Select all/Deselect all", selected count, "Rate" button, "Watchlist" button
-  - Rate and Watchlist buttons open stub dialogs (will be functional in future versions)
+  - "Delete Ratings" button appears when any selected media have existing ratings
+  - **Rate** opens BulkRateDialog: score circle + slider, note (applied to last main media), collapsible attributes grid. Overwrite warning shown if any selected media already rated. On save: exits select mode, shows "Note Added" info dialog naming which media received the note.
+  - **Delete Ratings** opens a destructive confirmation dialog, then `POST /ratings/bulk-delete`
+  - **Watchlist** opens a stub dialog (wired in v0.15.0)
   - "Cancel" exits select mode and clears selection
 
 ### 6.5 Ratings Overview ("Your Ratings")
@@ -251,7 +254,10 @@ Each anime search result card shows:
 | `/media/anime/{uuid}` | GET | Anime detail page load |
 | `/media/{uuid}` | GET | Media detail page load |
 | `/ratings/media/{uuid}` | GET | Media detail page load (fetch user's rating) |
+| `/ratings/anime/{uuid}` | GET | Anime detail page load (fetch user's ratings for all media) |
 | `/ratings/media/{uuid}` | PUT | Create or update a rating |
+| `/ratings/bulk` | PUT | Bulk rate selected media from anime detail |
+| `/ratings/bulk-delete` | POST | Bulk delete ratings from anime detail |
 | `/ratings/{uuid}` | DELETE | Delete a rating |
 
 ---
