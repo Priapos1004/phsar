@@ -56,8 +56,19 @@ def create_app() -> FastAPI:
     
 
     # Local import to avoid early dependency resolution in tests
-    from app.routers import auth, filters, media, ratings, save, search, seeder, users
+    from app.routers import (
+        admin,
+        auth,
+        filters,
+        media,
+        ratings,
+        save,
+        search,
+        seeder,
+        users,
+    )
 
+    app.include_router(admin.router)
     app.include_router(auth.router)
     app.include_router(filters.router)
     app.include_router(media.router)

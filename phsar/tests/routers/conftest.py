@@ -71,9 +71,9 @@ async def create_user_with_role(client, get_admin_token):
     async def _create_user(username: str, password: str, role: RoleType):
         admin_token = await get_admin_token()
 
-        # Issue registration token
+        # Issue registration token via admin endpoint
         issue_resp = await client.post(
-            "/auth/issue-token",
+            "/admin/registration-tokens",
             json={"role": role.value},
             headers={"Authorization": f"Bearer {admin_token}"}
         )

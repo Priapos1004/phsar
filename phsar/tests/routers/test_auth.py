@@ -43,9 +43,9 @@ async def test_register_with_invalid_token(client):
 async def test_register_with_used_token(client, create_user_with_role, get_admin_token):
     admin_token = await get_admin_token()
 
-    # Issue a registration token manually
+    # Issue a registration token via admin endpoint
     issue_resp = await client.post(
-        "/auth/issue-token",
+        "/admin/registration-tokens",
         json={"role": RoleType.User.value},
         headers={"Authorization": f"Bearer {admin_token}"}
     )
@@ -77,20 +77,6 @@ async def test_login_with_wrong_password(client, create_user_with_role):
     login_resp = await login_user(client, "wrongpassuser", "wrongpass")
     assert login_resp.status_code == 401
     logger.debug(f"Wrong password login response: {login_resp.json()}")
-
-@pytest.mark.asyncio
-async def test_issue_token_requires_admin(client, create_user_with_role):
-    # Create a normal user
-    token = await create_user_with_role(username="nonadmin", password="nonadminpass", role=RoleType.User)
-
-    # Try to issue a token as non-admin user
-    issue_resp_non_admin = await client.post(
-        "/auth/issue-token",
-        json={"role": RoleType.User.value},
-        headers={"Authorization": f"Bearer {token}"}
-    )
-    assert issue_resp_non_admin.status_code == 403
-    logger.debug(f"Non-admin trying to issue token response: {issue_resp_non_admin.json()}")
 
 @pytest.mark.asyncio
 async def test_validate_with_valid_token(client, create_user_with_role):

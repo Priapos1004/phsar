@@ -194,3 +194,20 @@ class UserSettingsNotFoundError(PhsarBaseError):
     def __init__(self):
         message = "User settings not found."
         super().__init__(message)
+
+
+class RegistrationTokenNotFoundError(PhsarBaseError):
+    """Raised when a registration token UUID does not resolve to an existing token."""
+    status_code = 404
+
+    def __init__(self, uuid: str):
+        message = f"Registration token not found: '{uuid}'."
+        super().__init__(message)
+
+
+class CannotDeleteUsedTokenError(PhsarBaseError):
+    """Raised when attempting to delete a registration token that has been used."""
+
+    def __init__(self):
+        message = "Cannot delete a registration token that has already been used."
+        super().__init__(message)

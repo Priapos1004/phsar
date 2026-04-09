@@ -28,9 +28,6 @@ class TokenPayload(BaseModel):
 class TokenValidationResponse(BaseModel):
     is_valid: bool
 
-class RegistrationTokenCreate(BaseModel):
-    role: RoleType
-
 class RegistrationTokenResponse(BaseModel):
     token: str
     role: RoleType
