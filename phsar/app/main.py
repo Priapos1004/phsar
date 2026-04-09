@@ -9,7 +9,7 @@ from app.core.config import settings
 from app.core.db import async_session_maker
 from app.core.logging_config import setup_logging
 from app.exceptions import PhsarBaseError
-from app.seeders.anime_search_seeder import seed_anime_embeddings
+from app.seeders.embedding_backfiller import backfill_embeddings
 from app.seeders.genre_seeder import seed_genres
 from app.seeders.user_seeder import seed_admin_user
 
@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
     async with async_session_maker() as session:
         await seed_genres(session)
         await seed_admin_user(session)
-        await seed_anime_embeddings(session)
+        await backfill_embeddings(session)
 
     yield  # Startup complete
 

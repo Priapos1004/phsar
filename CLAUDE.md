@@ -67,7 +67,7 @@ Layered architecture with strict dependency flow: **routers → services → DAO
 - **models/** — SQLAlchemy ORM models mapped to PostgreSQL tables. `media_search.py` stores pgvector embeddings for title and description; `anime_search.py` stores anime-level embeddings; `rating_search.py` stores note embeddings for rating note search.
 - **schemas/** — Pydantic request/response DTOs.
 - **core/** — Config (`config.py` loads from `.env`), database engine (`db.py`), auth dependencies (`dependencies.py`), JWT/password security (`security.py`).
-- **seeders/** — Run at app startup via lifespan; seed genres, admin user, and backfill anime embeddings.
+- **seeders/** — Run at app startup via lifespan; seed genres and admin user. `embedding_backfiller.py` detects and regenerates any missing anime, media, or rating embeddings (enables seamless embedding model swaps via Alembic migration + restart).
 - **exceptions.py** — Custom exception hierarchy rooted at `PhsarBaseError` with `status_code` attribute. Single exception handler in `main.py` reads the status code from each exception class.
 
 ### Frontend (phsar/frontend/)

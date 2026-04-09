@@ -65,7 +65,7 @@ phsar/
 │   │   ├── rating_schema.py
 │   │   └── search_schema.py
 │   ├── seeders/
-│   │   ├── anime_search_seeder.py
+│   │   ├── embedding_backfiller.py
 │   │   ├── genre_seeder.py
 │   │   ├── media_seeder.py
 │   │   └── user_seeder.py

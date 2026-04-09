@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.anime_search import AnimeSearch
 from app.models.media_search import MediaSearch
+from app.models.rating_search import RatingSearch
 
 logger = logging.getLogger(__name__)
 
@@ -32,3 +33,9 @@ async def create_media_embedding(db: AsyncSession, media_id: int, title_texts: l
 
 async def create_anime_embedding(db: AsyncSession, anime_id: int, title_texts: list[str], description_text: str):
     await _create_search_embedding(db, AnimeSearch, {"anime_id": anime_id}, title_texts, description_text)
+
+
+async def create_rating_embedding(db: AsyncSession, rating_id: int, note: str):
+    embedding = await generate_embedding(note)
+    db.add(RatingSearch(rating_id=rating_id, note_embedding=embedding))
+    await db.flush()
