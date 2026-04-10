@@ -1,6 +1,7 @@
 import csv
 import io
 import json
+from datetime import date
 from enum import Enum
 
 from fastapi import APIRouter, Depends, Query, status
@@ -61,35 +62,30 @@ async def export_user_data(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_user_or_admin),
 ):
-    """Download all user data (ratings + watchlist) as JSON or CSV."""
-    data = await export_service.fetch_export_data(db, current_user.id)
-    filename = f"phsar_export_{current_user.username}"
+    """Download all user data as flat media-level rows (JSON or CSV)."""
+    settings = await user_settings_service.get_settings(db, current_user.id)
+    rows = await export_service.fetch_export_data(
+        db, current_user.id, settings.name_language
+    )
+    today = date.today().strftime("%Y_%m_%d")
+    filename = f"phsar_export_{current_user.username}_{today}"
 
     if format == ExportFormat.json:
-        content = json.dumps(data, ensure_ascii=False, indent=2)
+        content = json.dumps(rows, ensure_ascii=False, indent=2)
         return Response(
             content=content,
             media_type="application/json",
             headers={"Content-Disposition": f"attachment; filename={filename}.json"},
         )
 
-    # CSV: ratings section then watchlist section
     output = io.StringIO()
-
-    if data["ratings"]:
-        writer = csv.DictWriter(output, fieldnames=data["ratings"][0].keys())
+    if rows:
+        for row in rows:
+            tags = row.get("watchlist_tags")
+            row["watchlist_tags"] = ";".join(tags) if tags else None
+        writer = csv.DictWriter(output, fieldnames=rows[0].keys())
         writer.writeheader()
-        writer.writerows(data["ratings"])
-
-    if data["watchlist"]:
-        if data["ratings"]:
-            output.write("\n")
-        watchlist_rows = [
-            {**w, "tags": ";".join(w["tags"])} for w in data["watchlist"]
-        ]
-        writer = csv.DictWriter(output, fieldnames=watchlist_rows[0].keys())
-        writer.writeheader()
-        writer.writerows(watchlist_rows)
+        writer.writerows(rows)
 
     return Response(
         content=output.getvalue(),

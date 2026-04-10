@@ -302,7 +302,7 @@ Each anime search result card shows:
 | `/ratings/{uuid}` | DELETE | Delete a rating |
 | `/users/settings` | GET | Layout auth (fetch user settings) |
 | `/users/settings` | PUT | Settings page (update preferences) |
-| `/users/export?format=json\|csv` | GET | Settings page (data export download) |
+| `/users/export?format=json\|csv` | GET | Settings page (data export download — flat media-level rows, filename includes username + date) |
 | `/users/account` | DELETE | Settings page (account deletion with password) |
 | `/admin/registration-tokens` | GET | Admin page (list all tokens) |
 | `/admin/registration-tokens` | POST | Admin page (create token) |

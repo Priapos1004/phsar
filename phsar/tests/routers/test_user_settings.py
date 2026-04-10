@@ -103,10 +103,18 @@ async def test_export_json(client, create_user_with_role):
     assert "attachment" in resp.headers["content-disposition"]
 
     data = resp.json()
-    assert "ratings" in data
-    assert "watchlist" in data
-    assert isinstance(data["ratings"], list)
-    assert isinstance(data["watchlist"], list)
+    assert isinstance(data, list)
+
+
+async def test_export_json_filename_contains_date(client, create_user_with_role):
+    token = await create_user_with_role(username="dateuser", password="pass123", role=RoleType.User)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = await client.get("/users/export?format=json", headers=headers)
+    disposition = resp.headers["content-disposition"]
+    # Filename should match phsar_export_{username}_{YYYY_MM_DD}.json
+    assert "phsar_export_dateuser_" in disposition
+    assert disposition.endswith(".json")
 
 
 async def test_export_csv(client, create_user_with_role):

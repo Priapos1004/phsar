@@ -8,6 +8,7 @@
     import { Label } from '$lib/components/ui/label';
     import { Separator } from '$lib/components/ui/separator';
     import { Download } from 'lucide-svelte';
+    import { jwtDecode } from 'jwt-decode';
     import { token } from '$lib/stores/auth';
     import { userSettings } from '$lib/stores/userSettings';
     import { get } from 'svelte/store';
@@ -87,7 +88,14 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = resp.headers.get('content-disposition')?.split('filename=')[1] ?? `phsar_export.${format}`;
+        let username = 'user';
+        try {
+            const decoded = jwtDecode<{ sub?: string }>(currentToken!);
+            if (decoded.sub) username = decoded.sub;
+        } catch { /* use fallback */ }
+        const d = new Date();
+        const today = `${d.getFullYear()}_${String(d.getMonth() + 1).padStart(2, '0')}_${String(d.getDate()).padStart(2, '0')}`;
+        a.download = `phsar_export_${username}_${today}.${format}`;
         a.click();
         URL.revokeObjectURL(url);
     }
