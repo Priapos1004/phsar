@@ -79,12 +79,8 @@ export const api = {
 		return jsonRequest<T>('PUT', path, body);
 	},
 
-	async del<T = void>(path: string): Promise<T> {
-		const res = await fetch(`${API_URL}${path}`, {
-			method: 'DELETE',
-			headers: getAuthHeaders(),
-		});
-		return handleResponse<T>(res);
+	async del<T = void>(path: string, body?: unknown): Promise<T> {
+		return jsonRequest<T>('DELETE', path, body);
 	},
 };
 

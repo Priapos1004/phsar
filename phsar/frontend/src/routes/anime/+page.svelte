@@ -578,10 +578,10 @@
 
 		<!-- Note placement info dialog -->
 		<Dialog.Root bind:open={showNoteDialog}>
-			<Dialog.Content class="bg-card text-card-foreground">
+			<Dialog.Content>
 				<Dialog.Header>
-					<Dialog.Title class="text-card-foreground">Note Added</Dialog.Title>
-					<Dialog.Description class="text-muted-foreground">
+					<Dialog.Title>Note Added</Dialog.Title>
+					<Dialog.Description>
 						Your note was added to: <span class="font-medium text-card-foreground">{noteDialogMedia}</span>
 					</Dialog.Description>
 				</Dialog.Header>
@@ -593,10 +593,10 @@
 
 		<!-- Bulk delete confirmation dialog -->
 		<Dialog.Root bind:open={showDeleteDialog}>
-			<Dialog.Content class="bg-card text-card-foreground">
+			<Dialog.Content>
 				<Dialog.Header>
-					<Dialog.Title class="text-card-foreground">Delete Ratings</Dialog.Title>
-					<Dialog.Description class="text-muted-foreground">
+					<Dialog.Title>Delete Ratings</Dialog.Title>
+					<Dialog.Description>
 						This will permanently delete {alreadyRatedCount} rating{alreadyRatedCount !== 1 ? 's' : ''} from the selected media. This cannot be undone.
 					</Dialog.Description>
 				</Dialog.Header>

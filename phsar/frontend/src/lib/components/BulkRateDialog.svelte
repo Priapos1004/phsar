@@ -71,9 +71,9 @@
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="bg-card text-card-foreground max-h-[85vh] overflow-y-auto sm:max-w-md">
+	<Dialog.Content class="max-h-[85vh] overflow-y-auto sm:max-w-md">
 		<Dialog.Header>
-			<Dialog.Title class="text-card-foreground">Rate {selectedUuids.size} Media</Dialog.Title>
+			<Dialog.Title>Rate {selectedUuids.size} Media</Dialog.Title>
 			<Dialog.Description class="text-muted-foreground">
 				Score and attributes are applied to all selected media.
 			</Dialog.Description>

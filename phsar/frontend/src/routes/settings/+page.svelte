@@ -12,6 +12,7 @@
     import { userSettings } from '$lib/stores/userSettings';
     import { get } from 'svelte/store';
     import { API_URL } from '$lib/config';
+    import DangerZone from '$lib/components/DangerZone.svelte';
     import type { UserSettings, UserSettingsUpdate } from '$lib/types/api';
 
     /**
@@ -258,6 +259,9 @@
                 </Card.Content>
             </Card.Root>
         {/if}
+
+        <!-- Danger Zone -->
+        <DangerZone {isRestricted} />
 
     {:else if !error}
         <p class="text-muted-foreground">Loading settings...</p>
