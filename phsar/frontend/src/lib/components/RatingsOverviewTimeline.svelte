@@ -16,9 +16,37 @@
 
 	let { mediaWithRatings, minScoreDecimals }: Props = $props();
 
+	const DIMMED_COLOR = 'rgba(0,0,0,0.10)';
+	const UNRATED_OPACITY = 0.2;
+
 	let activeRelationTypes = $derived(
 		[...new Set(mediaWithRatings.map((mr) => mr.media.relation_type))],
 	);
+
+	/** Types currently deselected — empty set means all are shown. */
+	let deselected = $state(new Set<string>());
+	let allSelected = $derived(deselected.size === 0);
+
+	// Reset filter when navigating to a different anime
+	$effect(() => {
+		mediaWithRatings;
+		deselected = new Set();
+	});
+
+	function toggleType(type: string) {
+		const next = new Set(deselected);
+		if (next.has(type)) {
+			next.delete(type);
+		} else {
+			next.add(type);
+			// If everything is now deselected, reset to show all
+			if (next.size === activeRelationTypes.length) {
+				deselected = new Set();
+				return;
+			}
+		}
+		deselected = next;
+	}
 
 	let chartOption = $derived({
 		tooltip: {
@@ -50,7 +78,7 @@
 				color: 'rgba(0,0,0,0.4)',
 				fontSize: 11,
 			},
-			axisLine: { lineStyle: { color: 'rgba(0,0,0,0.1)' } },
+			axisLine: { lineStyle: { color: DIMMED_COLOR } },
 			axisTick: { show: false },
 		},
 		yAxis: {
@@ -68,21 +96,16 @@
 			{
 				type: 'bar' as const,
 				data: mediaWithRatings.map((mr) => {
-					if (mr.rating) {
-						return {
-							value: mr.rating.rating,
-							itemStyle: {
-								color: RELATION_TYPE_COLORS[mr.media.relation_type] ?? CHART_COLORS.chart4,
-								borderRadius: [3, 3, 0, 0],
-								opacity: mr.rating.dropped ? 0.5 : 1,
-							},
-						};
-					}
+					const typeColor = RELATION_TYPE_COLORS[mr.media.relation_type] ?? CHART_COLORS.chart4;
+					const highlighted = allSelected || !deselected.has(mr.media.relation_type);
+					const value = mr.rating ? mr.rating.rating : 0.3;
+					const opacity = !mr.rating ? UNRATED_OPACITY : mr.rating.dropped ? 0.5 : 1;
 					return {
-						value: 0.3,
+						value,
 						itemStyle: {
-							color: 'rgba(0,0,0,0.08)',
+							color: highlighted ? typeColor : DIMMED_COLOR,
 							borderRadius: [3, 3, 0, 0],
+							opacity,
 						},
 					};
 				}),
@@ -98,13 +121,18 @@
 	<EChart option={chartOption} height="176px" />
 	<div class="flex justify-center gap-3 mt-1">
 		{#each activeRelationTypes as type}
-			<span class="text-xs text-muted-foreground">
+			<button
+				class="text-xs flex items-center gap-1 transition-opacity cursor-pointer"
+				class:opacity-40={!allSelected && deselected.has(type)}
+				aria-pressed={allSelected || !deselected.has(type)}
+				onclick={() => toggleType(type)}
+			>
 				<span
-					class="inline-block w-2 h-2 rounded-full mr-0.5"
+					class="inline-block w-2 h-2 rounded-full"
 					style="background: {RELATION_TYPE_COLORS[type] ?? CHART_COLORS.chart4}"
 				></span>
-				{RELATION_TYPE_LABELS[type] ?? type}
-			</span>
+				<span class="text-muted-foreground">{RELATION_TYPE_LABELS[type] ?? type}</span>
+			</button>
 		{/each}
 	</div>
 	<p class="text-sm text-muted-foreground text-center mt-1">
