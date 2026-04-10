@@ -110,6 +110,7 @@ phsar/
 │   │   │   │   ├── AttributeDetailBars.svelte
 │   │   │   │   ├── AttributeRadar.svelte
 │   │   │   │   ├── BulkRateDialog.svelte
+│   │   │   │   ├── DangerZone.svelte
 │   │   │   │   ├── DoubleRangeSlider.svelte
 │   │   │   │   ├── EChart.svelte
 │   │   │   │   ├── InfoDiashow.svelte

@@ -51,7 +51,7 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 | `/media?uuid=<uuid>` | Media detail + rating | Yes |
 | `/ratings` | (placeholder) | Yes |
 | `/watchlist` | (placeholder) | Yes |
-| `/settings` | User preferences (profile picture, language, rating step, spoiler level, data export) | Yes |
+| `/settings` | User preferences (profile picture, language, rating step, spoiler level, data export, account deletion) | Yes |
 | `/admin` | Registration token management (admin only) | Yes (admin) |
 | `/statistics` | (placeholder) | Yes |
 | `/getting-started` | (placeholder) | Yes |
@@ -243,27 +243,45 @@ Each anime search result card shows:
 
 ---
 
-## 8. Admin Page
+## 8. Settings Page
 
-### 8.1 Access
+### 8.1 Account Deletion (Danger Zone)
+- Red-bordered "Danger Zone" card at the bottom of the settings page
+- Glass overlay covers the entire card; the "Danger Zone" title shows through the tinted glass
+- Lock icon and "Click to unlock" prompt centered on the glass
+- Each click adds progressive cracks (SVG) with a shake animation; counter shows remaining clicks
+- After 5 clicks the glass shatters: 10 shard fragments fly outward with rotation and fade out
+- Once broken, the "Delete Account" button is revealed
+- **Restricted users**: button is disabled with "You don't have permission to delete your account" message
+- Clicking "Delete Account" opens a confirmation dialog requiring the user's current password
+- On wrong password: "Invalid password." error below the form
+- On success: non-dismissible farewell dialog ("Thank you for using PHSAR...") with "Continue to login" button
+- "Continue to login" clears token and settings, redirects to `/login`
+- **API call**: `DELETE /users/account` with `{ password }` body
+
+---
+
+## 9. Admin Page
+
+### 9.1 Access
 - Only accessible to users with `admin` role
 - Non-admin users are redirected to `/` on mount
 - NavBar dropdown shows "Admin" link only for admin users
 
-### 8.2 Create Registration Token
+### 9.2 Create Registration Token
 - Form with role selector (User / Restricted User) and expiry dropdown (1 day / 7 days / 30 days)
 - "Create" button POSTs to `/admin/registration-tokens`
 - On success: token string shown in a highlighted banner with copy button and toast feedback
 - Changing the role or expiry selector dismisses the success banner
 
-### 8.3 Token List
+### 9.3 Token List
 - Displays all registration tokens with: truncated token (click to copy), status badge (active/used/expired), role badge, creation date, expiry date, used-by username
 - **Sort options** (dropdown): By Status (default: active → used → expired), Newest First, Expiring Soon (active tokens first by soonest expiry), Recently Used
 - **Delete**: trash icon on unused/expired tokens opens confirm/cancel inline buttons. Used tokens cannot be deleted. DELETE returns 204.
 
 ---
 
-## 9. API Endpoints Used by Frontend
+## 10. API Endpoints Used by Frontend
 
 | Endpoint | Method | When |
 |----------|--------|------|
@@ -285,6 +303,7 @@ Each anime search result card shows:
 | `/users/settings` | GET | Layout auth (fetch user settings) |
 | `/users/settings` | PUT | Settings page (update preferences) |
 | `/users/export?format=json\|csv` | GET | Settings page (data export download) |
+| `/users/account` | DELETE | Settings page (account deletion with password) |
 | `/admin/registration-tokens` | GET | Admin page (list all tokens) |
 | `/admin/registration-tokens` | POST | Admin page (create token) |
 | `/admin/registration-tokens/{uuid}` | DELETE | Admin page (delete unused token) |
@@ -292,7 +311,7 @@ Each anime search result card shows:
 
 ---
 
-## 10. Error States
+## 11. Error States
 
 | Scenario | Expected Behavior |
 |----------|-------------------|
@@ -305,3 +324,5 @@ Each anime search result card shows:
 | Rating save failure | Red error message below rating form |
 | Rating delete failure | Red error message below rating card |
 | Rating fetch returns 404 | No rating displayed (expected for unrated media) |
+| Account deletion wrong password | "Invalid password." error below form |
+| Account deletion network failure | "Failed to delete account." error below form |
