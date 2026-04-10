@@ -26,6 +26,8 @@ async def db_session(db_engine):
             async with async_session() as session:
                 yield session
         finally:
+            # Rollback undoes all row changes, but PostgreSQL sequences (auto-increment IDs)
+            # are never rolled back — so production IDs will have gaps from test runs.
             await trans.rollback()
 
 @pytest.fixture

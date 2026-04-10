@@ -12,9 +12,9 @@ class RegistrationToken(BaseModel):
     __tablename__ = "registration_token"
 
     token = Column(String, unique=True, nullable=False)
-    created_by_user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     role = Column(Enum(RoleType), nullable=False)
-    was_used_for_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    was_used_for_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     used_at = Column(DateTime(timezone=True), nullable=True, default=None)
     expires_on = Column(DateTime(timezone=True), nullable=False)
 

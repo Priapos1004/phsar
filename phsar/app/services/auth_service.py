@@ -14,6 +14,7 @@ from app.core.security import (
 from app.daos.registration_token_dao import RegistrationTokenDAO
 from app.daos.user_dao import UserDAO
 from app.exceptions import (
+    InvalidPasswordError,
     InvalidRegistrationTokenError,
     RegistrationTokenAlreadyUsedError,
     RegistrationTokenExpiredError,
@@ -85,6 +86,14 @@ async def authenticate(username: str, password: str, db: AsyncSession):
             user = await user_dao.get_by_username(db, username)
 
     return user
+
+
+async def delete_account(user: Users, password: str, db: AsyncSession) -> None:
+    """Delete user account after verifying password. DB cascades handle related data."""
+    if not verify_password(password, user.hashed_password):
+        raise InvalidPasswordError()
+    await user_dao.delete(db, user)
+    await db.commit()
 
 
 async def create_registration_token(

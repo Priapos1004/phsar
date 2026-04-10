@@ -27,6 +27,7 @@ class Users(BaseModel):
         "RegistrationToken",
         back_populates="created_by",
         foreign_keys="[RegistrationToken.created_by_user_id]",
+        passive_deletes=True,
         lazy="raise",
     )
     settings = relationship("UserSettings", back_populates="users", uselist=False, cascade="all, delete-orphan", lazy="raise")

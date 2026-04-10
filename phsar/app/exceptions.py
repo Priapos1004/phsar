@@ -211,3 +211,12 @@ class CannotDeleteUsedTokenError(PhsarBaseError):
     def __init__(self):
         message = "Cannot delete a registration token that has already been used."
         super().__init__(message)
+
+
+class InvalidPasswordError(PhsarBaseError):
+    """Raised when the provided password does not match the user's current password."""
+    status_code = 403
+
+    def __init__(self):
+        message = "Invalid password."
+        super().__init__(message)

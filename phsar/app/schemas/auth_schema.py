@@ -33,3 +33,7 @@ class RegistrationTokenResponse(BaseModel):
     role: RoleType
     created_by: str
     expires_on: datetime
+
+
+class DeleteAccountRequest(BaseModel):
+    password: str

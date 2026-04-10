@@ -3,13 +3,14 @@ import io
 import json
 from enum import Enum
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_db, require_user_or_admin
+from app.schemas.auth_schema import DeleteAccountRequest
 from app.schemas.user_settings_schema import UserSettingsOut, UserSettingsUpdate
-from app.services import export_service, user_settings_service
+from app.services import auth_service, export_service, user_settings_service
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -37,6 +38,18 @@ async def update_settings(
     current_user=Depends(get_current_user),
 ):
     return await user_settings_service.update_settings(db, current_user.id, data)
+
+
+# --- Account Deletion ---
+
+
+@router.delete("/account", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_account(
+    data: DeleteAccountRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_user_or_admin),
+):
+    await auth_service.delete_account(current_user, data.password, db)
 
 
 # --- Data Export ---
