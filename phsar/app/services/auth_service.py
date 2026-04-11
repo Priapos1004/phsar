@@ -39,7 +39,8 @@ async def register(user_data: UserCreateWithToken, db: AsyncSession):
     token_obj = await registration_token_dao.get_by_token(db, user_data.registration_token)
     if not token_obj:
         raise InvalidRegistrationTokenError()
-    if token_obj.was_used_for_user_id is not None:
+    # Check used_at (not the FK) because the FK is SET NULL on user deletion
+    if token_obj.used_at is not None:
         raise RegistrationTokenAlreadyUsedError()
     if token_obj.is_expired:
         raise RegistrationTokenExpiredError()

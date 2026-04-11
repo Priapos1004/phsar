@@ -235,6 +235,46 @@ async def test_delete_account_preserves_registration_tokens(client, create_user_
     assert used_token["used_by"] == DELETED_USER_DISPLAY
 
 
+async def test_used_token_cannot_register_after_account_deletion(client, admin_auth_headers):
+    """A registration token that was used remains blocked even after the user deletes their account."""
+    # Create token and register a user
+    create_resp = await client.post(
+        "/admin/registration-tokens",
+        json={"role": "user"},
+        headers=admin_auth_headers,
+    )
+    reg_token = create_resp.json()["token"]
+
+    await client.post("/auth/register", json={
+        "username": "reuse_test_user",
+        "password": "password123",
+        "registration_token": reg_token,
+    })
+
+    # Login and delete account
+    login_resp = await client.post(
+        "/auth/login",
+        data={"username": "reuse_test_user", "password": "password123"},
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+    )
+    user_token = login_resp.json()["access_token"]
+    del_resp = await client.request(
+        "DELETE", "/users/account",
+        json={"password": "password123"},
+        headers={"Authorization": f"Bearer {user_token}"},
+    )
+    assert del_resp.status_code == 204
+
+    # Attempt to reuse the same token — must fail
+    reuse_resp = await client.post("/auth/register", json={
+        "username": "reuse_attacker",
+        "password": "password123",
+        "registration_token": reg_token,
+    })
+    assert reuse_resp.status_code == 400
+    assert "already been used" in reuse_resp.json()["detail"]
+
+
 async def test_delete_account_restricted_user_forbidden(client, restricted_user_auth_headers):
     """Restricted users cannot delete their account."""
     resp = await client.request(
