@@ -131,7 +131,7 @@ Each anime search result card shows:
 - Airing status for active/upcoming anime ("Currently Airing + upcoming content", "Not yet aired", or "upcoming content" for finished anime with announced sequels)
 - Age rating (max across media)
 - Genre tags (strict majority rule: genre must be on >50% of media)
-- Relation type badges with counts (e.g., "main: 5", "other: 2")
+- Relation type badges with counts (e.g., "Main Story: 5", "Side Story: 2")
 - Media type badges with counts (e.g., "TV: 3", "Movie: 1")
 - Total watch time (summed across media)
 - Clicking navigates to `/anime?uuid=<uuid>` (with `&q=<token>` preserved)

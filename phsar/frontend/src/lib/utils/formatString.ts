@@ -1,3 +1,10 @@
+import { RELATION_TYPE_LABELS } from '$lib/utils/chartColors';
+
+/** Formats a raw relation_type value to a user-friendly label. */
+export function formatRelationType(type: string): string {
+	return RELATION_TYPE_LABELS[type] ?? type;
+}
+
 /**
  * Format a number with commas for thousands, while preserving decimals.
  * Examples:

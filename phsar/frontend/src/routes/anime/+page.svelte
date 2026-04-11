@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { getContext } from 'svelte';
 	import { api, ApiError } from '$lib/api';
-	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, formatAiringStatus, resolveTitle, resolveSubtitles, decimalPlaces } from '$lib/utils/formatString';
+	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, formatAiringStatus, resolveTitle, resolveSubtitles, decimalPlaces, formatRelationType } from '$lib/utils/formatString';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -298,7 +298,7 @@
 
 					<div class="flex flex-wrap gap-2">
 						{#each anime.relation_types as rt}
-							<Badge variant="secondary" class={cls.badgeRelationType}>{rt.relation_type}: {rt.count}</Badge>
+							<Badge variant="secondary" class={cls.badgeRelationType}>{formatRelationType(rt.relation_type)}: {rt.count}</Badge>
 						{/each}
 						{#each anime.media_types as mt}
 							<Badge variant="secondary" class={cls.badgeMediaType}>{mt.media_type}: {mt.count}</Badge>
@@ -517,7 +517,7 @@
 									{resolveTitle(item.title, item.name_eng, item.name_jap, nameLanguage)}
 								</p>
 								<div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
-									<Badge variant="secondary" class={`${cls.badgeRelationTypeColor} text-xs px-1.5 py-0`}>{item.relation_type}</Badge>
+									<Badge variant="secondary" class={`${cls.badgeRelationTypeColor} text-xs px-1.5 py-0`}>{formatRelationType(item.relation_type)}</Badge>
 									<Badge variant="secondary" class={`${cls.badgeMediaTypeColor} text-xs px-1.5 py-0`}>{item.media_type}</Badge>
 									{#if item.episodes}
 										<span class="text-xs text-muted-foreground">{item.episodes} ep{item.episodes !== 1 ? 's' : ''}</span>

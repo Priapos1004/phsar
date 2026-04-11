@@ -68,7 +68,7 @@ const mockMediaDetail: MediaDetail = {
 			name_jap: null,
 			cover_image: null,
 			media_type: 'OVA',
-			relation_type: 'other',
+			relation_type: 'side_story',
 			episodes: 2,
 			airing_status: 'Finished Airing',
 			anime_season_name: 'Fall',

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
-	import { formatSeason, resolveTitle } from '$lib/utils/formatString';
+	import { formatSeason, resolveTitle, formatRelationType } from '$lib/utils/formatString';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import { userSettings } from '$lib/stores/userSettings';
 	import * as cls from '$lib/styles/classes';
@@ -50,7 +50,7 @@
 							{sibling.media_type}
 						</Badge>
 						<Badge variant="secondary" class="text-[11px] px-1.5 py-0 {cls.badgeRelationTypeColor}">
-							{sibling.relation_type}
+							{formatRelationType(sibling.relation_type)}
 						</Badge>
 					</div>
 

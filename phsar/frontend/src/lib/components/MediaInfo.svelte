@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { formatNumber, formatAiringStatus } from '$lib/utils/formatString';
+	import { formatNumber, formatAiringStatus, formatRelationType } from '$lib/utils/formatString';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import { Bookmark } from 'lucide-svelte';
 	import * as Card from '$lib/components/ui/card';
@@ -97,10 +97,10 @@
 					<div class="flex flex-wrap gap-2">
 						{#if relation_types?.length}
 							{#each relation_types as rt}
-								<Badge variant="secondary" class={cls.badgeRelationType}>{rt.relation_type}: {rt.count}</Badge>
+								<Badge variant="secondary" class={cls.badgeRelationType}>{formatRelationType(rt.relation_type)}: {rt.count}</Badge>
 							{/each}
 						{:else if relation_type}
-							<Badge variant="secondary" class={cls.badgeRelationType}>{relation_type}</Badge>
+							<Badge variant="secondary" class={cls.badgeRelationType}>{formatRelationType(relation_type)}</Badge>
 						{/if}
 
 						{#if media_types?.length}

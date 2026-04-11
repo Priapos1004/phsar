@@ -253,7 +253,7 @@ async def test_bulk_upsert_note_on_last_main_media(client, user_auth_headers, db
     await db_session.flush()
 
     media_items = []
-    relation_types = [RelationType.Main, RelationType.Main, RelationType.Other]
+    relation_types = [RelationType.Main, RelationType.Main, RelationType.SideStory]
     for i, rt in enumerate(relation_types):
         media = Media(
             anime_id=anime.id,

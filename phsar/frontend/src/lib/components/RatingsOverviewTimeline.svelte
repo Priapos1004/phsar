@@ -1,7 +1,7 @@
 <script lang="ts">
 	import EChart from '$lib/components/EChart.svelte';
-	import { formatSeason, formatDecimalDigits, decimalPlaces } from '$lib/utils/formatString';
-	import { RELATION_TYPE_COLORS, RELATION_TYPE_LABELS, CHART_COLORS } from '$lib/utils/chartColors';
+	import { formatSeason, formatDecimalDigits, decimalPlaces, formatRelationType } from '$lib/utils/formatString';
+	import { RELATION_TYPE_COLORS, CHART_COLORS } from '$lib/utils/chartColors';
 	import type { AnimeMediaItem, RatingOut } from '$lib/types/api';
 
 	interface MediaWithRating {
@@ -56,7 +56,7 @@
 				const p = params as { dataIndex: number };
 				const mr = mediaWithRatings[p.dataIndex];
 				const title = mr.media.name_eng ?? mr.media.title;
-				const relation = RELATION_TYPE_LABELS[mr.media.relation_type] ?? mr.media.relation_type;
+				const relation = formatRelationType(mr.media.relation_type);
 				const season = formatSeason(mr.media.anime_season_name, mr.media.anime_season_year) ?? '';
 				if (mr.rating) {
 					const dropped = mr.rating.dropped ? ' <span style="color:#ef4444">(Dropped)</span>' : '';
@@ -131,7 +131,7 @@
 					class="inline-block w-2 h-2 rounded-full"
 					style="background: {RELATION_TYPE_COLORS[type] ?? CHART_COLORS.chart4}"
 				></span>
-				<span class="text-muted-foreground">{RELATION_TYPE_LABELS[type] ?? type}</span>
+				<span class="text-muted-foreground">{formatRelationType(type)}</span>
 			</button>
 		{/each}
 	</div>
