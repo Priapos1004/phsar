@@ -144,16 +144,20 @@ Once all features are discussed, this becomes the basis for GitHub issues and mi
 | Field | Type | Default | Notes |
 |---|---|---|---|
 | `user_id` | FK → users.id | required | unique, one-to-one |
-| `profile_picture` | Enum/String | first option | Fixed set of 10-20 bunny-anime-character images |
+| `theme` | Enum | default | Theme key: default / red / blue / green — controls app colors + hero pic |
 | `name_language` | Enum | english | english / japanese / romaji |
 | `default_search_view` | Enum | anime | anime / media |
 | `rating_step` | Enum | 0.5 | 0.5 / 0.25 / 0.1 / 0.01 |
 | `spoiler_protection` | Boolean | false | Hides descriptions and covers of unrated media. Default set during get-started onboarding. |
 
-### Profile Pictures
-- Fixed set of 10-20 images shipped with the app (no user uploads)
-- Each has a distinct color/theme
-- Future: website theme (CSS custom properties) changes based on selected profile picture
+### Theme System
+- 4 themes: default (purple), red (crimson), blue (ocean), green (forest)
+- Each theme sets: `--primary`, `--ring`, gradient colors via `.theme-*` CSS class on `<html>`
+- `@property` + `var()` indirection in `@theme inline` forces Tailwind to emit dynamic `var()` utilities
+- Character pic per theme displayed as hero banner on home page (InfoDiashow)
+- Centralized config in `lib/themes.ts` — single source of truth for all theme data
+- Per-theme chart color palettes avoid hue clashes (e.g., red theme swaps static red for teal)
+- FOUC prevention via inline localStorage script in `app.html`
 
 ### Spoiler Protection Behavior
 - When enabled:
@@ -167,7 +171,7 @@ Once all features are discussed, this becomes the basis for GitHub issues and mi
 - Cross-user data only used in background for recommendations and aggregate browsing ("others rated 8.5+")
 - No NSFW filter for now (can be added later as a setting)
 - No notification setting yet (deferred until content pipeline feature)
-- Theme color derived from profile picture, not a separate setting
+- Theme selection controls both app colors and hero character pic (unified setting, not separate)
 - Settings created with defaults when user account is created
 
 ### Implementation Note (from v0.10.0)
@@ -455,7 +459,7 @@ Eye-catching landing page — light version of browse, serves new and returning 
 ### Concept
 - Mandatory onboarding flow — forced on first login, user must complete it before accessing the app
 - Serves as tutorial + initial settings configuration
-- User sets: profile picture, name language, rating step, spoiler protection, default search view
+- User sets: theme, name language, rating step, spoiler protection, default search view
 - Brief walkthrough of key features (search, ratings, watchlist)
 
 ---
@@ -475,7 +479,7 @@ Eye-catching landing page — light version of browse, serves new and returning 
 | **v0.9.0** | ✓ Ratings backend + rating enums/migration + DAO optimization | Pure backend. Lock DB schema for ratings. Clean up DAO query patterns (single-queries) while touching this layer. |
 | **v0.10.0** | ✓ Media detail page + rating UI | First visible ratings. Rating modal/popup. Media page with full info + link to anime (anime page not yet built). |
 | **v0.11.0** | ✓ Anime-level search + anime detail page | Aggregated search as default. Anime↔media navigation loop complete. View toggle (anime/media). View-type-aware filter options. |
-| **v0.12.0** | User settings + user page UI + data export + admin + account deletion | Settings table, profile pictures, rating step, name language, spoiler protection. Flat media-level data export (ratings + watchlist + catalog info per media, respects name_language, dated filename). Token expiry dialog. Registration page. Guest account. Admin page for registration token management. Account deletion with glass crack UX, password confirmation, DB cascade (SET NULL on registration tokens). |
+| **v0.12.0** | User settings + user page UI + data export + admin + account deletion | Settings table, theme system (app color + hero pic via `@property`/`var()` indirection), rating step, name language, spoiler protection. Flat media-level data export (ratings + watchlist + catalog info per media, respects name_language, dated filename). Token expiry dialog. Registration page. Guest account. Admin page for registration token management. Account deletion with glass crack UX, password confirmation, DB cascade (SET NULL on registration tokens). |
 | **v0.13.0** | Deployment (Coolify) + switch to bun + DB backup/restore | Deployment-ready: Coolify config for db/frontend/backend services. Switch frontend from npm to bun. pg_dump backup system (automated + local download). Prerequisite for content pipeline cron jobs. |
 | **v0.14.0** | Content pipeline (scraper jobs, dedup, updates, seasonal) | User-triggered scraping with job tracking. Automated daily/weekly updates. Seasonal scraping. Dedup + admin merge notifications. |
 | **v0.15.0** | Watchlist backend + UI | Watchlist CRUD, tags, priority. Watchlist page with filtering. Watchlist icons in search results. |

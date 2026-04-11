@@ -1,4 +1,5 @@
 /** TypeScript types mirroring backend Pydantic schemas */
+import type { ThemeKey } from '$lib/themes';
 
 // Auth
 export interface TokenResponse {
@@ -230,7 +231,7 @@ export interface SearchTokenResponse {
 
 // User Settings
 export interface UserSettings {
-	profile_picture: string;
+	theme: ThemeKey;
 	name_language: 'english' | 'japanese' | 'romaji';
 	default_search_view: 'anime' | 'media';
 	rating_step: '0.5' | '0.25' | '0.1' | '0.01';

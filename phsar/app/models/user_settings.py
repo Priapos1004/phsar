@@ -1,6 +1,6 @@
 import enum
 
-from sqlalchemy import Column, Enum, ForeignKey, Integer, String
+from sqlalchemy import Column, Enum, ForeignKey, Integer
 from sqlalchemy.orm import relationship
 
 from app.models.base import BaseModel
@@ -30,13 +30,19 @@ class SpoilerLevel(str, enum.Enum):
     hide = "hide"
 
 
+class Theme(str, enum.Enum):
+    default = "default"
+    red = "red"
+    blue = "blue"
+    green = "green"
+
+
 class UserSettings(BaseModel):
     __tablename__ = "user_settings"
 
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False)
 
-    # Stores the color key only (character/version-independent); enables future theme mapping
-    profile_picture = Column(String, nullable=False, default="rainbow")
+    theme = Column(Enum(Theme), nullable=False, default=Theme.default)
     name_language = Column(Enum(NameLanguage), nullable=False, default=NameLanguage.english)
     default_search_view = Column(Enum(DefaultSearchView), nullable=False, default=DefaultSearchView.anime)
     rating_step = Column(Enum(RatingStep), nullable=False, default=RatingStep.half)

@@ -104,6 +104,7 @@ phsar/
 │   │   │   ├── api.ts
 │   │   │   ├── config.ts
 │   │   │   ├── echarts.ts
+│   │   │   ├── themes.ts
 │   │   │   ├── utils.ts
 │   │   │   ├── components/
 │   │   │   │   ├── AttributeBadges.svelte
@@ -190,7 +191,7 @@ phsar/
 │   ├── static/
 │   │   ├── phsar_logo_inverted.png
 │   │   ├── phsar_logo_transparent.png
-│   │   └── profile_pics/    # 13 anime character avatars for user profiles
+│   │   └── profile_pics/    # theme character pics (rainbow.png, red.png, blue.png, green.png)
 │   ├── svelte.config.js
 │   ├── tsconfig.json
 │   └── vite.config.ts

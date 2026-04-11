@@ -8,6 +8,7 @@
     import NavBar from '$lib/components/NavBar.svelte';
     import TokenExpiryDialog from '$lib/components/TokenExpiryDialog.svelte';
     import LoadingScreen from '$lib/components/LoadingScreen.svelte';
+    import { getThemeCssClass, isValidTheme } from '$lib/themes';
     import '../app.css';
     import type { Snippet } from 'svelte';
     import type { UserSettings } from '$lib/types/api';
@@ -79,6 +80,28 @@
         unsubscribe();
         clearExpiryTimer();
       };
+    });
+
+    // Apply theme CSS class to <html> and sync to localStorage for FOUC prevention.
+    // Must be on <html> (not <body>) so overrides sit at the same :root level
+    // where @theme inline defines the CSS custom properties.
+    $effect(() => {
+      const themeKey = $userSettings?.theme;
+      const el = document.documentElement;
+      el.classList.forEach(cls => {
+        if (cls.startsWith('theme-')) el.classList.remove(cls);
+      });
+      if (themeKey && isValidTheme(themeKey)) {
+        const cssClass = getThemeCssClass(themeKey);
+        if (cssClass) {
+          el.classList.add(cssClass);
+          localStorage.setItem('phsar-theme', themeKey);
+        } else {
+          localStorage.removeItem('phsar-theme');
+        }
+      } else {
+        localStorage.removeItem('phsar-theme');
+      }
     });
 
     function handleLogout() {

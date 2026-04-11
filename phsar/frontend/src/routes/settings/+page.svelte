@@ -14,34 +14,11 @@
     import { get } from 'svelte/store';
     import { API_URL } from '$lib/config';
     import DangerZone from '$lib/components/DangerZone.svelte';
+    import { THEMES, isValidTheme } from '$lib/themes';
+    import type { ThemeKey } from '$lib/themes';
     import type { UserSettings, UserSettingsUpdate } from '$lib/types/api';
 
-    /**
-     * Profile picture naming convention:
-     *   filename: <color>__<name>__<version>.png  (e.g. sky_blue__frieren__v1.png)
-     *   DB key:   <color> only (character/version-independent, enables future theme mapping)
-     *   Frontend maps color → current filename for display
-     */
-    const PROFILE_PICTURES: { color: string; file: string; label: string }[] = [
-        { color: 'rainbow', file: 'rainbow__coach__v2.png', label: 'Coach' },
-        { color: 'white', file: 'white__asta__v4.png', label: 'Asta' },
-        { color: 'brown', file: 'brown__attack_on_titan__v1.png', label: 'Attack on Titan' },
-        { color: 'yellow', file: 'yellow__darkness__v1.png', label: 'Darkness' },
-        { color: 'light_blue', file: 'light_blue__detective_conan__v1.png', label: 'Detective Conan' },
-        { color: 'red', file: 'red__dr_stone__v1.png', label: 'Dr. Stone' },
-        { color: 'sky_blue', file: 'sky_blue__frieren__v1.png', label: 'Frieren' },
-        { color: 'orange', file: 'orange__naruto__v4.png', label: 'Naruto' },
-        { color: 'pink', file: 'pink__nezuko__v10.png', label: 'Nezuko' },
-        { color: 'purple', file: 'purple__shadow__v4.png', label: 'Shadow' },
-        { color: 'blue', file: 'blue__solo_leveling__v2.png', label: 'Solo Leveling' },
-        { color: 'black', file: 'black__tanya__v1.png', label: 'Tanya' },
-        { color: 'green', file: 'green__tornado__v1.png', label: 'Tornado' },
-    ];
-
-    function profilePicUrl(colorKey: string): string {
-        const pic = PROFILE_PICTURES.find(p => p.color === colorKey);
-        return `/profile_pics/${pic ? pic.file : 'rainbow__coach__v2.png'}`;
-    }
+    const themeEntries = Object.entries(THEMES) as [ThemeKey, typeof THEMES[ThemeKey]][];
 
     const getUserRole = getContext<() => string | null>('userRole');
 
@@ -103,11 +80,9 @@
     let role = $derived(getUserRole());
     let isRestricted = $derived(role === 'restricted_user');
 
-    // If the stored profile_picture doesn't match any known color, treat it as the default
-    function isSelectedPic(storedKey: string, picColor: string): boolean {
-        const knownColors = PROFILE_PICTURES.map(p => p.color);
-        if (knownColors.includes(storedKey)) return storedKey === picColor;
-        return picColor === 'rainbow'; // fallback highlights the default
+    function isSelectedTheme(storedKey: string, themeKey: string): boolean {
+        if (isValidTheme(storedKey)) return storedKey === themeKey;
+        return themeKey === 'default';
     }
 </script>
 
@@ -119,24 +94,25 @@
     {/if}
 
     {#if settings}
-        <!-- Profile Picture -->
+        <!-- Theme -->
         <Card.Root>
             <Card.Header>
-                <h2 class="text-lg font-semibold text-card-foreground">Profile Picture</h2>
+                <h2 class="text-lg font-semibold text-card-foreground">Theme</h2>
+                <p class="text-sm text-muted-foreground">Design your lobby</p>
             </Card.Header>
             <Card.Content>
-                <div class="grid grid-cols-5 sm:grid-cols-7 gap-3">
-                    {#each PROFILE_PICTURES as pic}
+                <div class="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-2 no-scrollbar">
+                    {#each themeEntries as [key, theme]}
                         <button
-                            class="rounded-lg overflow-hidden border-2 transition {isSelectedPic(settings.profile_picture, pic.color) ? 'border-primary ring-2 ring-primary/50' : 'border-transparent hover:border-muted-foreground/30'}"
-                            onclick={() => saveSetting({ profile_picture: pic.color })}
-                            title={pic.label}
+                            class="flex-shrink-0 snap-start rounded-lg overflow-hidden border-2 transition w-48 sm:w-56 {isSelectedTheme(settings.theme, key) ? 'border-primary ring-2 ring-primary/50' : 'border-transparent hover:border-muted-foreground/30'}"
+                            onclick={() => saveSetting({ theme: key })}
                         >
                             <img
-                                src={profilePicUrl(pic.color)}
-                                alt={pic.label}
-                                class="w-full aspect-square object-cover"
+                                src={theme.pic}
+                                alt={theme.label}
+                                class="w-full aspect-video object-cover"
                             />
+                            <span class="block text-center text-sm text-card-foreground py-1.5 font-medium">{theme.label}</span>
                         </button>
                     {/each}
                 </div>

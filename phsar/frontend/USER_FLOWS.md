@@ -51,7 +51,7 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 | `/media?uuid=<uuid>` | Media detail + rating | Yes |
 | `/ratings` | (placeholder) | Yes |
 | `/watchlist` | (placeholder) | Yes |
-| `/settings` | User preferences (profile picture, language, rating step, spoiler level, data export, account deletion) | Yes |
+| `/settings` | User preferences (theme, language, rating step, spoiler level, data export, account deletion) | Yes |
 | `/admin` | Registration token management (admin only) | Yes (admin) |
 | `/statistics` | (placeholder) | Yes |
 | `/getting-started` | (placeholder) | Yes |
@@ -60,7 +60,7 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 
 ## 3. Home Page
 
-- Displays current anime season (e.g., "Spring 2026") via InfoDiashow
+- **Hero banner** (InfoDiashow): Full-width rounded card showing the active theme's character pic as background (`object-cover`, per-theme focal point). Diagonal gradient overlay fades from the theme's primary color (opaque left) to transparent (right). "Current Season" label and season name (e.g., "Spring 2026") sit on the opaque side with text shadow. Pic and gradient update reactively when user changes theme.
 - SearchBar component for entering queries and applying filters
 - Three placeholder cards: "Recommended", "Lucky Find", "Upcoming"
 
@@ -205,7 +205,7 @@ Each anime search result card shows:
 - Airing status badge: green pulsing dot for "Currently Airing", yellow for "Not yet aired", muted for finished
 - MAL score with star icon and rating count
 - Badges: media type (green), relation type (blue), age rating (orange)
-- Genre badges (purple)
+- Genre badges (themed primary color)
 - Stats grid: episodes, duration per episode, season, total watch time
 - Studio names
 - Disabled bookmark button (placeholder for watchlist, wired in v0.15.0)
@@ -245,7 +245,17 @@ Each anime search result card shows:
 
 ## 8. Settings Page
 
-### 8.1 Account Deletion (Danger Zone)
+### 8.1 Theme
+- "Theme" card with "Design your lobby" subtitle
+- Horizontal scrollable row of theme cards (snap scrolling, `overflow-x-auto`)
+- Each card: landscape character pic (`aspect-video`), theme label below, `w-48 sm:w-56`
+- Selected theme highlighted with `border-primary ring-2`
+- Clicking a card saves immediately via `PUT /users/settings` with `{ theme: key }`
+- Selecting a theme changes: app background gradient, all primary-colored UI elements (buttons, rings, badges, links, charts), and the home page hero banner character pic
+- Four themes: Default (purple), Crimson (red), Ocean (blue), Forest (green)
+- Theme applied via CSS class on `<html>` with localStorage sync for FOUC prevention
+
+### 8.2 Account Deletion (Danger Zone)
 - Red-bordered "Danger Zone" card at the bottom of the settings page
 - Glass overlay covers the entire card; the "Danger Zone" title shows through the tinted glass
 - Lock icon and "Click to unlock" prompt centered on the glass

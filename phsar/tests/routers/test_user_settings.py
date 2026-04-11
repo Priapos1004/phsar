@@ -11,7 +11,7 @@ async def test_get_settings_returns_defaults_after_registration(client, create_u
     assert resp.status_code == 200
 
     data = resp.json()
-    assert data["profile_picture"] == "rainbow"
+    assert data["theme"] == "default"
     assert data["name_language"] == "english"
     assert data["default_search_view"] == "anime"
     assert data["rating_step"] == "0.5"
@@ -24,8 +24,21 @@ async def test_get_settings_admin(client, admin_auth_headers):
     assert resp.status_code == 200
     data = resp.json()
     assert "name_language" in data
-    assert "profile_picture" in data
+    assert "theme" in data
     assert "rating_step" in data
+
+
+async def test_update_theme(client, create_user_with_role):
+    token = await create_user_with_role(username="themeuser", password="pass123", role=RoleType.User)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    resp = await client.put("/users/settings", json={"theme": "blue"}, headers=headers)
+    assert resp.status_code == 200
+    assert resp.json()["theme"] == "blue"
+
+    # Verify it persists
+    resp = await client.get("/users/settings", headers=headers)
+    assert resp.json()["theme"] == "blue"
 
 
 async def test_update_settings_partial(client, create_user_with_role):

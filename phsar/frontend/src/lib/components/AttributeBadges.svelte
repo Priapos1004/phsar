@@ -119,11 +119,11 @@
 
 <style>
 	@keyframes pill-burst {
-		0%   { background-color: var(--color-chart-1); box-shadow: 0 0 8px 2px oklch(0.558 0.288 302.321 / 0.6); }
-		20%  { background-color: var(--color-chart-5); box-shadow: 0 0 14px 4px oklch(0.645 0.246 16.439 / 0.5); }
-		40%  { background-color: var(--color-chart-3); box-shadow: 0 0 18px 6px oklch(0.769 0.188 70.08 / 0.4); }
-		60%  { background-color: var(--color-chart-2); box-shadow: 0 0 14px 4px oklch(0.696 0.17 162.48 / 0.5); }
-		80%  { background-color: var(--color-chart-4); box-shadow: 0 0 8px 2px oklch(0.627 0.265 303.9 / 0.6); }
+		0%   { background-color: var(--color-chart-1); box-shadow: 0 0 8px 2px color-mix(in oklch, var(--color-chart-1) 60%, transparent); }
+		20%  { background-color: var(--color-chart-5); box-shadow: 0 0 14px 4px color-mix(in oklch, var(--color-chart-5) 50%, transparent); }
+		40%  { background-color: var(--color-chart-3); box-shadow: 0 0 18px 6px color-mix(in oklch, var(--color-chart-3) 40%, transparent); }
+		60%  { background-color: var(--color-chart-2); box-shadow: 0 0 14px 4px color-mix(in oklch, var(--color-chart-2) 50%, transparent); }
+		80%  { background-color: var(--color-chart-4); box-shadow: 0 0 8px 2px color-mix(in oklch, var(--color-chart-4) 60%, transparent); }
 		100% { background-color: transparent; box-shadow: 0 0 0 0 transparent; }
 	}
 

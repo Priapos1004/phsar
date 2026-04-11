@@ -7,11 +7,12 @@ from app.models.user_settings import (
     NameLanguage,
     RatingStep,
     SpoilerLevel,
+    Theme,
 )
 
 
 class UserSettingsOut(BaseModel):
-    profile_picture: str
+    theme: Theme
     name_language: NameLanguage
     default_search_view: DefaultSearchView
     rating_step: RatingStep
@@ -21,7 +22,7 @@ class UserSettingsOut(BaseModel):
 
 
 class UserSettingsUpdate(BaseModel):
-    profile_picture: Optional[str] = None
+    theme: Optional[Theme] = None
     name_language: Optional[NameLanguage] = None
     default_search_view: Optional[DefaultSearchView] = None
     rating_step: Optional[RatingStep] = None
