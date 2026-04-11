@@ -12,7 +12,7 @@
 
 <Dialog.Root bind:open>
     <Dialog.Content
-        class="sm:max-w-md bg-pink-100 text-card-foreground border border-pink-700"
+        class="sm:max-w-md"
         showCloseButton={false}
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeydown={(e) => e.preventDefault()}
