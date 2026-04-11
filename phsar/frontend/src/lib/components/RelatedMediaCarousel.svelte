@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
-	import { formatSeason, resolveTitle, formatRelationType } from '$lib/utils/formatString';
+	import { formatSeason, resolveTitle, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import { userSettings } from '$lib/stores/userSettings';
 	import * as cls from '$lib/styles/classes';
@@ -47,7 +47,7 @@
 
 					<div class="flex flex-wrap gap-1">
 						<Badge variant="secondary" class="text-[11px] px-1.5 py-0 {cls.badgeMediaTypeColor}">
-							{sibling.media_type}
+							{formatMediaType(sibling.media_type)}
 						</Badge>
 						<Badge variant="secondary" class="text-[11px] px-1.5 py-0 {cls.badgeRelationTypeColor}">
 							{formatRelationType(sibling.relation_type)}

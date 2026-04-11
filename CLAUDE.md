@@ -80,7 +80,7 @@ SvelteKit with file-based routing, Svelte 5 runes, Tailwind CSS 4, shadcn-svelte
 - **lib/api.ts** — Centralized API client with `get`/`post`/`postForm`/`put`/`del` methods, `ApiError` class, and automatic auth header injection from the token store.
 - **lib/types/api.ts** — TypeScript interfaces mirroring backend Pydantic schemas (`MediaConnected`, `FilterOptions`, `TokenResponse`, etc.).
 - **lib/stores/** — Svelte stores for auth state (JWT token persisted to localStorage).
-- **lib/utils/** — String formatting (`formatAiringStatus`, `formatRelationType`, `formatSeasonRange`, `formatDuration`, `formatDecimalDigits`), season logic, search params (`fetchSearchResults`, `fetchAnimeSearchResults`), navigation (`navigateToSearch`, `buildDetailHref`), chart colors (`CHART_COLORS`, `scoreColor`, `RELATION_TYPE_COLORS`, `RELATION_TYPE_LABELS`).
+- **lib/utils/** — String formatting (`formatAiringStatus`, `formatRelationType`, `formatMediaType`, `formatSeasonRange`, `formatDuration`, `formatDecimalDigits`), season logic, search params (`fetchSearchResults`, `fetchAnimeSearchResults`), navigation (`navigateToSearch`, `buildDetailHref`), chart colors (`CHART_COLORS`, `scoreColor`, `RELATION_TYPE_ORDER`, `RELATION_TYPE_COLORS`, `RELATION_TYPE_LABELS`).
 - **lib/echarts.ts** — Lazy-loaded ECharts singleton (`getEcharts()`) using pre-built ESM bundle (SSR-safe, cached).
 - **lib/config.ts** — Backend API base URL (consumed only by `api.ts`).
 - **src/app.css** — Custom theme (`@theme inline`) with light elevated surfaces on dark purple gradient background. Dark mode locked to class-based only.

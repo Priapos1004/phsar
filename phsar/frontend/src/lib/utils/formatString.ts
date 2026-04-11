@@ -5,6 +5,15 @@ export function formatRelationType(type: string): string {
 	return RELATION_TYPE_LABELS[type] ?? type;
 }
 
+const MEDIA_TYPE_LABELS: Record<string, string> = {
+	TVSpecial: 'TV Special',
+};
+
+/** Formats a raw media_type value to a user-friendly label. */
+export function formatMediaType(type: string): string {
+	return MEDIA_TYPE_LABELS[type] ?? type;
+}
+
 /**
  * Format a number with commas for thousands, while preserving decimals.
  * Examples:

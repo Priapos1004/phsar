@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { formatNumber, formatAiringStatus, formatRelationType } from '$lib/utils/formatString';
+	import { formatNumber, formatAiringStatus, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import { Bookmark } from 'lucide-svelte';
 	import * as Card from '$lib/components/ui/card';
@@ -105,10 +105,10 @@
 
 						{#if media_types?.length}
 							{#each media_types as mt}
-								<Badge variant="secondary" class={cls.badgeMediaType}>{mt.media_type}: {mt.count}</Badge>
+								<Badge variant="secondary" class={cls.badgeMediaType}>{formatMediaType(mt.media_type)}: {mt.count}</Badge>
 							{/each}
 						{:else if media_type}
-							<Badge variant="secondary" class={cls.badgeMediaType}>{media_type}</Badge>
+							<Badge variant="secondary" class={cls.badgeMediaType}>{formatMediaType(media_type)}</Badge>
 						{/if}
 
 						{#each genres ?? [] as genre}

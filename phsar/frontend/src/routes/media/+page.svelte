@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { getContext } from 'svelte';
 	import { api, ApiError } from '$lib/api';
-	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, resolveTitle, resolveSubtitles, formatRelationType } from '$lib/utils/formatString';
+	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, resolveTitle, resolveSubtitles, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -188,7 +188,7 @@
 					{/if}
 
 					<div class="flex flex-wrap gap-2">
-						<Badge variant="secondary" class={cls.badgeMediaType}>{media.media_type}</Badge>
+						<Badge variant="secondary" class={cls.badgeMediaType}>{formatMediaType(media.media_type)}</Badge>
 						<Badge variant="secondary" class={cls.badgeRelationType}>{formatRelationType(media.relation_type)}</Badge>
 						{#if media.age_rating_numeric !== null}
 							<Badge variant="secondary" class={cls.badgeAgeRating}>{media.age_rating_numeric}+</Badge>
