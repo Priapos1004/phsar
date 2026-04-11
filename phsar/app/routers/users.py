@@ -1,5 +1,3 @@
-import csv
-import io
 import json
 from datetime import date
 from enum import Enum
@@ -75,20 +73,11 @@ async def export_user_data(
         return Response(
             content=content,
             media_type="application/json",
-            headers={"Content-Disposition": f"attachment; filename={filename}.json"},
+            headers={"Content-Disposition": f'attachment; filename="{filename}.json"'},
         )
 
-    output = io.StringIO()
-    if rows:
-        for row in rows:
-            tags = row.get("watchlist_tags")
-            row["watchlist_tags"] = ";".join(tags) if tags else None
-        writer = csv.DictWriter(output, fieldnames=rows[0].keys())
-        writer.writeheader()
-        writer.writerows(rows)
-
     return Response(
-        content=output.getvalue(),
+        content=export_service.serialize_csv(rows),
         media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}.csv"},
+        headers={"Content-Disposition": f'attachment; filename="{filename}.csv"'},
     )

@@ -25,14 +25,6 @@ export function scoreColor(score: number): string {
 /** Canonical display order for relation types. */
 export const RELATION_TYPE_ORDER = ['main', 'side_story', 'summary', 'crossover'] as const;
 
-/** Maps relation types to chart colors for visual grouping. */
-export const RELATION_TYPE_COLORS: Record<string, string> = {
-	main: CHART_COLORS.chart1,
-	side_story: CHART_COLORS.chart5,
-	summary: CHART_COLORS.chart2,
-	crossover: CHART_COLORS.chart3,
-};
-
 /** User-friendly display labels for relation types. */
 export const RELATION_TYPE_LABELS: Record<string, string> = {
 	main: 'Main Story',
@@ -55,22 +47,48 @@ function cssVar(name: string, fallback: string): string {
 	return value || fallback;
 }
 
+// Cache palette per theme to avoid repeated getComputedStyle calls
+let cachedTheme: string | null = null;
+let cachedPalette: string[] | null = null;
+
 /**
  * Returns 5 visually distinct colors ordered so that the two same-hue
  * theme colors (primary at 0, ring at 4) are as far apart as possible.
  * Most attributes have ≤4 options, so they never hit both.
  */
 export function getThemedChartColorPalette(): string[] {
+	const theme = getActiveTheme();
+	if (theme === cachedTheme && cachedPalette) return cachedPalette;
+
 	const c1 = cssVar('--color-chart-1', CHART_COLORS.chart1);
 	const c4 = cssVar('--color-chart-4', CHART_COLORS.chart4);
 
-	switch (getActiveTheme()) {
+	switch (theme) {
 		case 'red':
-			return [c1, CHART_COLORS.chart2, CHART_COLORS.chart3, CHART_COLORS.teal, c4];
+			cachedPalette = [c1, CHART_COLORS.chart2, CHART_COLORS.chart3, CHART_COLORS.teal, c4];
+			break;
 		case 'green':
 			// Swap static green (chart2) → default purple to avoid clash
-			return [c1, CHART_COLORS.chart1, CHART_COLORS.chart3, CHART_COLORS.chart5, c4];
+			cachedPalette = [c1, CHART_COLORS.chart1, CHART_COLORS.chart3, CHART_COLORS.chart5, c4];
+			break;
 		default: // blue + default have no clashes with the static palette
-			return [c1, CHART_COLORS.chart2, CHART_COLORS.chart3, CHART_COLORS.chart5, c4];
+			cachedPalette = [c1, CHART_COLORS.chart2, CHART_COLORS.chart3, CHART_COLORS.chart5, c4];
 	}
+	cachedTheme = theme;
+	return cachedPalette;
+}
+
+/**
+ * Returns themed colors for relation types, using the themed palette
+ * to avoid hue clashes (e.g. red theme's "main" shouldn't be purple).
+ * Palette indices: 0=primary, 1=secondary, 2=yellow, 3=accent, 4=ring.
+ */
+export function getThemedRelationTypeColors(): Record<string, string> {
+	const palette = getThemedChartColorPalette();
+	return {
+		main: palette[0],
+		side_story: palette[3],
+		summary: palette[1],
+		crossover: palette[2],
+	};
 }

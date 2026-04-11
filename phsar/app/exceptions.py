@@ -207,6 +207,7 @@ class RegistrationTokenNotFoundError(PhsarBaseError):
 
 class CannotDeleteUsedTokenError(PhsarBaseError):
     """Raised when attempting to delete a registration token that has been used."""
+    status_code = 400
 
     def __init__(self):
         message = "Cannot delete a registration token that has already been used."

@@ -1,9 +1,12 @@
+import csv
+import io
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.media import Media
-from app.models.ratings import Ratings
+from app.models.ratings import RATING_ATTRIBUTE_FIELDS, Ratings
 from app.models.user_settings import NameLanguage
 from app.models.watchlist import Watchlist
 from app.models.watchlist_tag import WatchlistTag
@@ -67,7 +70,7 @@ def _rating_columns(r: Ratings) -> dict:
         "rated_at": r.created_at.isoformat() if r.created_at else None,
         "rating_updated_at": r.modified_at.isoformat() if r.modified_at else None,
     }
-    for attr in Ratings.ATTRIBUTE_FIELDS:
+    for attr in RATING_ATTRIBUTE_FIELDS:
         val = getattr(r, attr, None)
         d[attr] = val.value if val is not None else None
     return d
@@ -80,7 +83,7 @@ _RATING_NULL = {
     "rating_note": None,
     "rated_at": None,
     "rating_updated_at": None,
-    **{attr: None for attr in Ratings.ATTRIBUTE_FIELDS},
+    **{attr: None for attr in RATING_ATTRIBUTE_FIELDS},
 }
 
 
@@ -100,6 +103,17 @@ _WATCHLIST_NULL = {
     "watchlist_tags": None,
     "watchlist_added_at": None,
 }
+
+# Canonical column order — optional name columns slot in after their title
+_COLUMN_ORDER = [
+    "anime_title", "anime_name", "title", "name",
+    "anime_mal_id", "mal_id",
+    "type", "relation", "episodes", "episode_duration_seconds",
+    "season", "season_year", "age_rating", "mal_score", "mal_scored_by",
+    "rating", "dropped", "episodes_watched", "rating_note", "rated_at", "rating_updated_at",
+    *RATING_ATTRIBUTE_FIELDS,
+    "watchlist_priority", "watchlist_note", "watchlist_tags", "watchlist_added_at",
+]
 
 
 async def fetch_export_data(
@@ -158,3 +172,23 @@ async def fetch_export_data(
                     row.setdefault(col, None)
 
     return rows
+
+
+def _ordered_fieldnames(rows: list[dict]) -> list[str]:
+    """Return fieldnames in canonical order, including only keys present in any row."""
+    present = {k for row in rows for k in row}
+    return [col for col in _COLUMN_ORDER if col in present]
+
+
+def serialize_csv(rows: list[dict]) -> str:
+    """Serialize export rows to a CSV string."""
+    output = io.StringIO()
+    if rows:
+        csv_rows = [{**row} for row in rows]
+        for row in csv_rows:
+            tags = row.get("watchlist_tags")
+            row["watchlist_tags"] = ";".join(tags) if tags else None
+        writer = csv.DictWriter(output, fieldnames=_ordered_fieldnames(csv_rows))
+        writer.writeheader()
+        writer.writerows(csv_rows)
+    return output.getvalue()

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import EChart from '$lib/components/EChart.svelte';
 	import { formatSeason, formatDecimalDigits, decimalPlaces, formatRelationType, formatMediaType } from '$lib/utils/formatString';
-	import { RELATION_TYPE_COLORS, RELATION_TYPE_ORDER, CHART_COLORS } from '$lib/utils/chartColors';
+	import { getThemedRelationTypeColors, RELATION_TYPE_ORDER, CHART_COLORS } from '$lib/utils/chartColors';
 	import type { AnimeMediaItem, RatingOut } from '$lib/types/api';
 
 	interface MediaWithRating {
@@ -54,6 +54,8 @@
 		deselected = next;
 	}
 
+	let relationColors = $derived(getThemedRelationTypeColors());
+
 	let chartOption = $derived({
 		tooltip: {
 			trigger: 'item' as const,
@@ -102,7 +104,7 @@
 			{
 				type: 'bar' as const,
 				data: mediaWithRatings.map((mr) => {
-					const typeColor = RELATION_TYPE_COLORS[mr.media.relation_type] ?? CHART_COLORS.chart4;
+					const typeColor = relationColors[mr.media.relation_type] ?? CHART_COLORS.chart4;
 					const highlighted = allSelected || !deselected.has(mr.media.relation_type);
 					const value = mr.rating ? mr.rating.rating : 0.3;
 					const opacity = !mr.rating ? UNRATED_OPACITY : mr.rating.dropped ? 0.5 : 1;
@@ -135,7 +137,7 @@
 			>
 				<span
 					class="inline-block w-2 h-2 rounded-full"
-					style="background: {RELATION_TYPE_COLORS[type] ?? CHART_COLORS.chart4}"
+					style="background: {relationColors[type] ?? CHART_COLORS.chart4}"
 				></span>
 				<span class="text-muted-foreground">{formatRelationType(type)}</span>
 			</button>

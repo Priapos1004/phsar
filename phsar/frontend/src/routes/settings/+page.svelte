@@ -1,6 +1,5 @@
 <script lang="ts">
     import { onMount, getContext } from 'svelte';
-    import { fly } from 'svelte/transition';
     import { api, ApiError } from '$lib/api';
     import { Button } from '$lib/components/ui/button';
     import * as Card from '$lib/components/ui/card';
@@ -14,6 +13,7 @@
     import { get } from 'svelte/store';
     import { API_URL } from '$lib/config';
     import DangerZone from '$lib/components/DangerZone.svelte';
+    import Toast from '$lib/components/Toast.svelte';
     import { THEMES, isValidTheme } from '$lib/themes';
     import type { ThemeKey } from '$lib/themes';
     import type { UserSettings, UserSettingsUpdate } from '$lib/types/api';
@@ -54,27 +54,35 @@
 
     async function downloadExport(format: 'json' | 'csv') {
         const currentToken = get(token);
-        const resp = await fetch(`${API_URL}/users/export?format=${format}`, {
-            headers: { Authorization: `Bearer ${currentToken}` },
-        });
-        if (!resp.ok) {
-            error = 'Export failed.';
+        if (!currentToken) {
+            error = 'Session expired. Please log in again.';
             return;
         }
-        const blob = await resp.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        let username = 'user';
         try {
-            const decoded = jwtDecode<{ sub?: string }>(currentToken!);
-            if (decoded.sub) username = decoded.sub;
-        } catch { /* use fallback */ }
-        const d = new Date();
-        const today = `${d.getFullYear()}_${String(d.getMonth() + 1).padStart(2, '0')}_${String(d.getDate()).padStart(2, '0')}`;
-        a.download = `phsar_export_${username}_${today}.${format}`;
-        a.click();
-        URL.revokeObjectURL(url);
+            const resp = await fetch(`${API_URL}/users/export?format=${format}`, {
+                headers: { Authorization: `Bearer ${currentToken}` },
+            });
+            if (!resp.ok) {
+                error = 'Export failed.';
+                return;
+            }
+            const blob = await resp.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            let username = 'user';
+            try {
+                const decoded = jwtDecode<{ sub?: string }>(currentToken);
+                if (decoded.sub) username = decoded.sub;
+            } catch { /* use fallback */ }
+            const d = new Date();
+            const today = `${d.getFullYear()}_${String(d.getMonth() + 1).padStart(2, '0')}_${String(d.getDate()).padStart(2, '0')}`;
+            a.download = `phsar_export_${username}_${today}.${format}`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch {
+            error = 'Export failed. Please check your connection.';
+        }
     }
 
     let role = $derived(getUserRole());
@@ -252,12 +260,4 @@
     {/if}
 </div>
 
-{#if showToast}
-    <div
-        class="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-primary text-primary-foreground px-4 py-2 rounded-lg shadow-lg text-sm font-medium"
-        in:fly={{ y: -20, duration: 200 }}
-        out:fly={{ y: -20, duration: 150 }}
-    >
-        Settings updated
-    </div>
-{/if}
+<Toast message="Settings updated" show={showToast} />

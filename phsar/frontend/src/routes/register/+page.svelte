@@ -9,6 +9,12 @@
     import { Label } from '$lib/components/ui/label';
     import * as Card from '$lib/components/ui/card';
 
+    const USERNAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
+    const USERNAME_MIN = 3;
+    const USERNAME_MAX = 32;
+    const PASSWORD_MIN = 8;
+    const PASSWORD_MAX = 128;
+
     let registrationToken = $state('');
     let username = $state('');
     let password = $state('');
@@ -16,16 +22,32 @@
     let error = $state('');
     let loading = $state(false);
 
+    // Inline validation — only show after user has started typing
+    let usernameError = $derived.by(() => {
+        if (!username) return '';
+        if (username.length < USERNAME_MIN) return `At least ${USERNAME_MIN} characters`;
+        if (username.length > USERNAME_MAX) return `At most ${USERNAME_MAX} characters`;
+        if (!USERNAME_PATTERN.test(username)) return 'Letters, numbers, underscores, and hyphens only';
+        return '';
+    });
+
+    let passwordError = $derived.by(() => {
+        if (!password) return '';
+        if (password.length < PASSWORD_MIN) return `At least ${PASSWORD_MIN} characters`;
+        if (password.length > PASSWORD_MAX) return `At most ${PASSWORD_MAX} characters`;
+        return '';
+    });
+
     let passwordMismatch = $derived(confirmPassword !== '' && password !== confirmPassword);
+
+    let hasValidationErrors = $derived(
+        !!usernameError || !!passwordError || passwordMismatch
+        || !registrationToken || !username || !password || !confirmPassword
+    );
 
     async function handleRegister(e: Event) {
         e.preventDefault();
         error = '';
-
-        if (password !== confirmPassword) {
-            error = 'Passwords do not match.';
-            return;
-        }
 
         loading = true;
         try {
@@ -49,7 +71,7 @@
     }
 </script>
 
-<div class="fixed inset-0 bg-gradient-to-br from-purple-300 via-purple-500 to-purple-800 flex justify-center items-start pt-20">
+<div class="fixed inset-0 flex justify-center items-start pt-20" style="background-image: linear-gradient(to bottom right, var(--gradient-from), var(--gradient-via), var(--gradient-to))">
     <div in:fly={{ y: 20, duration: 2000 }} class="w-full max-w-md">
         <Card.Root>
             <Card.Header>
@@ -76,7 +98,12 @@
                             bind:value={username}
                             required
                             class="h-10"
+                            aria-invalid={!!usernameError || undefined}
+                            maxlength={USERNAME_MAX}
                         />
+                        {#if usernameError}
+                            <p class="text-xs text-destructive">{usernameError}</p>
+                        {/if}
                     </div>
                     <div class="space-y-2">
                         <Label for="password">Password</Label>
@@ -86,7 +113,12 @@
                             bind:value={password}
                             required
                             class="h-10"
+                            aria-invalid={!!passwordError || undefined}
+                            maxlength={PASSWORD_MAX}
                         />
+                        {#if passwordError}
+                            <p class="text-xs text-destructive">{passwordError}</p>
+                        {/if}
                     </div>
                     <div class="space-y-2">
                         <Label for="confirm-password">Confirm Password</Label>
@@ -95,7 +127,9 @@
                             type="password"
                             bind:value={confirmPassword}
                             required
-                            class="h-10 {passwordMismatch ? 'border-destructive' : ''}"
+                            class="h-10"
+                            aria-invalid={!!passwordMismatch || undefined}
+                            maxlength={PASSWORD_MAX}
                         />
                         {#if passwordMismatch}
                             <p class="text-xs text-destructive">Passwords do not match</p>
@@ -103,7 +137,7 @@
                     </div>
                     <Button
                         type="submit"
-                        disabled={loading || passwordMismatch}
+                        disabled={loading || hasValidationErrors}
                         class="w-full"
                         size="lg"
                     >

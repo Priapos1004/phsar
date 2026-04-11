@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { onMount, getContext } from 'svelte';
 	import { goto } from '$app/navigation';
-	import { fly } from 'svelte/transition';
 	import { api, ApiError } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -9,6 +8,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Copy, Trash2, Plus, ArrowUpDown } from 'lucide-svelte';
+	import Toast from '$lib/components/Toast.svelte';
 	import type { RegistrationTokenListItem } from '$lib/types/api';
 
 	const getUserRole = getContext<() => string | null>('userRole');
@@ -293,12 +293,4 @@
 	</Card.Root>
 </div>
 
-{#if showToast}
-	<div
-		class="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-primary text-primary-foreground px-4 py-2 rounded-lg shadow-lg text-sm font-medium"
-		in:fly={{ y: -20, duration: 200 }}
-		out:fly={{ y: -20, duration: 150 }}
-	>
-		{toastMessage}
-	</div>
-{/if}
+<Toast message={toastMessage} show={showToast} />

@@ -126,9 +126,8 @@ export function resolveTitle(
 ): string {
 	if (language === 'japanese' && nameJap) return nameJap;
 	if (language === 'english' && nameEng) return nameEng;
-	if (language === 'romaji') return title;
-	// Fallback: english name → romaji title
-	return nameEng ?? title;
+	// Fallback: romaji title (always present) is the universal fallback
+	return title;
 }
 
 /**

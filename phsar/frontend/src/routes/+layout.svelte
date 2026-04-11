@@ -88,9 +88,8 @@
     $effect(() => {
       const themeKey = $userSettings?.theme;
       const el = document.documentElement;
-      el.classList.forEach(cls => {
-        if (cls.startsWith('theme-')) el.classList.remove(cls);
-      });
+      const toRemove = [...el.classList].filter(cls => cls.startsWith('theme-'));
+      toRemove.forEach(cls => el.classList.remove(cls));
       if (themeKey && isValidTheme(themeKey)) {
         const cssClass = getThemeCssClass(themeKey);
         if (cssClass) {

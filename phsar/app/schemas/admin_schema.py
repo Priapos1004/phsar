@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.models.users import RoleType
 
@@ -17,6 +17,13 @@ class ExpiryPreset(int, Enum):
 class RegistrationTokenCreateRequest(BaseModel):
     role: RoleType
     expires_in_days: ExpiryPreset = ExpiryPreset.one_week
+
+    @field_validator("role")
+    @classmethod
+    def restrict_role(cls, v: RoleType) -> RoleType:
+        if v == RoleType.Admin:
+            raise ValueError("Cannot create registration tokens with admin role.")
+        return v
 
 
 class RegistrationTokenListItem(BaseModel):
