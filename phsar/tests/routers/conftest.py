@@ -68,7 +68,7 @@ async def create_user_with_role(client, get_admin_token):
     """
     Generic fixture to create & login a user with any RoleType.
     Usage:
-    token = await create_user_with_role(username="myuser", password="mypass", role=RoleType.User)
+    token = await create_user_with_role(username="myuser", password="mypass12", role=RoleType.User)
     """
     async def _create_user(username: str, password: str, role: RoleType):
         admin_token = await get_admin_token()
