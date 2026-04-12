@@ -240,6 +240,11 @@ export interface UserSettings {
 
 export type UserSettingsUpdate = Partial<UserSettings>;
 
+// Spoiler visibility
+export interface SpoilerVisibility {
+	visible_media_uuids: string[];
+}
+
 // Admin — Registration tokens
 export interface RegistrationTokenListItem {
 	uuid: string;
