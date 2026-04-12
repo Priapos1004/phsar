@@ -12,6 +12,7 @@ from app.exceptions import PhsarBaseError
 from app.seeders.embedding_backfiller import backfill_embeddings
 from app.seeders.genre_seeder import seed_genres
 from app.seeders.user_seeder import (
+    backfill_spoiler_visibility,
     backfill_user_settings,
     seed_admin_user,
     seed_guest_user,
@@ -29,6 +30,7 @@ async def lifespan(app: FastAPI):
         await seed_admin_user(session)
         await seed_guest_user(session)
         await backfill_user_settings(session)
+        await backfill_spoiler_visibility(session)
         await backfill_embeddings(session)
 
     yield  # Startup complete

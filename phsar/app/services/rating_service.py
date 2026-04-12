@@ -21,6 +21,7 @@ from app.schemas.rating_schema import (
     RatingSearchFilters,
 )
 from app.services.media_search_service import media_to_dict
+from app.services.spoiler_service import recompute_visibility_for_anime
 from app.services.vector_embedding_service import (
     create_rating_embedding,
     generate_embedding,
@@ -117,6 +118,7 @@ async def upsert_rating(db: AsyncSession, user_id: int, media_uuid: UUID, data: 
     note = fields.pop("note")
 
     uuid = await _upsert_single_rating(db, user_id, media, fields, note, existing)
+    await recompute_visibility_for_anime(db, user_id, media.anime_id)
     await db.commit()
 
     # Re-fetch with eager loading for media/anime relationships needed by _rating_to_out
@@ -149,7 +151,9 @@ async def delete_rating(db: AsyncSession, user_id: int, rating_uuid: UUID) -> No
     rating = await rating_dao.get_by_uuid_and_user(db, rating_uuid, user_id)
     if not rating:
         raise RatingNotFoundError(str(rating_uuid))
+    anime_id = rating.media.anime_id
     await rating_dao.delete(db, rating)
+    await recompute_visibility_for_anime(db, user_id, anime_id)
     await db.commit()
 
 
@@ -159,6 +163,10 @@ async def bulk_delete_ratings(db: AsyncSession, user_id: int, media_uuids: list[
     media_list = await _resolve_media_uuids(db, media_uuids)
     media_ids = [m.id for m in media_list]
     count = await rating_dao.bulk_delete_by_user_and_media_ids(db, user_id, media_ids)
+    # Recompute visibility for each affected anime
+    affected_anime_ids = {m.anime_id for m in media_list}
+    for anime_id in affected_anime_ids:
+        await recompute_visibility_for_anime(db, user_id, anime_id)
     await db.commit()
     return count
 
@@ -220,6 +228,11 @@ async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCr
         existing = existing_by_media_id.get(media.id)
         uuid = await _upsert_single_rating(db, user_id, media, per_media_fields, note, existing)
         rating_uuids.append(uuid)
+
+    # Recompute visibility for each affected anime
+    affected_anime_ids = {m.anime_id for m in media_list}
+    for anime_id in affected_anime_ids:
+        await recompute_visibility_for_anime(db, user_id, anime_id)
 
     await db.commit()
 

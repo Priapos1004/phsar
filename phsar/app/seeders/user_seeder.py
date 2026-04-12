@@ -7,8 +7,10 @@ from app.core.config import settings
 from app.core.security import get_password_hash
 from app.daos.user_dao import UserDAO
 from app.models.user_settings import UserSettings
+from app.models.user_visible_media import UserVisibleMedia
 from app.models.users import RoleType, Users
 from app.services import user_settings_service
+from app.services.spoiler_service import recompute_visibility_for_user
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,7 @@ async def _seed_user(
     )
     await user_dao.create(db, new_user)
     await user_settings_service.create_default_settings(db, new_user.id)
+    await recompute_visibility_for_user(db, new_user.id)
     await db.commit()
     logger.info(f"User '{username}' created with role '{role.value}'.")
 
@@ -45,6 +48,26 @@ async def seed_guest_user(db: AsyncSession):
         logger.info("Guest credentials not configured, skipping guest seeder.")
         return
     await _seed_user(db, settings.GUEST_USERNAME, settings.GUEST_PASSWORD, RoleType.RestrictedUser)
+
+
+async def backfill_spoiler_visibility(db: AsyncSession):
+    """Recompute spoiler visibility for users who have no rows in user_visible_media.
+    Covers new deployments and users created before the feature existed."""
+    stmt = (
+        select(Users.id)
+        .outerjoin(UserVisibleMedia, Users.id == UserVisibleMedia.user_id)
+        .where(UserVisibleMedia.id.is_(None))
+    )
+    result = await db.execute(stmt)
+    user_ids = result.scalars().all()
+
+    if not user_ids:
+        return
+
+    for user_id in user_ids:
+        await recompute_visibility_for_user(db, user_id)
+    await db.commit()
+    logger.info(f"Backfilled spoiler visibility for {len(user_ids)} user(s).")
 
 
 async def backfill_user_settings(db: AsyncSession):
