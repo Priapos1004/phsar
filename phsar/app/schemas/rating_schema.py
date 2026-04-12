@@ -127,6 +127,11 @@ class RatingSearchFilters(MediaSearchFilters):
     originality: Optional[list[Originality]] = None
 
 
+class SpoilerVisibility(BaseModel):
+    """Media UUIDs that are visible (not spoiler-protected) for the current user."""
+    visible_media_uuids: list[UUID]
+
+
 class RatedMediaResult(MediaConnected, RatingAttributes):
     """Media search result enriched with the user's rating data.
     Inherits media fields from MediaConnected and enum fields from RatingAttributes."""
