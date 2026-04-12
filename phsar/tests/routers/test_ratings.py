@@ -400,3 +400,44 @@ async def test_admin_can_rate(client, admin_auth_headers, test_media):
         headers=admin_auth_headers,
     )
     assert response.status_code == 200
+
+
+# --- Spoiler visibility ---
+
+
+async def test_spoiler_visibility_returns_ok(client, user_auth_headers):
+    """Endpoint returns 200 with a list of visible media UUIDs."""
+    resp = await client.get("/ratings/spoiler-visibility", headers=user_auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "visible_media_uuids" in data
+    assert isinstance(data["visible_media_uuids"], list)
+
+
+async def test_spoiler_visibility_updates_after_rating(client, user_auth_headers, test_media_list):
+    """After rating a media, the frontier advances in the visibility cache."""
+    # Before rating: get baseline count
+    resp1 = await client.get("/ratings/spoiler-visibility", headers=user_auth_headers)
+    assert resp1.status_code == 200
+    count_before = len(resp1.json()["visible_media_uuids"])
+
+    # Rate the first media
+    await client.put(
+        f"/ratings/media/{test_media_list[0].uuid}",
+        json={"rating": 8.0},
+        headers=user_auth_headers,
+    )
+
+    # After rating: visibility should have expanded (frontier advanced)
+    resp2 = await client.get("/ratings/spoiler-visibility", headers=user_auth_headers)
+    assert resp2.status_code == 200
+    uuids_after = resp2.json()["visible_media_uuids"]
+    # The rated media + the next frontier should now be visible
+    assert str(test_media_list[0].uuid) in uuids_after
+    assert str(test_media_list[1].uuid) in uuids_after
+    assert len(uuids_after) >= count_before
+
+
+async def test_spoiler_visibility_unauthenticated(client):
+    resp = await client.get("/ratings/spoiler-visibility")
+    assert resp.status_code == 401
