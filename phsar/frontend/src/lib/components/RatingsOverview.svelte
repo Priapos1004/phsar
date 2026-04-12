@@ -1,18 +1,21 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
+	import { Separator } from '$lib/components/ui/separator';
 	import * as cls from '$lib/styles/classes';
 	import RatingsOverviewStats from '$lib/components/RatingsOverviewStats.svelte';
 	import RatingsOverviewTimeline from '$lib/components/RatingsOverviewTimeline.svelte';
 	import RatingsOverviewNotes from '$lib/components/RatingsOverviewNotes.svelte';
 	import RatingsOverviewAttributes from '$lib/components/RatingsOverviewAttributes.svelte';
-	import type { AnimeMediaItem, RatingOut } from '$lib/types/api';
+	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr, type AnimeMediaItem, type RatingOut } from '$lib/types/api';
 
 	interface Props {
 		ratings: RatingOut[];
 		media: AnimeMediaItem[];
+		scoreDecimals: number;
+		minScoreDecimals: number;
 	}
 
-	let { ratings, media }: Props = $props();
+	let { ratings, media, scoreDecimals, minScoreDecimals }: Props = $props();
 
 	let ratingsMap = $derived(new Map(ratings.map((r) => [r.media_uuid, r])));
 
@@ -46,6 +49,11 @@
 				rating: mr.rating!.rating,
 			})),
 	);
+
+	const ATTR_KEYS = Object.keys(RATING_ATTRIBUTE_OPTIONS);
+	let hasAttributes = $derived(
+		ratings.some((r) => ATTR_KEYS.some((k) => getRatingAttr(r, k) !== null)),
+	);
 </script>
 
 <Card.Root class={cls.cardGlass}>
@@ -61,12 +69,18 @@
 			{totalEpisodesAvailable}
 		/>
 
-		<RatingsOverviewTimeline {mediaWithRatings} />
+		<Separator />
 
-		<RatingsOverviewAttributes {ratings} />
+		<RatingsOverviewTimeline {mediaWithRatings} {minScoreDecimals} />
+
+		{#if hasAttributes}
+			<Separator />
+			<RatingsOverviewAttributes {ratings} />
+		{/if}
 
 		{#if notesInOrder.length > 0}
-			<RatingsOverviewNotes notes={notesInOrder} />
+			<Separator />
+			<RatingsOverviewNotes notes={notesInOrder} {scoreDecimals} />
 		{/if}
 	</Card.Content>
 </Card.Root>

@@ -8,6 +8,8 @@
 		%sveltekit.head%
 	</head>
 	<body data-sveltekit-preload-data="hover">
+		<!-- Theme allowlist must stay in sync with THEMES in lib/themes.ts -->
+		<script>try{var t=localStorage.getItem('phsar-theme');if(t&&['red','blue','green'].includes(t))document.documentElement.classList.add('theme-'+t)}catch(e){}</script>
 		<div style="display: contents">%sveltekit.body%</div>
 	</body>
 </html>

@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     ADMIN_USERNAME: str
     ADMIN_PASSWORD: str
 
+    GUEST_USERNAME: str | None = None
+    GUEST_PASSWORD: str | None = None
+
     # JWT / Security settings
     SECRET_KEY: str
     ALGORITHM: str = "HS256"

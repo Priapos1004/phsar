@@ -26,7 +26,12 @@ async function handleResponse<T>(res: Response): Promise<T> {
 		let detail = `Request failed with status ${res.status}`;
 		try {
 			const body = await res.json();
-			detail = body.detail || detail;
+			if (typeof body.detail === 'string') {
+				detail = body.detail;
+			} else if (Array.isArray(body.detail) && body.detail.length > 0) {
+				// Pydantic 422 validation errors: [{msg, loc, type}, ...] — show first only
+				detail = body.detail[0].msg;
+			}
 		} catch {
 			// response body wasn't JSON
 		}
@@ -79,12 +84,8 @@ export const api = {
 		return jsonRequest<T>('PUT', path, body);
 	},
 
-	async del<T = void>(path: string): Promise<T> {
-		const res = await fetch(`${API_URL}${path}`, {
-			method: 'DELETE',
-			headers: getAuthHeaders(),
-		});
-		return handleResponse<T>(res);
+	async del<T = void>(path: string, body?: unknown): Promise<T> {
+		return jsonRequest<T>('DELETE', path, body);
 	},
 };
 

@@ -39,7 +39,7 @@
     }
 </script>
 
-<div class="fixed inset-0 bg-gradient-to-br from-purple-300 via-purple-500 to-purple-800 flex justify-center items-start pt-20">
+<div class="fixed inset-0 flex justify-center items-start pt-20" style="background-image: linear-gradient(to bottom right, var(--gradient-from), var(--gradient-via), var(--gradient-to))">
     <div in:fly={{ y: 20, duration: 2000 }} class="w-full max-w-md">
         <Card.Root>
             <Card.Header>
@@ -83,6 +83,9 @@
                 {#if error}
                     <div class="mt-4 text-center text-destructive text-sm">{error}</div>
                 {/if}
+                <p class="mt-4 text-center text-sm text-muted-foreground">
+                    Have a registration token? <a href="/register" class="text-primary hover:underline">Register</a>
+                </p>
             </Card.Content>
         </Card.Root>
     </div>

@@ -1,5 +1,21 @@
 @import "tailwindcss";
 
+/*
+ * Themeable source variables — overridden by .theme-* classes.
+ * Tailwind's @theme inline references these via var() so utilities
+ * stay dynamic at runtime instead of being inlined at build time.
+ */
+@property --primary {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: oklch(0.558 0.288 302.321);
+}
+@property --ring {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: oklch(0.627 0.265 303.9);
+}
+
 @theme inline {
   --radius: 0.625rem;
 
@@ -13,8 +29,8 @@
   --color-popover: oklch(1 0 0);
   --color-popover-foreground: oklch(0.278 0.033 256.848);
 
-  /* Primary accent: purple */
-  --color-primary: oklch(0.558 0.288 302.321);
+  /* Primary accent — dynamic via var(--primary) */
+  --color-primary: var(--primary);
   --color-primary-foreground: oklch(1 0 0);
 
   /* Secondary: neutral light */
@@ -36,25 +52,30 @@
   --color-border: oklch(0.872 0.01 258.338);
   --color-input: oklch(0.872 0.01 258.338);
 
-  /* Focus ring: purple */
-  --color-ring: oklch(0.627 0.265 303.9);
+  /* Focus ring — dynamic via var(--ring) */
+  --color-ring: var(--ring);
 
   /* Charts */
-  --color-chart-1: oklch(0.558 0.288 302.321);
+  --color-chart-1: var(--primary);
   --color-chart-2: oklch(0.696 0.17 162.48);
   --color-chart-3: oklch(0.769 0.188 70.08);
-  --color-chart-4: oklch(0.627 0.265 303.9);
+  --color-chart-4: var(--ring);
   --color-chart-5: oklch(0.645 0.246 16.439);
 
   /* Sidebar */
   --color-sidebar: oklch(1 0 0 / 80%);
   --color-sidebar-foreground: oklch(0.278 0.033 256.848);
-  --color-sidebar-primary: oklch(0.558 0.288 302.321);
+  --color-sidebar-primary: var(--primary);
   --color-sidebar-primary-foreground: oklch(1 0 0);
   --color-sidebar-accent: oklch(0.967 0.003 264.542);
   --color-sidebar-accent-foreground: oklch(0.21 0.034 264.665);
   --color-sidebar-border: oklch(0.872 0.01 258.338);
-  --color-sidebar-ring: oklch(0.627 0.265 303.9);
+  --color-sidebar-ring: var(--ring);
+
+  /* Themeable gradient (default = purple) */
+  --gradient-from: #352558;
+  --gradient-via: #261845;
+  --gradient-to: #1C1038;
 }
 
 /* Lock dark: variants to class-based only (prevent OS dark mode interference) */
@@ -70,9 +91,35 @@
  *   text-3xl  = 1.875rem  — hero titles
  */
 body {
-  @apply bg-gradient-to-br from-[#352558] via-[#261845] to-[#1C1038] text-white;
+  background-image: linear-gradient(to bottom right, var(--gradient-from), var(--gradient-via), var(--gradient-to));
+  @apply text-white;
   font-size: 0.9375rem;
   line-height: 1.6;
+}
+
+/* Theme overrides — set --primary and --ring source variables + gradient */
+.theme-red {
+  --primary: oklch(0.55 0.24 27);
+  --ring: oklch(0.62 0.22 27);
+  --gradient-from: #4A1A1A;
+  --gradient-via: #3A1010;
+  --gradient-to: #2E0A0A;
+}
+
+.theme-blue {
+  --primary: oklch(0.54 0.22 250);
+  --ring: oklch(0.62 0.20 250);
+  --gradient-from: #1A2E58;
+  --gradient-via: #132245;
+  --gradient-to: #0E1A38;
+}
+
+.theme-green {
+  --primary: oklch(0.56 0.20 150);
+  --ring: oklch(0.64 0.18 150);
+  --gradient-from: #1A4528;
+  --gradient-via: #123520;
+  --gradient-to: #0E2A18;
 }
 
 /* Override text-sm to 13px — the only "small" size in the app */

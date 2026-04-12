@@ -7,7 +7,7 @@ import { api, ApiError } from '$lib/api';
 
 export const load: LayoutLoad = async ({ url }) => {
   if (browser) {
-    if (url.pathname === '/login') {
+    if (url.pathname === '/login' || url.pathname === '/register') {
       return;
     }
 

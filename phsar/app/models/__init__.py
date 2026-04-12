@@ -11,6 +11,8 @@ from app.models.ratings import Ratings
 from app.models.registration_token import RegistrationToken
 from app.models.studio import Studio
 from app.models.tag import Tag
+from app.models.user_settings import UserSettings
+from app.models.user_visible_media import UserVisibleMedia
 from app.models.users import Users
 from app.models.watchlist import Watchlist
 from app.models.watchlist_tag import WatchlistTag

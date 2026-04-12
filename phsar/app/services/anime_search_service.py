@@ -150,6 +150,7 @@ def _media_to_anime_media_item(m: Media) -> AnimeMediaItem:
         uuid=m.uuid,
         title=m.title,
         name_eng=m.name_eng,
+        name_jap=m.name_jap,
         cover_image=m.cover_image,
         media_type=m.media_type.value,
         relation_type=m.relation_type.value,

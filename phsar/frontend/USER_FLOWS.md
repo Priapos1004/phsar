@@ -33,8 +33,9 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 ### 2.1 NavBar
 - Sticky bar at the top of every page except `/login`
 - Left: logo + "PHSAR" text linking to `/`, "Ratings" link, "Watchlist" link
-- Right (when authenticated): user button ("U") toggling a dropdown with:
+- Right (when authenticated): user button (first letter of username) toggling a dropdown with:
   - User Settings → `/settings`
+  - Admin → `/admin` (visible only to admin role)
   - Statistics → `/statistics`
   - Getting Started → `/getting-started`
   - Logout (red) → clears token, redirects to `/login`
@@ -44,12 +45,14 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 |-------|------|---------------|
 | `/` | Home (search bar + placeholders) | Yes |
 | `/login` | Login form | No |
+| `/register` | Registration form (requires token) | No |
 | `/search?q=<token>` | Search results (anime or media view) | Yes |
 | `/anime?uuid=<uuid>` | Anime detail (aggregated metadata + media table) | Yes |
 | `/media?uuid=<uuid>` | Media detail + rating | Yes |
 | `/ratings` | (placeholder) | Yes |
 | `/watchlist` | (placeholder) | Yes |
-| `/settings` | (placeholder) | Yes |
+| `/settings` | User preferences (theme, language, rating step, spoiler level, data export, account deletion) | Yes |
+| `/admin` | Registration token management (admin only) | Yes (admin) |
 | `/statistics` | (placeholder) | Yes |
 | `/getting-started` | (placeholder) | Yes |
 
@@ -57,7 +60,7 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 
 ## 3. Home Page
 
-- Displays current anime season (e.g., "Spring 2026") via InfoDiashow
+- **Hero banner** (InfoDiashow): Full-width rounded card showing the active theme's character pic as background (`object-cover`, per-theme focal point). Diagonal gradient overlay fades from the theme's primary color (opaque left) to transparent (right). "Current Season" label and season name (e.g., "Spring 2026") sit on the opaque side with text shadow. Pic and gradient update reactively when user changes theme.
 - SearchBar component for entering queries and applying filters
 - Three placeholder cards: "Recommended", "Lucky Find", "Upcoming"
 
@@ -115,7 +118,7 @@ Filters appear in a collapsible panel below the search input. Filter options ada
 
 ### 5.1 Media Card (media view)
 Each media search result card shows:
-- Cover image (lazy-loaded, with fallback)
+- Cover image (lazy-loaded, with fallback; blurred with click-to-reveal when spoiler-protected)
 - Title, score + scored-by count, anime season, airing status, age rating
 - Genre tags, media type tag, relation type tag
 - Total watch time
@@ -128,7 +131,7 @@ Each anime search result card shows:
 - Airing status for active/upcoming anime ("Currently Airing + upcoming content", "Not yet aired", or "upcoming content" for finished anime with announced sequels)
 - Age rating (max across media)
 - Genre tags (strict majority rule: genre must be on >50% of media)
-- Relation type badges with counts (e.g., "main: 5", "other: 2")
+- Relation type badges with counts (e.g., "Main Story: 5", "Side Story: 2")
 - Media type badges with counts (e.g., "TV: 3", "Movie: 1")
 - Total watch time (summed across media)
 - Clicking navigates to `/anime?uuid=<uuid>` (with `&q=<token>` preserved)
@@ -158,7 +161,7 @@ Each anime search result card shows:
 
 ### 6.4 Media Table
 - Compact table with rows for each media in the anime
-- Each row: small cover thumbnail (40x56px), title + relation/media type badges, season, score, airing status dot
+- Each row: small cover thumbnail (40x56px, blurred when spoiler-protected), title + relation/media type badges, season, score, airing status dot
 - Clicking a row navigates to `/media?uuid=<uuid>` (with search token preserved)
 - **Select mode**: "Select" button in table header toggles select mode
   - Checkboxes appear on left of each row
@@ -196,20 +199,21 @@ Each anime search result card shows:
 
 ### 7.2 Hero Card
 - Blurred cover image background with card overlay
-- Cover image (with fallback placeholder if missing or load fails)
+- Cover image (with fallback placeholder if missing or load fails; spoiler-guarded with blur + click-to-reveal when media is beyond the spoiler frontier)
 - Title (English preferred, falls back to default title)
 - Japanese title and romaji subtitle (if different from displayed title)
 - Airing status badge: green pulsing dot for "Currently Airing", yellow for "Not yet aired", muted for finished
 - MAL score with star icon and rating count
 - Badges: media type (green), relation type (blue), age rating (orange)
-- Genre badges (purple)
+- Genre badges (themed primary color)
 - Stats grid: episodes, duration per episode, season, total watch time
 - Studio names
 - Disabled bookmark button (placeholder for watchlist, wired in v0.15.0)
 
 ### 7.3 Synopsis
 - Collapsible description card (4-line clamp by default)
-- "Read more" / "Show less" toggle for descriptions over 300 characters
+- "Read more" / "Show less" toggle shown only when text actually overflows the 4-line clamp (DOM overflow detection with 2px threshold)
+- Synopsis blurred with click-to-reveal when media is spoiler-protected; "Read more" button is behind the blur
 - HTML entities cleaned from description text
 
 ### 7.4 Rating Card
@@ -229,7 +233,7 @@ Each anime search result card shows:
 ### 7.5 Related Media Carousel
 - Always shown — displays parent anime name as a clickable link to the anime detail page
 - If sibling media exist: horizontal scrollable row of compact cards (snap scrolling)
-  - Each card: cover image (with fallback), title, media type + relation type badges, season or episode count
+  - Each card: cover image (with fallback; blurred when spoiler-protected), title, media type + relation type badges, season or episode count
   - Clicking a sibling card navigates to that media's detail page (search token preserved)
 - If no siblings: "No other media in this anime" message
 
@@ -240,7 +244,65 @@ Each anime search result card shows:
 
 ---
 
-## 8. API Endpoints Used by Frontend
+## 8. Settings Page
+
+### 8.1 Theme
+- "Theme" card with "Design your lobby" subtitle
+- Horizontal scrollable row of theme cards (snap scrolling, `overflow-x-auto`)
+- Each card: landscape character pic (`aspect-video`), theme label below, `w-48 sm:w-56`
+- Selected theme highlighted with `border-primary ring-2`
+- Clicking a card saves immediately via `PUT /users/settings` with `{ theme: key }`
+- Selecting a theme changes: app background gradient, all primary-colored UI elements (buttons, rings, badges, links, charts), and the home page hero banner character pic
+- Four themes: Default (purple), Crimson (red), Ocean (blue), Forest (green)
+- Theme applied via CSS class on `<html>` with localStorage sync for FOUC prevention
+
+### 8.2 Spoiler Protection
+- Three-level dropdown: Off, Blur, Hide
+- **Off**: No spoiler protection
+- **Blur**: "Blur covers and descriptions to avoid spoilers" — media beyond the spoiler frontier are blurred with a "Click to reveal" overlay on covers and descriptions
+- **Hide**: "Blur covers and descriptions, and hide spoiler media from search results" — same as blur, plus media search results are filtered to only show visible media
+- Spoiler frontier: per anime, all media up to and including the next unwatched main-story entry are visible; individually rated media beyond the frontier are also visible
+- Anime covers and anime-level descriptions are never spoiler-protected
+- On detail pages, "hide" mode falls back to blur behavior (user explicitly navigated there)
+- Visibility data loaded on auth and refreshed after rating changes
+
+### 8.3 Account Deletion (Danger Zone)
+- Red-bordered "Danger Zone" card at the bottom of the settings page
+- Glass overlay covers the entire card; the "Danger Zone" title shows through the tinted glass
+- Lock icon and "Click to unlock" prompt centered on the glass
+- Each click adds progressive cracks (SVG) with a shake animation; counter shows remaining clicks
+- After 5 clicks the glass shatters: 10 shard fragments fly outward with rotation and fade out
+- Once broken, the "Delete Account" button is revealed
+- **Restricted users**: button is disabled with "You don't have permission to delete your account" message
+- Clicking "Delete Account" opens a confirmation dialog requiring the user's current password
+- On wrong password: "Invalid password." error below the form
+- On success: non-dismissible farewell dialog ("Thank you for using PHSAR...") with "Continue to login" button
+- "Continue to login" clears token and settings, redirects to `/login`
+- **API call**: `DELETE /users/account` with `{ password }` body
+
+---
+
+## 9. Admin Page
+
+### 9.1 Access
+- Only accessible to users with `admin` role
+- Non-admin users are redirected to `/` on mount
+- NavBar dropdown shows "Admin" link only for admin users
+
+### 9.2 Create Registration Token
+- Form with role selector (User / Restricted User) and expiry dropdown (1 day / 7 days / 30 days)
+- "Create" button POSTs to `/admin/registration-tokens`
+- On success: token string shown in a highlighted banner with copy button and toast feedback
+- Changing the role or expiry selector dismisses the success banner
+
+### 9.3 Token List
+- Displays all registration tokens with: truncated token (click to copy), status badge (active/used/expired), role badge, creation date, expiry date, used-by username
+- **Sort options** (dropdown): By Status (default: active → used → expired), Newest First, Expiring Soon (active tokens first by soonest expiry), Recently Used
+- **Delete**: trash icon on unused/expired tokens opens confirm/cancel inline buttons. Used tokens cannot be deleted. DELETE returns 204.
+
+---
+
+## 10. API Endpoints Used by Frontend
 
 | Endpoint | Method | When |
 |----------|--------|------|
@@ -259,10 +321,19 @@ Each anime search result card shows:
 | `/ratings/bulk` | PUT | Bulk rate selected media from anime detail |
 | `/ratings/bulk-delete` | POST | Bulk delete ratings from anime detail |
 | `/ratings/{uuid}` | DELETE | Delete a rating |
+| `/ratings/spoiler-visibility` | GET | Layout auth (fetch visible media UUIDs for spoiler protection) |
+| `/users/settings` | GET | Layout auth (fetch user settings) |
+| `/users/settings` | PUT | Settings page (update preferences) |
+| `/users/export?format=json\|csv` | GET | Settings page (data export download — flat media-level rows, filename includes username + date) |
+| `/users/account` | DELETE | Settings page (account deletion with password) |
+| `/admin/registration-tokens` | GET | Admin page (list all tokens) |
+| `/admin/registration-tokens` | POST | Admin page (create token) |
+| `/admin/registration-tokens/{uuid}` | DELETE | Admin page (delete unused token) |
+| `/auth/register` | POST | Registration page |
 
 ---
 
-## 9. Error States
+## 11. Error States
 
 | Scenario | Expected Behavior |
 |----------|-------------------|
@@ -275,3 +346,5 @@ Each anime search result card shows:
 | Rating save failure | Red error message below rating form |
 | Rating delete failure | Red error message below rating card |
 | Rating fetch returns 404 | No rating displayed (expected for unrated media) |
+| Account deletion wrong password | "Invalid password." error below form |
+| Account deletion network failure | "Failed to delete account." error below form |

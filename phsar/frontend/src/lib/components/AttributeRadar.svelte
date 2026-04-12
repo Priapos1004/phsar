@@ -1,7 +1,7 @@
 <script lang="ts">
 	import EChart from '$lib/components/EChart.svelte';
 	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr } from '$lib/types/api';
-	import { CHART_COLORS } from '$lib/utils/chartColors';
+	import { getThemedChartColorPalette } from '$lib/utils/chartColors';
 	import type { RatingOut } from '$lib/types/api';
 
 	interface Props {
@@ -68,45 +68,48 @@
 		return { avgs, closestLabels, hasData };
 	});
 
-	let radarOption = $derived.by(() => ({
-		radar: {
-			indicator: RADAR_LABELS.map((name) => ({ name, max: 1 })),
-			splitNumber: 3,
-			shape: 'polygon' as const,
-			axisName: {
-				color: 'rgba(0,0,0,0.7)',
-				fontSize: 12,
+	let radarOption = $derived.by(() => {
+		const primaryColor = getThemedChartColorPalette()[0];
+		return {
+			radar: {
+				indicator: RADAR_LABELS.map((name) => ({ name, max: 1 })),
+				splitNumber: 3,
+				shape: 'polygon' as const,
+				axisName: {
+					color: 'rgba(0,0,0,0.7)',
+					fontSize: 12,
+				},
+				splitArea: {
+					areaStyle: { color: ['rgba(0,0,0,0.02)', 'rgba(0,0,0,0.04)'] },
+				},
+				splitLine: { lineStyle: { color: 'rgba(0,0,0,0.08)' } },
 			},
-			splitArea: {
-				areaStyle: { color: ['rgba(0,0,0,0.02)', 'rgba(0,0,0,0.04)'] },
+			series: [
+				{
+					type: 'radar' as const,
+					emphasis: { disabled: true },
+					data: [
+						{
+							name: 'Your Profile',
+							value: radarData.avgs,
+							areaStyle: { color: primaryColor, opacity: 0.2 },
+							lineStyle: { color: primaryColor, width: 2 },
+							itemStyle: { color: primaryColor },
+						},
+					],
+				},
+			],
+			tooltip: {
+				trigger: 'item' as const,
+				formatter: () =>
+					RADAR_LABELS.map((label, i) => {
+						const closestLabel = radarData.closestLabels[i];
+						if (!closestLabel) return `${label}: <strong>--</strong>`;
+						return `${label}: <strong>${closestLabel}</strong>`;
+					}).join('<br/>'),
 			},
-			splitLine: { lineStyle: { color: 'rgba(0,0,0,0.08)' } },
-		},
-		series: [
-			{
-				type: 'radar' as const,
-				emphasis: { disabled: true },
-				data: [
-					{
-						name: 'Your Profile',
-						value: radarData.avgs,
-						areaStyle: { color: CHART_COLORS.chart1, opacity: 0.2 },
-						lineStyle: { color: CHART_COLORS.chart1, width: 2 },
-						itemStyle: { color: CHART_COLORS.chart1 },
-					},
-				],
-			},
-		],
-		tooltip: {
-			trigger: 'item' as const,
-			formatter: () =>
-				RADAR_LABELS.map((label, i) => {
-					const closestLabel = radarData.closestLabels[i];
-					if (!closestLabel) return `${label}: <strong>--</strong>`;
-					return `${label}: <strong>${closestLabel}</strong>`;
-				}).join('<br/>'),
-		},
-	}));
+		};
+	});
 </script>
 
 {#if radarData.hasData}

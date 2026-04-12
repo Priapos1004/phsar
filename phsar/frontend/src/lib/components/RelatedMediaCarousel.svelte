@@ -1,10 +1,15 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
-	import { formatSeason } from '$lib/utils/formatString';
+	import { formatSeason, resolveTitle, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref } from '$lib/utils/navigation';
+	import { userSettings } from '$lib/stores/userSettings';
+	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
+	import { visibleMediaSet } from '$lib/stores/spoilerVisibility';
 	import * as cls from '$lib/styles/classes';
 	import type { MediaSibling } from '$lib/types/api';
+
+	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
 
 	interface Props {
 		siblings: MediaSibling[];
@@ -24,30 +29,32 @@
 		>
 			<Card.Root class="h-full {cls.cardGlass}">
 				<Card.Content class="p-3 space-y-2">
-					{#if sibling.cover_image && !imgFailed[sibling.uuid]}
-						<img
-							src={sibling.cover_image}
-							alt={`Cover of ${sibling.title}`}
-							class="w-full h-24 object-cover rounded"
-							loading="lazy"
-							onerror={() => { imgFailed[sibling.uuid] = true; }}
-						/>
-					{:else}
-						<div class="w-full h-24 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs italic">
-							No image
-						</div>
-					{/if}
+					<SpoilerGuard visible={$visibleMediaSet.has(sibling.uuid)} mode="image">
+						{#if sibling.cover_image && !imgFailed[sibling.uuid]}
+							<img
+								src={sibling.cover_image}
+								alt={`Cover of ${sibling.title}`}
+								class="w-full h-24 object-cover rounded"
+								loading="lazy"
+								onerror={() => { imgFailed[sibling.uuid] = true; }}
+							/>
+						{:else}
+							<div class="w-full h-24 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs italic">
+								No image
+							</div>
+						{/if}
+					</SpoilerGuard>
 
 					<p class="text-xs font-semibold text-card-foreground line-clamp-2 leading-tight">
-						{sibling.name_eng ?? sibling.title}
+						{resolveTitle(sibling.title, sibling.name_eng, sibling.name_jap, nameLanguage)}
 					</p>
 
 					<div class="flex flex-wrap gap-1">
 						<Badge variant="secondary" class="text-[11px] px-1.5 py-0 {cls.badgeMediaTypeColor}">
-							{sibling.media_type}
+							{formatMediaType(sibling.media_type)}
 						</Badge>
 						<Badge variant="secondary" class="text-[11px] px-1.5 py-0 {cls.badgeRelationTypeColor}">
-							{sibling.relation_type}
+							{formatRelationType(sibling.relation_type)}
 						</Badge>
 					</div>
 

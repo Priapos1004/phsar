@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { getContext } from 'svelte';
 	import { api, ApiError } from '$lib/api';
-	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, formatAiringStatus } from '$lib/utils/formatString';
+	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, formatAiringStatus, resolveTitle, resolveSubtitles, decimalPlaces, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -11,16 +11,44 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { ArrowLeft, Bookmark, Star, Tv, Calendar, Film, Layers, X, ListChecks, BookmarkPlus, Trash2 } from 'lucide-svelte';
 	import * as cls from '$lib/styles/classes';
+	import { userSettings } from '$lib/stores/userSettings';
 	import type { AnimeDetail, AnimeMediaItem, RatingOut } from '$lib/types/api';
 	import RatingsOverview from '$lib/components/RatingsOverview.svelte';
 	import BulkRateDialog from '$lib/components/BulkRateDialog.svelte';
+	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
+	import { refreshSpoilerVisibility } from '$lib/stores/spoilerVisibility';
+	import { computeVisibleMediaUuids } from '$lib/utils/spoilerFrontier';
 
 	const getUserRole = getContext<() => string | null>('userRole');
+	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
+	let ratingStep = $derived(parseFloat($userSettings?.rating_step ?? '0.5'));
+	// Display decimals: at least enough for the step, or more if existing ratings need it
+	let scoreDecimals = $derived.by(() => {
+		const minDecimals = decimalPlaces(ratingStep);
+		const maxRatingDecimals = userRatingsList.reduce((max, r) =>
+			Math.max(max, decimalPlaces(r.rating)), 0);
+		return Math.max(minDecimals, maxRatingDecimals);
+	});
 
 	let anime = $state<AnimeDetail | null>(null);
 	let loading = $state(true);
 	let error = $state('');
 	let descriptionExpanded = $state(false);
+	let descriptionEl = $state<HTMLElement | null>(null);
+	let descriptionOverflows = $state(false);
+
+	$effect(() => {
+		const el = descriptionEl;
+		if (!el) { descriptionOverflows = false; return; }
+		if (descriptionExpanded) { descriptionOverflows = true; return; }
+		let innerFrame = 0;
+		const outerFrame = requestAnimationFrame(() => {
+			innerFrame = requestAnimationFrame(() => {
+				descriptionOverflows = el.scrollHeight - el.clientHeight > 2;
+			});
+		});
+		return () => { cancelAnimationFrame(outerFrame); cancelAnimationFrame(innerFrame); };
+	});
 	let coverFailed = $state(false);
 	let loadRequestId = 0;
 
@@ -60,12 +88,13 @@
 			const noteRating = results.find(r => r.note);
 			if (noteRating) {
 				const mediaItem = anime?.media.find(m => m.uuid === noteRating.media_uuid);
-				noteDialogMedia = mediaItem?.name_eng ?? noteRating.media_title;
+				noteDialogMedia = mediaItem ? resolveTitle(mediaItem.title, mediaItem.name_eng, mediaItem.name_jap, nameLanguage) : noteRating.media_title;
 				showNoteDialog = true;
 			}
 		}
 
 		refreshUserRatings();
+		refreshSpoilerVisibility();
 	}
 
 	async function handleBulkDelete() {
@@ -78,6 +107,7 @@
 			selectMode = false;
 			selectedUuids = new Set();
 			await refreshUserRatings();
+			refreshSpoilerVisibility();
 		} catch (err) {
 			bulkDeleteError = err instanceof ApiError ? err.detail : 'Failed to delete ratings';
 		} finally {
@@ -89,6 +119,12 @@
 	let searchToken = $derived(page.url.searchParams.get('q'));
 
 	let cleanedDescription = $derived(anime?.description ? cleanDescription(anime.description) : null);
+
+	// Spoiler frontier: compute which media within this anime are visible
+	let ratedMediaUuids = $derived(new Set(userRatingsList.map(r => r.media_uuid)));
+	let visibleMediaLocal = $derived(
+		anime ? computeVisibleMediaUuids(anime.media, ratedMediaUuids) : new Set<string>()
+	);
 
 	let displayStatus = $derived(
 		anime ? formatAiringStatus(anime.airing_status, anime.has_upcoming) : ''
@@ -236,7 +272,7 @@
 					<div class="flex items-start justify-between gap-4">
 						<div class="min-w-0">
 							<h1 class="text-2xl md:text-3xl font-bold text-card-foreground leading-tight">
-								{anime.name_eng ?? anime.title}
+								{resolveTitle(anime.title, anime.name_eng, anime.name_jap, nameLanguage)}
 							</h1>
 							{#if anime.airing_status === 'Currently Airing'}
 								<span class="inline-flex items-center gap-1.5 mt-1.5 px-2.5 py-1 rounded-md font-semibold bg-green-100 text-green-800 border border-green-200">
@@ -256,12 +292,9 @@
 									{displayStatus}
 								</span>
 							{/if}
-							{#if anime.name_eng && anime.name_eng !== anime.title}
-								<p class="text-sm text-muted-foreground mt-1">{anime.title}</p>
-							{/if}
-							{#if anime.name_jap}
-								<p class="text-sm text-muted-foreground/70">{anime.name_jap}</p>
-							{/if}
+							{#each resolveSubtitles(anime.title, anime.name_eng, anime.name_jap, nameLanguage) as subtitle, i}
+								<p class="text-sm {i === 0 ? 'text-muted-foreground mt-1' : 'text-muted-foreground/70'}">{subtitle}</p>
+							{/each}
 						</div>
 
 						<!-- Watchlist bookmark placeholder -->
@@ -291,10 +324,10 @@
 
 					<div class="flex flex-wrap gap-2">
 						{#each anime.relation_types as rt}
-							<Badge variant="secondary" class={cls.badgeRelationType}>{rt.relation_type}: {rt.count}</Badge>
+							<Badge variant="secondary" class={cls.badgeRelationType}>{formatRelationType(rt.relation_type)}: {rt.count}</Badge>
 						{/each}
 						{#each anime.media_types as mt}
-							<Badge variant="secondary" class={cls.badgeMediaType}>{mt.media_type}: {mt.count}</Badge>
+							<Badge variant="secondary" class={cls.badgeMediaType}>{formatMediaType(mt.media_type)}: {mt.count}</Badge>
 						{/each}
 						{#if anime.age_rating_numeric !== null}
 							<Badge variant="secondary" class={cls.badgeAgeRating}>{anime.age_rating_numeric}+</Badge>
@@ -362,11 +395,12 @@
 				<Card.Content>
 					<h2 class="text-lg font-semibold text-card-foreground mb-2">Synopsis</h2>
 					<div
+						bind:this={descriptionEl}
 						class="text-card-foreground leading-relaxed {descriptionExpanded ? '' : 'line-clamp-4'}"
 					>
 						{cleanedDescription}
 					</div>
-					{#if cleanedDescription.length > 300}
+					{#if descriptionOverflows}
 						<button
 							class="text-primary hover:underline mt-1"
 							onclick={() => (descriptionExpanded = !descriptionExpanded)}
@@ -379,7 +413,7 @@
 		{/if}
 
 		{#if userRatingsList.length > 0 && anime}
-			<RatingsOverview ratings={userRatingsList} media={anime.media} />
+			<RatingsOverview ratings={userRatingsList} media={anime.media} {scoreDecimals} minScoreDecimals={decimalPlaces(ratingStep)} />
 		{/if}
 
 		<!-- Media table -->
@@ -389,19 +423,21 @@
 					<h2 class="text-lg font-semibold text-card-foreground">
 						All Media ({anime.media.length})
 					</h2>
-					<button
-						class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition
-							{selectMode ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-card-foreground'}"
-						onclick={toggleSelectMode}
-					>
-						{#if selectMode}
-							<X class="size-4" />
-							Cancel
-						{:else}
-							<ListChecks class="size-4" />
-							Select
-						{/if}
-					</button>
+					{#if !isRestricted}
+						<button
+							class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition
+								{selectMode ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground hover:text-card-foreground'}"
+							onclick={toggleSelectMode}
+						>
+							{#if selectMode}
+								<X class="size-4" />
+								Cancel
+							{:else}
+								<ListChecks class="size-4" />
+								Select
+							{/if}
+						</button>
+					{/if}
 				</div>
 
 				<!-- Floating action bar — slides in when items are selected -->
@@ -458,6 +494,7 @@
 				<div class="divide-y divide-border rounded-lg border border-border overflow-hidden">
 					{#each anime.media as item}
 						{@const isSelected = selectedUuids.has(item.uuid)}
+						<!-- svelte-ignore a11y_no_noninteractive_tabindex -- role is always interactive (link or checkbox) -->
 						<div
 							class="flex items-center gap-3 px-3 py-2 transition
 								{selectMode ? (isSelected ? 'bg-primary/8' : 'hover:bg-muted/50 cursor-pointer') : 'hover:bg-muted/50'}"
@@ -467,7 +504,7 @@
 							}}
 							role={selectMode ? 'checkbox' : 'link'}
 							aria-checked={selectMode ? isSelected : undefined}
-							tabindex="0"
+							tabindex={0}
 							onkeydown={(e) => {
 								if (e.key === 'Enter' || e.key === ' ') {
 									e.preventDefault();
@@ -484,31 +521,33 @@
 							{/if}
 
 							<!-- Cover thumbnail -->
-							{#if item.cover_image}
-								<img
-									src={item.cover_image}
-									alt=""
-									class="w-10 h-14 object-cover rounded shadow-sm shrink-0"
-									loading="lazy"
-									onerror={imgFailed}
-								/>
-								<div class="w-10 h-14 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs shrink-0" style="display:none">
-									?
-								</div>
-							{:else}
-								<div class="w-10 h-14 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs shrink-0">
-									?
-								</div>
-							{/if}
+							<SpoilerGuard visible={visibleMediaLocal.has(item.uuid)} mode="image">
+								{#if item.cover_image}
+									<img
+										src={item.cover_image}
+										alt=""
+										class="w-10 h-14 object-cover rounded shadow-sm shrink-0"
+										loading="lazy"
+										onerror={imgFailed}
+									/>
+									<div class="w-10 h-14 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs shrink-0" style="display:none">
+										?
+									</div>
+								{:else}
+									<div class="w-10 h-14 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs shrink-0">
+										?
+									</div>
+								{/if}
+							</SpoilerGuard>
 
 							<!-- Title + badges -->
 							<div class="flex-1 min-w-0">
 								<p class="font-medium text-card-foreground truncate">
-									{item.name_eng ?? item.title}
+									{resolveTitle(item.title, item.name_eng, item.name_jap, nameLanguage)}
 								</p>
 								<div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
-									<Badge variant="secondary" class={`${cls.badgeRelationTypeColor} text-xs px-1.5 py-0`}>{item.relation_type}</Badge>
-									<Badge variant="secondary" class={`${cls.badgeMediaTypeColor} text-xs px-1.5 py-0`}>{item.media_type}</Badge>
+									<Badge variant="secondary" class={`${cls.badgeRelationTypeColor} text-xs px-1.5 py-0`}>{formatRelationType(item.relation_type)}</Badge>
+									<Badge variant="secondary" class={`${cls.badgeMediaTypeColor} text-xs px-1.5 py-0`}>{formatMediaType(item.media_type)}</Badge>
 									{#if item.episodes}
 										<span class="text-xs text-muted-foreground">{item.episodes} ep{item.episodes !== 1 ? 's' : ''}</span>
 									{/if}
@@ -523,7 +562,7 @@
 							<!-- User rating -->
 							<div class="text-sm text-card-foreground whitespace-nowrap w-12 text-right">
 								{#if userRatings.has(item.uuid)}
-									<span class="font-medium">{formatDecimalDigits(userRatings.get(item.uuid)!, 1)}</span>
+									<span class="font-medium">{formatDecimalDigits(userRatings.get(item.uuid)!, scoreDecimals)}</span>
 								{:else}
 									<span class="text-muted-foreground">--</span>
 								{/if}
@@ -568,10 +607,10 @@
 
 		<!-- Note placement info dialog -->
 		<Dialog.Root bind:open={showNoteDialog}>
-			<Dialog.Content class="bg-card text-card-foreground">
+			<Dialog.Content>
 				<Dialog.Header>
-					<Dialog.Title class="text-card-foreground">Note Added</Dialog.Title>
-					<Dialog.Description class="text-muted-foreground">
+					<Dialog.Title>Note Added</Dialog.Title>
+					<Dialog.Description>
 						Your note was added to: <span class="font-medium text-card-foreground">{noteDialogMedia}</span>
 					</Dialog.Description>
 				</Dialog.Header>
@@ -583,10 +622,10 @@
 
 		<!-- Bulk delete confirmation dialog -->
 		<Dialog.Root bind:open={showDeleteDialog}>
-			<Dialog.Content class="bg-card text-card-foreground">
+			<Dialog.Content>
 				<Dialog.Header>
-					<Dialog.Title class="text-card-foreground">Delete Ratings</Dialog.Title>
-					<Dialog.Description class="text-muted-foreground">
+					<Dialog.Title>Delete Ratings</Dialog.Title>
+					<Dialog.Description>
 						This will permanently delete {alreadyRatedCount} rating{alreadyRatedCount !== 1 ? 's' : ''} from the selected media. This cannot be undone.
 					</Dialog.Description>
 				</Dialog.Header>

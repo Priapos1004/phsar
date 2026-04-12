@@ -14,6 +14,7 @@ from app.core.security import (
 from app.daos.registration_token_dao import RegistrationTokenDAO
 from app.daos.user_dao import UserDAO
 from app.exceptions import (
+    InvalidPasswordError,
     InvalidRegistrationTokenError,
     RegistrationTokenAlreadyUsedError,
     RegistrationTokenExpiredError,
@@ -22,6 +23,8 @@ from app.exceptions import (
 from app.models.registration_token import RegistrationToken
 from app.models.users import RoleType, Users
 from app.schemas.auth_schema import UserCreateWithToken
+from app.services import user_settings_service
+from app.services.spoiler_service import recompute_visibility_for_user
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +40,8 @@ async def register(user_data: UserCreateWithToken, db: AsyncSession):
     token_obj = await registration_token_dao.get_by_token(db, user_data.registration_token)
     if not token_obj:
         raise InvalidRegistrationTokenError()
-    if token_obj.was_used_for_user_id is not None:
+    # Check used_at (not the FK) because the FK is SET NULL on user deletion
+    if token_obj.used_at is not None:
         raise RegistrationTokenAlreadyUsedError()
     if token_obj.is_expired:
         raise RegistrationTokenExpiredError()
@@ -49,6 +53,9 @@ async def register(user_data: UserCreateWithToken, db: AsyncSession):
         role=token_obj.role,
     )
     await user_dao.create(db, new_user)
+    await user_settings_service.create_default_settings(db, new_user.id)
+
+    await recompute_visibility_for_user(db, new_user.id)
 
     token_obj.was_used_for_user_id = new_user.id
     token_obj.used_at = datetime.now(timezone.utc)
@@ -83,6 +90,14 @@ async def authenticate(username: str, password: str, db: AsyncSession):
             user = await user_dao.get_by_username(db, username)
 
     return user
+
+
+async def delete_account(user: Users, password: str, db: AsyncSession) -> None:
+    """Delete user account after verifying password. DB cascades handle related data."""
+    if not verify_password(password, user.hashed_password):
+        raise InvalidPasswordError()
+    await user_dao.delete(db, user)
+    await db.commit()
 
 
 async def create_registration_token(

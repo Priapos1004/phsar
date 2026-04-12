@@ -146,7 +146,7 @@ class JikanScraper:
         return [media["mal_id"] for media in media_list if media.get("type") == "anime"]
 
     def get_relation_type(self, is_main_story: bool, relation_type: Optional[str]) -> str:
-        return "main" if is_main_story else (relation_type or "other")
+        return "main" if is_main_story else (relation_type or "side_story")
 
     async def search_title(self, title: str, excluded_mal_ids: set[int], initial_search_limit: int = 3) -> tuple[list[dict], dict[int, dict], set[tuple[int, str, str]]]:
         search = await self._get(f"{self.base_url}/anime", params={"q": title, "limit": initial_search_limit})
@@ -230,7 +230,7 @@ class JikanScraper:
                                 if rel in ["summary", "crossover"]:
                                     relation_types.extend([rel] * len(mal_ids))
                                 elif rel in ["side_story", "alternative_version", "compilation"]:
-                                    relation_types.extend(["other"] * len(mal_ids))
+                                    relation_types.extend(["side_story"] * len(mal_ids))
                                 else:
                                     relation_types.extend([None] * len(mal_ids))
 
