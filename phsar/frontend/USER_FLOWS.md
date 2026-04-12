@@ -118,7 +118,7 @@ Filters appear in a collapsible panel below the search input. Filter options ada
 
 ### 5.1 Media Card (media view)
 Each media search result card shows:
-- Cover image (lazy-loaded, with fallback)
+- Cover image (lazy-loaded, with fallback; blurred with click-to-reveal when spoiler-protected)
 - Title, score + scored-by count, anime season, airing status, age rating
 - Genre tags, media type tag, relation type tag
 - Total watch time
@@ -161,7 +161,7 @@ Each anime search result card shows:
 
 ### 6.4 Media Table
 - Compact table with rows for each media in the anime
-- Each row: small cover thumbnail (40x56px), title + relation/media type badges, season, score, airing status dot
+- Each row: small cover thumbnail (40x56px, blurred when spoiler-protected), title + relation/media type badges, season, score, airing status dot
 - Clicking a row navigates to `/media?uuid=<uuid>` (with search token preserved)
 - **Select mode**: "Select" button in table header toggles select mode
   - Checkboxes appear on left of each row
@@ -199,7 +199,7 @@ Each anime search result card shows:
 
 ### 7.2 Hero Card
 - Blurred cover image background with card overlay
-- Cover image (with fallback placeholder if missing or load fails)
+- Cover image (with fallback placeholder if missing or load fails; spoiler-guarded with blur + click-to-reveal when media is beyond the spoiler frontier)
 - Title (English preferred, falls back to default title)
 - Japanese title and romaji subtitle (if different from displayed title)
 - Airing status badge: green pulsing dot for "Currently Airing", yellow for "Not yet aired", muted for finished
@@ -212,7 +212,8 @@ Each anime search result card shows:
 
 ### 7.3 Synopsis
 - Collapsible description card (4-line clamp by default)
-- "Read more" / "Show less" toggle for descriptions over 300 characters
+- "Read more" / "Show less" toggle shown only when text actually overflows the 4-line clamp (DOM overflow detection with 2px threshold)
+- Synopsis blurred with click-to-reveal when media is spoiler-protected; "Read more" button is behind the blur
 - HTML entities cleaned from description text
 
 ### 7.4 Rating Card
@@ -232,7 +233,7 @@ Each anime search result card shows:
 ### 7.5 Related Media Carousel
 - Always shown — displays parent anime name as a clickable link to the anime detail page
 - If sibling media exist: horizontal scrollable row of compact cards (snap scrolling)
-  - Each card: cover image (with fallback), title, media type + relation type badges, season or episode count
+  - Each card: cover image (with fallback; blurred when spoiler-protected), title, media type + relation type badges, season or episode count
   - Clicking a sibling card navigates to that media's detail page (search token preserved)
 - If no siblings: "No other media in this anime" message
 
@@ -255,7 +256,17 @@ Each anime search result card shows:
 - Four themes: Default (purple), Crimson (red), Ocean (blue), Forest (green)
 - Theme applied via CSS class on `<html>` with localStorage sync for FOUC prevention
 
-### 8.2 Account Deletion (Danger Zone)
+### 8.2 Spoiler Protection
+- Three-level dropdown: Off, Blur, Hide
+- **Off**: No spoiler protection
+- **Blur**: "Blur covers and descriptions to avoid spoilers" — media beyond the spoiler frontier are blurred with a "Click to reveal" overlay on covers and descriptions
+- **Hide**: "Blur covers and descriptions, and hide spoiler media from search results" — same as blur, plus media search results are filtered to only show visible media
+- Spoiler frontier: per anime, all media up to and including the next unwatched main-story entry are visible; individually rated media beyond the frontier are also visible
+- Anime covers and anime-level descriptions are never spoiler-protected
+- On detail pages, "hide" mode falls back to blur behavior (user explicitly navigated there)
+- Visibility data loaded on auth and refreshed after rating changes
+
+### 8.3 Account Deletion (Danger Zone)
 - Red-bordered "Danger Zone" card at the bottom of the settings page
 - Glass overlay covers the entire card; the "Danger Zone" title shows through the tinted glass
 - Lock icon and "Click to unlock" prompt centered on the glass
@@ -310,6 +321,7 @@ Each anime search result card shows:
 | `/ratings/bulk` | PUT | Bulk rate selected media from anime detail |
 | `/ratings/bulk-delete` | POST | Bulk delete ratings from anime detail |
 | `/ratings/{uuid}` | DELETE | Delete a rating |
+| `/ratings/spoiler-visibility` | GET | Layout auth (fetch visible media UUIDs for spoiler protection) |
 | `/users/settings` | GET | Layout auth (fetch user settings) |
 | `/users/settings` | PUT | Settings page (update preferences) |
 | `/users/export?format=json\|csv` | GET | Settings page (data export download — flat media-level rows, filename includes username + date) |

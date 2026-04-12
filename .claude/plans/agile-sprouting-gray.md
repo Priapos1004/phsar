@@ -160,11 +160,34 @@ Once all features are discussed, this becomes the basis for GitHub issues and mi
 - FOUC prevention via inline localStorage script in `app.html`
 
 ### Spoiler Protection Behavior
-- When enabled:
-  - Hide descriptions until clicked/tapped
-  - Hide cover images of media the user hasn't rated yet
-  - Optionally: only show first-season anime or "continue watching" entries in search results
-- Applies in search results, anime pages, media pages
+
+**Scope:** Media-level only. Anime search cards and anime-level descriptions are always safe (cover is poster art, description is from first main media).
+
+**Three levels:**
+- `off` — No protection, everything visible
+- `blur` — Blur covers + descriptions of media beyond the spoiler frontier. Per-item click-to-reveal.
+- `hide` — In media search: backend filters out media beyond the frontier (correct pagination via `WHERE media.id IN (...)`). On detail pages: falls back to blur behavior (user explicitly navigated there).
+
+**Spoiler Frontier Algorithm** (per anime, media sorted chronologically by `season_year → season_name → mal_id`):
+1. Extract main media (`relation_type == 'main'`) in chronological order
+2. If no ratings exist: first main media is visible (or first media if no main exists), everything else is protected
+3. If ratings exist: find the last rated main media → the next unrated main media after it is the **frontier**
+4. All media chronologically up to and including the frontier are visible (including side stories, summaries, ONAs between rated mains and frontier)
+5. All media after the frontier are protected
+
+**Example:**
+```
+S1 (main, rated)      → visible
+S2 (main, rated)      → visible
+ONA (side_story)      → visible (before frontier)
+Summary               → visible (before frontier)
+S3 (main, NOT rated)  → visible ← frontier (next main to watch)
+OVA (side_story)      → BLUR/HIDE (after frontier)
+S4 (main)             → BLUR/HIDE
+S5 (main)             → BLUR/HIDE
+```
+
+**Implementation:** `GET /ratings/spoiler-visibility` endpoint computes visible media UUIDs. Frontend stores as `Set`. Detail pages compute frontier locally for fresher data. Reusable `SpoilerGuard.svelte` component wraps covers/descriptions.
 
 ### Key Decisions
 - No profile visibility setting — users are always separated
@@ -479,7 +502,7 @@ Eye-catching landing page — light version of browse, serves new and returning 
 | **v0.9.0** | ✓ Ratings backend + rating enums/migration + DAO optimization | Pure backend. Lock DB schema for ratings. Clean up DAO query patterns (single-queries) while touching this layer. |
 | **v0.10.0** | ✓ Media detail page + rating UI | First visible ratings. Rating modal/popup. Media page with full info + link to anime (anime page not yet built). |
 | **v0.11.0** | ✓ Anime-level search + anime detail page | Aggregated search as default. Anime↔media navigation loop complete. View toggle (anime/media). View-type-aware filter options. |
-| **v0.12.0** | User settings + user page UI + data export + admin + account deletion | Settings table, theme system (app color + hero pic via `@property`/`var()` indirection), rating step, name language, spoiler protection. Flat media-level data export (ratings + watchlist + catalog info per media, respects name_language, dated filename). Token expiry dialog. Registration page. Guest account. Admin page for registration token management. Account deletion with glass crack UX, password confirmation, DB cascade (SET NULL on registration tokens). |
+| **v0.12.0** | ✓ User settings + user page UI + data export + admin + account deletion | Settings table, theme system (app color + hero pic via `@property`/`var()` indirection), rating step, name language, spoiler protection. Flat media-level data export (ratings + watchlist + catalog info per media, respects name_language, dated filename). Token expiry dialog. Registration page. Guest account. Admin page for registration token management. Account deletion with glass crack UX, password confirmation, DB cascade (SET NULL on registration tokens). |
 | **v0.13.0** | Deployment (Coolify) + switch to bun + DB backup/restore | Deployment-ready: Coolify config for db/frontend/backend services. Switch frontend from npm to bun. pg_dump backup system (automated + local download). Prerequisite for content pipeline cron jobs. |
 | **v0.14.0** | Content pipeline (scraper jobs, dedup, updates, seasonal) | User-triggered scraping with job tracking. Automated daily/weekly updates. Seasonal scraping. Dedup + admin merge notifications. |
 | **v0.15.0** | Watchlist backend + UI | Watchlist CRUD, tags, priority. Watchlist page with filtering. Watchlist icons in search results. |

@@ -48,6 +48,7 @@ phsar/
 │   │   ├── studio.py
 │   │   ├── tag.py
 │   │   ├── user_settings.py
+│   │   ├── user_visible_media.py
 │   │   ├── users.py
 │   │   ├── watchlist.py
 │   │   └── watchlist_tag.py
@@ -89,6 +90,7 @@ phsar/
 │       ├── rating_service.py
 │       ├── save_service.py
 │       ├── search_service.py
+│       ├── spoiler_service.py
 │       ├── token_service.py
 │       ├── unwanted_media_service.py
 │       ├── user_settings_service.py
@@ -126,6 +128,7 @@ phsar/
 │   │   │   │   ├── RatingsOverviewTimeline.svelte
 │   │   │   │   ├── RelatedMediaCarousel.svelte
 │   │   │   │   ├── ScrollableCard.svelte
+│   │   │   │   ├── SpoilerGuard.svelte
 │   │   │   │   ├── SearchBar.svelte
 │   │   │   │   ├── SkeletonMediaInfo.svelte
 │   │   │   │   ├── TagSelect.svelte
@@ -148,6 +151,7 @@ phsar/
 │   │   │   │       └── textarea/
 │   │   │   ├── stores/
 │   │   │   │   ├── auth.ts
+│   │   │   │   ├── spoilerVisibility.ts
 │   │   │   │   └── userSettings.ts
 │   │   │   ├── styles/
 │   │   │   │   └── classes.ts
@@ -160,7 +164,8 @@ phsar/
 │   │   │       ├── getSeason.ts
 │   │   │       ├── index.ts
 │   │   │       ├── navigation.ts
-│   │   │       └── search.ts
+│   │   │       ├── search.ts
+│   │   │       └── spoilerFrontier.ts
 │   │   ├── routes/
 │   │   │   ├── +layout.svelte
 │   │   │   ├── +layout.ts
@@ -181,13 +186,16 @@ phsar/
 │   │   │       └── +page.svelte
 │   │   └── tests/
 │   │       ├── setup.ts
+│   │       ├── SpoilerGuardTest.svelte
 │   │       ├── auth-store.test.ts
 │   │       ├── format-string.test.ts
 │   │       ├── login.test.ts
 │   │       ├── media-detail.test.ts
 │   │       ├── navbar.test.ts
 │   │       ├── rating-modal.test.ts
-│   │       └── searchbar.test.ts
+│   │       ├── searchbar.test.ts
+│   │       ├── spoiler-frontier.test.ts
+│   │       └── spoiler-guard.test.ts
 │   ├── static/
 │   │   ├── phsar_logo_inverted.png
 │   │   ├── phsar_logo_transparent.png
@@ -221,6 +229,7 @@ phsar/
     └── services/
         ├── test_jikan_scraper.py
         ├── test_search_service.py
+        ├── test_spoiler_service.py
         └── test_vector_embedding_service.py
 ```
 </details>
