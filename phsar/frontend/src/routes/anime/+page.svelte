@@ -15,6 +15,9 @@
 	import type { AnimeDetail, AnimeMediaItem, RatingOut } from '$lib/types/api';
 	import RatingsOverview from '$lib/components/RatingsOverview.svelte';
 	import BulkRateDialog from '$lib/components/BulkRateDialog.svelte';
+	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
+	import { refreshSpoilerVisibility } from '$lib/stores/spoilerVisibility';
+	import { computeVisibleMediaUuids } from '$lib/utils/spoilerFrontier';
 
 	const getUserRole = getContext<() => string | null>('userRole');
 	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
@@ -31,6 +34,21 @@
 	let loading = $state(true);
 	let error = $state('');
 	let descriptionExpanded = $state(false);
+	let descriptionEl = $state<HTMLElement | null>(null);
+	let descriptionOverflows = $state(false);
+
+	$effect(() => {
+		const el = descriptionEl;
+		if (!el) { descriptionOverflows = false; return; }
+		if (descriptionExpanded) { descriptionOverflows = true; return; }
+		let innerFrame = 0;
+		const outerFrame = requestAnimationFrame(() => {
+			innerFrame = requestAnimationFrame(() => {
+				descriptionOverflows = el.scrollHeight - el.clientHeight > 2;
+			});
+		});
+		return () => { cancelAnimationFrame(outerFrame); cancelAnimationFrame(innerFrame); };
+	});
 	let coverFailed = $state(false);
 	let loadRequestId = 0;
 
@@ -76,6 +94,7 @@
 		}
 
 		refreshUserRatings();
+		refreshSpoilerVisibility();
 	}
 
 	async function handleBulkDelete() {
@@ -88,6 +107,7 @@
 			selectMode = false;
 			selectedUuids = new Set();
 			await refreshUserRatings();
+			refreshSpoilerVisibility();
 		} catch (err) {
 			bulkDeleteError = err instanceof ApiError ? err.detail : 'Failed to delete ratings';
 		} finally {
@@ -99,6 +119,12 @@
 	let searchToken = $derived(page.url.searchParams.get('q'));
 
 	let cleanedDescription = $derived(anime?.description ? cleanDescription(anime.description) : null);
+
+	// Spoiler frontier: compute which media within this anime are visible
+	let ratedMediaUuids = $derived(new Set(userRatingsList.map(r => r.media_uuid)));
+	let visibleMediaLocal = $derived(
+		anime ? computeVisibleMediaUuids(anime.media, ratedMediaUuids) : new Set<string>()
+	);
 
 	let displayStatus = $derived(
 		anime ? formatAiringStatus(anime.airing_status, anime.has_upcoming) : ''
@@ -369,11 +395,12 @@
 				<Card.Content>
 					<h2 class="text-lg font-semibold text-card-foreground mb-2">Synopsis</h2>
 					<div
+						bind:this={descriptionEl}
 						class="text-card-foreground leading-relaxed {descriptionExpanded ? '' : 'line-clamp-4'}"
 					>
 						{cleanedDescription}
 					</div>
-					{#if cleanedDescription.length > 300}
+					{#if descriptionOverflows}
 						<button
 							class="text-primary hover:underline mt-1"
 							onclick={() => (descriptionExpanded = !descriptionExpanded)}
@@ -494,22 +521,24 @@
 							{/if}
 
 							<!-- Cover thumbnail -->
-							{#if item.cover_image}
-								<img
-									src={item.cover_image}
-									alt=""
-									class="w-10 h-14 object-cover rounded shadow-sm shrink-0"
-									loading="lazy"
-									onerror={imgFailed}
-								/>
-								<div class="w-10 h-14 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs shrink-0" style="display:none">
-									?
-								</div>
-							{:else}
-								<div class="w-10 h-14 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs shrink-0">
-									?
-								</div>
-							{/if}
+							<SpoilerGuard visible={visibleMediaLocal.has(item.uuid)} mode="image">
+								{#if item.cover_image}
+									<img
+										src={item.cover_image}
+										alt=""
+										class="w-10 h-14 object-cover rounded shadow-sm shrink-0"
+										loading="lazy"
+										onerror={imgFailed}
+									/>
+									<div class="w-10 h-14 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs shrink-0" style="display:none">
+										?
+									</div>
+								{:else}
+									<div class="w-10 h-14 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs shrink-0">
+										?
+									</div>
+								{/if}
+							</SpoilerGuard>
 
 							<!-- Title + badges -->
 							<div class="flex-1 min-w-0">

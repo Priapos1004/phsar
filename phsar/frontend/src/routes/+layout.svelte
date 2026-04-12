@@ -2,6 +2,7 @@
     import { page } from '$app/state';
     import { token } from '$lib/stores/auth';
     import { userSettings } from '$lib/stores/userSettings';
+    import { spoilerVisibility, refreshSpoilerVisibility } from '$lib/stores/spoilerVisibility';
     import { onMount, setContext } from 'svelte';
     import { jwtDecode } from 'jwt-decode';
     import { api } from '$lib/api';
@@ -56,22 +57,33 @@
               expiryTimer = setTimeout(() => { showExpiryDialog = true; }, msUntilExpiry);
             }
 
-            // Fetch user settings into shared store
+            // Fetch settings and spoiler visibility in parallel to avoid serial latency
             try {
-              userSettings.set(await api.get<UserSettings>('/users/settings'));
+              const [settings] = await Promise.all([
+                api.get<UserSettings>('/users/settings'),
+                refreshSpoilerVisibility(),
+              ]);
+              userSettings.set(settings);
+              // Clear visibility store if spoiler protection is off
+              if (settings.spoiler_level === 'off') {
+                spoilerVisibility.set(null);
+              }
             } catch {
               userSettings.set(null);
+              spoilerVisibility.set(null);
             }
           } catch {
             token.set(null);
             userRole = null;
             username = null;
             userSettings.set(null);
+            spoilerVisibility.set(null);
           }
         } else {
           userRole = null;
           username = null;
           userSettings.set(null);
+          spoilerVisibility.set(null);
         }
         loading = false;
       });

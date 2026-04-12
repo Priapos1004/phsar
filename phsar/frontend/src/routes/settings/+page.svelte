@@ -206,9 +206,9 @@
                             {#if settings.spoiler_level === 'off'}
                                 No spoiler protection
                             {:else if settings.spoiler_level === 'blur'}
-                                Blur covers and descriptions for unrated media
+                                Blur covers and descriptions to avoid spoilers
                             {:else}
-                                Hide unrated media from search results
+                                Blur covers and descriptions, and hide spoiler media from search results
                             {/if}
                         </p>
                     </div>

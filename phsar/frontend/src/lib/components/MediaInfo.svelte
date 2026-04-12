@@ -5,6 +5,8 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as cls from '$lib/styles/classes';
+	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
+	import { visibleMediaSet } from '$lib/stores/spoilerVisibility';
 	import type { RelationTypeSummary, MediaTypeSummary } from '$lib/types/api';
 
 	interface Props {
@@ -44,6 +46,8 @@
 
 	let displaySeason = $derived(season_range ?? anime_season);
 	let displayStatus = $derived(formatAiringStatus(airing_status, has_upcoming));
+	// Spoiler: anime cards are always visible; media cards check the frontier store
+	let isCoverVisible = $derived(info_type === 'anime' || $visibleMediaSet.has(media_uuid));
 </script>
 
 <a
@@ -52,19 +56,21 @@
 >
 	<Card.Root class="h-full bg-card/80 backdrop-blur">
 		<Card.Content class="flex gap-4">
-			{#if imageUrl && !imgFailed}
-			<img
-				src={imageUrl}
-				alt={`Cover of ${title}`}
-				class="w-24 h-36 object-cover rounded-lg shadow-sm"
-				loading="lazy"
-				onerror={() => { imgFailed = true; }}
-			/>
-			{:else}
-				<div class="w-24 h-36 bg-muted rounded-lg flex items-center justify-center text-muted-foreground text-sm italic">
-					No image
-				</div>
-			{/if}
+			<SpoilerGuard visible={isCoverVisible} mode="image">
+				{#if imageUrl && !imgFailed}
+				<img
+					src={imageUrl}
+					alt={`Cover of ${title}`}
+					class="w-24 h-36 object-cover rounded-lg shadow-sm"
+					loading="lazy"
+					onerror={() => { imgFailed = true; }}
+				/>
+				{:else}
+					<div class="w-24 h-36 bg-muted rounded-lg flex items-center justify-center text-muted-foreground text-sm italic">
+						No image
+					</div>
+				{/if}
+			</SpoilerGuard>
 
 			<div class="flex flex-col justify-between flex-grow space-y-2">
 				<div class="flex items-start justify-between">

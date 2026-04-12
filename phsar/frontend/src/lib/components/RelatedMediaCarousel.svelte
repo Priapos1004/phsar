@@ -4,6 +4,8 @@
 	import { formatSeason, resolveTitle, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import { userSettings } from '$lib/stores/userSettings';
+	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
+	import { visibleMediaSet } from '$lib/stores/spoilerVisibility';
 	import * as cls from '$lib/styles/classes';
 	import type { MediaSibling } from '$lib/types/api';
 
@@ -27,19 +29,21 @@
 		>
 			<Card.Root class="h-full {cls.cardGlass}">
 				<Card.Content class="p-3 space-y-2">
-					{#if sibling.cover_image && !imgFailed[sibling.uuid]}
-						<img
-							src={sibling.cover_image}
-							alt={`Cover of ${sibling.title}`}
-							class="w-full h-24 object-cover rounded"
-							loading="lazy"
-							onerror={() => { imgFailed[sibling.uuid] = true; }}
-						/>
-					{:else}
-						<div class="w-full h-24 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs italic">
-							No image
-						</div>
-					{/if}
+					<SpoilerGuard visible={$visibleMediaSet.has(sibling.uuid)} mode="image">
+						{#if sibling.cover_image && !imgFailed[sibling.uuid]}
+							<img
+								src={sibling.cover_image}
+								alt={`Cover of ${sibling.title}`}
+								class="w-full h-24 object-cover rounded"
+								loading="lazy"
+								onerror={() => { imgFailed[sibling.uuid] = true; }}
+							/>
+						{:else}
+							<div class="w-full h-24 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs italic">
+								No image
+							</div>
+						{/if}
+					</SpoilerGuard>
 
 					<p class="text-xs font-semibold text-card-foreground line-clamp-2 leading-tight">
 						{resolveTitle(sibling.title, sibling.name_eng, sibling.name_jap, nameLanguage)}

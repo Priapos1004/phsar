@@ -12,6 +12,8 @@
 	import { ArrowLeft, Bookmark, Star, Tv, Clock, Calendar, Film } from 'lucide-svelte';
 	import * as cls from '$lib/styles/classes';
 	import { userSettings } from '$lib/stores/userSettings';
+	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
+	import { visibleMediaSet, refreshSpoilerVisibility } from '$lib/stores/spoilerVisibility';
 	import type { MediaDetail, RatingOut } from '$lib/types/api';
 
 	const getUserRole = getContext<() => string | null>('userRole');
@@ -22,6 +24,23 @@
 	let loading = $state(true);
 	let error = $state('');
 	let descriptionExpanded = $state(false);
+	let descriptionEl = $state<HTMLElement | null>(null);
+	let descriptionOverflows = $state(false);
+
+	$effect(() => {
+		const el = descriptionEl;
+		if (!el) { descriptionOverflows = false; return; }
+		if (descriptionExpanded) { descriptionOverflows = true; return; }
+		// Double rAF ensures layout + paint have completed before measuring.
+		// Threshold of 2px guards against sub-pixel rounding.
+		let innerFrame = 0;
+		const outerFrame = requestAnimationFrame(() => {
+			innerFrame = requestAnimationFrame(() => {
+				descriptionOverflows = el.scrollHeight - el.clientHeight > 2;
+			});
+		});
+		return () => { cancelAnimationFrame(outerFrame); cancelAnimationFrame(innerFrame); };
+	});
 	let coverFailed = $state(false);
 	let loadRequestId = 0;
 
@@ -29,6 +48,11 @@
 	let searchToken = $derived(page.url.searchParams.get('q'));
 
 	let cleanedDescription = $derived(media?.description ? cleanDescription(media.description) : null);
+	// OR with userRating prevents a brief blur flash after rating: the local
+	// state updates instantly while refreshSpoilerVisibility() is still in-flight.
+	let isMediaVisible = $derived(
+		!!userRating || (media ? $visibleMediaSet.has(media.uuid) : true)
+	);
 	let mediaSeason = $derived(media ? formatSeason(media.anime_season_name, media.anime_season_year) : null);
 
 	$effect(() => {
@@ -82,10 +106,12 @@
 
 	function handleRatingSaved(rating: RatingOut) {
 		userRating = rating;
+		refreshSpoilerVisibility();
 	}
 
 	function handleRatingDeleted() {
 		userRating = null;
+		refreshSpoilerVisibility();
 	}
 </script>
 
@@ -123,18 +149,20 @@
 
 			<div class="relative flex flex-col md:flex-row gap-6 p-6">
 				<div class="shrink-0 flex flex-col items-center md:items-start">
-					{#if media.cover_image && !coverFailed}
-						<img
-							src={media.cover_image}
-							alt={`Cover of ${media.title}`}
-							class="w-44 h-auto rounded-lg shadow-xl ring-1 ring-border"
-							onerror={() => { coverFailed = true; }}
-						/>
-					{:else}
-						<div class="w-44 h-64 bg-muted rounded-lg flex items-center justify-center text-muted-foreground italic">
-							No image
-						</div>
-					{/if}
+					<SpoilerGuard visible={isMediaVisible} mode="image">
+						{#if media.cover_image && !coverFailed}
+							<img
+								src={media.cover_image}
+								alt={`Cover of ${media.title}`}
+								class="w-44 h-auto rounded-lg shadow-xl ring-1 ring-border"
+								onerror={() => { coverFailed = true; }}
+							/>
+						{:else}
+							<div class="w-44 h-64 bg-muted rounded-lg flex items-center justify-center text-muted-foreground italic">
+								No image
+							</div>
+						{/if}
+					</SpoilerGuard>
 				</div>
 
 				<div class="flex-1 space-y-4 min-w-0">
@@ -248,19 +276,22 @@
 			<Card.Root class={cls.cardGlass}>
 				<Card.Content>
 					<h2 class="text-lg font-semibold text-card-foreground mb-2">Synopsis</h2>
-					<div
-						class="text-card-foreground leading-relaxed {descriptionExpanded ? '' : 'line-clamp-4'}"
-					>
-						{cleanedDescription}
-					</div>
-					{#if cleanedDescription.length > 300}
-						<button
-							class="text-primary hover:underline mt-1"
-							onclick={() => (descriptionExpanded = !descriptionExpanded)}
+					<SpoilerGuard visible={isMediaVisible} mode="text">
+						<div
+							bind:this={descriptionEl}
+							class="text-card-foreground leading-relaxed {descriptionExpanded ? '' : 'line-clamp-4'}"
 						>
-							{descriptionExpanded ? 'Show less' : 'Read more'}
-						</button>
-					{/if}
+							{cleanedDescription}
+						</div>
+						{#if descriptionOverflows}
+							<button
+								class="text-primary hover:underline mt-1"
+								onclick={() => (descriptionExpanded = !descriptionExpanded)}
+							>
+								{descriptionExpanded ? 'Show less' : 'Read more'}
+							</button>
+						{/if}
+					</SpoilerGuard>
 				</Card.Content>
 			</Card.Root>
 		{/if}
