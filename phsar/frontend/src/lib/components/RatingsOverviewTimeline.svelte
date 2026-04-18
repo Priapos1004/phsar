@@ -1,7 +1,8 @@
 <script lang="ts">
 	import EChart from '$lib/components/EChart.svelte';
-	import { formatSeason, formatDecimalDigits, decimalPlaces, formatRelationType, formatMediaType } from '$lib/utils/formatString';
+	import { formatSeason, formatDecimalDigits, decimalPlaces, formatRelationType, formatMediaType, resolveTitle } from '$lib/utils/formatString';
 	import { getThemedRelationTypeColors, RELATION_TYPE_ORDER, CHART_COLORS } from '$lib/utils/chartColors';
+	import { userSettings } from '$lib/stores/userSettings';
 	import type { AnimeMediaItem, RatingOut } from '$lib/types/api';
 
 	interface MediaWithRating {
@@ -55,6 +56,7 @@
 	}
 
 	let relationColors = $derived(getThemedRelationTypeColors());
+	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
 
 	let chartOption = $derived({
 		tooltip: {
@@ -63,7 +65,7 @@
 			formatter: (params: unknown) => {
 				const p = params as { dataIndex: number };
 				const mr = mediaWithRatings[p.dataIndex];
-				const title = mr.media.name_eng ?? mr.media.title;
+				const title = resolveTitle(mr.media.title, mr.media.name_eng, mr.media.name_jap, nameLanguage);
 				const relation = formatRelationType(mr.media.relation_type);
 				const season = formatSeason(mr.media.anime_season_name, mr.media.anime_season_year) ?? '';
 				if (mr.rating) {

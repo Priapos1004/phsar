@@ -41,7 +41,7 @@ async def list_registration_tokens(db: AsyncSession) -> list[RegistrationTokenLi
 
 
 async def delete_registration_token(db: AsyncSession, uuid: UUID) -> None:
-    token = await registration_token_dao.get_by_uuid(db, str(uuid))
+    token = await registration_token_dao.get_by_uuid(db, uuid)
     if not token:
         raise RegistrationTokenNotFoundError(str(uuid))
     if token.used_at is not None:

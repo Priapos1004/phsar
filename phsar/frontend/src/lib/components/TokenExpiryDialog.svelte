@@ -7,7 +7,7 @@
         onLogin: () => void;
     }
 
-    let { open, onLogin }: Props = $props();
+    let { open = $bindable(), onLogin }: Props = $props();
 </script>
 
 <Dialog.Root bind:open>

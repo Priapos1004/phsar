@@ -1,3 +1,5 @@
+import uuid
+
 import pytest
 
 from app.models.users import RoleType
@@ -167,12 +169,11 @@ async def test_delete_invalid_uuid_format(client, admin_auth_headers):
 
 @pytest.mark.asyncio
 async def test_delete_nonexistent_token(client, admin_auth_headers):
-    import uuid
     resp = await client.delete(f"{TOKENS_URL}/{uuid.uuid4()}", headers=admin_auth_headers)
     assert resp.status_code == 404
 
 
 @pytest.mark.asyncio
 async def test_delete_token_requires_admin(client, user_auth_headers):
-    resp = await client.delete(f"{TOKENS_URL}/some-uuid", headers=user_auth_headers)
+    resp = await client.delete(f"{TOKENS_URL}/{uuid.uuid4()}", headers=user_auth_headers)
     assert resp.status_code == 403

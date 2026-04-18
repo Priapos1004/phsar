@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -13,7 +15,7 @@ class RegistrationTokenDAO(BaseDAO[RegistrationToken]):
     async def get_by_token(self, db: AsyncSession, token: str) -> RegistrationToken | None:
         return await self.get_by_field(db, token=token)
 
-    async def get_by_uuid(self, db: AsyncSession, uuid: str) -> RegistrationToken | None:
+    async def get_by_uuid(self, db: AsyncSession, uuid: UUID) -> RegistrationToken | None:
         return await self.get_by_field(db, uuid=uuid)
 
     async def get_all_with_users(self, db: AsyncSession) -> list[RegistrationToken]:

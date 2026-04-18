@@ -6,6 +6,8 @@
 	import RatingsOverviewTimeline from '$lib/components/RatingsOverviewTimeline.svelte';
 	import RatingsOverviewNotes from '$lib/components/RatingsOverviewNotes.svelte';
 	import RatingsOverviewAttributes from '$lib/components/RatingsOverviewAttributes.svelte';
+	import { resolveTitle } from '$lib/utils/formatString';
+	import { userSettings } from '$lib/stores/userSettings';
 	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr, type AnimeMediaItem, type RatingOut } from '$lib/types/api';
 
 	interface Props {
@@ -40,11 +42,13 @@
 		media.reduce((sum, m) => sum + (m.episodes ?? 0), 0),
 	);
 
+	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
+
 	let notesInOrder = $derived(
 		mediaWithRatings
 			.filter((mr) => mr.rating?.note)
 			.map((mr) => ({
-				title: mr.media.name_eng ?? mr.media.title,
+				title: resolveTitle(mr.media.title, mr.media.name_eng, mr.media.name_jap, nameLanguage),
 				note: mr.rating!.note!,
 				rating: mr.rating!.rating,
 			})),
