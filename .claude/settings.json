@@ -30,7 +30,15 @@
       "Bash(yes)",
       "Bash(sort *)",
       "Bash(npx shadcn-svelte@latest add *)",
-      "Bash(npm list:*)"
+      "Bash(npm list:*)",
+      "Bash(npx svelte-check:*)",
+      "mcp__dev-browser__browser_navigate",
+      "mcp__dev-browser__browser_snapshot",
+      "mcp__dev-browser__browser_click",
+      "mcp__dev-browser__browser_type",
+      "mcp__dev-browser__browser_evaluate",
+      "mcp__dev-browser__browser_wait_for",
+      "mcp__dev-browser__browser_take_screenshot"
     ],
     "deny": [
       "Bash(git push --force *)",
