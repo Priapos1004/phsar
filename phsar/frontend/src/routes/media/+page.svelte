@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { getContext } from 'svelte';
 	import { api, ApiError } from '$lib/api';
-	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription } from '$lib/utils/formatString';
+	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, resolveTitle, resolveSubtitles, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -11,15 +11,36 @@
 	import RatingCard from '$lib/components/RatingCard.svelte';
 	import { ArrowLeft, Bookmark, Star, Tv, Clock, Calendar, Film } from 'lucide-svelte';
 	import * as cls from '$lib/styles/classes';
+	import { userSettings } from '$lib/stores/userSettings';
+	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
+	import { visibleMediaSet, refreshSpoilerVisibility } from '$lib/stores/spoilerVisibility';
 	import type { MediaDetail, RatingOut } from '$lib/types/api';
 
 	const getUserRole = getContext<() => string | null>('userRole');
+	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
 
 	let media = $state<MediaDetail | null>(null);
 	let userRating = $state<RatingOut | null>(null);
 	let loading = $state(true);
 	let error = $state('');
 	let descriptionExpanded = $state(false);
+	let descriptionEl = $state<HTMLElement | null>(null);
+	let descriptionOverflows = $state(false);
+
+	$effect(() => {
+		const el = descriptionEl;
+		if (!el) { descriptionOverflows = false; return; }
+		if (descriptionExpanded) { descriptionOverflows = true; return; }
+		// Double rAF ensures layout + paint have completed before measuring.
+		// Threshold of 2px guards against sub-pixel rounding.
+		let innerFrame = 0;
+		const outerFrame = requestAnimationFrame(() => {
+			innerFrame = requestAnimationFrame(() => {
+				descriptionOverflows = el.scrollHeight - el.clientHeight > 2;
+			});
+		});
+		return () => { cancelAnimationFrame(outerFrame); cancelAnimationFrame(innerFrame); };
+	});
 	let coverFailed = $state(false);
 	let loadRequestId = 0;
 
@@ -27,6 +48,11 @@
 	let searchToken = $derived(page.url.searchParams.get('q'));
 
 	let cleanedDescription = $derived(media?.description ? cleanDescription(media.description) : null);
+	// OR with userRating prevents a brief blur flash after rating: the local
+	// state updates instantly while refreshSpoilerVisibility() is still in-flight.
+	let isMediaVisible = $derived(
+		!!userRating || (media ? $visibleMediaSet.has(media.uuid) : true)
+	);
 	let mediaSeason = $derived(media ? formatSeason(media.anime_season_name, media.anime_season_year) : null);
 
 	$effect(() => {
@@ -80,10 +106,12 @@
 
 	function handleRatingSaved(rating: RatingOut) {
 		userRating = rating;
+		refreshSpoilerVisibility();
 	}
 
 	function handleRatingDeleted() {
 		userRating = null;
+		refreshSpoilerVisibility();
 	}
 </script>
 
@@ -121,25 +149,27 @@
 
 			<div class="relative flex flex-col md:flex-row gap-6 p-6">
 				<div class="shrink-0 flex flex-col items-center md:items-start">
-					{#if media.cover_image && !coverFailed}
-						<img
-							src={media.cover_image}
-							alt={`Cover of ${media.title}`}
-							class="w-44 h-auto rounded-lg shadow-xl ring-1 ring-border"
-							onerror={() => { coverFailed = true; }}
-						/>
-					{:else}
-						<div class="w-44 h-64 bg-muted rounded-lg flex items-center justify-center text-muted-foreground italic">
-							No image
-						</div>
-					{/if}
+					<SpoilerGuard visible={isMediaVisible} mode="image">
+						{#if media.cover_image && !coverFailed}
+							<img
+								src={media.cover_image}
+								alt={`Cover of ${media.title}`}
+								class="w-44 h-auto rounded-lg shadow-xl ring-1 ring-border"
+								onerror={() => { coverFailed = true; }}
+							/>
+						{:else}
+							<div class="w-44 h-64 bg-muted rounded-lg flex items-center justify-center text-muted-foreground italic">
+								No image
+							</div>
+						{/if}
+					</SpoilerGuard>
 				</div>
 
 				<div class="flex-1 space-y-4 min-w-0">
 					<div class="flex items-start justify-between gap-4">
 						<div class="min-w-0">
 							<h1 class="text-2xl md:text-3xl font-bold text-card-foreground leading-tight">
-								{media.name_eng ?? media.title}
+								{resolveTitle(media.title, media.name_eng, media.name_jap, nameLanguage)}
 							</h1>
 							{#if media.airing_status === 'Currently Airing'}
 								<span class="inline-flex items-center gap-1.5 mt-1.5 px-2.5 py-1 rounded-md font-semibold bg-green-100 text-green-800 border border-green-200">
@@ -155,12 +185,9 @@
 									{media.airing_status}
 								</span>
 							{/if}
-							{#if media.name_eng && media.name_eng !== media.title}
-								<p class="text-sm text-muted-foreground mt-1">{media.title}</p>
-							{/if}
-							{#if media.name_jap}
-								<p class="text-sm text-muted-foreground/70">{media.name_jap}</p>
-							{/if}
+							{#each resolveSubtitles(media.title, media.name_eng, media.name_jap, nameLanguage) as subtitle, i}
+								<p class="text-sm {i === 0 ? 'text-muted-foreground mt-1' : 'text-muted-foreground/70'}">{subtitle}</p>
+							{/each}
 						</div>
 
 						<!-- Watchlist bookmark placeholder -->
@@ -189,8 +216,8 @@
 					{/if}
 
 					<div class="flex flex-wrap gap-2">
-						<Badge variant="secondary" class={cls.badgeMediaType}>{media.media_type}</Badge>
-						<Badge variant="secondary" class={cls.badgeRelationType}>{media.relation_type}</Badge>
+						<Badge variant="secondary" class={cls.badgeMediaType}>{formatMediaType(media.media_type)}</Badge>
+						<Badge variant="secondary" class={cls.badgeRelationType}>{formatRelationType(media.relation_type)}</Badge>
 						{#if media.age_rating_numeric !== null}
 							<Badge variant="secondary" class={cls.badgeAgeRating}>{media.age_rating_numeric}+</Badge>
 						{/if}
@@ -249,19 +276,22 @@
 			<Card.Root class={cls.cardGlass}>
 				<Card.Content>
 					<h2 class="text-lg font-semibold text-card-foreground mb-2">Synopsis</h2>
-					<div
-						class="text-card-foreground leading-relaxed {descriptionExpanded ? '' : 'line-clamp-4'}"
-					>
-						{cleanedDescription}
-					</div>
-					{#if cleanedDescription.length > 300}
-						<button
-							class="text-primary hover:underline mt-1"
-							onclick={() => (descriptionExpanded = !descriptionExpanded)}
+					<SpoilerGuard visible={isMediaVisible} mode="text">
+						<div
+							bind:this={descriptionEl}
+							class="text-card-foreground leading-relaxed {descriptionExpanded ? '' : 'line-clamp-4'}"
 						>
-							{descriptionExpanded ? 'Show less' : 'Read more'}
-						</button>
-					{/if}
+							{cleanedDescription}
+						</div>
+						{#if descriptionOverflows}
+							<button
+								class="text-primary hover:underline mt-1"
+								onclick={() => (descriptionExpanded = !descriptionExpanded)}
+							>
+								{descriptionExpanded ? 'Show less' : 'Read more'}
+							</button>
+						{/if}
+					</SpoilerGuard>
 				</Card.Content>
 			</Card.Root>
 		{/if}
@@ -279,9 +309,9 @@
 				<Card.Content>
 					<div class="flex items-center justify-between">
 						<h2 class="text-lg font-semibold text-card-foreground">Your Rating</h2>
-						<Button disabled title="Upgrade your account to rate media">Rate This</Button>
+						<Button disabled>Rate This</Button>
 					</div>
-					<p class="text-muted-foreground mt-1">Upgrade your account to rate media</p>
+					<p class="text-muted-foreground mt-1">You don't have permission to rate media</p>
 				</Card.Content>
 			</Card.Root>
 		{/if}
@@ -294,7 +324,7 @@
 					<a
 						href={buildDetailHref('anime', media.anime_uuid, searchToken)}
 						class="text-primary font-medium hover:underline"
-					>{media.anime_name_eng ?? media.anime_title}</a>
+					>{resolveTitle(media.anime_title, media.anime_name_eng, media.anime_name_jap, nameLanguage)}</a>
 				</p>
 				{#if media.sibling_media.length}
 					<RelatedMediaCarousel siblings={media.sibling_media} {searchToken} />

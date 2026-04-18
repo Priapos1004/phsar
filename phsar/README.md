@@ -28,7 +28,8 @@ phsar/
 │   │   ├── registration_token_dao.py
 │   │   ├── search_filters.py
 │   │   ├── studio_dao.py
-│   │   └── user_dao.py
+│   │   ├── user_dao.py
+│   │   └── user_settings_dao.py
 │   ├── exceptions.py
 │   ├── main.py
 │   ├── models/
@@ -46,33 +47,41 @@ phsar/
 │   │   ├── registration_token.py
 │   │   ├── studio.py
 │   │   ├── tag.py
+│   │   ├── user_settings.py
+│   │   ├── user_visible_media.py
 │   │   ├── users.py
 │   │   ├── watchlist.py
 │   │   └── watchlist_tag.py
 │   ├── routers/
+│   │   ├── admin.py
 │   │   ├── auth.py
 │   │   ├── filters.py
 │   │   ├── media.py
 │   │   ├── ratings.py
 │   │   ├── save.py
 │   │   ├── search.py
-│   │   └── seeder.py
+│   │   ├── seeder.py
+│   │   └── users.py
 │   ├── schemas/
+│   │   ├── admin_schema.py
 │   │   ├── anime_schema.py
 │   │   ├── auth_schema.py
 │   │   ├── media_filter_schema.py
 │   │   ├── media_schema.py
 │   │   ├── rating_schema.py
-│   │   └── search_schema.py
+│   │   ├── search_schema.py
+│   │   └── user_settings_schema.py
 │   ├── seeders/
 │   │   ├── embedding_backfiller.py
 │   │   ├── genre_seeder.py
 │   │   ├── media_seeder.py
 │   │   └── user_seeder.py
 │   └── services/
+│       ├── admin_service.py
 │       ├── anime_search_service.py
 │       ├── anime_service.py
 │       ├── auth_service.py
+│       ├── export_service.py
 │       ├── filter_service.py
 │       ├── jikan_scraper.py
 │       ├── media_linking_service.py
@@ -81,8 +90,10 @@ phsar/
 │       ├── rating_service.py
 │       ├── save_service.py
 │       ├── search_service.py
+│       ├── spoiler_service.py
 │       ├── token_service.py
 │       ├── unwanted_media_service.py
+│       ├── user_settings_service.py
 │       └── vector_embedding_service.py
 ├── frontend/
 │   ├── components.json
@@ -95,12 +106,14 @@ phsar/
 │   │   │   ├── api.ts
 │   │   │   ├── config.ts
 │   │   │   ├── echarts.ts
+│   │   │   ├── themes.ts
 │   │   │   ├── utils.ts
 │   │   │   ├── components/
 │   │   │   │   ├── AttributeBadges.svelte
 │   │   │   │   ├── AttributeDetailBars.svelte
 │   │   │   │   ├── AttributeRadar.svelte
 │   │   │   │   ├── BulkRateDialog.svelte
+│   │   │   │   ├── DangerZone.svelte
 │   │   │   │   ├── DoubleRangeSlider.svelte
 │   │   │   │   ├── EChart.svelte
 │   │   │   │   ├── InfoDiashow.svelte
@@ -115,9 +128,11 @@ phsar/
 │   │   │   │   ├── RatingsOverviewTimeline.svelte
 │   │   │   │   ├── RelatedMediaCarousel.svelte
 │   │   │   │   ├── ScrollableCard.svelte
+│   │   │   │   ├── SpoilerGuard.svelte
 │   │   │   │   ├── SearchBar.svelte
 │   │   │   │   ├── SkeletonMediaInfo.svelte
 │   │   │   │   ├── TagSelect.svelte
+│   │   │   │   ├── TokenExpiryDialog.svelte
 │   │   │   │   └── ui/           # shadcn-svelte components
 │   │   │   │       ├── badge/
 │   │   │   │       ├── button/
@@ -135,7 +150,9 @@ phsar/
 │   │   │   │       ├── slider/
 │   │   │   │       └── textarea/
 │   │   │   ├── stores/
-│   │   │   │   └── auth.ts
+│   │   │   │   ├── auth.ts
+│   │   │   │   ├── spoilerVisibility.ts
+│   │   │   │   └── userSettings.ts
 │   │   │   ├── styles/
 │   │   │   │   └── classes.ts
 │   │   │   ├── types/
@@ -147,31 +164,42 @@ phsar/
 │   │   │       ├── getSeason.ts
 │   │   │       ├── index.ts
 │   │   │       ├── navigation.ts
-│   │   │       └── search.ts
+│   │   │       ├── search.ts
+│   │   │       └── spoilerFrontier.ts
 │   │   ├── routes/
 │   │   │   ├── +layout.svelte
 │   │   │   ├── +layout.ts
 │   │   │   ├── +page.svelte
+│   │   │   ├── admin/
+│   │   │   │   └── +page.svelte
 │   │   │   ├── anime/
 │   │   │   │   └── +page.svelte
 │   │   │   ├── login/
 │   │   │   │   └── +page.svelte
 │   │   │   ├── media/
 │   │   │   │   └── +page.svelte
-│   │   │   └── search/
+│   │   │   ├── register/
+│   │   │   │   └── +page.svelte
+│   │   │   ├── search/
+│   │   │   │   └── +page.svelte
+│   │   │   └── settings/
 │   │   │       └── +page.svelte
 │   │   └── tests/
 │   │       ├── setup.ts
+│   │       ├── SpoilerGuardTest.svelte
 │   │       ├── auth-store.test.ts
 │   │       ├── format-string.test.ts
 │   │       ├── login.test.ts
 │   │       ├── media-detail.test.ts
 │   │       ├── navbar.test.ts
 │   │       ├── rating-modal.test.ts
-│   │       └── searchbar.test.ts
+│   │       ├── searchbar.test.ts
+│   │       ├── spoiler-frontier.test.ts
+│   │       └── spoiler-guard.test.ts
 │   ├── static/
 │   │   ├── phsar_logo_inverted.png
-│   │   └── phsar_logo_transparent.png
+│   │   ├── phsar_logo_transparent.png
+│   │   └── profile_pics/    # theme character pics (rainbow.png, red.png, blue.png, green.png)
 │   ├── svelte.config.js
 │   ├── tsconfig.json
 │   └── vite.config.ts
@@ -186,6 +214,7 @@ phsar/
 └── tests/
     ├── routers/
     │   ├── conftest.py
+    │   ├── test_admin.py
     │   ├── test_anime_detail.py
     │   ├── test_auth.py
     │   ├── test_filters_options.py
@@ -195,10 +224,12 @@ phsar/
     │   ├── test_save.py
     │   ├── test_search_anime.py
     │   ├── test_search_media.py
-    │   └── test_search_ratings.py
+    │   ├── test_search_ratings.py
+    │   └── test_user_settings.py
     └── services/
         ├── test_jikan_scraper.py
         ├── test_search_service.py
+        ├── test_spoiler_service.py
         └── test_vector_embedding_service.py
 ```
 </details>
@@ -219,6 +250,9 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=supersecretpassword
 SECRET_KEY=supersecretsecretkey
 SEARCH_SECRET_KEY=supersecretsearchsecretkey
+# Optional: seeded guest account (restricted_user role, read-only)
+# GUEST_USERNAME=guest
+# GUEST_PASSWORD=guestpassword
 ```
 
 *Change `animeuser`, `animepass`, `admin`, `supersecretpassword`, `supersecretsecretkey`, and `supersecretsearchsecretkey`*
@@ -284,7 +318,7 @@ docker exec -it anime-postgres psql -U animeuser -d anime_db -c "DROP SCHEMA pub
 
 ## Run FastAPI App
 
-When first running the FastAPI App, the genre table and the first admin user will be seeded. For running the app, use:
+When first running the FastAPI App, the genre table, admin user, and optional guest user will be seeded. All users get default settings. For running the app, use:
 
 ```
 uvicorn app.main:app --reload

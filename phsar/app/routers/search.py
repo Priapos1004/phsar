@@ -19,6 +19,7 @@ from app.models.ratings import (
     ThreeDAnimation,
     WatchedFormat,
 )
+from app.models.user_settings import SpoilerLevel
 from app.schemas.anime_schema import AnimeSearchResult
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
 from app.schemas.media_schema import MediaConnected
@@ -28,6 +29,8 @@ from app.services.anime_search_service import search_anime_by_query
 from app.services.media_search_service import search_media_by_query
 from app.services.rating_service import search_user_ratings
 from app.services.search_service import handle_search_mal_api_results
+from app.services.spoiler_service import get_visible_media_ids
+from app.services.user_settings_service import get_settings
 
 router = APIRouter(prefix="/search", tags=["search"])
 
@@ -147,11 +150,18 @@ async def search_media(
     if search_type == SearchType.RATING_NOTES:
         raise InvalidSearchTypeError(search_type.value)
 
+    # Hide mode: only show media within the spoiler frontier
+    visible_media_ids = None
+    settings = await get_settings(db, current_user.id)
+    if settings.spoiler_level == SpoilerLevel.hide:
+        visible_media_ids = await get_visible_media_ids(db, current_user.id)
+
     return await search_media_by_query(
         db=db,
         query=query,
         filters=filters,
         search_type=search_type,
+        visible_media_ids=visible_media_ids,
     )
 
 

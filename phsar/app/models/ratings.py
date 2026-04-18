@@ -101,7 +101,7 @@ class Ratings(BaseModel):
     # Explicitly track whether the user dropped the anime
     dropped = Column(Boolean, default=False)
 
-    # Rating attributes (all optional)
+    # Rating attributes (all optional) — keep RATING_ATTRIBUTE_FIELDS in sync
     pace = Column(Enum(Pace), nullable=True)
     animation_quality = Column(Enum(AnimationQuality), nullable=True)
     has_3d_animation = Column(Enum(ThreeDAnimation), nullable=True)
@@ -118,6 +118,13 @@ class Ratings(BaseModel):
     media = relationship("Media", back_populates="ratings", lazy="raise")
     users = relationship("Users", back_populates="ratings", lazy="raise")
     rating_search = relationship("RatingSearch", back_populates="rating", cascade="all, delete-orphan", uselist=False, lazy="raise")
+
+# Module-level constant — keep in sync with attribute columns above
+RATING_ATTRIBUTE_FIELDS: tuple[str, ...] = (
+    "pace", "animation_quality", "has_3d_animation", "watched_format",
+    "fan_service", "dialogue_quality", "character_depth",
+    "ending_type", "ending_quality", "story_quality", "originality",
+)
 
 # Composite index for paginated listing: WHERE user_id = ? ORDER BY modified_at DESC
 Index("ix_ratings_user_modified", Ratings.user_id, Ratings.modified_at.desc())

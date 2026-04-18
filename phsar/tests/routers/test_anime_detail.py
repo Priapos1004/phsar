@@ -53,7 +53,7 @@ async def anime_for_detail(db_session):
         anime_id=anime.id, mal_id=88103,
         mal_url="https://myanimelist.net/anime/88103",
         title="Detail Movie", media_type=MediaType.Movie,
-        relation_type=RelationType.Other, scored_by=1000,
+        relation_type=RelationType.SideStory, scored_by=1000,
         score=7.0, episodes=1, duration_seconds=7200,
         airing_status="Not yet aired",
         age_rating="R - 17+ (violence & profanity)",

@@ -10,7 +10,7 @@ export const mediaInfoGrid = 'grid grid-cols-1 lg:grid-cols-2 gap-4 auto-rows-fr
 // Badge colors (color only — composable with size variants)
 export const badgeMediaTypeColor = 'bg-green-100 text-green-800';
 export const badgeRelationTypeColor = 'bg-blue-100 text-blue-800';
-export const badgeGenreColor = 'bg-purple-100 text-purple-800';
+export const badgeGenreColor = 'bg-primary/10 text-primary';
 export const badgeAgeRatingColor = 'bg-orange-100 text-orange-800';
 
 // Badge defaults for normal-sized contexts (hero card, search cards)

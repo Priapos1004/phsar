@@ -6,10 +6,11 @@
 	import { Slider } from '$lib/components/ui/slider';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { ChevronDown, ChevronUp } from 'lucide-svelte';
-	import { clampAndSnapScore } from '$lib/utils/formatString';
+	import { clampAndSnapScore, decimalPlaces } from '$lib/utils/formatString';
 	import { RATING_ATTRIBUTE_OPTIONS } from '$lib/types/api';
 	import type { RatingOut } from '$lib/types/api';
 	import { api, ApiError } from '$lib/api';
+	import { userSettings } from '$lib/stores/userSettings';
 
 	interface Props {
 		open: boolean;
@@ -25,9 +26,8 @@
 		onSaved,
 	}: Props = $props();
 
-	// Step size for score — hardcoded to 0.5 until user settings in v0.12.0
-	const SCORE_STEP = 0.5;
-	const SCORE_DECIMALS = SCORE_STEP < 1 ? 1 : 0;
+	let SCORE_STEP = $derived(parseFloat($userSettings?.rating_step ?? '0.5'));
+	let SCORE_DECIMALS = $derived(decimalPlaces(SCORE_STEP));
 
 	let score = $state<number>(5.0);
 	let note = $state('');
@@ -71,9 +71,9 @@
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="bg-card text-card-foreground max-h-[85vh] overflow-y-auto sm:max-w-md">
+	<Dialog.Content class="max-h-[85vh] overflow-y-auto sm:max-w-md">
 		<Dialog.Header>
-			<Dialog.Title class="text-card-foreground">Rate {selectedUuids.size} Media</Dialog.Title>
+			<Dialog.Title>Rate {selectedUuids.size} Media</Dialog.Title>
 			<Dialog.Description class="text-muted-foreground">
 				Score and attributes are applied to all selected media.
 			</Dialog.Description>

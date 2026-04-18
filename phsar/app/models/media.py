@@ -31,7 +31,7 @@ class RelationType(str, enum.Enum):
     Main = "main"
     Summary = "summary"
     Crossover = "crossover"
-    Other = "other"
+    SideStory = "side_story"
 
 class SeasonType(str, enum.Enum):
     Winter = "Winter"

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr } from '$lib/types/api';
-	import { CHART_COLOR_PALETTE } from '$lib/utils/chartColors';
+	import { getThemedChartColorPalette } from '$lib/utils/chartColors';
 	import type { RatingOut } from '$lib/types/api';
 
 	interface Props {
@@ -8,6 +8,8 @@
 	}
 
 	let { ratings }: Props = $props();
+
+	let palette = $derived(getThemedChartColorPalette());
 
 	interface AttrDistribution {
 		key: string;
@@ -56,7 +58,7 @@
 					{@const widthPercent = (entry.count / dist.totalSet) * 100}
 					<div
 						class="h-full"
-						style="width: {widthPercent}%; background: {CHART_COLOR_PALETTE[i % CHART_COLOR_PALETTE.length]}"
+						style="width: {widthPercent}%; background: {palette[i % palette.length]}"
 						title="{entry.label}: {entry.count}"
 					></div>
 				{/each}
@@ -67,7 +69,7 @@
 						<span class="text-xs text-muted-foreground">
 							<span
 								class="inline-block w-2 h-2 rounded-full mr-0.5"
-								style="background: {CHART_COLOR_PALETTE[i % CHART_COLOR_PALETTE.length]}"
+								style="background: {palette[i % palette.length]}"
 							></span>
 							{entry.label} ({entry.count})
 						</span>

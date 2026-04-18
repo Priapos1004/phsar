@@ -26,6 +26,8 @@ async def db_session(db_engine):
             async with async_session() as session:
                 yield session
         finally:
+            # Rollback undoes all row changes, but PostgreSQL sequences (auto-increment IDs)
+            # are never rolled back — so production IDs will have gaps from test runs.
             await trans.rollback()
 
 @pytest.fixture
@@ -66,14 +68,14 @@ async def create_user_with_role(client, get_admin_token):
     """
     Generic fixture to create & login a user with any RoleType.
     Usage:
-    token = await create_user_with_role(username="myuser", password="mypass", role=RoleType.User)
+    token = await create_user_with_role(username="myuser", password="mypass12", role=RoleType.User)
     """
     async def _create_user(username: str, password: str, role: RoleType):
         admin_token = await get_admin_token()
 
-        # Issue registration token
+        # Issue registration token via admin endpoint
         issue_resp = await client.post(
-            "/auth/issue-token",
+            "/admin/registration-tokens",
             json={"role": role.value},
             headers={"Authorization": f"Bearer {admin_token}"}
         )

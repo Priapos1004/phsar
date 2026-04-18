@@ -52,6 +52,7 @@ class MediaDAO(MalIdDAO[Media]):
         filters: MediaSearchFilters,
         search_type: SearchType,
         limit: int = 50,
+        visible_media_ids: set[int] | None = None,
     ) -> list[Media]:
         stmt = select(Media)
 
@@ -59,6 +60,9 @@ class MediaDAO(MalIdDAO[Media]):
             query_embedding = await generate_embedding(query)
             # Inner join ensures only media with embeddings are searched
             stmt = stmt.join(MediaSearch)
+
+        if visible_media_ids is not None:
+            stmt = stmt.where(Media.id.in_(visible_media_ids))
 
         stmt = apply_media_filters(stmt, filters)
 

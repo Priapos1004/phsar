@@ -1,4 +1,5 @@
 /** TypeScript types mirroring backend Pydantic schemas */
+import type { ThemeKey } from '$lib/themes';
 
 // Auth
 export interface TokenResponse {
@@ -68,6 +69,7 @@ export interface MediaSibling {
 	uuid: string;
 	title: string;
 	name_eng: string | null;
+	name_jap: string | null;
 	cover_image: string | null;
 	media_type: string;
 	relation_type: string;
@@ -200,6 +202,7 @@ export interface AnimeMediaItem {
 	uuid: string;
 	title: string;
 	name_eng: string | null;
+	name_jap: string | null;
 	cover_image: string | null;
 	media_type: string;
 	relation_type: string;
@@ -224,4 +227,33 @@ export interface AnimeDetail extends AnimeAggregatedBase {
 // Search token (POST /filters/create-token)
 export interface SearchTokenResponse {
 	token: string;
+}
+
+// User Settings
+export interface UserSettings {
+	theme: ThemeKey;
+	name_language: 'english' | 'japanese' | 'romaji';
+	default_search_view: 'anime' | 'media';
+	rating_step: '0.5' | '0.25' | '0.1' | '0.01';
+	spoiler_level: 'off' | 'blur' | 'hide';
+}
+
+export type UserSettingsUpdate = Partial<UserSettings>;
+
+// Spoiler visibility
+export interface SpoilerVisibility {
+	visible_media_uuids: string[];
+}
+
+// Admin — Registration tokens
+export interface RegistrationTokenListItem {
+	uuid: string;
+	token: string;
+	role: string;
+	status: 'active' | 'used' | 'expired';
+	created_by: string;
+	created_at: string;
+	expires_on: string;
+	used_by: string | null;
+	used_at: string | null;
 }

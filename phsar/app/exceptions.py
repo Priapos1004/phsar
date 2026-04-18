@@ -185,3 +185,39 @@ class AnimeNotFoundByUuidError(PhsarBaseError):
     def __init__(self, uuid: str):
         message = f"Anime not found: '{uuid}'."
         super().__init__(message)
+
+
+class UserSettingsNotFoundError(PhsarBaseError):
+    """Raised when user settings are not found (should not happen if seeding is correct)."""
+    status_code = 404
+
+    def __init__(self):
+        message = "User settings not found."
+        super().__init__(message)
+
+
+class RegistrationTokenNotFoundError(PhsarBaseError):
+    """Raised when a registration token UUID does not resolve to an existing token."""
+    status_code = 404
+
+    def __init__(self, uuid: str):
+        message = f"Registration token not found: '{uuid}'."
+        super().__init__(message)
+
+
+class CannotDeleteUsedTokenError(PhsarBaseError):
+    """Raised when attempting to delete a registration token that has been used."""
+    status_code = 400
+
+    def __init__(self):
+        message = "Cannot delete a registration token that has already been used."
+        super().__init__(message)
+
+
+class InvalidPasswordError(PhsarBaseError):
+    """Raised when the provided password does not match the user's current password."""
+    status_code = 403
+
+    def __init__(self):
+        message = "Invalid password."
+        super().__init__(message)

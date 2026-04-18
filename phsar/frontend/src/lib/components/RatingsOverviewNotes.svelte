@@ -10,9 +10,10 @@
 
 	interface Props {
 		notes: NoteItem[];
+		scoreDecimals: number;
 	}
 
-	let { notes }: Props = $props();
+	let { notes, scoreDecimals }: Props = $props();
 
 	let expanded = $state(false);
 	let visibleNotes = $derived(expanded ? notes : notes.slice(0, 1));
@@ -26,7 +27,7 @@
 			<div class="bg-muted/50 rounded-lg px-4 py-3">
 				<div class="flex items-center gap-2 mb-1">
 					<span class="text-sm font-medium text-card-foreground">{item.title}</span>
-					<span class="text-sm font-bold text-primary">{formatDecimalDigits(item.rating, 1)}</span>
+					<span class="text-sm font-bold text-primary">{formatDecimalDigits(item.rating, scoreDecimals)}</span>
 				</div>
 				<p class="text-card-foreground/80 italic leading-relaxed">
 					"{item.note}"

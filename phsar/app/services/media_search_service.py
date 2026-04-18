@@ -62,6 +62,7 @@ async def search_media_by_query(
     query: str,
     filters: MediaSearchFilters,
     search_type: SearchType,
+    visible_media_ids: set[int] | None = None,
 ) -> list[MediaConnected]:
     logger.info(f"Query: {query}")
     logger.info(f"Filters: {filters.model_dump()}")
@@ -72,6 +73,7 @@ async def search_media_by_query(
         query=query,
         filters=filters,
         search_type=search_type,
+        visible_media_ids=visible_media_ids,
     )
 
     # Map to MediaConnected Pydantic models
@@ -83,6 +85,7 @@ def _media_to_sibling(media: Media) -> MediaSibling:
         uuid=media.uuid,
         title=media.title,
         name_eng=media.name_eng,
+        name_jap=media.name_jap,
         cover_image=media.cover_image,
         media_type=media.media_type,
         relation_type=media.relation_type,

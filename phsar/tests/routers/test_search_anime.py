@@ -55,7 +55,7 @@ async def anime_with_media(db_session):
         anime_id=anime.id, mal_id=99102,
         mal_url="https://myanimelist.net/anime/99102",
         title="Search Test Movie", media_type=MediaType.Movie,
-        relation_type=RelationType.Other, scored_by=3000,
+        relation_type=RelationType.SideStory, scored_by=3000,
         score=9.0, episodes=1, duration_seconds=7200,
         airing_status="Finished Airing",
         anime_season_name=SeasonType.Winter, anime_season_year=2022,
@@ -65,7 +65,7 @@ async def anime_with_media(db_session):
         anime_id=anime.id, mal_id=99103,
         mal_url="https://myanimelist.net/anime/99103",
         title="Search Test OVA", media_type=MediaType.OVA,
-        relation_type=RelationType.Other, scored_by=500,
+        relation_type=RelationType.SideStory, scored_by=500,
         score=7.0, episodes=2, duration_seconds=1800,
         airing_status="Not yet aired",
         age_rating="PG-13 - Teens 13 or older",
@@ -245,7 +245,7 @@ async def test_search_anime_relation_type_counts(client, user_auth_headers, anim
     assert anime_result is not None
     rt_map = {rt["relation_type"]: rt["count"] for rt in anime_result["relation_types"]}
     assert rt_map.get("main") == 1
-    assert rt_map.get("other") == 2
+    assert rt_map.get("side_story") == 2
 
 
 async def test_search_anime_rating_notes_rejected(client, user_auth_headers):
