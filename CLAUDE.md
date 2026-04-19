@@ -118,7 +118,7 @@ The backend requires a `phsar/.env` file with: `DB_USER`, `DB_PASSWORD`, `DB_HOS
 
 Optional: `DEBUG` (enables SQL echo), `CORS_ORIGINS` (JSON list of allowed origins), `GUEST_USERNAME` + `GUEST_PASSWORD` (seeds a read-only guest account with `restricted_user` role), `APP_VERSION` (deployed version tag surfaced on `/health`; injected via the backend Dockerfile build arg).
 
-Frontend build/runtime: `PUBLIC_API_BASE_URL` (baked into the bundle at build time; defaults to `http://localhost:8000` for local dev) and `PUBLIC_APP_VERSION` (read at runtime from `$env/dynamic/public` and shown in the footer; set in the frontend container ENV).
+Frontend (runtime, read from `$env/dynamic/public`): `PUBLIC_API_BASE_URL` (backend URL; defaults to `http://localhost:8000` for local dev) and `PUBLIC_APP_VERSION` (shown in the footer). Both are set as container ENV in production — changing them does not require an image rebuild.
 
 ## Deployment
 
