@@ -54,8 +54,12 @@ services:
     build:
       context: ./phsar/frontend
       args:
-        PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://localhost:8000}
         PUBLIC_APP_VERSION: ${APP_VERSION:-dev}
+    environment:
+      # Read at runtime via $env/dynamic/public, so this can be swapped per
+      # deployment without rebuilding the image.
+      PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://localhost:8000}
+      PUBLIC_APP_VERSION: ${APP_VERSION:-dev}
     depends_on:
       - backend
     ports:
