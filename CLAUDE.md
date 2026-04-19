@@ -34,9 +34,10 @@ alembic upgrade head
 ### Frontend
 ```bash
 cd phsar/frontend
-npm install
-npm run dev -- --open   # dev server at localhost:5173
-npm run test            # vitest component tests
+bun install
+bun run dev -- --open   # dev server at localhost:5173
+bun run test            # vitest component tests
+bun run check           # svelte-check type check
 ```
 
 Backend and frontend must run simultaneously in separate terminals.

@@ -331,8 +331,8 @@ You can now open `http://127.0.0.1:8000` to see if the API is live.
 From `frontend/`:
 
 ```
-npm install
-npm run dev -- --open
+bun install
+bun run dev -- --open
 ```
 
 *FastAPI and Svelte need to run at the same time in two terminals!*
@@ -351,7 +351,7 @@ All changes to the database during the tests are rolled back afterwards.
 
 ```
 cd frontend
-npm run test
+bun run test
 ```
 
 ## Trouble-shooting

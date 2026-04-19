@@ -8,7 +8,7 @@ Thank you for your interest in contributing to Phsar! This project is licensed u
 2. **Clone** your fork and create a new branch from `main`
 3. **Set up** the development environment:
    - Backend: `cd phsar && pip install -r requirements.txt`
-   - Frontend: `cd phsar/frontend && npm install`
+   - Frontend: `cd phsar/frontend && bun install`
    - Database: Start a PostgreSQL container with pgvector (see [README](phsar/README.md))
 4. **Create a `.env` file** in `phsar/` (see README for required variables)
 
@@ -18,7 +18,7 @@ Thank you for your interest in contributing to Phsar! This project is licensed u
 2. Make your changes
 3. Run tests before committing:
    - Backend: `cd phsar && ruff check . && pytest`
-   - Frontend: `cd phsar/frontend && npm run test`
+   - Frontend: `cd phsar/frontend && bun run test`
 4. Commit with clear, descriptive messages
 5. Push and open a pull request against `main`
 

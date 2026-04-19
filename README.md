@@ -2,6 +2,7 @@
 
 [![Tests](https://github.com/Priapos1004/phsar/actions/workflows/test.yml/badge.svg)](https://github.com/Priapos1004/phsar/actions/workflows/test.yml)
 [![Lint](https://github.com/Priapos1004/phsar/actions/workflows/lint.yml/badge.svg)](https://github.com/Priapos1004/phsar/actions/workflows/lint.yml)
+[![Frontend](https://github.com/Priapos1004/phsar/actions/workflows/frontend.yml/badge.svg)](https://github.com/Priapos1004/phsar/actions/workflows/frontend.yml)
 
 Repository for Code of phsar website + backend.
 
