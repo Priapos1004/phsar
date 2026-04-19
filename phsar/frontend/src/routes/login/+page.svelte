@@ -55,7 +55,7 @@
     }
 </script>
 
-<div class="fixed inset-0 bg-gradient-to-br from-purple-300 via-purple-500 to-purple-800 flex justify-center items-start pt-20">
+<div class="fixed inset-0 bg-gradient-to-br from-[var(--auth-gradient-from)] via-[var(--auth-gradient-via)] to-[var(--auth-gradient-to)] flex justify-center items-start pt-20">
     <div in:fly={{ y: 20, duration: 2000 }} class="w-full max-w-md">
         <Card.Root>
             <Card.Header>

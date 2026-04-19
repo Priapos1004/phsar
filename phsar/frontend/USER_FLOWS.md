@@ -8,6 +8,7 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 
 ### 1.1 Login
 - User sees a centered card with username/password fields and a "Login" button
+- Page background is a themed light-to-deep gradient matching the active theme (purple / red / blue / green), driven by the theme class pre-applied from localStorage by the FOUC script in `app.html`
 - Submitting the form POSTs credentials to `/auth/login` (URL-encoded)
 - On success: token is stored in localStorage, user is redirected to `/`
 - On invalid credentials: error message appears below the form in red
@@ -20,7 +21,8 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 - If validation returns 401, token is cleared from localStorage and user is redirected to `/login`
 
 ### 1.3 Logout
-- Clicking "Logout" in the NavBar dropdown clears the token and redirects to `/login`
+- Clicking "Logout" in the NavBar dropdown triggers a ~1.5s themed sakura-ring loading screen, then clears the token and redirects to `/login`
+- Involuntary logouts (401 from API, token expiry, account deletion) skip the animation and redirect instantly
 
 ### 1.4 Token Persistence
 - Token is stored in and loaded from localStorage
@@ -225,7 +227,7 @@ Each anime search result card shows:
 - Collapsible description card (4-line clamp by default)
 - "Read more" / "Show less" toggle shown only when text actually overflows the 4-line clamp (DOM overflow detection with 2px threshold)
 - Synopsis blurred with click-to-reveal when media is spoiler-protected; "Read more" button is behind the blur
-- HTML entities cleaned from description text
+- HTML entities cleaned from description text; MAL attribution tags (`[Written by MAL Rewrite]`) and trailing `(Source: …)` / `[Source: …]` attributions stripped before display
 
 ### 7.4 Rating Card
 - **No rating exists, not editing**: CTA card with star icon and "Rate This" button
@@ -263,7 +265,7 @@ Each anime search result card shows:
 - Each card: landscape character pic (`aspect-video`), theme label below, `w-48 sm:w-56`
 - Selected theme highlighted with `border-primary ring-2`
 - Clicking a card saves immediately via `PUT /users/settings` with `{ theme: key }`
-- Selecting a theme changes: app background gradient, all primary-colored UI elements (buttons, rings, badges, links, charts), and the home page hero banner character pic
+- Selecting a theme changes: app background gradient, login/register background gradient, all primary-colored UI elements (buttons, rings, badges, links, charts), the LoadingScreen sakura-ring color, and the home page hero banner character pic
 - Four themes: Default (purple), Crimson (red), Ocean (blue), Forest (green)
 - Theme applied via CSS class on `<html>` with localStorage sync for FOUC prevention
 

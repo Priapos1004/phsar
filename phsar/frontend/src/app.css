@@ -86,6 +86,11 @@
   --gradient-from: #352558;
   --gradient-via: #261845;
   --gradient-to: #1C1038;
+
+  /* Auth-page gradient (lighter tonality; shown on /login + /register) */
+  --auth-gradient-from: #d8b4fe;  /* tw purple-300 */
+  --auth-gradient-via: #a855f7;   /* tw purple-500 */
+  --auth-gradient-to: #6b21a8;    /* tw purple-800 */
 }
 
 /* Lock dark: variants to class-based only (prevent OS dark mode interference) */
@@ -114,6 +119,9 @@ body {
   --gradient-from: #4A1A1A;
   --gradient-via: #3A1010;
   --gradient-to: #2E0A0A;
+  --auth-gradient-from: #fca5a5;  /* tw red-300 */
+  --auth-gradient-via: #ef4444;   /* tw red-500 */
+  --auth-gradient-to: #991b1b;    /* tw red-800 */
 }
 
 .theme-blue {
@@ -122,6 +130,9 @@ body {
   --gradient-from: #1A2E58;
   --gradient-via: #132245;
   --gradient-to: #0E1A38;
+  --auth-gradient-from: #93c5fd;  /* tw blue-300 */
+  --auth-gradient-via: #3b82f6;   /* tw blue-500 */
+  --auth-gradient-to: #1e40af;    /* tw blue-800 */
 }
 
 .theme-green {
@@ -130,6 +141,9 @@ body {
   --gradient-from: #1A4528;
   --gradient-via: #123520;
   --gradient-to: #0E2A18;
+  --auth-gradient-from: #86efac;  /* tw green-300 */
+  --auth-gradient-via: #22c55e;   /* tw green-500 */
+  --auth-gradient-to: #166534;    /* tw green-800 */
 }
 
 /* Override text-sm to 13px — the only "small" size in the app */

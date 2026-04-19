@@ -75,10 +75,15 @@ export function formatAiringStatus(status: string, hasUpcoming: boolean): string
 }
 
 /**
- * Strip MAL attribution tags (e.g. "[Written by MAL Rewrite]") from description text.
+ * Strip MAL attribution tags from description text:
+ *   - "[Written by MAL Rewrite]"
+ *   - trailing "(Source: ANN)" / "[Source: Wikipedia]" / etc.
  */
 export function cleanDescription(text: string): string {
-	return text.replace(/\s*\[Written by MAL Rewrite\]\s*/g, '').trim();
+	return text
+		.replace(/\s*\[Written by MAL Rewrite\]\s*/g, '')
+		.replace(/\s*[\(\[]\s*Source\s*:[^\)\]]*[\)\]]\s*$/i, '')
+		.trim();
 }
 
 export function formatShortDate(iso: string): string {
