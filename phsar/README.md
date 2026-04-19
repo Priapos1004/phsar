@@ -275,6 +275,8 @@ SEARCH_SECRET_KEY=supersecretsearchsecretkey
 # GUEST_PASSWORD=guestpassword
 # Optional: shared bearer secret for POST /admin/backups/auto (scheduled dumps)
 # BACKUP_CRON_TOKEN=supersecretcrontoken
+# Optional: raise if pg_restore of a larger DB legitimately takes >10 min
+# BACKUP_RESTORE_TIMEOUT_SECONDS=600
 ```
 
 *Change `animeuser`, `animepass`, `admin`, `supersecretpassword`, `supersecretsecretkey`, and `supersecretsearchsecretkey`*

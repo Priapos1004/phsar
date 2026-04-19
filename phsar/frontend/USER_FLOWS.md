@@ -320,7 +320,7 @@ Each anime search result card shows:
 - **List**: filename, timestamp, human-readable size, integrity badge, source badge. The dump whose content matches the live DB gets a blue "Current" badge (git-branch icon) and a faint blue tint on the row — this is the last-restored dump, or (when a create/upload dedupes) the pre-existing dump it re-confirmed. Deleting the current dump clears the marker so the badge disappears.
 - **Sort options** (dropdown): Newest First (default), Oldest First, Largest First, By Integrity (corrupt/unknown first to surface problems).
 - **Download**: arrow icon per row uses the `downloadBlob` helper (bearer token via fetch headers, then auto-click on an object URL). Saved with the original filename.
-- **Restore**: rotate-back icon opens a destructive-confirm dialog that requires typing the admin's username. Disabled on `corrupt` rows. Backend auto-snapshots as a `pre-restore` dump *before* entering maintenance mode, then flips the maintenance flag, closes the SQLAlchemy pool, terminates any other DB sessions, and runs `pg_restore --clean --if-exists` (10-minute timeout). Result banner reports the pre-restore filename, and the "Current" badge now follows the restored dump. All non-admin users in the app are bounced to `/login?maintenance=1` for the duration (see 1.5).
+- **Restore**: rotate-back icon opens a destructive-confirm dialog that requires typing the admin's username. Disabled on `corrupt` rows. Backend auto-snapshots as a `pre-restore` dump *before* entering maintenance mode, then flips the maintenance flag, closes the SQLAlchemy pool, terminates any other DB sessions, and runs `pg_restore --clean --if-exists` (timeout configurable via `BACKUP_RESTORE_TIMEOUT_SECONDS`, default 10 min). After pg_restore returns, the backend warms the connection pool before lifting the maintenance gate so the first post-restore request doesn't flap the liveness probe. Result banner reports the pre-restore filename, and the "Current" badge now follows the restored dump. All non-admin users in the app are bounced to `/login?maintenance=1` for the duration (see 1.5).
 - **Delete**: trash icon opens inline confirm/cancel buttons. DELETE returns 204.
 
 ---
@@ -380,4 +380,5 @@ Each anime search result card shows:
 | Any API call returns 503 `{maintenance: true}` | Token cleared, hard-navigate to `/login?maintenance=1`, yellow banner displayed |
 | `/auth/login` during maintenance | 503 shows the same yellow banner; submit not disabled, retry later |
 | Duplicate backup upload | 409 "This dump is identical to an existing backup: '<filename>'." — the new upload is discarded |
+| Backup upload >2 GB | 413 "Uploaded backup is too large: <N> MB (limit: 2048 MB)." — partial file discarded |
 | Restore of a corrupt dump | Restore button is disabled on rows with integrity badge = corrupt |
