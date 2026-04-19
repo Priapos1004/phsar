@@ -68,7 +68,13 @@ jobs:
           file: ${{ matrix.dockerfile }}
           push: true
           platforms: linux/amd64
-          tags: ghcr.io/${{ steps.ver.outputs.owner }}/${{ matrix.image }}:${{ steps.ver.outputs.value }}
+          # Stable tags (no hyphen, e.g. v0.13.0) also publish :latest so
+          # Coolify can pin to :latest and auto-pull on redeploy. Preview tags
+          # (v0.13.0-rc1) never overwrite :latest — so a preview build can't
+          # silently ship to prod.
+          tags: |
+            ghcr.io/${{ steps.ver.outputs.owner }}/${{ matrix.image }}:${{ steps.ver.outputs.value }}
+            ${{ !contains(steps.ver.outputs.value, '-') && format('ghcr.io/{0}/{1}:latest', steps.ver.outputs.owner, matrix.image) || '' }}
           build-args: |
             APP_VERSION=${{ steps.ver.outputs.value }}
             PUBLIC_API_BASE_URL=${{ vars.PUBLIC_API_BASE_URL }}
