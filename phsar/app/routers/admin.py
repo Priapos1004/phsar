@@ -83,8 +83,12 @@ async def delete_backup(filename: str, current_user=Depends(require_admin)):
 async def restore_backup(
     filename: str,
     data: backup_schema.BackupRestoreRequest,
+    db: AsyncSession = Depends(get_db),
     current_user=Depends(require_admin),
 ):
+    # Release this request's pooled connection before the service disposes the
+    # whole pool; otherwise get_db's cleanup tries to rollback on a closed conn.
+    await db.close()
     return await backup_service.restore_backup(
         filename=filename, confirm=data.confirm, caller_username=current_user.username,
     )
