@@ -75,3 +75,17 @@ async def test_save_search_results_without_token(client):
     # No auth header — should fail (Unauthorized)
     response = await client.post("/save/search-results", json=FAKE_SEARCH_RESULTS)
     assert response.status_code == 401, f"Expected 401 Unauthorized, got {response.status_code}"
+
+
+@pytest.mark.asyncio
+async def test_save_populates_spoiler_cache_for_existing_users(client, user_auth_headers):
+    # Regression: existing users need spoiler cache refreshed on new anime saves.
+    await client.put("/users/settings", json={"spoiler_level": "hide"}, headers=user_auth_headers)
+
+    save_resp = await client.post("/save/search-results", json=FAKE_SEARCH_RESULTS, headers=user_auth_headers)
+    assert save_resp.status_code == 200
+
+    search_resp = await client.get("/search/media", headers=user_auth_headers)
+    assert search_resp.status_code == 200
+    titles = [m["title"] for m in search_resp.json()]
+    assert "Fake Anime Title" in titles, f"Expected first main visible under hide, got {titles}"
