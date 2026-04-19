@@ -122,18 +122,23 @@ Frontend build/runtime: `PUBLIC_API_BASE_URL` (baked into the bundle at build ti
 
 ## Deployment
 
-Self-hosted on a Coolify-managed VM. Three services built from the repo:
+Self-hosted on a Coolify-managed VM. Images are built in GitHub Actions and pulled by Coolify — the VM is too small (2 vCPU / 4 GB) to survive a SvelteKit build.
+
+Three services:
 
 - `phsar/Dockerfile` — multi-stage backend. CPU-only torch from the pytorch CPU index; sentence-transformers model baked into `/opt/st-cache`. Runs as non-root `phsar` user (UID 1000). Entrypoint (`phsar/docker/entrypoint.sh`) applies Alembic migrations before exec'ing uvicorn.
 - `phsar/frontend/Dockerfile` — bun build → `node:22-slim` runtime via SvelteKit `adapter-node`. Reuses the built-in `node` user.
-- `docker-compose.yml` (repo root) — runs all three containers together; mirrors the Coolify stack (db has no published port). Only for parity smoke-testing, not day-to-day dev.
+- `docker-compose.yml` (repo root) — runs all three containers together; only for local parity smoke-testing, not day-to-day dev.
+
+Deployment flow: tag any commit with `v*` (stable `v0.13.0` or preview `v0.13.0-rc1`) and push. The `build-images.yml` workflow builds both images in parallel and pushes to `ghcr.io/priapos1004/phsar-{backend,frontend}:<tag>`. In Coolify, point each service at the new image tag and redeploy.
 
 ## CI
 
-GitHub Actions runs on every push and PR:
-- **Backend Lint** (`backend-lint.yml`): `ruff check .` in `phsar/`
-- **Backend Tests** (`backend-test.yml`): `pytest` against a pgvector service container with schema created from models
-- **Frontend Check** (`frontend-check.yml`): `bun run check` (svelte-check) + `bun run test` (vitest) in `phsar/frontend/`
+GitHub Actions:
+- **Backend Lint** (`backend-lint.yml`): `ruff check .` in `phsar/` — runs on every push/PR.
+- **Backend Tests** (`backend-test.yml`): `pytest` against a pgvector service container — runs on every push/PR.
+- **Frontend Check** (`frontend-check.yml`): `bun run check` + `bun run test` — runs on every push/PR.
+- **Build & Push Images** (`build-images.yml`): builds backend + frontend images and pushes to ghcr.io — runs on tag push (`v*`) or manual dispatch. Requires repo variable `PUBLIC_API_BASE_URL`.
 
 ## Linting Config (pyproject.toml)
 
