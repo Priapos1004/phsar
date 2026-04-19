@@ -245,10 +245,12 @@ class BackupDiskSpaceError(PhsarBaseError):
     """Raised when the backup volume has insufficient free space for a new dump."""
     status_code = 507
 
-    def __init__(self, free_fraction: float, required_fraction: float):
+    def __init__(self, free_bytes: int, required_bytes: int):
+        free_mb = free_bytes / (1024 * 1024)
+        required_mb = required_bytes / (1024 * 1024)
         message = (
             f"Insufficient disk space on backup volume: "
-            f"{free_fraction:.1%} free, need {required_fraction:.0%}."
+            f"{free_mb:.0f} MB free, need at least {required_mb:.0f} MB."
         )
         super().__init__(message)
 
@@ -277,4 +279,13 @@ class InvalidCronTokenError(PhsarBaseError):
 
     def __init__(self):
         message = "Invalid or missing cron token."
+        super().__init__(message)
+
+
+class DuplicateBackupError(PhsarBaseError):
+    """Raised when an uploaded backup has the same content hash as an existing dump."""
+    status_code = 409
+
+    def __init__(self, existing_filename: str):
+        message = f"This dump is identical to an existing backup: '{existing_filename}'."
         super().__init__(message)

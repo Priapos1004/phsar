@@ -23,6 +23,9 @@ class BackupMetadata(BaseModel):
     created_at: datetime
     integrity: BackupIntegrity
     source: BackupSource
+    # None for dumps written before the upload-dedupe check existed.
+    # New dumps always get a hash; absent hash just opts out of the dedupe check.
+    content_hash: str | None = None
 
 
 class BackupCreateRequest(BaseModel):

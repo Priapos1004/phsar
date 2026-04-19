@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import os
 import re
 import shutil
@@ -14,6 +15,7 @@ from app.exceptions import (
     BackupIntegrityError,
     BackupNotFoundError,
     BackupRestoreError,
+    DuplicateBackupError,
 )
 from app.schemas.backup_schema import BackupIntegrity, BackupMetadata, BackupSource
 
@@ -22,7 +24,10 @@ from app.schemas.backup_schema import BackupIntegrity, BackupMetadata, BackupSou
 _FILENAME_PATTERN = re.compile(r"^phsar-\d{8}-\d{6}(-[a-z0-9][a-z0-9_-]*)?\.dump$")
 _LABEL_SANITIZE_PATTERN = re.compile(r"[^a-z0-9_-]+")
 
-_DISK_SPACE_REQUIRED_FRACTION = 0.20
+# Floor, not a percentage — free-disk percentages are misleading on large drives
+# (macOS APFS can report <5% free on a 500 GB SSD with 20+ GB actually available),
+# and Phsar dumps are typically well under 100 MB, so 500 MB is ample headroom.
+_DISK_SPACE_REQUIRED_BYTES = 500 * 1024 * 1024
 
 _SOURCE_FILENAME_SUFFIX: dict[BackupSource, str] = {
     BackupSource.manual: "",
@@ -99,13 +104,25 @@ def _validate_filename(filename: str) -> Path:
     return path
 
 
-def check_disk_space(required_fraction: float = _DISK_SPACE_REQUIRED_FRACTION) -> None:
+def check_disk_space(required_bytes: int = _DISK_SPACE_REQUIRED_BYTES) -> None:
     usage = shutil.disk_usage(_backup_dir())
-    if usage.total == 0:
-        raise BackupDiskSpaceError(0.0, required_fraction)
-    free_fraction = usage.free / usage.total
-    if free_fraction < required_fraction:
-        raise BackupDiskSpaceError(free_fraction, required_fraction)
+    if usage.free < required_bytes:
+        raise BackupDiskSpaceError(usage.free, required_bytes)
+
+
+def _hash_file(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+async def _find_duplicate(content_hash: str) -> BackupMetadata | None:
+    for existing in await list_backups():
+        if existing.content_hash == content_hash:
+            return existing
+    return None
 
 
 async def _check_integrity(dump_path: Path) -> BackupIntegrity:
@@ -187,6 +204,7 @@ async def create_backup(
         created_at=_now_utc(),
         integrity=integrity,
         source=source,
+        content_hash=_hash_file(final_path),
     )
     _write_meta(final_path, metadata)
     return metadata
@@ -301,18 +319,27 @@ async def save_uploaded_backup(upload_file: UploadFile) -> BackupMetadata:
     partial_path = backup_dir / f"{filename}.partial"
     final_path = backup_dir / filename
 
+    hasher = hashlib.sha256()
     try:
         with partial_path.open("wb") as f:
             while chunk := await upload_file.read(1024 * 1024):
+                hasher.update(chunk)
                 f.write(chunk)
     except Exception:
         partial_path.unlink(missing_ok=True)
         raise
 
+    content_hash = hasher.hexdigest()
+
     integrity = await _check_integrity(partial_path)
     if integrity != BackupIntegrity.ok:
         partial_path.unlink(missing_ok=True)
         raise BackupIntegrityError(filename, "Uploaded file is not a valid pg custom dump")
+
+    duplicate = await _find_duplicate(content_hash)
+    if duplicate is not None:
+        partial_path.unlink(missing_ok=True)
+        raise DuplicateBackupError(duplicate.filename)
 
     partial_path.rename(final_path)
 
@@ -322,6 +349,7 @@ async def save_uploaded_backup(upload_file: UploadFile) -> BackupMetadata:
         created_at=_now_utc(),
         integrity=integrity,
         source=BackupSource.upload,
+        content_hash=content_hash,
     )
     _write_meta(final_path, metadata)
     return metadata
