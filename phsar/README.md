@@ -20,6 +20,7 @@ phsar/
 │   │   ├── db.py
 │   │   ├── dependencies.py
 │   │   ├── logging_config.py
+│   │   ├── maintenance.py
 │   │   └── security.py
 │   ├── daos/
 │   │   ├── anime_dao.py
@@ -208,9 +209,14 @@ phsar/
 │   │       ├── spoiler-frontier.test.ts
 │   │       └── spoiler-guard.test.ts
 │   ├── static/
-│   │   ├── phsar_logo_inverted.png
+│   │   ├── apple-touch-icon.png
+│   │   ├── favicon-192x192.png
+│   │   ├── favicon-32x32.png
+│   │   ├── favicon-512x512.png
+│   │   ├── favicon.ico
 │   │   ├── phsar_logo_transparent.png
-│   │   └── profile_pics/    # theme character pics (rainbow.png, red.png, blue.png, green.png)
+│   │   ├── profile_pics/    # theme character pics (rainbow.png, red.png, blue.png, green.png)
+│   │   └── robots.txt
 │   ├── svelte.config.js
 │   ├── tsconfig.json
 │   └── vite.config.ts

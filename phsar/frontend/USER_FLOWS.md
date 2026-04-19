@@ -26,6 +26,12 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 - Token is stored in and loaded from localStorage
 - Closing and reopening the browser keeps the user logged in (until token expires or is invalidated)
 
+### 1.5 Maintenance Banner
+- When the backend returns 503 with `{maintenance: true}` on *any* request, the API client clears the token and hard-navigates to `/login?maintenance=1`.
+- The login page also detects this state when `/auth/login` itself returns 503.
+- Yellow banner above the form: "Backup restore in progress. Login will be available again once it completes."
+- Submit is not disabled; retrying during the window repopulates the banner. On a successful login the banner clears and the user proceeds to `/` as normal.
+
 ---
 
 ## 2. Navigation
@@ -308,11 +314,11 @@ Each anime search result card shows:
 ### 9.4 Backups
 - Card below the token list. Admin-only.
 - **Create backup**: POSTs to `/admin/backups`; new dump appears in the list with a green `ok` integrity badge and a source badge (`Manual`, `Scheduled`, `Pre-restore`, or `Upload`).
-- **Upload**: file input accepts `.dump` files; `/admin/backups/upload` validates via `pg_restore --list` before storing.
-- **List**: filename, timestamp, human-readable size, integrity badge, source badge.
+- **Upload**: file input accepts `.dump` files; `/admin/backups/upload` validates via `pg_restore --list` before storing. Re-uploading a file with the same sha256 as an existing dump returns 409 ("identical to `<filename>`").
+- **List**: filename, timestamp, human-readable size, integrity badge, source badge. The dump the DB was last restored from gets a blue "Current" badge (git-branch icon) and a faint blue tint on the row; deleting that dump clears the marker so the badge disappears (no ghost references).
 - **Sort options** (dropdown): Newest First (default), Oldest First, Largest First, By Integrity (corrupt/unknown first to surface problems).
 - **Download**: arrow icon per row uses the `downloadBlob` helper (bearer token via fetch headers, then auto-click on an object URL). Saved with the original filename.
-- **Restore**: rotate-back icon opens a destructive-confirm dialog that requires typing the admin's username. Disabled on `corrupt` rows. Backend auto-snapshots as a `pre-restore` dump before running `pg_restore --clean --if-exists`. Result banner reports the pre-restore filename.
+- **Restore**: rotate-back icon opens a destructive-confirm dialog that requires typing the admin's username. Disabled on `corrupt` rows. Backend auto-snapshots as a `pre-restore` dump *before* entering maintenance mode, then flips the maintenance flag, closes the SQLAlchemy pool, terminates any other DB sessions, and runs `pg_restore --clean --if-exists` (10-minute timeout). Result banner reports the pre-restore filename, and the "Current" badge now follows the restored dump. All non-admin users in the app are bounced to `/login?maintenance=1` for the duration (see 1.5).
 - **Delete**: trash icon opens inline confirm/cancel buttons. DELETE returns 204.
 
 ---
@@ -369,3 +375,7 @@ Each anime search result card shows:
 | Rating fetch returns 404 | No rating displayed (expected for unrated media) |
 | Account deletion wrong password | "Invalid password." error below form |
 | Account deletion network failure | "Failed to delete account." error below form |
+| Any API call returns 503 `{maintenance: true}` | Token cleared, hard-navigate to `/login?maintenance=1`, yellow banner displayed |
+| `/auth/login` during maintenance | 503 shows the same yellow banner; submit not disabled, retry later |
+| Duplicate backup upload | 409 "This dump is identical to an existing backup: '<filename>'." — the new upload is discarded |
+| Restore of a corrupt dump | Restore button is disabled on rows with integrity badge = corrupt |
