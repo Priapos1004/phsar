@@ -1,12 +1,15 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.db import async_session_maker
+from app.core.dependencies import get_db
 from app.core.logging_config import setup_logging
 from app.exceptions import PhsarBaseError
 from app.seeders.embedding_backfiller import backfill_embeddings
@@ -83,6 +86,22 @@ def create_app() -> FastAPI:
     @app.get("/")
     async def root():
         return {"message": "Anime API is live :-)"}
+
+    @app.get("/health")
+    async def health(db: AsyncSession = Depends(get_db)):
+        try:
+            await db.execute(text("SELECT 1"))
+            db_ok = True
+        except Exception:
+            db_ok = False
+        return JSONResponse(
+            status_code=200 if db_ok else 503,
+            content={
+                "status": "ok" if db_ok else "degraded",
+                "version": settings.APP_VERSION,
+                "db": "ok" if db_ok else "error",
+            },
+        )
 
     return app
 

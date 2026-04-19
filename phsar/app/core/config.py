@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     CORS_ORIGINS: list[str] = ["http://localhost:5173"]
 
+    APP_VERSION: str = "dev"
+
     model_config = ConfigDict(env_file=".env")  # Tell Pydantic to load from .env
 
 settings = Settings()

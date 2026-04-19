@@ -9,6 +9,7 @@
     import NavBar from '$lib/components/NavBar.svelte';
     import TokenExpiryDialog from '$lib/components/TokenExpiryDialog.svelte';
     import LoadingScreen from '$lib/components/LoadingScreen.svelte';
+    import VersionFooter from '$lib/components/VersionFooter.svelte';
     import { getThemeCssClass, isValidTheme } from '$lib/themes';
     import '../app.css';
     import type { Snippet } from 'svelte';
@@ -131,6 +132,8 @@
     <main class="min-h-screen px-8 pt-4 pb-8">
       {@render children()}
     </main>
+
+    <VersionFooter />
 
     <TokenExpiryDialog open={showExpiryDialog} onLogin={handleLogout} />
 {/if}
