@@ -34,7 +34,9 @@ class Settings(BaseSettings):
     APP_VERSION: str = "dev"
 
     # Backups
-    BACKUP_DIR: str = "/backups"
+    # Default is a cwd-relative path so local uvicorn dev works without root;
+    # the container sets BACKUP_DIR=/backups explicitly in the Dockerfile.
+    BACKUP_DIR: str = "./backups"
     BACKUP_CRON_TOKEN: str = ""  # cron endpoint fails closed when empty
 
     model_config = ConfigDict(env_file=".env")  # Tell Pydantic to load from .env

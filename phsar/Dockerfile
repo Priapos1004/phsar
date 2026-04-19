@@ -36,7 +36,8 @@ ARG APP_VERSION=dev
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     SENTENCE_TRANSFORMERS_HOME=/opt/st-cache \
-    APP_VERSION=${APP_VERSION}
+    APP_VERSION=${APP_VERSION} \
+    BACKUP_DIR=/backups
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         postgresql-client \

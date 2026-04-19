@@ -116,7 +116,7 @@ SvelteKit with file-based routing, Svelte 5 runes, Tailwind CSS 4, shadcn-svelte
 
 The backend requires a `phsar/.env` file with: `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `SECRET_KEY`, `SEARCH_SECRET_KEY`.
 
-Optional: `DEBUG` (enables SQL echo), `CORS_ORIGINS` (JSON list of allowed origins), `GUEST_USERNAME` + `GUEST_PASSWORD` (seeds a read-only guest account with `restricted_user` role), `APP_VERSION` (deployed version tag surfaced on `/health`; injected via the backend Dockerfile build arg), `BACKUP_DIR` (container-side backup directory; defaults to `/backups`), `BACKUP_CRON_TOKEN` (shared bearer secret for `POST /admin/backups/auto`; empty = scheduled backups disabled and the endpoint fails closed).
+Optional: `DEBUG` (enables SQL echo), `CORS_ORIGINS` (JSON list of allowed origins), `GUEST_USERNAME` + `GUEST_PASSWORD` (seeds a read-only guest account with `restricted_user` role), `APP_VERSION` (deployed version tag surfaced on `/health`; injected via the backend Dockerfile build arg), `BACKUP_DIR` (where dumps are written; defaults to `./backups` so native `uvicorn` dev works without root, and the Dockerfile sets it to `/backups` so the container writes to the bind-mounted volume), `BACKUP_CRON_TOKEN` (shared bearer secret for `POST /admin/backups/auto`; empty = scheduled backups disabled and the endpoint fails closed).
 
 Frontend (runtime, read from `$env/dynamic/public`): `PUBLIC_API_BASE_URL` (backend URL; defaults to `http://localhost:8000` for local dev) and `PUBLIC_APP_VERSION` (shown in the footer). Both are set as container ENV in production — changing them does not require an image rebuild.
 

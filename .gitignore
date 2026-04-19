@@ -176,3 +176,6 @@ cython_debug/
 
 # Playwright MCP debugging artifacts
 .playwright-mcp/
+
+# Local backup dumps
+backups/
