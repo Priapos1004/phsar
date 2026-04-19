@@ -268,5 +268,6 @@ export interface BackupMetadata {
 	created_at: string;
 	integrity: BackupIntegrity;
 	source: BackupSource;
+	content_hash?: string | null;
 	is_current?: boolean;
 }
