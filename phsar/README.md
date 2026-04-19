@@ -70,6 +70,7 @@ phsar/
 │   │   ├── admin_schema.py
 │   │   ├── anime_schema.py
 │   │   ├── auth_schema.py
+│   │   ├── backup_schema.py
 │   │   ├── media_filter_schema.py
 │   │   ├── media_schema.py
 │   │   ├── rating_schema.py
@@ -85,6 +86,7 @@ phsar/
 │       ├── anime_search_service.py
 │       ├── anime_service.py
 │       ├── auth_service.py
+│       ├── backup_service.py
 │       ├── export_service.py
 │       ├── filter_service.py
 │       ├── jikan_scraper.py
@@ -119,6 +121,7 @@ phsar/
 │   │   │   │   ├── AttributeBadges.svelte
 │   │   │   │   ├── AttributeDetailBars.svelte
 │   │   │   │   ├── AttributeRadar.svelte
+│   │   │   │   ├── BackupsCard.svelte
 │   │   │   │   ├── BulkRateDialog.svelte
 │   │   │   │   ├── DangerZone.svelte
 │   │   │   │   ├── DoubleRangeSlider.svelte
@@ -262,6 +265,8 @@ SEARCH_SECRET_KEY=supersecretsearchsecretkey
 # Optional: seeded guest account (restricted_user role, read-only)
 # GUEST_USERNAME=guest
 # GUEST_PASSWORD=guestpassword
+# Optional: shared bearer secret for POST /admin/backups/auto (scheduled dumps)
+# BACKUP_CRON_TOKEN=supersecretcrontoken
 ```
 
 *Change `animeuser`, `animepass`, `admin`, `supersecretpassword`, `supersecretsecretkey`, and `supersecretsearchsecretkey`*

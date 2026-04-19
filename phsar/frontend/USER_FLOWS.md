@@ -305,6 +305,16 @@ Each anime search result card shows:
 - **Sort options** (dropdown): By Status (default: active → used → expired), Newest First, Expiring Soon (active tokens first by soonest expiry), Recently Used
 - **Delete**: trash icon on unused/expired tokens opens confirm/cancel inline buttons. Used tokens cannot be deleted. DELETE returns 204.
 
+### 9.4 Backups
+- Card below the token list. Admin-only.
+- **Create backup**: POSTs to `/admin/backups`; new dump appears in the list with a green `ok` integrity badge and a source badge (`Manual`, `Scheduled`, `Pre-restore`, or `Upload`).
+- **Upload**: file input accepts `.dump` files; `/admin/backups/upload` validates via `pg_restore --list` before storing.
+- **List**: filename, timestamp, human-readable size, integrity badge, source badge.
+- **Sort options** (dropdown): Newest First (default), Oldest First, Largest First, By Integrity (corrupt/unknown first to surface problems).
+- **Download**: arrow icon per row uses the `downloadBlob` helper (bearer token via fetch headers, then auto-click on an object URL). Saved with the original filename.
+- **Restore**: rotate-back icon opens a destructive-confirm dialog that requires typing the admin's username. Disabled on `corrupt` rows. Backend auto-snapshots as a `pre-restore` dump before running `pg_restore --clean --if-exists`. Result banner reports the pre-restore filename.
+- **Delete**: trash icon opens inline confirm/cancel buttons. DELETE returns 204.
+
 ---
 
 ## 10. API Endpoints Used by Frontend
@@ -334,6 +344,12 @@ Each anime search result card shows:
 | `/admin/registration-tokens` | GET | Admin page (list all tokens) |
 | `/admin/registration-tokens` | POST | Admin page (create token) |
 | `/admin/registration-tokens/{uuid}` | DELETE | Admin page (delete unused token) |
+| `/admin/backups` | GET | Admin page Backups card (list dumps) |
+| `/admin/backups` | POST | Admin page Backups card (create dump on demand) |
+| `/admin/backups/{filename}` | GET | Admin page Backups card (download dump) |
+| `/admin/backups/{filename}` | DELETE | Admin page Backups card (delete dump) |
+| `/admin/backups/{filename}/restore` | POST | Admin page Backups card (restore with username confirm; backend auto-takes a pre-restore snapshot) |
+| `/admin/backups/upload` | POST | Admin page Backups card (multipart upload of a `.dump` file) |
 | `/auth/register` | POST | Registration page |
 
 ---
