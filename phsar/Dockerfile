@@ -42,7 +42,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         postgresql-client \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 1000 phsar \
-    && useradd --system --uid 1000 --gid phsar --home /app phsar
+    && useradd --system --uid 1000 --gid phsar --home /app phsar \
+    && mkdir -p /backups \
+    && chown phsar:phsar /backups
 
 WORKDIR /app
 

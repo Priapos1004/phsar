@@ -41,11 +41,14 @@ services:
       SEARCH_SECRET_KEY: ${SEARCH_SECRET_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000"]}
       APP_VERSION: ${APP_VERSION:-dev}
+      BACKUP_CRON_TOKEN: ${BACKUP_CRON_TOKEN:-}
     depends_on:
       db:
         condition: service_healthy
     ports:
       - "8000:8000"
+    volumes:
+      - ./backups:/backups
 
   frontend:
     build:
