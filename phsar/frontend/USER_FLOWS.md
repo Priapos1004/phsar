@@ -40,7 +40,12 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
   - Getting Started → `/getting-started`
   - Logout (red) → clears token, redirects to `/login`
 
-### 2.2 Route Structure
+### 2.2 Version Footer
+- Small muted text at the bottom of every page showing the deployed version.
+- When the value looks like a version tag (`v0.13.0`), it's a link to the matching GitHub release; otherwise it's plain text (e.g. `dev` locally).
+- Sourced from `PUBLIC_APP_VERSION` at the node runtime.
+
+### 2.3 Route Structure
 | Route | Page | Auth Required |
 |-------|------|---------------|
 | `/` | Home (search bar + placeholders) | Yes |

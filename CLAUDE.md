@@ -56,6 +56,13 @@ docker exec -it anime-postgres psql -U <DB_USER> -d <DB_NAME> \
   -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 ```
 
+### Docker (production parity)
+```bash
+# Build + run db + backend + frontend containers end-to-end (NOT the dev flow).
+cp .env.example .env
+docker compose up --build
+```
+
 ## Architecture
 
 ### Backend (phsar/app/)
@@ -70,13 +77,14 @@ Layered architecture with strict dependency flow: **routers → services → DAO
 - **core/** — Config (`config.py` loads from `.env`), database engine (`db.py`), auth dependencies (`dependencies.py`), JWT/password security (`security.py`).
 - **seeders/** — Run at app startup via lifespan; seed genres, admin user, and optional guest user (restricted_user role). `backfill_user_settings` ensures all users have a UserSettings row. `backfill_spoiler_visibility` computes visible media for users with no cache rows. `embedding_backfiller.py` detects and regenerates any missing anime, media, or rating embeddings (enables seamless embedding model swaps via Alembic migration + restart).
 - **exceptions.py** — Custom exception hierarchy rooted at `PhsarBaseError` with `status_code` attribute. Single exception handler in `main.py` reads the status code from each exception class.
+- **main.py** — App factory + lifespan; also exposes `GET /` and `GET /health` directly (health returns `{status, version, db}` and pings the DB via the shared session dependency).
 
 ### Frontend (phsar/frontend/)
 
 SvelteKit with file-based routing, Svelte 5 runes, Tailwind CSS 4, shadcn-svelte component library.
 
 - **routes/** — Pages: home (`/`), login (`/login`), register (`/register`), search (`/search`), media detail (`/media`), anime detail (`/anime`), settings (`/settings`), admin (`/admin`).
-- **lib/components/** — App components (SearchBar, MediaInfo, NavBar, TagSelect, DoubleRangeSlider, RatingCard, BulkRateDialog, DangerZone, RelatedMediaCarousel, SpoilerGuard, EChart, RatingsOverview with sub-components for Stats/Timeline/Notes/Attributes, AttributeRadar, AttributeBadges, AttributeDetailBars, etc.) using Svelte 5 `$props()`, `$state()`, `$derived()`, `$effect()`.
+- **lib/components/** — App components (SearchBar, MediaInfo, NavBar, TagSelect, DoubleRangeSlider, RatingCard, BulkRateDialog, DangerZone, RelatedMediaCarousel, SpoilerGuard, EChart, RatingsOverview with sub-components for Stats/Timeline/Notes/Attributes, AttributeRadar, AttributeBadges, AttributeDetailBars, VersionFooter, etc.) using Svelte 5 `$props()`, `$state()`, `$derived()`, `$effect()`. `VersionFooter` renders at the bottom of every page and reads `PUBLIC_APP_VERSION` from `$env/dynamic/public`.
 - **lib/components/ui/** — shadcn-svelte base components (button, card, input, badge, slider, dropdown-menu, popover, checkbox, label, select, separator, etc.).
 - **lib/api.ts** — Centralized API client with `get`/`post`/`postForm`/`put`/`del` methods, `ApiError` class, and automatic auth header injection from the token store.
 - **lib/types/api.ts** — TypeScript interfaces mirroring backend Pydantic schemas (`MediaConnected`, `FilterOptions`, `TokenResponse`, etc.).
@@ -108,7 +116,17 @@ SvelteKit with file-based routing, Svelte 5 runes, Tailwind CSS 4, shadcn-svelte
 
 The backend requires a `phsar/.env` file with: `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `SECRET_KEY`, `SEARCH_SECRET_KEY`.
 
-Optional: `DEBUG` (enables SQL echo), `CORS_ORIGINS` (JSON list of allowed origins), `GUEST_USERNAME` + `GUEST_PASSWORD` (seeds a read-only guest account with `restricted_user` role).
+Optional: `DEBUG` (enables SQL echo), `CORS_ORIGINS` (JSON list of allowed origins), `GUEST_USERNAME` + `GUEST_PASSWORD` (seeds a read-only guest account with `restricted_user` role), `APP_VERSION` (deployed version tag surfaced on `/health`; injected via the backend Dockerfile build arg).
+
+Frontend build/runtime: `PUBLIC_API_BASE_URL` (baked into the bundle at build time; defaults to `http://localhost:8000` for local dev) and `PUBLIC_APP_VERSION` (read at runtime from `$env/dynamic/public` and shown in the footer; set in the frontend container ENV).
+
+## Deployment
+
+Self-hosted on a Coolify-managed VM. Three services built from the repo:
+
+- `phsar/Dockerfile` — multi-stage backend. CPU-only torch from the pytorch CPU index; sentence-transformers model baked into `/opt/st-cache`. Runs as non-root `phsar` user (UID 1000). Entrypoint (`phsar/docker/entrypoint.sh`) applies Alembic migrations before exec'ing uvicorn.
+- `phsar/frontend/Dockerfile` — bun build → `node:22-slim` runtime via SvelteKit `adapter-node`. Reuses the built-in `node` user.
+- `docker-compose.yml` (repo root) — runs all three containers together; mirrors the Coolify stack (db has no published port). Only for parity smoke-testing, not day-to-day dev.
 
 ## CI
 

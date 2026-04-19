@@ -8,8 +8,12 @@
 
 ```text
 phsar/
+├── .dockerignore
 ├── .env                  # local credentials (not tracked)
 ├── .env.example
+├── Dockerfile
+├── docker/
+│   └── entrypoint.sh     # applies alembic migrations before starting uvicorn
 ├── app/
 │   ├── core/
 │   │   ├── config.py
@@ -96,6 +100,9 @@ phsar/
 │       ├── user_settings_service.py
 │       └── vector_embedding_service.py
 ├── frontend/
+│   ├── .dockerignore
+│   ├── Dockerfile
+│   ├── bun.lock
 │   ├── components.json
 │   ├── package.json
 │   ├── USER_FLOWS.md
@@ -133,6 +140,7 @@ phsar/
 │   │   │   │   ├── SkeletonMediaInfo.svelte
 │   │   │   │   ├── TagSelect.svelte
 │   │   │   │   ├── TokenExpiryDialog.svelte
+│   │   │   │   ├── VersionFooter.svelte
 │   │   │   │   └── ui/           # shadcn-svelte components
 │   │   │   │       ├── badge/
 │   │   │   │       ├── button/
@@ -219,6 +227,7 @@ phsar/
     │   ├── test_auth.py
     │   ├── test_filters_options.py
     │   ├── test_filters_token.py
+    │   ├── test_health.py
     │   ├── test_media_detail.py
     │   ├── test_ratings.py
     │   ├── test_save.py
