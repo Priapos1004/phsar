@@ -52,7 +52,11 @@ async def seed_guest_user(db: AsyncSession):
 
 async def backfill_spoiler_visibility(db: AsyncSession):
     """Recompute spoiler visibility for users who have no rows in user_visible_media.
-    Covers new deployments and users created before the feature existed."""
+    Covers new deployments and users created before the feature existed.
+
+    Per-user try/commit so a poisoned user (stale rating FKs, etc.) doesn't abort
+    startup — this seeder is the mop-up path for `save_service`'s recompute, and
+    it can't itself be fragile."""
     stmt = (
         select(Users.id)
         .outerjoin(UserVisibleMedia, Users.id == UserVisibleMedia.user_id)
@@ -64,10 +68,16 @@ async def backfill_spoiler_visibility(db: AsyncSession):
     if not user_ids:
         return
 
+    succeeded = 0
     for user_id in user_ids:
-        await recompute_visibility_for_user(db, user_id)
-    await db.commit()
-    logger.info(f"Backfilled spoiler visibility for {len(user_ids)} user(s).")
+        try:
+            await recompute_visibility_for_user(db, user_id)
+            await db.commit()
+            succeeded += 1
+        except Exception:
+            await db.rollback()
+            logger.exception("Spoiler-visibility backfill failed for user %s", user_id)
+    logger.info(f"Backfilled spoiler visibility for {succeeded}/{len(user_ids)} user(s).")
 
 
 async def backfill_user_settings(db: AsyncSession):

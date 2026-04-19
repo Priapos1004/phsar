@@ -79,7 +79,19 @@ async def _refresh_spoiler_cache_for_all_users(db: AsyncSession) -> None:
     # Every existing user needs their spoiler cache recomputed against the new
     # media set; otherwise spoiler_level=hide filters the new animes out until
     # the next backend restart triggers backfill_spoiler_visibility.
+    #
+    # Per-user try/commit so one poisoned user (e.g. FK pointing at a stale
+    # rating row) doesn't abort the rest and doesn't unwind the already-
+    # committed anime/media rows from this save. `backfill_spoiler_visibility`
+    # will mop up anyone we skip on next startup.
     user_ids = (await db.execute(select(Users.id))).scalars().all()
     for user_id in user_ids:
-        await recompute_visibility_for_user(db, user_id)
-    await db.commit()
+        try:
+            await recompute_visibility_for_user(db, user_id)
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            logger.exception(
+                "Spoiler-cache recompute failed for user %s after save — skipping",
+                user_id,
+            )
