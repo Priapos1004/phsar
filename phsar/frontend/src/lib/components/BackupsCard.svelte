@@ -11,6 +11,7 @@
     import {
         ArrowUpDown,
         Download,
+        GitBranch,
         Plus,
         RotateCcw,
         Trash2,
@@ -233,10 +234,16 @@
         {:else}
             <div class="space-y-3">
                 {#each sortedBackups as b (b.filename)}
-                    <div class="flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3">
+                    <div class="flex items-center gap-3 rounded-lg border px-4 py-3 {b.is_current_restore ? 'border-blue-500/50 bg-blue-500/5' : 'bg-muted/30'}">
                         <div class="flex-1 min-w-0 space-y-1">
                             <div class="flex items-center gap-2 flex-wrap">
                                 <code class="text-sm text-card-foreground break-all">{b.filename}</code>
+                                {#if b.is_current_restore}
+                                    <Badge class="bg-blue-500/15 text-blue-400">
+                                        <GitBranch class="size-3 mr-1" />
+                                        Current
+                                    </Badge>
+                                {/if}
                                 {#if b.integrity === 'ok'}
                                     <Badge>ok</Badge>
                                 {:else if b.integrity === 'corrupt'}

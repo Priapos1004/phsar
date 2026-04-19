@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
     import { token } from '$lib/stores/auth';
     import { fly } from 'svelte/transition';
@@ -13,6 +14,14 @@
     let password = $state('');
     let error = $state('');
     let loading = $state(false);
+    let maintenanceActive = $state(false);
+
+    onMount(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('maintenance') === '1') {
+            maintenanceActive = true;
+        }
+    });
 
     async function handleLogin(e: Event) {
         e.preventDefault();
@@ -24,11 +33,18 @@
                 '/auth/login',
                 new URLSearchParams({ username, password })
             );
+            maintenanceActive = false;
             token.set(data.access_token);
             goto('/');
         } catch (err) {
             if (err instanceof ApiError) {
-                error = err.detail;
+                if (err.status === 503) {
+                    maintenanceActive = true;
+                    error = '';
+                } else {
+                    maintenanceActive = false;
+                    error = err.detail;
+                }
             } else {
                 console.error(err);
                 error = 'An unexpected error occurred.';
@@ -46,6 +62,11 @@
                 <h2 class="text-2xl font-bold text-center text-card-foreground">Login</h2>
             </Card.Header>
             <Card.Content>
+                {#if maintenanceActive}
+                    <div class="mb-4 rounded-md border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-sm text-yellow-900 dark:text-yellow-100">
+                        Backup restore in progress. Login will be available again once it completes.
+                    </div>
+                {/if}
                 <form onsubmit={handleLogin} class="space-y-4">
                     <div class="space-y-2">
                         <Label for="username">Username</Label>

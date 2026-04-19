@@ -24,6 +24,7 @@ function getAuthHeaders(): Record<string, string> {
 async function handleResponse<T>(res: Response): Promise<T> {
 	if (!res.ok) {
 		let detail = `Request failed with status ${res.status}`;
+		let maintenance = false;
 		try {
 			const body = await res.json();
 			if (typeof body.detail === 'string') {
@@ -32,8 +33,19 @@ async function handleResponse<T>(res: Response): Promise<T> {
 				// Pydantic 422 validation errors: [{msg, loc, type}, ...] — show first only
 				detail = body.detail[0].msg;
 			}
+			if (body.maintenance === true) {
+				maintenance = true;
+			}
 		} catch {
 			// response body wasn't JSON
+		}
+		if (maintenance) {
+			// Backend is gated during a backup restore. Kick the user to /login
+			// so no stale data is visible, and the login page shows the banner.
+			token.set(null);
+			if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+				window.location.href = '/login?maintenance=1';
+			}
 		}
 		throw new ApiError(res.status, detail);
 	}

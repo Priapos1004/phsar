@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -9,6 +10,8 @@ from pathlib import Path
 from fastapi import UploadFile
 
 from app.core.config import settings
+from app.core.db import engine
+from app.core.maintenance import set_maintenance
 from app.exceptions import (
     BackupConfirmationMismatchError,
     BackupDiskSpaceError,
@@ -18,6 +21,13 @@ from app.exceptions import (
     DuplicateBackupError,
 )
 from app.schemas.backup_schema import BackupIntegrity, BackupMetadata, BackupSource
+
+_PG_RESTORE_TIMEOUT_SECONDS = 10 * 60
+
+# Pointer to the dump the current DB was last restored from. Kept in the
+# backup directory (not inside the DB) because a restore would otherwise
+# overwrite it with whatever the dump held at its creation time.
+_LAST_RESTORED_FILENAME = ".last_restored.json"
 
 # Filenames we accept: phsar-YYYYMMDD-HHMMSS[-suffix].dump.
 # Anchored + restricted charset prevents path traversal via user-supplied filenames.
@@ -108,6 +118,26 @@ def check_disk_space(required_bytes: int = _DISK_SPACE_REQUIRED_BYTES) -> None:
     usage = shutil.disk_usage(_backup_dir())
     if usage.free < required_bytes:
         raise BackupDiskSpaceError(usage.free, required_bytes)
+
+
+def _last_restored_path() -> Path:
+    return _backup_dir() / _LAST_RESTORED_FILENAME
+
+
+def _read_last_restored_filename() -> str | None:
+    path = _last_restored_path()
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text()).get("filename")
+    except Exception:
+        return None
+
+
+def _write_last_restored_filename(filename: str) -> None:
+    _last_restored_path().write_text(
+        json.dumps({"filename": filename, "restored_at": _now_utc().isoformat()})
+    )
 
 
 def _hash_file(path: Path) -> str:
@@ -212,6 +242,7 @@ async def create_backup(
 
 async def list_backups() -> list[BackupMetadata]:
     backup_dir = _backup_dir()
+    current_restore = _read_last_restored_filename()
     items: list[BackupMetadata] = []
     for path in backup_dir.glob("phsar-*.dump"):
         if not _FILENAME_PATTERN.match(path.name):
@@ -223,6 +254,8 @@ async def list_backups() -> list[BackupMetadata]:
             actual_size = path.stat().st_size
             if meta.size_bytes != actual_size:
                 meta = meta.model_copy(update={"size_bytes": actual_size})
+        if current_restore and path.name == current_restore:
+            meta = meta.model_copy(update={"is_current_restore": True})
         items.append(meta)
     items.sort(key=lambda m: m.created_at, reverse=True)
     return items
@@ -232,6 +265,8 @@ async def delete_backup(filename: str) -> None:
     path = _validate_filename(filename)
     path.unlink(missing_ok=True)
     _meta_path(path).unlink(missing_ok=True)
+    if _read_last_restored_filename() == filename:
+        _last_restored_path().unlink(missing_ok=True)
 
 
 async def restore_backup(
@@ -244,29 +279,74 @@ async def restore_backup(
 
     target_path = _validate_filename(filename)
 
+    # Take the pre-restore snapshot BEFORE flipping the maintenance flag.
+    # pg_dump is non-destructive and runs via subprocess (not through our
+    # middleware), so there's no reason to block every user for the dump.
     pre_snapshot = await create_backup(source=BackupSource.pre_restore)
 
+    set_maintenance(True)
+    try:
+        # pg_restore --clean needs ACCESS EXCLUSIVE locks to DROP tables.
+        # Anything else holding even ACCESS SHARE makes it hang.
+        # Close our own pool first, then kick off any stragglers (psql shells,
+        # notebook sessions, etc.) before running the restore.
+        await engine.dispose()
+        await _terminate_other_sessions()
+
+        args = [
+            "pg_restore",
+            *_pg_connection_args(),
+            "--clean",
+            "--if-exists",
+            "--no-owner",
+            "--no-privileges",
+            str(target_path),
+        ]
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            env=_pg_env(),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        try:
+            _, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=_PG_RESTORE_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            raise BackupRestoreError(
+                filename,
+                f"pg_restore exceeded the {_PG_RESTORE_TIMEOUT_SECONDS // 60}-minute timeout.",
+            )
+
+        if proc.returncode != 0:
+            raise BackupRestoreError(filename, stderr.decode(errors="replace").strip()[:500])
+
+        _write_last_restored_filename(filename)
+    finally:
+        set_maintenance(False)
+
+    return pre_snapshot
+
+
+async def _terminate_other_sessions() -> None:
+    # Fire-and-forget: if psql fails we still try pg_restore. Better to hit the
+    # real lock-wait error message than mask it behind a terminate failure.
     args = [
-        "pg_restore",
+        "psql",
         *_pg_connection_args(),
-        "--clean",
-        "--if-exists",
-        "--no-owner",
-        "--no-privileges",
-        str(target_path),
+        "-c",
+        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+        "WHERE datname = current_database() AND pid <> pg_backend_pid();",
     ]
     proc = await asyncio.create_subprocess_exec(
         *args,
         env=_pg_env(),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
     )
-    _, stderr = await proc.communicate()
-
-    if proc.returncode != 0:
-        raise BackupRestoreError(filename, stderr.decode(errors="replace").strip()[:500])
-
-    return pre_snapshot
+    await proc.wait()
 
 
 def _is_sunday_utc(dt: datetime) -> bool:

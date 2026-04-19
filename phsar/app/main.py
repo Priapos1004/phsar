@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.core.db import async_session_maker
 from app.core.dependencies import get_db
 from app.core.logging_config import setup_logging
+from app.core.maintenance import is_maintenance_active
 from app.exceptions import PhsarBaseError
 from app.seeders.embedding_backfiller import backfill_embeddings
 from app.seeders.genre_seeder import seed_genres
@@ -58,7 +59,20 @@ def create_app() -> FastAPI:
     @app.exception_handler(PhsarBaseError)
     async def phsar_exception_handler(request: Request, exc: PhsarBaseError):
         return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
-    
+
+    @app.middleware("http")
+    async def maintenance_gate(request: Request, call_next):
+        # / and /health stay open so Coolify's liveness check doesn't fail the
+        # container mid-restore and trigger a restart in the middle of pg_restore.
+        if is_maintenance_active() and request.url.path not in ("/", "/health"):
+            return JSONResponse(
+                status_code=503,
+                content={
+                    "detail": "Backup restore in progress. Please try again in a moment.",
+                    "maintenance": True,
+                },
+            )
+        return await call_next(request)
 
     # Local import to avoid early dependency resolution in tests
     from app.routers import (
