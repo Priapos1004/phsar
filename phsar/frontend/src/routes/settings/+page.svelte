@@ -7,11 +7,8 @@
     import { Label } from '$lib/components/ui/label';
     import { Separator } from '$lib/components/ui/separator';
     import { Download } from 'lucide-svelte';
-    import { jwtDecode } from 'jwt-decode';
-    import { token } from '$lib/stores/auth';
     import { userSettings } from '$lib/stores/userSettings';
     import { get } from 'svelte/store';
-    import { API_URL } from '$lib/config';
     import DangerZone from '$lib/components/DangerZone.svelte';
     import Toast from '$lib/components/Toast.svelte';
     import { THEMES, isValidTheme } from '$lib/themes';
@@ -53,35 +50,11 @@
     }
 
     async function downloadExport(format: 'json' | 'csv') {
-        const currentToken = get(token);
-        if (!currentToken) {
-            error = 'Session expired. Please log in again.';
-            return;
-        }
         try {
-            const resp = await fetch(`${API_URL}/users/export?format=${format}`, {
-                headers: { Authorization: `Bearer ${currentToken}` },
-            });
-            if (!resp.ok) {
-                error = 'Export failed.';
-                return;
-            }
-            const blob = await resp.blob();
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            let username = 'user';
-            try {
-                const decoded = jwtDecode<{ sub?: string }>(currentToken);
-                if (decoded.sub) username = decoded.sub;
-            } catch { /* use fallback */ }
-            const d = new Date();
-            const today = `${d.getFullYear()}_${String(d.getMonth() + 1).padStart(2, '0')}_${String(d.getDate()).padStart(2, '0')}`;
-            a.download = `phsar_export_${username}_${today}.${format}`;
-            a.click();
-            URL.revokeObjectURL(url);
-        } catch {
-            error = 'Export failed. Please check your connection.';
+            await api.downloadBlob(`/users/export?format=${format}`);
+        } catch (err) {
+            if (err instanceof ApiError) error = err.detail;
+            else error = 'Export failed. Please check your connection.';
         }
     }
 

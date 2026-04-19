@@ -55,6 +55,21 @@ async function handleResponse<T>(res: Response): Promise<T> {
 	return res.json();
 }
 
+export function parseContentDispositionFilename(header: string | null): string | undefined {
+	if (!header) return undefined;
+	// RFC 5987 form (filename*=UTF-8''percent-encoded) wins over plain filename when both are present
+	const star = /filename\*=\s*(?:UTF-8'')?"?([^";]+)"?/i.exec(header);
+	if (star) {
+		try {
+			return decodeURIComponent(star[1].trim());
+		} catch {
+			/* fall through */
+		}
+	}
+	const plain = /filename="?([^";]+)"?/i.exec(header);
+	return plain?.[1].trim();
+}
+
 async function jsonRequest<T>(method: string, path: string, body?: unknown): Promise<T> {
 	const res = await fetch(`${API_URL}${path}`, {
 		method,
@@ -100,7 +115,7 @@ export const api = {
 		return jsonRequest<T>('DELETE', path, body);
 	},
 
-	async downloadBlob(path: string, filename: string): Promise<void> {
+	async downloadBlob(path: string, filename?: string): Promise<void> {
 		const res = await fetch(`${API_URL}${path}`, { headers: getAuthHeaders() });
 		if (!res.ok) {
 			await handleResponse(res);
@@ -110,7 +125,8 @@ export const api = {
 		const objectUrl = URL.createObjectURL(blob);
 		const anchor = document.createElement('a');
 		anchor.href = objectUrl;
-		anchor.download = filename;
+		const resolved = filename ?? parseContentDispositionFilename(res.headers.get('Content-Disposition'));
+		if (resolved) anchor.download = resolved;
 		document.body.appendChild(anchor);
 		anchor.click();
 		anchor.remove();

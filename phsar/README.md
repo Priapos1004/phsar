@@ -199,6 +199,7 @@ phsar/
 │   │   └── tests/
 │   │       ├── setup.ts
 │   │       ├── SpoilerGuardTest.svelte
+│   │       ├── api-download.test.ts
 │   │       ├── auth-store.test.ts
 │   │       ├── format-string.test.ts
 │   │       ├── login.test.ts

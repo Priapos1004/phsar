@@ -54,6 +54,9 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        # Browsers hide Content-Disposition from cross-origin fetch() unless it's
+        # explicitly exposed — the frontend's downloadBlob parses it for the filename.
+        expose_headers=["Content-Disposition"],
     )
 
     @app.exception_handler(PhsarBaseError)
