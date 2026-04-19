@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     # the container sets BACKUP_DIR=/backups explicitly in the Dockerfile.
     BACKUP_DIR: str = "./backups"
     BACKUP_CRON_TOKEN: str = ""  # cron endpoint fails closed when empty
+    # pg_restore timeout in seconds. Bump this if the DB grows large enough
+    # that restores legitimately take >10 min — a kill mid-restore leaves
+    # the DB half-dropped.
+    BACKUP_RESTORE_TIMEOUT_SECONDS: int = 600
 
     model_config = ConfigDict(env_file=".env")  # Tell Pydantic to load from .env
 

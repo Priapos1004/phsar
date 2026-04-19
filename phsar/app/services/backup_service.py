@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -8,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import UploadFile
+from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.db import engine
@@ -18,11 +20,12 @@ from app.exceptions import (
     BackupIntegrityError,
     BackupNotFoundError,
     BackupRestoreError,
+    BackupUploadTooLargeError,
     DuplicateBackupError,
 )
 from app.schemas.backup_schema import BackupIntegrity, BackupMetadata, BackupSource
 
-_PG_RESTORE_TIMEOUT_SECONDS = 10 * 60
+logger = logging.getLogger(__name__)
 
 # Pointer to the dump whose content matches the live DB state. Updated on
 # restore AND whenever a new dump's content_hash dedupe-matches an existing
@@ -55,8 +58,25 @@ _LABEL_SANITIZE_PATTERN = re.compile(r"[^a-z0-9_-]+")
 # and Phsar dumps are typically well under 100 MB, so 500 MB is ample headroom.
 _DISK_SPACE_REQUIRED_BYTES = 500 * 1024 * 1024
 
+# Hard upper bound on uploaded dump size — above this we bail out mid-stream so a
+# rogue admin request can't fill the backup volume (which would also knock out the
+# scheduled-backup + pre-restore-snapshot paths).
+_UPLOAD_MAX_BYTES = 2 * 1024 * 1024 * 1024
+_UPLOAD_FREE_CHECK_EVERY_BYTES = 10 * 1024 * 1024
+_UPLOAD_CHUNK_BYTES = 1024 * 1024
+
+# Serializes every write path (create + upload) so concurrent manual + cron +
+# re-upload requests can't race on disk-space checks, `.partial` filenames, or
+# the dedupe lookup. Single-process assumption — scale horizontally and this
+# needs a file lock.
+_BACKUP_WRITE_LOCK = asyncio.Lock()
+
+# Separator used on the manual-source filename so a manual backup labeled
+# "cron" (unlikely but possible) produces "phsar-<ts>-manual-cron.dump"
+# instead of "phsar-<ts>-cron.dump" — prevents _guess_source_from_name from
+# misclassifying a label-only collision when the sidecar meta is missing.
 _SOURCE_FILENAME_SUFFIX: dict[BackupSource, str] = {
-    BackupSource.manual: "",
+    BackupSource.manual: "-manual",
     BackupSource.cron: "-cron",
     BackupSource.pre_restore: "-pre-restore",
     BackupSource.upload: "-upload",
@@ -107,21 +127,28 @@ def _build_filename(source: BackupSource, label: str | None) -> str:
     suffix = _SOURCE_FILENAME_SUFFIX[source]
     safe_label = _sanitize_label(label)
     if safe_label:
-        suffix = f"{suffix}-{safe_label}" if suffix else f"-{safe_label}"
+        suffix = f"{suffix}-{safe_label}"
     return f"phsar-{_timestamp_string()}{suffix}.dump"
 
 
 def _guess_source_from_name(filename: str) -> BackupSource:
-    if "-cron" in filename:
-        return BackupSource.cron
+    # Order matters: if meta sidecar is missing for a manual backup whose
+    # label happened to match another source token (e.g. "cron"), the
+    # "-manual" segment wins over the later "-cron" substring.
+    if "-manual" in filename:
+        return BackupSource.manual
     if "-pre-restore" in filename:
         return BackupSource.pre_restore
+    if "-cron" in filename:
+        return BackupSource.cron
     if "-upload" in filename:
         return BackupSource.upload
     return BackupSource.manual
 
 
-def _validate_filename(filename: str) -> Path:
+def get_backup_path(filename: str) -> Path:
+    """Resolve a dump filename to its absolute path, raising BackupNotFoundError
+    if the name doesn't match the safe pattern or the file doesn't exist."""
     if not _FILENAME_PATTERN.match(filename):
         raise BackupNotFoundError(filename)
     path = _backup_dir() / filename
@@ -163,9 +190,9 @@ def _mark_current_db_confirmed(filename: str) -> None:
     }))
 
 
-def _confirm_duplicate(partial_path: Path, duplicate: BackupMetadata) -> BackupMetadata:
-    """Clean up the partial dump and re-point the current-DB marker at the
-    matched existing dump — shared by the create and upload dedupe paths."""
+def _adopt_existing_as_current(partial_path: Path, duplicate: BackupMetadata) -> BackupMetadata:
+    """Shared dedupe-hit tail: delete the partial and re-point the current-DB
+    marker at the matched existing dump so the UI badge follows DB state."""
     partial_path.unlink(missing_ok=True)
     _mark_current_db_confirmed(duplicate.filename)
     return duplicate
@@ -183,6 +210,7 @@ async def _compute_content_hash(dump_path: Path) -> str:
     Also stands in for an explicit integrity check: a corrupt archive makes
     `pg_restore -f -` exit non-zero, which this raises as BackupIntegrityError.
     """
+    timeout = settings.BACKUP_RESTORE_TIMEOUT_SECONDS
     proc = await asyncio.create_subprocess_exec(
         "pg_restore", "-f", "-", str(dump_path),
         env=_pg_env(),
@@ -212,14 +240,14 @@ async def _compute_content_hash(dump_path: Path) -> str:
         # block on stderr while we're still reading stdout → deadlock.
         digest, stderr_bytes = await asyncio.wait_for(
             asyncio.gather(_hash_stdout(), proc.stderr.read()),
-            timeout=_PG_RESTORE_TIMEOUT_SECONDS,
+            timeout=timeout,
         )
     except asyncio.TimeoutError:
         proc.kill()
         await proc.wait()
         raise BackupIntegrityError(
             dump_path.name,
-            f"pg_restore -f - exceeded the {_PG_RESTORE_TIMEOUT_SECONDS // 60}-minute timeout",
+            f"pg_restore -f - exceeded the {timeout // 60}-minute timeout",
         ) from None
     await proc.wait()
     if proc.returncode != 0:
@@ -275,35 +303,15 @@ async def _rebuild_meta(dump_path: Path) -> BackupMetadata:
     return meta
 
 
-async def create_backup(
-    source: BackupSource = BackupSource.manual,
-    label: str | None = None,
-) -> BackupMetadata:
-    check_disk_space()
-
-    filename = _build_filename(source, label)
-    backup_dir = _backup_dir()
-    partial_path = backup_dir / f"{filename}.partial"
-    final_path = backup_dir / filename
-
-    args = [
-        "pg_dump",
-        *_pg_connection_args(),
-        "-Fc",
-        "-f", str(partial_path),
-    ]
-    proc = await asyncio.create_subprocess_exec(
-        *args,
-        env=_pg_env(),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    _, stderr = await proc.communicate()
-
-    if proc.returncode != 0:
-        partial_path.unlink(missing_ok=True)
-        raise BackupIntegrityError(filename, stderr.decode(errors="replace").strip()[:500])
-
+async def _finalize_partial_dump(
+    partial_path: Path,
+    final_path: Path,
+    source: BackupSource,
+) -> tuple[BackupMetadata, bool]:
+    """Shared tail for create + upload: hash → dedupe check → rename → write
+    sidecar. Returns `(metadata, was_duplicate)` — callers decide whether a
+    dedupe hit is an error (manual creates + uploads raise) or a silent
+    return (cron + pre-restore)."""
     try:
         content_hash = await _compute_content_hash(partial_path)
     except BackupIntegrityError:
@@ -312,15 +320,12 @@ async def create_backup(
 
     duplicate = await _find_duplicate(content_hash)
     if duplicate is not None:
-        _confirm_duplicate(partial_path, duplicate)
-        if source == BackupSource.manual:
-            raise DuplicateBackupError(duplicate.filename)
-        return duplicate
+        return _adopt_existing_as_current(partial_path, duplicate), True
 
     partial_path.rename(final_path)
 
     metadata = BackupMetadata(
-        filename=filename,
+        filename=final_path.name,
         size_bytes=final_path.stat().st_size,
         created_at=_now_utc(),
         integrity=BackupIntegrity.ok,
@@ -328,7 +333,48 @@ async def create_backup(
         content_hash=content_hash,
     )
     _write_meta(final_path, metadata)
-    return metadata
+    return metadata, False
+
+
+async def create_backup(
+    source: BackupSource = BackupSource.manual,
+    label: str | None = None,
+) -> BackupMetadata:
+    async with _BACKUP_WRITE_LOCK:
+        check_disk_space()
+
+        filename = _build_filename(source, label)
+        backup_dir = _backup_dir()
+        partial_path = backup_dir / f"{filename}.partial"
+        final_path = backup_dir / filename
+
+        args = [
+            "pg_dump",
+            *_pg_connection_args(),
+            "-Fc",
+            "-f", str(partial_path),
+        ]
+        proc = await asyncio.create_subprocess_exec(
+            *args,
+            env=_pg_env(),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        _, stderr = await proc.communicate()
+
+        if proc.returncode != 0:
+            partial_path.unlink(missing_ok=True)
+            raise BackupIntegrityError(filename, stderr.decode(errors="replace").strip()[:500])
+
+        metadata, was_duplicate = await _finalize_partial_dump(
+            partial_path, final_path, source,
+        )
+        # Manual surfaces dedupe as a 409 so the admin sees a clear "identical
+        # to X" error; cron / pre-restore silently return the matched dump so
+        # unchanged DBs don't accumulate no-op snapshots.
+        if was_duplicate and source == BackupSource.manual:
+            raise DuplicateBackupError(metadata.filename)
+        return metadata
 
 
 async def list_backups() -> list[BackupMetadata]:
@@ -353,7 +399,7 @@ async def list_backups() -> list[BackupMetadata]:
 
 
 async def delete_backup(filename: str) -> None:
-    path = _validate_filename(filename)
+    path = get_backup_path(filename)
     path.unlink(missing_ok=True)
     _meta_path(path).unlink(missing_ok=True)
     if _read_current_db_filename() == filename:
@@ -368,7 +414,7 @@ async def restore_backup(
     if confirm != caller_username:
         raise BackupConfirmationMismatchError()
 
-    target_path = _validate_filename(filename)
+    target_path = get_backup_path(filename)
 
     # Take the pre-restore snapshot BEFORE flipping the maintenance flag.
     # pg_dump is non-destructive and runs via subprocess (not through our
@@ -382,48 +428,81 @@ async def restore_backup(
         # Close our own pool first, then kick off any stragglers (psql shells,
         # notebook sessions, etc.) before running the restore.
         await engine.dispose()
+        # Double terminate with a short sleep: requests that slipped past the
+        # maintenance gate before it flipped may still be acquiring fresh
+        # connections here; the second pass catches those stragglers before
+        # pg_restore hits DROP and hangs on their ACCESS SHARE locks.
+        await _terminate_other_sessions()
+        await asyncio.sleep(0.1)
         await _terminate_other_sessions()
 
-        args = [
-            "pg_restore",
-            *_pg_connection_args(),
-            "--clean",
-            "--if-exists",
-            "--no-owner",
-            "--no-privileges",
-            str(target_path),
-        ]
-        proc = await asyncio.create_subprocess_exec(
-            *args,
-            env=_pg_env(),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        try:
-            _, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=_PG_RESTORE_TIMEOUT_SECONDS,
-            )
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
-            raise BackupRestoreError(
-                filename,
-                f"pg_restore exceeded the {_PG_RESTORE_TIMEOUT_SECONDS // 60}-minute timeout.",
-            )
-
-        if proc.returncode != 0:
-            raise BackupRestoreError(filename, stderr.decode(errors="replace").strip()[:500])
+        await _run_pg_restore(target_path, filename)
 
         _mark_current_db_restored(filename)
     finally:
+        # Prime the pool BEFORE lifting the maintenance gate so user requests
+        # don't race the first post-restore connect (which would otherwise
+        # flap Coolify's liveness probe). Bounded with wait_for so a broken
+        # post-restore DB can't hang the finally block; if warm-up fails the
+        # gate lifts anyway and the next request will surface the real error.
+        try:
+            async with engine.connect() as conn:
+                await asyncio.wait_for(conn.execute(text("SELECT 1")), timeout=5.0)
+        except Exception:
+            logger.warning("Post-restore engine warm-up failed", exc_info=True)
         set_maintenance(False)
 
     return pre_snapshot
 
 
+async def _run_pg_restore(target_path: Path, filename: str) -> None:
+    """Spawn pg_restore against the live DB, streaming into --clean --if-exists
+    (drops + recreates every object). Caller owns the maintenance flag and
+    pool-disposal lifecycle."""
+    timeout = settings.BACKUP_RESTORE_TIMEOUT_SECONDS
+    args = [
+        "pg_restore",
+        *_pg_connection_args(),
+        "--clean",
+        "--if-exists",
+        "--no-owner",
+        "--no-privileges",
+        str(target_path),
+    ]
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        env=_pg_env(),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        # Timeout mid-restore leaves the DB half-dropped. We don't auto-roll
+        # back to the pre-snapshot because that restore could also time out
+        # and compound the mess; instead, surface a clear error so the admin
+        # knows to re-upload the pre-snapshot manually and bump
+        # BACKUP_RESTORE_TIMEOUT_SECONDS.
+        raise BackupRestoreError(
+            filename,
+            f"pg_restore exceeded the {timeout // 60}-minute timeout. "
+            "The database is likely in a partially-restored state — re-run "
+            "the restore against the pre-restore snapshot (see backups list) "
+            "and raise BACKUP_RESTORE_TIMEOUT_SECONDS if the dump is larger "
+            "than previously seen.",
+        ) from None
+
+    if proc.returncode != 0:
+        raise BackupRestoreError(filename, stderr.decode(errors="replace").strip()[:500])
+
+
 async def _terminate_other_sessions() -> None:
     # Fire-and-forget: if psql fails we still try pg_restore. Better to hit the
-    # real lock-wait error message than mask it behind a terminate failure.
+    # real lock-wait error message than mask it behind a terminate failure. We
+    # log stderr at WARNING so a missing psql binary or auth failure leaves a
+    # breadcrumb for the "pg_restore hung on locks" postmortem.
     args = [
         "psql",
         *_pg_connection_args(),
@@ -435,9 +514,15 @@ async def _terminate_other_sessions() -> None:
         *args,
         env=_pg_env(),
         stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
     )
-    await proc.wait()
+    _, stderr = await proc.communicate()
+    if proc.returncode != 0 and stderr:
+        logger.warning(
+            "Terminate-other-sessions psql returned %s: %s",
+            proc.returncode,
+            stderr.decode(errors="replace").strip()[:300],
+        )
 
 
 def _is_sunday_utc(dt: datetime) -> bool:
@@ -475,49 +560,38 @@ async def apply_retention() -> list[str]:
     return deleted
 
 
-async def resolve_backup_path(filename: str) -> Path:
-    """Validate + return an absolute path to a backup file. Used by the router to build
-    a FileResponse without re-implementing filename validation."""
-    return _validate_filename(filename)
-
-
 async def save_uploaded_backup(upload_file: UploadFile) -> BackupMetadata:
-    check_disk_space()
+    async with _BACKUP_WRITE_LOCK:
+        check_disk_space()
 
-    original_stem = Path(upload_file.filename or "upload").stem
-    filename = _build_filename(BackupSource.upload, original_stem)
-    backup_dir = _backup_dir()
-    partial_path = backup_dir / f"{filename}.partial"
-    final_path = backup_dir / filename
+        original_stem = Path(upload_file.filename or "upload").stem
+        filename = _build_filename(BackupSource.upload, original_stem)
+        backup_dir = _backup_dir()
+        partial_path = backup_dir / f"{filename}.partial"
+        final_path = backup_dir / filename
 
-    try:
-        with partial_path.open("wb") as f:
-            while chunk := await upload_file.read(1024 * 1024):
-                f.write(chunk)
-    except Exception:
-        partial_path.unlink(missing_ok=True)
-        raise
+        try:
+            bytes_written = 0
+            last_disk_check = 0
+            with partial_path.open("wb") as f:
+                while chunk := await upload_file.read(_UPLOAD_CHUNK_BYTES):
+                    bytes_written += len(chunk)
+                    if bytes_written > _UPLOAD_MAX_BYTES:
+                        raise BackupUploadTooLargeError(bytes_written, _UPLOAD_MAX_BYTES)
+                    f.write(chunk)
+                    # Recheck free space periodically so a slow upload that
+                    # fills the disk while streaming can't knock out the
+                    # scheduled-backup / pre-restore-snapshot paths.
+                    if bytes_written - last_disk_check >= _UPLOAD_FREE_CHECK_EVERY_BYTES:
+                        check_disk_space()
+                        last_disk_check = bytes_written
+        except Exception:
+            partial_path.unlink(missing_ok=True)
+            raise
 
-    try:
-        content_hash = await _compute_content_hash(partial_path)
-    except BackupIntegrityError:
-        partial_path.unlink(missing_ok=True)
-        raise
-
-    duplicate = await _find_duplicate(content_hash)
-    if duplicate is not None:
-        _confirm_duplicate(partial_path, duplicate)
-        raise DuplicateBackupError(duplicate.filename)
-
-    partial_path.rename(final_path)
-
-    metadata = BackupMetadata(
-        filename=filename,
-        size_bytes=final_path.stat().st_size,
-        created_at=_now_utc(),
-        integrity=BackupIntegrity.ok,
-        source=BackupSource.upload,
-        content_hash=content_hash,
-    )
-    _write_meta(final_path, metadata)
-    return metadata
+        metadata, was_duplicate = await _finalize_partial_dump(
+            partial_path, final_path, BackupSource.upload,
+        )
+        if was_duplicate:
+            raise DuplicateBackupError(metadata.filename)
+        return metadata

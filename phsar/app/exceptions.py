@@ -289,3 +289,16 @@ class DuplicateBackupError(PhsarBaseError):
     def __init__(self, existing_filename: str):
         message = f"This dump is identical to an existing backup: '{existing_filename}'."
         super().__init__(message)
+
+
+class BackupUploadTooLargeError(PhsarBaseError):
+    status_code = 413
+
+    def __init__(self, observed_bytes: int, max_bytes: int):
+        observed_mb = observed_bytes / (1024 * 1024)
+        max_mb = max_bytes / (1024 * 1024)
+        message = (
+            f"Uploaded backup is too large: {observed_mb:.0f} MB "
+            f"(limit: {max_mb:.0f} MB)."
+        )
+        super().__init__(message)
