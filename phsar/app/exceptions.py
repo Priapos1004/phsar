@@ -221,3 +221,60 @@ class InvalidPasswordError(PhsarBaseError):
     def __init__(self):
         message = "Invalid password."
         super().__init__(message)
+
+
+class BackupNotFoundError(PhsarBaseError):
+    """Raised when a backup filename does not resolve to a file on disk."""
+    status_code = 404
+
+    def __init__(self, filename: str):
+        message = f"Backup not found: '{filename}'."
+        super().__init__(message)
+
+
+class BackupIntegrityError(PhsarBaseError):
+    """Raised when a freshly created or uploaded backup fails pg_restore --list."""
+    status_code = 500
+
+    def __init__(self, filename: str, detail: str):
+        message = f"Backup '{filename}' failed integrity check: {detail}"
+        super().__init__(message)
+
+
+class BackupDiskSpaceError(PhsarBaseError):
+    """Raised when the backup volume has insufficient free space for a new dump."""
+    status_code = 507
+
+    def __init__(self, free_fraction: float, required_fraction: float):
+        message = (
+            f"Insufficient disk space on backup volume: "
+            f"{free_fraction:.1%} free, need {required_fraction:.0%}."
+        )
+        super().__init__(message)
+
+
+class BackupRestoreError(PhsarBaseError):
+    """Raised when pg_restore exits non-zero during a restore."""
+    status_code = 500
+
+    def __init__(self, filename: str, detail: str):
+        message = f"Restore from '{filename}' failed: {detail}"
+        super().__init__(message)
+
+
+class BackupConfirmationMismatchError(PhsarBaseError):
+    """Raised when the restore confirmation string does not match the caller's username."""
+    status_code = 400
+
+    def __init__(self):
+        message = "Restore confirmation did not match your username."
+        super().__init__(message)
+
+
+class InvalidCronTokenError(PhsarBaseError):
+    """Raised when the cron-authenticated backup endpoint gets a bad/missing bearer token."""
+    status_code = 401
+
+    def __init__(self):
+        message = "Invalid or missing cron token."
+        super().__init__(message)
