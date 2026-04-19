@@ -1,4 +1,6 @@
-from app.core.dependencies import get_db
+from httpx import ASGITransport, AsyncClient
+
+from app import main
 from app.main import create_app
 
 
@@ -11,18 +13,20 @@ async def test_health_ok(client):
     assert "version" in payload
 
 
-async def test_health_db_down():
+async def test_health_db_down(monkeypatch):
+    class _BrokenSession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return None
+
+        async def execute(self, *_args, **_kwargs):
+            raise RuntimeError("db unavailable")
+
+    monkeypatch.setattr(main, "async_session_maker", lambda: _BrokenSession())
+
     app = create_app()
-
-    async def broken_db():
-        class _BrokenSession:
-            async def execute(self, *_args, **_kwargs):
-                raise RuntimeError("db unavailable")
-        yield _BrokenSession()
-
-    app.dependency_overrides[get_db] = broken_db
-
-    from httpx import ASGITransport, AsyncClient
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         response = await c.get("/health")

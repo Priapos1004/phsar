@@ -1,15 +1,14 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.db import async_session_maker
-from app.core.dependencies import get_db
 from app.core.logging_config import setup_logging
 from app.core.maintenance import is_maintenance_active
 from app.exceptions import PhsarBaseError
@@ -105,10 +104,18 @@ def create_app() -> FastAPI:
         return {"message": "Anime API is live :-)"}
 
     @app.get("/health")
-    async def health(db: AsyncSession = Depends(get_db)):
+    async def health():
+        # Short-circuit the normal get_db dependency and time-box the ping
+        # ourselves — asyncpg's connect timeout is ~60s, which makes Coolify's
+        # liveness probe slow-503 during transient DB unavailability instead
+        # of fast-503. A bounded ping keeps liveness responsive.
+        async def _ping_db() -> bool:
+            async with async_session_maker() as session:
+                await session.execute(text("SELECT 1"))
+                return True
+
         try:
-            await db.execute(text("SELECT 1"))
-            db_ok = True
+            db_ok = await asyncio.wait_for(_ping_db(), timeout=2.0)
         except Exception:
             db_ok = False
         return JSONResponse(
