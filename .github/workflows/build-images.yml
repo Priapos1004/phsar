@@ -40,9 +40,13 @@ jobs:
             dockerfile: ./phsar/frontend/Dockerfile
             image: phsar-frontend
     steps:
-      - name: Resolve version
+      - name: Resolve version and lowercase owner
         id: ver
-        run: echo "value=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+        # ghcr.io requires lowercase repository paths; github.repository_owner
+        # returns the original casing.
+        run: |
+          echo "value=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+          echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
 
       - uses: actions/checkout@v4
         with:
@@ -64,7 +68,7 @@ jobs:
           file: ${{ matrix.dockerfile }}
           push: true
           platforms: linux/amd64
-          tags: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ steps.ver.outputs.value }}
+          tags: ghcr.io/${{ steps.ver.outputs.owner }}/${{ matrix.image }}:${{ steps.ver.outputs.value }}
           build-args: |
             APP_VERSION=${{ steps.ver.outputs.value }}
             PUBLIC_API_BASE_URL=${{ vars.PUBLIC_API_BASE_URL }}
