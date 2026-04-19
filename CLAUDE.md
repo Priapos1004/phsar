@@ -113,8 +113,9 @@ Optional: `DEBUG` (enables SQL echo), `CORS_ORIGINS` (JSON list of allowed origi
 ## CI
 
 GitHub Actions runs on every push and PR:
-- **Lint** (`lint.yml`): `ruff check .` in `phsar/`
-- **Tests** (`test.yml`): `pytest` against a pgvector service container with schema created from models
+- **Backend Lint** (`backend-lint.yml`): `ruff check .` in `phsar/`
+- **Backend Tests** (`backend-test.yml`): `pytest` against a pgvector service container with schema created from models
+- **Frontend Check** (`frontend-check.yml`): `bun run check` (svelte-check) + `bun run test` (vitest) in `phsar/frontend/`
 
 ## Linting Config (pyproject.toml)
 
