@@ -268,5 +268,5 @@ export interface BackupMetadata {
 	created_at: string;
 	integrity: BackupIntegrity;
 	source: BackupSource;
-	is_current_restore?: boolean;
+	is_current?: boolean;
 }

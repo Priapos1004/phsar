@@ -245,6 +245,7 @@ phsar/
     │   ├── test_search_ratings.py
     │   └── test_user_settings.py
     └── services/
+        ├── test_backup_service.py
         ├── test_jikan_scraper.py
         ├── test_search_service.py
         ├── test_spoiler_service.py

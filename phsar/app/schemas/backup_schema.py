@@ -26,9 +26,11 @@ class BackupMetadata(BaseModel):
     # None for dumps written before the upload-dedupe check existed.
     # New dumps always get a hash; absent hash just opts out of the dedupe check.
     content_hash: str | None = None
-    # Set at list time by matching against the .last_restored.json sidecar;
-    # not stored on the per-dump sidecar.
-    is_current_restore: bool = False
+    # Set at list time by matching against the .current_db.json pointer;
+    # not stored on the per-dump sidecar. True for the dump whose content
+    # matches the live DB — either because it was the last restore source,
+    # or because a later dump's content_hash re-confirmed it.
+    is_current: bool = False
 
 
 class BackupCreateRequest(BaseModel):

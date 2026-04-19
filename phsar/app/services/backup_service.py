@@ -24,10 +24,26 @@ from app.schemas.backup_schema import BackupIntegrity, BackupMetadata, BackupSou
 
 _PG_RESTORE_TIMEOUT_SECONDS = 10 * 60
 
-# Pointer to the dump the current DB was last restored from. Kept in the
-# backup directory (not inside the DB) because a restore would otherwise
-# overwrite it with whatever the dump held at its creation time.
-_LAST_RESTORED_FILENAME = ".last_restored.json"
+# Pointer to the dump whose content matches the live DB state. Updated on
+# restore AND whenever a new dump's content_hash dedupe-matches an existing
+# one (at which point the existing dump is re-confirmed as "current"). Lives
+# in the backup directory (not inside the DB) because a restore would
+# otherwise overwrite it with whatever the dump held at its creation time.
+_CURRENT_DB_FILENAME = ".current_db.json"
+
+# pg_restore -f - emits lines whose values change per invocation even when
+# the underlying DB content is identical. Stripping them gives us a content-
+# only hash so dedupe catches genuine no-op backups. Two families:
+#   - timestamp/version comments wrapping the dump
+#   - `\restrict <token>` / `\unrestrict <token>` psql meta-commands (anti-
+#     privesc guard added in pg16+), whose tokens are freshly randomized on
+#     every pg_restore run
+_VARIABLE_LINE_RE = re.compile(
+    rb"^(?:"
+    rb"-- (?:Started on|Completed on|Dumped from database version|Dumped by pg_dump version) "
+    rb"|\\(?:un)?restrict "
+    rb")"
+)
 
 # Filenames we accept: phsar-YYYYMMDD-HHMMSS[-suffix].dump.
 # Anchored + restricted charset prevents path traversal via user-supplied filenames.
@@ -120,12 +136,12 @@ def check_disk_space(required_bytes: int = _DISK_SPACE_REQUIRED_BYTES) -> None:
         raise BackupDiskSpaceError(usage.free, required_bytes)
 
 
-def _last_restored_path() -> Path:
-    return _backup_dir() / _LAST_RESTORED_FILENAME
+def _current_db_path() -> Path:
+    return _backup_dir() / _CURRENT_DB_FILENAME
 
 
-def _read_last_restored_filename() -> str | None:
-    path = _last_restored_path()
+def _read_current_db_filename() -> str | None:
+    path = _current_db_path()
     if not path.is_file():
         return None
     try:
@@ -134,18 +150,85 @@ def _read_last_restored_filename() -> str | None:
         return None
 
 
-def _write_last_restored_filename(filename: str) -> None:
-    _last_restored_path().write_text(
-        json.dumps({"filename": filename, "restored_at": _now_utc().isoformat()})
+def _mark_current_db_restored(filename: str) -> None:
+    now = _now_utc().isoformat()
+    _current_db_path().write_text(json.dumps({
+        "filename": filename, "confirmed_at": now, "restored_at": now,
+    }))
+
+
+def _mark_current_db_confirmed(filename: str) -> None:
+    _current_db_path().write_text(json.dumps({
+        "filename": filename, "confirmed_at": _now_utc().isoformat(),
+    }))
+
+
+def _confirm_duplicate(partial_path: Path, duplicate: BackupMetadata) -> BackupMetadata:
+    """Clean up the partial dump and re-point the current-DB marker at the
+    matched existing dump — shared by the create and upload dedupe paths."""
+    partial_path.unlink(missing_ok=True)
+    _mark_current_db_confirmed(duplicate.filename)
+    return duplicate
+
+
+async def _compute_content_hash(dump_path: Path) -> str:
+    """Hash the logical content of a pg_dump custom-format archive.
+
+    `pg_dump -Fc` output is not deterministic across runs of the same DB:
+    the archive header embeds a creation timestamp, pg version strings, etc.
+    We shell out to `pg_restore -f -` to stream the dump as plain SQL, strip
+    the handful of lines that carry per-run values, and hash the remainder.
+    Two dumps of an identical DB produce the same hash.
+
+    Also stands in for an explicit integrity check: a corrupt archive makes
+    `pg_restore -f -` exit non-zero, which this raises as BackupIntegrityError.
+    """
+    proc = await asyncio.create_subprocess_exec(
+        "pg_restore", "-f", "-", str(dump_path),
+        env=_pg_env(),
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
+    assert proc.stdout is not None and proc.stderr is not None
 
+    async def _hash_stdout() -> str:
+        hasher = hashlib.sha256()
+        buffer = b""
+        while chunk := await proc.stdout.read(1024 * 1024):
+            buffer += chunk
+            lines = buffer.split(b"\n")
+            buffer = lines.pop()
+            for line in lines:
+                if not _VARIABLE_LINE_RE.match(line):
+                    hasher.update(line)
+                    hasher.update(b"\n")
+        if buffer and not _VARIABLE_LINE_RE.match(buffer):
+            hasher.update(buffer)
+        return hasher.hexdigest()
 
-def _hash_file(path: Path) -> str:
-    hasher = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(1024 * 1024), b""):
-            hasher.update(chunk)
-    return hasher.hexdigest()
+    try:
+        # Drain stdout + stderr concurrently: pg_restore can emit enough
+        # warnings to fill the ~64 KB pipe buffer, at which point it would
+        # block on stderr while we're still reading stdout → deadlock.
+        digest, stderr_bytes = await asyncio.wait_for(
+            asyncio.gather(_hash_stdout(), proc.stderr.read()),
+            timeout=_PG_RESTORE_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        raise BackupIntegrityError(
+            dump_path.name,
+            f"pg_restore -f - exceeded the {_PG_RESTORE_TIMEOUT_SECONDS // 60}-minute timeout",
+        ) from None
+    await proc.wait()
+    if proc.returncode != 0:
+        raise BackupIntegrityError(
+            dump_path.name,
+            "pg_restore -f - failed: "
+            + stderr_bytes.decode(errors="replace").strip()[:300],
+        )
+    return digest
 
 
 async def _find_duplicate(content_hash: str) -> BackupMetadata | None:
@@ -221,10 +304,18 @@ async def create_backup(
         partial_path.unlink(missing_ok=True)
         raise BackupIntegrityError(filename, stderr.decode(errors="replace").strip()[:500])
 
-    integrity = await _check_integrity(partial_path)
-    if integrity != BackupIntegrity.ok:
+    try:
+        content_hash = await _compute_content_hash(partial_path)
+    except BackupIntegrityError:
         partial_path.unlink(missing_ok=True)
-        raise BackupIntegrityError(filename, "pg_restore --list could not parse the dump")
+        raise
+
+    duplicate = await _find_duplicate(content_hash)
+    if duplicate is not None:
+        _confirm_duplicate(partial_path, duplicate)
+        if source == BackupSource.manual:
+            raise DuplicateBackupError(duplicate.filename)
+        return duplicate
 
     partial_path.rename(final_path)
 
@@ -232,9 +323,9 @@ async def create_backup(
         filename=filename,
         size_bytes=final_path.stat().st_size,
         created_at=_now_utc(),
-        integrity=integrity,
+        integrity=BackupIntegrity.ok,
         source=source,
-        content_hash=_hash_file(final_path),
+        content_hash=content_hash,
     )
     _write_meta(final_path, metadata)
     return metadata
@@ -242,7 +333,7 @@ async def create_backup(
 
 async def list_backups() -> list[BackupMetadata]:
     backup_dir = _backup_dir()
-    current_restore = _read_last_restored_filename()
+    current_filename = _read_current_db_filename()
     items: list[BackupMetadata] = []
     for path in backup_dir.glob("phsar-*.dump"):
         if not _FILENAME_PATTERN.match(path.name):
@@ -254,8 +345,8 @@ async def list_backups() -> list[BackupMetadata]:
             actual_size = path.stat().st_size
             if meta.size_bytes != actual_size:
                 meta = meta.model_copy(update={"size_bytes": actual_size})
-        if current_restore and path.name == current_restore:
-            meta = meta.model_copy(update={"is_current_restore": True})
+        if current_filename and path.name == current_filename:
+            meta = meta.model_copy(update={"is_current": True})
         items.append(meta)
     items.sort(key=lambda m: m.created_at, reverse=True)
     return items
@@ -265,8 +356,8 @@ async def delete_backup(filename: str) -> None:
     path = _validate_filename(filename)
     path.unlink(missing_ok=True)
     _meta_path(path).unlink(missing_ok=True)
-    if _read_last_restored_filename() == filename:
-        _last_restored_path().unlink(missing_ok=True)
+    if _read_current_db_filename() == filename:
+        _current_db_path().unlink(missing_ok=True)
 
 
 async def restore_backup(
@@ -323,7 +414,7 @@ async def restore_backup(
         if proc.returncode != 0:
             raise BackupRestoreError(filename, stderr.decode(errors="replace").strip()[:500])
 
-        _write_last_restored_filename(filename)
+        _mark_current_db_restored(filename)
     finally:
         set_maintenance(False)
 
@@ -399,26 +490,23 @@ async def save_uploaded_backup(upload_file: UploadFile) -> BackupMetadata:
     partial_path = backup_dir / f"{filename}.partial"
     final_path = backup_dir / filename
 
-    hasher = hashlib.sha256()
     try:
         with partial_path.open("wb") as f:
             while chunk := await upload_file.read(1024 * 1024):
-                hasher.update(chunk)
                 f.write(chunk)
     except Exception:
         partial_path.unlink(missing_ok=True)
         raise
 
-    content_hash = hasher.hexdigest()
-
-    integrity = await _check_integrity(partial_path)
-    if integrity != BackupIntegrity.ok:
+    try:
+        content_hash = await _compute_content_hash(partial_path)
+    except BackupIntegrityError:
         partial_path.unlink(missing_ok=True)
-        raise BackupIntegrityError(filename, "Uploaded file is not a valid pg custom dump")
+        raise
 
     duplicate = await _find_duplicate(content_hash)
     if duplicate is not None:
-        partial_path.unlink(missing_ok=True)
+        _confirm_duplicate(partial_path, duplicate)
         raise DuplicateBackupError(duplicate.filename)
 
     partial_path.rename(final_path)
@@ -427,7 +515,7 @@ async def save_uploaded_backup(upload_file: UploadFile) -> BackupMetadata:
         filename=filename,
         size_bytes=final_path.stat().st_size,
         created_at=_now_utc(),
-        integrity=integrity,
+        integrity=BackupIntegrity.ok,
         source=BackupSource.upload,
         content_hash=content_hash,
     )
