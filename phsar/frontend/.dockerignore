@@ -1,0 +1,13 @@
+node_modules
+build
+.svelte-kit
+.vercel
+.netlify
+.wrangler
+.output
+.DS_Store
+.env
+.env.*
+!.env.example
+coverage
+*.log

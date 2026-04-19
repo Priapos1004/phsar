@@ -1,0 +1,17 @@
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.ruff_cache
+.venv
+venv
+.env
+.env.*
+!.env.example
+tests
+frontend
+compound-docs
+.DS_Store
+*.md
+!README.md

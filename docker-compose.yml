@@ -1,0 +1,62 @@
+# Local parity with the Coolify stack — not the dev flow (see CLAUDE.md
+# for native uvicorn + bun dev with hot-reload).
+#
+# Usage: cp .env.example .env && docker compose up --build
+
+name: phsar
+
+services:
+  db:
+    image: ankane/pgvector:v0.5.1
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # No ports: exposed — db is internal-only on the docker network.
+    # Same posture as production.
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${DB_USER}", "-d", "${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./phsar
+      args:
+        APP_VERSION: ${APP_VERSION:-dev}
+    environment:
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME}
+      ADMIN_USERNAME: ${ADMIN_USERNAME}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      GUEST_USERNAME: ${GUEST_USERNAME:-}
+      GUEST_PASSWORD: ${GUEST_PASSWORD:-}
+      SECRET_KEY: ${SECRET_KEY}
+      SEARCH_SECRET_KEY: ${SEARCH_SECRET_KEY}
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000"]}
+      APP_VERSION: ${APP_VERSION:-dev}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./phsar/frontend
+      args:
+        PUBLIC_API_BASE_URL: ${PUBLIC_API_BASE_URL:-http://localhost:8000}
+        PUBLIC_APP_VERSION: ${APP_VERSION:-dev}
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
