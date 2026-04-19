@@ -61,7 +61,9 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # Build args not declared in a given Dockerfile produce a harmless
-      # BuildKit warning — passing all three here keeps the matrix symmetric.
+      # BuildKit warning — passing both here keeps the matrix symmetric.
+      # PUBLIC_API_BASE_URL is read at runtime from the container env, so it
+      # is not passed here; set it on the Coolify service instead.
       - uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
@@ -77,7 +79,6 @@ jobs:
             ${{ !contains(steps.ver.outputs.value, '-') && format('ghcr.io/{0}/{1}:latest', steps.ver.outputs.owner, matrix.image) || '' }}
           build-args: |
             APP_VERSION=${{ steps.ver.outputs.value }}
-            PUBLIC_API_BASE_URL=${{ vars.PUBLIC_API_BASE_URL }}
             PUBLIC_APP_VERSION=${{ steps.ver.outputs.value }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}

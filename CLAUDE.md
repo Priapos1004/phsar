@@ -138,7 +138,7 @@ GitHub Actions:
 - **Backend Lint** (`backend-lint.yml`): `ruff check .` in `phsar/` — runs on every push/PR.
 - **Backend Tests** (`backend-test.yml`): `pytest` against a pgvector service container — runs on every push/PR.
 - **Frontend Check** (`frontend-check.yml`): `bun run check` + `bun run test` — runs on every push/PR.
-- **Build & Push Images** (`build-images.yml`): builds backend + frontend images and pushes to ghcr.io — runs on tag push (`v*`) or manual dispatch. Requires repo variable `PUBLIC_API_BASE_URL`.
+- **Build & Push Images** (`build-images.yml`): builds backend + frontend images and pushes to ghcr.io — runs on tag push (`v*`) or manual dispatch.
 
 ## Linting Config (pyproject.toml)
 

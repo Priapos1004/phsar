@@ -10,12 +10,8 @@ RUN bun install --frozen-lockfile
 
 COPY . .
 
-# PUBLIC_API_BASE_URL is baked into the client bundle at build time.
-# PUBLIC_APP_VERSION is read at runtime via $env/dynamic/public, so it
-# only needs to be set in the runtime stage.
-ARG PUBLIC_API_BASE_URL
-ENV PUBLIC_API_BASE_URL=${PUBLIC_API_BASE_URL}
-
+# PUBLIC_API_BASE_URL and PUBLIC_APP_VERSION are both read at runtime via
+# $env/dynamic/public — nothing needs to be baked into the build.
 RUN bun run build
 
 # Trim dependencies down to what the node runtime needs.
