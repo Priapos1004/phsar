@@ -87,6 +87,32 @@ export const api = {
 	async del<T = void>(path: string, body?: unknown): Promise<T> {
 		return jsonRequest<T>('DELETE', path, body);
 	},
+
+	async downloadBlob(path: string, filename: string): Promise<void> {
+		const res = await fetch(`${API_URL}${path}`, { headers: getAuthHeaders() });
+		if (!res.ok) {
+			await handleResponse(res);
+			return;
+		}
+		const blob = await res.blob();
+		const objectUrl = URL.createObjectURL(blob);
+		const anchor = document.createElement('a');
+		anchor.href = objectUrl;
+		anchor.download = filename;
+		document.body.appendChild(anchor);
+		anchor.click();
+		anchor.remove();
+		URL.revokeObjectURL(objectUrl);
+	},
+
+	async postMultipart<T = unknown>(path: string, formData: FormData): Promise<T> {
+		const res = await fetch(`${API_URL}${path}`, {
+			method: 'POST',
+			headers: getAuthHeaders(),
+			body: formData,
+		});
+		return handleResponse<T>(res);
+	},
 };
 
 export { ApiError };

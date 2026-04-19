@@ -81,6 +81,31 @@ export function cleanDescription(text: string): string {
 	return text.replace(/\s*\[Written by MAL Rewrite\]\s*/g, '').trim();
 }
 
+export function formatShortDate(iso: string): string {
+	return new Date(iso).toLocaleDateString('en-US', {
+		month: 'short',
+		day: 'numeric',
+		year: 'numeric',
+	});
+}
+
+export function formatShortDateTime(iso: string): string {
+	return new Date(iso).toLocaleString('en-US', {
+		month: 'short',
+		day: 'numeric',
+		year: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit',
+	});
+}
+
+export function formatBytes(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+	if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
 /**
  * Clamp a score to [0, 10] and round to the nearest step.
  * Examples (step=0.5): 6.6 -> 6.5, 9.656 -> 9.5, -1 -> 0, 15 -> 10, 7.25 -> 7.5

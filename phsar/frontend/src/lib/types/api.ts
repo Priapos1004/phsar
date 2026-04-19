@@ -257,3 +257,15 @@ export interface RegistrationTokenListItem {
 	used_by: string | null;
 	used_at: string | null;
 }
+
+// Admin — Backups
+export type BackupIntegrity = 'ok' | 'corrupt' | 'unknown';
+export type BackupSource = 'manual' | 'cron' | 'pre_restore' | 'upload';
+
+export interface BackupMetadata {
+	filename: string;
+	size_bytes: number;
+	created_at: string;
+	integrity: BackupIntegrity;
+	source: BackupSource;
+}

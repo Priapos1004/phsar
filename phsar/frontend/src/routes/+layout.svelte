@@ -25,6 +25,7 @@
     let expiryTimer: ReturnType<typeof setTimeout> | null = null;
 
     setContext('userRole', () => userRole);
+    setContext('username', () => username);
 
     interface DecodedToken {
       sub: string;
