@@ -4,6 +4,11 @@
  * Themeable source variables — overridden by .theme-* classes.
  * Tailwind's @theme inline references these via var() so utilities
  * stay dynamic at runtime instead of being inlined at build time.
+ *
+ * @property registers the syntax and provides a type contract. The :root
+ * block below carries the actual default values — Tailwind v4's production
+ * CSS pipeline does not reliably honor @property initial-value, so relying
+ * on it alone leaves --primary/--ring unresolved in prod builds.
  */
 @property --primary {
   syntax: "<color>";
@@ -14,6 +19,11 @@
   syntax: "<color>";
   inherits: true;
   initial-value: oklch(0.627 0.265 303.9);
+}
+
+:root {
+  --primary: oklch(0.558 0.288 302.321);
+  --ring: oklch(0.627 0.265 303.9);
 }
 
 @theme inline {
