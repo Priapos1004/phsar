@@ -48,25 +48,42 @@ async def delete_registration_token(
     await admin_service.delete_registration_token(db, uuid)
 
 
-@router.get("/backups", response_model=list[backup_schema.BackupMetadata])
-async def list_backups(current_user=Depends(require_admin)):
+# Cron-authed endpoint — stays on the parent router so it doesn't inherit the
+# JWT admin dep from the backups sub-router (router-level dependencies are
+# additive; the only way to exclude the admin check is to not be under it).
+@router.post(
+    "/backups/auto",
+    response_model=backup_schema.BackupMetadata,
+    dependencies=[Depends(require_backup_cron_token)],
+)
+async def auto_backup():
+    """Cron-triggered backup. Creates a dump tagged as `cron` and applies retention."""
+    metadata = await backup_service.create_backup(source=backup_schema.BackupSource.cron)
+    await backup_service.apply_retention()
+    return metadata
+
+
+# Router-level admin dep — only `restore` actually reads the caller's username,
+# so everything else drops the per-endpoint Depends(require_admin).
+backups_router = APIRouter(prefix="/backups", dependencies=[Depends(require_admin)])
+
+
+@backups_router.get("", response_model=list[backup_schema.BackupMetadata])
+async def list_backups():
     return await backup_service.list_backups()
 
 
-@router.post("/backups", response_model=backup_schema.BackupMetadata)
-async def create_backup(
-    data: backup_schema.BackupCreateRequest | None = None,
-    current_user=Depends(require_admin),
-):
+@backups_router.post("", response_model=backup_schema.BackupMetadata)
+async def create_backup(data: backup_schema.BackupCreateRequest | None = None):
     label = data.label if data else None
     return await backup_service.create_backup(
         source=backup_schema.BackupSource.manual, label=label,
     )
 
 
-@router.get("/backups/{filename}")
-async def download_backup(filename: str, current_user=Depends(require_admin)):
-    path = await backup_service.resolve_backup_path(filename)
+@backups_router.get("/{filename}")
+async def download_backup(filename: str):
+    path = backup_service.get_backup_path(filename)
     return FileResponse(
         path=path,
         media_type="application/octet-stream",
@@ -74,12 +91,12 @@ async def download_backup(filename: str, current_user=Depends(require_admin)):
     )
 
 
-@router.delete("/backups/{filename}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_backup(filename: str, current_user=Depends(require_admin)):
+@backups_router.delete("/{filename}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_backup(filename: str):
     await backup_service.delete_backup(filename)
 
 
-@router.post("/backups/{filename}/restore", response_model=backup_schema.BackupMetadata)
+@backups_router.post("/{filename}/restore", response_model=backup_schema.BackupMetadata)
 async def restore_backup(
     filename: str,
     data: backup_schema.BackupRestoreRequest,
@@ -94,18 +111,9 @@ async def restore_backup(
     )
 
 
-@router.post("/backups/upload", response_model=backup_schema.BackupMetadata)
-async def upload_backup(file: UploadFile, current_user=Depends(require_admin)):
+@backups_router.post("/upload", response_model=backup_schema.BackupMetadata)
+async def upload_backup(file: UploadFile):
     return await backup_service.save_uploaded_backup(file)
 
 
-@router.post(
-    "/backups/auto",
-    response_model=backup_schema.BackupMetadata,
-    dependencies=[Depends(require_backup_cron_token)],
-)
-async def auto_backup():
-    """Cron-triggered backup. Creates a dump tagged as `cron` and applies retention."""
-    metadata = await backup_service.create_backup(source=backup_schema.BackupSource.cron)
-    await backup_service.apply_retention()
-    return metadata
+router.include_router(backups_router)
