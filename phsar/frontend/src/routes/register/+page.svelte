@@ -71,7 +71,7 @@
     }
 </script>
 
-<div class="fixed inset-0 flex justify-center items-start pt-20" style="background-image: linear-gradient(to bottom right, var(--gradient-from), var(--gradient-via), var(--gradient-to))">
+<div class="fixed inset-0 bg-gradient-to-br from-[var(--auth-gradient-from)] via-[var(--auth-gradient-via)] to-[var(--auth-gradient-to)] flex justify-center items-start pt-20">
     <div in:fly={{ y: 20, duration: 2000 }} class="w-full max-w-md">
         <Card.Root>
             <Card.Header>

@@ -1,7 +1,8 @@
 # phsar
 
-[![Tests](https://github.com/Priapos1004/phsar/actions/workflows/test.yml/badge.svg)](https://github.com/Priapos1004/phsar/actions/workflows/test.yml)
-[![Lint](https://github.com/Priapos1004/phsar/actions/workflows/lint.yml/badge.svg)](https://github.com/Priapos1004/phsar/actions/workflows/lint.yml)
+[![Backend Lint](https://github.com/Priapos1004/phsar/actions/workflows/backend-lint.yml/badge.svg)](https://github.com/Priapos1004/phsar/actions/workflows/backend-lint.yml)
+[![Backend Tests](https://github.com/Priapos1004/phsar/actions/workflows/backend-test.yml/badge.svg)](https://github.com/Priapos1004/phsar/actions/workflows/backend-test.yml)
+[![Frontend Check](https://github.com/Priapos1004/phsar/actions/workflows/frontend-check.yml/badge.svg)](https://github.com/Priapos1004/phsar/actions/workflows/frontend-check.yml)
 
 Repository for Code of phsar website + backend.
 

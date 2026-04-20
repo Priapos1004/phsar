@@ -1,0 +1,42 @@
+name: Frontend Check
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check-test:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: phsar/frontend
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version-file: phsar/frontend/package.json
+
+    - name: Cache bun install
+      uses: actions/cache@v4
+      with:
+        path: ~/.bun/install/cache
+        key: ${{ runner.os }}-bun-${{ hashFiles('phsar/frontend/bun.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-bun-
+
+    - name: Install dependencies
+      run: bun install --frozen-lockfile
+
+    - name: Type check
+      run: bun run check
+
+    - name: Run tests
+      run: bun run test

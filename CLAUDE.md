@@ -34,9 +34,10 @@ alembic upgrade head
 ### Frontend
 ```bash
 cd phsar/frontend
-npm install
-npm run dev -- --open   # dev server at localhost:5173
-npm run test            # vitest component tests
+bun install
+bun run dev -- --open   # dev server at localhost:5173
+bun run test            # vitest component tests
+bun run check           # svelte-check type check
 ```
 
 Backend and frontend must run simultaneously in separate terminals.
@@ -55,36 +56,44 @@ docker exec -it anime-postgres psql -U <DB_USER> -d <DB_NAME> \
   -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
 ```
 
+### Docker (production parity)
+```bash
+# Build + run db + backend + frontend containers end-to-end (NOT the dev flow).
+cp .env.example .env
+docker compose up --build
+```
+
 ## Architecture
 
 ### Backend (phsar/app/)
 
 Layered architecture with strict dependency flow: **routers → services → DAOs → models**
 
-- **routers/** — FastAPI endpoint definitions. Each router maps to an API prefix (`/admin`, `/auth`, `/search`, `/filters`, `/media`, `/save`, `/seed`, `/ratings`, `/users`). `/admin` handles registration token management (list, create, delete — admin-only). `/search` handles both `/search/media` (per-media) and `/search/anime` (aggregated by anime). `/media` handles both `/media/{uuid}` and `/media/anime/{uuid}`. `/users` handles settings CRUD, data export, and account deletion.
-- **services/** — Business logic as module-level async functions. Key services: `jikan_scraper.py` (MAL API client with retry), `vector_embedding_service.py` (sentence-transformers embeddings), `media_search_service.py` (filtered DB search), `anime_search_service.py` (anime aggregated search + detail with majority genre logic), `rating_service.py` (rating CRUD + search, triggers spoiler visibility recompute on changes), `token_service.py` (compressed JWT for shareable filter URLs), `auth_service.py` (registration, authentication, token issuance, account deletion), `filter_service.py` (filter option values, view-type-aware for anime vs media ranges), `user_settings_service.py` (user settings CRUD + default creation), `spoiler_service.py` (spoiler frontier algorithm + precomputed visibility cache in `user_visible_media` table; recomputed per-anime on rating changes, per-user on registration), `export_service.py` (flat media-level data export merging catalog info, ratings, and watchlist per media; respects user's name_language setting for localized title columns), `admin_service.py` (registration token list + delete).
+- **routers/** — FastAPI endpoint definitions. Each router maps to an API prefix (`/admin`, `/auth`, `/search`, `/filters`, `/media`, `/save`, `/seed`, `/ratings`, `/users`). `/admin` handles registration token management (list, create, delete — admin-only) and database backups (list, create, download, delete, restore, upload — admin-only; plus `/admin/backups/auto` for scheduled dumps, authenticated via a cron bearer token). `/search` handles both `/search/media` (per-media) and `/search/anime` (aggregated by anime). `/media` handles both `/media/{uuid}` and `/media/anime/{uuid}`. `/users` handles settings CRUD, data export, and account deletion.
+- **services/** — Business logic as module-level async functions. Key services: `jikan_scraper.py` (MAL API client with retry), `vector_embedding_service.py` (sentence-transformers embeddings), `media_search_service.py` (filtered DB search), `anime_search_service.py` (anime aggregated search + detail with majority genre logic), `rating_service.py` (rating CRUD + search, triggers spoiler visibility recompute on changes), `token_service.py` (compressed JWT for shareable filter URLs), `auth_service.py` (registration, authentication, token issuance, account deletion), `filter_service.py` (filter option values, view-type-aware for anime vs media ranges), `user_settings_service.py` (user settings CRUD + default creation), `spoiler_service.py` (spoiler frontier algorithm + precomputed visibility cache in `user_visible_media` table; recomputed per-anime on rating changes, per-user on registration), `export_service.py` (flat media-level data export merging catalog info, ratings, and watchlist per media; respects user's name_language setting for localized title columns), `admin_service.py` (registration token list + delete), `backup_service.py` (pg_dump/pg_restore wrappers via `asyncio.create_subprocess_exec`; atomic `.partial` writes, sidecar `.meta.json` per dump, full-decode integrity + content hash via `pg_restore -f -` (`pg_restore --list` fallback for legacy dumps missing sidecars), retention of 14 daily + 8 Sunday dumps, 500 MB absolute-byte disk floor, pre-restore auto-snapshot, content-level sha256 dedupe on every new dump (hashes `pg_restore -f -` output with timestamp/version comment lines stripped so identical DB state always produces the same hash; manual creates raise `DuplicateBackupError`, cron + pre-restore silently return the existing dump). `.current_db.json` pointer tracks which dump matches the live DB — set after restore AND re-pointed whenever a dedupe match re-confirms an existing dump as "current", so the UI's "Current" badge follows DB state rather than just restore history. All write paths (create + upload) are serialized behind a module-level `asyncio.Lock` (single-worker assumption) so concurrent manual + cron requests can't race on disk-space checks or dedupe lookups. Restore closes the SQLAlchemy pool + double-terminates other sessions (short sleep between passes catches stragglers that slipped past the maintenance gate) before running pg_restore with a configurable timeout (`BACKUP_RESTORE_TIMEOUT_SECONDS`, default 600s); wrapped in a maintenance-mode flag so the HTTP middleware short-circuits concurrent requests, and the pool is re-warmed in `finally` so Coolify's /health probe doesn't flap on the hot path afterward. Upload endpoint enforces a hard 2 GB cap (`_UPLOAD_MAX_BYTES` in `backup_service.py`) with periodic free-space rechecks mid-stream, so a rogue admin request can't fill the backup volume. Password passed to subprocess via `PGPASSWORD`, never on the CLI).
 - **daos/** — Data access layer. `BaseDAO` provides generic async CRUD; specialized DAOs (media, anime, genre, studio, user, user_settings, registration_token, rating) add domain-specific queries with vector similarity, filtering, and aggregation. `AnimeDAO.search_anime_aggregated` uses two-phase query: SQL GROUP BY with HAVING for filtering/ordering, then detail fetch. `search_filters.py` provides shared filter/ordering helpers for media, anime pre-aggregation (WHERE), and anime post-aggregation (HAVING) filters.
 - **models/** — SQLAlchemy ORM models mapped to PostgreSQL tables. `media_search.py` stores pgvector embeddings for title and description; `anime_search.py` stores anime-level embeddings; `rating_search.py` stores note embeddings for rating note search. `user_settings.py` stores per-user preferences (one-to-one with Users) with enums for theme, name language, search view, rating step, and spoiler level. `user_visible_media.py` is a precomputed cache of which media are visible (not spoiler-protected) per user, updated on rating changes.
 - **schemas/** — Pydantic request/response DTOs.
-- **core/** — Config (`config.py` loads from `.env`), database engine (`db.py`), auth dependencies (`dependencies.py`), JWT/password security (`security.py`).
-- **seeders/** — Run at app startup via lifespan; seed genres, admin user, and optional guest user (restricted_user role). `backfill_user_settings` ensures all users have a UserSettings row. `backfill_spoiler_visibility` computes visible media for users with no cache rows. `embedding_backfiller.py` detects and regenerates any missing anime, media, or rating embeddings (enables seamless embedding model swaps via Alembic migration + restart).
+- **core/** — Config (`config.py` loads from `.env`), database engine (`db.py`), auth dependencies (`dependencies.py`), JWT/password security (`security.py`), process-wide maintenance flag (`maintenance.py`, single-process assumption).
+- **seeders/** — Run at app startup via lifespan; seed genres, admin user, and optional guest user (restricted_user role). `backfill_user_settings` ensures all users have a UserSettings row. `backfill_spoiler_visibility` computes visible media for users with no cache rows. `embedding_backfiller.py` detects and regenerates any missing anime, media, or rating embeddings (enables seamless embedding model swaps via Alembic migration + restart). `save_service.save_search_results` also triggers a full-user spoiler-cache recompute after new animes land so `spoiler_level=hide` doesn't mask them until the next restart.
 - **exceptions.py** — Custom exception hierarchy rooted at `PhsarBaseError` with `status_code` attribute. Single exception handler in `main.py` reads the status code from each exception class.
+- **main.py** — App factory + lifespan; also exposes `GET /` and `GET /health` directly (health returns `{status, version, db}` and pings the DB with a short 2s `asyncio.wait_for` so transient DB unavailability produces a fast 503 instead of riding asyncpg's 60s connect timeout into a Coolify liveness flap). Registers a `maintenance_gate` HTTP middleware that short-circuits every non-`/` / `/health` request to 503 `{maintenance: true}` while `core/maintenance.py`'s flag is set (flipped on by restore).
 
 ### Frontend (phsar/frontend/)
 
 SvelteKit with file-based routing, Svelte 5 runes, Tailwind CSS 4, shadcn-svelte component library.
 
 - **routes/** — Pages: home (`/`), login (`/login`), register (`/register`), search (`/search`), media detail (`/media`), anime detail (`/anime`), settings (`/settings`), admin (`/admin`).
-- **lib/components/** — App components (SearchBar, MediaInfo, NavBar, TagSelect, DoubleRangeSlider, RatingCard, BulkRateDialog, DangerZone, RelatedMediaCarousel, SpoilerGuard, EChart, RatingsOverview with sub-components for Stats/Timeline/Notes/Attributes, AttributeRadar, AttributeBadges, AttributeDetailBars, etc.) using Svelte 5 `$props()`, `$state()`, `$derived()`, `$effect()`.
+- **lib/components/** — App components (SearchBar, MediaInfo, NavBar, TagSelect, DoubleRangeSlider, RatingCard, BulkRateDialog, DangerZone, BackupsCard, RelatedMediaCarousel, SpoilerGuard, EChart, RatingsOverview with sub-components for Stats/Timeline/Notes/Attributes, AttributeRadar, AttributeBadges, AttributeDetailBars, VersionFooter, LoadingScreen (themed sakura-ring loader shown during initial boot + ~1.5s logout transition), etc.) using Svelte 5 `$props()`, `$state()`, `$derived()`, `$effect()`. `VersionFooter` renders at the bottom of every page and reads `PUBLIC_APP_VERSION` from `$env/dynamic/public`. `BackupsCard` is the admin-only dump list (create/upload/download/restore/delete with a "Current" badge on the row the DB was last restored from).
 - **lib/components/ui/** — shadcn-svelte base components (button, card, input, badge, slider, dropdown-menu, popover, checkbox, label, select, separator, etc.).
-- **lib/api.ts** — Centralized API client with `get`/`post`/`postForm`/`put`/`del` methods, `ApiError` class, and automatic auth header injection from the token store.
+- **lib/api.ts** — Centralized API client with `get`/`post`/`postForm`/`put`/`del`/`downloadBlob`/`postMultipart` methods, `ApiError` class, automatic auth header injection from the token store, and a maintenance-503 handler that clears the token and hard-navigates to `/login?maintenance=1` when the backend returns `{maintenance: true}`.
 - **lib/types/api.ts** — TypeScript interfaces mirroring backend Pydantic schemas (`MediaConnected`, `FilterOptions`, `TokenResponse`, etc.).
 - **lib/stores/** — Svelte stores for auth state (JWT token persisted to localStorage), user settings, and spoiler visibility (precomputed visible media UUIDs from backend).
-- **lib/utils/** — String formatting (`formatAiringStatus`, `formatRelationType`, `formatMediaType`, `formatSeasonRange`, `formatDuration`, `formatDecimalDigits`), season logic, search params (`fetchSearchResults`, `fetchAnimeSearchResults`), navigation (`navigateToSearch`, `buildDetailHref`), chart colors (`CHART_COLORS`, `scoreColor`, `getThemedChartColorPalette`, `RELATION_TYPE_ORDER`, `RELATION_TYPE_COLORS`, `RELATION_TYPE_LABELS`), spoiler frontier computation (`spoilerFrontier.ts` — client-side frontier for detail pages).
+- **lib/utils/** — String formatting (`formatAiringStatus`, `formatRelationType`, `formatMediaType`, `formatSeasonRange`, `formatDuration`, `formatDecimalDigits`, `formatShortDate`, `formatShortDateTime`, `formatBytes`), season logic, search params (`fetchSearchResults`, `fetchAnimeSearchResults`), navigation (`navigateToSearch`, `buildDetailHref`), chart colors (`CHART_COLORS`, `scoreColor`, `getThemedChartColorPalette`, `RELATION_TYPE_ORDER`, `RELATION_TYPE_COLORS`, `RELATION_TYPE_LABELS`), spoiler frontier computation (`spoilerFrontier.ts` — client-side frontier for detail pages).
 - **lib/themes.ts** — Centralized theme config (`THEMES` record mapping keys to CSS classes, character pics, labels; `ThemeKey` type; helpers: `isValidTheme`, `getThemeCssClass`, `getThemePic`, `getThemeFocal`, `getActiveTheme`).
 - **lib/echarts.ts** — Lazy-loaded ECharts singleton (`getEcharts()`) using pre-built ESM bundle (SSR-safe, cached).
 - **lib/config.ts** — Backend API base URL (consumed only by `api.ts`).
-- **src/app.css** — Theme system: `@property` definitions for `--primary`/`--ring`, `@theme inline` with `var()` indirection, `.theme-red`/`.theme-blue`/`.theme-green` override classes, themeable gradient variables. Light elevated surfaces on dark gradient background. Dark mode locked to class-based only.
+- **src/app.css** — Theme system: `@property` definitions for `--primary`/`--ring`, `@theme inline` with `var()` indirection, `.theme-red`/`.theme-blue`/`.theme-green` override classes, themeable gradient variables (body dark gradient `--gradient-*` + auth-page light gradient `--auth-gradient-*` used on login/register). Light elevated surfaces on dark gradient background. Dark mode locked to class-based only.
 - **tests/** — Vitest + @testing-library/svelte component tests.
 
 ### Key Patterns
@@ -95,8 +104,9 @@ SvelteKit with file-based routing, Svelte 5 runes, Tailwind CSS 4, shadcn-svelte
 - **Vector search**: `paraphrase-multilingual-MiniLM-L12-v2` model generates embeddings stored via pgvector; similarity search on title, description, and rating note vectors. `SearchType` enum (`title`, `description`, `rating_notes`) selects the target. Search filter schemas use inheritance: `MediaSearchFilters` (base) → `RatingSearchFilters` (adds rating-specific filters). Anime-level title search uses `AnimeSearch` embeddings directly; description search averages cosine distances across media. `ViewType` enum (`anime`, `media`) selects the search mode. `/filters/options?view_type=anime` returns anime-appropriate filter ranges (aggregated episodes/watch time, majority genres).
 - **Domain exceptions**: All custom exceptions extend `PhsarBaseError` with a `status_code` class attribute. One handler in `main.py` serves all.
 - **Theme system**: CSS custom properties with `@property` indirection — `@property --primary` / `--ring` hold the source values, `@theme inline` references them via `var()`, and `.theme-*` classes on `<html>` override them. This forces Tailwind to emit `var()` in utilities instead of inlining static values. Components use semantic tokens (`bg-primary`, `text-primary`, `ring-ring`). Centralized theme config in `lib/themes.ts` maps theme keys to CSS classes, character pics, and labels. FOUC prevention via inline localStorage script in `app.html`. Per-theme chart color palettes in `chartColors.ts` avoid hue clashes.
-- **Spoiler protection**: Three levels (`off`/`blur`/`hide`) controlled by `SpoilerLevel` user setting. Uses a "frontier" algorithm: per anime, all media up to and including the next unwatched main-story entry are visible. Precomputed in `user_visible_media` table (updated per-anime on rating changes, per-user on registration). Backend `GET /ratings/spoiler-visibility` returns visible UUIDs; frontend stores as `Set` in `spoilerVisibility` store. `SpoilerGuard.svelte` wraps covers/descriptions with blur + click-to-reveal. Detail pages compute frontier locally for fresher data. `hide` mode in media search uses `WHERE media.id IN (...)` from the cache. Anime covers/descriptions are never spoiler-protected.
-- **CORS**: Backend allows origins from `settings.CORS_ORIGINS` (defaults to `http://localhost:5173`).
+- **Spoiler protection**: Three levels (`off`/`blur`/`hide`) controlled by `SpoilerLevel` user setting. Uses a "frontier" algorithm: per anime, all media up to and including the next unwatched main-story entry are visible. Precomputed in `user_visible_media` table (updated per-anime on rating changes, per-user on registration, and per-user after new scrapes land via `save_service`). Backend `GET /ratings/spoiler-visibility` returns visible UUIDs; frontend stores as `Set` in `spoilerVisibility` store. `SpoilerGuard.svelte` wraps covers/descriptions with blur + click-to-reveal. Detail pages compute frontier locally for fresher data. `hide` mode in media search uses `WHERE media.id IN (...)` from the cache. Anime covers/descriptions are never spoiler-protected.
+- **Maintenance mode**: Destructive operations (currently only backup restore) flip `core/maintenance.py`'s in-memory flag. An HTTP middleware in `main.py` returns 503 `{maintenance: true}` for everything except `/` and `/health` while the flag is set. The frontend's `api.ts` detects that response, clears the auth token, and hard-navigates to `/login?maintenance=1`; the login page shows a yellow banner and `/auth/login` itself returns 503 so login is blocked until the operation finishes. Flag is process-wide and in-memory — single-worker assumption, documented upgrade path is a file sentinel if we ever scale horizontally.
+- **CORS**: Backend allows origins from `settings.CORS_ORIGINS` (defaults to `http://localhost:5173`) and exposes `Content-Disposition` so the frontend can read server-authored download filenames.
 
 ## Working With Me
 
@@ -107,13 +117,37 @@ SvelteKit with file-based routing, Svelte 5 runes, Tailwind CSS 4, shadcn-svelte
 
 The backend requires a `phsar/.env` file with: `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `SECRET_KEY`, `SEARCH_SECRET_KEY`.
 
-Optional: `DEBUG` (enables SQL echo), `CORS_ORIGINS` (JSON list of allowed origins), `GUEST_USERNAME` + `GUEST_PASSWORD` (seeds a read-only guest account with `restricted_user` role).
+Optional: `DEBUG` (enables SQL echo), `CORS_ORIGINS` (JSON list of allowed origins), `GUEST_USERNAME` + `GUEST_PASSWORD` (seeds a read-only guest account with `restricted_user` role), `APP_VERSION` (deployed version tag surfaced on `/health`; injected via the backend Dockerfile build arg), `BACKUP_DIR` (where dumps are written; defaults to `./backups` so native `uvicorn` dev works without root, and the Dockerfile sets it to `/backups` so the container writes to the bind-mounted volume), `BACKUP_CRON_TOKEN` (shared bearer secret for `POST /admin/backups/auto`; empty = scheduled backups disabled and the endpoint fails closed), `BACKUP_RESTORE_TIMEOUT_SECONDS` (default 600 — raise if the DB grows large enough that pg_restore legitimately takes >10 min; a mid-restore kill leaves the DB half-dropped).
+
+Frontend (runtime, read from `$env/dynamic/public`): `PUBLIC_API_BASE_URL` (backend URL; defaults to `http://localhost:8000` for local dev) and `PUBLIC_APP_VERSION` (shown in the footer). Both are set as container ENV in production — changing them does not require an image rebuild.
+
+## Deployment
+
+Self-hosted on a Coolify-managed VM. Images are built in GitHub Actions and pulled by Coolify — the VM is too small (2 vCPU / 4 GB) to survive a SvelteKit build.
+
+Three services:
+
+- `phsar/Dockerfile` — multi-stage backend. CPU-only torch from the pytorch CPU index; sentence-transformers model baked into `/opt/st-cache`. Runs as non-root `phsar` user (UID 1000). `/backups` is created at build time and chowned to `phsar:phsar` so a bind-mounted host dir matches. Entrypoint (`phsar/docker/entrypoint.sh`) applies Alembic migrations before exec'ing uvicorn.
+- `phsar/frontend/Dockerfile` — bun build → `node:22-slim` runtime via SvelteKit `adapter-node`. Reuses the built-in `node` user.
+- `docker-compose.yml` (repo root) — runs all three containers together; only for local parity smoke-testing, not day-to-day dev.
+
+Deployment flow: tag any commit with `v*` (stable `v0.13.0` or preview `v0.13.0-rc1`) and push. The `build-images.yml` workflow builds both images in parallel and pushes to `ghcr.io/priapos1004/phsar-{backend,frontend}:<tag>`. In Coolify, point each service at the new image tag and redeploy.
+
+### Backups
+
+- Coolify mounts `/opt/phsar/backups` on the VM to `/backups` in the backend container. The host directory must be owned by UID 1000 (`chown 1000:1000 /opt/phsar/backups`) so the `phsar` user can write dumps.
+- Manual backups: admin panel → Backups card → "Create backup". Download/delete/upload/restore from the same UI.
+- Scheduled backups: set `BACKUP_CRON_TOKEN` in Coolify backend env, then add a Coolify scheduled task that `curl -X POST -H "Authorization: Bearer $BACKUP_CRON_TOKEN" https://<backend-domain>/admin/backups/auto`. The endpoint creates a dump tagged `cron` and applies retention (14 daily + 8 Sunday; never evicts the most recent known-good dump).
+- Off-host safety net: `scripts/pull-backups.sh user@vm` rsyncs `/opt/phsar/backups/` to the local machine. Run every ~2 months and before any restore.
+- Restore workflow: UI prompts for the admin's username as the confirmation string; an automatic pre-restore snapshot is taken first, then `pg_restore --clean --if-exists --no-owner --no-privileges` runs against the target DB.
 
 ## CI
 
-GitHub Actions runs on every push and PR:
-- **Lint** (`lint.yml`): `ruff check .` in `phsar/`
-- **Tests** (`test.yml`): `pytest` against a pgvector service container with schema created from models
+GitHub Actions:
+- **Backend Lint** (`backend-lint.yml`): `ruff check .` in `phsar/` — runs on every push/PR.
+- **Backend Tests** (`backend-test.yml`): `pytest` against a pgvector service container — runs on every push/PR.
+- **Frontend Check** (`frontend-check.yml`): `bun run check` + `bun run test` — runs on every push/PR.
+- **Build & Push Images** (`build-images.yml`): builds backend + frontend images and pushes to ghcr.io — runs on tag push (`v*`) or manual dispatch.
 
 ## Linting Config (pyproject.toml)
 

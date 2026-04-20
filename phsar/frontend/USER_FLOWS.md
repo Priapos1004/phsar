@@ -8,6 +8,7 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 
 ### 1.1 Login
 - User sees a centered card with username/password fields and a "Login" button
+- Page background is a themed light-to-deep gradient matching the active theme (purple / red / blue / green), driven by the theme class pre-applied from localStorage by the FOUC script in `app.html`
 - Submitting the form POSTs credentials to `/auth/login` (URL-encoded)
 - On success: token is stored in localStorage, user is redirected to `/`
 - On invalid credentials: error message appears below the form in red
@@ -20,11 +21,18 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 - If validation returns 401, token is cleared from localStorage and user is redirected to `/login`
 
 ### 1.3 Logout
-- Clicking "Logout" in the NavBar dropdown clears the token and redirects to `/login`
+- Clicking "Logout" in the NavBar dropdown clears the token immediately, shows a ~1.5s themed sakura-ring loading screen as a soft transition, then redirects to `/login`
+- Involuntary logouts (401 from API, token expiry, account deletion) skip the animation and redirect instantly
 
 ### 1.4 Token Persistence
 - Token is stored in and loaded from localStorage
 - Closing and reopening the browser keeps the user logged in (until token expires or is invalidated)
+
+### 1.5 Maintenance Banner
+- When the backend returns 503 with `{maintenance: true}` on *any* request, the API client clears the token and hard-navigates to `/login?maintenance=1`.
+- The login page also detects this state when `/auth/login` itself returns 503.
+- Yellow banner above the form: "Backup restore in progress. Login will be available again once it completes."
+- Submit is not disabled; retrying during the window repopulates the banner. On a successful login the banner clears and the user proceeds to `/` as normal.
 
 ---
 
@@ -40,7 +48,12 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
   - Getting Started → `/getting-started`
   - Logout (red) → clears token, redirects to `/login`
 
-### 2.2 Route Structure
+### 2.2 Version Footer
+- Small muted text at the bottom of every page showing the deployed version.
+- When the value looks like a version tag (`v0.13.0`), it's a link to the matching GitHub release; otherwise it's plain text (e.g. `dev` locally).
+- Sourced from `PUBLIC_APP_VERSION` at the node runtime.
+
+### 2.3 Route Structure
 | Route | Page | Auth Required |
 |-------|------|---------------|
 | `/` | Home (search bar + placeholders) | Yes |
@@ -214,7 +227,7 @@ Each anime search result card shows:
 - Collapsible description card (4-line clamp by default)
 - "Read more" / "Show less" toggle shown only when text actually overflows the 4-line clamp (DOM overflow detection with 2px threshold)
 - Synopsis blurred with click-to-reveal when media is spoiler-protected; "Read more" button is behind the blur
-- HTML entities cleaned from description text
+- HTML entities cleaned from description text; MAL attribution tags (`[Written by MAL Rewrite]`) and trailing `(Source: …)` / `[Source: …]` attributions stripped before display
 
 ### 7.4 Rating Card
 - **No rating exists, not editing**: CTA card with star icon and "Rate This" button
@@ -252,7 +265,7 @@ Each anime search result card shows:
 - Each card: landscape character pic (`aspect-video`), theme label below, `w-48 sm:w-56`
 - Selected theme highlighted with `border-primary ring-2`
 - Clicking a card saves immediately via `PUT /users/settings` with `{ theme: key }`
-- Selecting a theme changes: app background gradient, all primary-colored UI elements (buttons, rings, badges, links, charts), and the home page hero banner character pic
+- Selecting a theme changes: app background gradient, login/register background gradient, all primary-colored UI elements (buttons, rings, badges, links, charts), the LoadingScreen sakura-ring color, and the home page hero banner character pic
 - Four themes: Default (purple), Crimson (red), Ocean (blue), Forest (green)
 - Theme applied via CSS class on `<html>` with localStorage sync for FOUC prevention
 
@@ -300,6 +313,16 @@ Each anime search result card shows:
 - **Sort options** (dropdown): By Status (default: active → used → expired), Newest First, Expiring Soon (active tokens first by soonest expiry), Recently Used
 - **Delete**: trash icon on unused/expired tokens opens confirm/cancel inline buttons. Used tokens cannot be deleted. DELETE returns 204.
 
+### 9.4 Backups
+- Card below the token list. Admin-only.
+- **Create backup**: POSTs to `/admin/backups`; new dump appears in the list with a green `ok` integrity badge and a source badge (`Manual`, `Scheduled`, `Pre-restore`, or `Upload`).
+- **Upload**: file input accepts `.dump` files; `/admin/backups/upload` runs `pg_restore -f -` to validate + compute a content hash that ignores per-run timestamps and psql `\restrict` tokens. An upload whose DB state matches an existing dump returns 409 ("identical to `<filename>`") and re-points the "Current" badge at the existing dump.
+- **List**: filename, timestamp, human-readable size, integrity badge, source badge. The dump whose content matches the live DB gets a blue "Current" badge (git-branch icon) and a faint blue tint on the row — this is the last-restored dump, or (when a create/upload dedupes) the pre-existing dump it re-confirmed. Deleting the current dump clears the marker so the badge disappears.
+- **Sort options** (dropdown): Newest First (default), Oldest First, Largest First, By Integrity (corrupt/unknown first to surface problems).
+- **Download**: arrow icon per row uses the `downloadBlob` helper (bearer token via fetch headers, then auto-click on an object URL). Saved with the original filename.
+- **Restore**: rotate-back icon opens a destructive-confirm dialog that requires typing the admin's username. Disabled on `corrupt` rows. Backend auto-snapshots as a `pre-restore` dump *before* entering maintenance mode, then flips the maintenance flag, closes the SQLAlchemy pool, terminates any other DB sessions, and runs `pg_restore --clean --if-exists` (timeout configurable via `BACKUP_RESTORE_TIMEOUT_SECONDS`, default 10 min). After pg_restore returns, the backend warms the connection pool before lifting the maintenance gate so the first post-restore request doesn't flap the liveness probe. Result banner reports the pre-restore filename, and the "Current" badge now follows the restored dump. All non-admin users in the app are bounced to `/login?maintenance=1` for the duration (see 1.5).
+- **Delete**: trash icon opens inline confirm/cancel buttons. DELETE returns 204.
+
 ---
 
 ## 10. API Endpoints Used by Frontend
@@ -329,6 +352,12 @@ Each anime search result card shows:
 | `/admin/registration-tokens` | GET | Admin page (list all tokens) |
 | `/admin/registration-tokens` | POST | Admin page (create token) |
 | `/admin/registration-tokens/{uuid}` | DELETE | Admin page (delete unused token) |
+| `/admin/backups` | GET | Admin page Backups card (list dumps) |
+| `/admin/backups` | POST | Admin page Backups card (create dump on demand) |
+| `/admin/backups/{filename}` | GET | Admin page Backups card (download dump) |
+| `/admin/backups/{filename}` | DELETE | Admin page Backups card (delete dump) |
+| `/admin/backups/{filename}/restore` | POST | Admin page Backups card (restore with username confirm; backend auto-takes a pre-restore snapshot) |
+| `/admin/backups/upload` | POST | Admin page Backups card (multipart upload of a `.dump` file) |
 | `/auth/register` | POST | Registration page |
 
 ---
@@ -348,3 +377,8 @@ Each anime search result card shows:
 | Rating fetch returns 404 | No rating displayed (expected for unrated media) |
 | Account deletion wrong password | "Invalid password." error below form |
 | Account deletion network failure | "Failed to delete account." error below form |
+| Any API call returns 503 `{maintenance: true}` | Token cleared, hard-navigate to `/login?maintenance=1`, yellow banner displayed |
+| `/auth/login` during maintenance | 503 shows the same yellow banner; submit not disabled, retry later |
+| Duplicate backup upload | 409 "This dump is identical to an existing backup: '<filename>'." — the new upload is discarded |
+| Backup upload >2 GB | 413 "Uploaded backup is too large: <N> MB (limit: 2048 MB)." — partial file discarded |
+| Restore of a corrupt dump | Restore button is disabled on rows with integrity badge = corrupt |

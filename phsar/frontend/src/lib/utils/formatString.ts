@@ -75,10 +75,40 @@ export function formatAiringStatus(status: string, hasUpcoming: boolean): string
 }
 
 /**
- * Strip MAL attribution tags (e.g. "[Written by MAL Rewrite]") from description text.
+ * Strip MAL attribution tags from description text:
+ *   - "[Written by MAL Rewrite]"
+ *   - trailing "(Source: ANN)" / "[Source: Wikipedia]" / etc.
  */
 export function cleanDescription(text: string): string {
-	return text.replace(/\s*\[Written by MAL Rewrite\]\s*/g, '').trim();
+	return text
+		.replace(/\s*\[Written by MAL Rewrite\]\s*/g, '')
+		.replace(/\s*[\(\[]\s*Source\s*:[^\)\]]*[\)\]]\s*$/i, '')
+		.trim();
+}
+
+export function formatShortDate(iso: string): string {
+	return new Date(iso).toLocaleDateString('en-US', {
+		month: 'short',
+		day: 'numeric',
+		year: 'numeric',
+	});
+}
+
+export function formatShortDateTime(iso: string): string {
+	return new Date(iso).toLocaleString('en-US', {
+		month: 'short',
+		day: 'numeric',
+		year: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit',
+	});
+}
+
+export function formatBytes(bytes: number): string {
+	if (bytes < 1024) return `${bytes} B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+	if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+	return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 /**

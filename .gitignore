@@ -171,9 +171,11 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
-**/versions/*
 
 .DS_Store
 
 # Playwright MCP debugging artifacts
 .playwright-mcp/
+
+# Local backup dumps
+backups/

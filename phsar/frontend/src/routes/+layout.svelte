@@ -9,6 +9,7 @@
     import NavBar from '$lib/components/NavBar.svelte';
     import TokenExpiryDialog from '$lib/components/TokenExpiryDialog.svelte';
     import LoadingScreen from '$lib/components/LoadingScreen.svelte';
+    import VersionFooter from '$lib/components/VersionFooter.svelte';
     import { getThemeCssClass, isValidTheme } from '$lib/themes';
     import '../app.css';
     import type { Snippet } from 'svelte';
@@ -17,6 +18,7 @@
     let { children }: { children: Snippet } = $props();
 
     let loading = $state(true);
+    let signingOut = $state(false);
     let isAuthenticated = $state(false);
     let userRole = $state<string | null>(null);
     let username = $state<string | null>(null);
@@ -24,6 +26,7 @@
     let expiryTimer: ReturnType<typeof setTimeout> | null = null;
 
     setContext('userRole', () => userRole);
+    setContext('username', () => username);
 
     interface DecodedToken {
       sub: string;
@@ -97,8 +100,14 @@
     // Apply theme CSS class to <html> and sync to localStorage for FOUC prevention.
     // Must be on <html> (not <body>) so overrides sit at the same :root level
     // where @theme inline defines the CSS custom properties.
+    //
+    // Guarded on `$userSettings !== null`: while settings are still loading we must
+    // NOT touch the class list, or we'd wipe whatever the FOUC script in app.html
+    // pre-applied — leaving the loading screen (and any pre-hydration paint) on the
+    // default purple instead of the user's theme color.
     $effect(() => {
-      const themeKey = $userSettings?.theme;
+      if (!$userSettings) return;
+      const themeKey = $userSettings.theme;
       const el = document.documentElement;
       const toRemove = [...el.classList].filter(cls => cls.startsWith('theme-'));
       toRemove.forEach(cls => el.classList.remove(cls));
@@ -115,13 +124,17 @@
       }
     });
 
-    function handleLogout() {
+    async function handleLogout() {
+      signingOut = true;
       token.set(null);
+      // Brief themed farewell — the sakura-ring screen acts as a soft transition
+      // from the authenticated app back to /login instead of an abrupt hard nav.
+      await new Promise(resolve => setTimeout(resolve, 1500));
       window.location.href = '/login';
     }
 </script>
 
-{#if loading}
+{#if loading || signingOut}
     <LoadingScreen />
 {:else}
     {#if page.url.pathname !== '/login' && page.url.pathname !== '/register'}
@@ -131,6 +144,8 @@
     <main class="min-h-screen px-8 pt-4 pb-8">
       {@render children()}
     </main>
+
+    <VersionFooter />
 
     <TokenExpiryDialog open={showExpiryDialog} onLogin={handleLogout} />
 {/if}

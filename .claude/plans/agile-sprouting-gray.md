@@ -450,6 +450,14 @@ Eye-catching landing page — light version of browse, serves new and returning 
 - Admin endpoint for `pg_restore` from uploaded or server-stored backup
 - Requires confirmation step (destructive operation)
 
+### Key Decisions
+- **Content-level dedupe, not raw-bytes.** `pg_dump -Fc` output is non-deterministic (embedded timestamps, `\restrict` tokens), so we hash `pg_restore -f -` output with per-run-variable lines stripped. Identical DB state → identical hash, so download→upload round-trips idempotent.
+- **Per-source dedupe policy.** Manual raises `DuplicateBackupError` (admin gets explicit feedback); cron + pre_restore silently return the existing dump so schedulers and restore snapshots don't accumulate identical files.
+- **"Current" badge follows DB state, not restore history.** `.current_db.json` pointer set after a restore AND re-pointed whenever a create/upload dedupe-matches an existing dump. Admin always sees which dump represents the live DB.
+- **Pre-restore snapshot is automatic + retention-exempt.** Every restore first dumps the live DB (also subject to dedupe). Retention keeps 14 daily + 8 Sunday + most-recent-good for manual/cron; uploads and pre_restore dumps are admin-managed, never auto-evicted.
+- **Maintenance mode during restore.** Process-wide in-memory flag; HTTP middleware 503s everything except `/` and `/health`, frontend bounces users to `/login?maintenance=1`. Single-worker assumption documented.
+- **Password handling.** `PGPASSWORD` env var on the subprocess, never on the CLI.
+
 ---
 
 ## Feature 9: Statistics & Analytics
@@ -503,7 +511,7 @@ Eye-catching landing page — light version of browse, serves new and returning 
 | **v0.10.0** | ✓ Media detail page + rating UI | First visible ratings. Rating modal/popup. Media page with full info + link to anime (anime page not yet built). |
 | **v0.11.0** | ✓ Anime-level search + anime detail page | Aggregated search as default. Anime↔media navigation loop complete. View toggle (anime/media). View-type-aware filter options. |
 | **v0.12.0** | ✓ User settings + user page UI + data export + admin + account deletion | Settings table, theme system (app color + hero pic via `@property`/`var()` indirection), rating step, name language, spoiler protection. Flat media-level data export (ratings + watchlist + catalog info per media, respects name_language, dated filename). Token expiry dialog. Registration page. Guest account. Admin page for registration token management. Account deletion with glass crack UX, password confirmation, DB cascade (SET NULL on registration tokens). |
-| **v0.13.0** | Deployment (Coolify) + switch to bun + DB backup/restore | Deployment-ready: Coolify config for db/frontend/backend services. Switch frontend from npm to bun. pg_dump backup system (automated + local download). Prerequisite for content pipeline cron jobs. |
+| **v0.13.0** | ✓ Deployment (Coolify) + switch to bun + CI image builds + DB backup/restore | Deployment-ready: Coolify config for db/frontend/backend services. Switch frontend from npm to bun. Build images in GitHub Actions → push to ghcr.io → Coolify pulls (VM too small for on-host bun/SvelteKit build). pg_dump backup system (automated + local download). Prerequisite for content pipeline cron jobs. |
 | **v0.14.0** | Content pipeline (scraper jobs, dedup, updates, seasonal) | User-triggered scraping with job tracking. Automated daily/weekly updates. Seasonal scraping. Dedup + admin merge notifications. |
 | **v0.15.0** | Watchlist backend + UI | Watchlist CRUD, tags, priority. Watchlist page with filtering. Watchlist icons in search results. |
 | **v0.15.1** | Search enhancements + design polish | "In watchlist"/"already watched" search filters. Search filter QoL improvements. Component design polish. Note: consider enlarging the watchlist bookmark icon on the media detail page for better tap target and visual presence. |

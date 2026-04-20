@@ -8,14 +8,19 @@
 
 ```text
 phsar/
+├── .dockerignore
 ├── .env                  # local credentials (not tracked)
 ├── .env.example
+├── Dockerfile
+├── docker/
+│   └── entrypoint.sh     # applies alembic migrations before starting uvicorn
 ├── app/
 │   ├── core/
 │   │   ├── config.py
 │   │   ├── db.py
 │   │   ├── dependencies.py
 │   │   ├── logging_config.py
+│   │   ├── maintenance.py
 │   │   └── security.py
 │   ├── daos/
 │   │   ├── anime_dao.py
@@ -66,6 +71,7 @@ phsar/
 │   │   ├── admin_schema.py
 │   │   ├── anime_schema.py
 │   │   ├── auth_schema.py
+│   │   ├── backup_schema.py
 │   │   ├── media_filter_schema.py
 │   │   ├── media_schema.py
 │   │   ├── rating_schema.py
@@ -81,6 +87,7 @@ phsar/
 │       ├── anime_search_service.py
 │       ├── anime_service.py
 │       ├── auth_service.py
+│       ├── backup_service.py
 │       ├── export_service.py
 │       ├── filter_service.py
 │       ├── jikan_scraper.py
@@ -96,6 +103,9 @@ phsar/
 │       ├── user_settings_service.py
 │       └── vector_embedding_service.py
 ├── frontend/
+│   ├── .dockerignore
+│   ├── Dockerfile
+│   ├── bun.lock
 │   ├── components.json
 │   ├── package.json
 │   ├── USER_FLOWS.md
@@ -112,6 +122,7 @@ phsar/
 │   │   │   │   ├── AttributeBadges.svelte
 │   │   │   │   ├── AttributeDetailBars.svelte
 │   │   │   │   ├── AttributeRadar.svelte
+│   │   │   │   ├── BackupsCard.svelte
 │   │   │   │   ├── BulkRateDialog.svelte
 │   │   │   │   ├── DangerZone.svelte
 │   │   │   │   ├── DoubleRangeSlider.svelte
@@ -133,6 +144,7 @@ phsar/
 │   │   │   │   ├── SkeletonMediaInfo.svelte
 │   │   │   │   ├── TagSelect.svelte
 │   │   │   │   ├── TokenExpiryDialog.svelte
+│   │   │   │   ├── VersionFooter.svelte
 │   │   │   │   └── ui/           # shadcn-svelte components
 │   │   │   │       ├── badge/
 │   │   │   │       ├── button/
@@ -187,6 +199,7 @@ phsar/
 │   │   └── tests/
 │   │       ├── setup.ts
 │   │       ├── SpoilerGuardTest.svelte
+│   │       ├── api-download.test.ts
 │   │       ├── auth-store.test.ts
 │   │       ├── format-string.test.ts
 │   │       ├── login.test.ts
@@ -197,9 +210,14 @@ phsar/
 │   │       ├── spoiler-frontier.test.ts
 │   │       └── spoiler-guard.test.ts
 │   ├── static/
-│   │   ├── phsar_logo_inverted.png
+│   │   ├── apple-touch-icon.png
+│   │   ├── favicon-192x192.png
+│   │   ├── favicon-32x32.png
+│   │   ├── favicon-512x512.png
+│   │   ├── favicon.ico
 │   │   ├── phsar_logo_transparent.png
-│   │   └── profile_pics/    # theme character pics (rainbow.png, red.png, blue.png, green.png)
+│   │   ├── profile_pics/    # theme character pics (rainbow.png, red.png, blue.png, green.png)
+│   │   └── robots.txt
 │   ├── svelte.config.js
 │   ├── tsconfig.json
 │   └── vite.config.ts
@@ -219,6 +237,7 @@ phsar/
     │   ├── test_auth.py
     │   ├── test_filters_options.py
     │   ├── test_filters_token.py
+    │   ├── test_health.py
     │   ├── test_media_detail.py
     │   ├── test_ratings.py
     │   ├── test_save.py
@@ -227,6 +246,7 @@ phsar/
     │   ├── test_search_ratings.py
     │   └── test_user_settings.py
     └── services/
+        ├── test_backup_service.py
         ├── test_jikan_scraper.py
         ├── test_search_service.py
         ├── test_spoiler_service.py
@@ -253,6 +273,10 @@ SEARCH_SECRET_KEY=supersecretsearchsecretkey
 # Optional: seeded guest account (restricted_user role, read-only)
 # GUEST_USERNAME=guest
 # GUEST_PASSWORD=guestpassword
+# Optional: shared bearer secret for POST /admin/backups/auto (scheduled dumps)
+# BACKUP_CRON_TOKEN=supersecretcrontoken
+# Optional: raise if pg_restore of a larger DB legitimately takes >10 min
+# BACKUP_RESTORE_TIMEOUT_SECONDS=600
 ```
 
 *Change `animeuser`, `animepass`, `admin`, `supersecretpassword`, `supersecretsecretkey`, and `supersecretsearchsecretkey`*
@@ -331,8 +355,8 @@ You can now open `http://127.0.0.1:8000` to see if the API is live.
 From `frontend/`:
 
 ```
-npm install
-npm run dev -- --open
+bun install
+bun run dev -- --open
 ```
 
 *FastAPI and Svelte need to run at the same time in two terminals!*
@@ -351,7 +375,7 @@ All changes to the database during the tests are rolled back afterwards.
 
 ```
 cd frontend
-npm run test
+bun run test
 ```
 
 ## Trouble-shooting

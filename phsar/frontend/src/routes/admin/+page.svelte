@@ -9,9 +9,12 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Copy, Trash2, Plus, ArrowUpDown } from 'lucide-svelte';
 	import Toast from '$lib/components/Toast.svelte';
+	import BackupsCard from '$lib/components/BackupsCard.svelte';
+	import { formatShortDate } from '$lib/utils/formatString';
 	import type { RegistrationTokenListItem } from '$lib/types/api';
 
 	const getUserRole = getContext<() => string | null>('userRole');
+	const getUsername = getContext<() => string | null>('username');
 
 	type SortOption = 'status' | 'newest' | 'expiring_soon' | 'recently_used';
 
@@ -77,14 +80,6 @@
 		toastMessage = msg;
 		showToast = true;
 		setTimeout(() => (showToast = false), 2000);
-	}
-
-	function formatDate(iso: string): string {
-		return new Date(iso).toLocaleDateString('en-US', {
-			month: 'short',
-			day: 'numeric',
-			year: 'numeric',
-		});
 	}
 
 	function truncateToken(t: string): string {
@@ -259,8 +254,8 @@
 									<Badge class="bg-primary/10 text-primary">{t.role === 'user' ? 'User' : t.role === 'restricted_user' ? 'Restricted' : t.role}</Badge>
 								</div>
 								<div class="text-xs text-muted-foreground flex gap-3 flex-wrap">
-									<span>Created {formatDate(t.created_at)} by {t.created_by}</span>
-									<span>Expires {formatDate(t.expires_on)}</span>
+									<span>Created {formatShortDate(t.created_at)} by {t.created_by}</span>
+									<span>Expires {formatShortDate(t.expires_on)}</span>
 									{#if t.used_by}
 										<span>Used by <strong>{t.used_by}</strong></span>
 									{/if}
@@ -291,6 +286,8 @@
 			{/if}
 		</Card.Content>
 	</Card.Root>
+
+	<BackupsCard currentUsername={getUsername() ?? ''} />
 </div>
 
 <Toast message={toastMessage} show={showToast} />
