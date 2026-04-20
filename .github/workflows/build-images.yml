@@ -80,5 +80,9 @@ jobs:
           build-args: |
             APP_VERSION=${{ steps.ver.outputs.value }}
             PUBLIC_APP_VERSION=${{ steps.ver.outputs.value }}
-          cache-from: type=gha,scope=${{ matrix.name }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          # Registry-backed buildx cache — stored in ghcr.io under a separate
+          # :buildcache tag per image, so it doesn't count against the 10 GB
+          # GitHub Actions cache quota and gets overwritten in place on every
+          # build instead of accumulating layer blobs.
+          cache-from: type=registry,ref=ghcr.io/${{ steps.ver.outputs.owner }}/${{ matrix.image }}:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ steps.ver.outputs.owner }}/${{ matrix.image }}:buildcache,mode=max
