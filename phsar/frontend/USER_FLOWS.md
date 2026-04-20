@@ -21,7 +21,7 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 - If validation returns 401, token is cleared from localStorage and user is redirected to `/login`
 
 ### 1.3 Logout
-- Clicking "Logout" in the NavBar dropdown triggers a ~1.5s themed sakura-ring loading screen, then clears the token and redirects to `/login`
+- Clicking "Logout" in the NavBar dropdown clears the token immediately, shows a ~1.5s themed sakura-ring loading screen as a soft transition, then redirects to `/login`
 - Involuntary logouts (401 from API, token expiry, account deletion) skip the animation and redirect instantly
 
 ### 1.4 Token Persistence

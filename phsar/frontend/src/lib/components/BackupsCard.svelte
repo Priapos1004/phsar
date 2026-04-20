@@ -44,6 +44,9 @@
         upload: 'Upload',
     };
 
+    const USERNAME_UNAVAILABLE_ERROR =
+        'Your username is unavailable — please reload the page before restoring.';
+
     let backups = $state<BackupMetadata[]>([]);
     let loading = $state(true);
     let error = $state('');
@@ -158,12 +161,18 @@
     function openRestore(filename: string) {
         restoreFilename = filename;
         restoreConfirmInput = '';
-        restoreError = '';
+        restoreError = currentUsername ? '' : USERNAME_UNAVAILABLE_ERROR;
         restoreResultMessage = '';
     }
 
     async function handleRestore() {
         if (!restoreFilename) return;
+        // Defense-in-depth: empty `currentUsername` would match an empty input
+        // and silently authorize the destructive action if `disabled` is bypassed.
+        if (!currentUsername) {
+            restoreError = USERNAME_UNAVAILABLE_ERROR;
+            return;
+        }
         restoring = true;
         restoreError = '';
         try {
@@ -311,8 +320,14 @@
                     id="restore-confirm"
                     bind:value={restoreConfirmInput}
                     placeholder={currentUsername}
+                    disabled={!currentUsername}
                     onkeydown={(e: KeyboardEvent) => {
-                        if (e.key === 'Enter' && restoreConfirmInput === currentUsername && !restoring) handleRestore();
+                        if (
+                            e.key === 'Enter'
+                            && !!currentUsername
+                            && restoreConfirmInput === currentUsername
+                            && !restoring
+                        ) handleRestore();
                     }}
                 />
             </div>
@@ -327,7 +342,7 @@
             <Button
                 variant="destructive"
                 onclick={handleRestore}
-                disabled={restoring || restoreConfirmInput !== currentUsername}
+                disabled={restoring || !currentUsername || restoreConfirmInput !== currentUsername}
             >
                 {restoring ? 'Restoring...' : 'Restore now'}
             </Button>
