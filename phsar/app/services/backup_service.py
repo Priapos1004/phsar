@@ -369,6 +369,12 @@ async def create_backup(
         metadata, was_duplicate = await _finalize_partial_dump(
             partial_path, final_path, source,
         )
+        # Fresh-install fallback: a unique dump is the live DB state at
+        # creation, so claim Current when no pointer has ever been set —
+        # otherwise the badge stays empty on a fresh VM until restore.
+        if not was_duplicate and _read_current_db_filename() is None:
+            _mark_current_db_confirmed(metadata.filename)
+            metadata = metadata.model_copy(update={"is_current": True})
         # Manual surfaces dedupe as a 409 so the admin sees a clear "identical
         # to X" error; cron / pre-restore silently return the matched dump so
         # unchanged DBs don't accumulate no-op snapshots.

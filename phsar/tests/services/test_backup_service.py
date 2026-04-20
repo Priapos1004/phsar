@@ -83,12 +83,27 @@ async def test_upload_of_same_content_raises(backup_dir):
     assert first.filename in str(excinfo.value)
 
 
-async def test_dedupe_match_repoints_current_db_on_create(backup_dir):
-    """A dedupe hit from create_backup sets the current-DB pointer to the
-    existing dump, so the UI's 'Current' badge follows DB state — even if
-    the matching dump is older than any other backup."""
-    first = await backup_service.create_backup(source=BackupSource.cron)
+async def test_first_dump_claims_current_on_fresh_install(backup_dir):
+    """On a fresh VM with no prior Current pointer, the first successful
+    create_backup marks itself current — otherwise the badge would stay
+    empty until the admin manually triggered a redundant dedupe-confirm."""
     assert backup_service._read_current_db_filename() is None
+
+    first = await backup_service.create_backup(source=BackupSource.cron)
+    assert backup_service._read_current_db_filename() == first.filename
+    assert first.is_current is True
+
+    items = await backup_service.list_backups()
+    assert len(items) == 1
+    assert items[0].is_current is True
+
+
+async def test_dedupe_match_repoints_current_db_on_create(backup_dir):
+    """A dedupe hit from create_backup keeps the Current pointer on the
+    matching existing dump, so the UI's 'Current' badge follows DB state —
+    even if the matching dump is older than any other backup."""
+    first = await backup_service.create_backup(source=BackupSource.cron)
+    assert backup_service._read_current_db_filename() == first.filename
 
     await backup_service.create_backup(source=BackupSource.cron)
     assert backup_service._read_current_db_filename() == first.filename
@@ -100,11 +115,11 @@ async def test_dedupe_match_repoints_current_db_on_create(backup_dir):
 
 async def test_dedupe_match_repoints_current_db_on_upload(backup_dir):
     """Same pointer-update behavior on the upload path: if an uploaded dump
-    matches an existing one, the existing dump gets the Current badge."""
+    matches an existing one, the existing dump keeps the Current badge."""
     first = await backup_service.create_backup(source=BackupSource.manual)
     dump_bytes = (backup_dir / first.filename).read_bytes()
 
-    assert backup_service._read_current_db_filename() is None
+    assert backup_service._read_current_db_filename() == first.filename
 
     upload = UploadFile(
         filename="phsar-downloaded.dump",
@@ -120,17 +135,27 @@ async def test_delete_clears_current_db_pointer(backup_dir):
     """Deleting the dump that the pointer references must drop the pointer
     file too — otherwise list_backups would badge a nonexistent dump."""
     first = await backup_service.create_backup(source=BackupSource.cron)
-    # Force pointer to be set via a dedupe match.
-    await backup_service.create_backup(source=BackupSource.cron)
     assert backup_service._read_current_db_filename() == first.filename
 
     await backup_service.delete_backup(first.filename)
     assert backup_service._read_current_db_filename() is None
 
 
-async def test_list_backups_unbadged_when_no_match(backup_dir):
-    """Fresh backup with no restore and no dedupe match: no Current badge."""
-    await backup_service.create_backup(source=BackupSource.manual)
-    items = await backup_service.list_backups()
-    assert len(items) == 1
-    assert items[0].is_current is False
+async def test_unique_dump_does_not_steal_current_from_existing(backup_dir, monkeypatch):
+    """Once the Current pointer is set, a later unique dump (different DB
+    state) must NOT claim it — only restore or dedupe-confirm can move it."""
+    first = await backup_service.create_backup(source=BackupSource.cron)
+    assert backup_service._read_current_db_filename() == first.filename
+
+    # Force the next dump to hash differently even against an unchanged DB
+    # so we can exercise the "unique dump, pointer already set" branch.
+    real_hash = backup_service._compute_content_hash
+
+    async def _perturbed(path):
+        return (await real_hash(path)) + "-x"
+
+    monkeypatch.setattr(backup_service, "_compute_content_hash", _perturbed)
+    second = await backup_service.create_backup(source=BackupSource.cron)
+
+    assert second.is_current is False
+    assert backup_service._read_current_db_filename() == first.filename
