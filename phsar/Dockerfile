@@ -41,6 +41,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         postgresql-client \
+        curl \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --system --gid 1000 phsar \
     && useradd --system --uid 1000 --gid phsar --home /app phsar \

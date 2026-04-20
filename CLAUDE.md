@@ -137,7 +137,7 @@ Deployment flow: tag any commit with `v*` (stable `v0.13.0` or preview `v0.13.0-
 
 - Coolify mounts `/opt/phsar/backups` on the VM to `/backups` in the backend container. The host directory must be owned by UID 1000 (`chown 1000:1000 /opt/phsar/backups`) so the `phsar` user can write dumps.
 - Manual backups: admin panel → Backups card → "Create backup". Download/delete/upload/restore from the same UI.
-- Scheduled backups: set `BACKUP_CRON_TOKEN` in Coolify backend env, then add a Coolify scheduled task that `curl -X POST -H "Authorization: Bearer $BACKUP_CRON_TOKEN" https://<backend-domain>/admin/backups/auto`. The endpoint creates a dump tagged `cron` and applies retention (14 daily + 8 Sunday; never evicts the most recent known-good dump).
+- Scheduled backups: set `BACKUP_CRON_TOKEN` in Coolify backend env, then add a Coolify scheduled task that `curl -fsS -X POST -H "Authorization: Bearer $BACKUP_CRON_TOKEN" http://localhost:8000/admin/backups/auto` (task runs inside the backend container, which ships with curl, so loopback avoids TLS/DNS). The endpoint creates a dump tagged `cron` and applies retention (14 daily + 8 Sunday; never evicts the most recent known-good dump).
 - Off-host safety net: `scripts/pull-backups.sh user@vm` rsyncs `/opt/phsar/backups/` to the local machine. Run every ~2 months and before any restore.
 - Restore workflow: UI prompts for the admin's username as the confirmation string; an automatic pre-restore snapshot is taken first, then `pg_restore --clean --if-exists --no-owner --no-privileges` runs against the target DB.
 
