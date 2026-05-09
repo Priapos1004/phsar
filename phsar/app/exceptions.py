@@ -274,7 +274,7 @@ class BackupConfirmationMismatchError(PhsarBaseError):
 
 
 class InvalidCronTokenError(PhsarBaseError):
-    """Raised when the cron-authenticated backup endpoint gets a bad/missing bearer token."""
+    """Raised when a cron-authenticated endpoint gets a bad/missing bearer token."""
     status_code = 401
 
     def __init__(self):

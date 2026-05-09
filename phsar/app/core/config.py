@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     # the DB half-dropped.
     BACKUP_RESTORE_TIMEOUT_SECONDS: int = 600
 
+    # Content pipeline jobs
+    JOBS_CRON_TOKEN: str = ""  # cron endpoints fail closed when empty
+    JOBS_PER_USER_LIMIT: int = 4  # max queued+running scrape jobs per user
+    JOBS_SWEEP_MAX_PER_RUN: int = 200  # bounds nightly update_sweep batch size
+
     model_config = ConfigDict(env_file=".env")  # Tell Pydantic to load from .env
 
 settings = Settings()
