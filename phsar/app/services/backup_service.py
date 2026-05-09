@@ -24,6 +24,7 @@ from app.exceptions import (
     DuplicateBackupError,
 )
 from app.schemas.backup_schema import BackupIntegrity, BackupMetadata, BackupSource
+from app.services._pg_subprocess import run_capture
 
 logger = logging.getLogger(__name__)
 
@@ -267,13 +268,12 @@ async def _find_duplicate(content_hash: str) -> BackupMetadata | None:
 
 
 async def _check_integrity(dump_path: Path) -> BackupIntegrity:
-    proc = await asyncio.create_subprocess_exec(
-        "pg_restore", "--list", str(dump_path),
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.PIPE,
+    returncode, _, _ = await run_capture(
+        ["pg_restore", "--list", str(dump_path)],
+        env=_pg_env(),
+        capture_stdout=False,
     )
-    await proc.communicate()
-    return BackupIntegrity.ok if proc.returncode == 0 else BackupIntegrity.corrupt
+    return BackupIntegrity.ok if returncode == 0 else BackupIntegrity.corrupt
 
 
 def _write_meta(dump_path: Path, meta: BackupMetadata) -> None:
@@ -348,21 +348,16 @@ async def create_backup(
         partial_path = backup_dir / f"{filename}.partial"
         final_path = backup_dir / filename
 
-        args = [
-            "pg_dump",
-            *_pg_connection_args(),
-            "-Fc",
-            "-f", str(partial_path),
-        ]
-        proc = await asyncio.create_subprocess_exec(
-            *args,
+        returncode, _, stderr = await run_capture(
+            [
+                "pg_dump",
+                *_pg_connection_args(),
+                "-Fc",
+                "-f", str(partial_path),
+            ],
             env=_pg_env(),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
         )
-        _, stderr = await proc.communicate()
-
-        if proc.returncode != 0:
+        if returncode != 0:
             partial_path.unlink(missing_ok=True)
             raise BackupIntegrityError(filename, stderr.decode(errors="replace").strip()[:500])
 
@@ -466,26 +461,21 @@ async def _run_pg_restore(target_path: Path, filename: str) -> None:
     (drops + recreates every object). Caller owns the maintenance flag and
     pool-disposal lifecycle."""
     timeout = settings.BACKUP_RESTORE_TIMEOUT_SECONDS
-    args = [
-        "pg_restore",
-        *_pg_connection_args(),
-        "--clean",
-        "--if-exists",
-        "--no-owner",
-        "--no-privileges",
-        str(target_path),
-    ]
-    proc = await asyncio.create_subprocess_exec(
-        *args,
-        env=_pg_env(),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
     try:
-        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        returncode, _, stderr = await run_capture(
+            [
+                "pg_restore",
+                *_pg_connection_args(),
+                "--clean",
+                "--if-exists",
+                "--no-owner",
+                "--no-privileges",
+                str(target_path),
+            ],
+            env=_pg_env(),
+            timeout=timeout,
+        )
     except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
         # Timeout mid-restore leaves the DB half-dropped. We don't auto-roll
         # back to the pre-snapshot because that restore could also time out
         # and compound the mess; instead, surface a clear error so the admin
@@ -500,7 +490,7 @@ async def _run_pg_restore(target_path: Path, filename: str) -> None:
             "than previously seen.",
         ) from None
 
-    if proc.returncode != 0:
+    if returncode != 0:
         raise BackupRestoreError(filename, stderr.decode(errors="replace").strip()[:500])
 
 
@@ -509,24 +499,21 @@ async def _terminate_other_sessions() -> None:
     # real lock-wait error message than mask it behind a terminate failure. We
     # log stderr at WARNING so a missing psql binary or auth failure leaves a
     # breadcrumb for the "pg_restore hung on locks" postmortem.
-    args = [
-        "psql",
-        *_pg_connection_args(),
-        "-c",
-        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-        "WHERE datname = current_database() AND pid <> pg_backend_pid();",
-    ]
-    proc = await asyncio.create_subprocess_exec(
-        *args,
+    returncode, _, stderr = await run_capture(
+        [
+            "psql",
+            *_pg_connection_args(),
+            "-c",
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+            "WHERE datname = current_database() AND pid <> pg_backend_pid();",
+        ],
         env=_pg_env(),
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.PIPE,
+        capture_stdout=False,
     )
-    _, stderr = await proc.communicate()
-    if proc.returncode != 0 and stderr:
+    if returncode != 0 and stderr:
         logger.warning(
             "Terminate-other-sessions psql returned %s: %s",
-            proc.returncode,
+            returncode,
             stderr.decode(errors="replace").strip()[:300],
         )
 
