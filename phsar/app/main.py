@@ -13,6 +13,7 @@ from app.core.logging_config import setup_logging
 from app.core.maintenance import is_maintenance_active
 from app.daos.job_dao import JobDAO
 from app.exceptions import PhsarBaseError
+from app.models.job import JobKind
 from app.seeders.embedding_backfiller import backfill_embeddings
 from app.seeders.genre_seeder import seed_genres
 from app.seeders.user_seeder import (
@@ -22,6 +23,7 @@ from app.seeders.user_seeder import (
     seed_guest_user,
 )
 from app.services.job_worker import job_worker
+from app.services.scrape_dispatcher import user_scrape_dispatcher
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -44,6 +46,7 @@ async def lifespan(app: FastAPI):
             await session.commit()
             logger.warning("Reaped %d orphan running jobs from previous process", reaped)
 
+    job_worker.register_dispatcher(JobKind.user_scrape, user_scrape_dispatcher)
     await job_worker.start()
 
     yield  # Startup complete
@@ -92,6 +95,7 @@ def create_app() -> FastAPI:
         admin,
         auth,
         filters,
+        jobs,
         media,
         ratings,
         save,
@@ -103,6 +107,7 @@ def create_app() -> FastAPI:
     app.include_router(admin.router)
     app.include_router(auth.router)
     app.include_router(filters.router)
+    app.include_router(jobs.router)
     app.include_router(media.router)
     app.include_router(ratings.router)
     app.include_router(save.router)

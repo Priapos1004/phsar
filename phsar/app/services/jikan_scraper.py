@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Optional
 
 import httpx
-from tenacity import before_sleep_log, retry, stop_after_attempt, wait_fixed
+from tenacity import before_sleep_log, retry, stop_after_attempt, wait_exponential
 
 from app.exceptions import AnimeNotFoundError
 
@@ -28,8 +28,10 @@ class JikanScraper:
         await self.client.aclose()
 
     @retry(
-        stop=stop_after_attempt(3),
-        wait=wait_fixed(1),
+        # Exponential backoff caps at 30s — better tail behavior on a transient
+        # MAL outage than fixed-1s, especially during overnight unattended runs.
+        stop=stop_after_attempt(5),
+        wait=wait_exponential(multiplier=2, min=1, max=30),
         before_sleep=before_sleep_log(logger, logging.DEBUG)
     )
     async def _get(self, url: str, params: Optional[dict] = None) -> dict:

@@ -59,6 +59,24 @@ class JobDAO(BaseDAO[Job]):
         )
         return list((await db.execute(stmt)).scalars().all())
 
+    async def mark_progress(
+        self,
+        db: AsyncSession,
+        job: Job,
+        stage: str | None = None,
+        items_done: int | None = None,
+        items_total: int | None = None,
+    ) -> None:
+        """Update only the fields the caller specifies. Used by the dispatcher's
+        ProgressReporter for mid-flight updates that bypass the main work tx."""
+        if stage is not None:
+            job.stage = stage
+        if items_done is not None:
+            job.items_done = items_done
+        if items_total is not None:
+            job.items_total = items_total
+        await db.flush()
+
     async def mark_succeeded(
         self,
         db: AsyncSession,

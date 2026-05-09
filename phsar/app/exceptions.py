@@ -291,6 +291,25 @@ class DuplicateBackupError(PhsarBaseError):
         super().__init__(message)
 
 
+class JobQueueLimitExceededError(PhsarBaseError):
+    """Raised when a user tries to enqueue a job past the per-user submission cap."""
+    status_code = 409
+
+    def __init__(self, limit: int):
+        self.limit = limit
+        message = f"You already have {limit} active scrape jobs. Wait for one to finish before queueing more."
+        super().__init__(message)
+
+
+class JobNotFoundError(PhsarBaseError):
+    """Raised when a job UUID doesn't resolve, or the requester isn't allowed to see it."""
+    status_code = 404
+
+    def __init__(self, uuid: str):
+        message = f"Job not found: '{uuid}'."
+        super().__init__(message)
+
+
 class BackupUploadTooLargeError(PhsarBaseError):
     status_code = 413
 
