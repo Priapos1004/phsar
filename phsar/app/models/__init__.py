@@ -1,6 +1,7 @@
 from app.models.anime import Anime
 from app.models.anime_search import AnimeSearch
 from app.models.genre import Genre
+from app.models.job import Job
 from app.models.media import Media
 from app.models.media_genre import MediaGenre
 from app.models.media_search import MediaSearch

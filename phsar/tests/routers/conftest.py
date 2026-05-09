@@ -1,34 +1,14 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
 
 from app.core.config import settings
-from app.core.db import DATABASE_URL
 from app.core.dependencies import get_db
 from app.main import create_app
 from app.models.users import RoleType
 
+# db_engine + db_session fixtures live in tests/conftest.py so non-router
+# tests can reuse them.
 
-@pytest.fixture
-async def db_engine():
-    engine = create_async_engine(DATABASE_URL, future=True)
-    yield engine
-    await engine.dispose()
-
-@pytest.fixture
-async def db_session(db_engine):
-    async with db_engine.connect() as conn:
-        trans = await conn.begin()
-        async_session = sessionmaker(bind=conn, class_=AsyncSession, expire_on_commit=False)
-
-        try:
-            async with async_session() as session:
-                yield session
-        finally:
-            # Rollback undoes all row changes, but PostgreSQL sequences (auto-increment IDs)
-            # are never rolled back — so production IDs will have gaps from test runs.
-            await trans.rollback()
 
 @pytest.fixture
 async def client(db_session):

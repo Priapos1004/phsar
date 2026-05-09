@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.core.db import async_session_maker
 from app.core.logging_config import setup_logging
 from app.core.maintenance import is_maintenance_active
+from app.daos.job_dao import JobDAO
 from app.exceptions import PhsarBaseError
 from app.seeders.embedding_backfiller import backfill_embeddings
 from app.seeders.genre_seeder import seed_genres
@@ -20,6 +21,7 @@ from app.seeders.user_seeder import (
     seed_admin_user,
     seed_guest_user,
 )
+from app.services.job_worker import job_worker
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -35,9 +37,18 @@ async def lifespan(app: FastAPI):
         await backfill_user_settings(session)
         await backfill_spoiler_visibility(session)
         await backfill_embeddings(session)
+        # Mark anything left in `running` as failed — the previous process
+        # died mid-job, so the row is stale. User retries from the bell.
+        reaped = await JobDAO().reap_orphans(session)
+        if reaped:
+            await session.commit()
+            logger.warning("Reaped %d orphan running jobs from previous process", reaped)
+
+    await job_worker.start()
 
     yield  # Startup complete
 
+    await job_worker.stop()
     logger.info("🛑 Shutting down FastAPI app")
 
 def create_app() -> FastAPI:

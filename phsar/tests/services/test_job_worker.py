@@ -1,0 +1,149 @@
+"""JobWorker integration tests.
+
+The worker creates fresh sessions per job via async_session_maker, which
+sidesteps the rolled-back db_session fixture. Tests below let the worker
+write to the real DB and clean up explicitly via a tracked-job-ids fixture.
+"""
+
+import asyncio
+
+import pytest
+from sqlalchemy import delete
+
+from app.core.db import async_session_maker, engine
+from app.daos.job_dao import JobDAO
+from app.models.job import Job, JobKind, JobStatus
+from app.services.job_worker import JobWorker
+
+dao = JobDAO()
+
+
+@pytest.fixture(autouse=True)
+async def _reset_engine_pool():
+    """Each pytest-asyncio test gets a fresh event loop. The global engine's
+    pooled connections are bound to whatever loop opened them — once that
+    loop is gone, asyncpg refuses to use them ('another operation is in
+    progress'). Disposing the pool here makes the next acquire() bind to the
+    current loop."""
+    await engine.dispose()
+    yield
+
+
+@pytest.fixture
+async def tracked_jobs():
+    """Yields a list to which tests append job ids; teardown deletes those
+    rows so the table is clean for the next test."""
+    ids: list[int] = []
+    yield ids
+    if ids:
+        async with async_session_maker() as s:
+            await s.execute(delete(Job).where(Job.id.in_(ids)))
+            await s.commit()
+
+
+async def _enqueue(payload: dict | None = None, kind: JobKind = JobKind.user_scrape) -> int:
+    """Insert a queued job and return its id. Real commit so the worker's
+    fresh sessions can see it."""
+    async with async_session_maker() as s:
+        job = Job(kind=kind, status=JobStatus.queued, payload=payload or {})
+        s.add(job)
+        await s.flush()
+        await s.commit()
+        return job.id
+
+
+async def _get(job_id: int) -> Job | None:
+    async with async_session_maker() as s:
+        return await dao.get_by_id(s, job_id)
+
+
+@pytest.mark.asyncio
+async def test_dispatch_one_runs_registered_handler(tracked_jobs):
+    captured = []
+
+    async def fake_dispatcher(session, job):
+        captured.append(job.id)
+        return {"ran": True}
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.user_scrape, fake_dispatcher)
+
+    job_id = await _enqueue()
+    tracked_jobs.append(job_id)
+
+    ran = await worker.dispatch_one()
+    assert ran is True
+    assert captured == [job_id]
+
+    refreshed = await _get(job_id)
+    assert refreshed.status is JobStatus.succeeded
+    assert refreshed.result_summary == {"ran": True}
+    assert refreshed.finished_at is not None
+
+
+@pytest.mark.asyncio
+async def test_dispatch_one_returns_false_when_queue_empty():
+    worker = JobWorker()
+    ran = await worker.dispatch_one()
+    assert ran is False
+
+
+@pytest.mark.asyncio
+async def test_unregistered_kind_marks_job_failed(tracked_jobs):
+    """A queued job for an unhandled kind doesn't crash the loop — it fails
+    cleanly so the worker drains the queue and doesn't get stuck."""
+    worker = JobWorker()
+    job_id = await _enqueue()
+    tracked_jobs.append(job_id)
+
+    ran = await worker.dispatch_one()
+    assert ran is True
+
+    refreshed = await _get(job_id)
+    assert refreshed.status is JobStatus.failed
+    assert "No dispatcher registered" in refreshed.error_message
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_exception_marks_job_failed(tracked_jobs):
+    """A handler that raises shouldn't poison the worker. The job records
+    the exception text and the loop continues."""
+
+    async def boom(session, job):
+        raise RuntimeError("simulated failure")
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.user_scrape, boom)
+
+    job_id = await _enqueue()
+    tracked_jobs.append(job_id)
+
+    ran = await worker.dispatch_one()
+    assert ran is True
+
+    refreshed = await _get(job_id)
+    assert refreshed.status is JobStatus.failed
+    assert "simulated failure" in refreshed.error_message
+
+
+@pytest.mark.asyncio
+async def test_notify_wakes_idle_worker(tracked_jobs):
+    """A queued job inserted while the worker is asleep gets picked up
+    promptly after notify(). Verifies the asyncio.Event signaling path."""
+    captured = asyncio.Event()
+
+    async def fake_dispatcher(session, job):
+        captured.set()
+        return None
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.user_scrape, fake_dispatcher)
+    await worker.start()
+    try:
+        job_id = await _enqueue()
+        tracked_jobs.append(job_id)
+
+        worker.notify()
+        await asyncio.wait_for(captured.wait(), timeout=2.0)
+    finally:
+        await worker.stop()
