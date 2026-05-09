@@ -1,4 +1,5 @@
 from app.core.config import settings
+from app.models.job import JobStatus
 
 
 class PhsarBaseError(Exception):
@@ -28,12 +29,21 @@ class AnimeNotFoundError(PhsarBaseError):
 
 
 class MainMediaNotFoundError(PhsarBaseError):
-    """Raised when a list of MediaUnconnected has no main media."""
+    """Raised when a relation graph has no media flagged as the main story.
+
+    The full title/relation list is preserved on the instance for server-side
+    logging; the user-facing message stays short so the bell isn't dominated
+    by a Python list repr.
+    """
     status_code = 404
 
     def __init__(self, title_relation_tuple: list[tuple[str, str]]):
         self.title_relation_tuple = title_relation_tuple
-        message = f"Main media not found in the list: {title_relation_tuple}."
+        first_title = title_relation_tuple[0][0] if title_relation_tuple else "(unknown)"
+        message = (
+            f"Couldn't identify a main story for '{first_title}'. "
+            "Try a more specific search term."
+        )
         super().__init__(message)
 
 
@@ -307,6 +317,27 @@ class JobNotFoundError(PhsarBaseError):
 
     def __init__(self, uuid: str):
         message = f"Job not found: '{uuid}'."
+        super().__init__(message)
+
+
+class DuplicateScrapeQueryError(PhsarBaseError):
+    """Raised when a user_scrape with the same query was run recently —
+    redundant because the BFS would just produce empty results."""
+    status_code = 409
+
+    def __init__(self, query: str, previous_status: JobStatus, hours_ago: int):
+        self.query = query
+        self.previous_status = previous_status
+        self.hours_ago = hours_ago
+        if previous_status in (JobStatus.queued, JobStatus.running):
+            message = f"'{query}' is already being scraped — check the bell for progress."
+        else:
+            ago = "less than an hour" if hours_ago < 1 else f"{hours_ago}h"
+            message = (
+                f"'{query}' was already scraped {ago} ago. "
+                "New seasonal releases land via the nightly update — "
+                "try again in a few days if something looks missing."
+            )
         super().__init__(message)
 
 

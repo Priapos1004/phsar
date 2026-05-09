@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timezone
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
@@ -8,6 +9,7 @@ from app.core.config import settings
 from app.core.dependencies import get_current_user, get_db, require_user_or_admin
 from app.daos.job_dao import JobDAO
 from app.exceptions import (
+    DuplicateScrapeQueryError,
     InsufficientPermissionsError,
     JobNotFoundError,
     JobQueueLimitExceededError,
@@ -31,6 +33,20 @@ async def enqueue_scrape(
     active = await dao.count_active_for_user(db, current_user.id)
     if active >= settings.JOBS_PER_USER_LIMIT:
         raise JobQueueLimitExceededError(settings.JOBS_PER_USER_LIMIT)
+
+    # Dedupe across all users: re-running an already-scraped query just
+    # fails with AnimeNotFoundError because the BFS sees every mal_id in
+    # the excluded set. Failed jobs aren't deduped — those may be transient.
+    recent = await dao.find_recent_scrape_for_query(
+        db, request.query, hours=settings.JOBS_DEDUPE_HOURS,
+    )
+    if recent is not None:
+        age = datetime.now(timezone.utc) - recent.created_at
+        raise DuplicateScrapeQueryError(
+            request.query,
+            recent.status,
+            int(age.total_seconds() // 3600),
+        )
 
     job = Job(
         kind=JobKind.user_scrape,

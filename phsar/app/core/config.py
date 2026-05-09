@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     JOBS_CRON_TOKEN: str = ""  # cron endpoints fail closed when empty
     JOBS_PER_USER_LIMIT: int = 4  # max queued+running scrape jobs per user
     JOBS_SWEEP_MAX_PER_RUN: int = 200  # bounds nightly update_sweep batch size
+    # Dedupe window for user_scrape: re-running the same query within this
+    # window would just produce empty BFS results (everything is in
+    # excluded_mal_ids already) and fail with AnimeNotFoundError. After the
+    # window, the seasonal update may have landed new media so a re-scrape
+    # is meaningful again.
+    JOBS_DEDUPE_HOURS: int = 72
 
     model_config = ConfigDict(env_file=".env")  # Tell Pydantic to load from .env
 

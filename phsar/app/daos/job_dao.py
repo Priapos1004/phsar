@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 from sqlalchemy import func, or_, select, update
@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.daos.base_dao import BaseDAO
-from app.models.job import Job, JobStatus
+from app.models.job import Job, JobKind, JobStatus
 
 
 class JobDAO(BaseDAO[Job]):
@@ -115,6 +115,37 @@ class JobDAO(BaseDAO[Job]):
         )
         result = await db.execute(stmt)
         return result.rowcount or 0
+
+    async def find_recent_scrape_for_query(
+        self,
+        db: AsyncSession,
+        query: str,
+        hours: int,
+    ) -> Job | None:
+        """Most-recent user_scrape job matching this query (case-insensitive,
+        trim-normalized) within the lookback window. Failed jobs are
+        intentionally excluded so a transient MAL outage doesn't lock the
+        query out for 3 days.
+        """
+        normalized = query.strip().lower()
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        stmt = (
+            select(Job)
+            .where(Job.kind == JobKind.user_scrape)
+            .where(
+                Job.status.in_(
+                    (JobStatus.queued, JobStatus.running, JobStatus.succeeded)
+                )
+            )
+            .where(Job.created_at >= cutoff)
+            .where(
+                func.lower(func.trim(Job.payload["query"].astext)) == normalized
+            )
+            .order_by(Job.created_at.desc())
+            .limit(1)
+        )
+        result = await db.execute(stmt)
+        return result.scalars().first()
 
     async def get_with_user(self, db: AsyncSession, uuid: UUID) -> Job | None:
         stmt = (

@@ -258,6 +258,25 @@ export interface RegistrationTokenListItem {
 	used_at: string | null;
 }
 
+// Jobs (content pipeline)
+export type JobKind = 'user_scrape' | 'update_sweep' | 'seasonal_sweep';
+export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+
+export interface Job {
+	uuid: string;
+	kind: JobKind;
+	status: JobStatus;
+	payload: Record<string, unknown>;
+	stage: string | null;
+	items_total: number | null;
+	items_done: number;
+	result_summary: Record<string, unknown> | null;
+	error_message: string | null;
+	created_at: string;
+	started_at: string | null;
+	finished_at: string | null;
+}
+
 // Admin — Backups
 export type BackupIntegrity = 'ok' | 'corrupt' | 'unknown';
 export type BackupSource = 'manual' | 'cron' | 'pre_restore' | 'upload';

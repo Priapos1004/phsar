@@ -33,6 +33,7 @@ describe('NavBar', () => {
 		// Click user button to open dropdown
 		await fireEvent.click(screen.getByText('T'));
 		expect(screen.getByText('User Settings')).toBeInTheDocument();
+		expect(screen.getByText('Add to Library')).toBeInTheDocument();
 		expect(screen.getByText('Statistics')).toBeInTheDocument();
 		expect(screen.getByText('Getting Started')).toBeInTheDocument();
 		expect(screen.getByText('Logout')).toBeInTheDocument();
@@ -40,6 +41,22 @@ describe('NavBar', () => {
 		// Click again to close
 		await fireEvent.click(screen.getByText('T'));
 		expect(screen.queryByText('User Settings')).not.toBeInTheDocument();
+	});
+
+	it('shows Add to Library for guest users (the page itself disables the form)', async () => {
+		// All authenticated users get the link — guests can still browse
+		// /library/add for the recent additions list. The form on that page
+		// is disabled separately based on userRole context.
+		render(NavBar, {
+			props: {
+				isAuthenticated: true,
+				username: 'guest',
+				isAdmin: false,
+				onLogout: vi.fn(),
+			},
+		});
+		await fireEvent.click(screen.getByText('G'));
+		expect(screen.getByText('Add to Library')).toBeInTheDocument();
 	});
 
 	it('calls onLogout when logout is clicked', async () => {

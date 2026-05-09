@@ -2,12 +2,15 @@ import logging
 import re
 from collections import deque
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import httpx
 from tenacity import before_sleep_log, retry, stop_after_attempt, wait_exponential
 
 from app.exceptions import AnimeNotFoundError
+
+if TYPE_CHECKING:
+    from app.services.progress_reporter import ProgressReporter
 
 BASE_URL = "https://api.jikan.moe/v4"
 
@@ -150,7 +153,13 @@ class JikanScraper:
     def get_relation_type(self, is_main_story: bool, relation_type: Optional[str]) -> str:
         return "main" if is_main_story else (relation_type or "side_story")
 
-    async def search_title(self, title: str, excluded_mal_ids: set[int], initial_search_limit: int = 3) -> tuple[list[dict], dict[int, dict], set[tuple[int, str, str]]]:
+    async def search_title(
+        self,
+        title: str,
+        excluded_mal_ids: set[int],
+        initial_search_limit: int = 3,
+        progress: "ProgressReporter | None" = None,
+    ) -> tuple[list[dict], dict[int, dict], set[tuple[int, str, str]]]:
         search = await self._get(f"{self.base_url}/anime", params={"q": title, "limit": initial_search_limit})
         results = search.get("data", [])
 
@@ -159,6 +168,9 @@ class JikanScraper:
 
         all_info: dict[int, dict] = {}
         visited_ids: set[int] = excluded_mal_ids
+        # Snapshot the pre-existing exclusions so progress reports the count of
+        # newly-discovered anime, not the count of all known mal_ids.
+        initial_visited = len(visited_ids)
         relations: list[dict] = []
         unwanted_media: set[tuple[int, str, str]] = set()
 
@@ -183,6 +195,16 @@ class JikanScraper:
 
                 # Mark as visited BEFORE doing anything
                 visited_ids.add(current_mal_id)
+
+                if progress is not None:
+                    discovered = len(visited_ids) - initial_visited
+                    # Estimate total as discovered-so-far plus the still-queued
+                    # frontier; the frontier has duplicates so this overshoots
+                    # slightly but always converges to 100% as the queue drains.
+                    await progress.update(
+                        items_done=discovered,
+                        items_total=discovered + len(left_mal_ids),
+                    )
 
                 if current_mal_id != mal_id:
                     anime_info = self.extract_information(await self.search_by_malid(current_mal_id))

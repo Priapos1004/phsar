@@ -12,6 +12,7 @@ from app.services.media_linking_service import (
     link_studios_to_media,
 )
 from app.services.media_service import create_media
+from app.services.progress_reporter import ProgressReporter
 from app.services.spoiler_service import recompute_visibility_for_user
 from app.services.vector_embedding_service import (
     create_anime_embedding,
@@ -20,9 +21,14 @@ from app.services.vector_embedding_service import (
 
 logger = logging.getLogger(__name__)
 
-async def save_search_results(db: AsyncSession, search_results: list[SearchResultDB]):
+async def save_search_results(
+    db: AsyncSession,
+    search_results: list[SearchResultDB],
+    progress: ProgressReporter | None = None,
+):
     logger.debug(f"DB session: {id(db)}")
     saved_anything = False
+    saved_media_count = 0
     for result in search_results:
         if not result.unconnected_media_list:
             continue  # Nothing to save if no media in result
@@ -68,6 +74,10 @@ async def save_search_results(db: AsyncSession, search_results: list[SearchResul
                 description_text=media_in.description
             )
             logger.info(f"Created embedding for Media: {media_obj.title} (ID: {media_obj.id})")
+
+            saved_media_count += 1
+            if progress is not None:
+                await progress.update(items_done=saved_media_count)
 
     await db.commit()  # Single commit at the end!
 

@@ -96,6 +96,7 @@ def create_app() -> FastAPI:
         auth,
         filters,
         jobs,
+        library,
         media,
         ratings,
         save,
@@ -108,6 +109,7 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(filters.router)
     app.include_router(jobs.router)
+    app.include_router(library.router)
     app.include_router(media.router)
     app.include_router(ratings.router)
     app.include_router(save.router)

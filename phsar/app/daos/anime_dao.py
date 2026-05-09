@@ -50,6 +50,17 @@ class AnimeDAO(MalIdDAO[Anime]):
         result = await db.execute(stmt)
         return result.scalars().first()
 
+    async def list_recent(self, db: AsyncSession, limit: int = 10) -> list[Anime]:
+        """Most-recently scraped anime, newest first. Powers the
+        'recent additions' panel on /library/add."""
+        stmt = (
+            select(Anime)
+            .order_by(Anime.created_at.desc())
+            .limit(limit)
+        )
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
+
     async def search_anime_aggregated(
         self,
         db: AsyncSession,
