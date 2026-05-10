@@ -200,6 +200,20 @@ def test_diff_refuses_to_clobber_airing_status_with_none():
     assert media.airing_status == "Finished Airing"
 
 
+def test_diff_refuses_to_clobber_score_with_omitted_field():
+    """MAL's scored_by is None or > 0; extract_information coerces None
+    to 0 for the not-null insert column. A 0/None value during a refresh
+    means MAL omitted the field — refuse to overwrite a populated count."""
+    media = Media(**media_kwargs(anime_id=1, mal_id=1, score=8.5, scored_by=5_000_000, episodes=12,
+        airing_status="Finished Airing",
+        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+    ))
+    payload = _payload(score=None, scored_by=0)
+    assert _apply_media_diff(media, payload) is False
+    assert media.score == 8.5
+    assert media.scored_by == 5_000_000
+
+
 # ---------------------------------------------------------------------------
 # _refresh_one_anime (uses db_session)
 # ---------------------------------------------------------------------------

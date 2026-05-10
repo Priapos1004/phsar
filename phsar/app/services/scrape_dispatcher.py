@@ -279,10 +279,14 @@ async def _probe_relations_for_anime(
             continue
 
         if unwanted_media:
-            try:
-                await create_unwanted_media(session, unwanted_media)
-            except Exception:
-                logger.exception("Failed to save probe-discovered unwanted media")
+            # No inner try/except: a flush() failure here (IntegrityError,
+            # connection drop) leaves the session in PendingRollbackError
+            # state, and swallowing it would surface as a confusing
+            # cascade in the next attach_search_result_to_anime call.
+            # Let it propagate to the outer probe handler, which rolls
+            # back step 2 only and leaves AnimeFreshness untouched so
+            # the next sweep retries this anime cleanly.
+            await create_unwanted_media(session, unwanted_media)
             # Mark unwanted mal_ids as excluded so the next main's BFS
             # skips them instead of re-fetching only to re-discard.
             for mal_id, _title, _reason in unwanted_media:
@@ -316,24 +320,26 @@ def _apply_media_diff(media: Media, payload: dict) -> bool:
     enough that the per-anime stability counter should reset)."""
     changed = False
 
-    # Score and scored_by are bundled. A +1 vote on a 5M-vote anime moves
-    # scored_by but is meaningless drift; use the weighted formula and
-    # only count this as stability-resetting when the delta crosses
-    # _SCORE_STABILITY_THRESHOLD. Always update the values so the catalog
-    # stays current — the threshold gates the *signal*, not the write.
+    # +1 vote on a 5M-vote anime is meaningless drift — use the weighted
+    # formula and only reset stability when the delta crosses
+    # _SCORE_STABILITY_THRESHOLD. Skip the write entirely if scored_by is
+    # falsy: extract_information coerces MAL's None to 0 for the not-null
+    # insert column, so a 0 here means the refresh response omitted the
+    # field, and overwriting a populated count would be silent data loss.
     new_score = payload.get("score")
-    new_scored_by = payload.get("scored_by") or 0
-    old_weighted = _weighted_score(media.score, media.scored_by)
-    new_weighted = _weighted_score(new_score, new_scored_by)
-    media.score = new_score
-    media.scored_by = new_scored_by
-    if (old_weighted is None) != (new_weighted is None):
-        # First votes coming in (score=None → 8.0, or scored_by 0 → N) is
-        # a structural transition, not noise.
-        changed = True
-    elif old_weighted is not None and new_weighted is not None:
-        if abs(new_weighted - old_weighted) >= _SCORE_STABILITY_THRESHOLD:
+    new_scored_by = payload.get("scored_by")
+    if new_scored_by:
+        old_weighted = _weighted_score(media.score, media.scored_by)
+        new_weighted = _weighted_score(new_score, new_scored_by)
+        media.score = new_score
+        media.scored_by = new_scored_by
+        if (old_weighted is None) != (new_weighted is None):
+            # First votes coming in (score=None → 8.0, or scored_by 0 → N) is
+            # a structural transition, not noise.
             changed = True
+        elif old_weighted is not None and new_weighted is not None:
+            if abs(new_weighted - old_weighted) >= _SCORE_STABILITY_THRESHOLD:
+                changed = True
 
     new_episodes = payload.get("episodes")
     if media.episodes != new_episodes:
