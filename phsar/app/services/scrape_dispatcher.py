@@ -124,35 +124,18 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     sweep_added_media = False
     async with JikanScraper() as scraper:
         for anime in anime_list:
-            try:
-                anime_changed, raw_payloads, is_currently_airing = (
-                    await _refresh_one_anime(session, anime, scraper)
-                )
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                logger.exception(
-                    "Sweep failed to refresh anime %s (%s); skipping",
-                    anime.id, anime.title,
-                )
+            step1 = await _try_step1_refresh(session, anime, scraper)
+            if step1 is None:
                 await progress.update(items_done=refreshed)
                 continue
+            anime_changed, raw_payloads, is_currently_airing = step1
 
-            qualifies = _qualifies_for_relations_probe(anime, is_currently_airing)
-            if qualifies:
+            if _qualifies_for_relations_probe(anime, is_currently_airing):
                 await progress.update(stage="Probing relations")
-                try:
-                    probe_added = await _probe_relations_for_anime(
-                        session, anime, raw_payloads, exclusions, scraper,
-                    )
-                except Exception:
-                    await session.rollback()
-                    logger.exception(
-                        "Relations probe failed for anime %s (%s); field-diff "
-                        "preserved, AnimeFreshness left unchanged so next sweep "
-                        "retries",
-                        anime.id, anime.title,
-                    )
+                probe_added = await _try_step2_probe(
+                    session, anime, raw_payloads, exclusions, scraper,
+                )
+                if probe_added is None:
                     probe_failed += 1
                     await progress.update(items_done=refreshed)
                     continue
@@ -179,6 +162,50 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
         "probe_succeeded": probe_succeeded,
         "probe_failed": probe_failed,
     }
+
+
+async def _try_step1_refresh(
+    session: AsyncSession, anime: Anime, scraper: JikanScraper,
+) -> tuple[bool, dict[int, dict], bool] | None:
+    """Step 1 wrapper: refresh + commit, or rollback + None on failure.
+    Always commits durably so a worker crash later in the sweep can't
+    take the field-diff work down with it, and a single bad MAL response
+    fails *that* anime only without aborting the loop."""
+    try:
+        result = await _refresh_one_anime(session, anime, scraper)
+        await session.commit()
+        return result
+    except Exception:
+        await session.rollback()
+        logger.exception(
+            "Sweep failed to refresh anime %s (%s); skipping",
+            anime.id, anime.title,
+        )
+        return None
+
+
+async def _try_step2_probe(
+    session: AsyncSession,
+    anime: Anime,
+    raw_payloads: dict[int, dict],
+    exclusions: set[int],
+    scraper: JikanScraper,
+) -> bool | None:
+    """Step 2 wrapper: relations probe + return whether new media landed,
+    or None on failure (rolls back, leaves AnimeFreshness untouched so
+    the next sweep retries this anime cleanly)."""
+    try:
+        return await _probe_relations_for_anime(
+            session, anime, raw_payloads, exclusions, scraper,
+        )
+    except Exception:
+        await session.rollback()
+        logger.exception(
+            "Relations probe failed for anime %s (%s); field-diff "
+            "preserved, AnimeFreshness left unchanged so next sweep retries",
+            anime.id, anime.title,
+        )
+        return None
 
 
 async def _refresh_one_anime(

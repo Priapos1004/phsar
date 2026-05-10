@@ -562,6 +562,41 @@ def _patch_select_due(monkeypatch, anime_ids: list[int]) -> None:
     monkeypatch.setattr(AnimeDAO, "select_due_for_sweep", fake_select)
 
 
+async def _run_dispatcher_harness(
+    monkeypatch,
+    fake_scraper,
+    anime_ids: list[int],
+    *,
+    patch_probe: bool = False,
+    job_id: int = 999,
+):
+    """Bundles the four monkeypatches the per-test dispatcher setup blocks
+    duplicate (JikanScraper factory, ProgressReporter, AnimeDAO selection,
+    optional probe pipeline) and runs `update_sweep_dispatcher` against
+    a fresh session with a synthetic FakeJob.
+
+    Returns `(summary, attach_calls, recompute_calls)` — the latter two
+    are the lists populated by `_patch_probe_pipeline` when patch_probe=True
+    (None otherwise) so tests can assert on attach/recompute call counts.
+    """
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.JikanScraper", lambda: fake_scraper,
+    )
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+    )
+    _patch_select_due(monkeypatch, anime_ids)
+    attach_calls = recompute_calls = None
+    if patch_probe:
+        attach_calls, recompute_calls = _patch_probe_pipeline(monkeypatch)
+
+    async with async_session_maker() as session:
+        job = type("FakeJob", (), {"id": job_id})()
+        summary = await update_sweep_dispatcher(session, job)
+
+    return summary, attach_calls, recompute_calls
+
+
 @pytest.mark.asyncio
 async def test_dispatcher_returns_summary(tracked_anime, monkeypatch):
     a1_id = await _real_seed(
@@ -577,16 +612,9 @@ async def test_dispatcher_returns_summary(tracked_anime, monkeypatch):
         -8002 * 100: _payload(score=9.9),         # diff → counter reset
     }
     fake = _FakeScraper(payloads)
-    monkeypatch.setattr("app.services.scrape_dispatcher.JikanScraper", lambda: fake)
-    monkeypatch.setattr(
-        "app.services.scrape_dispatcher.ProgressReporter",
-        _NoopProgressReporter,
+    summary, _, _ = await _run_dispatcher_harness(
+        monkeypatch, fake, [a1_id, a2_id],
     )
-    _patch_select_due(monkeypatch, [a1_id, a2_id])
-
-    async with async_session_maker() as session:
-        job = type("FakeJob", (), {"id": 999})()
-        summary = await update_sweep_dispatcher(session, job)
 
     assert summary["anime_refreshed"] == 2
     assert summary["anime_changed"] == 1
@@ -610,16 +638,9 @@ async def test_dispatcher_isolates_failures_per_anime(tracked_anime, monkeypatch
         -8103 * 100: _payload(),
     }
     fake = _FakeScraper(payloads, error_for_mal_id=-8102 * 100)
-    monkeypatch.setattr("app.services.scrape_dispatcher.JikanScraper", lambda: fake)
-    monkeypatch.setattr(
-        "app.services.scrape_dispatcher.ProgressReporter",
-        _NoopProgressReporter,
+    summary, _, _ = await _run_dispatcher_harness(
+        monkeypatch, fake, [a1_id, a2_id, a3_id], job_id=998,
     )
-    _patch_select_due(monkeypatch, [a1_id, a2_id, a3_id])
-
-    async with async_session_maker() as session:
-        job = type("FakeJob", (), {"id": 998})()
-        summary = await update_sweep_dispatcher(session, job)
 
     assert summary["anime_refreshed"] == 2
 
@@ -751,18 +772,10 @@ async def test_probe_only_runs_on_tier_3_or_4(tracked_anime, monkeypatch):
         -8303 * 100: _payload(),
     }
     fake_scraper = _FakeScraper(payloads)
-    monkeypatch.setattr(
-        "app.services.scrape_dispatcher.JikanScraper", lambda: fake_scraper,
+    summary, _, _ = await _run_dispatcher_harness(
+        monkeypatch, fake_scraper, [a_airing, a_unstable, a_tier3],
+        patch_probe=True, job_id=7301,
     )
-    monkeypatch.setattr(
-        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
-    )
-    _patch_select_due(monkeypatch, [a_airing, a_unstable, a_tier3])
-    _attach_calls, _recompute = _patch_probe_pipeline(monkeypatch)
-
-    async with async_session_maker() as session:
-        job = type("FakeJob", (), {"id": 7301})()
-        summary = await update_sweep_dispatcher(session, job)
 
     # search_title called only with the tier-3 anime's main media mal_id.
     assert fake_scraper.search_title_calls == [-8303 * 100]
@@ -798,18 +811,9 @@ async def test_probe_seeds_search_title_with_each_main_mal_id(
         second_main_mal_id: _payload(),
     }
     fake_scraper = _FakeScraper(payloads)
-    monkeypatch.setattr(
-        "app.services.scrape_dispatcher.JikanScraper", lambda: fake_scraper,
+    await _run_dispatcher_harness(
+        monkeypatch, fake_scraper, [a_id], patch_probe=True, job_id=7410,
     )
-    monkeypatch.setattr(
-        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
-    )
-    _patch_select_due(monkeypatch, [a_id])
-    _patch_probe_pipeline(monkeypatch)
-
-    async with async_session_maker() as session:
-        job = type("FakeJob", (), {"id": 7410})()
-        await update_sweep_dispatcher(session, job)
 
     assert sorted(fake_scraper.search_title_calls) == sorted(
         [-8410 * 100, second_main_mal_id]
@@ -834,18 +838,9 @@ async def test_probe_attach_routes_to_parent_anime(tracked_anime, monkeypatch):
         payloads,
         search_title_returns={seed_mal_id: _new_graph(seed_mal_id, new_mal_id)},
     )
-    monkeypatch.setattr(
-        "app.services.scrape_dispatcher.JikanScraper", lambda: fake_scraper,
+    summary, attach_calls, _ = await _run_dispatcher_harness(
+        monkeypatch, fake_scraper, [a_id], patch_probe=True, job_id=7420,
     )
-    monkeypatch.setattr(
-        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
-    )
-    _patch_select_due(monkeypatch, [a_id])
-    attach_calls, _recompute = _patch_probe_pipeline(monkeypatch)
-
-    async with async_session_maker() as session:
-        job = type("FakeJob", (), {"id": 7420})()
-        summary = await update_sweep_dispatcher(session, job)
 
     assert len(attach_calls) == 1
     assert attach_calls[0]["parent_anime_id"] == a_id
@@ -877,18 +872,9 @@ async def test_spoiler_cache_recomputes_once_per_sweep(tracked_anime, monkeypatc
             s2: _new_graph(s2, -660_002),
         },
     )
-    monkeypatch.setattr(
-        "app.services.scrape_dispatcher.JikanScraper", lambda: fake_scraper,
+    summary, attach_calls, recompute_calls = await _run_dispatcher_harness(
+        monkeypatch, fake_scraper, [a1_id, a2_id], patch_probe=True, job_id=7601,
     )
-    monkeypatch.setattr(
-        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
-    )
-    _patch_select_due(monkeypatch, [a1_id, a2_id])
-    attach_calls, recompute_calls = _patch_probe_pipeline(monkeypatch)
-
-    async with async_session_maker() as session:
-        job = type("FakeJob", (), {"id": 7601})()
-        summary = await update_sweep_dispatcher(session, job)
 
     assert len(attach_calls) == 2
     assert len(recompute_calls) == 1
@@ -907,18 +893,9 @@ async def test_no_recompute_when_probe_finds_nothing_new(tracked_anime, monkeypa
 
     # search_title default return is ([], {}, set()) — empty.
     fake_scraper = _FakeScraper({-8701 * 100: _payload()})
-    monkeypatch.setattr(
-        "app.services.scrape_dispatcher.JikanScraper", lambda: fake_scraper,
+    _, attach_calls, recompute_calls = await _run_dispatcher_harness(
+        monkeypatch, fake_scraper, [a_id], patch_probe=True, job_id=7701,
     )
-    monkeypatch.setattr(
-        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
-    )
-    _patch_select_due(monkeypatch, [a_id])
-    attach_calls, recompute_calls = _patch_probe_pipeline(monkeypatch)
-
-    async with async_session_maker() as session:
-        job = type("FakeJob", (), {"id": 7701})()
-        await update_sweep_dispatcher(session, job)
 
     assert attach_calls == []
     assert recompute_calls == []
