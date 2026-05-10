@@ -49,3 +49,28 @@ async def test_other_endpoints_503_during_maintenance(client):
     assert res.status_code == 503
     body = res.json()
     assert body.get("maintenance") is True
+
+
+async def test_503_carries_cors_headers_for_cross_origin_requests(client):
+    """Cross-origin 503s must include Access-Control-Allow-Origin or the
+    browser blocks the response and fetch() rejects with a TypeError —
+    pushing the frontend's catch into the generic "unexpected error"
+    branch instead of the maintenance-banner branch.
+
+    Regression test for the middleware-order bug: registering the
+    maintenance gate AFTER CORSMiddleware (via add_middleware) put the
+    gate OUTSIDE CORS — so 503 short-circuits never reached CORS's
+    response-header injection.
+    """
+    maintenance.set_maintenance(True)
+
+    res = await client.post(
+        "/auth/login",
+        data={"username": "x", "password": "x"},
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Origin": "http://localhost:5173",
+        },
+    )
+    assert res.status_code == 503
+    assert res.headers.get("access-control-allow-origin") == "http://localhost:5173"

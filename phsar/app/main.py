@@ -60,6 +60,52 @@ async def lifespan(app: FastAPI):
     await job_worker.stop()
     logger.info("🛑 Shutting down FastAPI app")
 
+class MaintenanceGateMiddleware:
+    """503-gate during a maintenance window.
+
+    Pure ASGI (not `@app.middleware("http")` / BaseHTTPMiddleware) so the
+    short-circuit response goes through CORSMiddleware's wrapped `send`
+    cleanly. Registration order in create_app puts CORS *outside* this
+    gate so cross-origin 503s still carry Access-Control-Allow-Origin —
+    without that, the browser rejects the response with a TypeError and
+    the frontend's catch falls into the generic "unexpected error" path
+    instead of the maintenance-banner branch.
+
+    Allowlist:
+      /, /health: keep Coolify's liveness probe alive so the container
+        doesn't restart mid-operation.
+      /maintenance/status: the banner needs truthful state during the
+        window — without it the user sees /login?maintenance=1 forever.
+      /admin/jobs/schedule-sweep: a cron retry while a sweep is already
+        running must not 503 the cron itself, otherwise tomorrow's sweep
+        never gets scheduled.
+    """
+
+    _ALLOWED_PATHS = frozenset(
+        {"/", "/health", "/maintenance/status", "/admin/jobs/schedule-sweep"}
+    )
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if (
+            scope["type"] == "http"
+            and is_maintenance_active()
+            and scope["path"] not in self._ALLOWED_PATHS
+        ):
+            response = JSONResponse(
+                status_code=503,
+                content={
+                    "detail": "Maintenance in progress. Please try again in a moment.",
+                    "maintenance": True,
+                },
+            )
+            await response(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
 def create_app() -> FastAPI:
     app = FastAPI(
         title="phsar - Anime Ratings",
@@ -67,6 +113,13 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Order matters: app.add_middleware insert(0, ...)s, so the LAST one
+    # registered ends up OUTERMOST. We need CORS outside the maintenance
+    # gate so 503 short-circuits still carry Access-Control-Allow-Origin —
+    # otherwise cross-origin fetch() rejects with a TypeError instead of a
+    # 503 response, and the frontend's catch falls into the generic
+    # "unexpected error" branch instead of the maintenance-banner branch.
+    app.add_middleware(MaintenanceGateMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
@@ -81,33 +134,6 @@ def create_app() -> FastAPI:
     @app.exception_handler(PhsarBaseError)
     async def phsar_exception_handler(request: Request, exc: PhsarBaseError):
         return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
-
-    @app.middleware("http")
-    async def maintenance_gate(request: Request, call_next):
-        # /, /health stay open so Coolify's liveness check doesn't fail the
-        # container mid-window and trigger a restart in the middle of an
-        # operation. /maintenance/status stays open so the frontend's banner
-        # can keep polling truthful state while the rest of the API is 503'd
-        # — without it, the user lands on /login?maintenance=1 with no
-        # countdown to tell them when service resumes.
-        if is_maintenance_active() and request.url.path not in (
-            "/",
-            "/health",
-            "/maintenance/status",
-            # Allowlisted so a cron retry while a sweep is already running
-            # doesn't 503 the cron itself. The endpoint is cheap (just a
-            # row insert + flag set) and idempotent enough that double-firing
-            # only enqueues a second sweep behind the live one.
-            "/admin/jobs/schedule-sweep",
-        ):
-            return JSONResponse(
-                status_code=503,
-                content={
-                    "detail": "Maintenance in progress. Please try again in a moment.",
-                    "maintenance": True,
-                },
-            )
-        return await call_next(request)
 
     # Local import to avoid early dependency resolution in tests
     from app.routers import (
