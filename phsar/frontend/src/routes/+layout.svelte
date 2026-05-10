@@ -140,16 +140,20 @@
 {:else}
     <!-- Banner sits above the navbar so it's the first thing users see on
          every page (including /login and /register). It only renders when
-         the backend reports a scheduled or active maintenance window. -->
-    <MaintenanceBanner />
-    {#if page.url.pathname !== '/login' && page.url.pathname !== '/register'}
-      <NavBar
-        {isAuthenticated}
-        {username}
-        isAdmin={userRole === 'admin'}
-        onLogout={handleLogout}
-      />
-    {/if}
+         the backend reports a scheduled or active maintenance window.
+         Single sticky container wraps both so the banner doesn't scroll
+         off the top while the navbar stays pinned. -->
+    <div class="sticky top-0 z-50">
+      <MaintenanceBanner />
+      {#if page.url.pathname !== '/login' && page.url.pathname !== '/register'}
+        <NavBar
+          {isAuthenticated}
+          {username}
+          isAdmin={userRole === 'admin'}
+          onLogout={handleLogout}
+        />
+      {/if}
+    </div>
 
     <main class="min-h-screen px-8 pt-4 pb-8">
       {@render children()}

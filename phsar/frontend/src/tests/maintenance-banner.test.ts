@@ -40,7 +40,7 @@ describe('MaintenanceBanner', () => {
 			expect(screen.getByRole('status')).toBeInTheDocument();
 		});
 		// Allow ±1 min slop for fake-timer / Math.round boundary.
-		expect(screen.getByRole('status')).toHaveTextContent(/starts in (14|15|16) minutes/);
+		expect(screen.getByRole('status')).toHaveTextContent(/starts in ~(14|15|16) minutes/);
 	});
 
 	it('hides the countdown when the schedule is more than 30 min out', async () => {
@@ -72,6 +72,6 @@ describe('MaintenanceBanner', () => {
 		await vi.waitFor(() => {
 			expect(screen.getByRole('status')).toBeInTheDocument();
 		});
-		expect(screen.getByRole('status')).toHaveTextContent(/starts in 1 minute(?!s)/);
+		expect(screen.getByRole('status')).toHaveTextContent(/starts in ~1 minute(?!s)/);
 	});
 });

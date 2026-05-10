@@ -12,7 +12,7 @@
     let { isAuthenticated, username = null, isAdmin = false, onLogout }: Props = $props();
 </script>
 
-<nav class="sticky top-0 z-50 h-16 flex justify-between items-center px-8 py-4 bg-black/10 backdrop-blur">
+<nav class="h-16 flex justify-between items-center px-8 py-4 bg-black/10 backdrop-blur">
     <div class="flex items-end gap-6">
         <a href="/" class="flex items-end hover:opacity-80 transition">
             <img src="/phsar_logo_transparent.png" alt="Phsar Logo" class="w-8 h-8" />

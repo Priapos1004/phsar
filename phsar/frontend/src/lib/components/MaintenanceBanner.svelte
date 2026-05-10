@@ -1,7 +1,10 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
-	import { AlertTriangle } from 'lucide-svelte';
 	import { API_URL } from '$lib/config';
+	import { token } from '$lib/stores/auth';
+	import { maintenanceRefresh } from '$lib/stores/maintenance';
+	import { onBump } from '$lib/stores/jobs';
+	import Notice from './Notice.svelte';
 	import type { MaintenanceStatus } from '$lib/types/api';
 
 	const POLL_MS = 60_000;
@@ -45,26 +48,42 @@
 	// the more-actionable message is still the countdown.
 	let visible = $derived(showCountdown || active);
 
+	let unsubAuth: (() => void) | null = null;
+	let unsubRefresh: (() => void) | null = null;
+
 	onMount(() => {
-		void fetchStatus();
 		pollTimer = setInterval(fetchStatus, POLL_MS);
+		// Re-fetch on every auth transition (mount, login, logout). Stores
+		// fire their subscriber once with the current value, so this also
+		// covers the initial fetch-on-mount.
+		unsubAuth = token.subscribe(() => {
+			void fetchStatus();
+		});
+		// Explicit refresh signal — api.ts bumps on any 503-with-maintenance
+		// response so the banner reacts in ms even when the user's token
+		// state didn't change (e.g. submitting login while already
+		// token-less). onBump skips the synchronous initial call since
+		// the auth subscribe above already drove the first fetch.
+		unsubRefresh = onBump(maintenanceRefresh, () => {
+			void fetchStatus();
+		});
 	});
 
 	onDestroy(() => {
 		if (pollTimer !== null) clearInterval(pollTimer);
+		if (unsubAuth !== null) unsubAuth();
+		if (unsubRefresh !== null) unsubRefresh();
 	});
 </script>
 
 {#if visible}
-	<div
-		role="status"
-		class="flex items-center justify-center gap-2 px-4 py-2 text-sm border-b border-yellow-500/40 bg-yellow-500/10 text-yellow-900 dark:text-yellow-100"
-	>
-		<AlertTriangle class="w-4 h-4 shrink-0" />
-		{#if showCountdown}
-			<span>{`Scheduled maintenance starts in ${minutesUntil} ${minutesUntil === 1 ? 'minute' : 'minutes'} — please save your work.`}</span>
-		{:else}
-			<span>Maintenance in progress. Some pages may be unavailable.</span>
-		{/if}
+	<div class="px-4 pt-3">
+		<Notice>
+			{#if showCountdown}
+				{`Scheduled maintenance starts in ~${minutesUntil} ${minutesUntil === 1 ? 'minute' : 'minutes'} — pause your current episode.`}
+			{:else}
+				Maintenance in progress. Some pages may be unavailable.
+			{/if}
+		</Notice>
 	</div>
 {/if}
