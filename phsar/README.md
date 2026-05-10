@@ -255,6 +255,7 @@ phsar/
 ├── pytest.ini
 ├── requirements.txt
 └── tests/
+    ├── _helpers.py
     ├── conftest.py
     ├── routers/
     │   ├── conftest.py
@@ -278,7 +279,9 @@ phsar/
         ├── test_jikan_scraper.py
         ├── test_job_dao.py
         ├── test_job_worker.py
+        ├── test_merge_candidate_service.py
         ├── test_merge_detection.py
+        ├── test_merge_preservation.py
         ├── test_progress_reporter.py
         ├── test_search_service.py
         ├── test_spoiler_service.py
