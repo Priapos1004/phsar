@@ -273,9 +273,9 @@ Foundation for any destructive/long-running periodic job. Consumed by both the d
 
 **Triggered via**: Coolify scheduled task (cron) calling `POST /admin/jobs/schedule-sweep?delay_minutes=20`. The endpoint is cron-bearer-token authed and allowlisted in the maintenance gate.
 
-**Status:** ✓ data-refresh dispatcher + tier query shipped (commit 7b of v0.14.0); relations probe + coalesced spoiler recompute pending (7c, closes #30).
+**Status:** ✓ shipped end-to-end. Data-refresh dispatcher + tier query landed in commit 7b; relations probe + coalesced spoiler recompute landed in commit 7c (closes #30).
 
-**What 7b ships (data refresh):**
+**What 7b shipped (data refresh):**
 - `update_sweep` dispatcher tier-selects due anime via a 4-tier OR query (LEFT JOIN against `anime_freshness`):
   - Tier 1: any media currently airing → always due
   - Tier 2: `stable_check_count < 3` → still stabilizing
@@ -285,9 +285,13 @@ Foundation for any destructive/long-running periodic job. Consumed by both the d
 - Score and scored_by are bundled through `_weighted_score(score, scored_by) = score * log10(scored_by + 1)` and only count as stability-resetting when `abs(new − old) >= 0.05`. Without this, every popular anime (One Piece, BNHA, Naruto:Shippuuden) would never stabilize because daily vote drift moved `scored_by`. New values are written through to the DB regardless; the threshold gates only the stability *signal*.
 - Episodes-was-NULL → known: `logger.info(...)` only. Per-user `episodes_watched` is NOT auto-set because we don't know what the user actually watched.
 
-**What 7c adds (relations probe + coalesced spoiler recompute):**
-- Inside the tier-3 path: pull `relations` from the same `/anime/{id}/full` response (no extra MAL call) and compare to existing media under the anime. For mal_ids not in our DB ∪ `MediaUnwanted`, run the existing `handle_search_mal_api_results` BFS to discover and save them.
-- `save_search_results` gains `defer_spoiler_recompute: bool = False`. Sweep passes `True`. After the whole sweep finishes, the dispatcher calls `refresh_spoiler_cache_for_all_users` exactly once — without coalescing, a 200-anime sweep would fire the per-user recompute 200×.
+**What 7c shipped (relations probe + coalesced spoiler recompute):**
+- Probe runs on **tier 3 + tier 4** (`not currently_airing AND stable_check_count >= 3`). Tier 4 was added on user feedback — long-tail franchises can announce sequels years post-finale, and the 6-month cadence is the right place to catch them. Tier 1 stays excluded (re-checked nightly anyway); tier 2 stays excluded (brand-new shows have no announcement to discover yet).
+- **Per-Main-seed BFS** via `JikanScraper.search_title(seed_mal_id=...)`: one BFS per Main media on the parent anime, fresh `visited_ids` each pass. The mal_id-based seed bypasses the fuzzy `q=<title>` top-3 lookup user_scrape uses — early prototype hit that path and pulled Bocchi the Rock! into a Vigilante S2 lookup because MAL's fuzzy search ranked an unrelated "2nd Season" token highly. Per-main isolation lets the probe reach disjoint sub-graphs (e.g., the Vigilante branch off BNHA, where Vigilante S1 is a side-story under BNHA and `search_title`'s BFS would otherwise stop expanding once BNHA's main is found).
+- New `save_service.attach_search_result_to_anime` saves discovered media under the existing parent anime — no new Anime row, no fuzzy main-story-required check that would drop orphan side-stories like a freshly-announced TVSpecial.
+- **Two commits per anime**: step 1 (field-diff + MediaFreshness) always durable; step 2 (probe + AnimeFreshness) only commits on probe success. A probe failure leaves AnimeFreshness untouched so the next sweep re-selects the anime via tier 3/4 — the field-diff work isn't lost.
+- `save_search_results` gains `defer_spoiler_recompute: bool = False`. Sweep passes `True`. The dispatcher calls `refresh_spoiler_cache_for_all_users` once at the end if any new media landed — without coalescing, a 200-anime sweep with 50 new media would fire the per-user recompute 50×.
+- **Bonus fix surfaced by end-to-end testing:** `JikanScraper.search_title` was inserting `media_type=None` anime into `media_unwanted` as "Unknown" even when `airing_status="Not yet aired"` — just-announced sequels got permanently blacklisted before MAL had classified them, and never got picked up once they aired. Now skipped silently; `media_unwanted` only catches true MAL anomalies. Alembic migration `2f1a8e3c4d5b` clears the existing Unknown backlog so previously-trapped anime can be rediscovered by the next sweep.
 
 **Frequency**: Coolify cron daily. Tier query LIMITs at `JOBS_SWEEP_MAX_PER_RUN=200` so a fully-saturated catalog still completes within a maintenance window.
 
