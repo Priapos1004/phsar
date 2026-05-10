@@ -25,8 +25,11 @@ from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
 from app.models.media import Media
 from app.models.media_freshness import MediaFreshness
+from app.models.media_unwanted import MediaUnwanted
 from app.services.scrape_dispatcher import (
+    _advance_anime_freshness,
     _apply_media_diff,
+    _qualifies_for_relations_probe,
     _refresh_one_anime,
     update_sweep_dispatcher,
 )
@@ -46,16 +49,23 @@ async def _reset_engine_pool():
 class _FakeScraper:
     """Stand-in for JikanScraper in dispatcher tests.
 
-    Uses the async-context-manager protocol the real scraper uses, but
-    `extract_information` is the identity so tests cook payloads
-    directly. Pass `payloads_by_mal_id={mal_id: payload, ...}` to vend
-    different payloads per media; pass `error_for_mal_id` to raise on a
-    specific id (per-anime fault isolation tests)."""
+    `extract_information` is the identity so tests cook payloads directly.
+    `search_title` is implemented as a recorder that vends canned
+    `(relations_list, all_info, unwanted_media)` tuples per seed."""
 
-    def __init__(self, payloads_by_mal_id: dict[int, dict], error_for_mal_id: int | None = None):
+    def __init__(
+        self,
+        payloads_by_mal_id: dict[int, dict],
+        error_for_mal_id: int | None = None,
+        search_title_returns: dict[int, tuple] | None = None,
+        search_title_error_for_seed: int | None = None,
+    ):
         self._payloads = payloads_by_mal_id
         self._error_for = error_for_mal_id
         self.refresh_calls: list[int] = []
+        self._search_title_returns = search_title_returns or {}
+        self._search_title_error_for_seed = search_title_error_for_seed
+        self.search_title_calls: list[int] = []
 
     async def __aenter__(self):
         return self
@@ -72,6 +82,23 @@ class _FakeScraper:
     @staticmethod
     def extract_information(payload: dict) -> dict:
         return payload
+
+    async def search_title(
+        self,
+        title=None,
+        excluded_mal_ids=None,
+        initial_search_limit=3,
+        progress=None,
+        seed_mal_id=None,
+        seed_payload=None,
+    ):
+        self.search_title_calls.append(seed_mal_id)
+        if (
+            self._search_title_error_for_seed is not None
+            and seed_mal_id == self._search_title_error_for_seed
+        ):
+            raise RuntimeError(f"simulated MAL outage during BFS for seed {seed_mal_id}")
+        return self._search_title_returns.get(seed_mal_id, ([], {}, set()))
 
 
 def _payload(
@@ -218,9 +245,12 @@ async def test_refresh_increments_counter_when_unchanged(db_session):
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper({media_mal_id: _payload()})
 
-    changed = await _refresh_one_anime(db_session, anime, scraper)
+    changed, raw, is_airing = await _refresh_one_anime(db_session, anime, scraper)
+    _advance_anime_freshness(anime, changed, is_airing)
 
     assert changed is False
+    assert is_airing is False
+    assert raw == {media_mal_id: _payload()}
     assert anime.freshness.stable_check_count == 6
 
 
@@ -236,7 +266,8 @@ async def test_refresh_resets_counter_on_score_change(db_session):
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper({media_mal_id: _payload(score=8.0)})
 
-    changed = await _refresh_one_anime(db_session, anime, scraper)
+    changed, _raw, is_airing = await _refresh_one_anime(db_session, anime, scraper)
+    _advance_anime_freshness(anime, changed, is_airing)
 
     assert changed is True
     assert anime.freshness.stable_check_count == 0
@@ -258,9 +289,11 @@ async def test_refresh_currently_airing_resets_counter_without_diff(db_session):
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper({media_mal_id: _payload(airing_status="Currently Airing", aired_to=None)})
 
-    changed = await _refresh_one_anime(db_session, anime, scraper)
+    changed, _raw, is_airing = await _refresh_one_anime(db_session, anime, scraper)
+    _advance_anime_freshness(anime, changed, is_airing)
 
     assert changed is False
+    assert is_airing is True
     assert anime.freshness.stable_check_count == 0
 
 
@@ -278,7 +311,8 @@ async def test_refresh_bumps_last_checked_even_when_unchanged(db_session):
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper({media_mal_id: _payload()})
 
-    await _refresh_one_anime(db_session, anime, scraper)
+    changed, _raw, is_airing = await _refresh_one_anime(db_session, anime, scraper)
+    _advance_anime_freshness(anime, changed, is_airing)
 
     assert anime.freshness.last_checked_at > old_anime_ts
     assert anime.media[0].freshness.last_checked_at > old_media_ts
@@ -301,11 +335,12 @@ async def test_refresh_creates_missing_sidecars_defensively(db_session):
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper({media_mal_id: _payload()})
 
-    await _refresh_one_anime(db_session, anime, scraper)
+    changed, _raw, is_airing = await _refresh_one_anime(db_session, anime, scraper)
+    assert anime.media[0].freshness is not None
+    _advance_anime_freshness(anime, changed, is_airing)
 
     assert anime.freshness is not None
     assert anime.freshness.stable_check_count == 0
-    assert anime.media[0].freshness is not None
 
 
 # ---------------------------------------------------------------------------
@@ -586,3 +621,393 @@ async def test_dispatcher_isolates_failures_per_anime(tracked_anime, monkeypatch
     assert anime_by_id[a3_id].freshness.last_checked_at > old
     # a2's freshness unchanged (stays at seeded value).
     assert anime_by_id[a2_id].freshness.last_checked_at == old
+
+
+# ---------------------------------------------------------------------------
+# 7c — relations probe gate (_qualifies_for_relations_probe)
+# ---------------------------------------------------------------------------
+
+
+def _anime_with_freshness(stable_check_count: int) -> Anime:
+    """Synthetic in-memory Anime + AnimeFreshness for gate unit tests.
+    No DB round trip needed — the gate reads the loaded ORM objects."""
+    a = Anime(mal_id=-1, title="A")
+    a.freshness = AnimeFreshness(stable_check_count=stable_check_count)
+    return a
+
+
+def test_gate_rejects_currently_airing():
+    a = _anime_with_freshness(stable_check_count=10)
+    assert _qualifies_for_relations_probe(a, is_currently_airing=True) is False
+
+
+def test_gate_rejects_stable_below_3():
+    a = _anime_with_freshness(stable_check_count=2)
+    assert _qualifies_for_relations_probe(a, is_currently_airing=False) is False
+
+
+def test_gate_accepts_stable_at_or_above_3_and_not_airing():
+    a = _anime_with_freshness(stable_check_count=3)
+    assert _qualifies_for_relations_probe(a, is_currently_airing=False) is True
+
+
+def test_gate_handles_missing_freshness_as_zero():
+    """A bare anime row (no sidecar yet) is functionally tier-2 — counter
+    treated as 0, gate rejects."""
+    a = Anime(mal_id=-1, title="A")
+    a.freshness = None
+    assert _qualifies_for_relations_probe(a, is_currently_airing=False) is False
+
+
+# ---------------------------------------------------------------------------
+# 7c — relations probe behaviour (full-dispatcher integration tests)
+#
+# The probe seeds JikanScraper.search_title with each Main media's mal_id and
+# attaches discovered media to the existing parent anime via
+# `attach_search_result_to_anime`. Filter logic (Music/PV/CM/Hentai/Unknown,
+# excluded mal_ids, is_main_story) lives inside search_title and is covered
+# by user_scrape's existing test surface; tests here focus on the probe's
+# specific responsibilities: which anime qualify, which seeds are passed,
+# how attaches are routed, and how failures isolate.
+# ---------------------------------------------------------------------------
+
+
+def _patch_probe_pipeline(monkeypatch):
+    """Patch attach_search_result_to_anime + spoiler-recompute hooks at
+    the dispatcher's import surface. Returns two recorder lists."""
+    attach_calls: list[dict] = []
+    recompute_calls: list[int] = []
+
+    async def fake_attach(db, parent_anime, graph, all_info):
+        attach_calls.append({
+            "parent_anime_id": parent_anime.id,
+            "graph_mal_ids": list(graph.keys()),
+        })
+        existing = {m.mal_id for m in parent_anime.media}
+        return sum(1 for mal_id in graph if mal_id not in existing)
+
+    async def fake_recompute(db):
+        recompute_calls.append(1)
+
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.attach_search_result_to_anime", fake_attach,
+    )
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.refresh_spoiler_cache_for_all_users",
+        fake_recompute,
+    )
+    return attach_calls, recompute_calls
+
+
+def _new_graph(seed_mal_id: int, new_mal_id: int) -> tuple:
+    """Construct a synthetic search_title return tuple with one new mal_id
+    plus the seed. attach (real or faked) decides which to skip."""
+    return (
+        [({seed_mal_id: {"relation_type": "main"}, new_mal_id: {"relation_type": "main"}}, set())],
+        {
+            seed_mal_id: {"mal_id": seed_mal_id, "title": "Seed"},
+            new_mal_id: {"mal_id": new_mal_id, "title": "Discovered"},
+        },
+        set(),
+    )
+
+
+@pytest.mark.asyncio
+async def test_probe_only_runs_on_tier_3_or_4(tracked_anime, monkeypatch):
+    """Three anime — tier 1 (currently airing), tier 2 (stable=1),
+    tier 3 (stable=5, finished). search_title must only be invoked
+    for the tier-3 anime."""
+    a_airing = await _real_seed(
+        mal_id=-8301, last_checked_at=datetime.now(timezone.utc) - timedelta(days=10),
+        stable_check_count=10, airing_status="Currently Airing",
+    )
+    a_unstable = await _real_seed(
+        mal_id=-8302, last_checked_at=datetime.now(timezone.utc) - timedelta(days=10),
+        stable_check_count=1,
+    )
+    a_tier3 = await _real_seed(
+        mal_id=-8303, last_checked_at=datetime.now(timezone.utc) - timedelta(days=10),
+        stable_check_count=5,
+    )
+    tracked_anime.extend([a_airing, a_unstable, a_tier3])
+
+    payloads = {
+        -8301 * 100: _payload(airing_status="Currently Airing", aired_to=None),
+        -8302 * 100: _payload(),
+        -8303 * 100: _payload(),
+    }
+    fake_scraper = _FakeScraper(payloads)
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.JikanScraper", lambda: fake_scraper,
+    )
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+    )
+    _patch_select_due(monkeypatch, [a_airing, a_unstable, a_tier3])
+    _attach_calls, _recompute = _patch_probe_pipeline(monkeypatch)
+
+    async with async_session_maker() as session:
+        job = type("FakeJob", (), {"id": 7301})()
+        summary = await update_sweep_dispatcher(session, job)
+
+    # search_title called only with the tier-3 anime's main media mal_id.
+    assert fake_scraper.search_title_calls == [-8303 * 100]
+    assert summary["probe_succeeded"] == 1
+    assert summary["probe_failed"] == 0
+    assert summary["anime_refreshed"] == 3
+
+
+@pytest.mark.asyncio
+async def test_probe_seeds_search_title_with_each_main_mal_id(
+    tracked_anime, monkeypatch,
+):
+    """Probe must call search_title once per Main media on the parent
+    anime — needed to reach disjoint sub-graphs (e.g., a side-story
+    branch like Vigilante off BNHA's main). _real_seed creates one
+    main per anime; we attach a second main inline."""
+    a_id = await _real_seed(
+        mal_id=-8410, last_checked_at=datetime.now(timezone.utc) - timedelta(days=10),
+        stable_check_count=5,
+    )
+    tracked_anime.append(a_id)
+
+    second_main_mal_id = -8410 * 100 + 1
+    async with async_session_maker() as s:
+        media2 = Media(**media_kwargs(anime_id=a_id, mal_id=second_main_mal_id))
+        s.add(media2)
+        await s.flush()
+        s.add(MediaFreshness(media_id=media2.id, last_checked_at=None))
+        await s.commit()
+
+    payloads = {
+        -8410 * 100: _payload(),
+        second_main_mal_id: _payload(),
+    }
+    fake_scraper = _FakeScraper(payloads)
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.JikanScraper", lambda: fake_scraper,
+    )
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+    )
+    _patch_select_due(monkeypatch, [a_id])
+    _patch_probe_pipeline(monkeypatch)
+
+    async with async_session_maker() as session:
+        job = type("FakeJob", (), {"id": 7410})()
+        await update_sweep_dispatcher(session, job)
+
+    assert sorted(fake_scraper.search_title_calls) == sorted(
+        [-8410 * 100, second_main_mal_id]
+    )
+
+
+@pytest.mark.asyncio
+async def test_probe_attach_routes_to_parent_anime(tracked_anime, monkeypatch):
+    """search_title returns a graph with a new mal_id; the probe must
+    invoke attach_search_result_to_anime with the parent anime (not a
+    new one) and the same graph."""
+    a_id = await _real_seed(
+        mal_id=-8420, last_checked_at=datetime.now(timezone.utc) - timedelta(days=10),
+        stable_check_count=5,
+    )
+    tracked_anime.append(a_id)
+
+    seed_mal_id = -8420 * 100
+    new_mal_id = -880_420
+    payloads = {seed_mal_id: _payload()}
+    fake_scraper = _FakeScraper(
+        payloads,
+        search_title_returns={seed_mal_id: _new_graph(seed_mal_id, new_mal_id)},
+    )
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.JikanScraper", lambda: fake_scraper,
+    )
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+    )
+    _patch_select_due(monkeypatch, [a_id])
+    attach_calls, _recompute = _patch_probe_pipeline(monkeypatch)
+
+    async with async_session_maker() as session:
+        job = type("FakeJob", (), {"id": 7420})()
+        summary = await update_sweep_dispatcher(session, job)
+
+    assert len(attach_calls) == 1
+    assert attach_calls[0]["parent_anime_id"] == a_id
+    assert sorted(attach_calls[0]["graph_mal_ids"]) == sorted([seed_mal_id, new_mal_id])
+    assert summary["probe_succeeded"] == 1
+
+
+@pytest.mark.asyncio
+async def test_spoiler_cache_recomputes_once_per_sweep(tracked_anime, monkeypatch):
+    """Two probe-eligible anime, each surfaces a new mal_id via
+    search_title. Recompute must fire exactly ONCE at the end of the
+    sweep — never per-attach."""
+    a1_id = await _real_seed(
+        mal_id=-8601, last_checked_at=datetime.now(timezone.utc) - timedelta(days=10),
+        stable_check_count=5,
+    )
+    a2_id = await _real_seed(
+        mal_id=-8602, last_checked_at=datetime.now(timezone.utc) - timedelta(days=10),
+        stable_check_count=5,
+    )
+    tracked_anime.extend([a1_id, a2_id])
+
+    s1, s2 = -8601 * 100, -8602 * 100
+    payloads = {s1: _payload(), s2: _payload()}
+    fake_scraper = _FakeScraper(
+        payloads,
+        search_title_returns={
+            s1: _new_graph(s1, -660_001),
+            s2: _new_graph(s2, -660_002),
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.JikanScraper", lambda: fake_scraper,
+    )
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+    )
+    _patch_select_due(monkeypatch, [a1_id, a2_id])
+    attach_calls, recompute_calls = _patch_probe_pipeline(monkeypatch)
+
+    async with async_session_maker() as session:
+        job = type("FakeJob", (), {"id": 7601})()
+        summary = await update_sweep_dispatcher(session, job)
+
+    assert len(attach_calls) == 2
+    assert len(recompute_calls) == 1
+    assert summary["probe_succeeded"] == 2
+
+
+@pytest.mark.asyncio
+async def test_no_recompute_when_probe_finds_nothing_new(tracked_anime, monkeypatch):
+    """search_title returns an empty relations_list. The probe makes no
+    attach calls; the dispatcher must not fire the recompute."""
+    a_id = await _real_seed(
+        mal_id=-8701, last_checked_at=datetime.now(timezone.utc) - timedelta(days=10),
+        stable_check_count=5,
+    )
+    tracked_anime.append(a_id)
+
+    # search_title default return is ([], {}, set()) — empty.
+    fake_scraper = _FakeScraper({-8701 * 100: _payload()})
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.JikanScraper", lambda: fake_scraper,
+    )
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+    )
+    _patch_select_due(monkeypatch, [a_id])
+    attach_calls, recompute_calls = _patch_probe_pipeline(monkeypatch)
+
+    async with async_session_maker() as session:
+        job = type("FakeJob", (), {"id": 7701})()
+        await update_sweep_dispatcher(session, job)
+
+    assert attach_calls == []
+    assert recompute_calls == []
+
+
+@pytest.mark.asyncio
+async def test_probe_persists_unwanted_media_returned_by_search_title(
+    tracked_anime, monkeypatch,
+):
+    """search_title's BFS classifies entries as Music/PV/CM/Hentai/Unknown
+    and surfaces them as `unwanted_media`. The probe must persist those
+    so a subsequent sweep doesn't re-fetch them, mirroring user_scrape's
+    create_unwanted_media path."""
+    a_id = await _real_seed(
+        mal_id=-8420 - 1, last_checked_at=datetime.now(timezone.utc) - timedelta(days=10),
+        stable_check_count=5,
+    )
+    tracked_anime.append(a_id)
+
+    seed_mal_id = (-8420 - 1) * 100
+    unwanted_set = {(-91111, "Some Music PV", "Music")}
+    fake_scraper = _FakeScraper(
+        {seed_mal_id: _payload()},
+        search_title_returns={seed_mal_id: ([], {}, unwanted_set)},
+    )
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.JikanScraper", lambda: fake_scraper,
+    )
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+    )
+    _patch_select_due(monkeypatch, [a_id])
+    _patch_probe_pipeline(monkeypatch)
+
+    try:
+        async with async_session_maker() as session:
+            job = type("FakeJob", (), {"id": 7421})()
+            await update_sweep_dispatcher(session, job)
+
+        async with async_session_maker() as s:
+            row = (await s.execute(
+                select(MediaUnwanted).where(MediaUnwanted.mal_id == -91111)
+            )).scalars().first()
+        assert row is not None
+        assert row.reason == "Music"
+    finally:
+        async with async_session_maker() as s:
+            await s.execute(delete(MediaUnwanted).where(MediaUnwanted.mal_id == -91111))
+            await s.commit()
+
+
+@pytest.mark.asyncio
+async def test_relations_probe_failure_preserves_field_diff_but_not_anime_freshness(
+    tracked_anime, monkeypatch,
+):
+    """search_title raises mid-probe. Step 1 (field-diff + MediaFreshness)
+    must stay committed; step 2 (AnimeFreshness) must roll back so the
+    tier query re-selects the anime on the next sweep."""
+    seed_ts = datetime.now(timezone.utc) - timedelta(days=10)
+    a_id = await _real_seed(
+        mal_id=-8801, last_checked_at=seed_ts,
+        stable_check_count=5, score=7.5,
+    )
+    tracked_anime.append(a_id)
+
+    seed_mal_id = -8801 * 100
+    payloads = {seed_mal_id: _payload(score=8.5)}
+    fake_scraper = _FakeScraper(
+        payloads,
+        search_title_error_for_seed=seed_mal_id,
+    )
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.JikanScraper", lambda: fake_scraper,
+    )
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+    )
+    _patch_select_due(monkeypatch, [a_id])
+    _attach, recompute_calls = _patch_probe_pipeline(monkeypatch)
+
+    async with async_session_maker() as session:
+        job = type("FakeJob", (), {"id": 7801})()
+        summary = await update_sweep_dispatcher(session, job)
+
+    assert summary["probe_failed"] == 1
+    assert summary["probe_succeeded"] == 0
+    assert summary["anime_refreshed"] == 0
+    assert recompute_calls == []
+
+    async with async_session_maker() as s:
+        result = await s.execute(
+            select(Anime).where(Anime.id == a_id).options(
+                selectinload(Anime.media).selectinload(Media.freshness),
+                selectinload(Anime.freshness),
+            )
+        )
+        anime = result.scalars().first()
+
+    # Field-diff committed in step 1.
+    assert anime.media[0].score == 8.5
+    assert anime.media[0].freshness.last_checked_at > seed_ts
+    # AnimeFreshness step rolled back — left at seeded values.
+    assert anime.freshness.last_checked_at == seed_ts
+    assert anime.freshness.stable_check_count == 5
+
+

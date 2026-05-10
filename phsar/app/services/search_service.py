@@ -5,9 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.daos.media_dao import MediaDAO
 from app.daos.media_unwanted_dao import MediaUnwantedDAO
 from app.exceptions import MainMediaNotFoundError
-from app.schemas.media_schema import MediaUnconnected
 from app.schemas.search_schema import SearchResultDB, SearchResultDBExtended
 from app.services.jikan_scraper import JikanScraper
+from app.services.media_service import media_unconnected_from_info
 from app.services.progress_reporter import ProgressReporter
 from app.services.unwanted_media_service import create_unwanted_media
 
@@ -50,32 +50,8 @@ async def search_mal_api(
 
         unconnected_media_list = []
         for mal_id, relation_info in related_anime_graph.items():
-            media_info = all_info[mal_id]
-            media = MediaUnconnected(
-                mal_id=mal_id,
-                mal_url=media_info.get("mal_url"),
-                title=media_info.get("title"),
-                name_eng=media_info.get("name_eng"),
-                name_jap=media_info.get("name_jap"),
-                other_names=media_info.get("other_names"),
-                media_type=media_info.get("media_type"),
-                relation_type=relation_info.get("relation_type"),
-                age_rating=media_info.get("age_rating"),
-                description=media_info.get("description"),
-                original_source=media_info.get("original_source"),
-                cover_image=media_info.get("cover_image"),
-                score=media_info.get("score"),
-                scored_by=media_info.get("scored_by"),
-                episodes=media_info.get("episodes"),
-                anime_season_name=media_info.get("anime_season_name"),
-                anime_season_year=media_info.get("anime_season_year"),
-                airing_status=media_info.get("airing_status"),
-                aired_from=media_info.get("aired_from"),
-                aired_to=media_info.get("aired_to"),
-                duration=media_info.get("duration"),
-                duration_seconds=media_info.get("duration_seconds"),
-                genres=media_info.get("genres"),
-                studio=media_info.get("studio"),
+            media = media_unconnected_from_info(
+                all_info[mal_id], relation_type=relation_info.get("relation_type"),
             )
             # Put the main anime always at the beginning of the list
             if mal_id == anime_mal_id:

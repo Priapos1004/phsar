@@ -14,10 +14,11 @@ if TYPE_CHECKING:
 
 BASE_URL = "https://api.jikan.moe/v4"
 
-# Sentinel media.airing_status value MAL returns for shows that haven't
-# wrapped yet. Module-level so callers (sweep tier query, dispatcher diff)
+# Sentinel media.airing_status values MAL returns. Module-level so callers
+# (sweep tier query, dispatcher diff, the not-yet-aired blacklist guard)
 # don't drift onto separate string copies.
 AIRING_STATUS_CURRENTLY_AIRING = "Currently Airing"
+AIRING_STATUS_NOT_YET_AIRED = "Not yet aired"
 
 logger = logging.getLogger(__name__)
 
@@ -175,27 +176,42 @@ class JikanScraper:
 
     async def search_title(
         self,
-        title: str,
+        title: str | None,
         excluded_mal_ids: set[int],
         initial_search_limit: int = 3,
         progress: "ProgressReporter | None" = None,
+        seed_mal_id: int | None = None,
+        seed_payload: dict | None = None,
     ) -> tuple[
         list[tuple[dict, set[int]]],
         dict[int, dict],
         set[tuple[int, str, str]],
     ]:
-        search = await self._get(f"{self.base_url}/anime", params={"q": title, "limit": initial_search_limit})
-        results = search.get("data", [])
-
-        if not results:
-            raise AnimeNotFoundError(title)
+        if seed_mal_id is not None:
+            # Probe path: skip the q= search; use the seed's own /full
+            # payload (already in the dispatcher's hand) as the single
+            # candidate. Subtract the seed from excluded_ids so the BFS
+            # actually processes it instead of short-circuiting on
+            # "already in catalog".
+            seed_data = seed_payload or await self.search_by_malid(seed_mal_id)
+            if not seed_data:
+                raise AnimeNotFoundError(f"mal_id={seed_mal_id}")
+            results = [seed_data]
+            excluded_ids: frozenset[int] = frozenset(excluded_mal_ids - {seed_mal_id})
+        else:
+            if title is None:
+                raise ValueError("search_title requires either title or seed_mal_id")
+            search = await self._get(f"{self.base_url}/anime", params={"q": title, "limit": initial_search_limit})
+            results = search.get("data", [])
+            if not results:
+                raise AnimeNotFoundError(title)
+            # excluded_ids = pre-existing in catalog (frozen for the run);
+            # visited_ids = traversed in *this* run. Splitting them so we can
+            # detect "BFS hit a media that already lives under a different anime
+            # in the catalog" — that's the relation_link merge-candidate signal.
+            excluded_ids: frozenset[int] = frozenset(excluded_mal_ids)
 
         all_info: dict[int, dict] = {}
-        # excluded_ids = pre-existing in catalog (frozen for the run);
-        # visited_ids = traversed in *this* run. Splitting them so we can
-        # detect "BFS hit a media that already lives under a different anime
-        # in the catalog" — that's the relation_link merge-candidate signal.
-        excluded_ids: frozenset[int] = frozenset(excluded_mal_ids)
         visited_ids: set[int] = set()
         relations: list[tuple[dict, set[int]]] = []
         unwanted_media: set[tuple[int, str, str]] = set()
@@ -269,6 +285,11 @@ class JikanScraper:
                     # franchises into one anime row.
                     if current_relation == "crossover":
                         all_related_media = []
+                    elif current_mal_id == mal_id and seed_payload is not None:
+                        # The /full payload the dispatcher just fetched
+                        # already bundles relations; reuse them instead of
+                        # paying for a second MAL hit per seed.
+                        all_related_media = seed_payload.get("relations") or []
                     else:
                         all_related_media = await self.fetch_relations(current_mal_id)
                     relation_types_list = [media["relation"] for media in all_related_media]
@@ -319,6 +340,14 @@ class JikanScraper:
 
                         if is_first_relation:
                             is_first_relation = False
+                elif anime_info.get("airing_status") == AIRING_STATUS_NOT_YET_AIRED:
+                    # Skip without blacklisting — MAL fills the type once the
+                    # show airs. A permanent unwanted entry would silently
+                    # block the catalog from ever picking it up.
+                    logger.info(
+                        "Skipping unscheduled anime without media_type: %s (mal_id=%s)",
+                        anime_info.get("title"), current_mal_id,
+                    )
                 else:
                     logger.warning(f"Anime without media_type:\n{anime_info}")
                     unwanted_media.add((current_mal_id, anime_info["title"], "Unknown"))

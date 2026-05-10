@@ -199,6 +199,75 @@ async def test_search_title_no_cross_link_for_crossover_relation(monkeypatch):
     _graph, cross_link_mal_ids = relations[0]
     assert cross_link_mal_ids == set()
 
+
+@pytest.mark.asyncio
+async def test_search_title_does_not_blacklist_not_yet_aired_anime(monkeypatch):
+    """Just-announced sequels (`media_type=None` + `status="Not yet aired"`)
+    must skip silently — a permanent unwanted entry would block
+    rediscovery once MAL fills the type."""
+    async def fake_get(self, url: str, params=None):
+        if url.endswith("/anime") and params is not None and params.get("q"):
+            return {"data": [_make_anime(1, "Origin Anime")]}
+        if url.endswith("/relations"):
+            mal_id = int(url.rsplit("/", 2)[-2])
+            if mal_id == 1:
+                return {"data": [{"relation": "Sequel", "entry": [{"type": "anime", "mal_id": 2}]}]}
+            return {"data": []}
+        if "/anime/" in url:
+            mal_id = int(url.rsplit("/", 1)[-1])
+            payload = _make_anime(mal_id, f"Anime {mal_id}")
+            if mal_id == 2:
+                payload["type"] = None
+                payload["status"] = "Not yet aired"
+                payload["aired"] = {"from": None, "to": None}
+            return {"data": payload}
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+
+    async with JikanScraper() as scraper:
+        _relations, _all_info, unwanted = await scraper.search_title(
+            title="Origin", excluded_mal_ids=set(),
+        )
+
+    assert all(uw[0] != 2 for uw in unwanted), (
+        "Not-yet-aired anime (mal_id=2) must NOT land in unwanted_media"
+    )
+
+
+@pytest.mark.asyncio
+async def test_search_title_blacklists_other_anomalous_no_media_type(monkeypatch):
+    """Anime with `media_type=None` but a non-`Not yet aired` status is
+    still a MAL anomaly worth blacklisting — keeps the existing
+    Music/PV/CM/Hentai pattern intact for true outliers."""
+    async def fake_get(self, url: str, params=None):
+        if url.endswith("/anime") and params is not None and params.get("q"):
+            return {"data": [_make_anime(1, "Origin Anime")]}
+        if url.endswith("/relations"):
+            mal_id = int(url.rsplit("/", 2)[-2])
+            if mal_id == 1:
+                return {"data": [{"relation": "Other", "entry": [{"type": "anime", "mal_id": 2}]}]}
+            return {"data": []}
+        if "/anime/" in url:
+            mal_id = int(url.rsplit("/", 1)[-1])
+            payload = _make_anime(mal_id, f"Anime {mal_id}")
+            if mal_id == 2:
+                payload["type"] = None
+                # Status is set (not "Not yet aired") — anomalous.
+                payload["status"] = "Finished Airing"
+            return {"data": payload}
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+
+    async with JikanScraper() as scraper:
+        _relations, _all_info, unwanted = await scraper.search_title(
+            title="Origin", excluded_mal_ids=set(),
+        )
+
+    assert any(uw[0] == 2 and uw[2] == "Unknown" for uw in unwanted)
+
+
 DURATION_EXPECTED_PAIRS = [
     # Check different string format:
     ("24 min per ep", 24 * 60),
