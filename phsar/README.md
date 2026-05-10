@@ -41,11 +41,13 @@ phsar/
 │   ├── main.py
 │   ├── models/
 │   │   ├── anime.py
+│   │   ├── anime_freshness.py
 │   │   ├── anime_search.py
 │   │   ├── base.py
 │   │   ├── genre.py
 │   │   ├── job.py
 │   │   ├── media.py
+│   │   ├── media_freshness.py
 │   │   ├── media_genre.py
 │   │   ├── media_search.py
 │   │   ├── media_studio.py
@@ -67,6 +69,7 @@ phsar/
 │   │   ├── filters.py
 │   │   ├── jobs.py
 │   │   ├── library.py
+│   │   ├── maintenance.py
 │   │   ├── media.py
 │   │   ├── ratings.py
 │   │   ├── save.py
@@ -79,6 +82,7 @@ phsar/
 │   │   ├── auth_schema.py
 │   │   ├── backup_schema.py
 │   │   ├── job_schema.py
+│   │   ├── maintenance_schema.py
 │   │   ├── media_filter_schema.py
 │   │   ├── media_schema.py
 │   │   ├── rating_schema.py
@@ -143,6 +147,7 @@ phsar/
 │   │   │   │   ├── InfoDiashow.svelte
 │   │   │   │   ├── JobBell.svelte
 │   │   │   │   ├── LoadingScreen.svelte
+│   │   │   │   ├── MaintenanceBanner.svelte
 │   │   │   │   ├── MediaInfo.svelte
 │   │   │   │   ├── MergeCandidatesCard.svelte
 │   │   │   │   ├── NavBar.svelte
@@ -228,6 +233,7 @@ phsar/
 │   │       ├── job-bell.test.ts
 │   │       ├── library-add.test.ts
 │   │       ├── login.test.ts
+│   │       ├── maintenance-banner.test.ts
 │   │       ├── media-detail.test.ts
 │   │       ├── navbar.test.ts
 │   │       ├── rating-modal.test.ts
@@ -266,6 +272,7 @@ phsar/
     │   ├── test_filters_token.py
     │   ├── test_health.py
     │   ├── test_jobs.py
+    │   ├── test_maintenance.py
     │   ├── test_media_detail.py
     │   ├── test_ratings.py
     │   ├── test_save.py

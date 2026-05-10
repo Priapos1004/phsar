@@ -28,10 +28,15 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 - Token is stored in and loaded from localStorage
 - Closing and reopening the browser keeps the user logged in (until token expires or is invalidated)
 
-### 1.5 Maintenance Banner
-- When the backend returns 503 with `{maintenance: true}` on *any* request, the API client clears the token and hard-navigates to `/login?maintenance=1`.
+### 1.5 Maintenance Mode
+- **Pre-warning banner.** A yellow banner sits above the navbar on every page (including `/login` and `/register`) when a maintenance window is upcoming or active.
+  - Polls `GET /maintenance/status` every 60s via raw `fetch` (deliberately bypasses the API client so a 503 mid-window doesn't trigger the redirect below and defeat the warning).
+  - When `scheduled_at` is within 30 min: "Scheduled maintenance starts in N minutes — please save your work." (singular "minute" at exactly 1).
+  - When `active` is true: "Maintenance in progress. Some pages may be unavailable."
+  - When neither: banner is hidden.
+- **Mid-window redirect.** When the backend returns 503 with `{maintenance: true}` on *any other* request, the API client clears the token and hard-navigates to `/login?maintenance=1`.
 - The login page also detects this state when `/auth/login` itself returns 503.
-- Yellow banner above the form: "Backup restore in progress. Login will be available again once it completes."
+- Login card shows its own yellow banner above the form: "Backup restore in progress. Login will be available again once it completes."
 - Submit is not disabled; retrying during the window repopulates the banner. On a successful login the banner clears and the user proceeds to `/` as normal.
 
 ---
@@ -376,6 +381,7 @@ Each anime search result card shows:
 | `/admin/merge-candidates/{uuid}/merge` | POST | Admin page Merge Candidates card (merge B into A, delete B) |
 | `/admin/merge-candidates/{uuid}/dismiss` | POST | Admin page Merge Candidates card (mark as reviewed-not-duplicate) |
 | `/auth/register` | POST | Registration page |
+| `/maintenance/status` | GET | Polled by MaintenanceBanner every 60s on every page (no auth) |
 
 ---
 
