@@ -306,3 +306,23 @@ DURATION_EXPECTED_PAIRS = [
 def test_parse_duration_to_seconds_exact(duration_str, expected_seconds):
     result = JikanScraper._parse_duration_to_seconds(duration_str)
     assert result == expected_seconds, f"For '{duration_str}', expected {expected_seconds} but got {result}"
+
+
+@pytest.mark.asyncio
+async def test_rate_limiter_spaces_consecutive_requests(monkeypatch):
+    """Two back-to-back calls must be spaced at least _MIN_REQUEST_INTERVAL_S
+    apart. Without this, a 200-anime sweep would burst hundreds of
+    requests into Jikan as fast as TCP allows."""
+    from time import monotonic
+
+    # Override to a small value so the test stays fast but still proves
+    # spacing — the production constant doesn't need to be exercised.
+    monkeypatch.setattr(JikanScraper, "_MIN_REQUEST_INTERVAL_S", 0.05)
+    JikanScraper._last_request_at = 0.0
+
+    t0 = monotonic()
+    await JikanScraper._wait_for_rate_limit()
+    await JikanScraper._wait_for_rate_limit()
+    elapsed = monotonic() - t0
+
+    assert elapsed >= 0.045  # 5% margin under the configured 50ms gap

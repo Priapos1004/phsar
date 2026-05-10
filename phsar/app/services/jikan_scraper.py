@@ -1,7 +1,9 @@
+import asyncio
 import logging
 import re
 from collections import deque
 from datetime import datetime
+from time import monotonic
 from typing import TYPE_CHECKING, Optional
 
 import httpx
@@ -32,6 +34,16 @@ def parse_mal_datetime(value: str | None) -> Optional[datetime]:
 
 
 class JikanScraper:
+    # Jikan documents ~3 req/s; we space request *starts* at 350ms (~2.85
+    # req/s) to leave headroom and avoid 429s on a 200-anime sweep that
+    # would otherwise burst hundreds of requests into the API as fast as
+    # TCP allows. tenacity's 429 retry would mask the rejections but not
+    # the IP-ban risk of sustained abuse. Class-level so user_scrape and
+    # update_sweep share the gate if they ever overlap.
+    _MIN_REQUEST_INTERVAL_S: float = 0.35
+    _rate_lock: asyncio.Lock = asyncio.Lock()
+    _last_request_at: float = 0.0
+
     def __init__(self, base_url: str = BASE_URL):
         self.base_url = base_url
         self.client: Optional[httpx.AsyncClient] = None
@@ -44,6 +56,20 @@ class JikanScraper:
     async def __aexit__(self, exc_type, exc, tb):
         await self.client.aclose()
 
+    @classmethod
+    async def _wait_for_rate_limit(cls) -> None:
+        """Serialized lock + sleep keeps consecutive request *starts* at
+        least _MIN_REQUEST_INTERVAL_S apart. Tenacity retries reinvoke
+        _get and hit this gate too — fine, since the backoff already
+        dominates the wait."""
+        async with cls._rate_lock:
+            now = monotonic()
+            elapsed = now - cls._last_request_at
+            if elapsed < cls._MIN_REQUEST_INTERVAL_S:
+                await asyncio.sleep(cls._MIN_REQUEST_INTERVAL_S - elapsed)
+                now = monotonic()
+            cls._last_request_at = now
+
     @retry(
         # Exponential backoff caps at 30s — better tail behavior on a transient
         # MAL outage than fixed-1s, especially during overnight unattended runs.
@@ -53,6 +79,7 @@ class JikanScraper:
     )
     async def _get(self, url: str, params: Optional[dict] = None) -> dict:
         logger.debug(f"Fetching URL: {url} with params: {params}")
+        await self._wait_for_rate_limit()
         response = await self.client.get(url, params=params)
         response.raise_for_status()
         return response.json()
