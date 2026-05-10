@@ -80,13 +80,21 @@ def create_app() -> FastAPI:
 
     @app.middleware("http")
     async def maintenance_gate(request: Request, call_next):
-        # / and /health stay open so Coolify's liveness check doesn't fail the
-        # container mid-restore and trigger a restart in the middle of pg_restore.
-        if is_maintenance_active() and request.url.path not in ("/", "/health"):
+        # /, /health stay open so Coolify's liveness check doesn't fail the
+        # container mid-window and trigger a restart in the middle of an
+        # operation. /maintenance/status stays open so the frontend's banner
+        # can keep polling truthful state while the rest of the API is 503'd
+        # — without it, the user lands on /login?maintenance=1 with no
+        # countdown to tell them when service resumes.
+        if is_maintenance_active() and request.url.path not in (
+            "/",
+            "/health",
+            "/maintenance/status",
+        ):
             return JSONResponse(
                 status_code=503,
                 content={
-                    "detail": "Backup restore in progress. Please try again in a moment.",
+                    "detail": "Maintenance in progress. Please try again in a moment.",
                     "maintenance": True,
                 },
             )
@@ -99,6 +107,7 @@ def create_app() -> FastAPI:
         filters,
         jobs,
         library,
+        maintenance,
         media,
         ratings,
         save,
@@ -112,6 +121,7 @@ def create_app() -> FastAPI:
     app.include_router(filters.router)
     app.include_router(jobs.router)
     app.include_router(library.router)
+    app.include_router(maintenance.router)
     app.include_router(media.router)
     app.include_router(ratings.router)
     app.include_router(save.router)

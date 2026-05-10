@@ -7,6 +7,12 @@ export interface TokenResponse {
 	token_type: string;
 }
 
+// Maintenance window status (GET /maintenance/status, public)
+export interface MaintenanceStatus {
+	active: boolean;
+	scheduled_at: string | null; // ISO 8601
+}
+
 // Media
 export interface MediaConnected {
 	mal_id: number;

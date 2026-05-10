@@ -130,6 +130,14 @@ class Media(BaseModel):
     media_genre = relationship("MediaGenre", back_populates="media", cascade="all, delete-orphan", lazy="raise")
     media_studio = relationship("MediaStudio", back_populates="media", cascade="all, delete-orphan", lazy="raise")
     media_search = relationship("MediaSearch", back_populates="media", cascade="all, delete-orphan", lazy="raise")
+    # One-to-one freshness sidecar. See AnimeFreshness for rationale.
+    freshness = relationship(
+        "MediaFreshness",
+        back_populates="media",
+        cascade="all, delete-orphan",
+        uselist=False,
+        lazy="raise",
+    )
 
 # Index to optimize queries filtering or ordering by season year and name
 Index(

@@ -7,6 +7,7 @@
     import { jwtDecode } from 'jwt-decode';
     import { api } from '$lib/api';
     import NavBar from '$lib/components/NavBar.svelte';
+    import MaintenanceBanner from '$lib/components/MaintenanceBanner.svelte';
     import TokenExpiryDialog from '$lib/components/TokenExpiryDialog.svelte';
     import LoadingScreen from '$lib/components/LoadingScreen.svelte';
     import VersionFooter from '$lib/components/VersionFooter.svelte';
@@ -137,6 +138,10 @@
 {#if loading || signingOut}
     <LoadingScreen />
 {:else}
+    <!-- Banner sits above the navbar so it's the first thing users see on
+         every page (including /login and /register). It only renders when
+         the backend reports a scheduled or active maintenance window. -->
+    <MaintenanceBanner />
     {#if page.url.pathname !== '/login' && page.url.pathname !== '/register'}
       <NavBar
         {isAuthenticated}

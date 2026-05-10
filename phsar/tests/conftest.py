@@ -9,7 +9,20 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
+from app.core import maintenance
 from app.core.db import DATABASE_URL
+
+
+@pytest.fixture(autouse=True)
+def reset_maintenance_state():
+    """Globals — a stray flag from one test would 503 every subsequent
+    test in the run, so reset around every test by default. The reset is
+    free when no test touched the flags."""
+    maintenance.set_maintenance(False)
+    maintenance.set_scheduled_at(None)
+    yield
+    maintenance.set_maintenance(False)
+    maintenance.set_scheduled_at(None)
 
 
 @pytest.fixture

@@ -6,10 +6,12 @@ write to the real DB and clean up explicitly via a tracked-job-ids fixture.
 """
 
 import asyncio
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import delete
 
+from app.core import maintenance
 from app.core.db import async_session_maker, engine
 from app.daos.job_dao import JobDAO
 from app.models.job import Job, JobKind, JobStatus
@@ -168,6 +170,83 @@ async def test_unregistered_kind_marks_job_not_retryable(tracked_jobs):
     refreshed = await _get(job_id)
     assert refreshed.status is JobStatus.failed
     assert (refreshed.result_summary or {}).get("retryable") is False
+
+
+@pytest.mark.asyncio
+async def test_sweep_kind_brackets_maintenance_flag(tracked_jobs):
+    """Sweep dispatchers run inside the maintenance window — the worker
+    flips the flag on before the dispatcher and off after, regardless of
+    success/failure. Verifies the success path here."""
+    captured_active: list[bool] = []
+
+    async def fake_sweep(session, job):
+        captured_active.append(maintenance.is_maintenance_active())
+        return None
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.update_sweep, fake_sweep)
+
+    # Pre-warning schedule — the worker should clear it once the job runs.
+    maintenance.set_scheduled_at(datetime.now(timezone.utc))
+
+    job_id = await _enqueue(kind=JobKind.update_sweep)
+    tracked_jobs.append(job_id)
+
+    ran = await worker.dispatch_one()
+    assert ran is True
+
+    # Inside the dispatcher: flag was True.
+    assert captured_active == [True]
+    # After dispatch_one returns: both cleared.
+    assert maintenance.is_maintenance_active() is False
+    assert maintenance.get_scheduled_at() is None
+
+
+@pytest.mark.asyncio
+async def test_sweep_kind_clears_flag_on_dispatcher_failure(tracked_jobs):
+    """A dispatcher crash must NOT leave the flag stuck — otherwise every
+    endpoint sits behind a 503 until the next process restart."""
+
+    async def boom(session, job):
+        raise RuntimeError("sweep blew up")
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.update_sweep, boom)
+
+    job_id = await _enqueue(kind=JobKind.update_sweep)
+    tracked_jobs.append(job_id)
+
+    ran = await worker.dispatch_one()
+    assert ran is True
+
+    assert maintenance.is_maintenance_active() is False
+    assert maintenance.get_scheduled_at() is None
+
+    refreshed = await _get(job_id)
+    assert refreshed.status is JobStatus.failed
+
+
+@pytest.mark.asyncio
+async def test_user_scrape_does_not_flip_maintenance_flag(tracked_jobs):
+    """user_scrape jobs run alongside normal traffic — they must NOT trip
+    the maintenance gate, otherwise every concurrent user gets 503'd."""
+    captured_active: list[bool] = []
+
+    async def fake_dispatcher(session, job):
+        captured_active.append(maintenance.is_maintenance_active())
+        return None
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.user_scrape, fake_dispatcher)
+
+    job_id = await _enqueue(kind=JobKind.user_scrape)
+    tracked_jobs.append(job_id)
+
+    ran = await worker.dispatch_one()
+    assert ran is True
+
+    assert captured_active == [False]
+    assert maintenance.is_maintenance_active() is False
 
 
 @pytest.mark.asyncio
