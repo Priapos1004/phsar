@@ -8,7 +8,13 @@
     import type { MergeCandidateListItem, MergeCandidateAnimeSummary } from '$lib/types/api';
 
     let candidates = $state<MergeCandidateListItem[]>([]);
+    // `loading` flips off after the first fetch and stays off; subsequent
+    // fetches only toggle `refreshing`. That keeps the keyed each-block
+    // mounted across refreshes so Svelte diffs the list in place — no full
+    // unmount, no scroll jump.
     let loading = $state(true);
+    let refreshing = $state(false);
+    let busy = $derived(loading || refreshing);
     let error = $state('');
     let busyUuid = $state<string | null>(null);
     let confirmMergeUuid = $state<string | null>(null);
@@ -18,8 +24,9 @@
     // merge — the backend ordering is just a recommendation.
     let swapped = $state<Record<string, boolean>>({});
 
-    onMount(() => {
-        fetchCandidates();
+    onMount(async () => {
+        await fetchCandidates();
+        loading = false;
     });
 
     function sides(c: MergeCandidateListItem): [MergeCandidateAnimeSummary, MergeCandidateAnimeSummary] {
@@ -27,14 +34,14 @@
     }
 
     async function fetchCandidates() {
-        loading = true;
+        refreshing = true;
         error = '';
         try {
             candidates = await api.get<MergeCandidateListItem[]>('/admin/merge-candidates');
         } catch (err) {
             error = err instanceof ApiError ? err.detail : 'Failed to load merge candidates';
         } finally {
-            loading = false;
+            refreshing = false;
         }
     }
 
@@ -47,7 +54,10 @@
         try {
             await api.post(`/admin/merge-candidates/${uuid}/merge`, { keep_uuid: keep.uuid });
             confirmMergeUuid = null;
-            candidates = candidates.filter((c) => c.uuid !== uuid);
+            // Refetch so the keyed each-block diffs in place: the merged row
+            // drops out, any cascade-resolved candidates drop with it, and
+            // re-detection may surface fresh pairs against the survivor.
+            await fetchCandidates();
         } catch (err) {
             error = err instanceof ApiError ? err.detail : 'Failed to merge';
         } finally {
@@ -83,8 +93,8 @@
     <Card.Header>
         <div class="flex items-center justify-between">
             <h2 class="text-lg font-semibold text-card-foreground">Merge Candidates</h2>
-            <Button variant="ghost" size="sm" onclick={fetchCandidates} disabled={loading} title="Refresh">
-                <RefreshCw class="size-4 {loading ? 'animate-spin' : ''}" />
+            <Button variant="ghost" size="sm" onclick={fetchCandidates} disabled={busy} title="Refresh">
+                <RefreshCw class="size-4 {busy ? 'animate-spin' : ''}" />
             </Button>
         </div>
         <p class="text-xs text-muted-foreground">

@@ -28,6 +28,7 @@ from app.schemas.admin_schema import (
     MergeCandidateListItem,
 )
 from app.services.anime_search_service import anime_title_texts
+from app.services.merge_detection_service import detect_merge_candidates
 from app.services.spoiler_service import refresh_spoiler_cache_for_all_users
 from app.services.vector_embedding_service import create_anime_embedding
 
@@ -134,14 +135,21 @@ async def _resolve_keep_uuid(
     return keep_id
 
 
-async def merge(db: AsyncSession, uuid: UUID, keep_uuid: UUID | None = None) -> str:
+async def merge(
+    db: AsyncSession, uuid: UUID, keep_uuid: UUID | None = None
+) -> str:
     """Merge the candidate's two anime. The surviving side is `keep_uuid`
     (or the table's anime_a if omitted); the other side is deleted, with
     its media re-parented onto the survivor.
 
     Cascade kills the candidate row + every other pending candidate that
-    referenced the deleted anime on either side. Spoiler cache is recomputed
-    globally because frontiers run per-anime over the now-merged media list.
+    referenced the deleted anime on either side. Re-detection runs against
+    the survivor afterwards: if the merged-in media surfaces a fresh
+    similarity against some third anime that wasn't flagged before, it
+    gets pushed into the queue for admin review (e.g. A-B and B-C were
+    pending; merging A-B should re-evaluate A-C). Spoiler cache is
+    recomputed globally because frontiers run per-anime over the now-merged
+    media list.
 
     Fail-loud on shared mal_ids: per-design assumption is that Media.mal_id
     is globally unique, so the same mal_id appearing under both anime is a
@@ -204,6 +212,16 @@ async def merge(db: AsyncSession, uuid: UUID, keep_uuid: UUID | None = None) -> 
     await db.commit()
 
     if anime_a is not None:
+        # Re-run detection against the survivor: B's old pairs are gone, but
+        # B's media is now under A and may match against a third anime that
+        # didn't trigger before. seen_pairs short-circuits anything admin
+        # already decided, so this only adds genuinely new candidates.
+        try:
+            await detect_merge_candidates(db, new_anime_ids=[anime_a.id])
+            await db.commit()
+        except Exception:
+            logger.exception("Post-merge re-detection failed; merge itself succeeded")
+            await db.rollback()
         # Spoiler cache stores media ids, not anime ids, but the frontier
         # algorithm runs per-anime. Recompute globally so frontiers reflect
         # the merged media list.

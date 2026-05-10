@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 import pytest
+from sqlalchemy import select
 
 from app.exceptions import InvalidMergeKeepError
 from app.models.anime import Anime
@@ -156,6 +157,64 @@ async def test_merge_keep_uuid_default_keeps_anime_a(db_session):
     surviving_uuid = await merge(db_session, uuid=candidate_uuid)
     assert surviving_uuid == str(table_a.uuid)
     assert await db_session.get(Anime, table_b.id) is None
+
+
+@pytest.mark.asyncio
+async def test_merge_redetects_against_third_anime(db_session):
+    """Three-way duplicate scenario: pending candidates A-B and B-C exist.
+    Merging A-B cascades B-C away (B is deleted), but B's media now sits
+    under A. If A and C now match per the detector, A-C should be flagged
+    so the admin doesn't lose the duplicate signal."""
+    studio = Studio(name="Re-detect Studio")
+    db_session.add(studio)
+    await db_session.flush()
+
+    # A and B share studio + match titles via containment ("Show" ⊂ "Show 2").
+    a = Anime(mal_id=90701, title="Re-detect Show")
+    b = Anime(mal_id=90702, title="Re-detect Show 2")
+    # C shares studio with A but its title only matches B's media title —
+    # so before the merge, A-C wouldn't flag (low title score), but after
+    # the merge B's media sits under A and the detector should re-score.
+    c = Anime(mal_id=90703, title="Re-detect Show Side Story")
+    db_session.add_all([a, b, c])
+    await db_session.flush()
+
+    media_a = Media(**_media_kwargs(a.id, 907010, title="Re-detect Show TV"))
+    media_b = Media(**_media_kwargs(b.id, 907020, title="Re-detect Show 2 TV"))
+    media_c = Media(**_media_kwargs(c.id, 907030, title="Re-detect Show Side Story TV"))
+    db_session.add_all([media_a, media_b, media_c])
+    await db_session.flush()
+    db_session.add_all([
+        MediaStudio(media_id=media_a.id, studio_id=studio.id),
+        MediaStudio(media_id=media_b.id, studio_id=studio.id),
+        MediaStudio(media_id=media_c.id, studio_id=studio.id),
+    ])
+    await db_session.flush()
+
+    a_id, b_id = sorted((a.id, b.id))
+    candidate_ab = MergeCandidate(
+        anime_a_id=a_id, anime_b_id=b_id,
+        similarity_score=0.9, detected_by="title_studio",
+        status=MergeCandidateStatus.pending,
+    )
+    db_session.add(candidate_ab)
+    await db_session.flush()
+
+    survivor_uuid = await merge(db_session, uuid=candidate_ab.uuid)
+    assert survivor_uuid == str((a if a.id == a_id else b).uuid)
+
+    # The original A-B candidate is gone via cascade (B was deleted). Any
+    # newly detected pair must reference the surviving anime + C.
+    survivor_id = a.id if a.id == a_id else b.id
+    new_pair = sorted((survivor_id, c.id))
+    fresh = (await db_session.execute(
+        select(MergeCandidate).where(
+            MergeCandidate.anime_a_id == new_pair[0],
+            MergeCandidate.anime_b_id == new_pair[1],
+        )
+    )).scalars().first()
+    assert fresh is not None, "expected post-merge re-detection to flag survivor vs C"
+    assert fresh.status == MergeCandidateStatus.pending
 
 
 @pytest.mark.asyncio
