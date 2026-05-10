@@ -295,6 +295,18 @@ class BackupConfirmationMismatchError(PhsarBaseError):
         super().__init__(message)
 
 
+class InvalidScheduleDelayError(PhsarBaseError):
+    """Raised when schedule-sweep / schedule-seasonal gets a negative delay.
+    Cron should always send a positive integer; a negative value indicates
+    a misconfigured task."""
+    status_code = 400
+
+    def __init__(self, delay_minutes: int):
+        self.delay_minutes = delay_minutes
+        message = f"delay_minutes must be >= 0, got {delay_minutes}."
+        super().__init__(message)
+
+
 class InvalidCronTokenError(PhsarBaseError):
     """Raised when a cron-authenticated endpoint gets a bad/missing bearer token."""
     status_code = 401

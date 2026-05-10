@@ -14,7 +14,20 @@ if TYPE_CHECKING:
 
 BASE_URL = "https://api.jikan.moe/v4"
 
+# Sentinel media.airing_status value MAL returns for shows that haven't
+# wrapped yet. Module-level so callers (sweep tier query, dispatcher diff)
+# don't drift onto separate string copies.
+AIRING_STATUS_CURRENTLY_AIRING = "Currently Airing"
+
 logger = logging.getLogger(__name__)
+
+
+def parse_mal_datetime(value: str | None) -> Optional[datetime]:
+    # MAL emits "+00:00" most of the time but historical payloads sometimes
+    # carry "Z". `fromisoformat` accepts the former natively.
+    if not value:
+        return None
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
 class JikanScraper:
@@ -70,7 +83,7 @@ class JikanScraper:
             return None, None
 
         try:
-            date = datetime.fromisoformat(aired_from.replace("Z", "+00:00"))
+            date = parse_mal_datetime(aired_from)
             year = date.year
             month = date.month
 
@@ -145,6 +158,13 @@ class JikanScraper:
 
     async def search_by_malid(self, mal_id: int) -> dict:
         data = await self._get(f"{self.base_url}/anime/{mal_id}")
+        return data.get("data", {})
+
+    async def refresh_anime(self, mal_id: int) -> dict:
+        # /full bundles relations into the same response, so 7c's probe
+        # can read them without a second hit. 7b ignores the relations
+        # block and just diffs the canonical fields.
+        data = await self._get(f"{self.base_url}/anime/{mal_id}/full")
         return data.get("data", {})
 
     def get_all_anime_media(self, media_list: list[dict]) -> list[int]:

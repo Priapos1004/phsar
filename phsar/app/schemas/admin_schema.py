@@ -47,6 +47,14 @@ class MergeResult(BaseModel):
     surviving_anime_uuid: str
 
 
+class ScheduledSweepResponse(BaseModel):
+    """Returned by POST /admin/jobs/schedule-sweep so the cron can confirm
+    the job is queued and (in dev) the admin can poll /maintenance/status
+    against the same timestamp."""
+    job_uuid: UUID
+    scheduled_at: datetime
+
+
 class ExpiryPreset(int, Enum):
     """Allowed token expiry durations in days."""
     one_day = 1

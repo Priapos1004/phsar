@@ -24,7 +24,10 @@ from app.seeders.user_seeder import (
 )
 from app.services.job_worker import job_worker
 from app.services.merge_detection_service import backfill_merge_candidates
-from app.services.scrape_dispatcher import user_scrape_dispatcher
+from app.services.scrape_dispatcher import (
+    update_sweep_dispatcher,
+    user_scrape_dispatcher,
+)
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -49,6 +52,7 @@ async def lifespan(app: FastAPI):
             logger.warning("Reaped %d orphan running jobs from previous process", reaped)
 
     job_worker.register_dispatcher(JobKind.user_scrape, user_scrape_dispatcher)
+    job_worker.register_dispatcher(JobKind.update_sweep, update_sweep_dispatcher)
     await job_worker.start()
 
     yield  # Startup complete
@@ -90,6 +94,11 @@ def create_app() -> FastAPI:
             "/",
             "/health",
             "/maintenance/status",
+            # Allowlisted so a cron retry while a sweep is already running
+            # doesn't 503 the cron itself. The endpoint is cheap (just a
+            # row insert + flag set) and idempotent enough that double-firing
+            # only enqueues a second sweep behind the live one.
+            "/admin/jobs/schedule-sweep",
         ):
             return JSONResponse(
                 status_code=503,

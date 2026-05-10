@@ -2,6 +2,8 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.anime_freshness import AnimeFreshness
+from app.models.media_freshness import MediaFreshness
 from app.schemas.search_schema import SearchResultDB
 from app.services.anime_search_service import anime_title_texts
 from app.services.anime_service import create_anime_from_media
@@ -40,6 +42,11 @@ async def save_search_results(
         # Pick the first media item to create Anime from
         anime_as_media_in = result.unconnected_media_list[0]
         anime = await create_anime_from_media(db, anime_as_media_in)
+        # Every catalog row born with its freshness sidecar so the nightly
+        # sweep's LEFT JOIN + COALESCE stays defensive belt-and-braces.
+        # last_checked_at=None is honest: nothing has *checked* this row
+        # from MAL yet — the row IS the check.
+        anime.freshness = AnimeFreshness(last_checked_at=None, stable_check_count=0)
         saved_anything = True
         new_anime_ids.append(anime.id)
         # Resolve graph cross-links to (this new anime, owning anime) pairs
@@ -63,6 +70,7 @@ async def save_search_results(
         # Create all Media attached to that Anime
         for media_in in result.unconnected_media_list:
             media_obj = await create_media(db, media_in, anime_id=anime.id)
+            media_obj.freshness = MediaFreshness(last_checked_at=None)
             logger.info(f"Created Media: {media_obj.title} (ID: {media_obj.id})")
 
             # Link genres
