@@ -26,7 +26,6 @@ async def save_search_results(
     db: AsyncSession,
     search_results: list[SearchResultDB],
     progress: ProgressReporter | None = None,
-    defer_spoiler_recompute: bool = False,
 ):
     logger.debug(f"DB session: {id(db)}")
     saved_anything = False
@@ -84,7 +83,7 @@ async def save_search_results(
 
     await db.commit()  # Single commit at the end!
 
-    if saved_anything and not defer_spoiler_recompute:
+    if saved_anything:
         # Existing users' spoiler caches need a recompute against the new
         # media set; otherwise spoiler_level=hide filters the new animes out
         # until the next backend restart triggers backfill_spoiler_visibility.
