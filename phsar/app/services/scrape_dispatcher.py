@@ -12,6 +12,7 @@ boundary so a crash mid-sweep preserves the already-refreshed rows.
 """
 
 import logging
+import math
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,6 +40,15 @@ logger = logging.getLogger(__name__)
 # the value keeps the integer bounded and avoids accumulating noise across
 # years of sweeps.
 _STABLE_COUNT_CAP = 99
+
+# Stability threshold for the (score, scored_by) pair, expressed as the
+# absolute change in the weighted score `score * log10(scored_by + 1)`.
+# Without this, a single new vote on a million-vote anime (One Piece etc.)
+# would reset the counter every night and the show would never stabilize.
+# 0.05 is calibrated so a +0.01 score shift at >100k votes counts as a
+# real change, while pure vote-count drift on popular anime is treated as
+# noise. See compound-doc / commit message for the magnitude analysis.
+_SCORE_STABILITY_THRESHOLD = 0.05
 
 
 async def user_scrape_dispatcher(session: AsyncSession, job: Job) -> dict:
@@ -157,21 +167,40 @@ async def _refresh_one_anime(
     return anime_changed
 
 
+def _weighted_score(score: float | None, scored_by: int | None) -> float | None:
+    """`score * log10(scored_by + 1)` — same formula used by the search
+    ranking helpers (anime_dao / media_dao). Returns None when either
+    side is missing so the caller can treat absent-vs-present as a
+    structural change instead of comparing 0 to None."""
+    if score is None or not scored_by:
+        return None
+    return score * math.log10(scored_by + 1)
+
+
 def _apply_media_diff(media: Media, payload: dict) -> bool:
     """Compare payload against media for the volatile fields and mutate
-    in place. Returns True if anything actually changed."""
+    in place. Returns True if anything *meaningfully* changed (i.e.
+    enough that the per-anime stability counter should reset)."""
     changed = False
 
+    # Score and scored_by are bundled. A +1 vote on a 5M-vote anime moves
+    # scored_by but is meaningless drift; use the weighted formula and
+    # only count this as stability-resetting when the delta crosses
+    # _SCORE_STABILITY_THRESHOLD. Always update the values so the catalog
+    # stays current — the threshold gates the *signal*, not the write.
     new_score = payload.get("score")
-    if media.score != new_score:
-        media.score = new_score
-        changed = True
-
-    # extract_information coerces missing scored_by to 0 already.
     new_scored_by = payload.get("scored_by") or 0
-    if media.scored_by != new_scored_by:
-        media.scored_by = new_scored_by
+    old_weighted = _weighted_score(media.score, media.scored_by)
+    new_weighted = _weighted_score(new_score, new_scored_by)
+    media.score = new_score
+    media.scored_by = new_scored_by
+    if (old_weighted is None) != (new_weighted is None):
+        # First votes coming in (score=None → 8.0, or scored_by 0 → N) is
+        # a structural transition, not noise.
         changed = True
+    elif old_weighted is not None and new_weighted is not None:
+        if abs(new_weighted - old_weighted) >= _SCORE_STABILITY_THRESHOLD:
+            changed = True
 
     new_episodes = payload.get("episodes")
     if media.episodes != new_episodes:

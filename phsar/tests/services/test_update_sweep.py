@@ -123,6 +123,43 @@ def test_diff_episodes_was_null_logs_only(caplog):
     assert any("Episode count revealed" in r.message for r in caplog.records)
 
 
+def test_diff_small_vote_drift_below_threshold_returns_false():
+    """A +1 vote on a high-vote anime moves scored_by but the weighted
+    delta is essentially zero — must not reset the stability counter."""
+    media = Media(**media_kwargs(anime_id=1, mal_id=1, score=8.5, scored_by=5_000_000, episodes=12,
+        airing_status="Finished Airing",
+        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+    ))
+    payload = _payload(score=8.5, scored_by=5_000_001, episodes=12, aired_to="2020-06-30T00:00:00+00:00")
+    assert _apply_media_diff(media, payload) is False
+    # But the value is still written through — data freshness.
+    assert media.scored_by == 5_000_001
+
+
+def test_diff_borderline_score_change_below_threshold_returns_false():
+    """+0.005 score on 1k votes — weighted delta ~0.015, below 0.05."""
+    media = Media(**media_kwargs(anime_id=1, mal_id=1, score=7.500, scored_by=1000, episodes=12,
+        airing_status="Finished Airing",
+        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+    ))
+    payload = _payload(score=7.505, scored_by=1000)
+    assert _apply_media_diff(media, payload) is False
+    assert media.score == 7.505
+
+
+def test_diff_score_appears_is_a_structural_change():
+    """score going from None (anime not yet rated) to a real value is a
+    real-world transition — must reset the counter regardless of the
+    weighted threshold."""
+    media = Media(**media_kwargs(anime_id=1, mal_id=1, score=None, scored_by=0, episodes=12,
+        airing_status="Currently Airing", aired_to=None,
+    ))
+    payload = _payload(score=8.0, scored_by=500, airing_status="Currently Airing", aired_to=None)
+    assert _apply_media_diff(media, payload) is True
+    assert media.score == 8.0
+    assert media.scored_by == 500
+
+
 def test_diff_refuses_to_clobber_airing_status_with_none():
     """airing_status is NOT NULL — a missing field in MAL payload (rare,
     defensive) must not blow up the row."""
