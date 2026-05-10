@@ -151,6 +151,7 @@ phsar/
 │   │   │   │   ├── MediaInfo.svelte
 │   │   │   │   ├── MergeCandidatesCard.svelte
 │   │   │   │   ├── NavBar.svelte
+│   │   │   │   ├── Notice.svelte
 │   │   │   │   ├── RatingCard.svelte
 │   │   │   │   ├── RatingsOverview.svelte
 │   │   │   │   ├── RatingsOverviewAttributes.svelte
@@ -186,6 +187,7 @@ phsar/
 │   │   │   │   ├── auth.ts
 │   │   │   │   ├── bell-session.ts
 │   │   │   │   ├── jobs.ts
+│   │   │   │   ├── maintenance.ts
 │   │   │   │   ├── spoilerVisibility.ts
 │   │   │   │   └── userSettings.ts
 │   │   │   ├── styles/
@@ -266,6 +268,7 @@ phsar/
     ├── routers/
     │   ├── conftest.py
     │   ├── test_admin.py
+    │   ├── test_admin_sweep.py
     │   ├── test_anime_detail.py
     │   ├── test_auth.py
     │   ├── test_filters_options.py
@@ -292,6 +295,7 @@ phsar/
         ├── test_progress_reporter.py
         ├── test_search_service.py
         ├── test_spoiler_service.py
+        ├── test_update_sweep.py
         └── test_vector_embedding_service.py
 ```
 </details>
@@ -319,6 +323,8 @@ SEARCH_SECRET_KEY=supersecretsearchsecretkey
 # BACKUP_CRON_TOKEN=supersecretcrontoken
 # Optional: raise if pg_restore of a larger DB legitimately takes >10 min
 # BACKUP_RESTORE_TIMEOUT_SECONDS=600
+# Optional: shared bearer secret for POST /admin/jobs/schedule-sweep (nightly content updates)
+# JOBS_CRON_TOKEN=supersecretsweeptoken
 ```
 
 *Change `animeuser`, `animepass`, `admin`, `supersecretpassword`, `supersecretsecretkey`, and `supersecretsearchsecretkey`*

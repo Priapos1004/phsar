@@ -29,15 +29,14 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 - Closing and reopening the browser keeps the user logged in (until token expires or is invalidated)
 
 ### 1.5 Maintenance Mode
-- **Pre-warning banner.** A yellow banner sits above the navbar on every page (including `/login` and `/register`) when a maintenance window is upcoming or active.
-  - Polls `GET /maintenance/status` every 60s via raw `fetch` (deliberately bypasses the API client so a 503 mid-window doesn't trigger the redirect below and defeat the warning).
-  - When `scheduled_at` is within 30 min: "Scheduled maintenance starts in N minutes — please save your work." (singular "minute" at exactly 1).
+- **Sticky pre-warning banner.** A yellow `Notice` card sits in a sticky container at the top of every page (including `/login` and `/register`), pinned alongside the navbar so scrolling the page keeps both visible. Renders only when a maintenance window is upcoming or active.
+  - Polls `GET /maintenance/status` every 60s via raw `fetch` (deliberately bypasses the API client so a 503 mid-window can't trigger the redirect below and defeat the warning).
+  - Also subscribes to the auth `token` store and to a shared `maintenanceRefresh` bump signal — any login/logout transition AND any 503-with-maintenance response triggers an immediate refetch, so the banner reacts in milliseconds rather than waiting for the next 60s poll.
+  - When `scheduled_at` is within 30 min: "Scheduled maintenance starts in ~N minutes — pause your current episode." (singular "minute" at exactly 1).
   - When `active` is true: "Maintenance in progress. Some pages may be unavailable."
   - When neither: banner is hidden.
-- **Mid-window redirect.** When the backend returns 503 with `{maintenance: true}` on *any other* request, the API client clears the token and hard-navigates to `/login?maintenance=1`.
-- The login page also detects this state when `/auth/login` itself returns 503.
-- Login card shows its own yellow banner above the form: "Backup restore in progress. Login will be available again once it completes."
-- Submit is not disabled; retrying during the window repopulates the banner. On a successful login the banner clears and the user proceeds to `/` as normal.
+- **Mid-window redirect.** When the backend returns 503 with `{maintenance: true}` on *any other* request, the API client clears the token, bumps `maintenanceRefresh` so the global banner refetches state immediately, and hard-navigates to `/login` (when the user wasn't already there).
+- **/login during a maintenance window.** The form has no inline maintenance message — the global sticky banner above the navbar conveys the state. A 503 from `/auth/login` is silently swallowed by the form's catch (no error text, no submit-disable); the user can retry once the global banner clears.
 
 ---
 
@@ -400,8 +399,8 @@ Each anime search result card shows:
 | Rating fetch returns 404 | No rating displayed (expected for unrated media) |
 | Account deletion wrong password | "Invalid password." error below form |
 | Account deletion network failure | "Failed to delete account." error below form |
-| Any API call returns 503 `{maintenance: true}` | Token cleared, hard-navigate to `/login?maintenance=1`, yellow banner displayed |
-| `/auth/login` during maintenance | 503 shows the same yellow banner; submit not disabled, retry later |
+| Any API call returns 503 `{maintenance: true}` | Token cleared, `maintenanceRefresh` bumped (so the global banner refetches in ms), hard-navigate to `/login` if not already there. The sticky global banner conveys the state. |
+| `/auth/login` during maintenance | 503 silently swallowed by the form catch (no inline error). The global banner is the only signal. Submit not disabled, retry later. |
 | Duplicate backup upload | 409 "This dump is identical to an existing backup: '<filename>'." — the new upload is discarded |
 | Backup upload >2 GB | 413 "Uploaded backup is too large: <N> MB (limit: 2048 MB)." — partial file discarded |
 | Restore of a corrupt dump | Restore button is disabled on rows with integrity badge = corrupt |

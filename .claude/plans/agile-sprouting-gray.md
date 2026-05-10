@@ -260,17 +260,36 @@ S5 (main)             → BLUR/HIDE
 
 **Backfiller:** `merge_detection_service.backfill_merge_candidates` runs in app lifespan after `backfill_embeddings`. One-shot existing × existing pair sweep so duplicates that pre-date the detector get flagged on first restart after upgrade. Idempotent: pre-fetched seen-pairs short-circuits subsequent restarts.
 
+### Maintenance Window ✓ shipped (commit 7a of v0.14.0)
+
+Foundation for any destructive/long-running periodic job. Consumed by both the data-refresh sweep (7b) and the seasonal sweep (commit 8).
+
+- **Sidecar tables** (`anime_freshness`, `media_freshness`) hold operational state outside the canonical catalog rows so sweep cadence can't leak into Pydantic schemas via `model_dump()`. Each row is born with a sidecar; the migration backfilled existing rows to the parent's `created_at`.
+- **`core/maintenance.py`** module-level `_active` (already from v0.13.0 backup restore) gains `_scheduled_at`. The cron schedule endpoint sets `_scheduled_at` to a future timestamp; the worker brackets each sweep dispatch with `set_maintenance(True/False)` + `set_scheduled_at(None)` in try/finally so a crash can't leave the flag stuck.
+- **`MaintenanceGateMiddleware`** (pure ASGI class) returns 503 `{maintenance: true}` for everything except `/`, `/health`, `/maintenance/status`, `/admin/jobs/schedule-sweep`. Registered BEFORE `CORSMiddleware` so CORS ends up outermost — `app.add_middleware()` prepends, so registration order reverses the apparent stacking. Without that ordering, cross-origin 503s drop CORS headers and the browser blocks them.
+- **`MaintenanceBanner`** sticky at the top alongside the navbar (single sticky container in `+layout.svelte`); renders a `Notice` card with a countdown when within 30 min, "in progress" while active. Subscribes to the auth token store + a `maintenanceRefresh` bump signal so it reacts in ms to login transitions and 503-with-maintenance responses, not just the 60s poll.
+
 ### Automated Updates (Periodic)
 
-**Triggered via**: Coolify scheduled task (cron) calling an internal endpoint.
+**Triggered via**: Coolify scheduled task (cron) calling `POST /admin/jobs/schedule-sweep?delay_minutes=20`. The endpoint is cron-bearer-token authed and allowlisted in the maintenance gate.
 
-**What it does for each existing anime:**
-- Re-queries MAL for each media: update airing status, episode counts, scores, scored_by, aired_to dates
-- Check for new media releases by re-traversing relations (new season announced?)
-- Backfill `episodes_watched` on user ratings where episodes count was previously NULL and is now known
-- Re-traverses relation graph to detect if separate anime entries should be flagged for merge
+**Status:** ✓ data-refresh dispatcher + tier query shipped (commit 7b of v0.14.0); relations probe + coalesced spoiler recompute pending (7c, closes #30).
 
-**Frequency**: Daily or weekly (TBD based on MAL API rate limits and DB size). Existing anime updates may be weekly; seasonal updates can be daily (only 20-30 anime per season, most MAL IDs already in DB after first fetch).
+**What 7b ships (data refresh):**
+- `update_sweep` dispatcher tier-selects due anime via a 4-tier OR query (LEFT JOIN against `anime_freshness`):
+  - Tier 1: any media currently airing → always due
+  - Tier 2: `stable_check_count < 3` → still stabilizing
+  - Tier 3: last-checked > 7 days AND has a main media whose `aired_from` is within `SWEEP_RECENT_MAIN_YEARS = 5` years (refined from "any main media exists" so dormant main-only franchises don't ride weekly cycles)
+  - Tier 4: last-checked > 180 days → long-tail safety net
+- For each due anime: refreshes child media via `/anime/{id}/full`, diffs `score`/`scored_by`/`episodes`/`airing_status`/`aired_to`. **Per-anime commit + per-anime try/except** — a worker crash mid-sweep preserves earlier successes; a single bad MAL response fails *that* anime only.
+- Score and scored_by are bundled through `_weighted_score(score, scored_by) = score * log10(scored_by + 1)` and only count as stability-resetting when `abs(new − old) >= 0.05`. Without this, every popular anime (One Piece, BNHA, Naruto:Shippuuden) would never stabilize because daily vote drift moved `scored_by`. New values are written through to the DB regardless; the threshold gates only the stability *signal*.
+- Episodes-was-NULL → known: `logger.info(...)` only. Per-user `episodes_watched` is NOT auto-set because we don't know what the user actually watched.
+
+**What 7c adds (relations probe + coalesced spoiler recompute):**
+- Inside the tier-3 path: pull `relations` from the same `/anime/{id}/full` response (no extra MAL call) and compare to existing media under the anime. For mal_ids not in our DB ∪ `MediaUnwanted`, run the existing `handle_search_mal_api_results` BFS to discover and save them.
+- `save_search_results` gains `defer_spoiler_recompute: bool = False`. Sweep passes `True`. After the whole sweep finishes, the dispatcher calls `refresh_spoiler_cache_for_all_users` exactly once — without coalescing, a 200-anime sweep would fire the per-user recompute 200×.
+
+**Frequency**: Coolify cron daily. Tier query LIMITs at `JOBS_SWEEP_MAX_PER_RUN=200` so a fully-saturated catalog still completes within a maintenance window.
 
 ### Seasonal Scraping
 
