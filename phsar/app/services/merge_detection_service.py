@@ -54,6 +54,11 @@ TITLE_ALONE_THRESHOLD = 0.85
 TITLE_FLOOR_FOR_DESC = 0.5
 # Description-cosine threshold for the title+desc combined rule.
 DESC_THRESHOLD = 0.85
+# Containment match must be at least this many chars to count, OR a full
+# match of the shorter title with the shorter at least MIN_FULL_MATCH_CHARS
+# long. Blocks one/two-letter substrings ('k' ⊂ 'knights') from scoring 1.0.
+MIN_CONTAINMENT_MATCH_CHARS = 4
+MIN_FULL_MATCH_CHARS = 3
 
 DETECTOR_TITLE_STUDIO = "title_studio"
 DETECTOR_TITLE_DESC = "title_desc"
@@ -81,17 +86,43 @@ def normalize_title(title: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+def _is_word_boundary_match(longer: str, start: int, size: int) -> bool:
+    """True iff the substring [start, start+size) sits at word boundaries
+    on both sides of `longer`. A boundary is start/end-of-string or a
+    non-alphanumeric neighbor character. Used to reject spurious containment
+    matches like 'k' ⊂ 'knights' where the match runs into another word."""
+    left_ok = start == 0 or not longer[start - 1].isalnum()
+    right_ok = start + size == len(longer) or not longer[start + size].isalnum()
+    return left_ok and right_ok
+
+
 def _title_score(a: str, b: str) -> float:
     """max(ratio, containment) — symmetric ratio catches near-equal titles
     while containment (longest contiguous match / shorter length) catches
     'X' ⊂ 'X: Subtitle'. Length-symmetric ratio under-counts the second
-    case because half its denominator is the longer string."""
+    case because half its denominator is the longer string.
+
+    Containment is gated by a word-boundary check on the longer string and
+    a minimum match-size floor (>= 4 chars, OR a full match where the
+    shorter title is itself >= 3 chars). Without these, a one-letter title
+    like 'K' would score containment 1.0 against any title containing the
+    letter k.
+    """
     if not a or not b:
         return 0.0
     seq = SequenceMatcher(None, a, b)
     ratio = seq.ratio()
-    longest = seq.find_longest_match(0, len(a), 0, len(b)).size
-    containment = longest / min(len(a), len(b))
+    match = seq.find_longest_match(0, len(a), 0, len(b))
+    containment = 0.0
+    if match.size > 0:
+        longer, longer_start = (a, match.a) if len(a) >= len(b) else (b, match.b)
+        min_len = min(len(a), len(b))
+        size_floor_ok = (
+            match.size >= MIN_CONTAINMENT_MATCH_CHARS
+            or (match.size == min_len and min_len >= MIN_FULL_MATCH_CHARS)
+        )
+        if size_floor_ok and _is_word_boundary_match(longer, longer_start, match.size):
+            containment = match.size / min_len
     return max(ratio, containment)
 
 

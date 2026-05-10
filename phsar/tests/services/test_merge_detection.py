@@ -86,6 +86,46 @@ def test_title_score_low_for_different_franchises():
     assert _title_score("boku no hero academia", "boku no pico") < TITLE_ALONE_THRESHOLD
 
 
+def test_title_score_short_substring_blocked():
+    """Single-letter title 'K' must not flag against unrelated 'Knights'.
+    Without the size floor + word-boundary check, containment would hit 1.0
+    just because the letter 'k' appears at position 0."""
+    assert _title_score("k", "knights of sidonia") < 0.5
+
+
+def test_title_score_two_letter_full_match_blocked():
+    """Two-letter shorter title fully matched isn't long enough to be
+    diagnostic — common 2-char strings appear inside many longer titles."""
+    assert _title_score("ef", "ef a tale of memories") < 0.5
+
+
+def test_title_score_three_letter_full_match_passes():
+    """Three-character title fully contained at word boundaries should still
+    flag — len('air') == 3 hits the (full_match AND min_len >= 3) branch."""
+    assert _title_score("air", "air the movie") == 1.0
+
+
+def test_title_score_word_boundary_required():
+    """Match without a word boundary on the right side of the longer string
+    (size hits 4+ but runs straight into another word) must not count as
+    containment. SequenceMatcher.ratio still applies and stays below the
+    alone-rule threshold for these distinct strings."""
+    assert _title_score("naruto", "narutoshippuuden") < TITLE_ALONE_THRESHOLD
+
+
+def test_title_score_naruto_shippuuden_still_passes():
+    """Regression check: the canonical 'X' / 'X Y' family must still flag.
+    The space after 'naruto' in the longer string is a non-alnum boundary."""
+    assert _title_score("naruto", "naruto shippuuden") >= TITLE_ALONE_THRESHOLD
+
+
+def test_title_score_dr_stone_still_passes():
+    """Regression check: the Dr. Stone subtitle case (size 9 punctuation-
+    bounded match) must continue to score 1.0 after the boundary + floor
+    additions. ':' after the match is a non-alnum boundary."""
+    assert _title_score("dr. stone", "dr. stone: new world") == 1.0
+
+
 def test_cosine_similarity_unit_vectors():
     # Identical vectors: 1.0
     assert _cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
