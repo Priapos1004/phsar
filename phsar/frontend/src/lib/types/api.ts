@@ -254,6 +254,8 @@ export interface MergeCandidateAnimeSummary {
 	media_count: number;
 	studios: string[];
 	earliest_year: number | null;
+	earliest_aired_from: string | null;
+	rating_count: number;
 }
 
 export interface MergeCandidateListItem {

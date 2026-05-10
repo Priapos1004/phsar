@@ -6,6 +6,7 @@ is fail-loud — see MergeMalIdConflictError.
 """
 
 import logging
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -14,6 +15,7 @@ from sqlalchemy.orm import selectinload
 
 from app.daos.merge_candidate_dao import MergeCandidateDAO
 from app.exceptions import (
+    InvalidMergeKeepError,
     MergeCandidateAlreadyResolvedError,
     MergeCandidateNotFoundError,
     MergeMalIdConflictError,
@@ -34,14 +36,17 @@ logger = logging.getLogger(__name__)
 merge_candidate_dao = MergeCandidateDAO()
 
 
-def _summarize(anime: Anime) -> MergeCandidateAnimeSummary:
+def _summarize(anime: Anime, rating_count: int) -> MergeCandidateAnimeSummary:
     studio_names: set[str] = set()
     years: list[int] = []
+    aired_from_dates: list[datetime] = []
     for media in anime.media:
         for ms in media.media_studio:
             studio_names.add(ms.studio.name)
         if media.anime_season_year is not None:
             years.append(media.anime_season_year)
+        if media.aired_from is not None:
+            aired_from_dates.append(media.aired_from)
     return MergeCandidateAnimeSummary(
         uuid=str(anime.uuid),
         title=anime.title,
@@ -50,22 +55,48 @@ def _summarize(anime: Anime) -> MergeCandidateAnimeSummary:
         media_count=len(anime.media),
         studios=sorted(studio_names),
         earliest_year=min(years) if years else None,
+        earliest_aired_from=min(aired_from_dates) if aired_from_dates else None,
+        rating_count=rating_count,
+    )
+
+
+def _rank_key(summary: MergeCandidateAnimeSummary, anime_id: int) -> tuple:
+    """Sort key for the recommended-keep ordering: earliest aired_from
+    ASC (NULL sorts last via datetime.max sentinel), rating_count DESC,
+    anime_id ASC as the stable fallback."""
+    return (
+        summary.earliest_aired_from or datetime.max,
+        -summary.rating_count,
+        anime_id,
     )
 
 
 async def list_pending(db: AsyncSession) -> list[MergeCandidateListItem]:
     rows = await merge_candidate_dao.list_pending_with_anime(db)
-    return [
-        MergeCandidateListItem(
+    if not rows:
+        return []
+
+    anime_ids: set[int] = set()
+    for row in rows:
+        anime_ids.add(row.anime_a_id)
+        anime_ids.add(row.anime_b_id)
+    rating_counts = await merge_candidate_dao.get_rating_counts_for_anime(db, anime_ids)
+
+    items: list[MergeCandidateListItem] = []
+    for row in rows:
+        a_summary = _summarize(row.anime_a, rating_counts.get(row.anime_a_id, 0))
+        b_summary = _summarize(row.anime_b, rating_counts.get(row.anime_b_id, 0))
+        if _rank_key(a_summary, row.anime_a_id) > _rank_key(b_summary, row.anime_b_id):
+            a_summary, b_summary = b_summary, a_summary
+        items.append(MergeCandidateListItem(
             uuid=str(row.uuid),
             similarity_score=row.similarity_score,
             detected_by=row.detected_by,
             created_at=row.created_at,
-            anime_a=_summarize(row.anime_a),
-            anime_b=_summarize(row.anime_b),
-        )
-        for row in rows
-    ]
+            anime_a=a_summary,
+            anime_b=b_summary,
+        ))
+    return items
 
 
 async def _ensure_pending(db: AsyncSession, uuid: UUID) -> MergeCandidate:
@@ -84,25 +115,48 @@ async def dismiss(db: AsyncSession, uuid: UUID) -> None:
     await db.commit()
 
 
-async def merge(db: AsyncSession, uuid: UUID) -> str:
-    """Merge anime_b into anime_a:
-    - Re-parent all of B's media rows to A
-    - Re-link studios accumulated only on B (so search filters keep working)
-    - Delete B (cascades anime_search, anime relationships)
-    - Refresh A's anime embedding to reflect any new titles in the merged
-      media list
-    - Recompute spoiler cache for all users so the merged anime's frontier
-      uses the combined media set
+async def _resolve_keep_uuid(
+    db: AsyncSession, keep_uuid: UUID, anime_a_id: int, anime_b_id: int
+) -> int:
+    """Map a kept-side UUID to the matching anime's id. Raises if the UUID
+    doesn't belong to either side of this candidate — almost always a stale
+    payload from the admin UI."""
+    stmt = (
+        select(Anime.id)
+        .where(
+            Anime.uuid == keep_uuid,
+            Anime.id.in_([anime_a_id, anime_b_id]),
+        )
+    )
+    keep_id = (await db.execute(stmt)).scalar_one_or_none()
+    if keep_id is None:
+        raise InvalidMergeKeepError(str(keep_uuid))
+    return keep_id
 
-    Returns the surviving anime's UUID.
+
+async def merge(db: AsyncSession, uuid: UUID, keep_uuid: UUID | None = None) -> str:
+    """Merge the candidate's two anime. The surviving side is `keep_uuid`
+    (or the table's anime_a if omitted); the other side is deleted, with
+    its media re-parented onto the survivor.
+
+    Cascade kills the candidate row + every other pending candidate that
+    referenced the deleted anime on either side. Spoiler cache is recomputed
+    globally because frontiers run per-anime over the now-merged media list.
 
     Fail-loud on shared mal_ids: per-design assumption is that Media.mal_id
     is globally unique, so the same mal_id appearing under both anime is a
     data bug that needs human review before merging.
+
+    Returns the surviving anime's UUID.
     """
     candidate = await _ensure_pending(db, uuid)
     anime_a_id = candidate.anime_a_id
     anime_b_id = candidate.anime_b_id
+
+    if keep_uuid is not None:
+        keep_id = await _resolve_keep_uuid(db, keep_uuid, anime_a_id, anime_b_id)
+        if keep_id == anime_b_id:
+            anime_a_id, anime_b_id = anime_b_id, anime_a_id
 
     # Pre-flight: detect shared mal_ids before mutating anything.
     a_mal_ids_stmt = select(Media.mal_id).where(Media.anime_id == anime_a_id)

@@ -4,7 +4,7 @@
     import { Button } from '$lib/components/ui/button';
     import * as Card from '$lib/components/ui/card';
     import { Badge } from '$lib/components/ui/badge';
-    import { GitMerge, X, RefreshCw } from 'lucide-svelte';
+    import { GitMerge, X, RefreshCw, ArrowLeftRight } from 'lucide-svelte';
     import type { MergeCandidateListItem, MergeCandidateAnimeSummary } from '$lib/types/api';
 
     let candidates = $state<MergeCandidateListItem[]>([]);
@@ -13,10 +13,18 @@
     let busyUuid = $state<string | null>(null);
     let confirmMergeUuid = $state<string | null>(null);
     let confirmDismissUuid = $state<string | null>(null);
+    // Per-candidate flip state. Keys are candidate uuids; flipping reorders
+    // which side is rendered as A vs B and changes the keep_uuid sent on
+    // merge — the backend ordering is just a recommendation.
+    let swapped = $state<Record<string, boolean>>({});
 
     onMount(() => {
         fetchCandidates();
     });
+
+    function sides(c: MergeCandidateListItem): [MergeCandidateAnimeSummary, MergeCandidateAnimeSummary] {
+        return swapped[c.uuid] ? [c.anime_b, c.anime_a] : [c.anime_a, c.anime_b];
+    }
 
     async function fetchCandidates() {
         loading = true;
@@ -31,10 +39,13 @@
     }
 
     async function handleMerge(uuid: string) {
+        const candidate = candidates.find((c) => c.uuid === uuid);
+        if (!candidate) return;
+        const [keep] = sides(candidate);
         busyUuid = uuid;
         error = '';
         try {
-            await api.post(`/admin/merge-candidates/${uuid}/merge`, {});
+            await api.post(`/admin/merge-candidates/${uuid}/merge`, { keep_uuid: keep.uuid });
             confirmMergeUuid = null;
             candidates = candidates.filter((c) => c.uuid !== uuid);
         } catch (err) {
@@ -62,6 +73,7 @@
         const parts: string[] = [];
         if (a.earliest_year !== null) parts.push(String(a.earliest_year));
         parts.push(`${a.media_count} media`);
+        if (a.rating_count > 0) parts.push(`${a.rating_count} rating${a.rating_count === 1 ? '' : 's'}`);
         if (a.studios.length > 0) parts.push(a.studios.slice(0, 2).join(', '));
         return parts.join(' · ');
     }
@@ -97,10 +109,19 @@
                                 {(c.similarity_score * 100).toFixed(0)}% match
                             </Badge>
                             <span class="text-muted-foreground">{c.detected_by}</span>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                class="h-6 px-2 text-xs ml-auto"
+                                onclick={() => (swapped[c.uuid] = !swapped[c.uuid])}
+                                title="Swap A/B"
+                            >
+                                <ArrowLeftRight class="size-3 mr-1" /> Swap
+                            </Button>
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            {#each [c.anime_a, c.anime_b] as anime, i (anime.uuid)}
+                            {#each sides(c) as anime, i (anime.uuid)}
                                 <div class="rounded border bg-card px-3 py-2 space-y-1">
                                     <div class="text-xs font-semibold uppercase text-muted-foreground tracking-wide">
                                         Anime {i === 0 ? 'A (kept)' : 'B (merged in)'}

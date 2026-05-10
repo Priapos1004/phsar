@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, UploadFile, status
+from fastapi import APIRouter, Body, Depends, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -70,10 +70,11 @@ async def list_merge_candidates(
 )
 async def merge_anime_candidate(
     uuid: UUID,
+    data: admin_schema.MergeRequest = Body(default_factory=admin_schema.MergeRequest),
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_admin),
 ):
-    surviving_uuid = await merge_candidate_service.merge(db, uuid)
+    surviving_uuid = await merge_candidate_service.merge(db, uuid, keep_uuid=data.keep_uuid)
     return admin_schema.MergeResult(surviving_anime_uuid=surviving_uuid)
 
 

@@ -389,6 +389,19 @@ class MergeMalIdConflictError(PhsarBaseError):
         super().__init__(message)
 
 
+class InvalidMergeKeepError(PhsarBaseError):
+    """Raised when the admin's keep_uuid for a merge doesn't match either
+    of the candidate's two anime. Almost always a stale frontend payload."""
+    status_code = 400
+
+    def __init__(self, keep_uuid: str):
+        message = (
+            f"keep_uuid '{keep_uuid}' does not match either anime in this "
+            "merge candidate."
+        )
+        super().__init__(message)
+
+
 class BackupUploadTooLargeError(PhsarBaseError):
     status_code = 413
 

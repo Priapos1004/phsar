@@ -1,6 +1,7 @@
 from datetime import datetime
 from enum import Enum
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, field_validator
 
@@ -9,7 +10,10 @@ from app.models.users import RoleType
 
 class MergeCandidateAnimeSummary(BaseModel):
     """Side-by-side card payload for the admin UI: just enough to compare
-    two anime at a glance without round-tripping back to /anime/{uuid}."""
+    two anime at a glance without round-tripping back to /anime/{uuid}.
+    `earliest_aired_from` and `rating_count` drive the recommended-keep
+    ordering — admin sees them as visible justification for which side is
+    surfaced as A."""
     uuid: str
     title: str
     name_eng: str | None = None
@@ -17,6 +21,8 @@ class MergeCandidateAnimeSummary(BaseModel):
     media_count: int
     studios: list[str]
     earliest_year: int | None = None
+    earliest_aired_from: datetime | None = None
+    rating_count: int = 0
 
 
 class MergeCandidateListItem(BaseModel):
@@ -26,6 +32,13 @@ class MergeCandidateListItem(BaseModel):
     created_at: datetime
     anime_a: MergeCandidateAnimeSummary
     anime_b: MergeCandidateAnimeSummary
+
+
+class MergeRequest(BaseModel):
+    """Optional body for POST /admin/merge-candidates/{uuid}/merge. When
+    `keep_uuid` matches the candidate's anime_b, the merge swaps direction
+    so the admin's preferred side is the survivor."""
+    keep_uuid: UUID | None = None
 
 
 class MergeResult(BaseModel):

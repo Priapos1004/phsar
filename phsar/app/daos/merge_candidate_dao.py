@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -12,6 +12,7 @@ from app.models.anime_search import AnimeSearch
 from app.models.media import Media
 from app.models.media_studio import MediaStudio
 from app.models.merge_candidate import MergeCandidate, MergeCandidateStatus
+from app.models.ratings import Ratings
 
 if TYPE_CHECKING:
     from app.services.merge_detection_service import AnimeForDetection
@@ -78,6 +79,23 @@ class MergeCandidateDAO(BaseDAO[MergeCandidate]):
             .on_conflict_do_nothing(constraint="uq_merge_candidates_pair")
         )
         await db.execute(stmt)
+
+    async def get_rating_counts_for_anime(
+        self, db: AsyncSession, anime_ids: set[int]
+    ) -> dict[int, int]:
+        """Total ratings across each anime's media. Used by the admin merge
+        UI to tiebreak A/B ordering on "which side has more user data".
+        Anime with zero ratings are absent — caller defaults to 0."""
+        if not anime_ids:
+            return {}
+        stmt = (
+            select(Media.anime_id, func.count(Ratings.id))
+            .join(Ratings, Ratings.media_id == Media.id)
+            .where(Media.anime_id.in_(anime_ids))
+            .group_by(Media.anime_id)
+        )
+        result = await db.execute(stmt)
+        return {anime_id: count for anime_id, count in result.all()}
 
     async def get_existing_pairs(self, db: AsyncSession) -> set[tuple[int, int]]:
         """Returns every (a_id, b_id) pair that already has a row, regardless
