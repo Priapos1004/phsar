@@ -6,7 +6,7 @@ write to the real DB and clean up explicitly via a tracked-job-ids fixture.
 """
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import delete
@@ -224,6 +224,33 @@ async def test_sweep_kind_clears_flag_on_dispatcher_failure(tracked_jobs):
 
     refreshed = await _get(job_id)
     assert refreshed.status is JobStatus.failed
+
+
+@pytest.mark.asyncio
+async def test_sweep_finally_preserves_future_scheduled_at(tracked_jobs):
+    """A Coolify cron retry can hit /admin/jobs/schedule-sweep mid-sweep
+    (allowlisted) and write a *future* `_scheduled_at` for the next
+    window. The worker's finally must not clobber it — otherwise the
+    next sweep fires with no banner pre-warning."""
+    next_window = datetime.now(timezone.utc) + timedelta(minutes=20)
+
+    async def fake_sweep(session, job):
+        # Simulate the cron-retry race: a freshly-set future timestamp
+        # appears while *this* sweep is still running.
+        maintenance.set_scheduled_at(next_window)
+        return None
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.update_sweep, fake_sweep)
+
+    job_id = await _enqueue(kind=JobKind.update_sweep)
+    tracked_jobs.append(job_id)
+
+    ran = await worker.dispatch_one()
+    assert ran is True
+
+    assert maintenance.is_maintenance_active() is False
+    assert maintenance.get_scheduled_at() == next_window
 
 
 @pytest.mark.asyncio

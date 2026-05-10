@@ -13,12 +13,13 @@ Subsequent commits add user_scrape, update_sweep, seasonal_sweep dispatchers.
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 from typing import Awaitable, Callable
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import async_session_maker
-from app.core.maintenance import set_maintenance, set_scheduled_at
+from app.core.maintenance import get_scheduled_at, set_maintenance, set_scheduled_at
 from app.daos.job_dao import JobDAO
 from app.exceptions import PermanentPhsarError
 from app.models.job import Job, JobKind
@@ -149,10 +150,15 @@ class JobWorker:
                     failure = exc
         finally:
             if in_maintenance:
-                # The pre-warning was for *this* sweep — once we're past the
-                # window the banner has nothing useful to say, so clear both.
                 set_maintenance(False)
-                set_scheduled_at(None)
+                # Only clear the pre-warning if it points at the window we just
+                # exited. A Coolify cron retry can fire mid-sweep (the
+                # schedule-sweep endpoint is allowlisted) and set a *future*
+                # `_scheduled_at` for the next window; clobbering that here
+                # would lose the next sweep's banner countdown.
+                scheduled = get_scheduled_at()
+                if scheduled is None or scheduled <= datetime.now(timezone.utc):
+                    set_scheduled_at(None)
 
         retryable = not isinstance(failure, PermanentPhsarError)
         async with async_session_maker() as fail_session:

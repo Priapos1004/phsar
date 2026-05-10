@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, UploadFile, status
+from fastapi import APIRouter, Body, Depends, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +12,6 @@ from app.core.dependencies import (
     require_roles,
 )
 from app.core.maintenance import set_scheduled_at
-from app.exceptions import InvalidScheduleDelayError
 from app.models.job import Job, JobKind, JobStatus
 from app.models.users import RoleType
 from app.schemas import admin_schema, auth_schema, backup_schema
@@ -108,12 +107,12 @@ async def dismiss_anime_candidate(
     dependencies=[Depends(require_jobs_cron_token)],
 )
 async def schedule_sweep(
-    delay_minutes: int = 20,
+    # Upper bound is 24h — anything longer is almost certainly a typo.
+    # Without it, a misconfigured cron could pass an enormous int and
+    # blow up timedelta() with OverflowError -> 500.
+    delay_minutes: int = Query(20, ge=0, le=1440),
     db: AsyncSession = Depends(get_db),
 ):
-    if delay_minutes < 0:
-        raise InvalidScheduleDelayError(delay_minutes)
-
     not_before = datetime.now(timezone.utc) + timedelta(minutes=delay_minutes)
     job = Job(
         kind=JobKind.update_sweep,

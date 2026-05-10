@@ -101,7 +101,15 @@ async def test_schedule_sweep_creates_job_and_sets_banner(cron_client, db_sessio
 @pytest.mark.asyncio
 async def test_schedule_sweep_negative_delay_rejected(cron_client):
     resp = await cron_client.post(URL + "?delay_minutes=-1", headers=GOOD_HEADER)
-    assert resp.status_code == 400
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_schedule_sweep_excessive_delay_rejected(cron_client):
+    """Defense-in-depth: an enormous delay would otherwise blow up
+    timedelta() with OverflowError -> 500. 1440 minutes = 24h ceiling."""
+    resp = await cron_client.post(URL + "?delay_minutes=10000", headers=GOOD_HEADER)
+    assert resp.status_code == 422
 
 
 @pytest.mark.asyncio
