@@ -6,7 +6,7 @@ import pytest
 from sqlalchemy import select
 
 from app.models.anime import Anime
-from app.models.media import Media, MediaType, RelationType
+from app.models.media import Media
 from app.models.media_studio import MediaStudio
 from app.models.merge_candidate import MergeCandidate, MergeCandidateStatus
 from app.models.studio import Studio
@@ -21,21 +21,9 @@ from app.services.merge_detection_service import (
     detect_merge_candidates,
     normalize_title,
 )
+from tests._helpers import media_kwargs
 
 logger = logging.getLogger(__name__)
-
-
-def _media_kwargs(anime_id: int, mal_id: int, title: str = "M") -> dict:
-    return dict(
-        anime_id=anime_id,
-        mal_id=mal_id,
-        mal_url=f"https://example/{mal_id}",
-        title=title,
-        media_type=MediaType.TV,
-        relation_type=RelationType.Main,
-        scored_by=0,
-        airing_status="Finished Airing",
-    )
 
 
 async def _make_anime_with_studio(db_session, *, mal_id: int, title: str, studio_name: str) -> Anime:
@@ -49,7 +37,7 @@ async def _make_anime_with_studio(db_session, *, mal_id: int, title: str, studio
         db_session.add(studio)
         await db_session.flush()
 
-    media = Media(**_media_kwargs(anime.id, mal_id * 10, f"{title} M1"))
+    media = Media(**media_kwargs(anime.id, mal_id * 10, title=f"{title} M1"))
     db_session.add(media)
     await db_session.flush()
     db_session.add(MediaStudio(media_id=media.id, studio_id=studio.id))

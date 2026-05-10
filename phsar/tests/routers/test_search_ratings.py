@@ -1,7 +1,8 @@
 import pytest
 
 from app.models.anime import Anime
-from app.models.media import Media, MediaType, RelationType
+from app.models.media import Media
+from tests._helpers import media_kwargs
 
 _RATED_MEDIA_DATA = [
     ("Action Search Media", 9.0, "fast"),
@@ -19,17 +20,12 @@ async def rated_media(client, user_auth_headers, db_session):
 
     media_items = []
     for i, (title, rating, pace) in enumerate(_RATED_MEDIA_DATA):
-        media = Media(
-            anime_id=anime.id,
-            mal_id=77770 + i,
-            mal_url=f"https://myanimelist.net/anime/{77770 + i}",
+        media = Media(**media_kwargs(
+            anime.id, 77770 + i,
             title=title,
-            media_type=MediaType.TV,
-            relation_type=RelationType.Main,
             scored_by=100,
-            airing_status="Finished Airing",
             score=8.0,
-        )
+        ))
         db_session.add(media)
         media_items.append(media)
     await db_session.flush()

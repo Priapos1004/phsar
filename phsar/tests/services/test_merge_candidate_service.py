@@ -13,28 +13,14 @@ from sqlalchemy import select
 
 from app.exceptions import InvalidMergeKeepError
 from app.models.anime import Anime
-from app.models.media import Media, MediaType, RelationType
+from app.models.media import Media
 from app.models.media_studio import MediaStudio
 from app.models.merge_candidate import MergeCandidate, MergeCandidateStatus
 from app.models.ratings import Ratings
 from app.models.studio import Studio
 from app.models.users import RoleType, Users
 from app.services.merge_candidate_service import list_pending, merge
-
-
-def _media_kwargs(anime_id: int, mal_id: int, **overrides) -> dict:
-    base = dict(
-        anime_id=anime_id,
-        mal_id=mal_id,
-        mal_url=f"https://example/{mal_id}",
-        title=f"M{mal_id}",
-        media_type=MediaType.TV,
-        relation_type=RelationType.Main,
-        scored_by=0,
-        airing_status="Finished Airing",
-    )
-    base.update(overrides)
-    return base
+from tests._helpers import media_kwargs
 
 
 async def _make_pair(
@@ -54,8 +40,8 @@ async def _make_pair(
     db_session.add_all([a, b])
     await db_session.flush()
 
-    media_a = Media(**_media_kwargs(a.id, a_mal * 10, aired_from=a_aired_from))
-    media_b = Media(**_media_kwargs(b.id, b_mal * 10, aired_from=b_aired_from))
+    media_a = Media(**media_kwargs(a.id, a_mal * 10, aired_from=a_aired_from))
+    media_b = Media(**media_kwargs(b.id, b_mal * 10, aired_from=b_aired_from))
     db_session.add_all([media_a, media_b])
     await db_session.flush()
 
@@ -179,9 +165,9 @@ async def test_merge_redetects_against_third_anime(db_session):
     db_session.add_all([a, b, c])
     await db_session.flush()
 
-    media_a = Media(**_media_kwargs(a.id, 907010, title="Re-detect Show TV"))
-    media_b = Media(**_media_kwargs(b.id, 907020, title="Re-detect Show 2 TV"))
-    media_c = Media(**_media_kwargs(c.id, 907030, title="Re-detect Show Side Story TV"))
+    media_a = Media(**media_kwargs(a.id, 907010, title="Re-detect Show TV"))
+    media_b = Media(**media_kwargs(b.id, 907020, title="Re-detect Show 2 TV"))
+    media_c = Media(**media_kwargs(c.id, 907030, title="Re-detect Show Side Story TV"))
     db_session.add_all([media_a, media_b, media_c])
     await db_session.flush()
     db_session.add_all([

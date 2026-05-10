@@ -4,11 +4,12 @@ import pytest
 from sqlalchemy import select
 
 from app.models.anime import Anime
-from app.models.media import Media, MediaType, RelationType
+from app.models.media import Media
 from app.models.media_studio import MediaStudio
 from app.models.merge_candidate import MergeCandidate, MergeCandidateStatus
 from app.models.studio import Studio
 from app.models.users import RoleType
+from tests._helpers import media_kwargs
 
 TOKENS_URL = "/admin/registration-tokens"
 MERGE_URL = "/admin/merge-candidates"
@@ -191,19 +192,6 @@ async def test_delete_token_requires_admin(client, user_auth_headers):
 # ---------------------------------------------------------------------------
 
 
-def _media_kwargs(anime_id: int, mal_id: int, title: str = "M") -> dict:
-    return dict(
-        anime_id=anime_id,
-        mal_id=mal_id,
-        mal_url=f"https://example/{mal_id}",
-        title=title,
-        media_type=MediaType.TV,
-        relation_type=RelationType.Main,
-        scored_by=0,
-        airing_status="Finished Airing",
-    )
-
-
 @pytest.fixture
 async def merge_pair(db_session):
     """Two anime sharing a studio, plus a pending merge candidate row."""
@@ -216,8 +204,8 @@ async def merge_pair(db_session):
     db_session.add_all([a, b])
     await db_session.flush()
 
-    media_a = Media(**_media_kwargs(a.id, 801011))
-    media_b = Media(**_media_kwargs(b.id, 801021))
+    media_a = Media(**media_kwargs(a.id, 801011))
+    media_b = Media(**media_kwargs(b.id, 801021))
     db_session.add_all([media_a, media_b])
     await db_session.flush()
 

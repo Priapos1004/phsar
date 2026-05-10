@@ -1,7 +1,8 @@
 import pytest
 
 from app.models.anime import Anime
-from app.models.media import Media, MediaType, RelationType
+from app.models.media import Media, RelationType
+from tests._helpers import media_kwargs
 
 
 @pytest.fixture
@@ -11,16 +12,7 @@ async def test_media(db_session):
     db_session.add(anime)
     await db_session.flush()
 
-    media = Media(
-        anime_id=anime.id,
-        mal_id=99999,
-        mal_url="https://myanimelist.net/anime/99999",
-        title="Test Media",
-        media_type=MediaType.TV,
-        relation_type=RelationType.Main,
-        scored_by=0,
-        airing_status="Finished Airing",
-    )
+    media = Media(**media_kwargs(anime.id, 99999, title="Test Media"))
     db_session.add(media)
     await db_session.flush()
     return media
@@ -36,17 +28,11 @@ async def test_media_list(db_session):
     media_items = []
     episode_counts = [12, 24, 6]
     for i in range(3):
-        media = Media(
-            anime_id=anime.id,
-            mal_id=88880 + i,
-            mal_url=f"https://myanimelist.net/anime/{88880 + i}",
+        media = Media(**media_kwargs(
+            anime.id, 88880 + i,
             title=f"Bulk Test Media {i + 1}",
-            media_type=MediaType.TV,
-            relation_type=RelationType.Main,
             episodes=episode_counts[i],
-            scored_by=0,
-            airing_status="Finished Airing",
-        )
+        ))
         db_session.add(media)
         media_items.append(media)
     await db_session.flush()
@@ -255,16 +241,11 @@ async def test_bulk_upsert_note_on_last_main_media(client, user_auth_headers, db
     media_items = []
     relation_types = [RelationType.Main, RelationType.Main, RelationType.SideStory]
     for i, rt in enumerate(relation_types):
-        media = Media(
-            anime_id=anime.id,
-            mal_id=77770 + i,
-            mal_url=f"https://myanimelist.net/anime/{77770 + i}",
+        media = Media(**media_kwargs(
+            anime.id, 77770 + i,
             title=f"Mixed Media {i + 1}",
-            media_type=MediaType.TV,
             relation_type=rt,
-            scored_by=0,
-            airing_status="Finished Airing",
-        )
+        ))
         db_session.add(media)
         media_items.append(media)
     await db_session.flush()

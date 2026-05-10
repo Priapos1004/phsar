@@ -8,6 +8,7 @@ from app.models.media import Media, MediaType, RelationType
 from app.models.media_genre import MediaGenre
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
+from tests._helpers import media_kwargs
 
 
 @pytest.fixture
@@ -22,44 +23,33 @@ async def test_anime_with_siblings(db_session):
     db_session.add(anime)
     await db_session.flush()
 
-    media_main = Media(
-        anime_id=anime.id,
-        mal_id=77701,
-        mal_url="https://myanimelist.net/anime/77701",
+    media_main = Media(**media_kwargs(
+        anime.id, 77701,
         title="Test Anime S1",
         name_eng="Test Anime Season 1",
-        media_type=MediaType.TV,
-        relation_type=RelationType.Main,
         scored_by=1000,
         score=8.5,
         episodes=12,
-        airing_status="Finished Airing",
         description="A great anime about testing.",
-    )
-    media_ova = Media(
-        anime_id=anime.id,
-        mal_id=77702,
-        mal_url="https://myanimelist.net/anime/77702",
+    ))
+    media_ova = Media(**media_kwargs(
+        anime.id, 77702,
         title="Test Anime OVA",
         media_type=MediaType.OVA,
         relation_type=RelationType.SideStory,
         scored_by=200,
         score=7.0,
         episodes=2,
-        airing_status="Finished Airing",
-    )
-    media_movie = Media(
-        anime_id=anime.id,
-        mal_id=77703,
-        mal_url="https://myanimelist.net/anime/77703",
+    ))
+    media_movie = Media(**media_kwargs(
+        anime.id, 77703,
         title="Test Anime Movie",
         media_type=MediaType.Movie,
         relation_type=RelationType.SideStory,
         scored_by=500,
         score=9.0,
         episodes=1,
-        airing_status="Finished Airing",
-    )
+    ))
     db_session.add_all([media_main, media_ova, media_movie])
     await db_session.flush()
 
