@@ -10,7 +10,7 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.core.db import async_session_maker
 from app.core.logging_config import setup_logging
-from app.core.maintenance import is_maintenance_active
+from app.core.maintenance_middleware import MaintenanceGateMiddleware
 from app.daos.job_dao import JobDAO
 from app.exceptions import PhsarBaseError
 from app.models.job import JobKind
@@ -59,52 +59,6 @@ async def lifespan(app: FastAPI):
 
     await job_worker.stop()
     logger.info("🛑 Shutting down FastAPI app")
-
-class MaintenanceGateMiddleware:
-    """503-gate during a maintenance window.
-
-    Pure ASGI (not `@app.middleware("http")` / BaseHTTPMiddleware) so the
-    short-circuit response goes through CORSMiddleware's wrapped `send`
-    cleanly. Registration order in create_app puts CORS *outside* this
-    gate so cross-origin 503s still carry Access-Control-Allow-Origin —
-    without that, the browser rejects the response with a TypeError and
-    the frontend's catch falls into the generic "unexpected error" path
-    instead of the maintenance-banner branch.
-
-    Allowlist:
-      /, /health: keep Coolify's liveness probe alive so the container
-        doesn't restart mid-operation.
-      /maintenance/status: the banner needs truthful state during the
-        window — without it the user sees /login?maintenance=1 forever.
-      /admin/jobs/schedule-sweep: a cron retry while a sweep is already
-        running must not 503 the cron itself, otherwise tomorrow's sweep
-        never gets scheduled.
-    """
-
-    _ALLOWED_PATHS = frozenset(
-        {"/", "/health", "/maintenance/status", "/admin/jobs/schedule-sweep"}
-    )
-
-    def __init__(self, app):
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        if (
-            scope["type"] == "http"
-            and is_maintenance_active()
-            and scope["path"] not in self._ALLOWED_PATHS
-        ):
-            response = JSONResponse(
-                status_code=503,
-                content={
-                    "detail": "Maintenance in progress. Please try again in a moment.",
-                    "maintenance": True,
-                },
-            )
-            await response(scope, receive, send)
-            return
-        await self.app(scope, receive, send)
-
 
 def create_app() -> FastAPI:
     app = FastAPI(
