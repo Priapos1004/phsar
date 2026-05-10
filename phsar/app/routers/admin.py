@@ -7,7 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_db, require_backup_cron_token, require_roles
 from app.models.users import RoleType
 from app.schemas import admin_schema, auth_schema, backup_schema
-from app.services import admin_service, auth_service, backup_service
+from app.services import (
+    admin_service,
+    auth_service,
+    backup_service,
+    merge_candidate_service,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -46,6 +51,42 @@ async def delete_registration_token(
     current_user=Depends(require_admin),
 ):
     await admin_service.delete_registration_token(db, uuid)
+
+
+@router.get(
+    "/merge-candidates",
+    response_model=list[admin_schema.MergeCandidateListItem],
+)
+async def list_merge_candidates(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    return await merge_candidate_service.list_pending(db)
+
+
+@router.post(
+    "/merge-candidates/{uuid}/merge",
+    response_model=admin_schema.MergeResult,
+)
+async def merge_anime_candidate(
+    uuid: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    surviving_uuid = await merge_candidate_service.merge(db, uuid)
+    return admin_schema.MergeResult(surviving_anime_uuid=surviving_uuid)
+
+
+@router.post(
+    "/merge-candidates/{uuid}/dismiss",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def dismiss_anime_candidate(
+    uuid: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    await merge_candidate_service.dismiss(db, uuid)
 
 
 # Cron-authed endpoint — stays on the parent router so it doesn't inherit the

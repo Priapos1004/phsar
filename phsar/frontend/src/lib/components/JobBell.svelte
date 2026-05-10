@@ -4,12 +4,14 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { api, ApiError } from '$lib/api';
 	import { bumpLibrarySaved, jobsRefresh, onBump } from '$lib/stores/jobs';
+	import { BELL_LOGIN_KEY, BELL_SEEN_KEY } from '$lib/stores/bell-session';
 	import type { Job } from '$lib/types/api';
 
 	const ACTIVE_POLL_MS = 4000;
 	const IDLE_POLL_MS = 30000;
-	const SESSION_LOGIN_KEY = 'phsar.bellLoginAt';
-	const SESSION_SEEN_KEY = 'phsar.bellSeenJobs';
+	// Cap the dropdown so a noisy session (max 4 active per JOBS_PER_USER_LIMIT
+	// + recent finishes) stays readable. Older entries live on /library/add.
+	const MAX_VISIBLE = 5;
 
 	// Captured once per tab/session. The bell only surfaces jobs created
 	// after this point — completed jobs from prior sessions live on the
@@ -25,7 +27,7 @@
 
 	function loadSeen(): Set<string> {
 		if (typeof sessionStorage === 'undefined') return new Set();
-		const raw = sessionStorage.getItem(SESSION_SEEN_KEY);
+		const raw = sessionStorage.getItem(BELL_SEEN_KEY);
 		if (!raw) return new Set();
 		try {
 			const parsed = JSON.parse(raw);
@@ -35,7 +37,7 @@
 		}
 	}
 
-	const sessionStart = readOrInitSessionTimestamp(SESSION_LOGIN_KEY);
+	const sessionStart = readOrInitSessionTimestamp(BELL_LOGIN_KEY);
 
 	let jobs = $state<Job[]>([]);
 	// UUID-based "seen" tracking: storing finished_at would couple "seen"
@@ -48,8 +50,14 @@
 	// bumpLibrarySaved — prevents the bell from re-triggering a refresh on
 	// every poll while a succeeded job is still in the response window.
 	let announcedSavedUuids = new Set<string>();
+	// Block re-clicks while a retry is in flight so each click maps to one job.
+	let retryingUuid = $state<string | null>(null);
 
 	let visibleJobs = $derived(jobs.filter((j) => j.created_at >= sessionStart));
+	// Cap the dropdown rendering. Badge math still uses the full visibleJobs
+	// list so a user with 6 active scrapes sees an honest count even though
+	// only 5 rows render. Older entries are reachable on /library/add.
+	let displayedJobs = $derived(visibleJobs.slice(0, MAX_VISIBLE));
 	let activeJobs = $derived(
 		visibleJobs.filter((j) => j.status === 'queued' || j.status === 'running'),
 	);
@@ -60,6 +68,7 @@
 		),
 	);
 	let badgeCount = $derived(activeJobs.length + unseenFinished.length);
+	let hiddenCount = $derived(Math.max(0, visibleJobs.length - MAX_VISIBLE));
 	let pollDelay = $derived(activeJobs.length > 0 ? ACTIVE_POLL_MS : IDLE_POLL_MS);
 
 	async function fetchJobs() {
@@ -141,7 +150,7 @@
 		if (!changed) return;
 		seenUuids = updated;
 		if (typeof sessionStorage !== 'undefined') {
-			sessionStorage.setItem(SESSION_SEEN_KEY, JSON.stringify([...updated]));
+			sessionStorage.setItem(BELL_SEEN_KEY, JSON.stringify([...updated]));
 		}
 	});
 
@@ -170,15 +179,27 @@
 		return job.kind.replace('_', ' ');
 	}
 
+	function isRetryable(job: Job): boolean {
+		// Default true — only the dispatcher's PermanentPhsarError path stamps
+		// retryable=false. Missing field (older rows, non-job errors) → still
+		// retryable so we don't break the historical bell behavior.
+		const flag = job.result_summary?.retryable;
+		return flag !== false;
+	}
+
 	async function retryJob(job: Job, event: MouseEvent) {
 		event.stopPropagation();
+		if (retryingUuid !== null) return;
 		const query = typeof job.payload?.query === 'string' ? job.payload.query : null;
 		if (!query) return;
+		retryingUuid = job.uuid;
 		try {
 			await api.post('/jobs/scrape', { query });
 			await fetchJobs();
 		} catch (err) {
 			console.error('Retry failed:', err);
+		} finally {
+			retryingUuid = null;
 		}
 	}
 
@@ -205,7 +226,7 @@
 				Currently no background jobs.
 			</div>
 		{:else}
-			{#each visibleJobs as job (job.uuid)}
+			{#each displayedJobs as job (job.uuid)}
 				{@const Icon = statusIcon(job)}
 				{@const pct = progressPercent(job)}
 				<div class="px-3 py-2 border-b last:border-b-0">
@@ -235,19 +256,28 @@
 								</div>
 							{/if}
 						</div>
-						{#if job.status === 'failed' && typeof job.payload?.query === 'string'}
+						{#if job.status === 'failed' && typeof job.payload?.query === 'string' && isRetryable(job)}
 							<button
 								type="button"
 								onclick={(e) => retryJob(job, e)}
-								class="shrink-0 p-1 rounded hover:bg-muted transition"
+								disabled={retryingUuid !== null}
+								class="shrink-0 p-1 rounded hover:bg-muted transition disabled:opacity-50 disabled:cursor-not-allowed"
 								aria-label="Retry job"
 							>
-								<RefreshCw class="w-3.5 h-3.5" />
+								<RefreshCw class="w-3.5 h-3.5 {retryingUuid === job.uuid ? 'animate-spin' : ''}" />
 							</button>
 						{/if}
 					</div>
 				</div>
 			{/each}
+			{#if hiddenCount > 0}
+				<a
+					href="/library/add"
+					class="block px-3 py-2 text-xs text-center text-muted-foreground hover:text-primary hover:bg-muted/50 transition"
+				>
+					+{hiddenCount} more in your library activity
+				</a>
+			{/if}
 		{/if}
 	</DropdownMenu.Content>
 </DropdownMenu.Root>

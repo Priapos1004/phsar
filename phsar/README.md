@@ -27,8 +27,10 @@ phsar/
 │   │   ├── base_dao.py
 │   │   ├── base_mal_id_dao.py
 │   │   ├── genre_dao.py
+│   │   ├── job_dao.py
 │   │   ├── media_dao.py
 │   │   ├── media_unwanted_dao.py
+│   │   ├── merge_candidate_dao.py
 │   │   ├── rating_dao.py
 │   │   ├── registration_token_dao.py
 │   │   ├── search_filters.py
@@ -42,11 +44,13 @@ phsar/
 │   │   ├── anime_search.py
 │   │   ├── base.py
 │   │   ├── genre.py
+│   │   ├── job.py
 │   │   ├── media.py
 │   │   ├── media_genre.py
 │   │   ├── media_search.py
 │   │   ├── media_studio.py
 │   │   ├── media_unwanted.py
+│   │   ├── merge_candidate.py
 │   │   ├── rating_search.py
 │   │   ├── ratings.py
 │   │   ├── registration_token.py
@@ -61,6 +65,8 @@ phsar/
 │   │   ├── admin.py
 │   │   ├── auth.py
 │   │   ├── filters.py
+│   │   ├── jobs.py
+│   │   ├── library.py
 │   │   ├── media.py
 │   │   ├── ratings.py
 │   │   ├── save.py
@@ -72,6 +78,7 @@ phsar/
 │   │   ├── anime_schema.py
 │   │   ├── auth_schema.py
 │   │   ├── backup_schema.py
+│   │   ├── job_schema.py
 │   │   ├── media_filter_schema.py
 │   │   ├── media_schema.py
 │   │   ├── rating_schema.py
@@ -83,6 +90,7 @@ phsar/
 │   │   ├── media_seeder.py
 │   │   └── user_seeder.py
 │   └── services/
+│       ├── _pg_subprocess.py
 │       ├── admin_service.py
 │       ├── anime_search_service.py
 │       ├── anime_service.py
@@ -91,11 +99,16 @@ phsar/
 │       ├── export_service.py
 │       ├── filter_service.py
 │       ├── jikan_scraper.py
+│       ├── job_worker.py
 │       ├── media_linking_service.py
 │       ├── media_search_service.py
 │       ├── media_service.py
+│       ├── merge_candidate_service.py
+│       ├── merge_detection_service.py
+│       ├── progress_reporter.py
 │       ├── rating_service.py
 │       ├── save_service.py
+│       ├── scrape_dispatcher.py
 │       ├── search_service.py
 │       ├── spoiler_service.py
 │       ├── token_service.py
@@ -128,8 +141,10 @@ phsar/
 │   │   │   │   ├── DoubleRangeSlider.svelte
 │   │   │   │   ├── EChart.svelte
 │   │   │   │   ├── InfoDiashow.svelte
+│   │   │   │   ├── JobBell.svelte
 │   │   │   │   ├── LoadingScreen.svelte
 │   │   │   │   ├── MediaInfo.svelte
+│   │   │   │   ├── MergeCandidatesCard.svelte
 │   │   │   │   ├── NavBar.svelte
 │   │   │   │   ├── RatingCard.svelte
 │   │   │   │   ├── RatingsOverview.svelte
@@ -143,6 +158,7 @@ phsar/
 │   │   │   │   ├── SearchBar.svelte
 │   │   │   │   ├── SkeletonMediaInfo.svelte
 │   │   │   │   ├── TagSelect.svelte
+│   │   │   │   ├── Toast.svelte
 │   │   │   │   ├── TokenExpiryDialog.svelte
 │   │   │   │   ├── VersionFooter.svelte
 │   │   │   │   └── ui/           # shadcn-svelte components
@@ -163,6 +179,8 @@ phsar/
 │   │   │   │       └── textarea/
 │   │   │   ├── stores/
 │   │   │   │   ├── auth.ts
+│   │   │   │   ├── bell-session.ts
+│   │   │   │   ├── jobs.ts
 │   │   │   │   ├── spoilerVisibility.ts
 │   │   │   │   └── userSettings.ts
 │   │   │   ├── styles/
@@ -188,6 +206,9 @@ phsar/
 │   │   │   │   └── +page.svelte
 │   │   │   ├── health/
 │   │   │   │   └── +server.ts
+│   │   │   ├── library/
+│   │   │   │   └── add/
+│   │   │   │       └── +page.svelte
 │   │   │   ├── login/
 │   │   │   │   └── +page.svelte
 │   │   │   ├── media/
@@ -204,6 +225,8 @@ phsar/
 │   │       ├── api-download.test.ts
 │   │       ├── auth-store.test.ts
 │   │       ├── format-string.test.ts
+│   │       ├── job-bell.test.ts
+│   │       ├── library-add.test.ts
 │   │       ├── login.test.ts
 │   │       ├── media-detail.test.ts
 │   │       ├── navbar.test.ts
@@ -232,6 +255,7 @@ phsar/
 ├── pytest.ini
 ├── requirements.txt
 └── tests/
+    ├── conftest.py
     ├── routers/
     │   ├── conftest.py
     │   ├── test_admin.py
@@ -240,6 +264,7 @@ phsar/
     │   ├── test_filters_options.py
     │   ├── test_filters_token.py
     │   ├── test_health.py
+    │   ├── test_jobs.py
     │   ├── test_media_detail.py
     │   ├── test_ratings.py
     │   ├── test_save.py
@@ -249,7 +274,12 @@ phsar/
     │   └── test_user_settings.py
     └── services/
         ├── test_backup_service.py
+        ├── test_backup_subprocess_failures.py
         ├── test_jikan_scraper.py
+        ├── test_job_dao.py
+        ├── test_job_worker.py
+        ├── test_merge_detection.py
+        ├── test_progress_reporter.py
         ├── test_search_service.py
         ├── test_spoiler_service.py
         └── test_vector_embedding_service.py

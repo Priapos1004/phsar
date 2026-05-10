@@ -243,22 +243,22 @@ S5 (main)             → BLUR/HIDE
 | `created_at` | DateTime | |
 | `completed_at` | DateTime | nullable |
 
-### Deduplication
+### Deduplication ✓ shipped (commit 6 of v0.14.0, closes #29)
 
-**Multi-layer approach:**
-1. **MAL ID match**: Before inserting any media, check if `mal_id` already exists → attach to existing anime
-2. **Title + metadata similarity**: If a newly scraped media's anime title closely matches an existing anime (same name + similar description or same studio), flag for admin review — do NOT auto-merge
-3. **Admin notification**: Potential duplicates trigger Discord webhook + in-app notification for admin. No automatic merge — could indicate MAL re-indexing which would be a major problem if handled wrong.
+**Three detectors feed the `merge_candidates` table:**
+1. **`title_studio`** — `max(SequenceMatcher.ratio, longest_match_size / min(len)) ≥ 0.85`, gated by studio overlap. The containment branch catches `"X" ⊂ "X: Subtitle"` cases that pure ratio under-counts.
+2. **`title_desc`** — title score ≥ 0.5 AND description-embedding cosine ≥ 0.85, also gated by studio overlap. Catches Dr. Stone / Dr. Stone: New World where the subtitle pushes title alone below the rule-1 threshold but the synopses lock onto the same characters/world.
+3. **`relation_link`** — BFS during a save discovered a non-crossover related media that lives under a different existing anime. Strongest signal (MAL itself asserting the connection); no title or studio gate.
 
-**BFS boundary rule (change from current behavior):**
-- Current scraper: two-phase BFS — freely explores to find "main story", then only follows relations from main story media. Already skips `character` and `adaptation` relations. Crossovers ARE currently followed and included in same anime group.
-- Proposed change: Stop following `crossover` relations during BFS — crossover media gets its own parent anime. Store crossover media with `relation_type="crossover"` but don't merge into same anime group.
-- This naturally separates franchises like FATE into distinct anime entries
-- Side stories are already limited (only explored from main story branches, not recursively)
+**MAL-ID match remains:** `MalIdAlreadyExistsError` raised at save-time if a media's mal_id already exists; this is the hard pre-detector guarantee.
 
-**Merge handling:**
-- If BFS from a new scrape overlaps with media already in DB (different parent anime), this flags a potential merge situation
-- Admin-only merge capability — never automatic
+**Admin review only — no auto-merge, no Discord webhook.** Pending candidates surface in the admin panel's Merge Candidates card. Admin merges (re-parents B's media onto A, deletes B with cascade) or dismisses (status flip, row stays so re-detection skips it). Both decisions survive across restarts via the unique `(anime_a_id, anime_b_id)` constraint + `seen_pairs` pre-fetch in detection.
+
+**BFS boundary rule (shipped):**
+- Crossover relations no longer get traversed: `JikanScraper.search_title` records the crossover anime in the relation graph but skips its `fetch_relations` call. Naturally separates franchises like FATE into distinct anime entries.
+- The same BFS now also splits `excluded_ids` (frozen pre-existing catalog) from `visited_ids` (this run) — when BFS pops a node already in the catalog via a non-crossover relation, that mal_id is surfaced as a per-graph cross-link signal that the detector resolves to an owning anime id and inserts as `relation_link`.
+
+**Backfiller:** `merge_detection_service.backfill_merge_candidates` runs in app lifespan after `backfill_embeddings`. One-shot existing × existing pair sweep so duplicates that pre-date the detector get flagged on first restart after upgrade. Idempotent: pre-fetched seen-pairs short-circuits subsequent restarts.
 
 ### Automated Updates (Periodic)
 

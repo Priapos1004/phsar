@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.media import Media, RelationType
 from app.models.ratings import Ratings
 from app.models.user_visible_media import UserVisibleMedia
+from app.models.users import Users
 from app.schemas.rating_schema import SpoilerVisibility
 from app.services.filter_service import SEASON_ORDER
 
@@ -224,6 +225,25 @@ async def recompute_visibility_for_user(db: AsyncSession, user_id: int) -> None:
             ).on_conflict_do_nothing()
         )
     await db.flush()
+
+
+async def refresh_spoiler_cache_for_all_users(db: AsyncSession) -> None:
+    """Recompute every user's visibility cache after a catalog mutation
+    (new save, anime merge). Per-user try/commit so one poisoned user
+    (e.g. FK pointing at a stale rating row) doesn't abort the rest and
+    doesn't unwind already-committed catalog rows. backfill_spoiler_visibility
+    will mop up anyone we skip on next startup."""
+    user_ids = (await db.execute(select(Users.id))).scalars().all()
+    for user_id in user_ids:
+        try:
+            await recompute_visibility_for_user(db, user_id)
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            logger.exception(
+                "Spoiler-cache recompute failed for user %s — skipping",
+                user_id,
+            )
 
 
 # ---------------------------------------------------------------------------

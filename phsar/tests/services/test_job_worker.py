@@ -124,6 +124,50 @@ async def test_dispatcher_exception_marks_job_failed(tracked_jobs):
     refreshed = await _get(job_id)
     assert refreshed.status is JobStatus.failed
     assert "simulated failure" in refreshed.error_message
+    # Generic exceptions default to retryable so the bell still offers a
+    # retry button — the failure could be a transient bug or DB hiccup.
+    assert (refreshed.result_summary or {}).get("retryable") is True
+
+
+@pytest.mark.asyncio
+async def test_permanent_phsar_error_marks_job_not_retryable(tracked_jobs):
+    """Errors that subclass PermanentPhsarError stamp retryable=False on
+    the job so the bell hides its retry button — same input + same MAL =
+    same failure, retrying is futile."""
+    from app.exceptions import AnimeNotFoundError
+
+    async def boom(session, job):
+        raise AnimeNotFoundError("missing show")
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.user_scrape, boom)
+
+    job_id = await _enqueue()
+    tracked_jobs.append(job_id)
+
+    ran = await worker.dispatch_one()
+    assert ran is True
+
+    refreshed = await _get(job_id)
+    assert refreshed.status is JobStatus.failed
+    assert (refreshed.result_summary or {}).get("retryable") is False
+
+
+@pytest.mark.asyncio
+async def test_unregistered_kind_marks_job_not_retryable(tracked_jobs):
+    """Missing dispatcher is a broken config, not a transient issue —
+    same as PermanentPhsarError it shouldn't tempt the user with retry."""
+    worker = JobWorker()  # no dispatchers registered
+
+    job_id = await _enqueue()
+    tracked_jobs.append(job_id)
+
+    ran = await worker.dispatch_one()
+    assert ran is True
+
+    refreshed = await _get(job_id)
+    assert refreshed.status is JobStatus.failed
+    assert (refreshed.result_summary or {}).get("retryable") is False
 
 
 @pytest.mark.asyncio

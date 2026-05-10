@@ -34,7 +34,7 @@ async def search_mal_api(
         )
 
     result_list = []
-    for related_anime_graph in relations:
+    for related_anime_graph, cross_link_mal_ids in relations:
         # MAL returns long-tail garbage for short or vague queries. A graph
         # without a clear main story is unsavable as a standalone anime, so
         # skip it instead of failing the entire scrape — other graphs from
@@ -83,7 +83,11 @@ async def search_mal_api(
             else:
                 unconnected_media_list.append(media)
 
-        result_list.append(SearchResultDB(anime_mal_id=anime_mal_id, unconnected_media_list=unconnected_media_list))
+        result_list.append(SearchResultDB(
+            anime_mal_id=anime_mal_id,
+            unconnected_media_list=unconnected_media_list,
+            cross_link_mal_ids=cross_link_mal_ids,
+        ))
     
     return SearchResultDBExtended(search_result_db_list=result_list, unwanted_media=unwanted_media)
 

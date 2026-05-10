@@ -171,6 +171,62 @@ describe('JobBell', () => {
 		});
 	});
 
+	it('caps the dropdown at 5 entries and surfaces a "+N more" link', async () => {
+		// 7 finished jobs: the bell should render 5 + a link pointing at
+		// /library/add for the remaining 2. The badge counts the full set
+		// of unseen finishes (7) since the API still returns them.
+		const jobs = Array.from({ length: 7 }, (_, i) =>
+			makeJob({
+				status: 'succeeded',
+				finished_at: `2026-05-09T10:0${i}:00Z`,
+				uuid: `dddddddd-dddd-dddd-dddd-${i.toString().padStart(12, '0')}`,
+				payload: { query: `query-${i}` },
+			}),
+		);
+		mockJobsResponse(jobs);
+		render(JobBell);
+		await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+		await fireEvent.click(screen.getByLabelText('Background jobs'));
+		await vi.waitFor(() => {
+			expect(screen.getByText('+2 more in your library activity')).toBeInTheDocument();
+		});
+		// Exactly 5 of the 7 unique queries are rendered in the dropdown.
+		const renderedQueries = jobs
+			.map((j) => `Add: "${j.payload.query as string}"`)
+			.filter((label) => screen.queryByText(label) !== null);
+		expect(renderedQueries).toHaveLength(5);
+	});
+
+	it('does not show the "+N more" link when all jobs fit in the cap', async () => {
+		mockJobsResponse([
+			makeJob({ status: 'succeeded', finished_at: '2026-05-09T10:00:00Z' }),
+		]);
+		render(JobBell);
+		await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+		await fireEvent.click(screen.getByLabelText('Background jobs'));
+		await vi.waitFor(() => expect(screen.queryByText(/more in your library activity/)).not.toBeInTheDocument());
+	});
+
+	it('hides the retry button when the failure is marked non-retryable', async () => {
+		// PermanentPhsarError on the backend writes retryable: false into
+		// result_summary; the bell uses that to suppress retry for failures
+		// that would deterministically fail again (anime not found, etc.).
+		mockJobsResponse([
+			makeJob({
+				status: 'failed',
+				error_message: "Anime titled 'asdfgh' not found.",
+				result_summary: { retryable: false },
+			}),
+		]);
+		render(JobBell);
+		await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+		await fireEvent.click(screen.getByLabelText('Background jobs'));
+		await vi.waitFor(() => {
+			expect(screen.getByText("Anime titled 'asdfgh' not found.")).toBeInTheDocument();
+		});
+		expect(screen.queryByLabelText('Retry job')).not.toBeInTheDocument();
+	});
+
 	it('stops polling on 401 (logged out)', async () => {
 		const fetchMock = vi.fn().mockResolvedValue({
 			ok: false,

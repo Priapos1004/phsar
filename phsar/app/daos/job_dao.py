@@ -94,10 +94,17 @@ class JobDAO(BaseDAO[Job]):
         db: AsyncSession,
         job: Job,
         error_message: str,
+        retryable: bool = True,
     ) -> None:
         job.status = JobStatus.failed
         job.finished_at = datetime.now(timezone.utc)
         job.error_message = error_message[:2000]
+        # Stash retryable in result_summary so the bell can read it without
+        # needing a separate column. The bell hides its retry button when
+        # retryable is False.
+        existing = dict(job.result_summary or {})
+        existing["retryable"] = retryable
+        job.result_summary = existing
         await db.flush()
 
     async def reap_orphans(self, db: AsyncSession) -> int:

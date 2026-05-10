@@ -323,6 +323,19 @@ Each anime search result card shows:
 - **Restore**: rotate-back icon opens a destructive-confirm dialog that requires typing the admin's username. Disabled on `corrupt` rows. Backend auto-snapshots as a `pre-restore` dump *before* entering maintenance mode, then flips the maintenance flag, closes the SQLAlchemy pool, terminates any other DB sessions, and runs `pg_restore --clean --if-exists` (timeout configurable via `BACKUP_RESTORE_TIMEOUT_SECONDS`, default 10 min). After pg_restore returns, the backend warms the connection pool before lifting the maintenance gate so the first post-restore request doesn't flap the liveness probe. Result banner reports the pre-restore filename, and the "Current" badge now follows the restored dump. All non-admin users in the app are bounced to `/login?maintenance=1` for the duration (see 1.5).
 - **Delete**: trash icon opens inline confirm/cancel buttons. DELETE returns 204.
 
+### 9.5 Merge Candidates
+- Card below Backups. Admin-only.
+- **List**: pending merge candidates flagged by the duplicate detector (running on every save and at app startup). Each row shows:
+  - A "% match" badge (similarity score)
+  - A `detected_by` label (`title_studio`, `title_desc`, or `relation_link`)
+  - Side-by-side anime cards labelled "Anime A (kept)" / "Anime B (merged in)" with title, romanized name, year, media count, and primary studio names
+  - Anime titles link to `/anime?uuid=<uuid>` (open in new tab) for context before deciding
+- **Refresh**: spinning-arrow icon in the header re-fetches the list; cards are read-only — refresh never adds or removes candidates.
+- **Merge**: re-parents B's media onto A and deletes B (cascade-removes the candidate row + any other pending pairs referencing B). A's anime embedding is regenerated and the spoiler-cache is recomputed for all users. Merge button opens an inline confirm/cancel pair; while in flight the button shows "Merging…" and the row stays visible. On success the row is removed from the local list. Backend rejects with 409 if A and B share any `Media.mal_id` (a should-never-happen invariant; admin investigates manually).
+- **Dismiss**: marks the candidate `dismissed` (status flip; row stays in DB so the seen-pairs filter prevents re-flagging). Same inline confirm/cancel UX. On success the row is removed from the local list.
+- Already-resolved candidates (merged or dismissed) return 409 if the action is retried.
+- The detector itself is invisible to non-admin users; nothing about it surfaces outside this card.
+
 ---
 
 ## 10. API Endpoints Used by Frontend
@@ -358,6 +371,9 @@ Each anime search result card shows:
 | `/admin/backups/{filename}` | DELETE | Admin page Backups card (delete dump) |
 | `/admin/backups/{filename}/restore` | POST | Admin page Backups card (restore with username confirm; backend auto-takes a pre-restore snapshot) |
 | `/admin/backups/upload` | POST | Admin page Backups card (multipart upload of a `.dump` file) |
+| `/admin/merge-candidates` | GET | Admin page Merge Candidates card (list pending duplicates) |
+| `/admin/merge-candidates/{uuid}/merge` | POST | Admin page Merge Candidates card (merge B into A, delete B) |
+| `/admin/merge-candidates/{uuid}/dismiss` | POST | Admin page Merge Candidates card (mark as reviewed-not-duplicate) |
 | `/auth/register` | POST | Registration page |
 
 ---

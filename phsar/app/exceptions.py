@@ -7,7 +7,19 @@ class PhsarBaseError(Exception):
     status_code: int = 400
 
 
-class MalIdAlreadyExistsError(PhsarBaseError):
+class PermanentPhsarError(PhsarBaseError):
+    """Marker for failures where retrying with the same input will produce
+    the same result. The job worker uses isinstance(exc, PermanentPhsarError)
+    to set retryable=False on the failed job, so the bell hides its retry
+    button instead of letting the user spam jobs that can't ever succeed.
+
+    Errors NOT in this branch (raw httpx errors, asyncio.TimeoutError,
+    tenacity-exhausted retries, etc.) default to retryable=True since they
+    plausibly recover when MAL or the network does.
+    """
+
+
+class MalIdAlreadyExistsError(PermanentPhsarError):
     """Raised when a media/anime with the same mal_id already exists in the database."""
     status_code = 409
 
@@ -18,7 +30,7 @@ class MalIdAlreadyExistsError(PhsarBaseError):
         super().__init__(message)
 
 
-class AnimeNotFoundError(PhsarBaseError):
+class AnimeNotFoundError(PermanentPhsarError):
     """Raised when an anime is not found in the MAL API."""
     status_code = 404
 
@@ -28,7 +40,7 @@ class AnimeNotFoundError(PhsarBaseError):
         super().__init__(message)
 
 
-class MainMediaNotFoundError(PhsarBaseError):
+class MainMediaNotFoundError(PermanentPhsarError):
     """Raised when a relation graph has no media flagged as the main story.
 
     The full title/relation list is preserved on the instance for server-side
@@ -338,6 +350,42 @@ class DuplicateScrapeQueryError(PhsarBaseError):
                 "New seasonal releases land via the nightly update — "
                 "try again in a few days if something looks missing."
             )
+        super().__init__(message)
+
+
+class MergeCandidateNotFoundError(PhsarBaseError):
+    """Raised when a merge candidate UUID doesn't resolve."""
+    status_code = 404
+
+    def __init__(self, uuid: str):
+        message = f"Merge candidate not found: '{uuid}'."
+        super().__init__(message)
+
+
+class MergeCandidateAlreadyResolvedError(PhsarBaseError):
+    """Raised when admin tries to merge or dismiss a candidate that's
+    already in a terminal state."""
+    status_code = 409
+
+    def __init__(self, status: str):
+        message = f"Merge candidate is already {status} — cannot resolve again."
+        super().__init__(message)
+
+
+class MergeMalIdConflictError(PhsarBaseError):
+    """Raised when two anime up for merge share a media mal_id.
+
+    Per design, this should never happen — Media.mal_id is globally unique.
+    Surface 409 so an admin investigates the underlying duplicate before
+    merging."""
+    status_code = 409
+
+    def __init__(self, mal_id: int):
+        self.mal_id = mal_id
+        message = (
+            f"Both anime have a media with mal_id {mal_id}. "
+            "This should never happen — investigate the duplicate before merging."
+        )
         super().__init__(message)
 
 

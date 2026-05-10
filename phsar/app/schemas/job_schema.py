@@ -20,7 +20,15 @@ class ScrapeJobRequest(BaseModel):
 
 class JobResponse(BaseModel):
     """Frontend-facing view of a Job row. Excludes columns the bell doesn't
-    need (modified_at, requested_by relationship)."""
+    need (modified_at, requested_by relationship).
+
+    Well-known result_summary keys (set by JobWorker / dispatchers; not all
+    are present on every row):
+    - "retryable": bool — set on failed rows. False when the failure is a
+      PermanentPhsarError or a missing-dispatcher config error; the bell
+      hides its retry button when False.
+    - "anime_count" / "media_count": int — set by user_scrape on success.
+    """
     model_config = ConfigDict(from_attributes=True)
 
     uuid: UUID

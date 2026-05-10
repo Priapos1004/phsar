@@ -23,6 +23,7 @@ from app.seeders.user_seeder import (
     seed_guest_user,
 )
 from app.services.job_worker import job_worker
+from app.services.merge_detection_service import backfill_merge_candidates
 from app.services.scrape_dispatcher import user_scrape_dispatcher
 
 setup_logging()
@@ -39,6 +40,7 @@ async def lifespan(app: FastAPI):
         await backfill_user_settings(session)
         await backfill_spoiler_visibility(session)
         await backfill_embeddings(session)
+        await backfill_merge_candidates(session)
         # Mark anything left in `running` as failed — the previous process
         # died mid-job, so the row is stale. User retries from the bell.
         reaped = await JobDAO().reap_orphans(session)

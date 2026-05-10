@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import async_session_maker
 from app.daos.job_dao import JobDAO
+from app.exceptions import PermanentPhsarError
 from app.models.job import Job, JobKind
 
 logger = logging.getLogger(__name__)
@@ -110,8 +111,13 @@ class JobWorker:
                 return True
             dispatcher = self._dispatchers.get(kind)
             if dispatcher is None:
+                # Missing dispatcher is a broken config — retry produces the
+                # same outcome until a redeploy, so don't tempt the bell.
                 await self._dao.mark_failed(
-                    work_session, job, f"No dispatcher registered for kind {kind.value!r}"
+                    work_session,
+                    job,
+                    f"No dispatcher registered for kind {kind.value!r}",
+                    retryable=False,
                 )
                 await work_session.commit()
                 return True
@@ -125,11 +131,15 @@ class JobWorker:
                 await work_session.rollback()
                 failure = exc
 
+        retryable = not isinstance(failure, PermanentPhsarError)
         async with async_session_maker() as fail_session:
             failing = await self._dao.get_by_id(fail_session, job_id)
             if failing is not None:
                 await self._dao.mark_failed(
-                    fail_session, failing, str(failure) or type(failure).__name__
+                    fail_session,
+                    failing,
+                    str(failure) or type(failure).__name__,
+                    retryable=retryable,
                 )
                 await fail_session.commit()
         return True

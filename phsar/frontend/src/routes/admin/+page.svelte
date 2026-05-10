@@ -10,6 +10,7 @@
 	import { Copy, Trash2, Plus, ArrowUpDown } from 'lucide-svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import BackupsCard from '$lib/components/BackupsCard.svelte';
+	import MergeCandidatesCard from '$lib/components/MergeCandidatesCard.svelte';
 	import { formatShortDate } from '$lib/utils/formatString';
 	import type { RegistrationTokenListItem } from '$lib/types/api';
 
@@ -286,6 +287,8 @@
 			{/if}
 		</Card.Content>
 	</Card.Root>
+
+	<MergeCandidatesCard />
 
 	<BackupsCard currentUsername={getUsername() ?? ''} />
 </div>

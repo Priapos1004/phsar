@@ -159,7 +159,11 @@ class JikanScraper:
         excluded_mal_ids: set[int],
         initial_search_limit: int = 3,
         progress: "ProgressReporter | None" = None,
-    ) -> tuple[list[dict], dict[int, dict], set[tuple[int, str, str]]]:
+    ) -> tuple[
+        list[tuple[dict, set[int]]],
+        dict[int, dict],
+        set[tuple[int, str, str]],
+    ]:
         search = await self._get(f"{self.base_url}/anime", params={"q": title, "limit": initial_search_limit})
         results = search.get("data", [])
 
@@ -167,11 +171,13 @@ class JikanScraper:
             raise AnimeNotFoundError(title)
 
         all_info: dict[int, dict] = {}
-        visited_ids: set[int] = excluded_mal_ids
-        # Snapshot the pre-existing exclusions so progress reports the count of
-        # newly-discovered anime, not the count of all known mal_ids.
-        initial_visited = len(visited_ids)
-        relations: list[dict] = []
+        # excluded_ids = pre-existing in catalog (frozen for the run);
+        # visited_ids = traversed in *this* run. Splitting them so we can
+        # detect "BFS hit a media that already lives under a different anime
+        # in the catalog" — that's the relation_link merge-candidate signal.
+        excluded_ids: frozenset[int] = frozenset(excluded_mal_ids)
+        visited_ids: set[int] = set()
+        relations: list[tuple[dict, set[int]]] = []
         unwanted_media: set[tuple[int, str, str]] = set()
 
         for anime in results:
@@ -179,6 +185,7 @@ class JikanScraper:
             logger.info(f"Searching relations with: {anime_info['title']}")
             mal_id = anime_info["mal_id"]
             related_anime_graph: dict[int, dict] = {}
+            cross_link_mal_ids: set[int] = set()
             left_mal_ids = deque([mal_id])
             relation_types = deque([None])
             is_first_relation = True # Skip first anime and come back later via relations (if it has relations)
@@ -188,16 +195,28 @@ class JikanScraper:
                 current_mal_id = left_mal_ids.popleft()
                 current_relation = relation_types.popleft()
 
-                if current_mal_id in visited_ids:  # skip if visited
+                if current_mal_id in visited_ids:  # already processed this run
                     continue
-                
-                logger.info(f"Media left in recursive search: {len(set(left_mal_ids) - visited_ids)}")
+
+                if current_mal_id in excluded_ids:
+                    # Already in our catalog under some anime parent. If we
+                    # reached it via a non-crossover relation from the
+                    # current graph (and it isn't the search-entry node
+                    # itself), it's a relation_link signal that the new
+                    # anime overlaps an existing one. The owning anime is
+                    # resolved later in save_service.
+                    if current_mal_id != mal_id and current_relation != "crossover":
+                        cross_link_mal_ids.add(current_mal_id)
+                    visited_ids.add(current_mal_id)
+                    continue
+
+                logger.info(f"Media left in recursive search: {len(set(left_mal_ids) - visited_ids - excluded_ids)}")
 
                 # Mark as visited BEFORE doing anything
                 visited_ids.add(current_mal_id)
 
                 if progress is not None:
-                    discovered = len(visited_ids) - initial_visited
+                    discovered = len(visited_ids)
                     # Estimate total as discovered-so-far plus the still-queued
                     # frontier; the frontier has duplicates so this overshoots
                     # slightly but always converges to 100% as the queue drains.
@@ -224,7 +243,14 @@ class JikanScraper:
                     
                     all_info[current_mal_id] = anime_info
 
-                    all_related_media = await self.fetch_relations(current_mal_id)
+                    # Crossover nodes mark a franchise boundary — record the
+                    # anime in the graph but don't BFS further. Without this,
+                    # a single Fate × Tsukihime crossover collapses both
+                    # franchises into one anime row.
+                    if current_relation == "crossover":
+                        all_related_media = []
+                    else:
+                        all_related_media = await self.fetch_relations(current_mal_id)
                     relation_types_list = [media["relation"] for media in all_related_media]
 
                     is_main_story = (
@@ -293,6 +319,6 @@ class JikanScraper:
                         key=lambda item: (item[1]["aired_from"] is None, item[1]["aired_from"])
                     )
                 )
-                relations.append(sorted_graph)
+                relations.append((sorted_graph, cross_link_mal_ids))
 
         return relations, all_info, unwanted_media

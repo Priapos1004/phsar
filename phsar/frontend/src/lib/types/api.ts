@@ -245,6 +245,26 @@ export interface SpoilerVisibility {
 	visible_media_uuids: string[];
 }
 
+// Admin — Merge candidates
+export interface MergeCandidateAnimeSummary {
+	uuid: string;
+	title: string;
+	name_eng: string | null;
+	name_jap: string | null;
+	media_count: number;
+	studios: string[];
+	earliest_year: number | null;
+}
+
+export interface MergeCandidateListItem {
+	uuid: string;
+	similarity_score: number;
+	detected_by: string;
+	created_at: string;
+	anime_a: MergeCandidateAnimeSummary;
+	anime_b: MergeCandidateAnimeSummary;
+}
+
 // Admin — Registration tokens
 export interface RegistrationTokenListItem {
 	uuid: string;
