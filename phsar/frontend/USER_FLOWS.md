@@ -30,8 +30,8 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 
 ### 1.5 Maintenance Mode
 - **Sticky pre-warning banner.** A yellow `Notice` card sits in a sticky container at the top of every page (including `/login` and `/register`), pinned alongside the navbar so scrolling the page keeps both visible. Renders only when a maintenance window is upcoming or active.
-  - Polls `GET /maintenance/status` every 60s via raw `fetch` (deliberately bypasses the API client so a 503 mid-window can't trigger the redirect below and defeat the warning).
-  - Also subscribes to the auth `token` store and to a shared `maintenanceRefresh` bump signal — any login/logout transition AND any 503-with-maintenance response triggers an immediate refetch, so the banner reacts in milliseconds rather than waiting for the next 60s poll.
+  - Polls `GET /maintenance/status` every 30s via raw `fetch` (deliberately bypasses the API client so a 503 mid-window can't trigger the redirect below and defeat the warning). 30s instead of 60s so the seasonal-sweep dispatcher's short maintenance window (which can be only a few seconds long since the per-id MAL work runs in child jobs) is still observable for idle sessions.
+  - Also subscribes to the auth `token` store and to a shared `maintenanceRefresh` bump signal — any login/logout transition AND any 503-with-maintenance response triggers an immediate refetch, so the banner reacts in milliseconds rather than waiting for the next 30s poll.
   - When `scheduled_at` is within 30 min: "Scheduled maintenance starts in ~N minutes — pause your current episode." (singular "minute" at exactly 1).
   - When `active` is true: "Maintenance in progress. Some pages may be unavailable."
   - When neither: banner is hidden.
@@ -43,14 +43,16 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 ## 2. Navigation
 
 ### 2.1 NavBar
-- Sticky bar at the top of every page except `/login`
-- Left: logo + "PHSAR" text linking to `/`, "Ratings" link, "Watchlist" link
-- Right (when authenticated): user button (first letter of username) toggling a dropdown with:
-  - User Settings → `/settings`
-  - Admin → `/admin` (visible only to admin role)
-  - Statistics → `/statistics`
-  - Getting Started → `/getting-started`
-  - Logout (red) → clears token, redirects to `/login`
+- Sticky bar at the top of every page except `/login` (sits inside a sticky wrapper shared with `MaintenanceBanner` — see 1.5)
+- Left: logo + "PHSAR" text linking to `/`, "Ratings" link, "Watchlist" link, "Add to Library" link → `/library/add`
+- Right (when authenticated):
+  - **JobBell** (bell icon next to the user button): polls `GET /jobs/mine` every 30s. Badge count surfaces session-scoped active jobs PLUS unseen-completed jobs since the tab opened (`bellLoginAt` + `bellSeenJobs` set in sessionStorage; cleared on every logout transition via `clearBellSession()` so a relogin in the same tab doesn't inherit the previous session). Clicking opens a dropdown listing up to 5 entries (active + recently-finished); a "View all in Library" tail links to `/library/add` for older jobs. Each row shows stage (Fetching/Saving/Done), progress (`items_done/items_total`), and on failed rows a friendly error + retry button. Retry is hidden when `result_summary.retryable === false` (permanent failures: `AnimeNotFoundError`, `MainMediaNotFoundError`, `MalIdAlreadyExistsError`, `AnimeFilteredOutError`); while one retry is in flight, every retry button in the dropdown is disabled. Bell stops polling on 401 (token dead).
+  - User button (first letter of username) toggling a dropdown with:
+    - User Settings → `/settings`
+    - Admin → `/admin` (visible only to admin role)
+    - Statistics → `/statistics`
+    - Getting Started → `/getting-started`
+    - Logout (red) → clears token, redirects to `/login`
 
 ### 2.2 Version Footer
 - Small muted text at the bottom of every page showing the deployed version.
@@ -69,6 +71,7 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 | `/ratings` | (placeholder) | Yes |
 | `/watchlist` | (placeholder) | Yes |
 | `/settings` | User preferences (theme, language, rating step, spoiler level, data export, account deletion) | Yes |
+| `/library/add` | Add anime via MAL query + recent additions panel | Yes (form disabled for restricted users) |
 | `/admin` | Registration token management (admin only) | Yes (admin) |
 | `/statistics` | (placeholder) | Yes |
 | `/getting-started` | (placeholder) | Yes |
@@ -299,35 +302,55 @@ Each anime search result card shows:
 
 ---
 
-## 9. Admin Page
+## 9. Add to Library Page
 
-### 9.1 Access
+### 9.1 Layout
+- Two-column card: left is a "Search MAL" form (text input + submit button), right is a "Recently added" panel showing the most recent saved anime across all users (catalog is family-shared, so this is a global feed).
+- Restricted users see the page but the form is disabled (`POST /jobs/scrape` rejects them backend-side via `require_user_or_admin` regardless).
+
+### 9.2 Submitting a Scrape Job
+- The query must be at least 4 chars (`minlength` attr + button stays disabled until 4 chars typed). MAL's top-3 search is too ambiguous on shorter queries.
+- Submitting POSTs `{ query }` to `/jobs/scrape`. Successful enqueue returns 202 with the new job uuid; the form clears and bumps `jobsRefresh` (in `lib/stores/jobs.ts`) so the navbar bell refetches in tens of milliseconds instead of waiting for the next 30s poll.
+- 409 dedupe: re-submitting the same normalized query within `JOBS_DEDUPE_HOURS` (default 72) returns "This query is already queued" — failed jobs don't count, so a transient MAL outage doesn't lock the user out for 3 days.
+- 409 per-user cap: more than `JOBS_PER_USER_LIMIT` (default 4) active/queued user jobs returns "Too many jobs in flight — wait for some to finish."
+- The job's lifecycle is then surfaced by the navbar bell (see 2.1). Long-term history lives on this page's recent-additions panel rather than the bell, which is intentionally session-scoped.
+
+### 9.3 Recent Additions Panel
+- Server-rendered list from `GET /library/recent` returning the most recent anime saved across the catalog (not just this user's scrapes). Each row links to the anime detail page.
+- Carries `name_eng` + `name_jap` so the frontend can call `resolveTitle(...)` with the user's `name_language` setting — no second fetch.
+- Refreshes automatically when the bell observes a NEW `succeeded` `user_scrape` (bumps `librarySaved` in `lib/stores/jobs.ts`; this panel subscribes via `onBump`). No manual reload required.
+
+---
+
+## 10. Admin Page
+
+### 10.1 Access
 - Only accessible to users with `admin` role
 - Non-admin users are redirected to `/` on mount
 - NavBar dropdown shows "Admin" link only for admin users
 
-### 9.2 Create Registration Token
+### 10.2 Create Registration Token
 - Form with role selector (User / Restricted User) and expiry dropdown (1 day / 7 days / 30 days)
 - "Create" button POSTs to `/admin/registration-tokens`
 - On success: token string shown in a highlighted banner with copy button and toast feedback
 - Changing the role or expiry selector dismisses the success banner
 
-### 9.3 Token List
+### 10.3 Token List
 - Displays all registration tokens with: truncated token (click to copy), status badge (active/used/expired), role badge, creation date, expiry date, used-by username
 - **Sort options** (dropdown): By Status (default: active → used → expired), Newest First, Expiring Soon (active tokens first by soonest expiry), Recently Used
 - **Delete**: trash icon on unused/expired tokens opens confirm/cancel inline buttons. Used tokens cannot be deleted. DELETE returns 204.
 
-### 9.4 Backups
+### 10.4 Backups
 - Card below the token list. Admin-only.
 - **Create backup**: POSTs to `/admin/backups`; new dump appears in the list with a green `ok` integrity badge and a source badge (`Manual`, `Scheduled`, `Pre-restore`, or `Upload`).
 - **Upload**: file input accepts `.dump` files; `/admin/backups/upload` runs `pg_restore -f -` to validate + compute a content hash that ignores per-run timestamps and psql `\restrict` tokens. An upload whose DB state matches an existing dump returns 409 ("identical to `<filename>`") and re-points the "Current" badge at the existing dump.
 - **List**: filename, timestamp, human-readable size, integrity badge, source badge. The dump whose content matches the live DB gets a blue "Current" badge (git-branch icon) and a faint blue tint on the row — this is the last-restored dump, or (when a create/upload dedupes) the pre-existing dump it re-confirmed. Deleting the current dump clears the marker so the badge disappears.
 - **Sort options** (dropdown): Newest First (default), Oldest First, Largest First, By Integrity (corrupt/unknown first to surface problems).
 - **Download**: arrow icon per row uses the `downloadBlob` helper (bearer token via fetch headers, then auto-click on an object URL). Saved with the original filename.
-- **Restore**: rotate-back icon opens a destructive-confirm dialog that requires typing the admin's username. Disabled on `corrupt` rows. Backend auto-snapshots as a `pre-restore` dump *before* entering maintenance mode, then flips the maintenance flag, closes the SQLAlchemy pool, terminates any other DB sessions, and runs `pg_restore --clean --if-exists` (timeout configurable via `BACKUP_RESTORE_TIMEOUT_SECONDS`, default 10 min). After pg_restore returns, the backend warms the connection pool before lifting the maintenance gate so the first post-restore request doesn't flap the liveness probe. Result banner reports the pre-restore filename, and the "Current" badge now follows the restored dump. All non-admin users in the app are bounced to `/login?maintenance=1` for the duration (see 1.5).
+- **Restore**: rotate-back icon opens a destructive-confirm dialog that requires typing the admin's username. Disabled on `corrupt` rows. Backend auto-snapshots as a `pre-restore` dump *before* entering maintenance mode, then flips the maintenance flag, closes the SQLAlchemy pool, terminates any other DB sessions, and runs `pg_restore --clean --if-exists` (timeout configurable via `BACKUP_RESTORE_TIMEOUT_SECONDS`, default 10 min). After pg_restore returns, the backend warms the connection pool before lifting the maintenance gate so the first post-restore request doesn't flap the liveness probe. Result banner reports the pre-restore filename, and the "Current" badge now follows the restored dump. All non-admin users in the app are bounced to `/login` for the duration; the sticky global banner conveys the maintenance state (see 1.5).
 - **Delete**: trash icon opens inline confirm/cancel buttons. DELETE returns 204.
 
-### 9.5 Merge Candidates
+### 10.5 Merge Candidates
 - Card below Backups. Admin-only.
 - **List**: pending merge candidates flagged by the duplicate detector (running on every save and at app startup). Each row shows:
   - A "% match" badge (similarity score)
@@ -343,7 +366,7 @@ Each anime search result card shows:
 
 ---
 
-## 10. API Endpoints Used by Frontend
+## 11. API Endpoints Used by Frontend
 
 | Endpoint | Method | When |
 |----------|--------|------|
@@ -380,11 +403,17 @@ Each anime search result card shows:
 | `/admin/merge-candidates/{uuid}/merge` | POST | Admin page Merge Candidates card (merge B into A, delete B) |
 | `/admin/merge-candidates/{uuid}/dismiss` | POST | Admin page Merge Candidates card (mark as reviewed-not-duplicate) |
 | `/auth/register` | POST | Registration page |
-| `/maintenance/status` | GET | Polled by MaintenanceBanner every 60s on every page (no auth) |
+| `/maintenance/status` | GET | Polled by MaintenanceBanner every 30s on every page (no auth) |
+| `/jobs/scrape` | POST | `/library/add` form submission (enqueues a `user_scrape` job; restricted users rejected by role check) |
+| `/jobs/mine` | GET | Polled by JobBell every 30s (active + recently-finished jobs for the current user) |
+| `/jobs/{uuid}` | GET | Single-job poll for owner or admin (used by bell retry + admin debugging) |
+| `/library/recent` | GET | `/library/add` recent-additions panel (global feed of recently-saved anime) |
+| `/admin/jobs/schedule-sweep` | POST | Coolify cron only — bearer token authenticated, enqueues a delayed `update_sweep` |
+| `/admin/jobs/schedule-seasonal` | POST | Coolify cron only — bearer token authenticated, enqueues a delayed `seasonal_sweep` |
 
 ---
 
-## 11. Error States
+## 12. Error States
 
 | Scenario | Expected Behavior |
 |----------|-------------------|
