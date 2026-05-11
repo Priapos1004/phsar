@@ -326,3 +326,62 @@ async def test_rate_limiter_spaces_consecutive_requests(monkeypatch):
     elapsed = monotonic() - t0
 
     assert elapsed >= 0.045  # 5% margin under the configured 50ms gap
+
+
+@pytest.mark.asyncio
+async def test_get_does_not_retry_4xx(monkeypatch):
+    """A 404 (or any 4xx) is deterministic — retrying wastes 31s of
+    exponential backoff before failing the same way. The httpx.AsyncClient
+    mock must see exactly one request."""
+    import httpx
+
+    monkeypatch.setattr(JikanScraper, "_MIN_REQUEST_INTERVAL_S", 0.0)
+
+    call_count = 0
+
+    async def fake_get(self, url, params=None):
+        nonlocal call_count
+        call_count += 1
+        request = httpx.Request("GET", url)
+        return httpx.Response(404, request=request, content=b'{"detail": "not found"}')
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    async with JikanScraper() as scraper:
+        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+            await scraper._get("https://example/anime")
+
+    assert call_count == 1
+    assert exc_info.value.response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_retries_5xx_and_surfaces_underlying_error(monkeypatch):
+    """5xx IS transient — tenacity retries to the cap (5 attempts), then
+    reraise=True surfaces the underlying HTTPStatusError instead of
+    wrapping it in tenacity's RetryError. The bell's result_summary
+    gets the human-readable upstream message, not `RetryError[<Future at 0x...>]`."""
+    import httpx
+
+    monkeypatch.setattr(JikanScraper, "_MIN_REQUEST_INTERVAL_S", 0.0)
+    # Tighten the backoff so the test isn't 31s long.
+    from tenacity import stop_after_attempt, wait_fixed
+    monkeypatch.setattr(JikanScraper._get.retry, "stop", stop_after_attempt(3))
+    monkeypatch.setattr(JikanScraper._get.retry, "wait", wait_fixed(0))
+
+    call_count = 0
+
+    async def fake_get(self, url, params=None):
+        nonlocal call_count
+        call_count += 1
+        request = httpx.Request("GET", url)
+        return httpx.Response(504, request=request, content=b"gateway timeout")
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    async with JikanScraper() as scraper:
+        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+            await scraper._get("https://example/anime")
+
+    assert call_count == 3
+    assert exc_info.value.response.status_code == 504

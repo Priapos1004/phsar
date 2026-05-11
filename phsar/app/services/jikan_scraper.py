@@ -7,9 +7,25 @@ from time import monotonic
 from typing import TYPE_CHECKING, Optional
 
 import httpx
-from tenacity import before_sleep_log, retry, stop_after_attempt, wait_exponential
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from app.exceptions import AnimeNotFoundError
+
+
+def _is_transient_mal_error(exc: BaseException) -> bool:
+    """5xx, timeouts, and network errors are transient and worth retrying.
+    4xx (most importantly 404) is deterministic — same request will fail
+    the same way, so burning 31s of exponential backoff just delays the
+    inevitable failure and locks up the worker for nothing."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= 500
+    return isinstance(exc, (httpx.TimeoutException, httpx.NetworkError))
 
 if TYPE_CHECKING:
     from app.services.progress_reporter import ProgressReporter
@@ -75,6 +91,15 @@ class JikanScraper:
         # MAL outage than fixed-1s, especially during overnight unattended runs.
         stop=stop_after_attempt(5),
         wait=wait_exponential(multiplier=2, min=1, max=30),
+        # Skip 4xx (404 from a misspelled query is deterministic; retrying
+        # wastes 31s of backoff before failing the same way).
+        retry=retry_if_exception(_is_transient_mal_error),
+        # Surface the underlying HTTPStatusError / TimeoutException to the
+        # caller instead of wrapping it in tenacity's RetryError. The bell's
+        # `result_summary["error"]` becomes the human-readable upstream
+        # message ("Server error '504 Gateway Time-out' for url '...'")
+        # instead of `RetryError[<Future at 0x... state=finished raised ...>]`.
+        reraise=True,
         before_sleep=before_sleep_log(logger, logging.DEBUG)
     )
     async def _get(self, url: str, params: Optional[dict] = None) -> dict:
