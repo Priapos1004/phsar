@@ -7,6 +7,12 @@ export interface TokenResponse {
 	token_type: string;
 }
 
+// Maintenance window status (GET /maintenance/status, public)
+export interface MaintenanceStatus {
+	active: boolean;
+	scheduled_at: string | null; // ISO 8601
+}
+
 // Media
 export interface MediaConnected {
 	mal_id: number;
@@ -284,6 +290,16 @@ export interface RegistrationTokenListItem {
 export type JobKind = 'user_scrape' | 'update_sweep' | 'seasonal_sweep';
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 
+// Mirrors backend `job_worker.ERROR_CATEGORY_*`. Keep both sides in sync —
+// the union is the compile-time contract that catches drift.
+export type JobErrorCategory = 'upstream_outage';
+
+export interface JobResultSummary {
+	retryable?: boolean;
+	error_category?: JobErrorCategory;
+	[key: string]: unknown;
+}
+
 export interface Job {
 	uuid: string;
 	kind: JobKind;
@@ -292,7 +308,7 @@ export interface Job {
 	stage: string | null;
 	items_total: number | null;
 	items_done: number;
-	result_summary: Record<string, unknown> | null;
+	result_summary: JobResultSummary | null;
 	error_message: string | null;
 	created_at: string;
 	started_at: string | null;

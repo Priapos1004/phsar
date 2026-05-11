@@ -199,6 +199,75 @@ async def test_search_title_no_cross_link_for_crossover_relation(monkeypatch):
     _graph, cross_link_mal_ids = relations[0]
     assert cross_link_mal_ids == set()
 
+
+@pytest.mark.asyncio
+async def test_search_title_does_not_blacklist_not_yet_aired_anime(monkeypatch):
+    """Just-announced sequels (`media_type=None` + `status="Not yet aired"`)
+    must skip silently — a permanent unwanted entry would block
+    rediscovery once MAL fills the type."""
+    async def fake_get(self, url: str, params=None):
+        if url.endswith("/anime") and params is not None and params.get("q"):
+            return {"data": [_make_anime(1, "Origin Anime")]}
+        if url.endswith("/relations"):
+            mal_id = int(url.rsplit("/", 2)[-2])
+            if mal_id == 1:
+                return {"data": [{"relation": "Sequel", "entry": [{"type": "anime", "mal_id": 2}]}]}
+            return {"data": []}
+        if "/anime/" in url:
+            mal_id = int(url.rsplit("/", 1)[-1])
+            payload = _make_anime(mal_id, f"Anime {mal_id}")
+            if mal_id == 2:
+                payload["type"] = None
+                payload["status"] = "Not yet aired"
+                payload["aired"] = {"from": None, "to": None}
+            return {"data": payload}
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+
+    async with JikanScraper() as scraper:
+        _relations, _all_info, unwanted = await scraper.search_title(
+            title="Origin", excluded_mal_ids=set(),
+        )
+
+    assert all(uw[0] != 2 for uw in unwanted), (
+        "Not-yet-aired anime (mal_id=2) must NOT land in unwanted_media"
+    )
+
+
+@pytest.mark.asyncio
+async def test_search_title_blacklists_other_anomalous_no_media_type(monkeypatch):
+    """Anime with `media_type=None` but a non-`Not yet aired` status is
+    still a MAL anomaly worth blacklisting — keeps the existing
+    Music/PV/CM/Hentai pattern intact for true outliers."""
+    async def fake_get(self, url: str, params=None):
+        if url.endswith("/anime") and params is not None and params.get("q"):
+            return {"data": [_make_anime(1, "Origin Anime")]}
+        if url.endswith("/relations"):
+            mal_id = int(url.rsplit("/", 2)[-2])
+            if mal_id == 1:
+                return {"data": [{"relation": "Other", "entry": [{"type": "anime", "mal_id": 2}]}]}
+            return {"data": []}
+        if "/anime/" in url:
+            mal_id = int(url.rsplit("/", 1)[-1])
+            payload = _make_anime(mal_id, f"Anime {mal_id}")
+            if mal_id == 2:
+                payload["type"] = None
+                # Status is set (not "Not yet aired") — anomalous.
+                payload["status"] = "Finished Airing"
+            return {"data": payload}
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+
+    async with JikanScraper() as scraper:
+        _relations, _all_info, unwanted = await scraper.search_title(
+            title="Origin", excluded_mal_ids=set(),
+        )
+
+    assert any(uw[0] == 2 and uw[2] == "Unknown" for uw in unwanted)
+
+
 DURATION_EXPECTED_PAIRS = [
     # Check different string format:
     ("24 min per ep", 24 * 60),
@@ -237,3 +306,82 @@ DURATION_EXPECTED_PAIRS = [
 def test_parse_duration_to_seconds_exact(duration_str, expected_seconds):
     result = JikanScraper._parse_duration_to_seconds(duration_str)
     assert result == expected_seconds, f"For '{duration_str}', expected {expected_seconds} but got {result}"
+
+
+@pytest.mark.asyncio
+async def test_rate_limiter_spaces_consecutive_requests(monkeypatch):
+    """Two back-to-back calls must be spaced at least _MIN_REQUEST_INTERVAL_S
+    apart. Without this, a 200-anime sweep would burst hundreds of
+    requests into Jikan as fast as TCP allows."""
+    from time import monotonic
+
+    # Override to a small value so the test stays fast but still proves
+    # spacing — the production constant doesn't need to be exercised.
+    monkeypatch.setattr(JikanScraper, "_MIN_REQUEST_INTERVAL_S", 0.05)
+    JikanScraper._last_request_at = 0.0
+
+    t0 = monotonic()
+    await JikanScraper._wait_for_rate_limit()
+    await JikanScraper._wait_for_rate_limit()
+    elapsed = monotonic() - t0
+
+    assert elapsed >= 0.045  # 5% margin under the configured 50ms gap
+
+
+@pytest.mark.asyncio
+async def test_get_does_not_retry_4xx(monkeypatch):
+    """A 404 (or any 4xx) is deterministic — retrying wastes 31s of
+    exponential backoff before failing the same way. The httpx.AsyncClient
+    mock must see exactly one request."""
+    import httpx
+
+    monkeypatch.setattr(JikanScraper, "_MIN_REQUEST_INTERVAL_S", 0.0)
+
+    call_count = 0
+
+    async def fake_get(self, url, params=None):
+        nonlocal call_count
+        call_count += 1
+        request = httpx.Request("GET", url)
+        return httpx.Response(404, request=request, content=b'{"detail": "not found"}')
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    async with JikanScraper() as scraper:
+        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+            await scraper._get("https://example/anime")
+
+    assert call_count == 1
+    assert exc_info.value.response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_get_retries_5xx_and_surfaces_underlying_error(monkeypatch):
+    """5xx IS transient — tenacity retries to the cap (5 attempts), then
+    reraise=True surfaces the underlying HTTPStatusError instead of
+    wrapping it in tenacity's RetryError. The bell's result_summary
+    gets the human-readable upstream message, not `RetryError[<Future at 0x...>]`."""
+    import httpx
+
+    monkeypatch.setattr(JikanScraper, "_MIN_REQUEST_INTERVAL_S", 0.0)
+    # Tighten the backoff so the test isn't 31s long.
+    from tenacity import stop_after_attempt, wait_fixed
+    monkeypatch.setattr(JikanScraper._get.retry, "stop", stop_after_attempt(3))
+    monkeypatch.setattr(JikanScraper._get.retry, "wait", wait_fixed(0))
+
+    call_count = 0
+
+    async def fake_get(self, url, params=None):
+        nonlocal call_count
+        call_count += 1
+        request = httpx.Request("GET", url)
+        return httpx.Response(504, request=request, content=b"gateway timeout")
+
+    monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
+
+    async with JikanScraper() as scraper:
+        with pytest.raises(httpx.HTTPStatusError) as exc_info:
+            await scraper._get("https://example/anime")
+
+    assert call_count == 3
+    assert exc_info.value.response.status_code == 504

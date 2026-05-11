@@ -21,6 +21,7 @@ phsar/
 │   │   ├── dependencies.py
 │   │   ├── logging_config.py
 │   │   ├── maintenance.py
+│   │   ├── maintenance_middleware.py
 │   │   └── security.py
 │   ├── daos/
 │   │   ├── anime_dao.py
@@ -41,11 +42,13 @@ phsar/
 │   ├── main.py
 │   ├── models/
 │   │   ├── anime.py
+│   │   ├── anime_freshness.py
 │   │   ├── anime_search.py
 │   │   ├── base.py
 │   │   ├── genre.py
 │   │   ├── job.py
 │   │   ├── media.py
+│   │   ├── media_freshness.py
 │   │   ├── media_genre.py
 │   │   ├── media_search.py
 │   │   ├── media_studio.py
@@ -67,6 +70,7 @@ phsar/
 │   │   ├── filters.py
 │   │   ├── jobs.py
 │   │   ├── library.py
+│   │   ├── maintenance.py
 │   │   ├── media.py
 │   │   ├── ratings.py
 │   │   ├── save.py
@@ -79,6 +83,7 @@ phsar/
 │   │   ├── auth_schema.py
 │   │   ├── backup_schema.py
 │   │   ├── job_schema.py
+│   │   ├── maintenance_schema.py
 │   │   ├── media_filter_schema.py
 │   │   ├── media_schema.py
 │   │   ├── rating_schema.py
@@ -143,9 +148,11 @@ phsar/
 │   │   │   │   ├── InfoDiashow.svelte
 │   │   │   │   ├── JobBell.svelte
 │   │   │   │   ├── LoadingScreen.svelte
+│   │   │   │   ├── MaintenanceBanner.svelte
 │   │   │   │   ├── MediaInfo.svelte
 │   │   │   │   ├── MergeCandidatesCard.svelte
 │   │   │   │   ├── NavBar.svelte
+│   │   │   │   ├── Notice.svelte
 │   │   │   │   ├── RatingCard.svelte
 │   │   │   │   ├── RatingsOverview.svelte
 │   │   │   │   ├── RatingsOverviewAttributes.svelte
@@ -181,6 +188,7 @@ phsar/
 │   │   │   │   ├── auth.ts
 │   │   │   │   ├── bell-session.ts
 │   │   │   │   ├── jobs.ts
+│   │   │   │   ├── maintenance.ts
 │   │   │   │   ├── spoilerVisibility.ts
 │   │   │   │   └── userSettings.ts
 │   │   │   ├── styles/
@@ -228,6 +236,7 @@ phsar/
 │   │       ├── job-bell.test.ts
 │   │       ├── library-add.test.ts
 │   │       ├── login.test.ts
+│   │       ├── maintenance-banner.test.ts
 │   │       ├── media-detail.test.ts
 │   │       ├── navbar.test.ts
 │   │       ├── rating-modal.test.ts
@@ -260,12 +269,14 @@ phsar/
     ├── routers/
     │   ├── conftest.py
     │   ├── test_admin.py
+    │   ├── test_admin_sweep.py
     │   ├── test_anime_detail.py
     │   ├── test_auth.py
     │   ├── test_filters_options.py
     │   ├── test_filters_token.py
     │   ├── test_health.py
     │   ├── test_jobs.py
+    │   ├── test_maintenance.py
     │   ├── test_media_detail.py
     │   ├── test_ratings.py
     │   ├── test_save.py
@@ -285,6 +296,7 @@ phsar/
         ├── test_progress_reporter.py
         ├── test_search_service.py
         ├── test_spoiler_service.py
+        ├── test_update_sweep.py
         └── test_vector_embedding_service.py
 ```
 </details>
@@ -312,6 +324,8 @@ SEARCH_SECRET_KEY=supersecretsearchsecretkey
 # BACKUP_CRON_TOKEN=supersecretcrontoken
 # Optional: raise if pg_restore of a larger DB legitimately takes >10 min
 # BACKUP_RESTORE_TIMEOUT_SECONDS=600
+# Optional: shared bearer secret for POST /admin/jobs/schedule-sweep (nightly content updates)
+# JOBS_CRON_TOKEN=supersecretsweeptoken
 ```
 
 *Change `animeuser`, `animepass`, `admin`, `supersecretpassword`, `supersecretsecretkey`, and `supersecretsearchsecretkey`*

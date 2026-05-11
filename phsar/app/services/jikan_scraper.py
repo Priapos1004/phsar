@@ -1,23 +1,65 @@
+import asyncio
 import logging
 import re
 from collections import deque
 from datetime import datetime
+from time import monotonic
 from typing import TYPE_CHECKING, Optional
 
 import httpx
-from tenacity import before_sleep_log, retry, stop_after_attempt, wait_exponential
+from tenacity import (
+    before_sleep_log,
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from app.exceptions import AnimeNotFoundError
+
+
+def _is_transient_mal_error(exc: BaseException) -> bool:
+    """5xx, timeouts, and network errors are transient and worth retrying.
+    4xx (most importantly 404) is deterministic — same request will fail
+    the same way, so burning 31s of exponential backoff just delays the
+    inevitable failure and locks up the worker for nothing."""
+    if isinstance(exc, httpx.HTTPStatusError):
+        return exc.response.status_code >= 500
+    return isinstance(exc, (httpx.TimeoutException, httpx.NetworkError))
 
 if TYPE_CHECKING:
     from app.services.progress_reporter import ProgressReporter
 
 BASE_URL = "https://api.jikan.moe/v4"
 
+# Sentinel media.airing_status values MAL returns. Module-level so callers
+# (sweep tier query, dispatcher diff, the not-yet-aired blacklist guard)
+# don't drift onto separate string copies.
+AIRING_STATUS_CURRENTLY_AIRING = "Currently Airing"
+AIRING_STATUS_NOT_YET_AIRED = "Not yet aired"
+
 logger = logging.getLogger(__name__)
 
 
+def parse_mal_datetime(value: str | None) -> Optional[datetime]:
+    # MAL emits "+00:00" most of the time but historical payloads sometimes
+    # carry "Z". `fromisoformat` accepts the former natively.
+    if not value:
+        return None
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
 class JikanScraper:
+    # Jikan documents ~3 req/s; we space request *starts* at 350ms (~2.85
+    # req/s) to leave headroom and avoid 429s on a 200-anime sweep that
+    # would otherwise burst hundreds of requests into the API as fast as
+    # TCP allows. tenacity's 429 retry would mask the rejections but not
+    # the IP-ban risk of sustained abuse. Class-level so user_scrape and
+    # update_sweep share the gate if they ever overlap.
+    _MIN_REQUEST_INTERVAL_S: float = 0.35
+    _rate_lock: asyncio.Lock = asyncio.Lock()
+    _last_request_at: float = 0.0
+
     def __init__(self, base_url: str = BASE_URL):
         self.base_url = base_url
         self.client: Optional[httpx.AsyncClient] = None
@@ -30,15 +72,39 @@ class JikanScraper:
     async def __aexit__(self, exc_type, exc, tb):
         await self.client.aclose()
 
+    @classmethod
+    async def _wait_for_rate_limit(cls) -> None:
+        """Serialized lock + sleep keeps consecutive request *starts* at
+        least _MIN_REQUEST_INTERVAL_S apart. Tenacity retries reinvoke
+        _get and hit this gate too — fine, since the backoff already
+        dominates the wait."""
+        async with cls._rate_lock:
+            now = monotonic()
+            elapsed = now - cls._last_request_at
+            if elapsed < cls._MIN_REQUEST_INTERVAL_S:
+                await asyncio.sleep(cls._MIN_REQUEST_INTERVAL_S - elapsed)
+                now = monotonic()
+            cls._last_request_at = now
+
     @retry(
         # Exponential backoff caps at 30s — better tail behavior on a transient
         # MAL outage than fixed-1s, especially during overnight unattended runs.
         stop=stop_after_attempt(5),
         wait=wait_exponential(multiplier=2, min=1, max=30),
+        # Skip 4xx (404 from a misspelled query is deterministic; retrying
+        # wastes 31s of backoff before failing the same way).
+        retry=retry_if_exception(_is_transient_mal_error),
+        # Surface the underlying HTTPStatusError / TimeoutException to the
+        # caller instead of wrapping it in tenacity's RetryError. The bell's
+        # `result_summary["error"]` becomes the human-readable upstream
+        # message ("Server error '504 Gateway Time-out' for url '...'")
+        # instead of `RetryError[<Future at 0x... state=finished raised ...>]`.
+        reraise=True,
         before_sleep=before_sleep_log(logger, logging.DEBUG)
     )
     async def _get(self, url: str, params: Optional[dict] = None) -> dict:
         logger.debug(f"Fetching URL: {url} with params: {params}")
+        await self._wait_for_rate_limit()
         response = await self.client.get(url, params=params)
         response.raise_for_status()
         return response.json()
@@ -70,7 +136,7 @@ class JikanScraper:
             return None, None
 
         try:
-            date = datetime.fromisoformat(aired_from.replace("Z", "+00:00"))
+            date = parse_mal_datetime(aired_from)
             year = date.year
             month = date.month
 
@@ -147,6 +213,13 @@ class JikanScraper:
         data = await self._get(f"{self.base_url}/anime/{mal_id}")
         return data.get("data", {})
 
+    async def refresh_anime(self, mal_id: int) -> dict:
+        # /full bundles relations into the same response, so 7c's probe
+        # can read them without a second hit. 7b ignores the relations
+        # block and just diffs the canonical fields.
+        data = await self._get(f"{self.base_url}/anime/{mal_id}/full")
+        return data.get("data", {})
+
     def get_all_anime_media(self, media_list: list[dict]) -> list[int]:
         return [media["mal_id"] for media in media_list if media.get("type") == "anime"]
 
@@ -155,27 +228,42 @@ class JikanScraper:
 
     async def search_title(
         self,
-        title: str,
+        title: str | None,
         excluded_mal_ids: set[int],
         initial_search_limit: int = 3,
         progress: "ProgressReporter | None" = None,
+        seed_mal_id: int | None = None,
+        seed_payload: dict | None = None,
     ) -> tuple[
         list[tuple[dict, set[int]]],
         dict[int, dict],
         set[tuple[int, str, str]],
     ]:
-        search = await self._get(f"{self.base_url}/anime", params={"q": title, "limit": initial_search_limit})
-        results = search.get("data", [])
-
-        if not results:
-            raise AnimeNotFoundError(title)
+        if seed_mal_id is not None:
+            # Probe path: skip the q= search; use the seed's own /full
+            # payload (already in the dispatcher's hand) as the single
+            # candidate. Subtract the seed from excluded_ids so the BFS
+            # actually processes it instead of short-circuiting on
+            # "already in catalog".
+            seed_data = seed_payload or await self.search_by_malid(seed_mal_id)
+            if not seed_data:
+                raise AnimeNotFoundError(f"mal_id={seed_mal_id}")
+            results = [seed_data]
+            excluded_ids: frozenset[int] = frozenset(excluded_mal_ids - {seed_mal_id})
+        else:
+            if title is None:
+                raise ValueError("search_title requires either title or seed_mal_id")
+            search = await self._get(f"{self.base_url}/anime", params={"q": title, "limit": initial_search_limit})
+            results = search.get("data", [])
+            if not results:
+                raise AnimeNotFoundError(title)
+            # excluded_ids = pre-existing in catalog (frozen for the run);
+            # visited_ids = traversed in *this* run. Splitting them so we can
+            # detect "BFS hit a media that already lives under a different anime
+            # in the catalog" — that's the relation_link merge-candidate signal.
+            excluded_ids: frozenset[int] = frozenset(excluded_mal_ids)
 
         all_info: dict[int, dict] = {}
-        # excluded_ids = pre-existing in catalog (frozen for the run);
-        # visited_ids = traversed in *this* run. Splitting them so we can
-        # detect "BFS hit a media that already lives under a different anime
-        # in the catalog" — that's the relation_link merge-candidate signal.
-        excluded_ids: frozenset[int] = frozenset(excluded_mal_ids)
         visited_ids: set[int] = set()
         relations: list[tuple[dict, set[int]]] = []
         unwanted_media: set[tuple[int, str, str]] = set()
@@ -249,6 +337,11 @@ class JikanScraper:
                     # franchises into one anime row.
                     if current_relation == "crossover":
                         all_related_media = []
+                    elif current_mal_id == mal_id and seed_payload is not None:
+                        # The /full payload the dispatcher just fetched
+                        # already bundles relations; reuse them instead of
+                        # paying for a second MAL hit per seed.
+                        all_related_media = seed_payload.get("relations") or []
                     else:
                         all_related_media = await self.fetch_relations(current_mal_id)
                     relation_types_list = [media["relation"] for media in all_related_media]
@@ -299,6 +392,14 @@ class JikanScraper:
 
                         if is_first_relation:
                             is_first_relation = False
+                elif anime_info.get("airing_status") == AIRING_STATUS_NOT_YET_AIRED:
+                    # Skip without blacklisting — MAL fills the type once the
+                    # show airs. A permanent unwanted entry would silently
+                    # block the catalog from ever picking it up.
+                    logger.info(
+                        "Skipping unscheduled anime without media_type: %s (mal_id=%s)",
+                        anime_info.get("title"), current_mal_id,
+                    )
                 else:
                     logger.warning(f"Anime without media_type:\n{anime_info}")
                     unwanted_media.add((current_mal_id, anime_info["title"], "Unknown"))

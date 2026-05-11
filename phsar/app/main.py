@@ -10,7 +10,7 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.core.db import async_session_maker
 from app.core.logging_config import setup_logging
-from app.core.maintenance import is_maintenance_active
+from app.core.maintenance_middleware import MaintenanceGateMiddleware
 from app.daos.job_dao import JobDAO
 from app.exceptions import PhsarBaseError
 from app.models.job import JobKind
@@ -24,7 +24,10 @@ from app.seeders.user_seeder import (
 )
 from app.services.job_worker import job_worker
 from app.services.merge_detection_service import backfill_merge_candidates
-from app.services.scrape_dispatcher import user_scrape_dispatcher
+from app.services.scrape_dispatcher import (
+    update_sweep_dispatcher,
+    user_scrape_dispatcher,
+)
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -49,6 +52,7 @@ async def lifespan(app: FastAPI):
             logger.warning("Reaped %d orphan running jobs from previous process", reaped)
 
     job_worker.register_dispatcher(JobKind.user_scrape, user_scrape_dispatcher)
+    job_worker.register_dispatcher(JobKind.update_sweep, update_sweep_dispatcher)
     await job_worker.start()
 
     yield  # Startup complete
@@ -63,6 +67,13 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Order matters: app.add_middleware insert(0, ...)s, so the LAST one
+    # registered ends up OUTERMOST. We need CORS outside the maintenance
+    # gate so 503 short-circuits still carry Access-Control-Allow-Origin —
+    # otherwise cross-origin fetch() rejects with a TypeError instead of a
+    # 503 response, and the frontend's catch falls into the generic
+    # "unexpected error" branch instead of the maintenance-banner branch.
+    app.add_middleware(MaintenanceGateMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
@@ -78,20 +89,6 @@ def create_app() -> FastAPI:
     async def phsar_exception_handler(request: Request, exc: PhsarBaseError):
         return JSONResponse(status_code=exc.status_code, content={"detail": str(exc)})
 
-    @app.middleware("http")
-    async def maintenance_gate(request: Request, call_next):
-        # / and /health stay open so Coolify's liveness check doesn't fail the
-        # container mid-restore and trigger a restart in the middle of pg_restore.
-        if is_maintenance_active() and request.url.path not in ("/", "/health"):
-            return JSONResponse(
-                status_code=503,
-                content={
-                    "detail": "Backup restore in progress. Please try again in a moment.",
-                    "maintenance": True,
-                },
-            )
-        return await call_next(request)
-
     # Local import to avoid early dependency resolution in tests
     from app.routers import (
         admin,
@@ -99,6 +96,7 @@ def create_app() -> FastAPI:
         filters,
         jobs,
         library,
+        maintenance,
         media,
         ratings,
         save,
@@ -112,6 +110,7 @@ def create_app() -> FastAPI:
     app.include_router(filters.router)
     app.include_router(jobs.router)
     app.include_router(library.router)
+    app.include_router(maintenance.router)
     app.include_router(media.router)
     app.include_router(ratings.router)
     app.include_router(save.router)

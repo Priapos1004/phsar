@@ -21,3 +21,14 @@ class Anime(BaseModel):
 
     # One-to-one relationship: Anime has one AnimeSearch (vector embeddings)
     anime_search = relationship("AnimeSearch", back_populates="anime", cascade="all, delete-orphan", uselist=False, lazy="raise")
+
+    # One-to-one sidecar with the nightly-sweep freshness state. Lives in
+    # its own table so operational tracking doesn't widen the canonical
+    # anime row or risk leaking into Pydantic response schemas.
+    freshness = relationship(
+        "AnimeFreshness",
+        back_populates="anime",
+        cascade="all, delete-orphan",
+        uselist=False,
+        lazy="raise",
+    )

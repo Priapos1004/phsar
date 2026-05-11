@@ -1,10 +1,18 @@
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, UploadFile, status
+from fastapi import APIRouter, Body, Depends, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_db, require_backup_cron_token, require_roles
+from app.core.dependencies import (
+    get_db,
+    require_backup_cron_token,
+    require_jobs_cron_token,
+    require_roles,
+)
+from app.core.maintenance import set_scheduled_at
+from app.models.job import Job, JobKind, JobStatus
 from app.models.users import RoleType
 from app.schemas import admin_schema, auth_schema, backup_schema
 from app.services import (
@@ -13,6 +21,7 @@ from app.services import (
     backup_service,
     merge_candidate_service,
 )
+from app.services.job_worker import job_worker
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -88,6 +97,42 @@ async def dismiss_anime_candidate(
     current_user=Depends(require_admin),
 ):
     await merge_candidate_service.dismiss(db, uuid)
+
+
+# Sits on the parent router so it doesn't inherit the JWT admin dep —
+# same reason as /backups/auto below (cron-only auth, no user context).
+@router.post(
+    "/jobs/schedule-sweep",
+    response_model=admin_schema.ScheduledSweepResponse,
+    dependencies=[Depends(require_jobs_cron_token)],
+)
+async def schedule_sweep(
+    # Upper bound is 24h — anything longer is almost certainly a typo.
+    # Without it, a misconfigured cron could pass an enormous int and
+    # blow up timedelta() with OverflowError -> 500.
+    delay_minutes: int = Query(20, ge=0, le=1440),
+    db: AsyncSession = Depends(get_db),
+):
+    not_before = datetime.now(timezone.utc) + timedelta(minutes=delay_minutes)
+    job = Job(
+        kind=JobKind.update_sweep,
+        status=JobStatus.queued,
+        payload={},
+        not_before_at=not_before,
+    )
+    db.add(job)
+    await db.commit()
+    await db.refresh(job)
+    # Set the banner timestamp *after* the commit so a failed insert
+    # doesn't leave a phantom countdown on the frontend.
+    set_scheduled_at(not_before)
+    # notify() is harmless: the worker re-checks not_before_at and sleeps
+    # if the timestamp is still in the future. The 60s wakeup fallback
+    # would catch it anyway.
+    job_worker.notify()
+    return admin_schema.ScheduledSweepResponse(
+        job_uuid=job.uuid, scheduled_at=not_before,
+    )
 
 
 # Cron-authed endpoint — stays on the parent router so it doesn't inherit the

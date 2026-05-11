@@ -171,6 +171,26 @@ describe('JobBell', () => {
 		});
 	});
 
+	it('renders friendly copy for upstream-outage failures instead of the raw 504 message', async () => {
+		mockJobsResponse([
+			makeJob({
+				status: 'failed',
+				error_message: "Server error '504 Gateway Time-out' for url 'https://api.jikan.moe/v4/anime?q=Spoiled&limit=3'",
+				result_summary: { retryable: true, error_category: 'upstream_outage' },
+			}),
+		]);
+		render(JobBell);
+		await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+		await fireEvent.click(screen.getByLabelText('Background jobs'));
+		await vi.waitFor(() => {
+			expect(
+				screen.getByText('Anime database is temporarily unavailable. Please retry in a few minutes.'),
+			).toBeInTheDocument();
+			// Raw upstream message hidden so users don't see implementation details.
+			expect(screen.queryByText(/504 Gateway Time-out/)).not.toBeInTheDocument();
+		});
+	});
+
 	it('caps the dropdown at 5 entries and surfaces a "+N more" link', async () => {
 		// 7 finished jobs: the bell should render 5 + a link pointing at
 		// /library/add for the remaining 2. The badge counts the full set

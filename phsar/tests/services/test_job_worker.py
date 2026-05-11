@@ -6,10 +6,12 @@ write to the real DB and clean up explicitly via a tracked-job-ids fixture.
 """
 
 import asyncio
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import delete
 
+from app.core import maintenance
 from app.core.db import async_session_maker, engine
 from app.daos.job_dao import JobDAO
 from app.models.job import Job, JobKind, JobStatus
@@ -168,6 +170,161 @@ async def test_unregistered_kind_marks_job_not_retryable(tracked_jobs):
     refreshed = await _get(job_id)
     assert refreshed.status is JobStatus.failed
     assert (refreshed.result_summary or {}).get("retryable") is False
+
+
+@pytest.mark.asyncio
+async def test_sweep_kind_brackets_maintenance_flag(tracked_jobs):
+    """Sweep dispatchers run inside the maintenance window — the worker
+    flips the flag on before the dispatcher and off after, regardless of
+    success/failure. Verifies the success path here."""
+    captured_active: list[bool] = []
+
+    async def fake_sweep(session, job):
+        captured_active.append(maintenance.is_maintenance_active())
+        return None
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.update_sweep, fake_sweep)
+
+    # Pre-warning schedule — the worker should clear it once the job runs.
+    maintenance.set_scheduled_at(datetime.now(timezone.utc))
+
+    job_id = await _enqueue(kind=JobKind.update_sweep)
+    tracked_jobs.append(job_id)
+
+    ran = await worker.dispatch_one()
+    assert ran is True
+
+    # Inside the dispatcher: flag was True.
+    assert captured_active == [True]
+    # After dispatch_one returns: both cleared.
+    assert maintenance.is_maintenance_active() is False
+    assert maintenance.get_scheduled_at() is None
+
+
+@pytest.mark.asyncio
+async def test_sweep_kind_clears_flag_on_dispatcher_failure(tracked_jobs):
+    """A dispatcher crash must NOT leave the flag stuck — otherwise every
+    endpoint sits behind a 503 until the next process restart."""
+
+    async def boom(session, job):
+        raise RuntimeError("sweep blew up")
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.update_sweep, boom)
+
+    job_id = await _enqueue(kind=JobKind.update_sweep)
+    tracked_jobs.append(job_id)
+
+    ran = await worker.dispatch_one()
+    assert ran is True
+
+    assert maintenance.is_maintenance_active() is False
+    assert maintenance.get_scheduled_at() is None
+
+    refreshed = await _get(job_id)
+    assert refreshed.status is JobStatus.failed
+
+
+@pytest.mark.asyncio
+async def test_sweep_finally_preserves_future_scheduled_at(tracked_jobs):
+    """A Coolify cron retry can hit /admin/jobs/schedule-sweep mid-sweep
+    (allowlisted) and write a *future* `_scheduled_at` for the next
+    window. The worker's finally must not clobber it — otherwise the
+    next sweep fires with no banner pre-warning."""
+    next_window = datetime.now(timezone.utc) + timedelta(minutes=20)
+
+    async def fake_sweep(session, job):
+        # Simulate the cron-retry race: a freshly-set future timestamp
+        # appears while *this* sweep is still running.
+        maintenance.set_scheduled_at(next_window)
+        return None
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.update_sweep, fake_sweep)
+
+    job_id = await _enqueue(kind=JobKind.update_sweep)
+    tracked_jobs.append(job_id)
+
+    ran = await worker.dispatch_one()
+    assert ran is True
+
+    assert maintenance.is_maintenance_active() is False
+    assert maintenance.get_scheduled_at() == next_window
+
+
+@pytest.mark.asyncio
+async def test_user_scrape_does_not_flip_maintenance_flag(tracked_jobs):
+    """user_scrape jobs run alongside normal traffic — they must NOT trip
+    the maintenance gate, otherwise every concurrent user gets 503'd."""
+    captured_active: list[bool] = []
+
+    async def fake_dispatcher(session, job):
+        captured_active.append(maintenance.is_maintenance_active())
+        return None
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.user_scrape, fake_dispatcher)
+
+    job_id = await _enqueue(kind=JobKind.user_scrape)
+    tracked_jobs.append(job_id)
+
+    ran = await worker.dispatch_one()
+    assert ran is True
+
+    assert captured_active == [False]
+    assert maintenance.is_maintenance_active() is False
+
+
+@pytest.mark.asyncio
+async def test_failure_stamps_upstream_outage_category_for_5xx(tracked_jobs):
+    """A dispatcher raising httpx.HTTPStatusError(5xx) must surface as
+    `error_category=upstream_outage` on result_summary so the bell can
+    render friendly copy instead of the raw 'Server error 504 ...' line."""
+    import httpx
+
+    async def fake_dispatcher(session, job):
+        request = httpx.Request("GET", "https://api.jikan.moe/v4/anime")
+        response = httpx.Response(504, request=request, content=b"gateway timeout")
+        raise httpx.HTTPStatusError("504 Gateway Time-out", request=request, response=response)
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.user_scrape, fake_dispatcher)
+
+    job_id = await _enqueue(kind=JobKind.user_scrape)
+    tracked_jobs.append(job_id)
+
+    ran = await worker.dispatch_one()
+    assert ran is True
+
+    refreshed = await _get(job_id)
+    assert refreshed.status is JobStatus.failed
+    assert refreshed.result_summary is not None
+    assert refreshed.result_summary.get("error_category") == "upstream_outage"
+    assert refreshed.result_summary.get("retryable") is True
+
+
+@pytest.mark.asyncio
+async def test_failure_omits_category_for_non_upstream_errors(tracked_jobs):
+    """A generic RuntimeError shouldn't categorize — bell falls through to
+    the raw error_message instead of mislabeling it as an outage."""
+
+    async def boom(session, job):
+        raise RuntimeError("something broke in our code, not MAL")
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.user_scrape, boom)
+
+    job_id = await _enqueue(kind=JobKind.user_scrape)
+    tracked_jobs.append(job_id)
+
+    ran = await worker.dispatch_one()
+    assert ran is True
+
+    refreshed = await _get(job_id)
+    assert refreshed.status is JobStatus.failed
+    assert refreshed.result_summary is not None
+    assert "error_category" not in refreshed.result_summary
 
 
 @pytest.mark.asyncio

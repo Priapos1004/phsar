@@ -260,17 +260,52 @@ S5 (main)             → BLUR/HIDE
 
 **Backfiller:** `merge_detection_service.backfill_merge_candidates` runs in app lifespan after `backfill_embeddings`. One-shot existing × existing pair sweep so duplicates that pre-date the detector get flagged on first restart after upgrade. Idempotent: pre-fetched seen-pairs short-circuits subsequent restarts.
 
+### Maintenance Window ✓ shipped (commit 7a of v0.14.0)
+
+Foundation for any destructive/long-running periodic job. Consumed by both the data-refresh sweep (7b) and the seasonal sweep (commit 8).
+
+- **Sidecar tables** (`anime_freshness`, `media_freshness`) hold operational state outside the canonical catalog rows so sweep cadence can't leak into Pydantic schemas via `model_dump()`. Each row is born with a sidecar; the migration backfilled existing rows to the parent's `created_at`.
+- **`core/maintenance.py`** module-level `_active` (already from v0.13.0 backup restore) gains `_scheduled_at`. The cron schedule endpoint sets `_scheduled_at` to a future timestamp; the worker brackets each sweep dispatch with `set_maintenance(True/False)` + `set_scheduled_at(None)` in try/finally so a crash can't leave the flag stuck.
+- **`MaintenanceGateMiddleware`** (pure ASGI class) returns 503 `{maintenance: true}` for everything except `/`, `/health`, `/maintenance/status`, `/admin/jobs/schedule-sweep`. Registered BEFORE `CORSMiddleware` so CORS ends up outermost — `app.add_middleware()` prepends, so registration order reverses the apparent stacking. Without that ordering, cross-origin 503s drop CORS headers and the browser blocks them.
+- **`MaintenanceBanner`** sticky at the top alongside the navbar (single sticky container in `+layout.svelte`); renders a `Notice` card with a countdown when within 30 min, "in progress" while active. Subscribes to the auth token store + a `maintenanceRefresh` bump signal so it reacts in ms to login transitions and 503-with-maintenance responses, not just the 60s poll.
+
 ### Automated Updates (Periodic)
 
-**Triggered via**: Coolify scheduled task (cron) calling an internal endpoint.
+**Triggered via**: Coolify scheduled task (cron) calling `POST /admin/jobs/schedule-sweep?delay_minutes=20`. The endpoint is cron-bearer-token authed and allowlisted in the maintenance gate.
 
-**What it does for each existing anime:**
-- Re-queries MAL for each media: update airing status, episode counts, scores, scored_by, aired_to dates
-- Check for new media releases by re-traversing relations (new season announced?)
-- Backfill `episodes_watched` on user ratings where episodes count was previously NULL and is now known
-- Re-traverses relation graph to detect if separate anime entries should be flagged for merge
+**Status:** ✓ shipped end-to-end. Data-refresh dispatcher + tier query landed in commit 7b; relations probe + coalesced spoiler recompute landed in commit 7c (closes #30).
 
-**Frequency**: Daily or weekly (TBD based on MAL API rate limits and DB size). Existing anime updates may be weekly; seasonal updates can be daily (only 20-30 anime per season, most MAL IDs already in DB after first fetch).
+**What 7b shipped (data refresh):**
+- `update_sweep` dispatcher tier-selects due anime via a 4-tier OR query (LEFT JOIN against `anime_freshness`):
+  - Tier 1: any media currently airing → always due
+  - Tier 2: `stable_check_count < 3` → still stabilizing
+  - Tier 3: last-checked > 7 days AND has a main media whose `aired_from` is within `SWEEP_RECENT_MAIN_YEARS = 5` years (refined from "any main media exists" so dormant main-only franchises don't ride weekly cycles)
+  - Tier 4: last-checked > 180 days → long-tail safety net
+- For each due anime: refreshes child media via `/anime/{id}/full`, diffs `score`/`scored_by`/`episodes`/`airing_status`/`aired_to`. **Per-anime commit + per-anime try/except** — a worker crash mid-sweep preserves earlier successes; a single bad MAL response fails *that* anime only.
+- Score and scored_by are bundled through `_weighted_score(score, scored_by) = score * log10(scored_by + 1)` and only count as stability-resetting when `abs(new − old) >= 0.05`. Without this, every popular anime (One Piece, BNHA, Naruto:Shippuuden) would never stabilize because daily vote drift moved `scored_by`. New values are written through to the DB regardless; the threshold gates only the stability *signal*.
+- Episodes-was-NULL → known: `logger.info(...)` only. Per-user `episodes_watched` is NOT auto-set because we don't know what the user actually watched.
+
+**What 7c shipped (relations probe + coalesced spoiler recompute):**
+- Probe runs on **tier 3 + tier 4** (`not currently_airing AND stable_check_count >= 3`). Tier 4 was added on user feedback — long-tail franchises can announce sequels years post-finale, and the 6-month cadence is the right place to catch them. Tier 1 stays excluded (re-checked nightly anyway); tier 2 stays excluded (brand-new shows have no announcement to discover yet).
+- **Per-Main-seed BFS** via `JikanScraper.search_title(seed_mal_id=...)`: one BFS per Main media on the parent anime, fresh `visited_ids` each pass. The mal_id-based seed bypasses the fuzzy `q=<title>` top-3 lookup user_scrape uses — early prototype hit that path and pulled Bocchi the Rock! into a Vigilante S2 lookup because MAL's fuzzy search ranked an unrelated "2nd Season" token highly. Per-main isolation lets the probe reach disjoint sub-graphs (e.g., the Vigilante branch off BNHA, where Vigilante S1 is a side-story under BNHA and `search_title`'s BFS would otherwise stop expanding once BNHA's main is found).
+- New `save_service.attach_search_result_to_anime` saves discovered media under the existing parent anime — no new Anime row, no fuzzy main-story-required check that would drop orphan side-stories like a freshly-announced TVSpecial.
+- **Two commits per anime**: step 1 (field-diff + MediaFreshness) always durable; step 2 (probe + AnimeFreshness) only commits on probe success. A probe failure leaves AnimeFreshness untouched so the next sweep re-selects the anime via tier 3/4 — the field-diff work isn't lost.
+- The dispatcher calls `refresh_spoiler_cache_for_all_users` once at the end if any new media landed — coalesced because the probe path saves through `save_service.attach_search_result_to_anime` (which never recomputes) instead of `save_search_results` (which always does), so a 200-anime sweep with 50 new media triggers exactly one cache recompute instead of 50.
+- **Bonus fix surfaced by end-to-end testing:** `JikanScraper.search_title` was inserting `media_type=None` anime into `media_unwanted` as "Unknown" even when `airing_status="Not yet aired"` — just-announced sequels got permanently blacklisted before MAL had classified them, and never got picked up once they aired. Now skipped silently; `media_unwanted` only catches true MAL anomalies. Alembic migration `2f1a8e3c4d5b` clears the existing Unknown backlog so previously-trapped anime can be rediscovered by the next sweep.
+
+**Frequency**: Coolify cron daily. Tier query LIMITs at `JOBS_SWEEP_MAX_PER_RUN=200` so a fully-saturated catalog still completes within a maintenance window.
+
+**What 7d shipped (post-review hardening):** Seven commits stacked on the v0.14.0-update-sweep branch addressing reviewer findings before PR merge.
+
+- **Score-write guard (`2b80641`):** `_apply_media_diff` was treating `payload["scored_by"] or 0` as authoritative and unconditionally writing it back. MAL's scored_by is None or > 0 (never literally 0), and `extract_information` coerces None → 0 to satisfy the not-null insert column — so a 0 during a refresh meant the field was omitted, and we'd silently overwrite a populated 5M-vote count with 0 (also tripping the structural-reset branch and dragging the row back to tier-1 cadence). Skip the score write when `scored_by` is falsy. Mirrors the existing `airing_status` guard.
+- **Unwanted-media flush propagation (`2b80641`):** the probe's `create_unwanted_media` call was wrapped in a bare `except` that swallowed flush() failures. An IntegrityError or connection drop would leave the session in `PendingRollbackError` and the next `attach_search_result_to_anime` would surface as a confusing cascade. Drop the inner try/except — let the failure propagate to the outer probe handler which already does the right thing.
+- **Drop dead `defer_spoiler_recompute` parameter (`60c6e7a`):** never invoked with `True`; CLAUDE.md described a fictional mechanism. Removed.
+- **Schedule-sweep clobber + delay bound (`91fa580`):** the worker's `finally` unconditionally cleared `_scheduled_at`, so a Coolify cron retry that landed mid-sweep (allowlisted endpoint) would write the next window's timestamp and have it wiped on exit. Now we only clear if the timestamp is in the past — future ones belong to a different window. Plus `delay_minutes` switched to `Query(20, ge=0, le=1440)` for defense-in-depth.
+- **Jikan rate limiter (`e9ce488`):** class-level `asyncio.Lock` + monotonic-time gate spaces request *starts* at ~2.85 req/s (under MAL's 3 req/s). Without it, a 200-anime sweep would burst hundreds of requests as fast as TCP allows; tenacity caught the 429s but didn't avoid them.
+- **Sweep-selection indexes (`e9ce488`):** new migration `8d4f2a1c9e7b` adds `ix_anime_freshness_last_checked_at` (the ORDER BY), `ix_media_airing_now` (partial on `media(anime_id) WHERE airing_status = 'Currently Airing'`), and `ix_media_main_aired_from` (composite for the recent-main EXISTS as index-only). Resolves the open follow-up flagged in the v0.14.0 compound doc.
+- **Spoiler recompute hoist (`2eba9b4`):** `refresh_spoiler_cache_for_all_users` was O(users × media) — the catalog read ran inside the per-user loop. Hoist the snapshot once and pass it through to a new `_recompute_user_against_catalog` worker; `recompute_visibility_for_user` (seeders) builds a single-user snapshot and delegates to the same worker, so the delete + bulk-insert tail isn't duplicated.
+- **`MaintenanceGateMiddleware` extracted (`951873d`):** moved out of `main.py` into its own `core/maintenance_middleware.py` module. The middleware's invariant comments (pure-ASGI choice + CORS-must-wrap-it ordering) travel with the class.
+- **Sweep loop refactor + test harness (`096be4e`):** extract `_try_step1_refresh` / `_try_step2_probe` so the loop reads as straight orchestration instead of two near-identical try/except blocks. Add a `_run_dispatcher_harness` test helper bundling the four monkeypatches the dispatcher integration tests duplicated 8+ times.
 
 ### Seasonal Scraping
 

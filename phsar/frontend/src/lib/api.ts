@@ -1,6 +1,7 @@
 import { API_URL } from '$lib/config';
 import { get } from 'svelte/store';
 import { token } from '$lib/stores/auth';
+import { bumpMaintenanceRefresh } from '$lib/stores/maintenance';
 
 class ApiError extends Error {
 	status: number;
@@ -40,11 +41,16 @@ async function handleResponse<T>(res: Response): Promise<T> {
 			// response body wasn't JSON
 		}
 		if (maintenance) {
-			// Backend is gated during a backup restore. Kick the user to /login
-			// so no stale data is visible, and the login page shows the banner.
+			// Backend is gated during a maintenance window (sweep or restore).
+			// Bump the banner store so it refetches /maintenance/status in
+			// ms instead of waiting up to 60s for the next poll — needed for
+			// the case where the user is already token-less (login submit),
+			// since token.set(null) → null isn't a real transition and won't
+			// fire its subscriber.
 			token.set(null);
+			bumpMaintenanceRefresh();
 			if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-				window.location.href = '/login?maintenance=1';
+				window.location.href = '/login';
 			}
 		}
 		throw new ApiError(res.status, detail);

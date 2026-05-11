@@ -13,11 +13,14 @@ Subsequent commits add user_scrape, update_sweep, seasonal_sweep dispatchers.
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 from typing import Awaitable, Callable
 
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import async_session_maker
+from app.core.maintenance import get_scheduled_at, set_maintenance, set_scheduled_at
 from app.daos.job_dao import JobDAO
 from app.exceptions import PermanentPhsarError
 from app.models.job import Job, JobKind
@@ -27,6 +30,33 @@ logger = logging.getLogger(__name__)
 # Wall-clock fallback for the rare case that a notify() is lost to a race.
 # Short enough that an empty queue picks up an orphaned signal within a minute.
 _FALLBACK_POLL_SECONDS = 60.0
+
+# Sweeps run inside the maintenance window — the worker brackets them with
+# the in-memory flag flip so the HTTP middleware returns 503 to everything
+# except the allowlist for the duration. user_scrape jobs are concurrent-safe
+# with normal traffic and don't need the bracket.
+_MAINTENANCE_KINDS: frozenset[JobKind] = frozenset(
+    {JobKind.update_sweep, JobKind.seasonal_sweep}
+)
+
+# Error categories stamped on result_summary["error_category"] for the
+# frontend bell to render friendly copy. Only categories with a clear
+# end-user message live here; everything else falls through to the raw
+# exception string (which is already useful for AnimeNotFoundError,
+# MalIdAlreadyExistsError, etc.).
+ERROR_CATEGORY_UPSTREAM_OUTAGE = "upstream_outage"
+
+
+def _classify_error(exc: BaseException) -> str | None:
+    """Translate a dispatcher exception into a coarse error category for
+    the bell. Returns None when the raw exception message is already
+    user-friendly (custom domain errors carry their own copy)."""
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code >= 500:
+        return ERROR_CATEGORY_UPSTREAM_OUTAGE
+    if isinstance(exc, (httpx.TimeoutException, httpx.NetworkError)):
+        return ERROR_CATEGORY_UPSTREAM_OUTAGE
+    return None
+
 
 JobDispatcher = Callable[[AsyncSession, Job], Awaitable[dict | None]]
 
@@ -104,34 +134,54 @@ class JobWorker:
         # a separate fail-record session. Two sequential sessions instead of
         # nested ones — concurrent sessions on a small asyncpg pool deadlock.
         failure: Exception | None = None
-        async with async_session_maker() as work_session:
-            job = await self._dao.get_by_id(work_session, job_id)
-            if job is None:
-                logger.warning("Job %s vanished after claim", job_id)
-                return True
-            dispatcher = self._dispatchers.get(kind)
-            if dispatcher is None:
-                # Missing dispatcher is a broken config — retry produces the
-                # same outcome until a redeploy, so don't tempt the bell.
-                await self._dao.mark_failed(
-                    work_session,
-                    job,
-                    f"No dispatcher registered for kind {kind.value!r}",
-                    retryable=False,
-                )
-                await work_session.commit()
-                return True
-            try:
-                result_summary = await dispatcher(work_session, job)
-                await self._dao.mark_succeeded(work_session, job, result_summary)
-                await work_session.commit()
-                return True
-            except Exception as exc:
-                logger.exception("Job %s (%s) failed", job.uuid, kind.value)
-                await work_session.rollback()
-                failure = exc
+        in_maintenance = kind in _MAINTENANCE_KINDS
+        # Flip the flag *before* the work session opens so the middleware
+        # sees the same window as the running job. Try/finally guarantees
+        # it clears even on dispatcher crash — a stuck flag would lock every
+        # endpoint behind a 503 until restart.
+        if in_maintenance:
+            set_maintenance(True)
+        try:
+            async with async_session_maker() as work_session:
+                job = await self._dao.get_by_id(work_session, job_id)
+                if job is None:
+                    logger.warning("Job %s vanished after claim", job_id)
+                    return True
+                dispatcher = self._dispatchers.get(kind)
+                if dispatcher is None:
+                    # Missing dispatcher is a broken config — retry produces the
+                    # same outcome until a redeploy, so don't tempt the bell.
+                    await self._dao.mark_failed(
+                        work_session,
+                        job,
+                        f"No dispatcher registered for kind {kind.value!r}",
+                        retryable=False,
+                    )
+                    await work_session.commit()
+                    return True
+                try:
+                    result_summary = await dispatcher(work_session, job)
+                    await self._dao.mark_succeeded(work_session, job, result_summary)
+                    await work_session.commit()
+                    return True
+                except Exception as exc:
+                    logger.exception("Job %s (%s) failed", job.uuid, kind.value)
+                    await work_session.rollback()
+                    failure = exc
+        finally:
+            if in_maintenance:
+                set_maintenance(False)
+                # Only clear the pre-warning if it points at the window we just
+                # exited. A Coolify cron retry can fire mid-sweep (the
+                # schedule-sweep endpoint is allowlisted) and set a *future*
+                # `_scheduled_at` for the next window; clobbering that here
+                # would lose the next sweep's banner countdown.
+                scheduled = get_scheduled_at()
+                if scheduled is None or scheduled <= datetime.now(timezone.utc):
+                    set_scheduled_at(None)
 
         retryable = not isinstance(failure, PermanentPhsarError)
+        error_category = _classify_error(failure) if failure is not None else None
         async with async_session_maker() as fail_session:
             failing = await self._dao.get_by_id(fail_session, job_id)
             if failing is not None:
@@ -140,6 +190,7 @@ class JobWorker:
                     failing,
                     str(failure) or type(failure).__name__,
                     retryable=retryable,
+                    error_category=error_category,
                 )
                 await fail_session.commit()
         return True
