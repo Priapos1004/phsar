@@ -51,6 +51,14 @@ jobs:
         python-version: '3.12'
         cache: 'pip'
 
+    # Match the Dockerfile: install CPU-only torch from the PyTorch CPU
+    # index BEFORE requirements.txt, so sentence-transformers doesn't
+    # pull the default CUDA torch wheel (~890 MB vs ~190 MB CPU). CI has
+    # no GPU; the CUDA build was dead weight that bloated the pip cache
+    # to ~2.5 GiB per branch and blew the Actions cache budget.
+    - name: Install CPU-only torch
+      run: pip install --index-url https://download.pytorch.org/whl/cpu torch==2.11.0+cpu
+
     - name: Install dependencies
       run: pip install -r requirements.txt
 
