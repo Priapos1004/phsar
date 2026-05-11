@@ -100,6 +100,7 @@ phsar/
 │       ├── anime_search_service.py
 │       ├── anime_service.py
 │       ├── auth_service.py
+│       ├── backup_dispatcher.py
 │       ├── backup_service.py
 │       ├── export_service.py
 │       ├── filter_service.py
@@ -232,6 +233,7 @@ phsar/
 │   │       ├── SpoilerGuardTest.svelte
 │   │       ├── api-download.test.ts
 │   │       ├── auth-store.test.ts
+│   │       ├── backups-card.test.ts
 │   │       ├── format-string.test.ts
 │   │       ├── job-bell.test.ts
 │   │       ├── library-add.test.ts
@@ -286,6 +288,7 @@ phsar/
     │   ├── test_search_ratings.py
     │   └── test_user_settings.py
     └── services/
+        ├── test_backup_jobs.py
         ├── test_backup_service.py
         ├── test_backup_subprocess_failures.py
         ├── test_jikan_scraper.py
