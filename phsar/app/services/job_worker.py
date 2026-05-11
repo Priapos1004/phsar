@@ -20,7 +20,12 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import async_session_maker
-from app.core.maintenance import get_scheduled_at, set_maintenance, set_scheduled_at
+from app.core.maintenance import (
+    get_scheduled_at,
+    is_maintenance_active,
+    set_maintenance,
+    set_scheduled_at,
+)
 from app.daos.job_dao import JobDAO
 from app.exceptions import (
     BackupDiskSpaceError,
@@ -141,6 +146,13 @@ class JobWorker:
         single transaction across the whole scrape would block every other
         write on the jobs table and accumulate identity-map state.
         """
+        # Restore disposes the pool + terminates sessions mid-flight; claiming
+        # any job in that window either dies on the killed session or (for
+        # backup) writes a silently-incomplete dump. Sweep-induced maintenance
+        # is a no-op here — `_run` is already inside dispatch_one running the
+        # sweep, so it can't re-enter.
+        if is_maintenance_active():
+            return False
         async with async_session_maker() as claim_session:
             job = await self._dao.claim_next_queued(claim_session)
             if job is None:

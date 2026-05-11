@@ -254,6 +254,42 @@ async def test_sweep_finally_preserves_future_scheduled_at(tracked_jobs):
 
 
 @pytest.mark.asyncio
+async def test_dispatch_one_skips_claim_when_maintenance_active(tracked_jobs):
+    """Externally-active maintenance (restore) must idle the worker so it
+    doesn't claim against a pool about to be disposed. The queued job
+    survives untouched and runs on the next dispatch after the flag lifts."""
+    captured: list[int] = []
+
+    async def fake_dispatcher(session, job):
+        captured.append(job.id)
+        return None
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.user_scrape, fake_dispatcher)
+
+    job_id = await _enqueue(kind=JobKind.user_scrape)
+    tracked_jobs.append(job_id)
+
+    maintenance.set_maintenance(True)
+    try:
+        ran = await worker.dispatch_one()
+    finally:
+        maintenance.set_maintenance(False)
+
+    assert ran is False
+    assert captured == []
+
+    # Job stays queued for the next dispatch cycle after maintenance lifts.
+    refreshed = await _get(job_id)
+    assert refreshed.status is JobStatus.queued
+
+    # Sanity: with the flag cleared, the same worker picks the job up.
+    ran_after = await worker.dispatch_one()
+    assert ran_after is True
+    assert captured == [job_id]
+
+
+@pytest.mark.asyncio
 async def test_user_scrape_does_not_flip_maintenance_flag(tracked_jobs):
     """user_scrape jobs run alongside normal traffic — they must NOT trip
     the maintenance gate, otherwise every concurrent user gets 503'd."""
