@@ -1,9 +1,15 @@
 import uuid
 
 import pytest
+from fastapi import Header
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
+from app.core.dependencies import get_db, require_backup_cron_token
+from app.exceptions import InvalidCronTokenError
+from app.main import create_app
 from app.models.anime import Anime
+from app.models.job import Job, JobKind, JobStatus
 from app.models.media import Media
 from app.models.media_studio import MediaStudio
 from app.models.merge_candidate import MergeCandidate, MergeCandidateStatus
@@ -13,6 +19,8 @@ from tests._helpers import media_kwargs
 
 TOKENS_URL = "/admin/registration-tokens"
 MERGE_URL = "/admin/merge-candidates"
+BACKUPS_URL = "/admin/backups"
+AUTO_BACKUP_URL = "/admin/backups/auto"
 
 
 @pytest.mark.asyncio
@@ -326,3 +334,133 @@ async def test_merge_unknown_uuid_returns_404(client, admin_auth_headers):
         headers=admin_auth_headers,
     )
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Async backups — both endpoints now enqueue a `backup` job and return 202
+# instead of blocking on pg_dump in the request thread. These tests pin the
+# enqueue contract; the dispatcher's behavior is exercised in
+# tests/services/test_backup_jobs.py.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_backup_returns_202_with_job_uuid(
+    client, admin_auth_headers, db_session,
+):
+    """Manual POST /admin/backups enqueues a backup job attributed to the
+    calling admin and returns 202 + job_uuid. The dispatcher does the
+    real pg_dump asynchronously — the request returns immediately so
+    the bell + toast can take over."""
+    resp = await client.post(BACKUPS_URL, headers=admin_auth_headers)
+    assert resp.status_code == 202, resp.text
+    body = resp.json()
+    assert "job_uuid" in body
+
+    job = (await db_session.execute(
+        select(Job).where(Job.uuid == body["job_uuid"])
+    )).scalars().first()
+    assert job is not None
+    assert job.kind is JobKind.backup
+    assert job.status is JobStatus.queued
+    assert job.payload == {"source": "manual"}
+    # Manual backups attribute to the admin user so they surface in
+    # *their* bell only — multi-admin deployments avoid cross-admin
+    # bell clutter.
+    assert job.requested_by_user_id is not None
+
+
+@pytest.mark.asyncio
+async def test_create_backup_with_label_carries_label_in_payload(
+    client, admin_auth_headers, db_session,
+):
+    """The dispatcher passes the optional `label` through to
+    backup_service.create_backup, which appends it to the dump filename.
+    Pin the payload contract here so the dispatcher can rely on the
+    field being present when given."""
+    resp = await client.post(
+        BACKUPS_URL,
+        json={"label": "pre-migration"},
+        headers=admin_auth_headers,
+    )
+    assert resp.status_code == 202, resp.text
+
+    job = (await db_session.execute(
+        select(Job).where(Job.uuid == resp.json()["job_uuid"])
+    )).scalars().first()
+    assert job is not None
+    assert job.payload == {"source": "manual", "label": "pre-migration"}
+
+
+@pytest.mark.asyncio
+async def test_create_backup_requires_admin(client, user_auth_headers):
+    """Regular users can't enqueue backups — same auth surface as
+    pre-async. The 403 here is what stops a regular user from
+    DoS'ing the worker queue with backup jobs."""
+    resp = await client.post(BACKUPS_URL, headers=user_auth_headers)
+    assert resp.status_code == 403
+
+
+@pytest.fixture
+async def cron_backup_client(db_session):
+    """Mirrors test_admin_sweep's cron_client: override the cron-token
+    dep with a literal-token check so we don't depend on
+    settings.BACKUP_CRON_TOKEN being set in the test env."""
+    app = create_app()
+
+    async def override_get_db():
+        yield db_session
+
+    def fake_require(authorization: str | None = Header(default=None)) -> None:
+        if authorization != "Bearer test-backup-token":
+            raise InvalidCronTokenError()
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[require_backup_cron_token] = fake_require
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        yield c
+
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_backup_auto_returns_202_with_job_uuid(
+    cron_backup_client, db_session,
+):
+    """Cron-authed POST /admin/backups/auto enqueues a `cron`-source
+    backup job (no user attribution) and returns 202 + job_uuid.
+    The dispatcher applies retention after the dump so the
+    14-daily/8-Sunday/most-recent-known-good contract is preserved."""
+    resp = await cron_backup_client.post(
+        AUTO_BACKUP_URL,
+        headers={"Authorization": "Bearer test-backup-token"},
+    )
+    assert resp.status_code == 202, resp.text
+    body = resp.json()
+    assert "job_uuid" in body
+
+    job = (await db_session.execute(
+        select(Job).where(Job.uuid == body["job_uuid"])
+    )).scalars().first()
+    assert job is not None
+    assert job.kind is JobKind.backup
+    assert job.status is JobStatus.queued
+    assert job.payload == {"source": "cron"}
+    # System job — invisible to every user's bell. The dump list IS the
+    # audit log for scheduled backups.
+    assert job.requested_by_user_id is None
+
+
+@pytest.mark.asyncio
+async def test_backup_auto_requires_cron_token(cron_backup_client):
+    """No bearer → 401. Wrong bearer → 401. Same fail-closed pattern
+    as schedule-sweep."""
+    resp = await cron_backup_client.post(AUTO_BACKUP_URL)
+    assert resp.status_code == 401
+
+    resp = await cron_backup_client.post(
+        AUTO_BACKUP_URL, headers={"Authorization": "Bearer wrong"},
+    )
+    assert resp.status_code == 401

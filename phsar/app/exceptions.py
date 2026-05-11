@@ -342,8 +342,15 @@ class DuplicateBackupError(PhsarBaseError):
     """Raised when an uploaded backup has the same content hash as an existing dump."""
     status_code = 409
 
-    def __init__(self, existing_filename: str):
-        message = f"This dump is identical to an existing backup: '{existing_filename}'."
+    def __init__(self, existing_metadata):
+        # Carry the full matched BackupMetadata (duck-typed to avoid an
+        # exceptions.py → schemas import) so the backup dispatcher can
+        # convert this into a 'deduped_against' success outcome without
+        # re-scanning the backup dir (which would shell out to
+        # pg_restore --list for any dump missing a sidecar).
+        self.existing_metadata = existing_metadata
+        self.existing_filename = existing_metadata.filename
+        message = f"This dump is identical to an existing backup: '{existing_metadata.filename}'."
         super().__init__(message)
 
 

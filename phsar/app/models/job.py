@@ -11,6 +11,7 @@ class JobKind(str, enum.Enum):
     user_scrape = "user_scrape"
     update_sweep = "update_sweep"
     seasonal_sweep = "seasonal_sweep"
+    backup = "backup"
 
 
 class JobStatus(str, enum.Enum):

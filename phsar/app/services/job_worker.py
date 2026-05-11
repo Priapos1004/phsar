@@ -22,7 +22,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import async_session_maker
 from app.core.maintenance import get_scheduled_at, set_maintenance, set_scheduled_at
 from app.daos.job_dao import JobDAO
-from app.exceptions import PermanentPhsarError, TransientUpstreamError
+from app.exceptions import (
+    BackupDiskSpaceError,
+    BackupIntegrityError,
+    PermanentPhsarError,
+    TransientUpstreamError,
+)
 from app.models.job import Job, JobKind
 
 logger = logging.getLogger(__name__)
@@ -45,6 +50,8 @@ _MAINTENANCE_KINDS: frozenset[JobKind] = frozenset(
 # exception string (which is already useful for AnimeNotFoundError,
 # MalIdAlreadyExistsError, etc.).
 ERROR_CATEGORY_UPSTREAM_OUTAGE = "upstream_outage"
+ERROR_CATEGORY_BACKUP_DISK_FULL = "backup_disk_full"
+ERROR_CATEGORY_BACKUP_CORRUPT = "backup_corrupt"
 
 
 def _classify_error(exc: BaseException) -> str | None:
@@ -57,6 +64,16 @@ def _classify_error(exc: BaseException) -> str | None:
         return ERROR_CATEGORY_UPSTREAM_OUTAGE
     if isinstance(exc, TransientUpstreamError):
         return ERROR_CATEGORY_UPSTREAM_OUTAGE
+    # Backup failure modes get their own categories so the bell can
+    # render an actionable hint ("free disk space and retry" / "pg_dump
+    # produced a corrupt archive — check Postgres logs") instead of the
+    # raw stderr tail. retryable stays at the default (True) because
+    # both modes are fixable: an admin can free space, or a transient
+    # connection drop during pg_dump can resolve on its own.
+    if isinstance(exc, BackupDiskSpaceError):
+        return ERROR_CATEGORY_BACKUP_DISK_FULL
+    if isinstance(exc, BackupIntegrityError):
+        return ERROR_CATEGORY_BACKUP_CORRUPT
     return None
 
 

@@ -374,7 +374,7 @@ async def create_backup(
         # to X" error; cron / pre-restore silently return the matched dump so
         # unchanged DBs don't accumulate no-op snapshots.
         if was_duplicate and source == BackupSource.manual:
-            raise DuplicateBackupError(metadata.filename)
+            raise DuplicateBackupError(metadata)
         return metadata
 
 
@@ -586,5 +586,5 @@ async def save_uploaded_backup(upload_file: UploadFile) -> BackupMetadata:
             partial_path, final_path, BackupSource.upload,
         )
         if was_duplicate:
-            raise DuplicateBackupError(metadata.filename)
+            raise DuplicateBackupError(metadata)
         return metadata

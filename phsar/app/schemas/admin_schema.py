@@ -55,6 +55,15 @@ class ScheduledSweepResponse(BaseModel):
     scheduled_at: datetime
 
 
+class JobEnqueuedResponse(BaseModel):
+    """Lightweight 202 payload returned when an endpoint enqueues a job
+    instead of doing the work synchronously. The bell + the relevant card
+    pick the new row up via /jobs/mine (manual) or the dump list refresh
+    (cron) — the uuid lets the caller poll /jobs/{uuid} directly if it
+    wants tighter feedback than the bell's interval."""
+    job_uuid: UUID
+
+
 class ExpiryPreset(int, Enum):
     """Allowed token expiry durations in days."""
     one_day = 1
