@@ -191,12 +191,6 @@ def _mark_current_db_confirmed(filename: str) -> None:
     }))
 
 
-def _adopt_existing_as_current(partial_path: Path, duplicate: BackupMetadata) -> BackupMetadata:
-    """Shared dedupe-hit tail: delete the partial and re-point the current-DB
-    marker at the matched existing dump so the UI badge follows DB state."""
-    partial_path.unlink(missing_ok=True)
-    _mark_current_db_confirmed(duplicate.filename)
-    return duplicate
 
 
 async def _compute_content_hash(dump_path: Path) -> str:
@@ -311,7 +305,8 @@ async def _finalize_partial_dump(
     """Shared tail for create + upload: hash → dedupe check → rename → write
     sidecar. Returns `(metadata, was_duplicate)` — callers decide whether a
     dedupe hit is an error (manual creates + uploads raise) or a silent
-    return (cron + pre-restore)."""
+    return (cron + pre-restore), AND whether to move the Current pointer
+    (live-capturing creates do, uploads don't)."""
     try:
         content_hash = await _compute_content_hash(partial_path)
     except BackupIntegrityError:
@@ -320,7 +315,8 @@ async def _finalize_partial_dump(
 
     duplicate = await _find_duplicate(content_hash)
     if duplicate is not None:
-        return _adopt_existing_as_current(partial_path, duplicate), True
+        partial_path.unlink(missing_ok=True)
+        return duplicate, True
 
     partial_path.rename(final_path)
 
@@ -364,12 +360,11 @@ async def create_backup(
         metadata, was_duplicate = await _finalize_partial_dump(
             partial_path, final_path, source,
         )
-        # Fresh-install fallback: a unique dump is the live DB state at
-        # creation, so claim Current when no pointer has ever been set —
-        # otherwise the badge stays empty on a fresh VM until restore.
-        if not was_duplicate and _read_current_db_filename() is None:
-            _mark_current_db_confirmed(metadata.filename)
-            metadata = metadata.model_copy(update={"is_current": True})
+        # pg_dump just captured live state, so the resulting `metadata.filename`
+        # IS the dump that matches live — whether it's a new unique dump or a
+        # dedupe hit pointing at an existing one. Move Current to it.
+        _mark_current_db_confirmed(metadata.filename)
+        metadata = metadata.model_copy(update={"is_current": True})
         # Manual surfaces dedupe as a 409 so the admin sees a clear "identical
         # to X" error; cron / pre-restore silently return the matched dump so
         # unchanged DBs don't accumulate no-op snapshots.
@@ -585,6 +580,13 @@ async def save_uploaded_backup(upload_file: UploadFile) -> BackupMetadata:
         metadata, was_duplicate = await _finalize_partial_dump(
             partial_path, final_path, BackupSource.upload,
         )
+        # Uploads never move the Current pointer — bytes are external and we
+        # can't verify they represent live DB state. Stamp is_current
+        # truthfully against whatever the pointer holds right now: for a
+        # dedupe hit the matched dump may already be Current, for a unique
+        # upload the new filename can't equal the unchanged pointer.
+        pointer = _read_current_db_filename()
+        metadata = metadata.model_copy(update={"is_current": metadata.filename == pointer})
         if was_duplicate:
             raise DuplicateBackupError(metadata)
         return metadata
