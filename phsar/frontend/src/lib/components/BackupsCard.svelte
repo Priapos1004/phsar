@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
+    import { onDestroy, onMount } from 'svelte';
     import { api, ApiError } from '$lib/api';
     import { Button } from '$lib/components/ui/button';
     import * as Card from '$lib/components/ui/card';
@@ -17,7 +17,9 @@
         Trash2,
         Upload,
     } from 'lucide-svelte';
+    import Toast from '$lib/components/Toast.svelte';
     import { formatBytes, formatShortDateTime } from '$lib/utils/formatString';
+    import { addOptimisticJob, backupSaved, bumpJobsRefresh, onBump } from '$lib/stores/jobs';
     import type { BackupMetadata, BackupSource } from '$lib/types/api';
 
     interface Props {
@@ -57,6 +59,28 @@
     let confirmDeleteFilename = $state<string | null>(null);
     let deleting = $state(false);
 
+    let toastShown = $state(false);
+    let toastMsg = $state('');
+    // Track timer handles so unmount mid-flight doesn't fire a $state write
+    // on a destroyed component.
+    let toastTimer: ReturnType<typeof setTimeout> | null = null;
+    let creatingTimer: ReturnType<typeof setTimeout> | null = null;
+
+    function showToast(msg: string) {
+        toastMsg = msg;
+        toastShown = true;
+        if (toastTimer !== null) clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => {
+            toastShown = false;
+            toastTimer = null;
+        }, 2500);
+    }
+
+    onDestroy(() => {
+        if (toastTimer !== null) clearTimeout(toastTimer);
+        if (creatingTimer !== null) clearTimeout(creatingTimer);
+    });
+
     let restoreFilename = $state<string | null>(null);
     let restoreConfirmInput = $state('');
     let restoring = $state(false);
@@ -70,6 +94,16 @@
         switch (sortBy) {
             case 'newest':
                 sorted.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+                // Pin Current to the top of newest-first so post-restore state
+                // stays salient even when the restored dump is older. Other
+                // sorts are explicit user choices and respect their order.
+                {
+                    const currentIdx = sorted.findIndex((b) => b.is_current);
+                    if (currentIdx > 0) {
+                        const [current] = sorted.splice(currentIdx, 1);
+                        sorted.unshift(current);
+                    }
+                }
                 break;
             case 'oldest':
                 sorted.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
@@ -102,16 +136,48 @@
 
     onMount(refresh);
 
+    // The bell bumps `backupSaved` when it observes a newly-succeeded backup
+    // job. Refetch the dump list so the new row appears without a manual
+    // reload. Cron-triggered backups stay invisible to the bell (system
+    // jobs); onMount + sort/refresh pick those up on next visit.
+    $effect(() => onBump(backupSaved, () => void refresh()));
+
     async function handleCreate() {
+        if (creating) return;
         creating = true;
         error = '';
         try {
-            await api.post<BackupMetadata>('/admin/backups', {});
-            await refresh();
+            const { job_uuid } = await api.post<{ job_uuid: string }>('/admin/backups', {});
+            // Seed the bell with a queued stub keyed on the real job_uuid so the
+            // next /jobs/mine fetch reconciles it into the real row.
+            addOptimisticJob({
+                uuid: job_uuid,
+                kind: 'backup',
+                status: 'queued',
+                payload: { source: 'manual' },
+                stage: null,
+                items_total: null,
+                items_done: 0,
+                result_summary: null,
+                error_message: null,
+                created_at: new Date().toISOString(),
+                started_at: null,
+                finished_at: null,
+            });
+            // Bump so the bell refetches in ms instead of waiting for its
+            // 30s idle poll.
+            bumpJobsRefresh();
+            showToast("Backup queued. We'll let you know when it's ready.");
         } catch (err) {
-            error = err instanceof ApiError ? err.detail : 'Failed to create backup';
+            error = err instanceof ApiError ? err.detail : 'Failed to queue backup';
         } finally {
-            creating = false;
+            // 5s debounce: the POST returns in ms now (was minutes when pg_dump
+            // ran synchronously), so without this a double-click enqueues twice.
+            if (creatingTimer !== null) clearTimeout(creatingTimer);
+            creatingTimer = setTimeout(() => {
+                creating = false;
+                creatingTimer = null;
+            }, 5000);
         }
     }
 
@@ -198,7 +264,7 @@
             <div class="flex items-center gap-2">
                 <Button size="sm" onclick={handleCreate} disabled={creating}>
                     <Plus class="size-4 mr-1" />
-                    {creating ? 'Creating...' : 'Create backup'}
+                    Create backup
                 </Button>
                 <Button size="sm" variant="secondary" onclick={() => fileInput?.click()} disabled={uploading}>
                     <Upload class="size-4 mr-1" />
@@ -349,3 +415,5 @@
         </Dialog.Footer>
     </Dialog.Content>
 </Dialog.Root>
+
+<Toast message={toastMsg} show={toastShown} />

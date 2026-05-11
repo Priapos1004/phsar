@@ -1,13 +1,26 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-	import { Bell, RefreshCw, CheckCircle2, XCircle, Loader2 } from 'lucide-svelte';
+	import { Bell, Database, RefreshCw, CheckCircle2, XCircle, Loader2 } from 'lucide-svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { api, ApiError } from '$lib/api';
-	import { bumpLibrarySaved, jobsRefresh, onBump } from '$lib/stores/jobs';
+	import {
+		bumpBackupSaved,
+		bumpLibrarySaved,
+		jobsRefresh,
+		onBump,
+		optimisticJobs,
+		reconcileOptimisticJobs,
+	} from '$lib/stores/jobs';
 	import { BELL_LOGIN_KEY, BELL_SEEN_KEY } from '$lib/stores/bell-session';
-	import type { Job } from '$lib/types/api';
+	import { formatBytes } from '$lib/utils/formatString';
+	import type { BackupResultSummary, Job } from '$lib/types/api';
 
-	const ACTIVE_POLL_MS = 4000;
+	// 2s while anything is queued/running — short backups can transition
+	// Dumping → Applying retention → Done in 3–5s total, so the previous 4s
+	// cadence often skipped stages entirely. /jobs/mine is one cheap SELECT
+	// and active polling is bounded by job duration (idle stays at 30s), so
+	// the extra request rate is well inside the self-hosted load budget.
+	const ACTIVE_POLL_MS = 2000;
 	const IDLE_POLL_MS = 30000;
 	// Cap the dropdown so a noisy session (max 4 active per JOBS_PER_USER_LIMIT
 	// + recent finishes) stays readable. Older entries live on /library/add.
@@ -53,7 +66,16 @@
 	// Block re-clicks while a retry is in flight so each click maps to one job.
 	let retryingUuid = $state<string | null>(null);
 
-	let visibleJobs = $derived(jobs.filter((j) => j.created_at >= sessionStart));
+	// Optimistic rows live in front of fetched rows so the queued state is
+	// visible immediately. Once a fetch lands the real row with the same UUID,
+	// reconcileOptimisticJobs prunes the optimistic copy and the merge collapses
+	// to a single entry.
+	let mergedJobs = $derived.by(() => {
+		const fetchedUuids = new Set(jobs.map((j) => j.uuid));
+		const stillOptimistic = $optimisticJobs.filter((j) => !fetchedUuids.has(j.uuid));
+		return [...stillOptimistic, ...jobs];
+	});
+	let visibleJobs = $derived(mergedJobs.filter((j) => j.created_at >= sessionStart));
 	// Cap the dropdown rendering. Badge math still uses the full visibleJobs
 	// list so a user with 6 active scrapes sees an honest count even though
 	// only 5 rows render. Older entries are reachable on /library/add.
@@ -75,21 +97,29 @@
 		try {
 			const fresh = await api.get<Job[]>('/jobs/mine');
 			jobs = fresh;
-			// Announce any newly-succeeded user_scrape jobs so /library/add
-			// refreshes its recent-additions panel without a page reload.
-			let anyNew = false;
+			// Drop any optimistic rows that have now landed in /jobs/mine so the
+			// dropdown shows a single canonical entry per UUID.
+			reconcileOptimisticJobs(fresh);
+			// Announce newly-succeeded jobs to the consumer pages so they can
+			// refresh without a manual reload. user_scrape → /library/add;
+			// backup → BackupsCard. The same UUID set covers both because job
+			// UUIDs are globally unique.
+			let anyScrape = false;
+			let anyBackup = false;
 			for (const job of fresh) {
-				if (
-					job.kind === 'user_scrape' &&
-					job.status === 'succeeded' &&
-					job.created_at >= sessionStart &&
-					!announcedSavedUuids.has(job.uuid)
-				) {
+				if (job.status !== 'succeeded') continue;
+				if (job.created_at < sessionStart) continue;
+				if (announcedSavedUuids.has(job.uuid)) continue;
+				if (job.kind === 'user_scrape') {
 					announcedSavedUuids.add(job.uuid);
-					anyNew = true;
+					anyScrape = true;
+				} else if (job.kind === 'backup') {
+					announcedSavedUuids.add(job.uuid);
+					anyBackup = true;
 				}
 			}
-			if (anyNew) bumpLibrarySaved();
+			if (anyScrape) bumpLibrarySaved();
+			if (anyBackup) bumpBackupSaved();
 		} catch (err) {
 			// 401 means logged out — the global ApiError handler in api.ts will
 			// redirect on maintenance; for plain auth failures we just stop
@@ -155,10 +185,13 @@
 	});
 
 	function statusIcon(job: Job) {
-		if (job.status === 'queued') return Bell;
 		if (job.status === 'running') return Loader2;
 		if (job.status === 'succeeded') return CheckCircle2;
-		return XCircle;
+		if (job.status === 'failed') return XCircle;
+		// Queued is the most ambiguous state — convey kind here. Lifecycle
+		// icons (spinner/check/X) are universal once work starts.
+		if (job.kind === 'backup') return Database;
+		return Bell;
 	}
 
 	function statusColor(job: Job): string {
@@ -174,9 +207,17 @@
 	}
 
 	function describeJob(job: Job): string {
+		if (job.kind === 'backup') return 'Backup';
 		const query = typeof job.payload?.query === 'string' ? job.payload.query : null;
 		if (query) return `Add: "${query}"`;
 		return job.kind.replace('_', ' ');
+	}
+
+	function canRetry(job: Job): boolean {
+		if (job.status !== 'failed' || !isRetryable(job)) return false;
+		if (job.kind === 'user_scrape') return typeof job.payload?.query === 'string';
+		if (job.kind === 'backup') return true;
+		return false;
 	}
 
 	function isRetryable(job: Job): boolean {
@@ -197,17 +238,28 @@
 		if (category === 'upstream_outage') {
 			return 'Anime database is temporarily unavailable. Please retry in a few minutes.';
 		}
+		if (category === 'backup_disk_full') {
+			return 'Backup volume is full. Free disk space and retry.';
+		}
+		if (category === 'backup_corrupt') {
+			return 'Backup archive failed integrity check. Retrying may produce a clean dump.';
+		}
 		return job.error_message ?? 'Failed';
 	}
 
 	async function retryJob(job: Job, event: MouseEvent) {
 		event.stopPropagation();
 		if (retryingUuid !== null) return;
-		const query = typeof job.payload?.query === 'string' ? job.payload.query : null;
-		if (!query) return;
 		retryingUuid = job.uuid;
 		try {
-			await api.post('/jobs/scrape', { query });
+			if (job.kind === 'backup') {
+				const label = typeof job.payload?.label === 'string' ? job.payload.label : null;
+				await api.post('/admin/backups', label ? { label } : {});
+			} else {
+				const query = typeof job.payload?.query === 'string' ? job.payload.query : null;
+				if (!query) return;
+				await api.post('/jobs/scrape', { query });
+			}
 			await fetchJobs();
 		} catch (err) {
 			console.error('Retry failed:', err);
@@ -263,13 +315,24 @@
 								{/if}
 							{:else if job.status === 'queued'}
 								<div class="text-xs text-muted-foreground">Waiting in queue…</div>
+							{:else if job.status === 'succeeded' && job.kind === 'backup'}
+								{@const summary = job.result_summary as BackupResultSummary | null}
+								{#if summary?.deduped_against}
+									<div class="text-xs text-muted-foreground">
+										Re-confirmed existing dump (no new data)
+									</div>
+								{:else if typeof summary?.size_bytes === 'number'}
+									<div class="text-xs text-muted-foreground">
+										Backup ready ({formatBytes(summary.size_bytes)})
+									</div>
+								{/if}
 							{:else if job.status === 'failed'}
 								<div class="text-xs text-destructive truncate">
 									{describeError(job)}
 								</div>
 							{/if}
 						</div>
-						{#if job.status === 'failed' && typeof job.payload?.query === 'string' && isRetryable(job)}
+						{#if canRetry(job)}
 							<button
 								type="button"
 								onclick={(e) => retryJob(job, e)}
