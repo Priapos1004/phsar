@@ -40,6 +40,40 @@ class AnimeNotFoundError(PermanentPhsarError):
         super().__init__(message)
 
 
+class TransientUpstreamError(PhsarBaseError):
+    """Raised when MAL returns a successful HTTP response but with empty
+    or malformed data — distinct from a real 404 (which would surface as
+    HTTPStatusError from `_get`). Not a PermanentPhsarError, so the job
+    worker stamps retryable=True and the bell shows its retry button;
+    job_worker's _classify_error also tags it as `upstream_outage` so
+    the bell renders the friendly 'MAL temporarily unavailable' copy
+    instead of leaking this internal message to users."""
+    status_code = 502
+
+    def __init__(self, identifier: str):
+        self.identifier = identifier
+        message = (
+            f"MAL returned no data for {identifier}. "
+            "This usually clears on retry."
+        )
+        super().__init__(message)
+
+
+class AnimeFilteredOutError(PermanentPhsarError):
+    """Raised when a seeded BFS run finds the target anime but our content
+    filter (Music/PV/CM/Hentai/Unknown) rejects it. Distinct from
+    AnimeNotFoundError so admin/cron logs reflect why the catalog
+    doesn't have it — without this, every filtered seasonal entry
+    looks like a missing MAL record in the jobs table."""
+    status_code = 422
+
+    def __init__(self, title: str, reason: str):
+        self.title = title
+        self.reason = reason
+        message = f"'{title}' was filtered out as {reason} and not added to the catalog."
+        super().__init__(message)
+
+
 class MainMediaNotFoundError(PermanentPhsarError):
     """Raised when a relation graph has no media flagged as the main story.
 

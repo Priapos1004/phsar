@@ -136,7 +136,11 @@ async def search_mal(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_user_or_admin),
 ):
-    return await handle_search_mal_api_results(query=query, db=db)
+    # The route returns the legacy result-list shape unchanged; the new
+    # attach_actions field is dispatcher-only (system jobs decide whether
+    # to auto-attach; the public search route never does).
+    result = await handle_search_mal_api_results(query=query, db=db)
+    return result.search_result_db_list
 
 
 @router.get("/media", response_model=list[MediaConnected])

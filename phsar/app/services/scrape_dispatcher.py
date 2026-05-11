@@ -21,17 +21,23 @@ from app.core.config import settings
 from app.daos.anime_dao import AnimeDAO
 from app.daos.media_dao import MediaDAO
 from app.daos.media_unwanted_dao import MediaUnwantedDAO
-from app.exceptions import AnimeNotFoundError
+from app.exceptions import (
+    AnimeFilteredOutError,
+    AnimeNotFoundError,
+    MainMediaNotFoundError,
+)
 from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
-from app.models.job import Job
+from app.models.job import Job, JobKind, JobStatus
 from app.models.media import Media, RelationType
 from app.models.media_freshness import MediaFreshness
+from app.schemas.search_schema import AttachToExistingAction
 from app.services.jikan_scraper import (
     AIRING_STATUS_CURRENTLY_AIRING,
     JikanScraper,
     parse_mal_datetime,
 )
+from app.services.job_worker import job_worker
 from app.services.progress_reporter import ProgressReporter
 from app.services.save_service import attach_search_result_to_anime, save_search_results
 from app.services.search_service import handle_search_mal_api_results
@@ -58,28 +64,67 @@ _SCORE_STABILITY_THRESHOLD = 0.05
 async def user_scrape_dispatcher(session: AsyncSession, job: Job) -> dict:
     """BFS everything matching the query and save all results.
 
-    payload: {"query": str}. The 3-candidate search is for query imprecision,
-    not user choice — connected candidates dedupe through the shared visited
-    set in search_title; unconnected ones each become their own anime row.
+    payload: {"query": str, "mal_id": int | None}. The 3-candidate search
+    is for query imprecision, not user choice — connected candidates dedupe
+    through the shared visited set in search_title; unconnected ones each
+    become their own anime row. When `mal_id` is set (seasonal sweep
+    children), the BFS skips the fuzzy q= lookup and seeds from that id
+    directly so unrelated top-3 matches don't slip into the catalog.
     """
     payload = job.payload or {}
     query = payload.get("query")
-    if not query:
-        raise ValueError(f"user_scrape payload must include query, got {payload!r}")
+    seed_mal_id = payload.get("mal_id")
+    if not query and seed_mal_id is None:
+        raise ValueError(
+            f"user_scrape payload must include query or mal_id, got {payload!r}",
+        )
 
     progress = ProgressReporter(job.id)
 
     await progress.update(stage="Fetching", force=True)
-    results = await handle_search_mal_api_results(db=session, query=query, progress=progress)
-    # search_title raises AnimeNotFoundError when MAL returns zero hits, but
-    # if every hit was filtered as Music/PV/CM/Hentai it returns successfully
-    # with an empty list — caller still has nothing to save.
-    if not results:
+    extended = await handle_search_mal_api_results(
+        db=session, query=query, progress=progress, seed_mal_id=seed_mal_id,
+    )
+    results = extended.search_result_db_list
+    attach_actions = extended.attach_actions
+
+    # Two parallel write paths:
+    #  - save_search_results: graphs WITH a main story → new Anime rows
+    #  - attach_actions: orphan-side-story graphs whose single cross-link
+    #    resolves to an existing Anime → new Media rows attached under
+    #    that parent (same primitive the 7c freshness probe uses)
+    media_count = sum(len(r.unconnected_media_list) for r in results)
+    if results:
+        await progress.update(
+            stage="Saving", items_total=media_count, items_done=0, force=True,
+        )
+        await save_search_results(session, results, progress=progress)
+
+    attached_count = 0
+    if attach_actions:
+        await progress.update(stage="Attaching", force=True)
+        attached_count = await _route_attach_actions(session, attach_actions)
+
+    if not results and not attached_count:
+        # Empty BFS result + no attach happened. Three distinct causes
+        # worth surfacing — the cron path's error_message is the only
+        # post-mortem record (system jobs don't appear in the bell), so
+        # distinguishing them saves the next admin from wondering
+        # whether MAL is broken, dropping a PV, or returning a
+        # malformed graph.
+        if seed_mal_id is not None:
+            unwanted = await MediaUnwantedDAO().get_by_mal_id(session, seed_mal_id)
+            if unwanted is not None:
+                raise AnimeFilteredOutError(unwanted.title, unwanted.reason)
+            # Seed found but graph had no main story AND no attachable
+            # single cross-link — typically a multi-parent ambiguity or
+            # a fully-orphaned side-story the BFS couldn't anchor.
+            raise MainMediaNotFoundError([(query or f"mal_id={seed_mal_id}", "?")])
+        # Reached only when seed_mal_id is None (handled above).
+        # `query` is guaranteed truthy here — the dispatcher entry-check
+        # raises ValueError when both are missing.
         raise AnimeNotFoundError(query)
 
-    media_count = sum(len(r.unconnected_media_list) for r in results)
-    await progress.update(stage="Saving", items_total=media_count, items_done=0, force=True)
-    await save_search_results(session, results, progress=progress)
     # "Done" while the row is still status='running' is brief — the worker
     # flips to succeeded immediately after this dispatcher returns. Showing
     # it gives the user a clean terminal label instead of a stuck "Saving".
@@ -88,7 +133,39 @@ async def user_scrape_dispatcher(session: AsyncSession, job: Job) -> dict:
     return {
         "anime_count": len(results),
         "media_count": media_count,
+        "attached_count": attached_count,
     }
+
+
+async def _route_attach_actions(
+    session: AsyncSession, attach_actions: list[AttachToExistingAction],
+) -> int:
+    """Look up each attach action's parent Anime via Media.mal_id and
+    call `attach_search_result_to_anime` to materialize the orphan
+    graph's media under that parent. Returns total Media rows attached.
+
+    The lookup goes through Media.mal_id because the cross-link signal
+    carries the *media* mal_id (any media in the parent franchise; not
+    necessarily the parent anime's primary mal_id)."""
+    anime_dao = AnimeDAO()
+    attached_total = 0
+    for action in attach_actions:
+        parent = await anime_dao.get_by_media_mal_id_with_media(
+            session, action.target_mal_id,
+        )
+        if parent is None:
+            # Race: cross-link mal_id was in catalog at BFS time but
+            # disappeared before we got here (merge candidate completed,
+            # delete, etc.). Log and skip; next sweep will re-evaluate.
+            logger.warning(
+                "Attach target mal_id=%s no longer in catalog; skipping",
+                action.target_mal_id,
+            )
+            continue
+        attached_total += await attach_search_result_to_anime(
+            session, parent, action.related_anime_graph, action.all_info,
+        )
+    return attached_total
 
 
 async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
@@ -327,6 +404,86 @@ async def _probe_relations_for_anime(
                 exclusions.add(mal_id)
 
     return saved_anything
+
+
+async def seasonal_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
+    """Weekly: paginate /seasons/now, dedupe against the catalog
+    (`Anime.mal_id ∪ Media.mal_id ∪ MediaUnwanted.mal_id`), and enqueue
+    one `user_scrape` job per new mal_id. Children carry the seed mal_id
+    so the BFS skips the fuzzy q= lookup that would otherwise pull
+    unrelated top-3 matches into the catalog.
+
+    Per-row commit mirrors update_sweep's per-anime pattern from 7b: if
+    the loop dies mid-batch, already-enqueued children survive. Children
+    are `requested_by_user_id=None` (system jobs) — they skip the
+    per-user submission cap and don't surface in any user's bell. The
+    dispatcher itself completes in seconds (single MAL fetch + N row
+    inserts); the long tail of child user_scrapes runs after the
+    maintenance flag flips off, which is safe because additive scrapes
+    don't disrupt live traffic.
+    """
+    progress = ProgressReporter(job.id)
+    await progress.update(stage="Fetching season", force=True)
+
+    async with JikanScraper() as scraper:
+        entries = await scraper.fetch_current_season()
+
+    anime_ids = await AnimeDAO().get_all_mal_ids(session)
+    media_ids = await MediaDAO().get_all_mal_ids(session)
+    unwanted_ids = await MediaUnwantedDAO().get_all_mal_ids(session)
+    # Media.mal_id is included because a season entry may already exist
+    # as a side-story under a parent anime — we'd otherwise re-scrape
+    # the same show from a different angle and trip the merge detector.
+    # `seen` starts seeded with the catalog so the same pass dedupes
+    # both against the DB *and* against duplicates within `entries`
+    # itself: MAL's /seasons/now has been observed to repeat a mal_id
+    # across pages, and without per-run dedupe each duplicate enqueues
+    # its own child user_scrape (and they all fail the same way).
+    seen: set[int] = set(anime_ids) | set(media_ids) | set(unwanted_ids)
+    new_entries: list[dict] = []
+    for entry in entries:
+        mal_id = entry.get("mal_id")
+        if mal_id is None or mal_id in seen:
+            continue
+        new_entries.append(entry)
+        seen.add(mal_id)
+    await progress.update(
+        stage="Enqueuing",
+        items_total=len(new_entries),
+        items_done=0,
+        force=True,
+    )
+
+    # Bulk insert + single commit. The enqueue loop does no MAL I/O
+    # (already drained in the season-fetch step above), so the
+    # per-anime commit pattern that update_sweep uses for crash-safety
+    # would just extend the maintenance window without any work to
+    # preserve — a crash here loses nothing the next scheduled run
+    # can't reproduce by re-querying /seasons/now.
+    children = [
+        Job(
+            kind=JobKind.user_scrape,
+            status=JobStatus.queued,
+            requested_by_user_id=None,
+            payload={"query": entry.get("title") or f"mal_id={entry['mal_id']}", "mal_id": entry["mal_id"]},
+        )
+        for entry in new_entries
+    ]
+    if children:
+        session.add_all(children)
+        await session.commit()
+        # Single notify after the commit — the worker picks the first
+        # child immediately instead of waiting up to 60s for the
+        # wall-clock fallback.
+        job_worker.notify()
+
+    enqueued = len(children)
+    await progress.update(stage="Done", items_done=enqueued, force=True)
+    return {
+        "season_entries": len(entries),
+        "new_entries_enqueued": enqueued,
+        "dedup_skipped": len(entries) - enqueued,
+    }
 
 
 def _weighted_score(score: float | None, scored_by: int | None) -> float | None:

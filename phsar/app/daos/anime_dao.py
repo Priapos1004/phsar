@@ -57,6 +57,21 @@ class AnimeDAO(MalIdDAO[Anime]):
         result = await db.execute(stmt)
         return result.scalars().first()
 
+    async def get_by_media_mal_id_with_media(
+        self, db: AsyncSession, media_mal_id: int,
+    ) -> Anime | None:
+        """Resolve a `Media.mal_id` back to its owning Anime, with
+        `Anime.media` eager-loaded so callers (the orphan-side-story
+        attach path in `scrape_dispatcher`) can read the parent's
+        existing media set without a `lazy="raise"` fault."""
+        stmt = (
+            select(Anime)
+            .join(Media, Media.anime_id == Anime.id)
+            .where(Media.mal_id == media_mal_id)
+            .options(selectinload(Anime.media))
+        )
+        return (await db.execute(stmt)).scalars().first()
+
     async def select_due_for_sweep(
         self, db: AsyncSession, limit: int,
     ) -> list[Anime]:

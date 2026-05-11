@@ -9,14 +9,10 @@ without that, the browser rejects the response with a TypeError and the
 frontend's catch falls into the generic "unexpected error" path instead
 of the maintenance-banner branch.
 
-Allowlist:
-  /, /health: keep Coolify's liveness probe alive so the container
-    doesn't restart mid-operation.
-  /maintenance/status: the banner needs truthful state during the window —
-    without it the user sees /login?maintenance=1 forever.
-  /admin/jobs/schedule-sweep: a cron retry while a sweep is already
-    running must not 503 the cron itself, otherwise tomorrow's sweep
-    never gets scheduled.
+The allowlist (`_ALLOWED_PATHS` below) covers Coolify's liveness probe,
+the public maintenance-status endpoint, and the cron-scheduler routes —
+those last must stay reachable during a window or a cron retry could
+fail to schedule the next maintenance.
 """
 
 from fastapi.responses import JSONResponse
@@ -26,7 +22,13 @@ from app.core.maintenance import is_maintenance_active
 
 class MaintenanceGateMiddleware:
     _ALLOWED_PATHS = frozenset(
-        {"/", "/health", "/maintenance/status", "/admin/jobs/schedule-sweep"}
+        {
+            "/",
+            "/health",
+            "/maintenance/status",
+            "/admin/jobs/schedule-sweep",
+            "/admin/jobs/schedule-seasonal",
+        }
     )
 
     def __init__(self, app):

@@ -25,6 +25,7 @@ from app.seeders.user_seeder import (
 from app.services.job_worker import job_worker
 from app.services.merge_detection_service import backfill_merge_candidates
 from app.services.scrape_dispatcher import (
+    seasonal_sweep_dispatcher,
     update_sweep_dispatcher,
     user_scrape_dispatcher,
 )
@@ -53,6 +54,7 @@ async def lifespan(app: FastAPI):
 
     job_worker.register_dispatcher(JobKind.user_scrape, user_scrape_dispatcher)
     job_worker.register_dispatcher(JobKind.update_sweep, update_sweep_dispatcher)
+    job_worker.register_dispatcher(JobKind.seasonal_sweep, seasonal_sweep_dispatcher)
     await job_worker.start()
 
     yield  # Startup complete

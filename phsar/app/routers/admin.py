@@ -99,23 +99,19 @@ async def dismiss_anime_candidate(
     await merge_candidate_service.dismiss(db, uuid)
 
 
-# Sits on the parent router so it doesn't inherit the JWT admin dep —
-# same reason as /backups/auto below (cron-only auth, no user context).
-@router.post(
-    "/jobs/schedule-sweep",
-    response_model=admin_schema.ScheduledSweepResponse,
-    dependencies=[Depends(require_jobs_cron_token)],
-)
-async def schedule_sweep(
-    # Upper bound is 24h — anything longer is almost certainly a typo.
-    # Without it, a misconfigured cron could pass an enormous int and
-    # blow up timedelta() with OverflowError -> 500.
-    delay_minutes: int = Query(20, ge=0, le=1440),
-    db: AsyncSession = Depends(get_db),
-):
+async def _enqueue_scheduled_sweep(
+    db: AsyncSession, kind: JobKind, delay_minutes: int,
+) -> admin_schema.ScheduledSweepResponse:
+    """Shared enqueue path for the two cron-authed sweep schedulers.
+
+    Set the banner timestamp *after* the commit so a failed insert
+    doesn't leave a phantom countdown on the frontend. notify() is
+    harmless even when not_before_at is in the future: the worker
+    re-checks not_before_at on wake and sleeps if the job isn't due
+    yet (the 60s wakeup fallback would catch it anyway)."""
     not_before = datetime.now(timezone.utc) + timedelta(minutes=delay_minutes)
     job = Job(
-        kind=JobKind.update_sweep,
+        kind=kind,
         status=JobStatus.queued,
         payload={},
         not_before_at=not_before,
@@ -123,16 +119,43 @@ async def schedule_sweep(
     db.add(job)
     await db.commit()
     await db.refresh(job)
-    # Set the banner timestamp *after* the commit so a failed insert
-    # doesn't leave a phantom countdown on the frontend.
     set_scheduled_at(not_before)
-    # notify() is harmless: the worker re-checks not_before_at and sleeps
-    # if the timestamp is still in the future. The 60s wakeup fallback
-    # would catch it anyway.
     job_worker.notify()
     return admin_schema.ScheduledSweepResponse(
         job_uuid=job.uuid, scheduled_at=not_before,
     )
+
+
+# Sits on the parent router so it doesn't inherit the JWT admin dep —
+# same reason as /backups/auto below (cron-only auth, no user context).
+# `delay_minutes` upper bound is 24h — anything longer is almost certainly
+# a typo, and without the cap a misconfigured cron could pass an enormous
+# int and blow up timedelta() with OverflowError → 500.
+@router.post(
+    "/jobs/schedule-sweep",
+    response_model=admin_schema.ScheduledSweepResponse,
+    dependencies=[Depends(require_jobs_cron_token)],
+)
+async def schedule_sweep(
+    delay_minutes: int = Query(20, ge=0, le=1440),
+    db: AsyncSession = Depends(get_db),
+):
+    return await _enqueue_scheduled_sweep(db, JobKind.update_sweep, delay_minutes)
+
+
+# Same cron-auth pattern as schedule-sweep; the dispatcher is thin (one MAL
+# paginate + N row inserts) so the maintenance window is brief. Child
+# user_scrapes run afterwards while the site is live.
+@router.post(
+    "/jobs/schedule-seasonal",
+    response_model=admin_schema.ScheduledSweepResponse,
+    dependencies=[Depends(require_jobs_cron_token)],
+)
+async def schedule_seasonal(
+    delay_minutes: int = Query(20, ge=0, le=1440),
+    db: AsyncSession = Depends(get_db),
+):
+    return await _enqueue_scheduled_sweep(db, JobKind.seasonal_sweep, delay_minutes)
 
 
 # Cron-authed endpoint — stays on the parent router so it doesn't inherit the

@@ -13,6 +13,25 @@ class SearchResultDB(BaseModel):
     cross_link_mal_ids: set[int] = Field(default_factory=set)
 
 
+class AttachToExistingAction(BaseModel):
+    """A BFS graph that has no `main` relation but cross-links to exactly
+    one existing anime in the catalog (typical case: seasonal sweep
+    surfaces a side-story whose parent show is already in the DB).
+    The caller looks up the parent Anime by `target_mal_id` (one of its
+    existing Media mal_ids) and feeds `related_anime_graph` + `all_info`
+    straight into `attach_search_result_to_anime`, the same primitive
+    the 7c relations probe uses."""
+    target_mal_id: int
+    related_anime_graph: dict
+    all_info: dict
+
+
 class SearchResultDBExtended(BaseModel):
-   search_result_db_list: list[SearchResultDB]
-   unwanted_media: set[tuple[int, str, str]]
+    search_result_db_list: list[SearchResultDB]
+    unwanted_media: set[tuple[int, str, str]]
+    # Orphan-side-story graphs that resolve cleanly to a single existing
+    # parent. Empty for the common path; populated when MAL surfaces a
+    # side-story whose parent show is already in our catalog. The dispatcher
+    # (and only the dispatcher — not the public /search/mal route) acts on
+    # these by attaching the new media under the existing parent.
+    attach_actions: list[AttachToExistingAction] = Field(default_factory=list)

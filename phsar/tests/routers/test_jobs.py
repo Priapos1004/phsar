@@ -160,6 +160,33 @@ async def test_enqueue_scrape_rejects_short_query(client, user_auth_headers):
     assert resp.status_code == 422
 
 
+async def test_enqueue_scrape_accepts_optional_mal_id(client, user_auth_headers):
+    """Callers can opt into the seed-mal_id path that the seasonal sweep
+    uses (skips MAL's fuzzy q= lookup). Without mal_id the existing
+    fuzzy path is preserved."""
+    query = _q()
+    resp = await client.post(
+        "/jobs/scrape",
+        json={"query": query, "mal_id": 12345},
+        headers=user_auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["payload"] == {"query": query, "mal_id": 12345}
+
+
+async def test_enqueue_scrape_rejects_non_positive_mal_id(client, user_auth_headers):
+    """gt=0 — anything else is a malformed payload, fail fast at the
+    edge instead of letting it land in a Job row that'll error inside
+    the dispatcher much later."""
+    resp = await client.post(
+        "/jobs/scrape",
+        json={"query": _q(), "mal_id": 0},
+        headers=user_auth_headers,
+    )
+    assert resp.status_code == 422
+
+
 async def test_list_my_jobs_returns_only_my_jobs(client, user_auth_headers):
     a, b = _q("-alpha"), _q("-bravo")
     await client.post("/jobs/scrape", json={"query": a}, headers=user_auth_headers)

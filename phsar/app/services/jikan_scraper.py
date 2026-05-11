@@ -11,21 +11,47 @@ from tenacity import (
     before_sleep_log,
     retry,
     retry_if_exception,
-    stop_after_attempt,
     wait_exponential,
 )
 
-from app.exceptions import AnimeNotFoundError
+from app.exceptions import AnimeNotFoundError, TransientUpstreamError
 
 
 def _is_transient_mal_error(exc: BaseException) -> bool:
-    """5xx, timeouts, and network errors are transient and worth retrying.
-    4xx (most importantly 404) is deterministic — same request will fail
-    the same way, so burning 31s of exponential backoff just delays the
-    inevitable failure and locks up the worker for nothing."""
+    """5xx, 429, timeouts, and network errors are transient and worth
+    retrying. Other 4xx (most importantly 404) is deterministic — same
+    request will fail the same way, so burning exponential backoff
+    just delays the inevitable failure.
+
+    429 is special-cased BECAUSE the rate limiter (1 req/s, matching
+    MAL's 60 req/min sustained ceiling) leaves zero headroom: a brief
+    per-minute window overrun can produce 429 even though our average
+    request rate is correct. Limited retry with backoff (capped at
+    3 attempts by _stop_strategy below) bridges the per-minute window
+    without giving up on a single transient rejection. The tight cap
+    is deliberate — if we're consistently 429'd, retrying harder
+    masks sustained abuse instead of fixing it; the right response
+    then is to slow the source rate, not retry more."""
     if isinstance(exc, httpx.HTTPStatusError):
-        return exc.response.status_code >= 500
+        status = exc.response.status_code
+        return status == 429 or status >= 500
     return isinstance(exc, (httpx.TimeoutException, httpx.NetworkError))
+
+
+def _stop_strategy(retry_state) -> bool:
+    """Asymmetric retry budget: 3 total attempts for 429, 5 for
+    everything else (5xx/timeouts/network). The lower 429 cap keeps a
+    failing job from burning 31s+ of backoff when MAL is sustained-
+    limiting us — 2 retries are enough to bridge a misaligned
+    per-minute window; beyond that, retrying just delays the
+    inevitable failure (and the job stays retryable=True so user-
+    facing flows can re-submit from the bell)."""
+    if retry_state.attempt_number >= 5:
+        return True
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429:
+        return retry_state.attempt_number >= 3
+    return False
 
 if TYPE_CHECKING:
     from app.services.progress_reporter import ProgressReporter
@@ -50,13 +76,21 @@ def parse_mal_datetime(value: str | None) -> Optional[datetime]:
 
 
 class JikanScraper:
-    # Jikan documents ~3 req/s; we space request *starts* at 350ms (~2.85
-    # req/s) to leave headroom and avoid 429s on a 200-anime sweep that
-    # would otherwise burst hundreds of requests into the API as fast as
-    # TCP allows. tenacity's 429 retry would mask the rejections but not
-    # the IP-ban risk of sustained abuse. Class-level so user_scrape and
-    # update_sweep share the gate if they ever overlap.
-    _MIN_REQUEST_INTERVAL_S: float = 0.35
+    # Jikan documents 3 req/s burst AND 60 req/min sustained. The
+    # per-minute ceiling is the binding constraint for the seasonal
+    # sweep's `/seasons/now` pagination and the update sweep's
+    # bulk-refresh path: both fire continuous requests with no idle
+    # window to amortize the average. 350ms (~2.85/s) and 500ms (~2/s)
+    # both observed 429s in practice — neither stays under 60/min for
+    # sustained traffic. 1000ms (1 req/s) is the documented sustained
+    # ceiling. Jikan's docs also note "It's still possible to get rate
+    # limited from MyAnimeList.net instead" — MAL upstream can throttle
+    # us regardless of Jikan headroom, but staying under the documented
+    # limit minimizes that risk. tenacity intentionally skips 4xx retry:
+    # retrying 429 wouldn't reduce IP-ban risk, slowing the source is
+    # what helps. Class-level so user_scrape and update_sweep share the
+    # gate if they ever overlap.
+    _MIN_REQUEST_INTERVAL_S: float = 1.0
     _rate_lock: asyncio.Lock = asyncio.Lock()
     _last_request_at: float = 0.0
 
@@ -89,7 +123,10 @@ class JikanScraper:
     @retry(
         # Exponential backoff caps at 30s — better tail behavior on a transient
         # MAL outage than fixed-1s, especially during overnight unattended runs.
-        stop=stop_after_attempt(5),
+        # Asymmetric budget: 429 caps at 3 attempts (2 retries — enough to
+        # bridge a misaligned per-minute window), other transients at 5.
+        # See _stop_strategy above.
+        stop=_stop_strategy,
         wait=wait_exponential(multiplier=2, min=1, max=30),
         # Skip 4xx (404 from a misspelled query is deterministic; retrying
         # wastes 31s of backoff before failing the same way).
@@ -220,6 +257,28 @@ class JikanScraper:
         data = await self._get(f"{self.base_url}/anime/{mal_id}/full")
         return data.get("data", {})
 
+    async def fetch_current_season(self) -> list[dict]:
+        """Paginate `/seasons/now` and return the raw anime entries.
+
+        Each page response shape: `{"data": [...], "pagination": {
+        "has_next_page": bool, ...}}`. The dispatcher only needs
+        `mal_id` + `title` per entry — no `extract_information` here,
+        the seasonal sweep just hands the title down to a child
+        `user_scrape` job that fetches the full record itself.
+        """
+        results: list[dict] = []
+        page = 1
+        while True:
+            payload = await self._get(
+                f"{self.base_url}/seasons/now", params={"page": page},
+            )
+            entries = payload.get("data", []) or []
+            results.extend(entries)
+            if not payload.get("pagination", {}).get("has_next_page"):
+                break
+            page += 1
+        return results
+
     def get_all_anime_media(self, media_list: list[dict]) -> list[int]:
         return [media["mal_id"] for media in media_list if media.get("type") == "anime"]
 
@@ -247,7 +306,16 @@ class JikanScraper:
             # "already in catalog".
             seed_data = seed_payload or await self.search_by_malid(seed_mal_id)
             if not seed_data:
-                raise AnimeNotFoundError(f"mal_id={seed_mal_id}")
+                # MAL returned 200 OK but the `data` field was empty/null
+                # — a real 404 would have raised HTTPStatusError inside
+                # `_get`. This is a transient MAL data hiccup (observed
+                # in practice: legitimate mal_ids briefly return empty
+                # payloads). Use TransientUpstreamError so the worker
+                # marks the job retryable=True; otherwise a single
+                # cosmic-ray MAL response permanently locks the mal_id
+                # out via the 72h dedup window for user jobs and gets
+                # stamped as a Permanent failure that no one can retry.
+                raise TransientUpstreamError(f"mal_id={seed_mal_id}")
             results = [seed_data]
             excluded_ids: frozenset[int] = frozenset(excluded_mal_ids - {seed_mal_id})
         else:
@@ -319,6 +387,27 @@ class JikanScraper:
                     # Seeing first anime organically again
                     anime_info = self.extract_information(anime)
 
+                # Skip null-title entries without blacklisting — same
+                # sentinel pattern as `Not yet aired` below. MAL routinely
+                # leaves `title=null` on entries it's still populating
+                # (romanization-pending Chinese/Korean shows, brand-new PV
+                # stubs); the field reliably fills in within hours. A
+                # permanent MediaUnwanted entry with a placeholder title
+                # would (a) block re-discovery once MAL titles the row
+                # properly and (b) pollute the admin-only table with
+                # `<mal_id:NNNN>` strings instead of the real name we'd
+                # get on the next sweep. The BFS stops here, so this
+                # entry's relations are temporarily out of reach — same
+                # cost as Not-yet-aired and acceptable for a transient
+                # state.
+                if anime_info.get("title") is None:
+                    logger.info(
+                        "Skipping null-title anime mal_id=%s; MAL hasn't "
+                        "populated title yet, next sweep will retry",
+                        current_mal_id,
+                    )
+                    continue
+
                 if anime_info.get("media_type"):
                     if anime_info["media_type"].lower() in ["music", "pv", "cm"]:
                         logger.warning(f"Skipping anime {anime_info['media_type']}: {anime_info['title']}")
@@ -367,7 +456,25 @@ class JikanScraper:
                             if rel == 'character': # Skip because not related enough
                                 continue
 
-                            if rel != "adaptation": # Skip adaptation which are mangas, light novels, etc.
+                            # `alternative setting` is excluded alongside
+                            # `adaptation` because it labels separate franchises
+                            # that share themes only (e.g., Zhe Tian ↔ Wanmei
+                            # Shijie, Madoka ↔ Magia Record). Walking it would
+                            # conflate distinct donghua / shows into one Anime
+                            # row and produce false-positive merge candidates.
+                            # `crossover` stays in the queue (graph boundary,
+                            # not full skip) because crossover anime really
+                            # ARE part of both franchises.
+                            #
+                            # NOTE: MAL emits multi-word relations with a space
+                            # ("Side Story", "Alternative Setting"); the
+                            # `.lower()` above keeps the space, so the literal
+                            # to match here is "alternative setting" with a
+                            # space, NOT the underscore form some other checks
+                            # below use. (Those underscore checks are a known
+                            # latent issue worth a separate fix; in scope here
+                            # is just the new alt-setting boundary cut.)
+                            if rel not in ("adaptation", "alternative setting"):
                                 mal_ids = self.get_all_anime_media(related_media["entry"])
                                 left_mal_ids.extend(mal_ids)
                                 if rel in ["summary", "crossover"]:
@@ -409,6 +516,40 @@ class JikanScraper:
                     logger.info(f"Re-enqueuing original anime {anime_info['title']} ({mal_id}) because it was not found organically.")
                     left_mal_ids.append(mal_id)
                     relation_types.append(None)
+
+            # Post-loop safety net for the seed. The drop branch above
+            # (is_main_story + has-relations + is_first_relation) removes
+            # the seed from `visited_ids`, `all_info`, and the graph,
+            # expecting BFS to organically rediscover it via a relation
+            # from one of its sub-graph nodes pointing back. That works
+            # for franchises like Demon Slayer (Sequel → original); it
+            # fails for Rilakkuma-style cases where the seed's only
+            # outgoing relation is `Other` and no node points back —
+            # the BFS terminates without ever re-encountering the seed,
+            # and the inline bottom-of-loop re-enqueue check is bypassed
+            # whenever the last popped node hit a `continue` path
+            # (visited / excluded / null-title / filtered). Without this
+            # net, the graph ends up missing the seed entirely → no
+            # `main` relation → MainMediaNotFoundError → whole scrape
+            # fails. The seed was is_main_story=True at drop time (that's
+            # the only branch that drops), so re-adding with
+            # relation_type="main" matches the intended classification.
+            if mal_id not in visited_ids:
+                seed_info = self.extract_information(anime)
+                if seed_info.get("title") and seed_info.get("media_type"):
+                    all_info[mal_id] = seed_info
+                    related_anime_graph[mal_id] = {
+                        "mal_id": mal_id,
+                        "title": seed_info["title"],
+                        "aired_from": seed_info["aired_from"],
+                        "media_type": seed_info["media_type"],
+                        "relation_type": "main",
+                    }
+                    visited_ids.add(mal_id)
+                    logger.info(
+                        "BFS recovered dropped seed mal_id=%s as main (post-loop net)",
+                        mal_id,
+                    )
 
             # Case that no main story was found but more than one media
             # will be catched in search_service.py with MainMediaNotFoundError

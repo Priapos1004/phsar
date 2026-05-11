@@ -48,11 +48,14 @@ async def enqueue_scrape(
             int(age.total_seconds() // 3600),
         )
 
+    payload: dict = {"query": request.query}
+    if request.mal_id is not None:
+        payload["mal_id"] = request.mal_id
     job = Job(
         kind=JobKind.user_scrape,
         status=JobStatus.queued,
         requested_by_user_id=current_user.id,
-        payload={"query": request.query},
+        payload=payload,
     )
     db.add(job)
     await db.commit()

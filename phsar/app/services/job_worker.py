@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import async_session_maker
 from app.core.maintenance import get_scheduled_at, set_maintenance, set_scheduled_at
 from app.daos.job_dao import JobDAO
-from app.exceptions import PermanentPhsarError
+from app.exceptions import PermanentPhsarError, TransientUpstreamError
 from app.models.job import Job, JobKind
 
 logger = logging.getLogger(__name__)
@@ -54,6 +54,8 @@ def _classify_error(exc: BaseException) -> str | None:
     if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code >= 500:
         return ERROR_CATEGORY_UPSTREAM_OUTAGE
     if isinstance(exc, (httpx.TimeoutException, httpx.NetworkError)):
+        return ERROR_CATEGORY_UPSTREAM_OUTAGE
+    if isinstance(exc, TransientUpstreamError):
         return ERROR_CATEGORY_UPSTREAM_OUTAGE
     return None
 

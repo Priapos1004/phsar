@@ -14,8 +14,14 @@ class ScrapeJobRequest(BaseModel):
 
     min_length=4 because shorter queries are ambiguous on MAL (e.g. "fma" hits
     Fullmetal Alchemist + dozens of unrelated entries) and waste a job slot.
+
+    `mal_id` is opt-in: when set, the BFS skips the fuzzy q= lookup and
+    seeds directly from the given mal_id. The seasonal sweep uses this
+    so children don't pull unrelated top-3 matches into the catalog;
+    user-facing callers can still submit `{query}` only.
     """
     query: str = Field(..., min_length=4, max_length=200)
+    mal_id: int | None = Field(default=None, gt=0)
 
 
 class JobResponse(BaseModel):

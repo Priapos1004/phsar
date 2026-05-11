@@ -7,7 +7,14 @@
 	import Notice from './Notice.svelte';
 	import type { MaintenanceStatus } from '$lib/types/api';
 
-	const POLL_MS = 60_000;
+	// 30s instead of 60s: short maintenance windows (the seasonal sweep
+	// can be just a few seconds) would otherwise slip between two polls
+	// and the user would never see the banner. 30s halves the worst-case
+	// detection lag while keeping the request load trivial. The 503-on-
+	// API-call path still triggers an instant refresh via api.ts +
+	// `bumpMaintenanceRefresh`, but that only fires when the user is
+	// actively making requests — the poll covers idle sessions.
+	const POLL_MS = 30_000;
 	// Don't bother showing the user a "starts in 31 minutes" notice — by the
 	// time they've registered the warning, the window is closer than that
 	// anyway. 30 min matches the schedule cron's 20-min default + small buffer.
