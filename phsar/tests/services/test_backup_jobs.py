@@ -2,7 +2,7 @@
 
 The dispatcher wraps backup_service.create_backup, surfaces content-hash
 dedupe as a success outcome (`deduped_against` on result_summary), and
-applies retention for cron-source jobs.
+applies retention after every successful job (manual + cron alike).
 
 Happy-path and dedupe tests call the dispatcher directly with a FakeJob
 because they only assert on the returned summary. The failure-mode tests
@@ -169,9 +169,8 @@ async def test_backup_dispatcher_surfaces_dedupe_as_success(backup_dir, monkeypa
 
 @pytest.mark.asyncio
 async def test_backup_dispatcher_cron_applies_retention(backup_dir, monkeypatch):
-    """Cron-source jobs apply retention after the dump (carries over
-    from the pre-async /admin/backups/auto handler). Manual jobs must
-    NOT — admin-driven backups predate any retention policy."""
+    """Cron-source jobs apply retention after the dump, enforcing the
+    14-recent + 8-Sunday + 1-known-good contract."""
     _patch_progress(monkeypatch)
 
     retention_calls: list[int] = []
@@ -190,12 +189,13 @@ async def test_backup_dispatcher_cron_applies_retention(backup_dir, monkeypatch)
 
 
 @pytest.mark.asyncio
-async def test_backup_dispatcher_manual_skips_retention(backup_dir, monkeypatch):
-    """Pinning the inverse of the cron-retention contract: manual creates
-    must not run retention. Retention has its own opinionated keep-rules
-    that admins shouldn't trigger by clicking 'Create backup'. Uses a
-    fresh tmp dir so the dedupe-success branch doesn't short-circuit
-    ahead of the retention check."""
+async def test_backup_dispatcher_manual_applies_retention(backup_dir, monkeypatch):
+    """Manual jobs also apply retention. Without this, manual creates
+    pile up indefinitely on installs where cron is disabled (empty
+    `BACKUP_CRON_TOKEN`) or rarely fires, since the cron path was the
+    only one historically wired to retention. Same shared pool — manual
+    and cron compete for the same slots in the 14-recent + 8-Sunday + 1
+    keep budget."""
     _patch_progress(monkeypatch)
 
     retention_calls: list[int] = []
@@ -210,7 +210,7 @@ async def test_backup_dispatcher_manual_skips_retention(backup_dir, monkeypatch)
         await backup_dispatcher.backup_dispatcher(
             session, _fake_job({"source": "manual"}, job_id=2002),
         )
-    assert retention_calls == []
+    assert retention_calls == [1]
 
 
 @pytest.mark.asyncio

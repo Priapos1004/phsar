@@ -7,10 +7,10 @@ Notable design choices:
   maintenance gate is reserved for destructive operations (restore +
   sweeps) that would corrupt mid-flight requests.
 
-- **Source-aware retention.** Cron jobs apply retention after the dump
-  so the scheduled-backup contract (14 daily + 8 Sunday + most-recent
-  known-good) holds without an extra cron-side step. Manual creates
-  skip retention — admin-driven dumps predate any policy.
+- **Retention runs after every backup job.** Both manual and cron end
+  with `apply_retention()` so the 14-recent + 8-Sunday + 1-known-good
+  contract bounds disk usage on installs where cron is disabled or
+  rarely fires. Manual + cron share the same retention pool.
 
 - **Dedupe surfaces as success.** Manual `create_backup` normally raises
   `DuplicateBackupError` on content-hash match; the dispatcher converts
@@ -56,9 +56,8 @@ async def backup_dispatcher(session: AsyncSession, job: Job) -> dict[str, Any]:
         metadata = exc.existing_metadata
         deduped_against = metadata.filename
 
-    if source == BackupSource.cron:
-        await progress.update(stage="Applying retention", force=True)
-        await backup_service.apply_retention()
+    await progress.update(stage="Applying retention", force=True)
+    await backup_service.apply_retention()
 
     await progress.update(stage="Done", force=True)
     return {
