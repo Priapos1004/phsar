@@ -121,6 +121,37 @@ def _fake_job(payload: dict, job_id: int = 12345):
 
 
 @pytest.mark.asyncio
+async def test_backup_dispatcher_rejects_payload_missing_source(backup_dir, monkeypatch):
+    """The payload is JSONB so the router could in principle drift from the
+    dispatcher's expectations. BackupJobPayload's pydantic validation
+    surfaces drift here as a clean ValidationError that JobWorker stamps as
+    the failure reason, instead of an opaque KeyError deeper in dispatch."""
+    _patch_progress(monkeypatch)
+
+    from pydantic import ValidationError
+
+    async with async_session_maker() as session:
+        with pytest.raises(ValidationError):
+            await backup_dispatcher.backup_dispatcher(session, _fake_job({}))
+
+
+@pytest.mark.asyncio
+async def test_backup_dispatcher_rejects_payload_with_unknown_field(backup_dir, monkeypatch):
+    """BackupJobPayload sets `extra='forbid'` so a typo in the router's
+    payload construction (e.g. `tag` instead of `label`) surfaces at job
+    pickup instead of silently dropping the field."""
+    _patch_progress(monkeypatch)
+
+    from pydantic import ValidationError
+
+    async with async_session_maker() as session:
+        with pytest.raises(ValidationError):
+            await backup_dispatcher.backup_dispatcher(
+                session, _fake_job({"source": "manual", "tag": "oops"}),
+            )
+
+
+@pytest.mark.asyncio
 async def test_backup_dispatcher_creates_dump(backup_dir, monkeypatch):
     """Happy path: a manual backup runs pg_dump, lands a single .dump in
     BACKUP_DIR, and returns the structured summary the bell consumes."""
