@@ -95,15 +95,20 @@ class JobDAO(BaseDAO[Job]):
         job: Job,
         error_message: str,
         retryable: bool = True,
+        error_category: str | None = None,
     ) -> None:
         job.status = JobStatus.failed
         job.finished_at = datetime.now(timezone.utc)
         job.error_message = error_message[:2000]
-        # Stash retryable in result_summary so the bell can read it without
-        # needing a separate column. The bell hides its retry button when
-        # retryable is False.
+        # Stash retryable + error_category in result_summary so the bell
+        # can read them without needing separate columns. retryable
+        # hides the retry button when False; error_category lets the
+        # bell render friendly copy ("MAL is temporarily unavailable")
+        # instead of the raw upstream message for known failure modes.
         existing = dict(job.result_summary or {})
         existing["retryable"] = retryable
+        if error_category is not None:
+            existing["error_category"] = error_category
         job.result_summary = existing
         await db.flush()
 

@@ -187,6 +187,19 @@
 		return flag !== false;
 	}
 
+	function describeError(job: Job): string {
+		// Backend stamps result_summary.error_category for failure modes that
+		// have a clear user-facing message. Anything not categorized falls
+		// through to the raw error_message — custom domain errors
+		// (AnimeNotFoundError, MainMediaNotFoundError, MalIdAlreadyExistsError)
+		// already carry their own copy so the raw text is already friendly.
+		const category = job.result_summary?.error_category;
+		if (category === 'upstream_outage') {
+			return 'Anime database is temporarily unavailable. Please retry in a few minutes.';
+		}
+		return job.error_message ?? 'Failed';
+	}
+
 	async function retryJob(job: Job, event: MouseEvent) {
 		event.stopPropagation();
 		if (retryingUuid !== null) return;
@@ -252,7 +265,7 @@
 								<div class="text-xs text-muted-foreground">Waiting in queue…</div>
 							{:else if job.status === 'failed'}
 								<div class="text-xs text-destructive truncate">
-									{job.error_message ?? 'Failed'}
+									{describeError(job)}
 								</div>
 							{/if}
 						</div>

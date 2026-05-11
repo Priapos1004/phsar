@@ -277,6 +277,57 @@ async def test_user_scrape_does_not_flip_maintenance_flag(tracked_jobs):
 
 
 @pytest.mark.asyncio
+async def test_failure_stamps_upstream_outage_category_for_5xx(tracked_jobs):
+    """A dispatcher raising httpx.HTTPStatusError(5xx) must surface as
+    `error_category=upstream_outage` on result_summary so the bell can
+    render friendly copy instead of the raw 'Server error 504 ...' line."""
+    import httpx
+
+    async def fake_dispatcher(session, job):
+        request = httpx.Request("GET", "https://api.jikan.moe/v4/anime")
+        response = httpx.Response(504, request=request, content=b"gateway timeout")
+        raise httpx.HTTPStatusError("504 Gateway Time-out", request=request, response=response)
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.user_scrape, fake_dispatcher)
+
+    job_id = await _enqueue(kind=JobKind.user_scrape)
+    tracked_jobs.append(job_id)
+
+    ran = await worker.dispatch_one()
+    assert ran is True
+
+    refreshed = await _get(job_id)
+    assert refreshed.status is JobStatus.failed
+    assert refreshed.result_summary is not None
+    assert refreshed.result_summary.get("error_category") == "upstream_outage"
+    assert refreshed.result_summary.get("retryable") is True
+
+
+@pytest.mark.asyncio
+async def test_failure_omits_category_for_non_upstream_errors(tracked_jobs):
+    """A generic RuntimeError shouldn't categorize — bell falls through to
+    the raw error_message instead of mislabeling it as an outage."""
+
+    async def boom(session, job):
+        raise RuntimeError("something broke in our code, not MAL")
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.user_scrape, boom)
+
+    job_id = await _enqueue(kind=JobKind.user_scrape)
+    tracked_jobs.append(job_id)
+
+    ran = await worker.dispatch_one()
+    assert ran is True
+
+    refreshed = await _get(job_id)
+    assert refreshed.status is JobStatus.failed
+    assert refreshed.result_summary is not None
+    assert "error_category" not in refreshed.result_summary
+
+
+@pytest.mark.asyncio
 async def test_notify_wakes_idle_worker(tracked_jobs):
     """A queued job inserted while the worker is asleep gets picked up
     promptly after notify(). Verifies the asyncio.Event signaling path."""

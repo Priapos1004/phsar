@@ -16,6 +16,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Awaitable, Callable
 
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import async_session_maker
@@ -37,6 +38,25 @@ _FALLBACK_POLL_SECONDS = 60.0
 _MAINTENANCE_KINDS: frozenset[JobKind] = frozenset(
     {JobKind.update_sweep, JobKind.seasonal_sweep}
 )
+
+# Error categories stamped on result_summary["error_category"] for the
+# frontend bell to render friendly copy. Only categories with a clear
+# end-user message live here; everything else falls through to the raw
+# exception string (which is already useful for AnimeNotFoundError,
+# MalIdAlreadyExistsError, etc.).
+ERROR_CATEGORY_UPSTREAM_OUTAGE = "upstream_outage"
+
+
+def _classify_error(exc: BaseException) -> str | None:
+    """Translate a dispatcher exception into a coarse error category for
+    the bell. Returns None when the raw exception message is already
+    user-friendly (custom domain errors carry their own copy)."""
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code >= 500:
+        return ERROR_CATEGORY_UPSTREAM_OUTAGE
+    if isinstance(exc, (httpx.TimeoutException, httpx.NetworkError)):
+        return ERROR_CATEGORY_UPSTREAM_OUTAGE
+    return None
+
 
 JobDispatcher = Callable[[AsyncSession, Job], Awaitable[dict | None]]
 
@@ -161,6 +181,7 @@ class JobWorker:
                     set_scheduled_at(None)
 
         retryable = not isinstance(failure, PermanentPhsarError)
+        error_category = _classify_error(failure) if failure is not None else None
         async with async_session_maker() as fail_session:
             failing = await self._dao.get_by_id(fail_session, job_id)
             if failing is not None:
@@ -169,6 +190,7 @@ class JobWorker:
                     failing,
                     str(failure) or type(failure).__name__,
                     retryable=retryable,
+                    error_category=error_category,
                 )
                 await fail_session.commit()
         return True
