@@ -540,6 +540,13 @@ async def apply_retention() -> list[str]:
     if most_recent_ok is not None:
         keep.add(most_recent_ok.filename)
 
+    # Pin the is_current dump regardless of age. A stack of dedupe-hit
+    # re-confirms could otherwise push an older-but-pointed-at dump out of
+    # the 14-recent window and retention would delete the file the bell
+    # labels as "matches live DB". `list_backups()` already stamped
+    # is_current on each row, so no extra pointer-file read here.
+    keep.update(b.filename for b in candidates if b.is_current)
+
     deleted: list[str] = []
     for b in candidates:
         if b.filename not in keep:

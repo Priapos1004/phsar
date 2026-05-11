@@ -6,6 +6,8 @@ settings.BACKUP_DIR, so no state leaks out to the real /backups volume.
 """
 
 import io
+import os
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi import UploadFile
@@ -389,3 +391,31 @@ async def test_current_pointer_matrix(
             f"was {pointer_after_a}, became {pointer_after_b}"
         )
         assert dump_b.is_current is False
+
+
+async def test_retention_pins_current_dump_against_eviction(
+    backup_dir, monkeypatch, unique_hashes,
+):
+    """Without the is_current keep-set exemption, a stack of unique creates
+    pushes an older pinned dump out of the 14-recent window and retention
+    deletes it — even though the bell still labels it 'matches live DB'."""
+    pinned = await backup_service.create_backup(source=BackupSource.cron, label="pinned")
+
+    # Force pinned 120 days into the past so it falls outside the 14-recent
+    # window once 15 fresh dumps land. Deleting the sidecar makes
+    # `list_backups` rebuild created_at from the file mtime.
+    pinned_path = backup_dir / pinned.filename
+    old_ts = (datetime.now(timezone.utc) - timedelta(days=120)).timestamp()
+    os.utime(pinned_path, (old_ts, old_ts))
+    (pinned_path.parent / f"{pinned.filename}.meta.json").unlink()
+
+    for i in range(15):
+        await backup_service.create_backup(source=BackupSource.cron, label=f"fresh{i}")
+
+    # Unique creates re-stamped the pointer to themselves; restore the
+    # post-restore / post-dedupe state where Current sits on the older dump.
+    backup_service._mark_current_db_confirmed(pinned.filename)
+
+    deleted = await backup_service.apply_retention()
+    assert pinned.filename not in deleted
+    assert pinned_path.is_file()
