@@ -11,7 +11,6 @@ fields, and advance the per-anime stability counter. Per-anime commit
 boundary so a crash mid-sweep preserves the already-refreshed rows.
 """
 
-import asyncio
 import logging
 import math
 from datetime import datetime, timezone
@@ -110,11 +109,10 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
         stage="Refreshing", items_total=total, items_done=0, force=True,
     )
 
-    media_ids, anime_ids, unwanted_ids = await asyncio.gather(
-        MediaDAO().get_all_mal_ids(session),
-        AnimeDAO().get_all_mal_ids(session),
-        MediaUnwantedDAO().get_all_mal_ids(session),
-    )
+    # AsyncSession is not concurrency-safe; all three queries share `session`.
+    media_ids = await MediaDAO().get_all_mal_ids(session)
+    anime_ids = await AnimeDAO().get_all_mal_ids(session)
+    unwanted_ids = await MediaUnwantedDAO().get_all_mal_ids(session)
     exclusions: set[int] = set(media_ids) | set(anime_ids) | set(unwanted_ids)
 
     refreshed = 0

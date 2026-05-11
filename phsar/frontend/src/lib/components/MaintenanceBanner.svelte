@@ -18,10 +18,10 @@
 	let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 	// Bypass api.ts on purpose: a 503 with `{maintenance: true}` would otherwise
-	// trigger the global redirect to /login?maintenance=1, defeating the
-	// pre-warning point of the banner. The status endpoint is allowlisted in
-	// the backend's maintenance gate so it returns truthful info during a
-	// window too. No auth header — endpoint is public.
+	// trigger the global redirect to /login, defeating the pre-warning point
+	// of the banner. The status endpoint is allowlisted in the backend's
+	// maintenance gate so it returns truthful info during a window too. No
+	// auth header — endpoint is public.
 	async function fetchStatus() {
 		try {
 			const res = await fetch(`${API_URL}/maintenance/status`);
@@ -41,12 +41,17 @@
 	}
 
 	let showCountdown = $derived(
-		minutesUntil !== null && minutesUntil > 0 && minutesUntil <= VISIBLE_LEAD_MINUTES,
+		!active &&
+			minutesUntil !== null &&
+			minutesUntil > 0 &&
+			minutesUntil <= VISIBLE_LEAD_MINUTES,
 	);
-	// "Starts in N min" wins over "in progress" when both are true: if the
-	// schedule wasn't cleared yet but the worker already flipped active,
-	// the more-actionable message is still the countdown.
-	let visible = $derived(showCountdown || active);
+	// "In progress" wins over the countdown when both are true. A cron retry
+	// mid-sweep can legitimately set _scheduled_at to a *future* timestamp
+	// for the next window while the current sweep is still active, so the
+	// countdown alone would otherwise read "starts in N min" while the API
+	// is already 503'ing — a contradictory message.
+	let visible = $derived(active || showCountdown);
 
 	let unsubAuth: (() => void) | null = null;
 	let unsubRefresh: (() => void) | null = null;

@@ -73,7 +73,11 @@ class AnimeDAO(MalIdDAO[Anime]):
 
         LEFT JOIN against anime_freshness because the migration backfilled
         every existing row but a future code path could insert without one;
-        COALESCE on anime.created_at keeps the ordering honest.
+        the COALESCE expression powers the WHERE-clause staleness checks
+        (long_tail / weekly_recent_main). ORDER BY uses raw
+        `last_checked_at NULLS FIRST` instead — see the ordering comment
+        below for why never-checked rows belong at the front, not at
+        their created_at position.
         """
         af = aliased(AnimeFreshness)
         last_checked = func.coalesce(af.last_checked_at, Anime.created_at)
@@ -104,7 +108,20 @@ class AnimeDAO(MalIdDAO[Anime]):
             select(Anime)
             .outerjoin(af, af.anime_id == Anime.id)
             .where(or_(airing_now, still_stabilizing, weekly_recent_main, long_tail))
-            .order_by(af.last_checked_at.asc().nullsfirst(), Anime.id.asc())
+            # Primary order: `nullsfirst()` puts never-checked rows at the
+            # front. A NULL last_checked_at is "maximum staleness from MAL's
+            # perspective" — new anime (always due via tier 2) must survive
+            # the LIMIT cap even when there's a 180-day stale backlog so the
+            # 3-check stabilization sampling completes promptly.
+            # Secondary: tiebreak by created_at so older catalog entries
+            # win, not whichever anime.id happens to be lower (the
+            # tiebreaker is only deterministic by accident under a
+            # sequential PK).
+            .order_by(
+                af.last_checked_at.asc().nullsfirst(),
+                Anime.created_at.asc(),
+                Anime.id.asc(),
+            )
             .options(
                 selectinload(Anime.media).selectinload(Media.freshness),
                 selectinload(Anime.freshness),
