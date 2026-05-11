@@ -16,6 +16,7 @@ required.
 """
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import delete
 
 from app.core.config import settings
@@ -128,8 +129,6 @@ async def test_backup_dispatcher_rejects_payload_missing_source(backup_dir, monk
     the failure reason, instead of an opaque KeyError deeper in dispatch."""
     _patch_progress(monkeypatch)
 
-    from pydantic import ValidationError
-
     async with async_session_maker() as session:
         with pytest.raises(ValidationError):
             await backup_dispatcher.backup_dispatcher(session, _fake_job({}))
@@ -141,8 +140,6 @@ async def test_backup_dispatcher_rejects_payload_with_unknown_field(backup_dir, 
     payload construction (e.g. `tag` instead of `label`) surfaces at job
     pickup instead of silently dropping the field."""
     _patch_progress(monkeypatch)
-
-    from pydantic import ValidationError
 
     async with async_session_maker() as session:
         with pytest.raises(ValidationError):

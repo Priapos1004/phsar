@@ -349,7 +349,6 @@ class DuplicateBackupError(PhsarBaseError):
         # re-scanning the backup dir (which would shell out to
         # pg_restore --list for any dump missing a sidecar).
         self.existing_metadata = existing_metadata
-        self.existing_filename = existing_metadata.filename
         message = f"This dump is identical to an existing backup: '{existing_metadata.filename}'."
         super().__init__(message)
 
