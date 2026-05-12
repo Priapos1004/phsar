@@ -173,6 +173,7 @@ cython_debug/
 .pypirc
 
 .DS_Store
+.claude/*.lock
 
 # Playwright MCP debugging artifacts
 .playwright-mcp/
