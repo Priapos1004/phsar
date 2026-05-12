@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Body, Depends, Query, UploadFile, status
@@ -158,19 +159,59 @@ async def schedule_seasonal(
     return await _enqueue_scheduled_sweep(db, JobKind.seasonal_sweep, delay_minutes)
 
 
+async def _enqueue_backup_job(
+    db: AsyncSession,
+    source: backup_schema.BackupSource,
+    label: str | None,
+    requested_by_user_id: int | None,
+) -> admin_schema.JobEnqueuedResponse:
+    """Shared enqueue path for the manual + cron backup endpoints.
+
+    Backup work now flows through the JobWorker so admins don't wait
+    minutes for pg_dump and the cron path gets FIFO sequencing + crash
+    recovery for free. The dispatcher (`backup_dispatcher`) applies
+    retention after every job — manual and cron share the same
+    14-recent + 8-Sunday + 1-known-good pool, so a manual-only install
+    doesn't accumulate dumps indefinitely.
+
+    Manual backups attribute to the admin user so the row surfaces in
+    *their* bell only — multi-admin deployments don't get cross-admin
+    bell clutter. Cron leaves `requested_by_user_id=None` (system job,
+    same pattern as sweeps), invisible to every user's bell — the dump
+    list is the audit log for those.
+    """
+    payload: dict[str, Any] = {"source": source.value}
+    if label:
+        payload["label"] = label
+    job = Job(
+        kind=JobKind.backup,
+        status=JobStatus.queued,
+        requested_by_user_id=requested_by_user_id,
+        payload=payload,
+    )
+    db.add(job)
+    await db.commit()
+    job_worker.notify()
+    return admin_schema.JobEnqueuedResponse(job_uuid=job.uuid)
+
+
 # Cron-authed endpoint — stays on the parent router so it doesn't inherit the
 # JWT admin dep from the backups sub-router (router-level dependencies are
 # additive; the only way to exclude the admin check is to not be under it).
 @router.post(
     "/backups/auto",
-    response_model=backup_schema.BackupMetadata,
+    response_model=admin_schema.JobEnqueuedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
     dependencies=[Depends(require_backup_cron_token)],
 )
-async def auto_backup():
-    """Cron-triggered backup. Creates a dump tagged as `cron` and applies retention."""
-    metadata = await backup_service.create_backup(source=backup_schema.BackupSource.cron)
-    await backup_service.apply_retention()
-    return metadata
+async def auto_backup(db: AsyncSession = Depends(get_db)):
+    """Cron-triggered backup. Enqueues a `backup` job tagged `cron`; the
+    dispatcher creates the dump and then applies retention so the
+    14-daily/8-Sunday/most-recent-known-good contract holds without an
+    extra cron-side step."""
+    return await _enqueue_backup_job(
+        db, backup_schema.BackupSource.cron, label=None, requested_by_user_id=None,
+    )
 
 
 # Router-level admin dep — only `restore` actually reads the caller's username,
@@ -183,11 +224,26 @@ async def list_backups():
     return await backup_service.list_backups()
 
 
-@backups_router.post("", response_model=backup_schema.BackupMetadata)
-async def create_backup(data: backup_schema.BackupCreateRequest | None = None):
+@backups_router.post(
+    "",
+    response_model=admin_schema.JobEnqueuedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_backup(
+    data: backup_schema.BackupCreateRequest | None = Body(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """Manual backup. Enqueues a `backup` job attributed to the admin;
+    the dispatcher runs pg_dump asynchronously while the admin keeps
+    working. The bell tracks progress + surfaces the final filename so
+    the BackupsCard can refresh its dump list on completion."""
     label = data.label if data else None
-    return await backup_service.create_backup(
-        source=backup_schema.BackupSource.manual, label=label,
+    return await _enqueue_backup_job(
+        db,
+        backup_schema.BackupSource.manual,
+        label=label,
+        requested_by_user_id=current_user.id,
     )
 
 

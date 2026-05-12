@@ -75,6 +75,14 @@ def parse_mal_datetime(value: str | None) -> Optional[datetime]:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+def _normalize_relation(rel: str) -> str:
+    """MAL emits multi-word relations title-cased with a space
+    ("Side Story", "Parent story", "Alternative Setting"). Normalize
+    once on entry so every downstream comparison uses the same
+    underscore form."""
+    return rel.lower().replace(" ", "_")
+
+
 class JikanScraper:
     # Jikan documents 3 req/s burst AND 60 req/min sustained. The
     # per-minute ceiling is the binding constraint for the seasonal
@@ -433,7 +441,7 @@ class JikanScraper:
                         all_related_media = seed_payload.get("relations") or []
                     else:
                         all_related_media = await self.fetch_relations(current_mal_id)
-                    relation_types_list = [media["relation"] for media in all_related_media]
+                    relation_types_list = [_normalize_relation(media["relation"]) for media in all_related_media]
 
                     is_main_story = (
                         current_relation is None
@@ -452,11 +460,11 @@ class JikanScraper:
 
                     if is_main_story or is_first_relation or not found_main_story:
                         for related_media in all_related_media:
-                            rel = related_media["relation"].lower()
+                            rel = _normalize_relation(related_media["relation"])
                             if rel == 'character': # Skip because not related enough
                                 continue
 
-                            # `alternative setting` is excluded alongside
+                            # `alternative_setting` is excluded alongside
                             # `adaptation` because it labels separate franchises
                             # that share themes only (e.g., Zhe Tian ↔ Wanmei
                             # Shijie, Madoka ↔ Magia Record). Walking it would
@@ -465,16 +473,7 @@ class JikanScraper:
                             # `crossover` stays in the queue (graph boundary,
                             # not full skip) because crossover anime really
                             # ARE part of both franchises.
-                            #
-                            # NOTE: MAL emits multi-word relations with a space
-                            # ("Side Story", "Alternative Setting"); the
-                            # `.lower()` above keeps the space, so the literal
-                            # to match here is "alternative setting" with a
-                            # space, NOT the underscore form some other checks
-                            # below use. (Those underscore checks are a known
-                            # latent issue worth a separate fix; in scope here
-                            # is just the new alt-setting boundary cut.)
-                            if rel not in ("adaptation", "alternative setting"):
+                            if rel not in ("adaptation", "alternative_setting"):
                                 mal_ids = self.get_all_anime_media(related_media["entry"])
                                 left_mal_ids.extend(mal_ids)
                                 if rel in ["summary", "crossover"]:

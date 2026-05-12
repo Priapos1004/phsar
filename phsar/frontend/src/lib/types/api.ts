@@ -287,17 +287,28 @@ export interface RegistrationTokenListItem {
 }
 
 // Jobs (content pipeline)
-export type JobKind = 'user_scrape' | 'update_sweep' | 'seasonal_sweep';
+export type JobKind = 'user_scrape' | 'update_sweep' | 'seasonal_sweep' | 'backup';
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 
 // Mirrors backend `job_worker.ERROR_CATEGORY_*`. Keep both sides in sync —
 // the union is the compile-time contract that catches drift.
-export type JobErrorCategory = 'upstream_outage';
+export type JobErrorCategory = 'upstream_outage' | 'backup_disk_full' | 'backup_corrupt';
 
 export interface JobResultSummary {
 	retryable?: boolean;
 	error_category?: JobErrorCategory;
 	[key: string]: unknown;
+}
+
+// Backup dispatcher stamps these into result_summary on success. Typed as a
+// supertype of JobResultSummary so the bell can read fields directly via `?.`
+// without a runtime guard (Job.result_summary is still typed JobResultSummary).
+export interface BackupResultSummary extends JobResultSummary {
+	filename?: string;
+	size_bytes?: number;
+	integrity?: BackupIntegrity;
+	source?: BackupSource;
+	deduped_against?: string | null;
 }
 
 export interface Job {

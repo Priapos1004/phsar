@@ -379,6 +379,95 @@ async def test_search_title_skips_alternative_setting_relations(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_search_title_normalizes_relation_strings_so_franchise_movies_are_side_story(monkeypatch):
+    """Franchise movies / OVAs reached via `Side Story` from a main TV
+    show must classify as `side_story`, not `main`.
+
+    Regression guard for the MAL relation-string normalization. MAL
+    emits multi-word relations title-cased with a space (`"Side Story"`,
+    `"Parent story"`, `"Full story"`). Two BFS checks gate
+    `is_main_story` on the popped node's relations containing
+    `"parent_story"` / `"full_story"`. If those checks compare raw
+    against the title-cased list, they always pass, and any TV/Movie
+    node with a `Parent story` upward link leaks into the catalog as
+    `relation_type="main"`. In practice every Naruto/Bleach/Demon Slayer
+    movie classified as a separate `main` story instead of a side story
+    under its parent series.
+
+    Naruto-shaped fixture:
+      20  Naruto             (TV,    no parent)
+      1735 Naruto Shippuden  (TV,    Prequel → 20)
+      894  Naruto Movie 1    (Movie, Parent story → 20)
+      936  Naruto OVA        (OVA,   Parent story → 20)
+      5085 Shippuden Movie   (Movie, Parent story → 1735)
+
+    Only 20 and 1735 may end up with `relation_type="main"`. Everything
+    that has a `Parent story` upward link must be `side_story`.
+    """
+    # Movies + OVA each have a `Parent story` upward link — the exact
+    # MAL convention the underscore-form check used to miss.
+    relations_by_id = {
+        20: [
+            {"relation": "Sequel", "entry": [{"type": "anime", "mal_id": 1735}]},
+            {"relation": "Side Story", "entry": [{"type": "anime", "mal_id": 894}]},
+            {"relation": "Side Story", "entry": [{"type": "anime", "mal_id": 936}]},
+        ],
+        1735: [
+            {"relation": "Prequel", "entry": [{"type": "anime", "mal_id": 20}]},
+            {"relation": "Side Story", "entry": [{"type": "anime", "mal_id": 5085}]},
+        ],
+        894: [{"relation": "Parent story", "entry": [{"type": "anime", "mal_id": 20}]}],
+        936: [{"relation": "Parent story", "entry": [{"type": "anime", "mal_id": 20}]}],
+        5085: [{"relation": "Parent story", "entry": [{"type": "anime", "mal_id": 1735}]}],
+    }
+    type_by_id = {20: "TV", 1735: "TV", 894: "Movie", 936: "OVA", 5085: "Movie"}
+    title_by_id = {
+        20: "Naruto",
+        1735: "Naruto: Shippuuden",
+        894: "Naruto Movie 1",
+        936: "Naruto OVA",
+        5085: "Naruto Shippuuden Movie 1",
+    }
+
+    async def fake_get(self, url: str, params=None):
+        if url.endswith("/anime") and params is not None and params.get("q"):
+            return {"data": [_make_anime(20, "Naruto", media_type="TV")]}
+        if url.endswith("/relations"):
+            mal_id = int(url.rsplit("/", 2)[-2])
+            return {"data": relations_by_id.get(mal_id, [])}
+        if "/anime/" in url:
+            mal_id = int(url.rsplit("/", 1)[-1])
+            return {"data": _make_anime(mal_id, title_by_id[mal_id], media_type=type_by_id[mal_id])}
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+
+    async with JikanScraper() as scraper:
+        relations, _all_info, _unwanted = await scraper.search_title(
+            title="Naruto", excluded_mal_ids=set(),
+        )
+
+    assert len(relations) == 1
+    graph, _cross_links = relations[0]
+
+    # All five nodes reached.
+    assert set(graph.keys()) == {20, 1735, 894, 936, 5085}
+
+    # Exactly the two TV series are main; movies + OVA are side_story.
+    mains = {mal_id for mal_id, node in graph.items() if node["relation_type"] == "main"}
+    assert mains == {20, 1735}, (
+        f"Only the TV series should be main; got mains={mains}. "
+        "If franchise movies leak into this set, the relation-string "
+        "normalization in jikan_scraper has regressed."
+    )
+    for child_id in (894, 936, 5085):
+        assert graph[child_id]["relation_type"] == "side_story", (
+            f"mal_id={child_id} ({title_by_id[child_id]}) should be "
+            f"side_story; got {graph[child_id]['relation_type']}"
+        )
+
+
+@pytest.mark.asyncio
 async def test_search_title_skips_null_title_pv_silently(monkeypatch):
     """MAL occasionally leaves `title=null` on entries it's still
     populating (romanization pending, brand-new PV stubs). Skip silently

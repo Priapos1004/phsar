@@ -20,9 +20,19 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import async_session_maker
-from app.core.maintenance import get_scheduled_at, set_maintenance, set_scheduled_at
+from app.core.maintenance import (
+    get_scheduled_at,
+    is_maintenance_active,
+    set_maintenance,
+    set_scheduled_at,
+)
 from app.daos.job_dao import JobDAO
-from app.exceptions import PermanentPhsarError, TransientUpstreamError
+from app.exceptions import (
+    BackupDiskSpaceError,
+    BackupIntegrityError,
+    PermanentPhsarError,
+    TransientUpstreamError,
+)
 from app.models.job import Job, JobKind
 
 logger = logging.getLogger(__name__)
@@ -30,6 +40,12 @@ logger = logging.getLogger(__name__)
 # Wall-clock fallback for the rare case that a notify() is lost to a race.
 # Short enough that an empty queue picks up an orphaned signal within a minute.
 _FALLBACK_POLL_SECONDS = 60.0
+
+# Tighter poll while maintenance is active. dispatch_one short-circuits to
+# False during maintenance and clearing the flag (in restore's finally) does
+# not fire notify() — without this, a job queued during the window can sit
+# up to _FALLBACK_POLL_SECONDS past the lift.
+_MAINTENANCE_POLL_SECONDS = 2.0
 
 # Sweeps run inside the maintenance window — the worker brackets them with
 # the in-memory flag flip so the HTTP middleware returns 503 to everything
@@ -45,6 +61,8 @@ _MAINTENANCE_KINDS: frozenset[JobKind] = frozenset(
 # exception string (which is already useful for AnimeNotFoundError,
 # MalIdAlreadyExistsError, etc.).
 ERROR_CATEGORY_UPSTREAM_OUTAGE = "upstream_outage"
+ERROR_CATEGORY_BACKUP_DISK_FULL = "backup_disk_full"
+ERROR_CATEGORY_BACKUP_CORRUPT = "backup_corrupt"
 
 
 def _classify_error(exc: BaseException) -> str | None:
@@ -57,6 +75,16 @@ def _classify_error(exc: BaseException) -> str | None:
         return ERROR_CATEGORY_UPSTREAM_OUTAGE
     if isinstance(exc, TransientUpstreamError):
         return ERROR_CATEGORY_UPSTREAM_OUTAGE
+    # Backup failure modes get their own categories so the bell can
+    # render an actionable hint ("free disk space and retry" / "pg_dump
+    # produced a corrupt archive — check Postgres logs") instead of the
+    # raw stderr tail. retryable stays at the default (True) because
+    # both modes are fixable: an admin can free space, or a transient
+    # connection drop during pg_dump can resolve on its own.
+    if isinstance(exc, BackupDiskSpaceError):
+        return ERROR_CATEGORY_BACKUP_DISK_FULL
+    if isinstance(exc, BackupIntegrityError):
+        return ERROR_CATEGORY_BACKUP_CORRUPT
     return None
 
 
@@ -110,8 +138,12 @@ class JobWorker:
             # Race: a notify() between dispatch_one returning False and clear()
             # would be lost. The wait_for timeout below catches it within a minute.
             self._wakeup.clear()
+            timeout = (
+                _MAINTENANCE_POLL_SECONDS if is_maintenance_active()
+                else _FALLBACK_POLL_SECONDS
+            )
             try:
-                await asyncio.wait_for(self._wakeup.wait(), timeout=_FALLBACK_POLL_SECONDS)
+                await asyncio.wait_for(self._wakeup.wait(), timeout=timeout)
             except asyncio.TimeoutError:
                 pass
 
@@ -124,6 +156,13 @@ class JobWorker:
         single transaction across the whole scrape would block every other
         write on the jobs table and accumulate identity-map state.
         """
+        # Restore disposes the pool + terminates sessions mid-flight; claiming
+        # any job in that window either dies on the killed session or (for
+        # backup) writes a silently-incomplete dump. Sweep-induced maintenance
+        # is a no-op here — `_run` is already inside dispatch_one running the
+        # sweep, so it can't re-enter.
+        if is_maintenance_active():
+            return False
         async with async_session_maker() as claim_session:
             job = await self._dao.claim_next_queued(claim_session)
             if job is None:

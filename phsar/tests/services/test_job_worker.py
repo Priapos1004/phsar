@@ -15,6 +15,7 @@ from app.core import maintenance
 from app.core.db import async_session_maker, engine
 from app.daos.job_dao import JobDAO
 from app.models.job import Job, JobKind, JobStatus
+from app.services import job_worker as job_worker_module
 from app.services.job_worker import JobWorker
 
 dao = JobDAO()
@@ -251,6 +252,89 @@ async def test_sweep_finally_preserves_future_scheduled_at(tracked_jobs):
 
     assert maintenance.is_maintenance_active() is False
     assert maintenance.get_scheduled_at() == next_window
+
+
+@pytest.mark.asyncio
+async def test_dispatch_one_skips_claim_when_maintenance_active(tracked_jobs):
+    """Externally-active maintenance (restore) must idle the worker so it
+    doesn't claim against a pool about to be disposed. The queued job
+    survives untouched and runs on the next dispatch after the flag lifts."""
+    captured: list[int] = []
+
+    async def fake_dispatcher(session, job):
+        captured.append(job.id)
+        return None
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.user_scrape, fake_dispatcher)
+
+    job_id = await _enqueue(kind=JobKind.user_scrape)
+    tracked_jobs.append(job_id)
+
+    maintenance.set_maintenance(True)
+    try:
+        ran = await worker.dispatch_one()
+    finally:
+        maintenance.set_maintenance(False)
+
+    assert ran is False
+    assert captured == []
+
+    # Job stays queued for the next dispatch cycle after maintenance lifts.
+    refreshed = await _get(job_id)
+    assert refreshed.status is JobStatus.queued
+
+    # Sanity: with the flag cleared, the same worker picks the job up.
+    ran_after = await worker.dispatch_one()
+    assert ran_after is True
+    assert captured == [job_id]
+
+
+@pytest.mark.asyncio
+async def test_run_loop_picks_up_job_quickly_after_maintenance_lift(
+    tracked_jobs, monkeypatch
+):
+    """`set_maintenance(False)` in `restore_backup`'s finally does NOT
+    fire `notify()`. Without a tighter timeout during maintenance, the
+    worker would sleep up to `_FALLBACK_POLL_SECONDS` (60s) past the
+    lift before claiming a job that was enqueued during the window.
+
+    Tighten the maintenance poll for the test so the assertion happens
+    in well under a second: if a future refactor drops the
+    maintenance-aware timeout selection in `_run`, this test falls back
+    to the 60s wall and the surrounding `wait_for(timeout=2.0)` trips.
+    """
+    monkeypatch.setattr(job_worker_module, "_MAINTENANCE_POLL_SECONDS", 0.05)
+
+    claimed = asyncio.Event()
+    captured: list[int] = []
+
+    async def fake_dispatcher(session, job):
+        captured.append(job.id)
+        claimed.set()
+        return None
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.user_scrape, fake_dispatcher)
+
+    job_id = await _enqueue(kind=JobKind.user_scrape)
+    tracked_jobs.append(job_id)
+
+    maintenance.set_maintenance(True)
+    await worker.start()
+    try:
+        # Yield until the worker has entered its maintenance-poll wait —
+        # otherwise lifting the gate races dispatch_one and the test
+        # never exercises the short-poll wake-up that is the regression
+        # subject.
+        await asyncio.sleep(0.1)
+        # No notify() — the short poll is what wakes the worker.
+        maintenance.set_maintenance(False)
+        await asyncio.wait_for(claimed.wait(), timeout=2.0)
+    finally:
+        await worker.stop()
+
+    assert captured == [job_id]
 
 
 @pytest.mark.asyncio

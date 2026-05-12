@@ -100,6 +100,7 @@ phsar/
 │       ├── anime_search_service.py
 │       ├── anime_service.py
 │       ├── auth_service.py
+│       ├── backup_dispatcher.py
 │       ├── backup_service.py
 │       ├── export_service.py
 │       ├── filter_service.py
@@ -232,6 +233,7 @@ phsar/
 │   │       ├── SpoilerGuardTest.svelte
 │   │       ├── api-download.test.ts
 │   │       ├── auth-store.test.ts
+│   │       ├── backups-card.test.ts
 │   │       ├── format-string.test.ts
 │   │       ├── job-bell.test.ts
 │   │       ├── library-add.test.ts
@@ -269,6 +271,7 @@ phsar/
     ├── routers/
     │   ├── conftest.py
     │   ├── test_admin.py
+    │   ├── test_admin_seasonal.py
     │   ├── test_admin_sweep.py
     │   ├── test_anime_detail.py
     │   ├── test_auth.py
@@ -285,6 +288,7 @@ phsar/
     │   ├── test_search_ratings.py
     │   └── test_user_settings.py
     └── services/
+        ├── test_backup_jobs.py
         ├── test_backup_service.py
         ├── test_backup_subprocess_failures.py
         ├── test_jikan_scraper.py
@@ -295,6 +299,7 @@ phsar/
         ├── test_merge_preservation.py
         ├── test_progress_reporter.py
         ├── test_search_service.py
+        ├── test_seasonal_sweep.py
         ├── test_spoiler_service.py
         ├── test_update_sweep.py
         └── test_vector_embedding_service.py
@@ -324,7 +329,10 @@ SEARCH_SECRET_KEY=supersecretsearchsecretkey
 # BACKUP_CRON_TOKEN=supersecretcrontoken
 # Optional: raise if pg_restore of a larger DB legitimately takes >10 min
 # BACKUP_RESTORE_TIMEOUT_SECONDS=600
-# Optional: shared bearer secret for POST /admin/jobs/schedule-sweep (nightly content updates)
+# Optional: shared bearer secret for the sweep cron endpoints
+# (POST /admin/jobs/schedule-sweep — nightly catalog refresh,
+#  POST /admin/jobs/schedule-seasonal — weekly /seasons/now pickup)
+# Empty disables both endpoints and they fail closed.
 # JOBS_CRON_TOKEN=supersecretsweeptoken
 ```
 

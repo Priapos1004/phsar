@@ -374,7 +374,7 @@ async def test_user_scrape_raises_main_not_found_when_seed_has_no_anchor(monkeyp
     AND no MediaUnwanted (i.e., the entry exists on MAL but its graph
     can't be saved). Surface MainMediaNotFoundError so the error message
     in jobs.failed says 'Couldn't identify a main story' instead of the
-    misleading 'Anime titled X not found' (which implies MAL had no
+    misleading 'No new anime matched X' (which would imply MAL had no
     record at all)."""
     seed_mal_id = -7712
 
