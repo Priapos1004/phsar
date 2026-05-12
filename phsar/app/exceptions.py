@@ -31,12 +31,17 @@ class MalIdAlreadyExistsError(PermanentPhsarError):
 
 
 class AnimeNotFoundError(PermanentPhsarError):
-    """Raised when an anime is not found in the MAL API."""
+    """Raised when a fuzzy `q=<title>` MAL search returns zero matches
+    that aren't already in the catalog or filtered as unwanted. The
+    title may well exist on MAL — the message is intentionally hedged
+    ("no new match") rather than absolute ("not found") so the admin
+    doesn't go chasing a MAL outage when in fact every hit was simply
+    de-duped against existing rows."""
     status_code = 404
 
     def __init__(self, title: str):
         self.title = title
-        message = f"Anime titled '{title}' not found."
+        message = f"No new anime matched '{title}' on MAL."
         super().__init__(message)
 
 

@@ -237,7 +237,7 @@ describe('JobBell', () => {
 		mockJobsResponse([
 			makeJob({
 				status: 'failed',
-				error_message: "Anime titled 'asdfgh' not found.",
+				error_message: "No new anime matched 'asdfgh' on MAL.",
 				result_summary: { retryable: false },
 			}),
 		]);
@@ -245,7 +245,7 @@ describe('JobBell', () => {
 		await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
 		await fireEvent.click(screen.getByLabelText('Background jobs'));
 		await vi.waitFor(() => {
-			expect(screen.getByText("Anime titled 'asdfgh' not found.")).toBeInTheDocument();
+			expect(screen.getByText("No new anime matched 'asdfgh' on MAL.")).toBeInTheDocument();
 		});
 		expect(screen.queryByLabelText('Retry job')).not.toBeInTheDocument();
 	});
