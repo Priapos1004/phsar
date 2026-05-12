@@ -58,11 +58,9 @@ The corresponding production code lives in three layers:
 
 ### Relation string format
 
-- **MAL emits relation strings with SPACES and CamelCase**: `"Side Story"`, `"Alternative Setting"`, `"Parent Story"`, `"Full Story"`, `"Spin-Off"`. Our code uses `.lower()` but **doesn't replace spaces with underscores**, so `rel = "side story"` and `rel = "alternative setting"`.
-- **Known latent issue**: several checks in `search_title` use the *underscore* form (`"side_story"`, `"alternative_version"`, `"compilation"`, `"full_story"`, `"parent_story"`) but MAL never emits those. So:
-  - The `elif rel in ["side_story", "alternative_version", "compilation"]` branch (intended to mark relation_type=`"side_story"`) **never matches** in production — those entries fall into the else branch and get `relation_type=None`.
-  - The `"full_story" not in relation_types_list` / `"parent_story" not in relation_types_list` checks (intended to exclude side-stories from `is_main_story`) **always pass** — the underscore strings aren't in MAL's space-separated relation list.
-- We left this unfixed in v0.14.0 because (a) the BFS works well enough in practice, (b) fixing it would change classification for many existing flows in subtle ways. Worth a focused fix later: normalize once via `rel = rel.lower().replace(" ", "_")` and update the checks consistently. See Future Work.
+- **MAL emits relation strings with SPACES and CamelCase**: `"Side Story"`, `"Alternative Setting"`, `"Parent story"`, `"Full story"`, `"Spin-Off"`. The scraper normalizes them once on entry via `_normalize_relation(rel) = rel.lower().replace(" ", "_")`, so every downstream comparison works against the underscore form.
+- **Why the normalization matters (regression from v0.13.x → fixed in v0.14.0).** The `is_main_story` gate excludes any popped TV/Movie node whose relations list contains `"parent_story"` or `"full_story"`. Before the fix the list was built from raw MAL strings (`"Parent story"`), so both `not in` checks always passed and any TV/Movie with a `Parent story` upward link silently classified as `main`. In practice every Naruto/Bleach/Demon Slayer movie ended up as a separate `main` row instead of `side_story` under its parent series. The Naruto-shaped fixture in `test_search_title_normalizes_relation_strings_so_franchise_movies_are_side_story` is the regression guard.
+- **Fix is for new scrapes only.** The sweep's relations probe goes through `attach_search_result_to_anime`, which doesn't reclassify existing `relation_type` values. Catalog rows scraped pre-fix keep their stale `main` labels until the parent anime is deleted and re-scraped. Document this in the upgrade notes for the next deploy; the alternative (data migration that re-runs classification) is its own follow-up.
 
 ### BFS algorithm specifics
 
@@ -81,7 +79,7 @@ The dispatcher distinguishes four post-empty-result paths:
 | Seed was Music/PV/CM/Hentai | `MediaUnwantedDAO.get_by_mal_id(seed_mal_id)` returns row | `AnimeFilteredOutError("'X' was filtered out as Music")` |
 | MAL returned empty 200 | Caught earlier in `search_title` | `TransientUpstreamError("MAL returned no data for mal_id=N")` |
 | Graph has no main + no single cross-link | Promote-root fallback didn't pick up | `MainMediaNotFoundError("Couldn't identify a main story for 'X'")` |
-| Truly missing (no seed_mal_id mode, fuzzy query) | `results == []` from title search | `AnimeNotFoundError("Anime titled 'X' not found")` |
+| No new match (no seed_mal_id mode, fuzzy query) | `results == []` from title search after catalog + MediaUnwanted filtering | `AnimeNotFoundError("No new anime matched 'X' on MAL")` |
 
 This taxonomy was learned empirically — earlier validation runs surfaced jobs in `failed` state with misleading copy that made it hard to tell *which* failure mode hit. The dispatcher's `if not results and not attached_count:` ladder is the lookup table.
 
@@ -92,7 +90,7 @@ This taxonomy was learned empirically — earlier validation runs surfaced jobs 
 
 ## Future Work
 
-- **Relation string normalization.** Do `rel = rel.lower().replace(" ", "_")` once and update all the underscore-form comparisons to actually match. Will change classification for `Side Story`, `Alternative Version`, `Compilation`, `Parent Story`, `Full Story` reach paths. Test against the existing catalog before landing — could break some scrape patterns that incidentally work because the broken checks happen to fail-safe.
+- **Backfill relation_type for catalog rows scraped pre-fix.** The normalization in v0.14.0 corrects `relation_type` for new scrapes only — the sweep's relations probe doesn't rewrite the field. Existing franchise movies/OVAs stay labeled `main` until their parent anime is deleted and re-scraped. A one-shot reclassification migration would re-run `get_relation_type` against existing media graphs. Out of scope for v0.14.0 because it needs its own validation pass against the live catalog.
 - **`is_main_story` should include ONA when no parent_story/full_story.** Today, ONA seeds fall through to the promote-root fallback. Making the gate accept ONA + no-parent-story would let donghua land in the regular `save_search_results` flow without needing the fallback. Same outcome, cleaner code path.
 - **Track null-title skip frequency per mal_id.** If a mal_id keeps coming back null over months, MAL likely won't ever populate it. After N silent-skips, add to MediaUnwanted with reason=`"NullTitle"` to prevent infinite re-fetch. Threshold to be determined empirically.
 - **Distinguish "Music PV linked from main TV show" from standalone Music/PV/CM.** The former is part of a franchise (worth attaching as media under the main anime); the latter is unwanted. Currently both go to MediaUnwanted. Heuristic: a Music/PV/CM reached via a Parent Story or Side Story relation FROM a non-Music main anime *might* be franchise media. Needs careful design — false positives pollute the catalog with promotional clips.
