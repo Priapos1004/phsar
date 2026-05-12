@@ -15,6 +15,7 @@ from app.core import maintenance
 from app.core.db import async_session_maker, engine
 from app.daos.job_dao import JobDAO
 from app.models.job import Job, JobKind, JobStatus
+from app.services import job_worker as job_worker_module
 from app.services.job_worker import JobWorker
 
 dao = JobDAO()
@@ -286,6 +287,53 @@ async def test_dispatch_one_skips_claim_when_maintenance_active(tracked_jobs):
     # Sanity: with the flag cleared, the same worker picks the job up.
     ran_after = await worker.dispatch_one()
     assert ran_after is True
+    assert captured == [job_id]
+
+
+@pytest.mark.asyncio
+async def test_run_loop_picks_up_job_quickly_after_maintenance_lift(
+    tracked_jobs, monkeypatch
+):
+    """`set_maintenance(False)` in `restore_backup`'s finally does NOT
+    fire `notify()`. Without a tighter timeout during maintenance, the
+    worker would sleep up to `_FALLBACK_POLL_SECONDS` (60s) past the
+    lift before claiming a job that was enqueued during the window.
+
+    Tighten the maintenance poll for the test so the assertion happens
+    in well under a second: if a future refactor drops the
+    maintenance-aware timeout selection in `_run`, this test falls back
+    to the 60s wall and the surrounding `wait_for(timeout=2.0)` trips.
+    """
+    monkeypatch.setattr(job_worker_module, "_MAINTENANCE_POLL_SECONDS", 0.05)
+
+    claimed = asyncio.Event()
+    captured: list[int] = []
+
+    async def fake_dispatcher(session, job):
+        captured.append(job.id)
+        claimed.set()
+        return None
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.user_scrape, fake_dispatcher)
+
+    job_id = await _enqueue(kind=JobKind.user_scrape)
+    tracked_jobs.append(job_id)
+
+    maintenance.set_maintenance(True)
+    await worker.start()
+    try:
+        # Yield until the worker has entered its maintenance-poll wait —
+        # otherwise lifting the gate races dispatch_one and the test
+        # never exercises the short-poll wake-up that is the regression
+        # subject.
+        await asyncio.sleep(0.1)
+        # No notify() — the short poll is what wakes the worker.
+        maintenance.set_maintenance(False)
+        await asyncio.wait_for(claimed.wait(), timeout=2.0)
+    finally:
+        await worker.stop()
+
     assert captured == [job_id]
 
 

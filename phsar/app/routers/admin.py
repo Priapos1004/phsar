@@ -169,8 +169,10 @@ async def _enqueue_backup_job(
 
     Backup work now flows through the JobWorker so admins don't wait
     minutes for pg_dump and the cron path gets FIFO sequencing + crash
-    recovery for free. The dispatcher (`backup_dispatcher`) decides
-    whether to apply retention based on `source`.
+    recovery for free. The dispatcher (`backup_dispatcher`) applies
+    retention after every job — manual and cron share the same
+    14-recent + 8-Sunday + 1-known-good pool, so a manual-only install
+    doesn't accumulate dumps indefinitely.
 
     Manual backups attribute to the admin user so the row surfaces in
     *their* bell only — multi-admin deployments don't get cross-admin

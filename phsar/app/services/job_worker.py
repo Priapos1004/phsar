@@ -41,6 +41,12 @@ logger = logging.getLogger(__name__)
 # Short enough that an empty queue picks up an orphaned signal within a minute.
 _FALLBACK_POLL_SECONDS = 60.0
 
+# Tighter poll while maintenance is active. dispatch_one short-circuits to
+# False during maintenance and clearing the flag (in restore's finally) does
+# not fire notify() — without this, a job queued during the window can sit
+# up to _FALLBACK_POLL_SECONDS past the lift.
+_MAINTENANCE_POLL_SECONDS = 2.0
+
 # Sweeps run inside the maintenance window — the worker brackets them with
 # the in-memory flag flip so the HTTP middleware returns 503 to everything
 # except the allowlist for the duration. user_scrape jobs are concurrent-safe
@@ -132,8 +138,12 @@ class JobWorker:
             # Race: a notify() between dispatch_one returning False and clear()
             # would be lost. The wait_for timeout below catches it within a minute.
             self._wakeup.clear()
+            timeout = (
+                _MAINTENANCE_POLL_SECONDS if is_maintenance_active()
+                else _FALLBACK_POLL_SECONDS
+            )
             try:
-                await asyncio.wait_for(self._wakeup.wait(), timeout=_FALLBACK_POLL_SECONDS)
+                await asyncio.wait_for(self._wakeup.wait(), timeout=timeout)
             except asyncio.TimeoutError:
                 pass
 
