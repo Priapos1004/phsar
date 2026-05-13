@@ -14,6 +14,17 @@ banner is for warning the user before the window, not during).
 Single-process assumption: both values are in-memory module globals. If the
 backend ever runs multiple workers behind a load balancer, this becomes a
 file sentinel or a DB row. Not in scope for v0.14.0.
+
+Single-owner assumption: `_active` is a plain boolean, not a refcount. Today
+only ONE code path drives a maintenance window at a time — either the worker
+bracketing a sweep, or a synchronous restore (which executes on the request
+thread while the worker is blocked by `is_maintenance_active()` in
+`dispatch_one`). If a future change ever allows two owners to overlap (e.g.
+an admin restore endpoint added to `_ALLOWED_PATHS` in
+`core/maintenance_middleware.py`), the inner owner's finally will clear the
+flag from under the outer owner. Either keep the single-owner invariant or
+convert this to a refcount with explicit owners before allowlisting `/restore`
+or any other destructive endpoint.
 """
 
 from datetime import datetime

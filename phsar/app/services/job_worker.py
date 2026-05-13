@@ -121,7 +121,26 @@ class JobWorker:
             return
         self._stop.set()
         self._wakeup.set()  # break out of the wait
-        await asyncio.gather(self._task, return_exceptions=True)
+        # Bound the wait so a job mid-BFS (httpx 120s read timeout + tenacity
+        # backoff = several minutes) can't stall lifespan shutdown. On timeout
+        # the task is cancelled — its finally clauses (maintenance-clear) still
+        # run, but the in-flight `running` row is left for reap_orphans to flip
+        # on the next startup.
+        try:
+            await asyncio.wait_for(self._task, timeout=10.0)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "JobWorker stop() exceeded 10s; cancelling in-flight job"
+            )
+            self._task.cancel()
+            try:
+                await self._task
+            except (asyncio.CancelledError, Exception):
+                pass
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("JobWorker task raised during shutdown")
         self._task = None
         logger.info("JobWorker stopped")
 
@@ -211,15 +230,21 @@ class JobWorker:
                     failure = exc
         finally:
             if in_maintenance:
-                set_maintenance(False)
-                # Only clear the pre-warning if it points at the window we just
-                # exited. A Coolify cron retry can fire mid-sweep (the
-                # schedule-sweep endpoint is allowlisted) and set a *future*
-                # `_scheduled_at` for the next window; clobbering that here
-                # would lose the next sweep's banner countdown.
-                scheduled = get_scheduled_at()
-                if scheduled is None or scheduled <= datetime.now(timezone.utc):
-                    set_scheduled_at(None)
+                # Wrap the flag-clear in try/except so a hypothetical raise can
+                # never escape the finally and skip the mark_failed block below
+                # — that would leak a `running` row until next reap_orphans.
+                try:
+                    set_maintenance(False)
+                    # Only clear the pre-warning if it points at the window we
+                    # just exited. A Coolify cron retry can fire mid-sweep (the
+                    # schedule-sweep endpoint is allowlisted) and set a *future*
+                    # `_scheduled_at` for the next window; clobbering that here
+                    # would lose the next sweep's banner countdown.
+                    scheduled = get_scheduled_at()
+                    if scheduled is None or scheduled <= datetime.now(timezone.utc):
+                        set_scheduled_at(None)
+                except Exception:
+                    logger.exception("Failed to clear maintenance flag in worker finally")
 
         retryable = not isinstance(failure, PermanentPhsarError)
         error_category = _classify_error(failure) if failure is not None else None

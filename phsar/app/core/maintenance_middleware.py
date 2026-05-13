@@ -21,6 +21,12 @@ from app.core.maintenance import is_maintenance_active
 
 
 class MaintenanceGateMiddleware:
+    # DO NOT allowlist any destructive endpoint here (e.g. the admin restore
+    # route, a future force-stop-sweep endpoint). The maintenance flag is a
+    # single-owner boolean — see `core/maintenance.py`. Allowing two owners
+    # to overlap (sweep + restore in the same window) means the inner owner's
+    # finally will clear the flag from under the outer owner, releasing the
+    # 503 gate while the outer operation is still running.
     _ALLOWED_PATHS = frozenset(
         {
             "/",
