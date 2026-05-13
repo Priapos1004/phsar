@@ -271,6 +271,7 @@ phsar/
     ├── routers/
     │   ├── conftest.py
     │   ├── test_admin.py
+    │   ├── test_admin_nightly.py
     │   ├── test_admin_seasonal.py
     │   ├── test_admin_sweep.py
     │   ├── test_anime_detail.py
@@ -325,15 +326,16 @@ SEARCH_SECRET_KEY=supersecretsearchsecretkey
 # Optional: seeded guest account (restricted_user role, read-only)
 # GUEST_USERNAME=guest
 # GUEST_PASSWORD=guestpassword
-# Optional: shared bearer secret for POST /admin/backups/auto (scheduled dumps)
-# BACKUP_CRON_TOKEN=supersecretcrontoken
 # Optional: raise if pg_restore of a larger DB legitimately takes >10 min
 # BACKUP_RESTORE_TIMEOUT_SECONDS=600
-# Optional: shared bearer secret for the sweep cron endpoints
-# (POST /admin/jobs/schedule-sweep — nightly catalog refresh,
-#  POST /admin/jobs/schedule-seasonal — weekly /seasons/now pickup)
-# Empty disables both endpoints and they fail closed.
-# JOBS_CRON_TOKEN=supersecretsweeptoken
+# Optional: shared bearer secret for every cron-authed endpoint —
+# POST /admin/backups/auto              (scheduled dump)
+# POST /admin/jobs/schedule-sweep       (nightly catalog refresh)
+# POST /admin/jobs/schedule-seasonal    (weekly /seasons/now pickup)
+# POST /admin/jobs/schedule-nightly     (combined daily entry: backup +
+#                                        update_sweep + Sunday-only seasonal)
+# Empty disables every cron endpoint and they fail closed.
+# JOBS_CRON_TOKEN=supersecretcrontoken
 ```
 
 *Change `animeuser`, `animepass`, `admin`, `supersecretpassword`, `supersecretsecretkey`, and `supersecretsearchsecretkey`*
