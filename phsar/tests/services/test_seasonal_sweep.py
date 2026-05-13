@@ -30,10 +30,8 @@ from app.schemas.search_schema import (
     AttachToExistingAction,
     SearchResultDBExtended,
 )
-from app.services.scrape_dispatcher import (
-    seasonal_sweep_dispatcher,
-    user_scrape_dispatcher,
-)
+from app.services.scrape_dispatcher import user_scrape_dispatcher
+from app.services.seasonal_sweep_dispatcher import seasonal_sweep_dispatcher
 from tests._helpers import media_kwargs
 
 
@@ -127,7 +125,8 @@ def _patch_scraper(monkeypatch, entries: list[dict]) -> None:
             return entries
 
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.JikanScraper", lambda: _FakeScraper(),
+        "app.services.seasonal_sweep_dispatcher.JikanScraper",
+        lambda: _FakeScraper(),
     )
 
 
@@ -141,7 +140,8 @@ class _NoopProgressReporter:
 
 def _patch_progress(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+        "app.services.seasonal_sweep_dispatcher.ProgressReporter",
+        _NoopProgressReporter,
     )
 
 
@@ -189,7 +189,7 @@ async def test_dispatcher_enqueues_only_new_mal_ids(
         {"mal_id": new_b_mal_id, "title": "New Show B"},
     ])
     # Don't ping the worker; the test environment doesn't have one running.
-    monkeypatch.setattr("app.services.scrape_dispatcher.job_worker.notify", lambda: None)
+    monkeypatch.setattr("app.services.seasonal_sweep_dispatcher.job_worker.notify", lambda: None)
 
     started = datetime.now(timezone.utc)
     summary = await _run_dispatcher(job_id=9001)
@@ -229,7 +229,7 @@ async def test_dispatcher_dedupes_against_existing_media_mal_id(
     _patch_scraper(monkeypatch, [
         {"mal_id": side_story_mal_id, "title": "Side Story As Season Entry"},
     ])
-    monkeypatch.setattr("app.services.scrape_dispatcher.job_worker.notify", lambda: None)
+    monkeypatch.setattr("app.services.seasonal_sweep_dispatcher.job_worker.notify", lambda: None)
 
     started = datetime.now(timezone.utc)
     summary = await _run_dispatcher(job_id=9201)
@@ -249,7 +249,7 @@ async def test_dispatcher_empty_season_returns_zeros(monkeypatch):
 
     notify_calls: list[int] = []
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.job_worker.notify",
+        "app.services.seasonal_sweep_dispatcher.job_worker.notify",
         lambda: notify_calls.append(1),
     )
 
@@ -277,7 +277,7 @@ async def test_dispatcher_notifies_worker_after_enqueue(
 
     notify_calls: list[int] = []
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.job_worker.notify",
+        "app.services.seasonal_sweep_dispatcher.job_worker.notify",
         lambda: notify_calls.append(1),
     )
 
@@ -299,7 +299,7 @@ async def test_dispatcher_skips_entries_with_missing_mal_id(
         {"mal_id": None, "title": "Null mal_id"},     # explicitly null
         {"mal_id": -9501, "title": "Valid"},
     ])
-    monkeypatch.setattr("app.services.scrape_dispatcher.job_worker.notify", lambda: None)
+    monkeypatch.setattr("app.services.seasonal_sweep_dispatcher.job_worker.notify", lambda: None)
 
     started = datetime.now(timezone.utc)
     summary = await _run_dispatcher(job_id=9501)
@@ -595,7 +595,7 @@ async def test_dispatcher_dedupes_duplicate_mal_ids_within_one_run(
         {"mal_id": -9603, "title": "Show C"},
         {"mal_id": -9601, "title": "Show A (third copy)"},
     ])
-    monkeypatch.setattr("app.services.scrape_dispatcher.job_worker.notify", lambda: None)
+    monkeypatch.setattr("app.services.seasonal_sweep_dispatcher.job_worker.notify", lambda: None)
 
     started = datetime.now(timezone.utc)
     summary = await _run_dispatcher(job_id=9601)

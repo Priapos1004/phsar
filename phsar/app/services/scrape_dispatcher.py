@@ -1,4 +1,4 @@
-"""Dispatchers that run inside the JobWorker.
+"""user_scrape + update_sweep dispatchers (the catalog-mutation pair).
 
 The user_scrape dispatcher fetches the chosen anime + its relations from MAL
 and persists them. Progress updates come from a ProgressReporter that opens
@@ -9,6 +9,10 @@ The update_sweep dispatcher refreshes existing catalog rows: tier-select due
 anime, re-fetch each child media via /anime/{id}/full, diff the volatile
 fields, and advance the per-anime stability counter. Per-anime commit
 boundary so a crash mid-sweep preserves the already-refreshed rows.
+
+The seasonal_sweep dispatcher lives in its own module
+(seasonal_sweep_dispatcher.py) — it doesn't touch any of this file's
+helpers and is purely a discovery pass that hands off to user_scrape.
 """
 
 import logging
@@ -28,7 +32,7 @@ from app.exceptions import (
 )
 from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
-from app.models.job import Job, JobKind, JobStatus
+from app.models.job import Job
 from app.models.media import Media, RelationType
 from app.models.media_freshness import MediaFreshness
 from app.schemas.search_schema import AttachToExistingAction
@@ -37,7 +41,6 @@ from app.services.jikan_scraper import (
     JikanScraper,
     parse_mal_datetime,
 )
-from app.services.job_worker import job_worker
 from app.services.progress_reporter import ProgressReporter
 from app.services.save_service import attach_search_result_to_anime, save_search_results
 from app.services.search_service import handle_search_mal_api_results
@@ -413,86 +416,6 @@ async def _probe_relations_for_anime(
                 exclusions.add(mal_id)
 
     return saved_anything
-
-
-async def seasonal_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
-    """Weekly: paginate /seasons/now, dedupe against the catalog
-    (`Anime.mal_id ∪ Media.mal_id ∪ MediaUnwanted.mal_id`), and enqueue
-    one `user_scrape` job per new mal_id. Children carry the seed mal_id
-    so the BFS skips the fuzzy q= lookup that would otherwise pull
-    unrelated top-3 matches into the catalog.
-
-    Per-row commit mirrors update_sweep's per-anime pattern from 7b: if
-    the loop dies mid-batch, already-enqueued children survive. Children
-    are `requested_by_user_id=None` (system jobs) — they skip the
-    per-user submission cap and don't surface in any user's bell. The
-    dispatcher itself completes in seconds (single MAL fetch + N row
-    inserts); the long tail of child user_scrapes runs after the
-    maintenance flag flips off, which is safe because additive scrapes
-    don't disrupt live traffic.
-    """
-    progress = ProgressReporter(job.id)
-    await progress.update(stage="Fetching season", force=True)
-
-    async with JikanScraper() as scraper:
-        entries = await scraper.fetch_current_season()
-
-    anime_ids = await AnimeDAO().get_all_mal_ids(session)
-    media_ids = await MediaDAO().get_all_mal_ids(session)
-    unwanted_ids = await MediaUnwantedDAO().get_all_mal_ids(session)
-    # Media.mal_id is included because a season entry may already exist
-    # as a side-story under a parent anime — we'd otherwise re-scrape
-    # the same show from a different angle and trip the merge detector.
-    # `seen` starts seeded with the catalog so the same pass dedupes
-    # both against the DB *and* against duplicates within `entries`
-    # itself: MAL's /seasons/now has been observed to repeat a mal_id
-    # across pages, and without per-run dedupe each duplicate enqueues
-    # its own child user_scrape (and they all fail the same way).
-    seen: set[int] = set(anime_ids) | set(media_ids) | set(unwanted_ids)
-    new_entries: list[dict] = []
-    for entry in entries:
-        mal_id = entry.get("mal_id")
-        if mal_id is None or mal_id in seen:
-            continue
-        new_entries.append(entry)
-        seen.add(mal_id)
-    await progress.update(
-        stage="Enqueuing",
-        items_total=len(new_entries),
-        items_done=0,
-        force=True,
-    )
-
-    # Bulk insert + single commit. The enqueue loop does no MAL I/O
-    # (already drained in the season-fetch step above), so the
-    # per-anime commit pattern that update_sweep uses for crash-safety
-    # would just extend the maintenance window without any work to
-    # preserve — a crash here loses nothing the next scheduled run
-    # can't reproduce by re-querying /seasons/now.
-    children = [
-        Job(
-            kind=JobKind.user_scrape,
-            status=JobStatus.queued,
-            requested_by_user_id=None,
-            payload={"query": entry.get("title") or f"mal_id={entry['mal_id']}", "mal_id": entry["mal_id"]},
-        )
-        for entry in new_entries
-    ]
-    if children:
-        session.add_all(children)
-        await session.commit()
-        # Single notify after the commit — the worker picks the first
-        # child immediately instead of waiting up to 60s for the
-        # wall-clock fallback.
-        job_worker.notify()
-
-    enqueued = len(children)
-    await progress.update(stage="Done", items_done=enqueued, force=True)
-    return {
-        "season_entries": len(entries),
-        "new_entries_enqueued": enqueued,
-        "dedup_skipped": len(entries) - enqueued,
-    }
 
 
 def _weighted_score(score: float | None, scored_by: int | None) -> float | None:
