@@ -80,7 +80,6 @@ def require_bearer_token(expected_token: str, error_factory: type[PhsarBaseError
 # Bind once at module load. Do NOT call require_bearer_token inline inside
 # Depends(...) — that would create a fresh function per request and defeat
 # FastAPI's identity-based dependency caching.
-require_backup_cron_token = require_bearer_token(settings.BACKUP_CRON_TOKEN, InvalidCronTokenError)
 require_jobs_cron_token = require_bearer_token(settings.JOBS_CRON_TOKEN, InvalidCronTokenError)
 
 

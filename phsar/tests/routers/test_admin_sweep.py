@@ -4,57 +4,22 @@ The endpoint inserts an `update_sweep` job with a future `not_before_at`
 and bumps the maintenance banner schedule. Tests pin the auth surface,
 the schema, and the maintenance-allowlist.
 
-Auth is faked via app.dependency_overrides because the require_jobs_cron_token
-dependency is bound once at module load from settings.JOBS_CRON_TOKEN; the
-test env leaves that empty so the dep would otherwise always raise.
+`cron_client` + `CRON_AUTH_HEADER` come from tests/routers/conftest.py;
+the require_jobs_cron_token dep is bound once at module load from
+settings.JOBS_CRON_TOKEN (empty in test env), so the fixture overrides
+it with a literal-token check.
 """
 
 from datetime import datetime, timezone
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from app.core import maintenance
-from app.core.dependencies import get_db, require_jobs_cron_token
-from app.exceptions import InvalidCronTokenError
-from app.main import create_app
 from app.models.job import Job, JobKind, JobStatus
+from tests.routers.conftest import CRON_AUTH_HEADER as GOOD_HEADER
 
 URL = "/admin/jobs/schedule-sweep"
-GOOD_HEADER = {"Authorization": "Bearer test-token"}
-
-
-@pytest.fixture
-async def cron_client(db_session):
-    """Test client whose require_jobs_cron_token dep accepts a literal
-    token. Mirrors the production gate (raises InvalidCronTokenError on
-    missing/wrong bearer) without depending on settings.JOBS_CRON_TOKEN."""
-    app = create_app()
-
-    async def override_get_db():
-        yield db_session
-
-    def fake_cron_token(authorization: str | None = None):
-        if authorization != "Bearer test-token":
-            raise InvalidCronTokenError()
-
-    # FastAPI inspects the actual function signature for header binding.
-    # Easier: register the dep wrapper that pulls the header itself.
-    from fastapi import Header
-
-    def fake_require(authorization: str | None = Header(default=None)) -> None:
-        if authorization != "Bearer test-token":
-            raise InvalidCronTokenError()
-
-    app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[require_jobs_cron_token] = fake_require
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
-
-    app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio

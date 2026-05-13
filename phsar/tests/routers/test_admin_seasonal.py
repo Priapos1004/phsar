@@ -3,46 +3,20 @@
 Mirrors test_admin_sweep.py exactly: the endpoint inserts a
 seasonal_sweep Job row with a future not_before_at and bumps the
 maintenance banner schedule. Tests pin auth, schema, and the
-maintenance-allowlist for the cron retry case.
+maintenance-allowlist for the cron retry case. Shared cron_client +
+CRON_AUTH_HEADER live in tests/routers/conftest.py.
 """
 
 from datetime import datetime, timezone
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from app.core import maintenance
-from app.core.dependencies import get_db, require_jobs_cron_token
-from app.exceptions import InvalidCronTokenError
-from app.main import create_app
 from app.models.job import Job, JobKind, JobStatus
+from tests.routers.conftest import CRON_AUTH_HEADER as GOOD_HEADER
 
 URL = "/admin/jobs/schedule-seasonal"
-GOOD_HEADER = {"Authorization": "Bearer test-token"}
-
-
-@pytest.fixture
-async def cron_client(db_session):
-    app = create_app()
-
-    async def override_get_db():
-        yield db_session
-
-    from fastapi import Header
-
-    def fake_require(authorization: str | None = Header(default=None)) -> None:
-        if authorization != "Bearer test-token":
-            raise InvalidCronTokenError()
-
-    app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[require_jobs_cron_token] = fake_require
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
-
-    app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio

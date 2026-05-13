@@ -64,6 +64,18 @@ class JobEnqueuedResponse(BaseModel):
     job_uuid: UUID
 
 
+class NightlyScheduleResponse(BaseModel):
+    """Returned by POST /admin/jobs/schedule-nightly. The combined cron
+    endpoint enqueues a backup (immediate), an update_sweep (delayed so the
+    banner can warm up), and — only on Sundays UTC — a seasonal_sweep with
+    the same delay. `seasonal_sweep_uuid` is null on weekdays so callers can
+    distinguish 'didn't run today' from 'failed to enqueue'."""
+    backup_uuid: UUID
+    update_sweep_uuid: UUID
+    seasonal_sweep_uuid: UUID | None = None
+    scheduled_at: datetime
+
+
 class ExpiryPreset(int, Enum):
     """Allowed token expiry durations in days."""
     one_day = 1

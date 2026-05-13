@@ -220,7 +220,7 @@ async def test_backup_dispatcher_cron_applies_retention(backup_dir, monkeypatch)
 async def test_backup_dispatcher_manual_applies_retention(backup_dir, monkeypatch):
     """Manual jobs also apply retention. Without this, manual creates
     pile up indefinitely on installs where cron is disabled (empty
-    `BACKUP_CRON_TOKEN`) or rarely fires, since the cron path was the
+    `JOBS_CRON_TOKEN`) or rarely fires, since the cron path was the
     only one historically wired to retention. Same shared pool — manual
     and cron compete for the same slots in the 14-recent + 8-Sunday + 1
     keep budget."""

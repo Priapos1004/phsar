@@ -1,13 +1,8 @@
 import uuid
 
 import pytest
-from fastapi import Header
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
-from app.core.dependencies import get_db, require_backup_cron_token
-from app.exceptions import InvalidCronTokenError
-from app.main import create_app
 from app.models.anime import Anime
 from app.models.job import Job, JobKind, JobStatus
 from app.models.media import Media
@@ -16,6 +11,7 @@ from app.models.merge_candidate import MergeCandidate, MergeCandidateStatus
 from app.models.studio import Studio
 from app.models.users import RoleType
 from tests._helpers import media_kwargs
+from tests.routers.conftest import CRON_AUTH_HEADER
 
 TOKENS_URL = "/admin/registration-tokens"
 MERGE_URL = "/admin/merge-candidates"
@@ -401,42 +397,15 @@ async def test_create_backup_requires_admin(client, user_auth_headers):
     assert resp.status_code == 403
 
 
-@pytest.fixture
-async def cron_backup_client(db_session):
-    """Mirrors test_admin_sweep's cron_client: override the cron-token
-    dep with a literal-token check so we don't depend on
-    settings.BACKUP_CRON_TOKEN being set in the test env."""
-    app = create_app()
-
-    async def override_get_db():
-        yield db_session
-
-    def fake_require(authorization: str | None = Header(default=None)) -> None:
-        if authorization != "Bearer test-backup-token":
-            raise InvalidCronTokenError()
-
-    app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[require_backup_cron_token] = fake_require
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
-
-    app.dependency_overrides.clear()
-
-
 @pytest.mark.asyncio
 async def test_backup_auto_returns_202_with_job_uuid(
-    cron_backup_client, db_session,
+    cron_client, db_session,
 ):
     """Cron-authed POST /admin/backups/auto enqueues a `cron`-source
     backup job (no user attribution) and returns 202 + job_uuid.
     The dispatcher applies retention after the dump so the
     14-daily/8-Sunday/most-recent-known-good contract is preserved."""
-    resp = await cron_backup_client.post(
-        AUTO_BACKUP_URL,
-        headers={"Authorization": "Bearer test-backup-token"},
-    )
+    resp = await cron_client.post(AUTO_BACKUP_URL, headers=CRON_AUTH_HEADER)
     assert resp.status_code == 202, resp.text
     body = resp.json()
     assert "job_uuid" in body
@@ -454,13 +423,13 @@ async def test_backup_auto_returns_202_with_job_uuid(
 
 
 @pytest.mark.asyncio
-async def test_backup_auto_requires_cron_token(cron_backup_client):
+async def test_backup_auto_requires_cron_token(cron_client):
     """No bearer → 401. Wrong bearer → 401. Same fail-closed pattern
     as schedule-sweep."""
-    resp = await cron_backup_client.post(AUTO_BACKUP_URL)
+    resp = await cron_client.post(AUTO_BACKUP_URL)
     assert resp.status_code == 401
 
-    resp = await cron_backup_client.post(
+    resp = await cron_client.post(
         AUTO_BACKUP_URL, headers={"Authorization": "Bearer wrong"},
     )
     assert resp.status_code == 401

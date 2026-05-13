@@ -1,3 +1,4 @@
+import calendar
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
@@ -8,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import (
     get_db,
-    require_backup_cron_token,
     require_jobs_cron_token,
     require_roles,
 )
@@ -159,6 +159,41 @@ async def schedule_seasonal(
     return await _enqueue_scheduled_sweep(db, JobKind.seasonal_sweep, delay_minutes)
 
 
+# Combined daily cron entry — one Coolify scheduled task hits this and the
+# endpoint decides which jobs to enqueue. Routes through the same per-kind
+# helpers as the individual schedulers so the post-commit ceremony
+# (set_scheduled_at + job_worker.notify) is centralized.
+@router.post(
+    "/jobs/schedule-nightly",
+    response_model=admin_schema.NightlyScheduleResponse,
+    dependencies=[Depends(require_jobs_cron_token)],
+)
+async def schedule_nightly(
+    delay_minutes: int = Query(20, ge=0, le=1440),
+    db: AsyncSession = Depends(get_db),
+):
+    """Backup (immediate) + update_sweep (delayed) + seasonal_sweep
+    (delayed, Sundays UTC only). The seasonal piggybacks on the same
+    `not_before_at` as update_sweep so the weekly catalog pickup shares
+    the daily maintenance window instead of opening its own."""
+    backup = await _enqueue_backup_job(
+        db, backup_schema.BackupSource.cron, label=None, requested_by_user_id=None,
+    )
+    sweep = await _enqueue_scheduled_sweep(db, JobKind.update_sweep, delay_minutes)
+    seasonal: admin_schema.ScheduledSweepResponse | None = None
+    if datetime.now(timezone.utc).weekday() == calendar.SUNDAY:
+        seasonal = await _enqueue_scheduled_sweep(
+            db, JobKind.seasonal_sweep, delay_minutes,
+        )
+
+    return admin_schema.NightlyScheduleResponse(
+        backup_uuid=backup.job_uuid,
+        update_sweep_uuid=sweep.job_uuid,
+        seasonal_sweep_uuid=seasonal.job_uuid if seasonal is not None else None,
+        scheduled_at=sweep.scheduled_at,
+    )
+
+
 async def _enqueue_backup_job(
     db: AsyncSession,
     source: backup_schema.BackupSource,
@@ -198,11 +233,13 @@ async def _enqueue_backup_job(
 # Cron-authed endpoint — stays on the parent router so it doesn't inherit the
 # JWT admin dep from the backups sub-router (router-level dependencies are
 # additive; the only way to exclude the admin check is to not be under it).
+# Auth shares JOBS_CRON_TOKEN with the other cron-authed endpoints so the
+# deployment only carries one bearer secret.
 @router.post(
     "/backups/auto",
     response_model=admin_schema.JobEnqueuedResponse,
     status_code=status.HTTP_202_ACCEPTED,
-    dependencies=[Depends(require_backup_cron_token)],
+    dependencies=[Depends(require_jobs_cron_token)],
 )
 async def auto_backup(db: AsyncSession = Depends(get_db)):
     """Cron-triggered backup. Enqueues a `backup` job tagged `cron`; the
