@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store';
+import { createBumpStore } from './_bumpStore';
 
 /**
  * api.ts bumps this whenever it gets a 503-with-{maintenance:true} so the
@@ -8,8 +8,4 @@ import { writable } from 'svelte/store';
  * user-facing "after relogin the banner is still there" / "no banner
  * during a known maintenance" gap.
  */
-export const maintenanceRefresh = writable(0);
-
-export function bumpMaintenanceRefresh(): void {
-	maintenanceRefresh.update((n) => n + 1);
-}
+export const [maintenanceRefresh, bumpMaintenanceRefresh] = createBumpStore();

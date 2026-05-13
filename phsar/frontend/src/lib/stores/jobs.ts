@@ -1,15 +1,6 @@
-import { get, writable, type Readable } from 'svelte/store';
+import { get, writable } from 'svelte/store';
 import type { Job } from '$lib/types/api';
-
-/**
- * One bump store + a `bump()` setter that increments it. svelte/store's
- * writables always notify subscribers on `update()`, so the bump pattern
- * is just `n => n+1` — every call fires every subscriber exactly once.
- */
-function createBumpStore() {
-	const store = writable(0);
-	return [store, () => store.update((n) => n + 1)] as const;
-}
+import { createBumpStore } from './_bumpStore';
 
 // /library/add bumps this so the bell refetches /jobs/mine immediately
 // after enqueue, instead of waiting for its 30s idle poll.
@@ -56,22 +47,6 @@ export function reconcileOptimisticJobs(fetched: Job[]): void {
 	optimisticJobs.set(next);
 }
 
-/**
- * Subscribe to a store and run `fn` on every change EXCEPT the initial
- * synchronous fire that svelte/store does at subscribe time. Used by
- * components that already do their first fetch on mount and only want the
- * store to drive subsequent refreshes.
- *
- * Returns the unsubscribe function — caller is expected to wire it into
- * onDestroy (or assign to a $effect cleanup).
- */
-export function onBump(store: Readable<unknown>, fn: () => void): () => void {
-	let initial = true;
-	return store.subscribe(() => {
-		if (initial) {
-			initial = false;
-			return;
-		}
-		fn();
-	});
-}
+// Re-export onBump from the shared module so existing callers that import
+// it from `$lib/stores/jobs` keep working without a rename.
+export { onBump } from './_bumpStore';
