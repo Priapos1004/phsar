@@ -419,3 +419,71 @@ async def test_retention_pins_current_dump_against_eviction(
     deleted = await backup_service.apply_retention()
     assert pinned.filename not in deleted
     assert pinned_path.is_file()
+
+
+async def test_retention_caps_uploaded_dumps(backup_dir):
+    """Uploaded dumps were previously retention-exempt; that lets disk grow
+    without bound at 2 GiB per upload. Retention now caps uploads at the
+    most-recent _UPLOAD_RETENTION_COUNT entries, but never evicts the
+    is_current upload (covered by a separate assert below)."""
+    cap = backup_service._UPLOAD_RETENTION_COUNT
+    uploads = []
+    for i in range(cap + 3):
+        # Fabricate distinct dumps directly on disk — save_uploaded_backup
+        # would byte-dedupe identical payloads, so we shortcut via the
+        # internal helpers that the upload path uses.
+        original_stem = f"fake-upload-{i}"
+        filename = backup_service._build_filename(
+            BackupSource.upload, original_stem,
+        )
+        path = backup_dir / filename
+        path.write_bytes(f"distinct-payload-{i}".encode())
+        # Touch each upload at a distinct mtime so list_backups orders them.
+        # Older uploads should evict; newer ones should survive.
+        mtime = (
+            datetime.now(timezone.utc) - timedelta(minutes=cap + 3 - i)
+        ).timestamp()
+        os.utime(path, (mtime, mtime))
+        uploads.append(filename)
+
+    survivors_before = {p.name for p in backup_dir.glob("*-upload*.dump")}
+    assert len(survivors_before) == cap + 3
+
+    deleted = await backup_service.apply_retention()
+    survivors_after = {p.name for p in backup_dir.glob("*-upload*.dump")}
+
+    # Oldest 3 uploads got evicted; the cap-sized newest pool survived.
+    assert len(survivors_after) == cap
+    assert set(deleted) >= {uploads[0], uploads[1], uploads[2]}
+    for survivor in uploads[3:]:
+        assert survivor in survivors_after
+
+
+async def test_retention_pins_is_current_upload_against_eviction(backup_dir):
+    """If admin restored from an uploaded dump, the is_current pointer lands
+    on that upload. Retention must never evict the pointed-at upload, even
+    if it's outside the most-recent _UPLOAD_RETENTION_COUNT window."""
+    cap = backup_service._UPLOAD_RETENTION_COUNT
+    pinned_filename = backup_service._build_filename(
+        BackupSource.upload, "pinned-restore",
+    )
+    pinned_path = backup_dir / pinned_filename
+    pinned_path.write_bytes(b"pinned-upload-payload")
+
+    # Age the pinned upload past every other upload so the natural cap
+    # window would evict it.
+    old_ts = (datetime.now(timezone.utc) - timedelta(hours=1)).timestamp()
+    os.utime(pinned_path, (old_ts, old_ts))
+
+    backup_service._mark_current_db_restored(pinned_filename)
+
+    for i in range(cap + 2):
+        fresh = backup_service._build_filename(
+            BackupSource.upload, f"fresh-{i}",
+        )
+        path = backup_dir / fresh
+        path.write_bytes(f"fresh-payload-{i}".encode())
+
+    deleted = await backup_service.apply_retention()
+    assert pinned_filename not in deleted
+    assert pinned_path.is_file()

@@ -66,6 +66,11 @@ _UPLOAD_MAX_BYTES = 2 * 1024 * 1024 * 1024
 _UPLOAD_FREE_CHECK_EVERY_BYTES = 10 * 1024 * 1024
 _UPLOAD_CHUNK_BYTES = 1024 * 1024
 
+# Most-recent uploads to keep on disk. Uploads were previously retention-exempt
+# entirely (admin-managed), but at 2 GiB per upload the volume can grow without
+# bound. The pointed-at (is_current) upload is always pinned regardless of age.
+_UPLOAD_RETENTION_COUNT = 5
+
 # Serializes every write path (create + upload) so concurrent manual + cron +
 # re-upload requests can't race on disk-space checks, `.partial` filenames, or
 # the dedupe lookup. Single-process assumption — scale horizontally and this
@@ -518,10 +523,21 @@ def _is_sunday_utc(dt: datetime) -> bool:
 
 
 async def apply_retention() -> list[str]:
-    """Evict old backups. Keeps 14 most recent + last 8 Sunday dumps + the most recent
-    known-good dump, regardless of date. Only touches manual + cron dumps: uploads and
-    pre-restore snapshots are always preserved (admin-managed)."""
+    """Evict old backups. Two independent pools:
+
+    - manual + cron: 14 most recent + last 8 Sunday dumps + the most recent
+      known-good dump, regardless of age.
+    - uploads: the `_UPLOAD_RETENTION_COUNT` most recent.
+
+    Both pools pin the `is_current` dump (the one the live DB was restored
+    from) regardless of age. Pre-restore snapshots remain retention-exempt;
+    they're the safety net for the synchronous restore path and admin
+    cleans them up by hand once the new state is confirmed stable.
+    """
     backups = await list_backups()
+    deleted: list[str] = []
+
+    # --- manual + cron pool ----------------------------------------------
     candidates = [
         b for b in backups
         if b.source in (BackupSource.cron, BackupSource.manual)
@@ -547,11 +563,24 @@ async def apply_retention() -> list[str]:
     # is_current on each row, so no extra pointer-file read here.
     keep.update(b.filename for b in candidates if b.is_current)
 
-    deleted: list[str] = []
     for b in candidates:
         if b.filename not in keep:
             await delete_backup(b.filename)
             deleted.append(b.filename)
+
+    # --- upload pool -----------------------------------------------------
+    # Cap uploaded dumps to avoid unbounded disk growth — a 2 GiB upload
+    # cap with no eviction would let an admin (or a runaway script) fill
+    # the volume. is_current is still pinned so a restore-from-upload
+    # workflow doesn't evict the bytes the DB was just restored from.
+    uploads = [b for b in backups if b.source == BackupSource.upload]
+    upload_keep = {b.filename for b in uploads[:_UPLOAD_RETENTION_COUNT]}
+    upload_keep.update(b.filename for b in uploads if b.is_current)
+    for b in uploads:
+        if b.filename not in upload_keep:
+            await delete_backup(b.filename)
+            deleted.append(b.filename)
+
     return deleted
 
 
