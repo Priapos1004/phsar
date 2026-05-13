@@ -22,7 +22,7 @@ from sqlalchemy import select
 
 from app.core import maintenance
 from app.models.job import Job, JobKind, JobStatus
-from app.routers import admin as admin_router
+from app.routers import admin_jobs as admin_jobs_router
 from tests.routers.conftest import CRON_AUTH_HEADER as GOOD_HEADER
 
 URL = "/admin/jobs/schedule-nightly"
@@ -49,7 +49,7 @@ def freeze_admin_clock(monkeypatch):
             def now(cls, tz=None):
                 return frozen.astimezone(tz) if tz is not None else frozen
 
-        monkeypatch.setattr(admin_router, "datetime", _Pinned)
+        monkeypatch.setattr(admin_jobs_router, "datetime", _Pinned)
 
     return _set
 
