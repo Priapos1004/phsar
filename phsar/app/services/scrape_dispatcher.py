@@ -225,10 +225,18 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
                 changed_anime += 1
             await progress.update(items_done=refreshed)
 
+    cache_recompute_failed = False
     if sweep_added_media:
         # Per-batch recomputes inside the probe loop would multiply the
         # per-user spoiler-cache cost by anime-count.
-        await refresh_spoiler_cache_for_all_users(session)
+        # The per-anime catalog work already committed by this point, so a
+        # cache failure here shouldn't mark the whole sweep failed in the bell
+        # — surface it as a soft warning on the success summary instead.
+        try:
+            await refresh_spoiler_cache_for_all_users(session)
+        except Exception:
+            logger.exception("Spoiler cache recompute failed after sweep")
+            cache_recompute_failed = True
 
     await progress.update(stage="Done", items_done=refreshed, force=True)
     return {
@@ -236,6 +244,7 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
         "anime_changed": changed_anime,
         "probe_succeeded": probe_succeeded,
         "probe_failed": probe_failed,
+        "cache_recompute_failed": cache_recompute_failed,
     }
 
 

@@ -902,6 +902,57 @@ async def test_no_recompute_when_probe_finds_nothing_new(tracked_anime, monkeypa
 
 
 @pytest.mark.asyncio
+async def test_spoiler_recompute_failure_does_not_fail_the_sweep(
+    tracked_anime, monkeypatch,
+):
+    """A spoiler-cache recompute failure must not poison the whole sweep
+    summary — the per-anime catalog work is already committed by that point.
+    The bell should see a success entry with cache_recompute_failed=True so
+    admin can act on the cache separately."""
+    a_id = await _real_seed(
+        mal_id=-8801, last_checked_at=datetime.now(timezone.utc) - timedelta(days=10),
+        stable_check_count=5,
+    )
+    tracked_anime.append(a_id)
+
+    seed_mal_id = -8801 * 100
+    payloads = {seed_mal_id: _payload()}
+    fake_scraper = _FakeScraper(
+        payloads,
+        search_title_returns={seed_mal_id: _new_graph(seed_mal_id, -880_001)},
+    )
+
+    attach_calls: list[dict] = []
+
+    async def fake_attach(db, parent_anime, graph, all_info):
+        attach_calls.append({
+            "parent_anime_id": parent_anime.id,
+            "graph_mal_ids": list(graph.keys()),
+        })
+        existing = {m.mal_id for m in parent_anime.media}
+        return sum(1 for mal_id in graph if mal_id not in existing)
+
+    async def boom_recompute(db):
+        raise RuntimeError("simulated recompute failure")
+
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.attach_search_result_to_anime", fake_attach,
+    )
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.refresh_spoiler_cache_for_all_users",
+        boom_recompute,
+    )
+
+    summary, _, _ = await _run_dispatcher_harness(
+        monkeypatch, fake_scraper, [a_id], patch_probe=False, job_id=8801,
+    )
+
+    assert summary["cache_recompute_failed"] is True
+    assert summary["anime_refreshed"] == 1
+    assert summary["probe_succeeded"] == 1
+
+
+@pytest.mark.asyncio
 async def test_probe_persists_unwanted_media_returned_by_search_title(
     tracked_anime, monkeypatch,
 ):
