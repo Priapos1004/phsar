@@ -66,6 +66,8 @@ phsar/
 │   │   └── watchlist_tag.py
 │   ├── routers/
 │   │   ├── admin.py
+│   │   ├── admin_jobs.py
+│   │   ├── admin_merge.py
 │   │   ├── auth.py
 │   │   ├── filters.py
 │   │   ├── jobs.py
@@ -115,6 +117,7 @@ phsar/
 │       ├── rating_service.py
 │       ├── save_service.py
 │       ├── scrape_dispatcher.py
+│       ├── seasonal_sweep_dispatcher.py
 │       ├── search_service.py
 │       ├── spoiler_service.py
 │       ├── token_service.py
@@ -186,6 +189,7 @@ phsar/
 │   │   │   │       ├── slider/
 │   │   │   │       └── textarea/
 │   │   │   ├── stores/
+│   │   │   │   ├── _bumpStore.ts
 │   │   │   │   ├── auth.ts
 │   │   │   │   ├── bell-session.ts
 │   │   │   │   ├── jobs.ts
@@ -326,16 +330,26 @@ SEARCH_SECRET_KEY=supersecretsearchsecretkey
 # Optional: seeded guest account (restricted_user role, read-only)
 # GUEST_USERNAME=guest
 # GUEST_PASSWORD=guestpassword
-# Optional: raise if pg_restore of a larger DB legitimately takes >10 min
+
+# --- Backups ----------------------------------------------------------------
+# Where dumps land. Defaults to ./backups (cwd-relative) so native dev works
+# without root; the container Dockerfile sets BACKUP_DIR=/backups.
+# BACKUP_DIR=./backups
+# pg_restore timeout. Raise if the DB grows large enough that restores
+# legitimately take > 10 min — a mid-restore kill leaves the DB half-dropped.
 # BACKUP_RESTORE_TIMEOUT_SECONDS=600
-# Optional: shared bearer secret for every cron-authed endpoint —
-# POST /admin/backups/auto              (scheduled dump)
-# POST /admin/jobs/schedule-sweep       (nightly catalog refresh)
-# POST /admin/jobs/schedule-seasonal    (weekly /seasons/now pickup)
-# POST /admin/jobs/schedule-nightly     (combined daily entry: backup +
-#                                        update_sweep + Sunday-only seasonal)
-# Empty disables every cron endpoint and they fail closed.
+
+# --- Content pipeline (jobs + sweeps) ---------------------------------------
+# Shared bearer for every cron-authed endpoint. See "Scheduled jobs" below.
+# Empty disables every cron endpoint (they fail closed).
 # JOBS_CRON_TOKEN=supersecretcrontoken
+# Max queued+running scrape jobs per user (bounds queue DEPTH, not parallelism
+# — the worker is sequential because of MAL's ~3 req/s rate limit).
+# JOBS_PER_USER_LIMIT=4
+# Dedupe window for /jobs/scrape. Failed jobs don't count.
+# JOBS_DEDUPE_HOURS=72
+# Bounds the nightly update_sweep batch size.
+# JOBS_SWEEP_MAX_PER_RUN=200
 ```
 
 *Change `animeuser`, `animepass`, `admin`, `supersecretpassword`, `supersecretsecretkey`, and `supersecretsearchsecretkey`*
@@ -436,6 +450,25 @@ All changes to the database during the tests are rolled back afterwards.
 cd frontend
 bun run test
 ```
+
+## Scheduled jobs
+
+The backend exposes four cron-authed endpoints — all share the same `JOBS_CRON_TOKEN` bearer.
+
+**Recommended (one daily task):** point your cron at the combined nightly endpoint. It enqueues a backup immediately (pg_dump is MVCC-snapshot, no maintenance window needed), an `update_sweep` after `delay_minutes`, and on Sunday UTC a `seasonal_sweep` with the same delay so the weekly catalog pickup piggybacks on the maintenance window.
+
+```sh
+curl -fsS -X POST -H "Authorization: Bearer $JOBS_CRON_TOKEN" \
+  "http://localhost:8000/admin/jobs/schedule-nightly?delay_minutes=20"
+```
+
+**Ad-hoc endpoints** (same token, kept for force-running one job outside the nightly window):
+
+- `POST /admin/backups/auto` — backup only
+- `POST /admin/jobs/schedule-sweep?delay_minutes=N` — `update_sweep` only
+- `POST /admin/jobs/schedule-seasonal?delay_minutes=N` — `seasonal_sweep` only
+
+`delay_minutes` is bound to `[0, 1440]` on every sweep endpoint and drives the frontend's maintenance-banner countdown.
 
 ## Trouble-shooting
 
