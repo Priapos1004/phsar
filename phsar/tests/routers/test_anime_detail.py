@@ -8,6 +8,7 @@ from app.models.media import Media, MediaType, RelationType, SeasonType
 from app.models.media_genre import MediaGenre
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
+from tests._helpers import media_kwargs
 
 
 @pytest.fixture
@@ -29,35 +30,31 @@ async def anime_for_detail(db_session):
     db_session.add(anime)
     await db_session.flush()
 
-    media_s1 = Media(
-        anime_id=anime.id, mal_id=88101,
-        mal_url="https://myanimelist.net/anime/88101",
-        title="Detail S1", media_type=MediaType.TV,
-        relation_type=RelationType.Main, scored_by=4000,
+    media_s1 = Media(**media_kwargs(
+        anime.id, 88101,
+        title="Detail S1", scored_by=4000,
         score=8.5, episodes=12, duration_seconds=1440,
-        airing_status="Finished Airing",
         anime_season_name=SeasonType.Spring, anime_season_year=2020,
         age_rating="PG-13 - Teens 13 or older",
-    )
-    media_s2 = Media(
-        anime_id=anime.id, mal_id=88102,
-        mal_url="https://myanimelist.net/anime/88102",
-        title="Detail S2", media_type=MediaType.TV,
-        relation_type=RelationType.Main, scored_by=3000,
+    ))
+    media_s2 = Media(**media_kwargs(
+        anime.id, 88102,
+        title="Detail S2", scored_by=3000,
         score=9.0, episodes=12, duration_seconds=1440,
         airing_status="Currently Airing",
         anime_season_name=SeasonType.Fall, anime_season_year=2021,
         age_rating="PG-13 - Teens 13 or older",
-    )
-    media_movie = Media(
-        anime_id=anime.id, mal_id=88103,
-        mal_url="https://myanimelist.net/anime/88103",
-        title="Detail Movie", media_type=MediaType.Movie,
-        relation_type=RelationType.SideStory, scored_by=1000,
+    ))
+    media_movie = Media(**media_kwargs(
+        anime.id, 88103,
+        title="Detail Movie",
+        media_type=MediaType.Movie,
+        relation_type=RelationType.SideStory,
+        scored_by=1000,
         score=7.0, episodes=1, duration_seconds=7200,
         airing_status="Not yet aired",
         age_rating="R - 17+ (violence & profanity)",
-    )
+    ))
     db_session.add_all([media_s1, media_s2, media_movie])
     await db_session.flush()
 

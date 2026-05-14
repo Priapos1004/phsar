@@ -28,25 +28,35 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 - Token is stored in and loaded from localStorage
 - Closing and reopening the browser keeps the user logged in (until token expires or is invalidated)
 
-### 1.5 Maintenance Banner
-- When the backend returns 503 with `{maintenance: true}` on *any* request, the API client clears the token and hard-navigates to `/login?maintenance=1`.
-- The login page also detects this state when `/auth/login` itself returns 503.
-- Yellow banner above the form: "Backup restore in progress. Login will be available again once it completes."
-- Submit is not disabled; retrying during the window repopulates the banner. On a successful login the banner clears and the user proceeds to `/` as normal.
+### 1.5 Maintenance Mode
+- **Sticky pre-warning banner.** A yellow `Notice` card sits in a sticky container at the top of every page (including `/login` and `/register`), pinned alongside the navbar so scrolling the page keeps both visible. Renders only when a maintenance window is upcoming or active.
+  - Polls `GET /maintenance/status` every 30s via raw `fetch` (deliberately bypasses the API client so a 503 mid-window can't trigger the redirect below and defeat the warning). 30s instead of 60s so the seasonal-sweep dispatcher's short maintenance window (which can be only a few seconds long since the per-id MAL work runs in child jobs) is still observable for idle sessions.
+  - Also subscribes to the auth `token` store and to a shared `maintenanceRefresh` bump signal — any login/logout transition AND any 503-with-maintenance response triggers an immediate refetch, so the banner reacts in milliseconds rather than waiting for the next 30s poll.
+  - When `scheduled_at` is within 30 min: "Scheduled maintenance starts in ~N minutes — pause your current episode." (singular "minute" at exactly 1).
+  - When `active` is true: "Maintenance in progress. Some pages may be unavailable."
+  - When neither: banner is hidden.
+- **Mid-window redirect.** When the backend returns 503 with `{maintenance: true}` on *any other* request, the API client clears the token, bumps `maintenanceRefresh` so the global banner refetches state immediately, and hard-navigates to `/login` (when the user wasn't already there).
+- **/login during a maintenance window.** The form has no inline maintenance message — the global sticky banner above the navbar conveys the state. A 503 from `/auth/login` is silently swallowed by the form's catch (no error text, no submit-disable); the user can retry once the global banner clears.
 
 ---
 
 ## 2. Navigation
 
 ### 2.1 NavBar
-- Sticky bar at the top of every page except `/login`
-- Left: logo + "PHSAR" text linking to `/`, "Ratings" link, "Watchlist" link
-- Right (when authenticated): user button (first letter of username) toggling a dropdown with:
-  - User Settings → `/settings`
-  - Admin → `/admin` (visible only to admin role)
-  - Statistics → `/statistics`
-  - Getting Started → `/getting-started`
-  - Logout (red) → clears token, redirects to `/login`
+- Sticky bar at the top of every page except `/login` (sits inside a sticky wrapper shared with `MaintenanceBanner` — see 1.5)
+- Left: logo + "PHSAR" text linking to `/`, "Ratings" link, "Watchlist" link, "Add to Library" link → `/library/add`
+- Right (when authenticated):
+  - **JobBell** (bell icon next to the user button): polls `GET /jobs/mine` every 2s while any of your jobs is queued/running, 30s when idle. Badge count surfaces session-scoped active jobs PLUS unseen-completed jobs since the tab opened (`bellLoginAt` + `bellSeenJobs` set in sessionStorage; cleared on every logout transition via `clearBellSession()` so a relogin in the same tab doesn't inherit the previous session). Clicking opens a dropdown listing up to 5 entries (active + recently-finished); a "View all in Library" tail links to `/library/add` for older jobs. Rendering is JobKind-aware:
+    - `user_scrape`: `Add: "<query>"`, stage Fetching → Saving → Done with `items_done/items_total` progress.
+    - `backup`: `Backup`, Database icon for the queued state (vs the default Bell), stage Dumping → Applying retention → Done. On succeeded: `Backup ready (12.4 MB)` substext (using `formatBytes`), or `Re-confirmed existing dump (no new data)` when the create deduped against an existing dump.
+    - Failed rows show a friendly error + retry button. Retry is hidden when `result_summary.retryable === false` (permanent failures: `AnimeNotFoundError`, `MainMediaNotFoundError`, `MalIdAlreadyExistsError`, `AnimeFilteredOutError`). Backup-specific error categories (`backup_disk_full`, `backup_corrupt`) render friendly copy instead of the raw stderr — both stay retryable so admin can free space or re-run. While one retry is in flight, every retry button in the dropdown is disabled. Bell stops polling on 401 (token dead).
+    - Optimistic-stub pattern: when `/library/add` or the BackupsCard `Create backup` button POSTs, the page pushes a `queued` row into the `optimisticJobs` store with the returned `job_uuid` so the bell renders it instantly without waiting for the next poll. The next `/jobs/mine` fetch reconciles it (UUID match) and replaces the stub with the real row.
+  - User button (first letter of username) toggling a dropdown with:
+    - User Settings → `/settings`
+    - Admin → `/admin` (visible only to admin role)
+    - Statistics → `/statistics`
+    - Getting Started → `/getting-started`
+    - Logout (red) → clears token, redirects to `/login`
 
 ### 2.2 Version Footer
 - Small muted text at the bottom of every page showing the deployed version.
@@ -65,6 +75,7 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 | `/ratings` | (placeholder) | Yes |
 | `/watchlist` | (placeholder) | Yes |
 | `/settings` | User preferences (theme, language, rating step, spoiler level, data export, account deletion) | Yes |
+| `/library/add` | Add anime via MAL query + recent additions panel | Yes (form disabled for restricted users) |
 | `/admin` | Registration token management (admin only) | Yes (admin) |
 | `/statistics` | (placeholder) | Yes |
 | `/getting-started` | (placeholder) | Yes |
@@ -295,37 +306,71 @@ Each anime search result card shows:
 
 ---
 
-## 9. Admin Page
+## 9. Add to Library Page
 
-### 9.1 Access
+### 9.1 Layout
+- Two-column card: left is a "Search MAL" form (text input + submit button), right is a "Recently added" panel showing the most recent saved anime across all users (catalog is family-shared, so this is a global feed).
+- Restricted users see the page but the form is disabled (`POST /jobs/scrape` rejects them backend-side via `require_user_or_admin` regardless).
+
+### 9.2 Submitting a Scrape Job
+- The query must be at least 4 chars (`minlength` attr + button stays disabled until 4 chars typed). MAL's top-3 search is too ambiguous on shorter queries.
+- Submitting POSTs `{ query }` to `/jobs/scrape`. Successful enqueue returns 202 with the new job uuid; the form clears and bumps `jobsRefresh` (in `lib/stores/jobs.ts`) so the navbar bell refetches in tens of milliseconds instead of waiting for the next 30s poll.
+- 409 dedupe: re-submitting the same normalized query within `JOBS_DEDUPE_HOURS` (default 72) returns "This query is already queued" — failed jobs don't count, so a transient MAL outage doesn't lock the user out for 3 days.
+- 409 per-user cap: more than `JOBS_PER_USER_LIMIT` (default 4) active/queued user jobs returns "Too many jobs in flight — wait for some to finish."
+- The job's lifecycle is then surfaced by the navbar bell (see 2.1). Long-term history lives on this page's recent-additions panel rather than the bell, which is intentionally session-scoped.
+
+### 9.3 Recent Additions Panel
+- Server-rendered list from `GET /library/recent` returning the most recent anime saved across the catalog (not just this user's scrapes). Each row links to the anime detail page.
+- Carries `name_eng` + `name_jap` so the frontend can call `resolveTitle(...)` with the user's `name_language` setting — no second fetch.
+- Refreshes automatically when the bell observes a NEW `succeeded` `user_scrape` (bumps `librarySaved` in `lib/stores/jobs.ts`; this panel subscribes via `onBump`). No manual reload required.
+
+---
+
+## 10. Admin Page
+
+### 10.1 Access
 - Only accessible to users with `admin` role
 - Non-admin users are redirected to `/` on mount
 - NavBar dropdown shows "Admin" link only for admin users
 
-### 9.2 Create Registration Token
+### 10.2 Create Registration Token
 - Form with role selector (User / Restricted User) and expiry dropdown (1 day / 7 days / 30 days)
 - "Create" button POSTs to `/admin/registration-tokens`
 - On success: token string shown in a highlighted banner with copy button and toast feedback
 - Changing the role or expiry selector dismisses the success banner
 
-### 9.3 Token List
+### 10.3 Token List
 - Displays all registration tokens with: truncated token (click to copy), status badge (active/used/expired), role badge, creation date, expiry date, used-by username
 - **Sort options** (dropdown): By Status (default: active → used → expired), Newest First, Expiring Soon (active tokens first by soonest expiry), Recently Used
 - **Delete**: trash icon on unused/expired tokens opens confirm/cancel inline buttons. Used tokens cannot be deleted. DELETE returns 204.
 
-### 9.4 Backups
+### 10.4 Backups
 - Card below the token list. Admin-only.
-- **Create backup**: POSTs to `/admin/backups`; new dump appears in the list with a green `ok` integrity badge and a source badge (`Manual`, `Scheduled`, `Pre-restore`, or `Upload`).
-- **Upload**: file input accepts `.dump` files; `/admin/backups/upload` runs `pg_restore -f -` to validate + compute a content hash that ignores per-run timestamps and psql `\restrict` tokens. An upload whose DB state matches an existing dump returns 409 ("identical to `<filename>`") and re-points the "Current" badge at the existing dump.
-- **List**: filename, timestamp, human-readable size, integrity badge, source badge. The dump whose content matches the live DB gets a blue "Current" badge (git-branch icon) and a faint blue tint on the row — this is the last-restored dump, or (when a create/upload dedupes) the pre-existing dump it re-confirmed. Deleting the current dump clears the marker so the badge disappears.
-- **Sort options** (dropdown): Newest First (default), Oldest First, Largest First, By Integrity (corrupt/unknown first to surface problems).
+- **Create backup**: POST returns 202 with `{job_uuid}` instead of running pg_dump synchronously. The button shows a toast ("Backup queued. We'll let you know when it's ready.") and disables for 5 seconds to absorb double-clicks. The bell shows a queued row instantly (optimistic stub seeded from the returned uuid; see 2.1) and tracks the job through to completion. When the job succeeds the bell bumps `backupSaved`; this card subscribes via `onBump` and refetches the dump list, so the new row appears with a green `ok` integrity badge and a source badge (`Manual`, `Scheduled`, `Pre-restore`, or `Upload`) without any manual reload. Cron-triggered backups stay system jobs (invisible to every bell) — they appear in this list on the card's next mount or sort change.
+- **Upload**: file input accepts `.dump` files; `/admin/backups/upload` runs `pg_restore -f -` to validate + compute a content hash that ignores per-run timestamps and psql `\restrict` tokens. An upload whose DB state matches an existing dump returns 409 ("identical to `<filename>`"). Uploads never move the "Current" badge — uploaded bytes are external and the backend can't verify they match live DB.
+- **List**: filename, timestamp, human-readable size, integrity badge, source badge. The dump whose content matches the live DB gets a blue "Current" badge (git-branch icon) and a faint blue tint on the row — this is the dump the last restore left, or (when a create dedupes) the pre-existing dump it re-confirmed, or (in the normal create path) the just-created dump itself. Deleting the current dump clears the marker so the badge disappears.
+- **Sort options** (dropdown): Newest First (default), Oldest First, Largest First, By Integrity (corrupt/unknown first to surface problems). In "Newest First" only, the Current row is pinned to the top regardless of its age — so a post-restore older dump stays salient as "what's live right now". Other sorts respect their natural order.
 - **Download**: arrow icon per row uses the `downloadBlob` helper (bearer token via fetch headers, then auto-click on an object URL). Saved with the original filename.
-- **Restore**: rotate-back icon opens a destructive-confirm dialog that requires typing the admin's username. Disabled on `corrupt` rows. Backend auto-snapshots as a `pre-restore` dump *before* entering maintenance mode, then flips the maintenance flag, closes the SQLAlchemy pool, terminates any other DB sessions, and runs `pg_restore --clean --if-exists` (timeout configurable via `BACKUP_RESTORE_TIMEOUT_SECONDS`, default 10 min). After pg_restore returns, the backend warms the connection pool before lifting the maintenance gate so the first post-restore request doesn't flap the liveness probe. Result banner reports the pre-restore filename, and the "Current" badge now follows the restored dump. All non-admin users in the app are bounced to `/login?maintenance=1` for the duration (see 1.5).
+- **Restore**: rotate-back icon opens a destructive-confirm dialog that requires typing the admin's username. Disabled on `corrupt` rows. Backend auto-snapshots as a `pre-restore` dump *before* entering maintenance mode, then flips the maintenance flag, closes the SQLAlchemy pool, terminates any other DB sessions, and runs `pg_restore --clean --if-exists` (timeout configurable via `BACKUP_RESTORE_TIMEOUT_SECONDS`, default 10 min). After pg_restore returns, the backend warms the connection pool before lifting the maintenance gate so the first post-restore request doesn't flap the liveness probe. Result banner reports the pre-restore filename, and the "Current" badge now follows the restored dump. All non-admin users in the app are bounced to `/login` for the duration; the sticky global banner conveys the maintenance state (see 1.5).
 - **Delete**: trash icon opens inline confirm/cancel buttons. DELETE returns 204.
+
+### 10.5 Merge Candidates
+- Card below Backups. Admin-only.
+- **List**: pending merge candidates flagged by the duplicate detector (running on every save and at app startup). Each row shows:
+  - A "% match" badge (similarity score)
+  - A `detected_by` label (`title_studio`, `title_desc`, or `relation_link`)
+  - Side-by-side anime cards labelled "Anime A (kept)" / "Anime B (merged in)" with title, romanized name, year, media count, rating count, and primary studio names. The recommended A is whichever side has the earliest aired media (with rating count as tiebreak); rating count is shown explicitly so the admin can see the justification.
+  - Anime titles link to `/anime?uuid=<uuid>` (open in new tab) for context before deciding
+- **Swap A/B**: per-row ghost button next to the similarity badge. Flips which side is rendered as A vs B and changes which uuid is sent as `keep_uuid` on merge. Local-only state; refresh resets the toggles.
+- **Refresh**: spinning-arrow icon in the header re-fetches the list silently — existing rows stay rendered while the request is in flight, the spinner spins, and the keyed each-block diffs the result in place. The list never collapses to "Loading…" mid-refresh, so there's no scroll jump.
+- **Merge**: re-parents B's media onto A and deletes B (cascade-removes the candidate row + any other pending pairs referencing B). A's anime embedding is regenerated, the duplicate detector re-runs against the survivor (so freshly-valid pairs from the merged-in media surface as new candidates), and the spoiler-cache is recomputed for all users. Merge button opens an inline confirm/cancel pair; while in flight the button shows "Merging…" and the row stays visible. On success the list refetches automatically (silent), so cascade-resolved rows leave and any re-detected pairs appear in one update. Backend rejects with 409 if A and B share any `Media.mal_id` (a should-never-happen invariant; admin investigates manually).
+- **Dismiss**: marks the candidate `dismissed` (status flip; row stays in DB so the seen-pairs filter prevents re-flagging). Same inline confirm/cancel UX. On success the row is removed from the local list.
+- Already-resolved candidates (merged or dismissed) return 409 if the action is retried.
+- The detector itself is invisible to non-admin users; nothing about it surfaces outside this card.
 
 ---
 
-## 10. API Endpoints Used by Frontend
+## 11. API Endpoints Used by Frontend
 
 | Endpoint | Method | When |
 |----------|--------|------|
@@ -353,16 +398,26 @@ Each anime search result card shows:
 | `/admin/registration-tokens` | POST | Admin page (create token) |
 | `/admin/registration-tokens/{uuid}` | DELETE | Admin page (delete unused token) |
 | `/admin/backups` | GET | Admin page Backups card (list dumps) |
-| `/admin/backups` | POST | Admin page Backups card (create dump on demand) |
+| `/admin/backups` | POST | Admin page Backups card "Create backup" — enqueues a `backup` job and returns 202; bell tracks progress, dump list auto-refreshes on succeeded |
 | `/admin/backups/{filename}` | GET | Admin page Backups card (download dump) |
 | `/admin/backups/{filename}` | DELETE | Admin page Backups card (delete dump) |
 | `/admin/backups/{filename}/restore` | POST | Admin page Backups card (restore with username confirm; backend auto-takes a pre-restore snapshot) |
 | `/admin/backups/upload` | POST | Admin page Backups card (multipart upload of a `.dump` file) |
+| `/admin/merge-candidates` | GET | Admin page Merge Candidates card (list pending duplicates) |
+| `/admin/merge-candidates/{uuid}/merge` | POST | Admin page Merge Candidates card (merge B into A, delete B) |
+| `/admin/merge-candidates/{uuid}/dismiss` | POST | Admin page Merge Candidates card (mark as reviewed-not-duplicate) |
 | `/auth/register` | POST | Registration page |
+| `/maintenance/status` | GET | Polled by MaintenanceBanner every 30s on every page (no auth) |
+| `/jobs/scrape` | POST | `/library/add` form submission (enqueues a `user_scrape` job; restricted users rejected by role check) |
+| `/jobs/mine` | GET | Polled by JobBell every 2s while any of your jobs is queued/running, every 30s when idle (active + recently-finished jobs for the current user) |
+| `/jobs/{uuid}` | GET | Single-job poll for owner or admin (used by bell retry + admin debugging) |
+| `/library/recent` | GET | `/library/add` recent-additions panel (global feed of recently-saved anime) |
+| `/admin/jobs/schedule-sweep` | POST | Coolify cron only — bearer token authenticated, enqueues a delayed `update_sweep` |
+| `/admin/jobs/schedule-seasonal` | POST | Coolify cron only — bearer token authenticated, enqueues a delayed `seasonal_sweep` |
 
 ---
 
-## 11. Error States
+## 12. Error States
 
 | Scenario | Expected Behavior |
 |----------|-------------------|
@@ -377,8 +432,8 @@ Each anime search result card shows:
 | Rating fetch returns 404 | No rating displayed (expected for unrated media) |
 | Account deletion wrong password | "Invalid password." error below form |
 | Account deletion network failure | "Failed to delete account." error below form |
-| Any API call returns 503 `{maintenance: true}` | Token cleared, hard-navigate to `/login?maintenance=1`, yellow banner displayed |
-| `/auth/login` during maintenance | 503 shows the same yellow banner; submit not disabled, retry later |
+| Any API call returns 503 `{maintenance: true}` | Token cleared, `maintenanceRefresh` bumped (so the global banner refetches in ms), hard-navigate to `/login` if not already there. The sticky global banner conveys the state. |
+| `/auth/login` during maintenance | 503 silently swallowed by the form catch (no inline error). The global banner is the only signal. Submit not disabled, retry later. |
 | Duplicate backup upload | 409 "This dump is identical to an existing backup: '<filename>'." — the new upload is discarded |
 | Backup upload >2 GB | 413 "Uploaded backup is too large: <N> MB (limit: 2048 MB)." — partial file discarded |
 | Restore of a corrupt dump | Restore button is disabled on rows with integrity badge = corrupt |

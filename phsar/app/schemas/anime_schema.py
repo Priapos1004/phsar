@@ -1,7 +1,24 @@
+from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
+
+
+class AnimeRecentItem(BaseModel):
+    """Lightweight anime card for the /library/add 'recent additions' panel.
+
+    Carries the localized-title fields so the frontend can apply the user's
+    name_language preference without an extra fetch.
+    """
+    model_config = ConfigDict(from_attributes=True)
+
+    uuid: UUID
+    title: str
+    name_eng: Optional[str] = None
+    name_jap: Optional[str] = None
+    cover_image: Optional[str] = None
+    created_at: datetime
 
 
 class AnimeBase(BaseModel):

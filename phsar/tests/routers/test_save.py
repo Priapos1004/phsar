@@ -78,6 +78,55 @@ async def test_save_search_results_without_token(client):
 
 
 @pytest.mark.asyncio
+async def test_save_creates_anime_freshness_sidecar(client, user_auth_headers, db_session):
+    """Every catalog row born with its sidecar — sweep tier query relies
+    on this so its LEFT JOIN + COALESCE stays defensive belt-and-braces
+    rather than load-bearing."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.models.anime import Anime
+
+    resp = await client.post("/save/search-results", json=FAKE_SEARCH_RESULTS, headers=user_auth_headers)
+    assert resp.status_code == 200
+
+    result = await db_session.execute(
+        select(Anime)
+        .where(Anime.mal_id == FAKE_ANIME_MAL_ID)
+        .options(selectinload(Anime.freshness))
+    )
+    anime = result.scalars().first()
+    assert anime is not None
+    assert anime.freshness is not None
+    assert anime.freshness.last_checked_at is None
+    assert anime.freshness.stable_check_count == 0
+
+
+@pytest.mark.asyncio
+async def test_save_creates_media_freshness_sidecars(client, user_auth_headers, db_session):
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.models.anime import Anime
+    from app.models.media import Media
+
+    resp = await client.post("/save/search-results", json=FAKE_SEARCH_RESULTS, headers=user_auth_headers)
+    assert resp.status_code == 200
+
+    result = await db_session.execute(
+        select(Anime)
+        .where(Anime.mal_id == FAKE_ANIME_MAL_ID)
+        .options(selectinload(Anime.media).selectinload(Media.freshness))
+    )
+    anime = result.scalars().first()
+    assert anime is not None
+    assert len(anime.media) >= 1
+    for media in anime.media:
+        assert media.freshness is not None
+        assert media.freshness.last_checked_at is None
+
+
+@pytest.mark.asyncio
 async def test_save_populates_spoiler_cache_for_existing_users(client, user_auth_headers):
     # Regression: existing users need spoiler cache refreshed on new anime saves.
     await client.put("/users/settings", json={"spoiler_level": "hide"}, headers=user_auth_headers)

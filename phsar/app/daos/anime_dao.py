@@ -2,9 +2,9 @@ import logging
 from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import cast, func, select
+from sqlalchemy import and_, cast, exists, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
 
 from app.daos.base_mal_id_dao import MalIdDAO
 from app.daos.search_filters import (
@@ -13,15 +13,22 @@ from app.daos.search_filters import (
     apply_vector_ordering,
 )
 from app.models.anime import Anime
+from app.models.anime_freshness import AnimeFreshness
 from app.models.anime_search import AnimeSearch
-from app.models.media import Media
+from app.models.media import Media, RelationType
 from app.models.media_genre import MediaGenre
 from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
+from app.services.jikan_scraper import AIRING_STATUS_CURRENTLY_AIRING
 from app.services.vector_embedding_service import generate_embedding
 
 logger = logging.getLogger(__name__)
+
+# Tier 3 of the nightly sweep: only weekly-probe franchises whose latest
+# main media aired within this window. Older main-only franchises fall
+# back to tier 4 (180-day long tail).
+SWEEP_RECENT_MAIN_YEARS = 5
 
 
 class AnimeDAO(MalIdDAO[Anime]):
@@ -49,6 +56,106 @@ class AnimeDAO(MalIdDAO[Anime]):
         )
         result = await db.execute(stmt)
         return result.scalars().first()
+
+    async def get_by_media_mal_id_with_media(
+        self, db: AsyncSession, media_mal_id: int,
+    ) -> Anime | None:
+        """Resolve a `Media.mal_id` back to its owning Anime, with
+        `Anime.media` eager-loaded so callers (the orphan-side-story
+        attach path in `scrape_dispatcher`) can read the parent's
+        existing media set without a `lazy="raise"` fault."""
+        stmt = (
+            select(Anime)
+            .join(Media, Media.anime_id == Anime.id)
+            .where(Media.mal_id == media_mal_id)
+            .options(selectinload(Anime.media))
+        )
+        return (await db.execute(stmt)).scalars().first()
+
+    async def select_due_for_sweep(
+        self, db: AsyncSession, limit: int,
+    ) -> list[Anime]:
+        """Anime due for the nightly update sweep, oldest-first.
+
+        Four tiers OR'd together:
+          1. Has a "Currently Airing" media — always due.
+          2. stable_check_count < 3 — burn the initial stability sampling.
+          3. Last checked > 7 days ago AND has a recent main media
+             (aired_from within SWEEP_RECENT_MAIN_YEARS). Sequels
+             announce off the main story; old main-only franchises don't
+             warrant weekly cycles.
+          4. Last checked > 180 days ago — long-tail safety net.
+
+        LEFT JOIN against anime_freshness because the migration backfilled
+        every existing row but a future code path could insert without one;
+        the COALESCE expression powers the WHERE-clause staleness checks
+        (long_tail / weekly_recent_main). ORDER BY uses raw
+        `last_checked_at NULLS FIRST` instead — see the ordering comment
+        below for why never-checked rows belong at the front, not at
+        their created_at position.
+        """
+        af = aliased(AnimeFreshness)
+        last_checked = func.coalesce(af.last_checked_at, Anime.created_at)
+        stable = func.coalesce(af.stable_check_count, 0)
+        now = func.now()
+        week_ago = now - text("interval '7 days'")
+        six_mo_ago = now - text("interval '180 days'")
+        recent_main_cutoff = now - text(f"interval '{SWEEP_RECENT_MAIN_YEARS} years'")
+
+        airing_now = exists().where(
+            and_(
+                Media.anime_id == Anime.id,
+                Media.airing_status == AIRING_STATUS_CURRENTLY_AIRING,
+            )
+        )
+        recent_main = exists().where(
+            and_(
+                Media.anime_id == Anime.id,
+                Media.relation_type == RelationType.Main,
+                Media.aired_from >= recent_main_cutoff,
+            )
+        )
+        still_stabilizing = stable < 3
+        long_tail = last_checked < six_mo_ago
+        weekly_recent_main = and_(last_checked < week_ago, recent_main)
+
+        stmt = (
+            select(Anime)
+            .outerjoin(af, af.anime_id == Anime.id)
+            .where(or_(airing_now, still_stabilizing, weekly_recent_main, long_tail))
+            # Primary order: `nullsfirst()` puts never-checked rows at the
+            # front. A NULL last_checked_at is "maximum staleness from MAL's
+            # perspective" — new anime (always due via tier 2) must survive
+            # the LIMIT cap even when there's a 180-day stale backlog so the
+            # 3-check stabilization sampling completes promptly.
+            # Secondary: tiebreak by created_at so older catalog entries
+            # win, not whichever anime.id happens to be lower (the
+            # tiebreaker is only deterministic by accident under a
+            # sequential PK).
+            .order_by(
+                af.last_checked_at.asc().nullsfirst(),
+                Anime.created_at.asc(),
+                Anime.id.asc(),
+            )
+            .options(
+                selectinload(Anime.media).selectinload(Media.freshness),
+                selectinload(Anime.freshness),
+            )
+            .limit(limit)
+        )
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_recent(self, db: AsyncSession, limit: int = 10) -> list[Anime]:
+        """Most-recently scraped anime, newest first. Powers the
+        'recent additions' panel on /library/add."""
+        stmt = (
+            select(Anime)
+            .order_by(Anime.created_at.desc())
+            .limit(limit)
+        )
+        result = await db.execute(stmt)
+        return list(result.scalars().all())
 
     async def search_anime_aggregated(
         self,

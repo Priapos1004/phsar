@@ -93,5 +93,5 @@ media_dao = MediaDAO()
 async def seed_popular_anime(db: AsyncSession, popular_anime_queries: list[str] = POPULAR_ANIME_QUERIES):
     for query in popular_anime_queries:
         logger.info(f"Seeding: {query}")
-        results = await handle_search_mal_api_results(db=db, query=query)
-        await save_search_results(db, results)
+        result = await handle_search_mal_api_results(db=db, query=query)
+        await save_search_results(db, result.search_result_db_list)

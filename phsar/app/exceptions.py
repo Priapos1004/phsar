@@ -1,4 +1,5 @@
 from app.core.config import settings
+from app.models.job import JobStatus
 
 
 class PhsarBaseError(Exception):
@@ -6,7 +7,19 @@ class PhsarBaseError(Exception):
     status_code: int = 400
 
 
-class MalIdAlreadyExistsError(PhsarBaseError):
+class PermanentPhsarError(PhsarBaseError):
+    """Marker for failures where retrying with the same input will produce
+    the same result. The job worker uses isinstance(exc, PermanentPhsarError)
+    to set retryable=False on the failed job, so the bell hides its retry
+    button instead of letting the user spam jobs that can't ever succeed.
+
+    Errors NOT in this branch (raw httpx errors, asyncio.TimeoutError,
+    tenacity-exhausted retries, etc.) default to retryable=True since they
+    plausibly recover when MAL or the network does.
+    """
+
+
+class MalIdAlreadyExistsError(PermanentPhsarError):
     """Raised when a media/anime with the same mal_id already exists in the database."""
     status_code = 409
 
@@ -17,23 +30,71 @@ class MalIdAlreadyExistsError(PhsarBaseError):
         super().__init__(message)
 
 
-class AnimeNotFoundError(PhsarBaseError):
-    """Raised when an anime is not found in the MAL API."""
+class AnimeNotFoundError(PermanentPhsarError):
+    """Raised when a fuzzy `q=<title>` MAL search returns zero matches
+    that aren't already in the catalog or filtered as unwanted. The
+    title may well exist on MAL — the message is intentionally hedged
+    ("no new match") rather than absolute ("not found") so the admin
+    doesn't go chasing a MAL outage when in fact every hit was simply
+    de-duped against existing rows."""
     status_code = 404
 
     def __init__(self, title: str):
         self.title = title
-        message = f"Anime titled '{title}' not found."
+        message = f"No new anime matched '{title}' on MAL."
         super().__init__(message)
 
 
-class MainMediaNotFoundError(PhsarBaseError):
-    """Raised when a list of MediaUnconnected has no main media."""
+class TransientUpstreamError(PhsarBaseError):
+    """Raised when MAL returns a successful HTTP response but with empty
+    or malformed data — distinct from a real 404 (which would surface as
+    HTTPStatusError from `_get`). Not a PermanentPhsarError, so the job
+    worker stamps retryable=True and the bell shows its retry button;
+    job_worker's _classify_error also tags it as `upstream_outage` so
+    the bell renders the friendly 'MAL temporarily unavailable' copy
+    instead of leaking this internal message to users."""
+    status_code = 502
+
+    def __init__(self, identifier: str):
+        self.identifier = identifier
+        message = (
+            f"MAL returned no data for {identifier}. "
+            "This usually clears on retry."
+        )
+        super().__init__(message)
+
+
+class AnimeFilteredOutError(PermanentPhsarError):
+    """Raised when a seeded BFS run finds the target anime but our content
+    filter (Music/PV/CM/Hentai/Unknown) rejects it. Distinct from
+    AnimeNotFoundError so admin/cron logs reflect why the catalog
+    doesn't have it — without this, every filtered seasonal entry
+    looks like a missing MAL record in the jobs table."""
+    status_code = 422
+
+    def __init__(self, title: str, reason: str):
+        self.title = title
+        self.reason = reason
+        message = f"'{title}' was filtered out as {reason} and not added to the catalog."
+        super().__init__(message)
+
+
+class MainMediaNotFoundError(PermanentPhsarError):
+    """Raised when a relation graph has no media flagged as the main story.
+
+    The full title/relation list is preserved on the instance for server-side
+    logging; the user-facing message stays short so the bell isn't dominated
+    by a Python list repr.
+    """
     status_code = 404
 
     def __init__(self, title_relation_tuple: list[tuple[str, str]]):
         self.title_relation_tuple = title_relation_tuple
-        message = f"Main media not found in the list: {title_relation_tuple}."
+        first_title = title_relation_tuple[0][0] if title_relation_tuple else "(unknown)"
+        message = (
+            f"Couldn't identify a main story for '{first_title}'. "
+            "Try a more specific search term."
+        )
         super().__init__(message)
 
 
@@ -274,7 +335,7 @@ class BackupConfirmationMismatchError(PhsarBaseError):
 
 
 class InvalidCronTokenError(PhsarBaseError):
-    """Raised when the cron-authenticated backup endpoint gets a bad/missing bearer token."""
+    """Raised when a cron-authenticated endpoint gets a bad/missing bearer token."""
     status_code = 401
 
     def __init__(self):
@@ -286,8 +347,103 @@ class DuplicateBackupError(PhsarBaseError):
     """Raised when an uploaded backup has the same content hash as an existing dump."""
     status_code = 409
 
-    def __init__(self, existing_filename: str):
-        message = f"This dump is identical to an existing backup: '{existing_filename}'."
+    def __init__(self, existing_metadata):
+        # Carry the full matched BackupMetadata (duck-typed to avoid an
+        # exceptions.py → schemas import) so the backup dispatcher can
+        # convert this into a 'deduped_against' success outcome without
+        # re-scanning the backup dir (which would shell out to
+        # pg_restore --list for any dump missing a sidecar).
+        self.existing_metadata = existing_metadata
+        message = f"This dump is identical to an existing backup: '{existing_metadata.filename}'."
+        super().__init__(message)
+
+
+class JobQueueLimitExceededError(PhsarBaseError):
+    """Raised when a user tries to enqueue a job past the per-user submission cap."""
+    status_code = 409
+
+    def __init__(self, limit: int):
+        self.limit = limit
+        message = f"You already have {limit} active scrape jobs. Wait for one to finish before queueing more."
+        super().__init__(message)
+
+
+class JobNotFoundError(PhsarBaseError):
+    """Raised when a job UUID doesn't resolve, or the requester isn't allowed to see it."""
+    status_code = 404
+
+    def __init__(self, uuid: str):
+        message = f"Job not found: '{uuid}'."
+        super().__init__(message)
+
+
+class DuplicateScrapeQueryError(PhsarBaseError):
+    """Raised when a user_scrape with the same query was run recently —
+    redundant because the BFS would just produce empty results."""
+    status_code = 409
+
+    def __init__(self, query: str, previous_status: JobStatus, hours_ago: int):
+        self.query = query
+        self.previous_status = previous_status
+        self.hours_ago = hours_ago
+        if previous_status in (JobStatus.queued, JobStatus.running):
+            message = f"'{query}' is already being scraped — check the bell for progress."
+        else:
+            ago = "less than an hour" if hours_ago < 1 else f"{hours_ago}h"
+            message = (
+                f"'{query}' was already scraped {ago} ago. "
+                "New seasonal releases land via the nightly update — "
+                "try again in a few days if something looks missing."
+            )
+        super().__init__(message)
+
+
+class MergeCandidateNotFoundError(PhsarBaseError):
+    """Raised when a merge candidate UUID doesn't resolve."""
+    status_code = 404
+
+    def __init__(self, uuid: str):
+        message = f"Merge candidate not found: '{uuid}'."
+        super().__init__(message)
+
+
+class MergeCandidateAlreadyResolvedError(PhsarBaseError):
+    """Raised when admin tries to merge or dismiss a candidate that's
+    already in a terminal state."""
+    status_code = 409
+
+    def __init__(self, status: str):
+        message = f"Merge candidate is already {status} — cannot resolve again."
+        super().__init__(message)
+
+
+class MergeMalIdConflictError(PhsarBaseError):
+    """Raised when two anime up for merge share a media mal_id.
+
+    Per design, this should never happen — Media.mal_id is globally unique.
+    Surface 409 so an admin investigates the underlying duplicate before
+    merging."""
+    status_code = 409
+
+    def __init__(self, mal_id: int):
+        self.mal_id = mal_id
+        message = (
+            f"Both anime have a media with mal_id {mal_id}. "
+            "This should never happen — investigate the duplicate before merging."
+        )
+        super().__init__(message)
+
+
+class InvalidMergeKeepError(PhsarBaseError):
+    """Raised when the admin's keep_uuid for a merge doesn't match either
+    of the candidate's two anime. Almost always a stale frontend payload."""
+    status_code = 400
+
+    def __init__(self, keep_uuid: str):
+        message = (
+            f"keep_uuid '{keep_uuid}' does not match either anime in this "
+            "merge candidate."
+        )
         super().__init__(message)
 
 

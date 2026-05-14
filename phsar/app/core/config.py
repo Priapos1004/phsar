@@ -37,11 +37,24 @@ class Settings(BaseSettings):
     # Default is a cwd-relative path so local uvicorn dev works without root;
     # the container sets BACKUP_DIR=/backups explicitly in the Dockerfile.
     BACKUP_DIR: str = "./backups"
-    BACKUP_CRON_TOKEN: str = ""  # cron endpoint fails closed when empty
     # pg_restore timeout in seconds. Bump this if the DB grows large enough
     # that restores legitimately take >10 min — a kill mid-restore leaves
     # the DB half-dropped.
     BACKUP_RESTORE_TIMEOUT_SECONDS: int = 600
+
+    # Content pipeline jobs
+    # Shared bearer for every cron-authed endpoint (the three individual
+    # schedulers AND the combined /admin/jobs/schedule-nightly). Empty value
+    # disables those endpoints — they all fail closed.
+    JOBS_CRON_TOKEN: str = ""
+    JOBS_PER_USER_LIMIT: int = 4  # max queued+running scrape jobs per user
+    JOBS_SWEEP_MAX_PER_RUN: int = 200  # bounds nightly update_sweep batch size
+    # Dedupe window for user_scrape: re-running the same query within this
+    # window would just produce empty BFS results (everything is in
+    # excluded_mal_ids already) and fail with AnimeNotFoundError. After the
+    # window, the seasonal update may have landed new media so a re-scrape
+    # is meaningful again.
+    JOBS_DEDUPE_HOURS: int = 72
 
     model_config = ConfigDict(env_file=".env")  # Tell Pydantic to load from .env
 

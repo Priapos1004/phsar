@@ -24,6 +24,7 @@ from app.exceptions import (
     DuplicateBackupError,
 )
 from app.schemas.backup_schema import BackupIntegrity, BackupMetadata, BackupSource
+from app.services._pg_subprocess import run_capture
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,11 @@ _DISK_SPACE_REQUIRED_BYTES = 500 * 1024 * 1024
 _UPLOAD_MAX_BYTES = 2 * 1024 * 1024 * 1024
 _UPLOAD_FREE_CHECK_EVERY_BYTES = 10 * 1024 * 1024
 _UPLOAD_CHUNK_BYTES = 1024 * 1024
+
+# Most-recent uploads to keep on disk. Uploads were previously retention-exempt
+# entirely (admin-managed), but at 2 GiB per upload the volume can grow without
+# bound. The pointed-at (is_current) upload is always pinned regardless of age.
+_UPLOAD_RETENTION_COUNT = 5
 
 # Serializes every write path (create + upload) so concurrent manual + cron +
 # re-upload requests can't race on disk-space checks, `.partial` filenames, or
@@ -190,12 +196,6 @@ def _mark_current_db_confirmed(filename: str) -> None:
     }))
 
 
-def _adopt_existing_as_current(partial_path: Path, duplicate: BackupMetadata) -> BackupMetadata:
-    """Shared dedupe-hit tail: delete the partial and re-point the current-DB
-    marker at the matched existing dump so the UI badge follows DB state."""
-    partial_path.unlink(missing_ok=True)
-    _mark_current_db_confirmed(duplicate.filename)
-    return duplicate
 
 
 async def _compute_content_hash(dump_path: Path) -> str:
@@ -267,13 +267,12 @@ async def _find_duplicate(content_hash: str) -> BackupMetadata | None:
 
 
 async def _check_integrity(dump_path: Path) -> BackupIntegrity:
-    proc = await asyncio.create_subprocess_exec(
-        "pg_restore", "--list", str(dump_path),
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.PIPE,
+    returncode, _, _ = await run_capture(
+        ["pg_restore", "--list", str(dump_path)],
+        env=_pg_env(),
+        capture_stdout=False,
     )
-    await proc.communicate()
-    return BackupIntegrity.ok if proc.returncode == 0 else BackupIntegrity.corrupt
+    return BackupIntegrity.ok if returncode == 0 else BackupIntegrity.corrupt
 
 
 def _write_meta(dump_path: Path, meta: BackupMetadata) -> None:
@@ -311,7 +310,8 @@ async def _finalize_partial_dump(
     """Shared tail for create + upload: hash → dedupe check → rename → write
     sidecar. Returns `(metadata, was_duplicate)` — callers decide whether a
     dedupe hit is an error (manual creates + uploads raise) or a silent
-    return (cron + pre-restore)."""
+    return (cron + pre-restore), AND whether to move the Current pointer
+    (live-capturing creates do, uploads don't)."""
     try:
         content_hash = await _compute_content_hash(partial_path)
     except BackupIntegrityError:
@@ -320,7 +320,8 @@ async def _finalize_partial_dump(
 
     duplicate = await _find_duplicate(content_hash)
     if duplicate is not None:
-        return _adopt_existing_as_current(partial_path, duplicate), True
+        partial_path.unlink(missing_ok=True)
+        return duplicate, True
 
     partial_path.rename(final_path)
 
@@ -348,38 +349,32 @@ async def create_backup(
         partial_path = backup_dir / f"{filename}.partial"
         final_path = backup_dir / filename
 
-        args = [
-            "pg_dump",
-            *_pg_connection_args(),
-            "-Fc",
-            "-f", str(partial_path),
-        ]
-        proc = await asyncio.create_subprocess_exec(
-            *args,
+        returncode, _, stderr = await run_capture(
+            [
+                "pg_dump",
+                *_pg_connection_args(),
+                "-Fc",
+                "-f", str(partial_path),
+            ],
             env=_pg_env(),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
         )
-        _, stderr = await proc.communicate()
-
-        if proc.returncode != 0:
+        if returncode != 0:
             partial_path.unlink(missing_ok=True)
             raise BackupIntegrityError(filename, stderr.decode(errors="replace").strip()[:500])
 
         metadata, was_duplicate = await _finalize_partial_dump(
             partial_path, final_path, source,
         )
-        # Fresh-install fallback: a unique dump is the live DB state at
-        # creation, so claim Current when no pointer has ever been set —
-        # otherwise the badge stays empty on a fresh VM until restore.
-        if not was_duplicate and _read_current_db_filename() is None:
-            _mark_current_db_confirmed(metadata.filename)
-            metadata = metadata.model_copy(update={"is_current": True})
+        # pg_dump just captured live state, so the resulting `metadata.filename`
+        # IS the dump that matches live — whether it's a new unique dump or a
+        # dedupe hit pointing at an existing one. Move Current to it.
+        _mark_current_db_confirmed(metadata.filename)
+        metadata = metadata.model_copy(update={"is_current": True})
         # Manual surfaces dedupe as a 409 so the admin sees a clear "identical
         # to X" error; cron / pre-restore silently return the matched dump so
         # unchanged DBs don't accumulate no-op snapshots.
         if was_duplicate and source == BackupSource.manual:
-            raise DuplicateBackupError(metadata.filename)
+            raise DuplicateBackupError(metadata)
         return metadata
 
 
@@ -466,26 +461,21 @@ async def _run_pg_restore(target_path: Path, filename: str) -> None:
     (drops + recreates every object). Caller owns the maintenance flag and
     pool-disposal lifecycle."""
     timeout = settings.BACKUP_RESTORE_TIMEOUT_SECONDS
-    args = [
-        "pg_restore",
-        *_pg_connection_args(),
-        "--clean",
-        "--if-exists",
-        "--no-owner",
-        "--no-privileges",
-        str(target_path),
-    ]
-    proc = await asyncio.create_subprocess_exec(
-        *args,
-        env=_pg_env(),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
     try:
-        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout)
+        returncode, _, stderr = await run_capture(
+            [
+                "pg_restore",
+                *_pg_connection_args(),
+                "--clean",
+                "--if-exists",
+                "--no-owner",
+                "--no-privileges",
+                str(target_path),
+            ],
+            env=_pg_env(),
+            timeout=timeout,
+        )
     except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
         # Timeout mid-restore leaves the DB half-dropped. We don't auto-roll
         # back to the pre-snapshot because that restore could also time out
         # and compound the mess; instead, surface a clear error so the admin
@@ -500,7 +490,7 @@ async def _run_pg_restore(target_path: Path, filename: str) -> None:
             "than previously seen.",
         ) from None
 
-    if proc.returncode != 0:
+    if returncode != 0:
         raise BackupRestoreError(filename, stderr.decode(errors="replace").strip()[:500])
 
 
@@ -509,24 +499,21 @@ async def _terminate_other_sessions() -> None:
     # real lock-wait error message than mask it behind a terminate failure. We
     # log stderr at WARNING so a missing psql binary or auth failure leaves a
     # breadcrumb for the "pg_restore hung on locks" postmortem.
-    args = [
-        "psql",
-        *_pg_connection_args(),
-        "-c",
-        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
-        "WHERE datname = current_database() AND pid <> pg_backend_pid();",
-    ]
-    proc = await asyncio.create_subprocess_exec(
-        *args,
+    returncode, _, stderr = await run_capture(
+        [
+            "psql",
+            *_pg_connection_args(),
+            "-c",
+            "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+            "WHERE datname = current_database() AND pid <> pg_backend_pid();",
+        ],
         env=_pg_env(),
-        stdout=asyncio.subprocess.DEVNULL,
-        stderr=asyncio.subprocess.PIPE,
+        capture_stdout=False,
     )
-    _, stderr = await proc.communicate()
-    if proc.returncode != 0 and stderr:
+    if returncode != 0 and stderr:
         logger.warning(
             "Terminate-other-sessions psql returned %s: %s",
-            proc.returncode,
+            returncode,
             stderr.decode(errors="replace").strip()[:300],
         )
 
@@ -536,10 +523,21 @@ def _is_sunday_utc(dt: datetime) -> bool:
 
 
 async def apply_retention() -> list[str]:
-    """Evict old backups. Keeps 14 most recent + last 8 Sunday dumps + the most recent
-    known-good dump, regardless of date. Only touches manual + cron dumps: uploads and
-    pre-restore snapshots are always preserved (admin-managed)."""
+    """Evict old backups. Two independent pools:
+
+    - manual + cron: 14 most recent + last 8 Sunday dumps + the most recent
+      known-good dump, regardless of age.
+    - uploads: the `_UPLOAD_RETENTION_COUNT` most recent.
+
+    Both pools pin the `is_current` dump (the one the live DB was restored
+    from) regardless of age. Pre-restore snapshots remain retention-exempt;
+    they're the safety net for the synchronous restore path and admin
+    cleans them up by hand once the new state is confirmed stable.
+    """
     backups = await list_backups()
+    deleted: list[str] = []
+
+    # --- manual + cron pool ----------------------------------------------
     candidates = [
         b for b in backups
         if b.source in (BackupSource.cron, BackupSource.manual)
@@ -558,11 +556,31 @@ async def apply_retention() -> list[str]:
     if most_recent_ok is not None:
         keep.add(most_recent_ok.filename)
 
-    deleted: list[str] = []
+    # Pin the is_current dump regardless of age. A stack of dedupe-hit
+    # re-confirms could otherwise push an older-but-pointed-at dump out of
+    # the 14-recent window and retention would delete the file the bell
+    # labels as "matches live DB". `list_backups()` already stamped
+    # is_current on each row, so no extra pointer-file read here.
+    keep.update(b.filename for b in candidates if b.is_current)
+
     for b in candidates:
         if b.filename not in keep:
             await delete_backup(b.filename)
             deleted.append(b.filename)
+
+    # --- upload pool -----------------------------------------------------
+    # Cap uploaded dumps to avoid unbounded disk growth — a 2 GiB upload
+    # cap with no eviction would let an admin (or a runaway script) fill
+    # the volume. is_current is still pinned so a restore-from-upload
+    # workflow doesn't evict the bytes the DB was just restored from.
+    uploads = [b for b in backups if b.source == BackupSource.upload]
+    upload_keep = {b.filename for b in uploads[:_UPLOAD_RETENTION_COUNT]}
+    upload_keep.update(b.filename for b in uploads if b.is_current)
+    for b in uploads:
+        if b.filename not in upload_keep:
+            await delete_backup(b.filename)
+            deleted.append(b.filename)
+
     return deleted
 
 
@@ -598,6 +616,13 @@ async def save_uploaded_backup(upload_file: UploadFile) -> BackupMetadata:
         metadata, was_duplicate = await _finalize_partial_dump(
             partial_path, final_path, BackupSource.upload,
         )
+        # Uploads never move the Current pointer — bytes are external and we
+        # can't verify they represent live DB state. Stamp is_current
+        # truthfully against whatever the pointer holds right now: for a
+        # dedupe hit the matched dump may already be Current, for a unique
+        # upload the new filename can't equal the unchanged pointer.
+        pointer = _read_current_db_filename()
+        metadata = metadata.model_copy(update={"is_current": metadata.filename == pointer})
         if was_duplicate:
-            raise DuplicateBackupError(metadata.filename)
+            raise DuplicateBackupError(metadata)
         return metadata

@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.media import Media, RelationType
 from app.models.ratings import Ratings
 from app.models.user_visible_media import UserVisibleMedia
+from app.models.users import Users
 from app.schemas.rating_schema import SpoilerVisibility
 from app.services.filter_service import SEASON_ORDER
 
@@ -203,20 +204,59 @@ async def recompute_visibility_for_user(db: AsyncSession, user_id: int) -> None:
     """Full recompute of visible media for a user. Used for new user seeding.
     Does NOT commit — caller manages the transaction."""
     all_media = await _fetch_all_media_lightweight(db)
-    rated_ids = await _fetch_all_rated_media_ids(db, user_id)
+    media_by_anime: dict[int, list[_MediaEntry]] = defaultdict(list)
+    for m in all_media:
+        media_by_anime[m.anime_id].append(m)
+    await _recompute_user_against_catalog(db, user_id, media_by_anime)
 
+
+async def refresh_spoiler_cache_for_all_users(db: AsyncSession) -> None:
+    """Recompute every user's visibility cache after a catalog mutation
+    (new save, anime merge). Per-user try/commit so one poisoned user
+    (e.g. FK pointing at a stale rating row) doesn't abort the rest and
+    doesn't unwind already-committed catalog rows. backfill_spoiler_visibility
+    will mop up anyone we skip on next startup.
+
+    The catalog-wide media read is hoisted out of the per-user loop:
+    `_fetch_all_media_lightweight` returns the same rows regardless of
+    user, so calling `recompute_visibility_for_user` per user would ship
+    O(users × media) rows for nothing. Hoisting cuts the post-sweep
+    recompute (the longest single phase of the maintenance window)
+    proportionally to user count.
+    """
+    all_media = await _fetch_all_media_lightweight(db)
     media_by_anime: dict[int, list[_MediaEntry]] = defaultdict(list)
     for m in all_media:
         media_by_anime[m.anime_id].append(m)
 
+    user_ids = (await db.execute(select(Users.id))).scalars().all()
+    for user_id in user_ids:
+        try:
+            await _recompute_user_against_catalog(db, user_id, media_by_anime)
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            logger.exception(
+                "Spoiler-cache recompute failed for user %s — skipping",
+                user_id,
+            )
+
+
+async def _recompute_user_against_catalog(
+    db: AsyncSession,
+    user_id: int,
+    media_by_anime: dict[int, list[_MediaEntry]],
+) -> None:
+    """Single full-recompute worker. The all-users refresh shares one
+    catalog snapshot across users; the single-user refresh
+    (`recompute_visibility_for_user`) builds the snapshot itself and
+    delegates here."""
+    rated_ids = await _fetch_all_rated_media_ids(db, user_id)
     visible_ids = compute_visible_media(media_by_anime, rated_ids)
 
-    # Delete all existing rows for this user
     await db.execute(
         delete(UserVisibleMedia).where(UserVisibleMedia.user_id == user_id)
     )
-
-    # Bulk insert
     if visible_ids:
         await db.execute(
             pg_insert(UserVisibleMedia).values(

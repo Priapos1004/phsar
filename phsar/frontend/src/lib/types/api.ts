@@ -7,6 +7,12 @@ export interface TokenResponse {
 	token_type: string;
 }
 
+// Maintenance window status (GET /maintenance/status, public)
+export interface MaintenanceStatus {
+	active: boolean;
+	scheduled_at: string | null; // ISO 8601
+}
+
 // Media
 export interface MediaConnected {
 	mal_id: number;
@@ -245,6 +251,28 @@ export interface SpoilerVisibility {
 	visible_media_uuids: string[];
 }
 
+// Admin — Merge candidates
+export interface MergeCandidateAnimeSummary {
+	uuid: string;
+	title: string;
+	name_eng: string | null;
+	name_jap: string | null;
+	media_count: number;
+	studios: string[];
+	earliest_year: number | null;
+	earliest_aired_from: string | null;
+	rating_count: number;
+}
+
+export interface MergeCandidateListItem {
+	uuid: string;
+	similarity_score: number;
+	detected_by: string;
+	created_at: string;
+	anime_a: MergeCandidateAnimeSummary;
+	anime_b: MergeCandidateAnimeSummary;
+}
+
 // Admin — Registration tokens
 export interface RegistrationTokenListItem {
 	uuid: string;
@@ -256,6 +284,46 @@ export interface RegistrationTokenListItem {
 	expires_on: string;
 	used_by: string | null;
 	used_at: string | null;
+}
+
+// Jobs (content pipeline)
+export type JobKind = 'user_scrape' | 'update_sweep' | 'seasonal_sweep' | 'backup';
+export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
+
+// Mirrors backend `job_worker.ERROR_CATEGORY_*`. Keep both sides in sync —
+// the union is the compile-time contract that catches drift.
+export type JobErrorCategory = 'upstream_outage' | 'backup_disk_full' | 'backup_corrupt';
+
+export interface JobResultSummary {
+	retryable?: boolean;
+	error_category?: JobErrorCategory;
+	[key: string]: unknown;
+}
+
+// Backup dispatcher stamps these into result_summary on success. Typed as a
+// supertype of JobResultSummary so the bell can read fields directly via `?.`
+// without a runtime guard (Job.result_summary is still typed JobResultSummary).
+export interface BackupResultSummary extends JobResultSummary {
+	filename?: string;
+	size_bytes?: number;
+	integrity?: BackupIntegrity;
+	source?: BackupSource;
+	deduped_against?: string | null;
+}
+
+export interface Job {
+	uuid: string;
+	kind: JobKind;
+	status: JobStatus;
+	payload: Record<string, unknown>;
+	stage: string | null;
+	items_total: number | null;
+	items_done: number;
+	result_summary: JobResultSummary | null;
+	error_message: string | null;
+	created_at: string;
+	started_at: string | null;
+	finished_at: string | null;
 }
 
 // Admin — Backups

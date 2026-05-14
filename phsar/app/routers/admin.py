@@ -1,11 +1,25 @@
+"""Admin router root — mounts the focused sub-routers under `/admin`.
+
+This file owns the registration-token CRUD and the backups CRUD (list /
+create / download / delete / restore / upload). Cron-authed scheduler
+endpoints live in `admin_jobs.py` (mounted as a sub-router) and merge-
+candidate review lives in `admin_merge.py`.
+
+The split keeps each surface under ~150 lines so future agents don't
+scroll past three unrelated admin concerns to find the fourth.
+"""
+
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, UploadFile, status
+from fastapi import APIRouter, Body, Depends, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_db, require_backup_cron_token, require_roles
+from app.core.dependencies import get_db, require_roles
 from app.models.users import RoleType
+from app.routers.admin_jobs import enqueue_backup_job
+from app.routers.admin_jobs import router as admin_jobs_router
+from app.routers.admin_merge import router as admin_merge_router
 from app.schemas import admin_schema, auth_schema, backup_schema
 from app.services import admin_service, auth_service, backup_service
 
@@ -48,21 +62,6 @@ async def delete_registration_token(
     await admin_service.delete_registration_token(db, uuid)
 
 
-# Cron-authed endpoint — stays on the parent router so it doesn't inherit the
-# JWT admin dep from the backups sub-router (router-level dependencies are
-# additive; the only way to exclude the admin check is to not be under it).
-@router.post(
-    "/backups/auto",
-    response_model=backup_schema.BackupMetadata,
-    dependencies=[Depends(require_backup_cron_token)],
-)
-async def auto_backup():
-    """Cron-triggered backup. Creates a dump tagged as `cron` and applies retention."""
-    metadata = await backup_service.create_backup(source=backup_schema.BackupSource.cron)
-    await backup_service.apply_retention()
-    return metadata
-
-
 # Router-level admin dep — only `restore` actually reads the caller's username,
 # so everything else drops the per-endpoint Depends(require_admin).
 backups_router = APIRouter(prefix="/backups", dependencies=[Depends(require_admin)])
@@ -73,11 +72,26 @@ async def list_backups():
     return await backup_service.list_backups()
 
 
-@backups_router.post("", response_model=backup_schema.BackupMetadata)
-async def create_backup(data: backup_schema.BackupCreateRequest | None = None):
+@backups_router.post(
+    "",
+    response_model=admin_schema.JobEnqueuedResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def create_backup(
+    data: backup_schema.BackupCreateRequest | None = Body(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """Manual backup. Enqueues a `backup` job attributed to the admin;
+    the dispatcher runs pg_dump asynchronously while the admin keeps
+    working. The bell tracks progress + surfaces the final filename so
+    the BackupsCard can refresh its dump list on completion."""
     label = data.label if data else None
-    return await backup_service.create_backup(
-        source=backup_schema.BackupSource.manual, label=label,
+    return await enqueue_backup_job(
+        db,
+        backup_schema.BackupSource.manual,
+        label=label,
+        requested_by_user_id=current_user.id,
     )
 
 
@@ -117,3 +131,5 @@ async def upload_backup(file: UploadFile):
 
 
 router.include_router(backups_router)
+router.include_router(admin_jobs_router)
+router.include_router(admin_merge_router)

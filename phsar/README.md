@@ -21,14 +21,17 @@ phsar/
 │   │   ├── dependencies.py
 │   │   ├── logging_config.py
 │   │   ├── maintenance.py
+│   │   ├── maintenance_middleware.py
 │   │   └── security.py
 │   ├── daos/
 │   │   ├── anime_dao.py
 │   │   ├── base_dao.py
 │   │   ├── base_mal_id_dao.py
 │   │   ├── genre_dao.py
+│   │   ├── job_dao.py
 │   │   ├── media_dao.py
 │   │   ├── media_unwanted_dao.py
+│   │   ├── merge_candidate_dao.py
 │   │   ├── rating_dao.py
 │   │   ├── registration_token_dao.py
 │   │   ├── search_filters.py
@@ -39,14 +42,18 @@ phsar/
 │   ├── main.py
 │   ├── models/
 │   │   ├── anime.py
+│   │   ├── anime_freshness.py
 │   │   ├── anime_search.py
 │   │   ├── base.py
 │   │   ├── genre.py
+│   │   ├── job.py
 │   │   ├── media.py
+│   │   ├── media_freshness.py
 │   │   ├── media_genre.py
 │   │   ├── media_search.py
 │   │   ├── media_studio.py
 │   │   ├── media_unwanted.py
+│   │   ├── merge_candidate.py
 │   │   ├── rating_search.py
 │   │   ├── ratings.py
 │   │   ├── registration_token.py
@@ -59,8 +66,13 @@ phsar/
 │   │   └── watchlist_tag.py
 │   ├── routers/
 │   │   ├── admin.py
+│   │   ├── admin_jobs.py
+│   │   ├── admin_merge.py
 │   │   ├── auth.py
 │   │   ├── filters.py
+│   │   ├── jobs.py
+│   │   ├── library.py
+│   │   ├── maintenance.py
 │   │   ├── media.py
 │   │   ├── ratings.py
 │   │   ├── save.py
@@ -72,6 +84,8 @@ phsar/
 │   │   ├── anime_schema.py
 │   │   ├── auth_schema.py
 │   │   ├── backup_schema.py
+│   │   ├── job_schema.py
+│   │   ├── maintenance_schema.py
 │   │   ├── media_filter_schema.py
 │   │   ├── media_schema.py
 │   │   ├── rating_schema.py
@@ -83,19 +97,27 @@ phsar/
 │   │   ├── media_seeder.py
 │   │   └── user_seeder.py
 │   └── services/
+│       ├── _pg_subprocess.py
 │       ├── admin_service.py
 │       ├── anime_search_service.py
 │       ├── anime_service.py
 │       ├── auth_service.py
+│       ├── backup_dispatcher.py
 │       ├── backup_service.py
 │       ├── export_service.py
 │       ├── filter_service.py
 │       ├── jikan_scraper.py
+│       ├── job_worker.py
 │       ├── media_linking_service.py
 │       ├── media_search_service.py
 │       ├── media_service.py
+│       ├── merge_candidate_service.py
+│       ├── merge_detection_service.py
+│       ├── progress_reporter.py
 │       ├── rating_service.py
 │       ├── save_service.py
+│       ├── scrape_dispatcher.py
+│       ├── seasonal_sweep_dispatcher.py
 │       ├── search_service.py
 │       ├── spoiler_service.py
 │       ├── token_service.py
@@ -128,9 +150,13 @@ phsar/
 │   │   │   │   ├── DoubleRangeSlider.svelte
 │   │   │   │   ├── EChart.svelte
 │   │   │   │   ├── InfoDiashow.svelte
+│   │   │   │   ├── JobBell.svelte
 │   │   │   │   ├── LoadingScreen.svelte
+│   │   │   │   ├── MaintenanceBanner.svelte
 │   │   │   │   ├── MediaInfo.svelte
+│   │   │   │   ├── MergeCandidatesCard.svelte
 │   │   │   │   ├── NavBar.svelte
+│   │   │   │   ├── Notice.svelte
 │   │   │   │   ├── RatingCard.svelte
 │   │   │   │   ├── RatingsOverview.svelte
 │   │   │   │   ├── RatingsOverviewAttributes.svelte
@@ -143,6 +169,7 @@ phsar/
 │   │   │   │   ├── SearchBar.svelte
 │   │   │   │   ├── SkeletonMediaInfo.svelte
 │   │   │   │   ├── TagSelect.svelte
+│   │   │   │   ├── Toast.svelte
 │   │   │   │   ├── TokenExpiryDialog.svelte
 │   │   │   │   ├── VersionFooter.svelte
 │   │   │   │   └── ui/           # shadcn-svelte components
@@ -162,7 +189,11 @@ phsar/
 │   │   │   │       ├── slider/
 │   │   │   │       └── textarea/
 │   │   │   ├── stores/
+│   │   │   │   ├── _bumpStore.ts
 │   │   │   │   ├── auth.ts
+│   │   │   │   ├── bell-session.ts
+│   │   │   │   ├── jobs.ts
+│   │   │   │   ├── maintenance.ts
 │   │   │   │   ├── spoilerVisibility.ts
 │   │   │   │   └── userSettings.ts
 │   │   │   ├── styles/
@@ -188,6 +219,9 @@ phsar/
 │   │   │   │   └── +page.svelte
 │   │   │   ├── health/
 │   │   │   │   └── +server.ts
+│   │   │   ├── library/
+│   │   │   │   └── add/
+│   │   │   │       └── +page.svelte
 │   │   │   ├── login/
 │   │   │   │   └── +page.svelte
 │   │   │   ├── media/
@@ -203,8 +237,12 @@ phsar/
 │   │       ├── SpoilerGuardTest.svelte
 │   │       ├── api-download.test.ts
 │   │       ├── auth-store.test.ts
+│   │       ├── backups-card.test.ts
 │   │       ├── format-string.test.ts
+│   │       ├── job-bell.test.ts
+│   │       ├── library-add.test.ts
 │   │       ├── login.test.ts
+│   │       ├── maintenance-banner.test.ts
 │   │       ├── media-detail.test.ts
 │   │       ├── navbar.test.ts
 │   │       ├── rating-modal.test.ts
@@ -232,14 +270,21 @@ phsar/
 ├── pytest.ini
 ├── requirements.txt
 └── tests/
+    ├── _helpers.py
+    ├── conftest.py
     ├── routers/
     │   ├── conftest.py
     │   ├── test_admin.py
+    │   ├── test_admin_nightly.py
+    │   ├── test_admin_seasonal.py
+    │   ├── test_admin_sweep.py
     │   ├── test_anime_detail.py
     │   ├── test_auth.py
     │   ├── test_filters_options.py
     │   ├── test_filters_token.py
     │   ├── test_health.py
+    │   ├── test_jobs.py
+    │   ├── test_maintenance.py
     │   ├── test_media_detail.py
     │   ├── test_ratings.py
     │   ├── test_save.py
@@ -248,10 +293,20 @@ phsar/
     │   ├── test_search_ratings.py
     │   └── test_user_settings.py
     └── services/
+        ├── test_backup_jobs.py
         ├── test_backup_service.py
+        ├── test_backup_subprocess_failures.py
         ├── test_jikan_scraper.py
+        ├── test_job_dao.py
+        ├── test_job_worker.py
+        ├── test_merge_candidate_service.py
+        ├── test_merge_detection.py
+        ├── test_merge_preservation.py
+        ├── test_progress_reporter.py
         ├── test_search_service.py
+        ├── test_seasonal_sweep.py
         ├── test_spoiler_service.py
+        ├── test_update_sweep.py
         └── test_vector_embedding_service.py
 ```
 </details>
@@ -275,10 +330,26 @@ SEARCH_SECRET_KEY=supersecretsearchsecretkey
 # Optional: seeded guest account (restricted_user role, read-only)
 # GUEST_USERNAME=guest
 # GUEST_PASSWORD=guestpassword
-# Optional: shared bearer secret for POST /admin/backups/auto (scheduled dumps)
-# BACKUP_CRON_TOKEN=supersecretcrontoken
-# Optional: raise if pg_restore of a larger DB legitimately takes >10 min
+
+# --- Backups ----------------------------------------------------------------
+# Where dumps land. Defaults to ./backups (cwd-relative) so native dev works
+# without root; the container Dockerfile sets BACKUP_DIR=/backups.
+# BACKUP_DIR=./backups
+# pg_restore timeout. Raise if the DB grows large enough that restores
+# legitimately take > 10 min — a mid-restore kill leaves the DB half-dropped.
 # BACKUP_RESTORE_TIMEOUT_SECONDS=600
+
+# --- Content pipeline (jobs + sweeps) ---------------------------------------
+# Shared bearer for every cron-authed endpoint. See "Scheduled jobs" below.
+# Empty disables every cron endpoint (they fail closed).
+# JOBS_CRON_TOKEN=supersecretcrontoken
+# Max queued+running scrape jobs per user (bounds queue DEPTH, not parallelism
+# — the worker is sequential because of MAL's ~3 req/s rate limit).
+# JOBS_PER_USER_LIMIT=4
+# Dedupe window for /jobs/scrape. Failed jobs don't count.
+# JOBS_DEDUPE_HOURS=72
+# Bounds the nightly update_sweep batch size.
+# JOBS_SWEEP_MAX_PER_RUN=200
 ```
 
 *Change `animeuser`, `animepass`, `admin`, `supersecretpassword`, `supersecretsecretkey`, and `supersecretsearchsecretkey`*
@@ -379,6 +450,25 @@ All changes to the database during the tests are rolled back afterwards.
 cd frontend
 bun run test
 ```
+
+## Scheduled jobs
+
+The backend exposes four cron-authed endpoints — all share the same `JOBS_CRON_TOKEN` bearer.
+
+**Recommended (one daily task):** point your cron at the combined nightly endpoint. It enqueues a backup immediately (pg_dump is MVCC-snapshot, no maintenance window needed), an `update_sweep` after `delay_minutes`, and on Sunday UTC a `seasonal_sweep` with the same delay so the weekly catalog pickup piggybacks on the maintenance window.
+
+```sh
+curl -fsS -X POST -H "Authorization: Bearer $JOBS_CRON_TOKEN" \
+  "http://localhost:8000/admin/jobs/schedule-nightly?delay_minutes=20"
+```
+
+**Ad-hoc endpoints** (same token, kept for force-running one job outside the nightly window):
+
+- `POST /admin/backups/auto` — backup only
+- `POST /admin/jobs/schedule-sweep?delay_minutes=N` — `update_sweep` only
+- `POST /admin/jobs/schedule-seasonal?delay_minutes=N` — `seasonal_sweep` only
+
+`delay_minutes` is bound to `[0, 1440]` on every sweep endpoint and drives the frontend's maintenance-banner countdown.
 
 ## Trouble-shooting
 

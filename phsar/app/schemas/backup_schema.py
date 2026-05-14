@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class BackupIntegrity(str, Enum):
@@ -39,3 +39,22 @@ class BackupCreateRequest(BaseModel):
 
 class BackupRestoreRequest(BaseModel):
     confirm: str
+
+
+class BackupJobPayload(BaseModel):
+    """`extra='forbid'` so a router-side typo (e.g. `tag` instead of `label`)
+    surfaces at job pickup instead of being silently dropped."""
+    model_config = ConfigDict(extra="forbid")
+
+    source: BackupSource
+    label: str | None = None
+
+
+class BackupResultSummary(BaseModel):
+    """`deduped_against` is the matched dump's filename when create_backup
+    found an existing dump with the same content hash; None for unique creates."""
+    filename: str
+    size_bytes: int
+    integrity: BackupIntegrity
+    source: BackupSource
+    deduped_against: str | None = None
