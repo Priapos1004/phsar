@@ -1,0 +1,186 @@
+"""Two-pass relation classifier for anime media graphs.
+
+Pass 1 (in `jikan_scraper.py`) captures relation EDGES during BFS instead
+of classifying nodes inline. Pass 2 (this module) picks a canonical
+anchor, builds the main chain via sequel/prequel transitive closure,
+classifies alt-version branches, then defaults the rest to side_story.
+
+Path-dependent classification was the root cause of the Evangelion
+umbrella anchoring on Rebuild Movie 1 (see Issue 2b in
+compound-docs/2026-05-11-jikan-scraper-quirks.md). With nodes + edges
+known up front, anchor choice no longer depends on which media the user
+searched for.
+
+The function is pure and DB-less so it can be exercised at scrape time,
+at merge time over a consolidated graph, and at backfill time over the
+existing catalog without changing implementation.
+"""
+
+from collections import defaultdict, deque
+from typing import TypedDict
+
+
+class ClassifierNode(TypedDict):
+    media_type: str | None
+    aired_from: str | None
+    episodes: int | None
+    duration_seconds: int | None
+    scored_by: int
+
+
+SUBSTANCE_MIN_EPISODES = 8
+SUBSTANCE_MIN_TV_DURATION_S = 900    # 15 min
+SUBSTANCE_MIN_MOVIE_DURATION_S = 1800  # 30 min
+
+_TV_LIKE_TYPES = frozenset({"tv", "ona", "tvspecial"})
+_MOVIE_TYPES = frozenset({"movie"})
+
+# Fallback tier 4 covers OVA / Special / anything else that passed
+# substance but isn't canonical-shaped.
+_ANCHOR_TIER = {
+    "tv": 1,
+    "ona": 2,
+    "movie": 3,
+}
+_ANCHOR_TIER_FALLBACK = 4
+
+_MAIN_CHAIN_EDGES = frozenset({"sequel", "prequel"})
+_ALT_CHAIN_EDGES = frozenset({"sequel", "prequel", "alternative_version"})
+
+
+def _normalize_media_type(media_type: str | None) -> str:
+    if not media_type:
+        return ""
+    return media_type.replace(" ", "").lower()
+
+
+def _passes_substance(node: ClassifierNode) -> bool:
+    media_type = _normalize_media_type(node.get("media_type"))
+    duration = node.get("duration_seconds")
+    episodes = node.get("episodes")
+    if media_type in _TV_LIKE_TYPES:
+        if episodes is None or duration is None:
+            return False
+        return episodes >= SUBSTANCE_MIN_EPISODES and duration >= SUBSTANCE_MIN_TV_DURATION_S
+    if media_type in _MOVIE_TYPES:
+        if duration is None:
+            return False
+        return duration >= SUBSTANCE_MIN_MOVIE_DURATION_S
+    return False
+
+
+def _anchor_sort_key(mal_id: int, node: ClassifierNode) -> tuple:
+    media_type = _normalize_media_type(node.get("media_type"))
+    tier = _ANCHOR_TIER.get(media_type, _ANCHOR_TIER_FALLBACK)
+    aired = node.get("aired_from")
+    scored_by = node.get("scored_by") or 0
+    # Bucket nulls last within a tier so a typed-but-undated entry never
+    # beats one with a real date. Within non-nulls, oldest wins.
+    if aired is None:
+        aired_sort = (1, "")
+    else:
+        aired_sort = (0, aired)
+    return (tier, aired_sort, -scored_by, mal_id)
+
+
+def _pick_anchor(nodes: dict[int, ClassifierNode]) -> int:
+    substance_passing = {m: n for m, n in nodes.items() if _passes_substance(n)}
+    # Fallback covers donghua / orphan-side-story / standalone-weak-anime
+    # cases where nothing passes substance — pick the most main-like
+    # node anyway so the anime row has a `main`.
+    candidates = substance_passing or nodes
+    return min(candidates.items(), key=lambda kv: _anchor_sort_key(kv[0], kv[1]))[0]
+
+
+def _build_adjacency(
+    edges: list[tuple[int, int, str]],
+) -> dict[int, list[tuple[int, str]]]:
+    # Undirected adjacency: MAL relations are reciprocal across the pair
+    # (A → Sequel → B implies B → Prequel → A) so either direction
+    # counts for classifier traversal.
+    adj: dict[int, list[tuple[int, str]]] = defaultdict(list)
+    for a, b, rel in edges:
+        adj[a].append((b, rel))
+        adj[b].append((a, rel))
+    return adj
+
+
+def _closure(
+    starts: set[int],
+    adj: dict[int, list[tuple[int, str]]],
+    allowed_rels: frozenset[str],
+    excluded: set[int],
+) -> set[int]:
+    visited: set[int] = set(starts)
+    queue: deque[int] = deque(starts)
+    while queue:
+        cur = queue.popleft()
+        for neighbor, rel in adj.get(cur, []):
+            if neighbor in visited or neighbor in excluded:
+                continue
+            if rel not in allowed_rels:
+                continue
+            visited.add(neighbor)
+            queue.append(neighbor)
+    return visited
+
+
+def classify_anime_relations(
+    nodes: dict[int, ClassifierNode],
+    edges: list[tuple[int, int, str]],
+) -> dict[int, str]:
+    """Classify every node in `nodes` as one of: main, alternative_version,
+    side_story, summary, crossover.
+
+    `nodes` maps `mal_id` to a node dict (see ClassifierNode TypedDict).
+    `edges` is a list of (a, b, normalized_relation) tuples where
+    `normalized_relation` matches `jikan_scraper._normalize_relation`
+    output (lowercased, spaces → underscores).
+    """
+    if not nodes:
+        return {}
+
+    anchor = _pick_anchor(nodes)
+    adj = _build_adjacency(edges)
+
+    main_chain = _closure({anchor}, adj, _MAIN_CHAIN_EDGES, set())
+
+    # Alt-chain seeds: nodes adjacent to main chain via an alt-version edge.
+    # Closure expands via sequel/prequel/alt-version so a chain of sequel'd
+    # alt-versions (Rebuild Movie 1 → 2 → 3 → 4) all inherit the label.
+    alt_seeds = {
+        neighbor
+        for main_node in main_chain
+        for neighbor, rel in adj.get(main_node, [])
+        if rel == "alternative_version" and neighbor not in main_chain
+    }
+    alt_chain = _closure(alt_seeds, adj, _ALT_CHAIN_EDGES, main_chain)
+
+    anchored = main_chain | alt_chain
+    classifications: dict[int, str] = {}
+    for mal_id in nodes:
+        if mal_id in main_chain:
+            classifications[mal_id] = "main"
+            continue
+        if mal_id in alt_chain:
+            classifications[mal_id] = "alternative_version"
+            continue
+        edge_types = {rel for n, rel in adj.get(mal_id, []) if n in anchored}
+        if "summary" in edge_types:
+            classifications[mal_id] = "summary"
+        elif "crossover" in edge_types:
+            classifications[mal_id] = "crossover"
+        else:
+            classifications[mal_id] = "side_story"
+
+    # Substance demotion: weak-main media inside the main chain (except the
+    # anchor) drops to side_story. Load-bearing at merge time when a
+    # standalone weak-anime (e.g. the Overlord 2024 standalone Manner Movie)
+    # gets absorbed and would otherwise inherit `main`.
+    for mal_id in main_chain:
+        if mal_id == anchor:
+            continue
+        if not _passes_substance(nodes[mal_id]):
+            classifications[mal_id] = "side_story"
+
+    return classifications
