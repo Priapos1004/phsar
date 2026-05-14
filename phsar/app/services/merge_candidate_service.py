@@ -193,6 +193,11 @@ async def merge(
     # statement, so we don't update candidate.status here — the row no longer
     # exists once the cascade fires.
     anime_b = await db.get(Anime, anime_b_id)
+    if anime_b is None:
+        # Race window: B got deleted (and our candidate row cascade-killed)
+        # between _ensure_pending and now. Surface as not-found instead of
+        # letting db.delete(None) raise UnmappedInstanceError.
+        raise MergeCandidateNotFoundError(str(uuid))
     await db.delete(anime_b)
     await db.flush()
 
