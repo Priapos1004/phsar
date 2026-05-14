@@ -135,6 +135,7 @@ Filters appear in a collapsible panel below the search input. Filter options ada
 - Filter options are fetched from `GET /filters/options?view_type=anime|media` on component mount and on view toggle
 - "Clear all" button resets all filters and query to defaults
 - Modifying filters and resubmitting creates a new search token and navigates
+- **Anime view:** filters apply to the value shown on the anime card, not to individual media. Age rating uses the max across media; airing status uses the priority-collapsed value (Currently Airing dominates over Finished over Not yet aired).
 
 ---
 
@@ -356,13 +357,14 @@ Each anime search result card shows:
 
 ### 10.5 Merge Candidates
 - Card below Backups. Admin-only.
-- **List**: pending merge candidates flagged by the duplicate detector (running on every save and at app startup). Each row shows:
+- **List**: pending merge candidates flagged by the duplicate detector (running on every save covering new × new and new × existing pairs, at app startup covering existing × existing, and on admin demand via the Re-run detection button). Each row shows:
   - A "% match" badge (similarity score)
   - A `detected_by` label (`title_studio`, `title_desc`, or `relation_link`)
   - Side-by-side anime cards labelled "Anime A (kept)" / "Anime B (merged in)" with title, romanized name, year, media count, rating count, and primary studio names. The recommended A is whichever side has the earliest aired media (with rating count as tiebreak); rating count is shown explicitly so the admin can see the justification.
   - Anime titles link to `/anime?uuid=<uuid>` (open in new tab) for context before deciding
 - **Swap A/B**: per-row ghost button next to the similarity badge. Flips which side is rendered as A vs B and changes which uuid is sent as `keep_uuid` on merge. Local-only state; refresh resets the toggles.
 - **Refresh**: spinning-arrow icon in the header re-fetches the list silently — existing rows stay rendered while the request is in flight, the spinner spins, and the keyed each-block diffs the result in place. The list never collapses to "Loading…" mid-refresh, so there's no scroll jump.
+- **Re-run detection**: magnifying-glass icon next to the refresh control. Re-runs the existing × existing detection backfill on demand — primarily for the post-restore workflow (restore doesn't bounce the container, so the lifespan-startup backfill never sees the restored catalog). The backfiller is idempotent: already-flagged pairs (any status) skip via `seen_pairs`, so repeat clicks return 0. Shows a "Flagged N new candidate(s)" inline note on success.
 - **Merge**: re-parents B's media onto A and deletes B (cascade-removes the candidate row + any other pending pairs referencing B). A's anime embedding is regenerated, the duplicate detector re-runs against the survivor (so freshly-valid pairs from the merged-in media surface as new candidates), and the spoiler-cache is recomputed for all users. Merge button opens an inline confirm/cancel pair; while in flight the button shows "Merging…" and the row stays visible. On success the list refetches automatically (silent), so cascade-resolved rows leave and any re-detected pairs appear in one update. Backend rejects with 409 if A and B share any `Media.mal_id` (a should-never-happen invariant; admin investigates manually).
 - **Dismiss**: marks the candidate `dismissed` (status flip; row stays in DB so the seen-pairs filter prevents re-flagging). Same inline confirm/cancel UX. On success the row is removed from the local list.
 - Already-resolved candidates (merged or dismissed) return 409 if the action is retried.

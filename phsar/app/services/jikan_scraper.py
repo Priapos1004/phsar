@@ -59,9 +59,11 @@ if TYPE_CHECKING:
 BASE_URL = "https://api.jikan.moe/v4"
 
 # Sentinel media.airing_status values MAL returns. Module-level so callers
-# (sweep tier query, dispatcher diff, the not-yet-aired blacklist guard)
+# (sweep tier query, dispatcher diff, the not-yet-aired blacklist guard,
+# the anime-card status derivation, and the anime-view search filter)
 # don't drift onto separate string copies.
 AIRING_STATUS_CURRENTLY_AIRING = "Currently Airing"
+AIRING_STATUS_FINISHED_AIRING = "Finished Airing"
 AIRING_STATUS_NOT_YET_AIRED = "Not yet aired"
 
 logger = logging.getLogger(__name__)

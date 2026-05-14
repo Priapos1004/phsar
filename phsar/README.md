@@ -289,6 +289,7 @@ phsar/
     │   ├── test_ratings.py
     │   ├── test_save.py
     │   ├── test_search_anime.py
+    │   ├── test_search_anime_filters.py
     │   ├── test_search_media.py
     │   ├── test_search_ratings.py
     │   └── test_user_settings.py

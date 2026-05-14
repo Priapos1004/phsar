@@ -1,15 +1,20 @@
 import logging
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import and_, cast, distinct, func, select, tuple_
+from sqlalchemy import and_, case, cast, distinct, func, select, tuple_
 
 from app.models.genre import Genre
-from app.models.media import Media, SeasonType
+from app.models.media import AGE_RATING_MAP, Media, SeasonType
 from app.models.media_genre import MediaGenre
 from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
+from app.services.jikan_scraper import (
+    AIRING_STATUS_CURRENTLY_AIRING,
+    AIRING_STATUS_FINISHED_AIRING,
+    AIRING_STATUS_NOT_YET_AIRED,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,16 +47,25 @@ def _parse_season_filters(anime_season: list[str]) -> list[tuple]:
     return filter_pairs
 
 
-def _build_categorical_conditions(filters: MediaSearchFilters) -> list:
-    """Build WHERE conditions for categorical media filters (media_type, relation_type, etc.)."""
+def _build_categorical_conditions(
+    filters: MediaSearchFilters, *, for_anime: bool = False,
+) -> list:
+    """Build WHERE conditions for categorical media filters.
+
+    `for_anime=True` excludes `age_rating` and `airing_status` — those move
+    to HAVING-clause aggregations in `apply_anime_having_filters` so the
+    filter matches the card's derived display value (max age across media,
+    priority-collapsed airing status) instead of the any-media WHERE
+    semantics that media-view search uses.
+    """
     conditions = []
     if filters.media_type:
         conditions.append(Media.media_type.in_(filters.media_type))
     if filters.relation_type:
         conditions.append(Media.relation_type.in_(filters.relation_type))
-    if filters.age_rating:
+    if not for_anime and filters.age_rating:
         conditions.append(Media.age_rating.in_(filters.age_rating))
-    if filters.airing_status:
+    if not for_anime and filters.airing_status:
         conditions.append(Media.airing_status.in_(filters.airing_status))
     if filters.anime_season:
         filter_pairs = _parse_season_filters(filters.anime_season)
@@ -60,6 +74,21 @@ def _build_categorical_conditions(filters: MediaSearchFilters) -> list:
                 tuple_(Media.anime_season_year, Media.anime_season_name).in_(filter_pairs)
             )
     return conditions
+
+
+def _age_rating_text_to_numerics(text_ratings: list[str]) -> list[int]:
+    """Map MAL `age_rating` text strings to their numeric tier using the
+    same prefix lookup the `Media.age_rating_numeric` hybrid uses. Lets the
+    anime-view filter compare against `MAX(age_rating_numeric)` (the card's
+    derivation) without round-tripping back to text."""
+    results: list[int] = []
+    for text in text_ratings:
+        normalized = text.strip()
+        for prefix, value in AGE_RATING_MAP:
+            if normalized.startswith(prefix):
+                results.append(value)
+                break
+    return results
 
 
 def apply_media_filters(stmt, filters: MediaSearchFilters):
@@ -121,13 +150,14 @@ def apply_media_filters(stmt, filters: MediaSearchFilters):
 
 def apply_anime_pre_filters(stmt, filters: MediaSearchFilters):
     """Apply WHERE-clause filters with 'any' semantics for anime-level search.
-    These narrow which media rows enter the GROUP BY. Genre and range filters
-    are excluded — they use HAVING on aggregated values instead."""
+    These narrow which media rows enter the GROUP BY. Genre, range, age_rating,
+    and airing_status filters are excluded — they use HAVING aggregations that
+    mirror the anime card's derived display values instead."""
 
     if filters.studio_name:
         stmt = _apply_studio_filter(stmt, filters.studio_name)
 
-    conditions = _build_categorical_conditions(filters)
+    conditions = _build_categorical_conditions(filters, for_anime=True)
 
     if conditions:
         stmt = stmt.where(and_(*conditions))
@@ -176,6 +206,38 @@ def apply_anime_having_filters(stmt, filters: MediaSearchFilters, agg_columns: d
                 .scalar_subquery()
             )
             conditions.append(genre_count_subq * 2 > agg_columns["media_count"])
+
+    # Age-rating filter: compare against MAX(media.age_rating_numeric), the
+    # same aggregation `_compute_anime_aggregates` uses for the card's
+    # displayed age. A mixed-rating anime (e.g. G main + R side-story)
+    # surfaces under R, not G, because the card surfaces under R.
+    if filters.age_rating:
+        numerics = _age_rating_text_to_numerics(filters.age_rating)
+        if numerics:
+            conditions.append(func.max(Media.age_rating_numeric).in_(numerics))
+
+    # Airing-status filter: reproduce `_compute_airing_status`'s priority
+    # ladder (Currently → Finished → Not yet aired) in SQL, then check
+    # membership. Without this, an anime with one Currently-Airing media
+    # and one Finished side-story would show up when the user filters
+    # "Finished" — the WHERE-based any-media match wouldn't respect the
+    # card's collapsed status.
+    if filters.airing_status:
+        # Mirror `_compute_airing_status` in anime_search_service.py: the
+        # card collapses to Currently → Finished → Not yet aired by
+        # priority. Filter against that derived value, not any-media
+        # membership, so a Currently-Airing anime with a Finished side-
+        # story doesn't surface under the "Finished" filter.
+        has_current = func.bool_or(Media.airing_status == AIRING_STATUS_CURRENTLY_AIRING)
+        has_finished = func.bool_or(Media.airing_status == AIRING_STATUS_FINISHED_AIRING)
+        has_upcoming = func.bool_or(Media.airing_status == AIRING_STATUS_NOT_YET_AIRED)
+        card_status = case(
+            (has_current, AIRING_STATUS_CURRENTLY_AIRING),
+            (has_finished, AIRING_STATUS_FINISHED_AIRING),
+            (has_upcoming, AIRING_STATUS_NOT_YET_AIRED),
+            else_=None,
+        )
+        conditions.append(card_status.in_(filters.airing_status))
 
     if conditions:
         stmt = stmt.having(and_(*conditions))

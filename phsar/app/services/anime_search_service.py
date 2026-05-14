@@ -17,6 +17,11 @@ from app.schemas.anime_schema import (
 )
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
 from app.services.filter_service import SEASON_ORDER
+from app.services.jikan_scraper import (
+    AIRING_STATUS_CURRENTLY_AIRING,
+    AIRING_STATUS_FINISHED_AIRING,
+    AIRING_STATUS_NOT_YET_AIRED,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -25,17 +30,21 @@ anime_dao = AnimeDAO()
 
 def _compute_airing_status(statuses: list[str]) -> tuple[str, bool]:
     """Compute a single airing status from a list of per-media statuses.
-    Returns (primary_status, has_upcoming)."""
-    has_current = "Currently Airing" in statuses
-    has_finished = "Finished Airing" in statuses
-    has_upcoming = "Not yet aired" in statuses
+    Returns (primary_status, has_upcoming).
+
+    The priority Currently → Finished → Not yet aired is also reproduced in
+    SQL by `apply_anime_having_filters` so anime-view search filtering
+    matches the card the user sees. Keep these two sites in sync."""
+    has_current = AIRING_STATUS_CURRENTLY_AIRING in statuses
+    has_finished = AIRING_STATUS_FINISHED_AIRING in statuses
+    has_upcoming = AIRING_STATUS_NOT_YET_AIRED in statuses
 
     if has_current:
-        primary = "Currently Airing"
+        primary = AIRING_STATUS_CURRENTLY_AIRING
     elif has_finished:
-        primary = "Finished Airing"
+        primary = AIRING_STATUS_FINISHED_AIRING
     else:
-        primary = "Not yet aired"
+        primary = AIRING_STATUS_NOT_YET_AIRED
 
     show_upcoming = has_upcoming and (has_current or has_finished)
     return primary, show_upcoming

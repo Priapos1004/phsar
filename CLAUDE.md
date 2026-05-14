@@ -196,6 +196,7 @@ Business logic as module-level async functions.
 - **`vector_embedding_service.py`** — sentence-transformers embeddings
 - **`media_search_service.py`** / **`anime_search_service.py`** — filtered DB search
   - Anime variant uses a two-phase query (GROUP BY + HAVING for filter/order, then detail fetch) with majority-genre logic
+  - **Anime-view filters mirror the card's derivation in `_compute_anime_aggregates`**, not per-media WHERE: `age_rating` filters against `MAX(age_rating_numeric)`, `airing_status` against the priority-collapsed value (Currently → Finished → Not yet aired). Otherwise an anime with one Finished side-story would surface under the "Finished" filter despite the card showing "Currently Airing"
 - **`filter_service.py`** — filter option values; view-type-aware for anime vs media ranges
 - **`auth_service.py`** — registration, authentication, token issuance, account deletion
 - **`user_settings_service.py`** — user settings CRUD + default creation
