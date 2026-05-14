@@ -14,6 +14,7 @@ from app.core.maintenance_middleware import MaintenanceGateMiddleware
 from app.daos.job_dao import JobDAO
 from app.exceptions import PhsarBaseError
 from app.models.job import JobKind
+from app.seeders.anime_title_backfiller import backfill_anime_title_suffixes
 from app.seeders.embedding_backfiller import backfill_embeddings
 from app.seeders.genre_seeder import seed_genres
 from app.seeders.user_seeder import (
@@ -44,6 +45,12 @@ async def lifespan(app: FastAPI):
         await seed_guest_user(session)
         await backfill_user_settings(session)
         await backfill_spoiler_visibility(session)
+        # Title-suffix stripper runs BEFORE the embedding backfiller so a
+        # row whose suffix is stripped here gets its regenerated embedding
+        # immediately. The embedding backfiller below covers the
+        # missing-embedding case (model swap / new rows without a
+        # search row); these two passes are independent.
+        await backfill_anime_title_suffixes(session)
         await backfill_embeddings(session)
         await backfill_merge_candidates(session)
         # Mark anything left in `running` as failed — the previous process

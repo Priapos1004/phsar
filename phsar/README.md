@@ -92,6 +92,7 @@ phsar/
 │   │   ├── search_schema.py
 │   │   └── user_settings_schema.py
 │   ├── seeders/
+│   │   ├── anime_title_backfiller.py
 │   │   ├── embedding_backfiller.py
 │   │   ├── genre_seeder.py
 │   │   ├── media_seeder.py
@@ -295,6 +296,7 @@ phsar/
     │   ├── test_search_ratings.py
     │   └── test_user_settings.py
     └── services/
+        ├── test_anime_service.py
         ├── test_backup_jobs.py
         ├── test_backup_service.py
         ├── test_backup_subprocess_failures.py
