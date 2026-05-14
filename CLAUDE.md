@@ -59,7 +59,7 @@ docker exec -it anime-postgres psql -U <DB_USER> -d <DB_NAME> \
 ### Docker (production parity)
 ```bash
 # Build + run db + backend + frontend containers end-to-end (NOT the dev flow).
-cp .env.example .env
+cp phsar/.env.example .env
 docker compose up --build
 ```
 
