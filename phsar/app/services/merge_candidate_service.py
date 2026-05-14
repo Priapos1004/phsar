@@ -6,7 +6,7 @@ is fail-loud — see MergeMalIdConflictError.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -61,12 +61,19 @@ def _summarize(anime: Anime, rating_count: int) -> MergeCandidateAnimeSummary:
     )
 
 
+_AIRED_FROM_NULL_SENTINEL = datetime.max.replace(tzinfo=timezone.utc)
+
+
 def _rank_key(summary: MergeCandidateAnimeSummary, anime_id: int) -> tuple:
     """Sort key for the recommended-keep ordering: earliest aired_from
-    ASC (NULL sorts last via datetime.max sentinel), rating_count DESC,
-    anime_id ASC as the stable fallback."""
+    ASC (NULL sorts last), rating_count DESC, anime_id ASC as the stable
+    fallback.
+
+    Sentinel must be tz-aware because Media.aired_from is DateTime(timezone=True);
+    mixing naive datetime.max with aware values raises TypeError on comparison.
+    """
     return (
-        summary.earliest_aired_from or datetime.max,
+        summary.earliest_aired_from or _AIRED_FROM_NULL_SENTINEL,
         -summary.rating_count,
         anime_id,
     )
