@@ -273,6 +273,10 @@ export interface MergeCandidateListItem {
 	anime_b: MergeCandidateAnimeSummary;
 }
 
+export interface MergeBackfillResult {
+	inserted: number;
+}
+
 // Admin — Registration tokens
 export interface RegistrationTokenListItem {
 	uuid: string;

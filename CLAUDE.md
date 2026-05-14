@@ -79,6 +79,7 @@ FastAPI endpoint definitions. Each router maps to an API prefix.
     - `POST /admin/backups` and `POST /admin/backups/auto` (cron-token authed) both enqueue a `backup` job and return 202 with the job uuid so the request thread doesn't block on `pg_dump`
     - Manual backups attribute to the admin user (visible only in their bell); cron is a system job (`requested_by_user_id=null`), invisible to every bell — the dump list is the audit log
   - Merge-candidate review (list pending, merge, dismiss; powered by the duplicate detector)
+    - `POST /admin/merge-candidates/backfill` re-runs existing × existing detection without a container restart — primarily for the post-restore workflow (restore is synchronous, so the lifespan-startup backfill never sees the restored catalog)
   - Three cron-token-authed sweep schedulers:
     - `POST /admin/jobs/schedule-sweep?delay_minutes=N` — enqueues an `update_sweep` job (nightly catalog refresh + relations probe)
     - `POST /admin/jobs/schedule-seasonal?delay_minutes=N` — enqueues a `seasonal_sweep` job (weekly `/seasons/now` scrape)
@@ -207,7 +208,7 @@ Business logic as module-level async functions.
       - Containment additionally requires word-boundary on both sides of the match in the longer string AND a size floor of `MIN_CONTAINMENT_MATCH_CHARS=4` chars OR a full match where the shorter title is itself ≥ `MIN_FULL_MATCH_CHARS=3`
     - `title_desc` — weaker title match + description-embedding cosine ≥ 0.85
     - `relation_link` — BFS surfaced a non-crossover related media under a different anime
-  - Detection runs at the end of `save_search_results` (new × existing); startup `backfill_merge_candidates` covers existing × existing
+  - Detection runs at the end of `save_search_results` (new × existing AND new × new — the latter catches single-scrape duplicates without waiting for a restart); startup `backfill_merge_candidates` covers existing × existing, and admin can re-trigger it any time via the manual `POST /admin/merge-candidates/backfill` endpoint
   - `seen_pairs` pre-fetch short-circuits flagged or admin-resolved pairs before any similarity computation
 
 - **`merge_candidate_service.py`** — admin operations on merge candidates

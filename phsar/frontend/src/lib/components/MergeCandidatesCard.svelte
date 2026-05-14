@@ -4,8 +4,12 @@
     import { Button } from '$lib/components/ui/button';
     import * as Card from '$lib/components/ui/card';
     import { Badge } from '$lib/components/ui/badge';
-    import { GitMerge, X, RefreshCw, ArrowLeftRight } from 'lucide-svelte';
-    import type { MergeCandidateListItem, MergeCandidateAnimeSummary } from '$lib/types/api';
+    import { GitMerge, X, RefreshCw, ArrowLeftRight, Search } from 'lucide-svelte';
+    import type {
+        MergeBackfillResult,
+        MergeCandidateAnimeSummary,
+        MergeCandidateListItem,
+    } from '$lib/types/api';
 
     let candidates = $state<MergeCandidateListItem[]>([]);
     // `loading` flips off after the first fetch and stays off; subsequent
@@ -14,8 +18,10 @@
     // unmount, no scroll jump.
     let loading = $state(true);
     let refreshing = $state(false);
-    let busy = $derived(loading || refreshing);
+    let redetecting = $state(false);
+    let busy = $derived(loading || refreshing || redetecting);
     let error = $state('');
+    let info = $state('');
     let busyUuid = $state<string | null>(null);
     let confirmMergeUuid = $state<string | null>(null);
     let confirmDismissUuid = $state<string | null>(null);
@@ -31,6 +37,13 @@
 
     function sides(c: MergeCandidateListItem): [MergeCandidateAnimeSummary, MergeCandidateAnimeSummary] {
         return swapped[c.uuid] ? [c.anime_b, c.anime_a] : [c.anime_a, c.anime_b];
+    }
+
+    async function refreshCandidates() {
+        // Manual user-initiated refresh — clear the stale re-detect summary
+        // so it doesn't outlive the run that produced it.
+        info = '';
+        await fetchCandidates();
     }
 
     async function fetchCandidates() {
@@ -51,6 +64,7 @@
         const [keep] = sides(candidate);
         busyUuid = uuid;
         error = '';
+        info = '';
         try {
             await api.post(`/admin/merge-candidates/${uuid}/merge`, { keep_uuid: keep.uuid });
             confirmMergeUuid = null;
@@ -65,9 +79,27 @@
         }
     }
 
+    async function handleRedetect() {
+        redetecting = true;
+        error = '';
+        info = '';
+        try {
+            const result = await api.post<MergeBackfillResult>('/admin/merge-candidates/backfill', {});
+            info = result.inserted === 0
+                ? 'No new candidates found.'
+                : `Flagged ${result.inserted} new candidate${result.inserted === 1 ? '' : 's'}.`;
+            await fetchCandidates();
+        } catch (err) {
+            error = err instanceof ApiError ? err.detail : 'Failed to re-run detection';
+        } finally {
+            redetecting = false;
+        }
+    }
+
     async function handleDismiss(uuid: string) {
         busyUuid = uuid;
         error = '';
+        info = '';
         try {
             await api.post(`/admin/merge-candidates/${uuid}/dismiss`, {});
             confirmDismissUuid = null;
@@ -93,13 +125,27 @@
     <Card.Header>
         <div class="flex items-center justify-between">
             <h2 class="text-lg font-semibold text-card-foreground">Merge Candidates</h2>
-            <Button variant="ghost" size="sm" onclick={fetchCandidates} disabled={busy} title="Refresh">
-                <RefreshCw class="size-4 {busy ? 'animate-spin' : ''}" />
-            </Button>
+            <div class="flex items-center gap-1">
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    onclick={handleRedetect}
+                    disabled={busy}
+                    title="Re-run detection across the existing catalog (useful after restoring a backup)"
+                >
+                    <Search class="size-4 {redetecting ? 'animate-pulse' : ''}" />
+                </Button>
+                <Button variant="ghost" size="sm" onclick={refreshCandidates} disabled={busy} title="Refresh">
+                    <RefreshCw class="size-4 {refreshing ? 'animate-spin' : ''}" />
+                </Button>
+            </div>
         </div>
         <p class="text-xs text-muted-foreground">
             Pairs flagged by the duplicate detector. Merging re-parents B's media onto A and deletes B.
         </p>
+        {#if info}
+            <p class="text-xs text-primary mt-1">{info}</p>
+        {/if}
     </Card.Header>
     <Card.Content>
         {#if error}

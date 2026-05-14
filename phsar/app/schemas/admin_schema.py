@@ -47,6 +47,13 @@ class MergeResult(BaseModel):
     surviving_anime_uuid: str
 
 
+class MergeBackfillResult(BaseModel):
+    """Returned by the manual re-detect trigger. `inserted` is the number
+    of new pending pairs created by this run; the backfiller is idempotent
+    so repeated clicks return 0 once everything is flagged."""
+    inserted: int
+
+
 class ScheduledSweepResponse(BaseModel):
     """Returned by POST /admin/jobs/schedule-sweep so the cron can confirm
     the job is queued and (in dev) the admin can poll /maintenance/status
