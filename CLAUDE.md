@@ -256,6 +256,7 @@ Data access layer.
     - `ix_media_airing_now` — partial index on `media(anime_id) WHERE airing_status = 'Currently Airing'`
     - `ix_media_main_aired_from` — composite `(anime_id, relation_type, aired_from)` for the recent-main EXISTS
 - **`search_filters.py`** — shared filter/ordering helpers for media, anime pre-aggregation (WHERE), and anime post-aggregation (HAVING)
+  - **Title-search ranking**: `apply_vector_ordering` subtracts a two-tier bonus from `cosine_distance` so titles that literally match the query rank ahead of merely thematically-similar shows. Substring (`ilike`) bonus is flat; pg_trgm `similarity()` bonus is scaled linearly above a threshold so typos still surface the intended show. Description and rating-notes search skip both bonuses (semantic queries, not literal). pg_trgm extension enabled via migration `4b8f1e3c7d0a`
 - **`JobDAO`**:
   - Claim-skip-locked dispatch + crash recovery
   - `reap_orphans` — runs at startup, flips any `running` rows to `failed` so a mid-job restart doesn't leave them stuck

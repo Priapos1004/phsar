@@ -118,6 +118,8 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 8. If no results: "No results found :-("
 9. If no search performed yet: "Start searching!!!"
 
+**Title-query ranking:** Title search starts from embedding cosine similarity, then boosts results whose titles literally contain the query (`Lord of` → `Lord of Mysteries` first, not `Overlord`) and results that fuzzy-match via trigram similarity (typos like `lor of` still surface the intended show near the top). Description and rating-notes search rank by embedding only — those queries are semantic, not literal.
+
 ### 4.4 Search Filters
 Filters appear in a collapsible panel below the search input. Filter options adapt to the current view type.
 
