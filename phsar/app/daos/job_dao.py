@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -50,11 +50,19 @@ class JobDAO(BaseDAO[Job]):
         return (await db.execute(stmt)).scalar_one()
 
     async def list_for_user(self, db: AsyncSession, user_id: int, limit: int = 25) -> list[Job]:
-        """Recent jobs for the navbar bell. Active first, then most-recent finished."""
+        """Recent jobs for the navbar bell. Active first (running, then queued),
+        then finished by recency. The bell renders the response order directly,
+        so ordering only by created_at would surface newer queued jobs above
+        the currently running one."""
+        status_priority = case(
+            (Job.status == JobStatus.running, 0),
+            (Job.status == JobStatus.queued, 1),
+            else_=2,
+        )
         stmt = (
             select(Job)
             .where(Job.requested_by_user_id == user_id)
-            .order_by(Job.created_at.desc())
+            .order_by(status_priority.asc(), Job.created_at.desc())
             .limit(limit)
         )
         return list((await db.execute(stmt)).scalars().all())
