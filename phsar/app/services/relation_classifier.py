@@ -103,12 +103,22 @@ def pick_anchor(nodes: dict[int, ClassifierNode]) -> int:
 
 def _build_adjacency(
     edges: list[tuple[int, int, str]],
+    valid_ids: set[int],
 ) -> dict[int, list[tuple[int, str]]]:
     # Undirected adjacency: MAL relations are reciprocal across the pair
     # (A → Sequel → B implies B → Prequel → A) so either direction
     # counts for classifier traversal.
+    #
+    # Edges with at least one endpoint outside `valid_ids` are dropped
+    # defensively. Sidecars persist all observed MAL edges including
+    # ones pointing to media outside this anime's graph (so a future
+    # merge surfaces previously-dangling bridge edges) — at classify
+    # time we still want to traverse only edges that connect nodes the
+    # caller passed in.
     adj: dict[int, list[tuple[int, str]]] = defaultdict(list)
     for a, b, rel in edges:
+        if a not in valid_ids or b not in valid_ids:
+            continue
         adj[a].append((b, rel))
         adj[b].append((a, rel))
     return adj
@@ -207,7 +217,7 @@ def classify_anime_relations(
         return {}
 
     anchor = pick_anchor(nodes)
-    adj = _build_adjacency(edges)
+    adj = _build_adjacency(edges, valid_ids=set(nodes.keys()))
 
     main_chain = _closure({anchor}, adj, _MAIN_CHAIN_EDGES, set())
 

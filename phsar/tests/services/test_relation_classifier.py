@@ -282,6 +282,25 @@ def test_classifier_outputs_are_valid_relation_type_values():
     assert set(out.values()) <= valid
 
 
+def test_classifier_ignores_dangling_edges():
+    """Sidecars persist full MAL relation lists, including targets
+    outside the current input set (so a future merge can surface
+    bridge edges). The classifier must filter those defensively —
+    without dropping them, the closure would visit non-existent
+    mal_ids and substance demotion would KeyError on nodes[mal_id]."""
+    nodes = {
+        1: _tv(episodes=12, duration_s=1440, aired="2020-01-01"),
+        2: _tv(episodes=12, duration_s=1440, aired="2021-01-01"),
+    }
+    edges = [
+        (1, 2, "sequel"),
+        (2, 999, "sequel"),  # dangling — 999 is not in nodes
+        (888, 1, "prequel"),  # dangling — 888 is not in nodes
+    ]
+    out = classify_anime_relations(nodes, edges)
+    assert out == {1: "main", 2: "main"}
+
+
 def test_empty_graph_returns_empty_dict():
     assert classify_anime_relations({}, []) == {}
 

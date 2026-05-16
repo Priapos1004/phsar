@@ -475,13 +475,16 @@ class JikanScraper:
                         key=lambda item: (item[1]["aired_from"] is None, item[1]["aired_from"]),
                     )
                 )
-                # Drop edges that cross the graph boundary (target was
-                # filtered, blacklisted, or remained in `excluded_ids`).
-                # The classifier only reasons about nodes it actually
-                # received; dangling targets would leak into adjacency
-                # lookups that never resolve.
-                graph_ids = set(sorted_graph.keys())
-                graph_edges = [(a, b, r) for a, b, r in edges if a in graph_ids and b in graph_ids]
-                relations.append((sorted_graph, graph_edges, cross_link_mal_ids))
+                # Persist edges UNFILTERED, including targets outside
+                # this anime's graph. When the same media later sits
+                # inside a merge candidate, an originally-dangling
+                # edge to the other side's media becomes the bridge
+                # that re-connects the consolidated main chain — see
+                # the Dr. Stone split-merge case in
+                # tests/services/test_merge_candidate_service.py. The
+                # classifier filters dangling endpoints defensively at
+                # `_build_adjacency` so search-time + backfill-time
+                # behavior is unchanged.
+                relations.append((sorted_graph, edges, cross_link_mal_ids))
 
         return relations, all_info, unwanted_media

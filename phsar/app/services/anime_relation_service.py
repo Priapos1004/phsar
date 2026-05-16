@@ -33,21 +33,21 @@ from app.services.vector_embedding_service import regenerate_anime_embedding
 def _build_classifier_graph(
     media: Iterable[Media],
 ) -> tuple[dict[int, dict], list[tuple[int, int, str]]]:
-    """Project a media iterable into (nodes, in-graph-only edges) ready
-    for `classify_anime_relations`. Edges pointing outside this media
-    set (cross-links, stale targets) are dropped — the classifier
-    requires both endpoints in `nodes`.
+    """Project a media iterable into (nodes, edges) ready for
+    `classify_anime_relations`. Edges include the full unfiltered set
+    from each media's sidecar — the classifier filters dangling
+    endpoints at `_build_adjacency` time. This shape lets merge time
+    surface bridge edges that were previously dangling at scrape time
+    (Dr. Stone split-merge case).
     """
     media_list = list(media)
     nodes = {m.mal_id: media_to_classifier_node(m) for m in media_list}
-    graph_ids = set(nodes.keys())
     edges: list[tuple[int, int, str]] = []
     for m in media_list:
         if m.relation_edges is None:
             continue
         for target_mal_id, rel in m.relation_edges.edges:
-            if target_mal_id in graph_ids:
-                edges.append((m.mal_id, target_mal_id, rel))
+            edges.append((m.mal_id, target_mal_id, rel))
     return nodes, edges
 
 
