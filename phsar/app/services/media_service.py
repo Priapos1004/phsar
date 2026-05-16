@@ -84,7 +84,13 @@ async def persist_media_with_links(
     so the backfiller can later populate via lazy MAL fetch."""
     media_obj = await create_media(db, media_in, anime_id=anime_id)
     media_obj.freshness = MediaFreshness(last_checked_at=last_checked_at)
-    media_obj.relation_edges = MediaRelationEdges(edges=relation_edges or [])
+    # Normalize tuples to lists so the in-memory cached attribute
+    # matches the JSONB round-trip shape (asyncpg returns arrays as
+    # lists). Without this, callers reading from the session identity
+    # map see tuples while a fresh SELECT sees lists.
+    media_obj.relation_edges = MediaRelationEdges(
+        edges=[list(edge) for edge in (relation_edges or [])],
+    )
     await link_genres_to_media(db, media_id=media_obj.id, genres=media_in.genres)
     await link_studios_to_media(db, media_id=media_obj.id, studios=media_in.studio)
     await create_media_embedding(
