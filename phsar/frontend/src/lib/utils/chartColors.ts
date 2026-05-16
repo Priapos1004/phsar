@@ -23,11 +23,12 @@ export function scoreColor(score: number): string {
 }
 
 /** Canonical display order for relation types. */
-export const RELATION_TYPE_ORDER = ['main', 'side_story', 'summary', 'crossover'] as const;
+export const RELATION_TYPE_ORDER = ['main', 'alternative_version', 'side_story', 'summary', 'crossover'] as const;
 
 /** User-friendly display labels for relation types. */
 export const RELATION_TYPE_LABELS: Record<string, string> = {
 	main: 'Main Story',
+	alternative_version: 'Alternative Version',
 	side_story: 'Side Story',
 	summary: 'Summary',
 	crossover: 'Crossover',
@@ -82,11 +83,13 @@ export function getThemedChartColorPalette(): string[] {
  * Returns themed colors for relation types, using the themed palette
  * to avoid hue clashes (e.g. red theme's "main" shouldn't be purple).
  * Palette indices: 0=primary, 1=secondary, 2=yellow, 3=accent, 4=ring.
+ * alternative_version uses ring (4) so retellings echo the main hue.
  */
 export function getThemedRelationTypeColors(): Record<string, string> {
 	const palette = getThemedChartColorPalette();
 	return {
 		main: palette[0],
+		alternative_version: palette[4],
 		side_story: palette[3],
 		summary: palette[1],
 		crossover: palette[2],
