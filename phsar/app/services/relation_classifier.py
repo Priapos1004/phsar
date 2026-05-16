@@ -54,7 +54,7 @@ def _normalize_media_type(media_type: str | None) -> str:
     return media_type.replace(" ", "").lower()
 
 
-def _passes_substance(node: ClassifierNode) -> bool:
+def passes_substance(node: ClassifierNode) -> bool:
     media_type = _normalize_media_type(node.get("media_type"))
     duration = node.get("duration_seconds")
     episodes = node.get("episodes")
@@ -84,7 +84,7 @@ def _anchor_sort_key(mal_id: int, node: ClassifierNode) -> tuple:
 
 
 def _pick_anchor(nodes: dict[int, ClassifierNode]) -> int:
-    substance_passing = {m: n for m, n in nodes.items() if _passes_substance(n)}
+    substance_passing = {m: n for m, n in nodes.items() if passes_substance(n)}
     # Fallback covers donghua / orphan-side-story / standalone-weak-anime
     # cases where nothing passes substance — pick the most main-like
     # node anyway so the anime row has a `main`.
@@ -123,6 +123,40 @@ def _closure(
             visited.add(neighbor)
             queue.append(neighbor)
     return visited
+
+
+def build_classifier_nodes(
+    graph: dict[int, dict], all_info: dict[int, dict],
+) -> dict[int, ClassifierNode]:
+    """Project per-anime `all_info` into the ClassifierNode shape for
+    every mal_id in `graph`. Skips mal_ids absent from all_info so a
+    partially-extracted graph doesn't crash the classifier."""
+    return {
+        mal_id: {
+            "media_type": all_info[mal_id].get("media_type"),
+            "aired_from": all_info[mal_id].get("aired_from"),
+            "episodes": all_info[mal_id].get("episodes"),
+            "duration_seconds": all_info[mal_id].get("duration_seconds"),
+            "scored_by": all_info[mal_id].get("scored_by") or 0,
+        }
+        for mal_id in graph
+        if mal_id in all_info
+    }
+
+
+def classify_and_stamp(
+    graph: dict[int, dict],
+    edges: list[tuple[int, int, str]],
+    all_info: dict[int, dict],
+) -> dict[int, str]:
+    """Classify a per-anime graph and stamp `relation_type` on each
+    graph entry in place. Returns the classifications so callers can
+    look up the anchor without re-iterating."""
+    nodes = build_classifier_nodes(graph, all_info)
+    classifications = classify_anime_relations(nodes, edges)
+    for mal_id, relation_type in classifications.items():
+        graph[mal_id]["relation_type"] = relation_type
+    return classifications
 
 
 def classify_anime_relations(
@@ -180,7 +214,7 @@ def classify_anime_relations(
     for mal_id in main_chain:
         if mal_id == anchor:
             continue
-        if not _passes_substance(nodes[mal_id]):
+        if not passes_substance(nodes[mal_id]):
             classifications[mal_id] = "side_story"
 
     return classifications

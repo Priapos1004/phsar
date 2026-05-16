@@ -736,9 +736,20 @@ def _patch_probe_pipeline(monkeypatch):
 
 def _new_graph(seed_mal_id: int, new_mal_id: int) -> tuple:
     """Construct a synthetic search_title return tuple with one new mal_id
-    plus the seed. attach (real or faked) decides which to skip."""
+    plus the seed. attach (real or faked) decides which to skip. Graph
+    entries omit `relation_type` — the dispatcher stamps it via the
+    classifier before calling attach."""
     return (
-        [({seed_mal_id: {"relation_type": "main"}, new_mal_id: {"relation_type": "main"}}, set())],
+        [
+            (
+                {
+                    seed_mal_id: {"mal_id": seed_mal_id, "media_type": "TV"},
+                    new_mal_id: {"mal_id": new_mal_id, "media_type": "TV"},
+                },
+                [],
+                set(),
+            )
+        ],
         {
             seed_mal_id: {"mal_id": seed_mal_id, "title": "Seed"},
             new_mal_id: {"mal_id": new_mal_id, "title": "Discovered"},

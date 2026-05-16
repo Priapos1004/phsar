@@ -42,6 +42,7 @@ from app.services.jikan_scraper import (
     parse_mal_datetime,
 )
 from app.services.progress_reporter import ProgressReporter
+from app.services.relation_classifier import classify_and_stamp
 from app.services.save_service import attach_search_result_to_anime, save_search_results
 from app.services.search_service import handle_search_mal_api_results
 from app.services.spoiler_service import refresh_spoiler_cache_for_all_users
@@ -406,7 +407,10 @@ async def _probe_relations_for_anime(
             for mal_id, _title, _reason in unwanted_media:
                 exclusions.add(mal_id)
 
-        for graph, _cross_links in relations_list:
+        for graph, edges, _cross_links in relations_list:
+            # Probe path doesn't pass through search_mal_api, so stamp
+            # relation_type here before attach reads it.
+            classify_and_stamp(graph, edges, all_info)
             saved_count = await attach_search_result_to_anime(
                 session, anime, graph, all_info,
             )

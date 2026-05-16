@@ -292,9 +292,6 @@ class JikanScraper:
     def get_all_anime_media(self, media_list: list[dict]) -> list[int]:
         return [media["mal_id"] for media in media_list if media.get("type") == "anime"]
 
-    def get_relation_type(self, is_main_story: bool, relation_type: Optional[str]) -> str:
-        return "main" if is_main_story else (relation_type or "side_story")
-
     async def search_title(
         self,
         title: str | None,
@@ -304,7 +301,7 @@ class JikanScraper:
         seed_mal_id: int | None = None,
         seed_payload: dict | None = None,
     ) -> tuple[
-        list[tuple[dict, set[int]]],
+        list[tuple[dict, list[tuple[int, int, str]], set[int]]],
         dict[int, dict],
         set[tuple[int, str, str]],
     ]:
@@ -343,7 +340,7 @@ class JikanScraper:
 
         all_info: dict[int, dict] = {}
         visited_ids: set[int] = set()
-        relations: list[tuple[dict, set[int]]] = []
+        relations: list[tuple[dict, list[tuple[int, int, str]], set[int]]] = []
         unwanted_media: set[tuple[int, str, str]] = set()
 
         for anime in results:
@@ -351,41 +348,36 @@ class JikanScraper:
             logger.info(f"Searching relations with: {anime_info['title']}")
             mal_id = anime_info["mal_id"]
             related_anime_graph: dict[int, dict] = {}
+            edges: list[tuple[int, int, str]] = []
             cross_link_mal_ids: set[int] = set()
             left_mal_ids = deque([mal_id])
-            relation_types = deque([None])
-            is_first_relation = True # Skip first anime and come back later via relations (if it has relations)
-            found_main_story = False # Search side-stories till main story is found. Then only search relations for main stories
+            # Tracks mal_ids queued via a `crossover` edge so they're
+            # treated as franchise boundaries (no further walking, no
+            # relation_link signal).
+            crossover_arrivals: set[int] = set()
 
             while left_mal_ids:
                 current_mal_id = left_mal_ids.popleft()
-                current_relation = relation_types.popleft()
 
-                if current_mal_id in visited_ids:  # already processed this run
+                if current_mal_id in visited_ids:
                     continue
 
                 if current_mal_id in excluded_ids:
-                    # Already in our catalog under some anime parent. If we
-                    # reached it via a non-crossover relation from the
-                    # current graph (and it isn't the search-entry node
-                    # itself), it's a relation_link signal that the new
-                    # anime overlaps an existing one. The owning anime is
-                    # resolved later in save_service.
-                    if current_mal_id != mal_id and current_relation != "crossover":
+                    # Already in catalog. Non-crossover crossings from the
+                    # current graph become relation_link merge-candidate
+                    # signals; the owning anime is resolved later in
+                    # save_service.
+                    if current_mal_id != mal_id and current_mal_id not in crossover_arrivals:
                         cross_link_mal_ids.add(current_mal_id)
                     visited_ids.add(current_mal_id)
                     continue
 
-                logger.info(f"Media left in recursive search: {len(set(left_mal_ids) - visited_ids - excluded_ids)}")
-
-                # Mark as visited BEFORE doing anything
                 visited_ids.add(current_mal_id)
 
                 if progress is not None:
                     discovered = len(visited_ids)
-                    # Estimate total as discovered-so-far plus the still-queued
-                    # frontier; the frontier has duplicates so this overshoots
-                    # slightly but always converges to 100% as the queue drains.
+                    # Frontier has duplicates so this overshoots slightly
+                    # but always converges to 100% as the queue drains.
                     await progress.update(
                         items_done=discovered,
                         items_total=discovered + len(left_mal_ids),
@@ -393,23 +385,11 @@ class JikanScraper:
 
                 if current_mal_id != mal_id:
                     anime_info = self.extract_information(await self.search_by_malid(current_mal_id))
-                elif not is_first_relation:
-                    # Seeing first anime organically again
-                    anime_info = self.extract_information(anime)
 
-                # Skip null-title entries without blacklisting — same
-                # sentinel pattern as `Not yet aired` below. MAL routinely
-                # leaves `title=null` on entries it's still populating
-                # (romanization-pending Chinese/Korean shows, brand-new PV
-                # stubs); the field reliably fills in within hours. A
-                # permanent MediaUnwanted entry with a placeholder title
-                # would (a) block re-discovery once MAL titles the row
-                # properly and (b) pollute the admin-only table with
-                # `<mal_id:NNNN>` strings instead of the real name we'd
-                # get on the next sweep. The BFS stops here, so this
-                # entry's relations are temporarily out of reach — same
-                # cost as Not-yet-aired and acceptable for a transient
-                # state.
+                # Null-title sentinel: MAL leaves `title=null` on entries
+                # it's still populating (romanization-pending donghua, PV
+                # stubs). Blacklisting would block re-discovery once the
+                # field fills in — skip without recording.
                 if anime_info.get("title") is None:
                     logger.info(
                         "Skipping null-title anime mal_id=%s; MAL hasn't "
@@ -427,83 +407,49 @@ class JikanScraper:
                         logger.warning(f"Skipping anime hentai: {anime_info['title']}")
                         unwanted_media.add((current_mal_id, anime_info["title"], "Hentai"))
                         continue
-                    
+
                     all_info[current_mal_id] = anime_info
-
-                    # Crossover nodes mark a franchise boundary — record the
-                    # anime in the graph but don't BFS further. Without this,
-                    # a single Fate × Tsukihime crossover collapses both
-                    # franchises into one anime row.
-                    if current_relation == "crossover":
-                        all_related_media = []
-                    elif current_mal_id == mal_id and seed_payload is not None:
-                        # The /full payload the dispatcher just fetched
-                        # already bundles relations; reuse them instead of
-                        # paying for a second MAL hit per seed.
-                        all_related_media = seed_payload.get("relations") or []
-                    else:
-                        all_related_media = await self.fetch_relations(current_mal_id)
-                    relation_types_list = [_normalize_relation(media["relation"]) for media in all_related_media]
-
-                    is_main_story = (
-                        current_relation is None
-                        and anime_info["media_type"].lower() in ["tv", "movie"]
-                        and "full_story" not in relation_types_list
-                        and "parent_story" not in relation_types_list
-                    )
-
                     related_anime_graph[current_mal_id] = {
                         "mal_id": current_mal_id,
                         "title": anime_info["title"],
                         "aired_from": anime_info["aired_from"],
                         "media_type": anime_info["media_type"],
-                        "relation_type": self.get_relation_type(is_main_story, current_relation),
                     }
 
-                    if is_main_story or is_first_relation or not found_main_story:
-                        for related_media in all_related_media:
-                            rel = _normalize_relation(related_media["relation"])
-                            if rel == 'character': # Skip because not related enough
-                                continue
+                    # Crossover nodes are a franchise boundary — record
+                    # the anime in the graph but don't BFS further.
+                    # Without this, a single Fate × Tsukihime crossover
+                    # collapses both franchises into one anime row.
+                    if current_mal_id in crossover_arrivals:
+                        all_related_media = []
+                    elif current_mal_id == mal_id and seed_payload is not None:
+                        # The /full payload the dispatcher just fetched
+                        # already bundles relations; reuse them.
+                        all_related_media = seed_payload.get("relations") or []
+                    else:
+                        all_related_media = await self.fetch_relations(current_mal_id)
 
-                            # `alternative_setting` is excluded alongside
-                            # `adaptation` because it labels separate franchises
-                            # that share themes only (e.g., Zhe Tian ↔ Wanmei
-                            # Shijie, Madoka ↔ Magia Record). Walking it would
-                            # conflate distinct donghua / shows into one Anime
-                            # row and produce false-positive merge candidates.
-                            # `crossover` stays in the queue (graph boundary,
-                            # not full skip) because crossover anime really
-                            # ARE part of both franchises.
-                            if rel not in ("adaptation", "alternative_setting"):
-                                mal_ids = self.get_all_anime_media(related_media["entry"])
-                                left_mal_ids.extend(mal_ids)
-                                if rel in ["summary", "crossover"]:
-                                    relation_types.extend([rel] * len(mal_ids))
-                                elif rel in ["side_story", "alternative_version", "compilation"]:
-                                    relation_types.extend(["side_story"] * len(mal_ids))
-                                else:
-                                    relation_types.extend([None] * len(mal_ids))
-
-                        if len(left_mal_ids) > 0 and is_first_relation and is_main_story:
-                            # Remove current_mal_id from visited_ids, all_info, and related_anime_graph -> find it organically again
-                            visited_ids.discard(current_mal_id)
-                            all_info.pop(current_mal_id)
-                            related_anime_graph.pop(current_mal_id)
-                        elif is_main_story and not found_main_story:
-                            # Found main story -> only search relations of main stories
-                            found_main_story = True
-                        elif len(left_mal_ids) == 0 and is_first_relation and not is_main_story:
-                            # Orphaned side-story media -> main story
-                            logger.warning(f"Orphaned side-story detected: {anime_info['title']} ({current_mal_id})")
-                            related_anime_graph[current_mal_id]["relation_type"] = "main"
-
-                        if is_first_relation:
-                            is_first_relation = False
+                    for related_media in all_related_media:
+                        rel = _normalize_relation(related_media["relation"])
+                        if rel == "character":
+                            continue
+                        # `alternative_setting` and `adaptation` label
+                        # separate franchises that share themes only
+                        # (Zhe Tian ↔ Wanmei Shijie, Madoka ↔ Magia
+                        # Record); walking them collapses distinct shows
+                        # into one anime row. `crossover` stays — those
+                        # anime really are part of both franchises.
+                        if rel in ("adaptation", "alternative_setting"):
+                            continue
+                        target_mal_ids = self.get_all_anime_media(related_media["entry"])
+                        for target_mal_id in target_mal_ids:
+                            edges.append((current_mal_id, target_mal_id, rel))
+                        left_mal_ids.extend(target_mal_ids)
+                        if rel == "crossover":
+                            crossover_arrivals.update(target_mal_ids)
                 elif anime_info.get("airing_status") == AIRING_STATUS_NOT_YET_AIRED:
-                    # Skip without blacklisting — MAL fills the type once the
-                    # show airs. A permanent unwanted entry would silently
-                    # block the catalog from ever picking it up.
+                    # Skip without blacklisting — MAL fills the type
+                    # once the show airs.
                     logger.info(
                         "Skipping unscheduled anime without media_type: %s (mal_id=%s)",
                         anime_info.get("title"), current_mal_id,
@@ -511,57 +457,21 @@ class JikanScraper:
                 else:
                     logger.warning(f"Anime without media_type:\n{anime_info}")
                     unwanted_media.add((current_mal_id, anime_info["title"], "Unknown"))
-            
-                # Case that the original anime was not found organically again
-                if (len(left_mal_ids) == 0) and (mal_id not in visited_ids):
-                    logger.info(f"Re-enqueuing original anime {anime_info['title']} ({mal_id}) because it was not found organically.")
-                    left_mal_ids.append(mal_id)
-                    relation_types.append(None)
-
-            # Post-loop safety net for the seed. The drop branch above
-            # (is_main_story + has-relations + is_first_relation) removes
-            # the seed from `visited_ids`, `all_info`, and the graph,
-            # expecting BFS to organically rediscover it via a relation
-            # from one of its sub-graph nodes pointing back. That works
-            # for franchises like Demon Slayer (Sequel → original); it
-            # fails for Rilakkuma-style cases where the seed's only
-            # outgoing relation is `Other` and no node points back —
-            # the BFS terminates without ever re-encountering the seed,
-            # and the inline bottom-of-loop re-enqueue check is bypassed
-            # whenever the last popped node hit a `continue` path
-            # (visited / excluded / null-title / filtered). Without this
-            # net, the graph ends up missing the seed entirely → no
-            # `main` relation → MainMediaNotFoundError → whole scrape
-            # fails. The seed was is_main_story=True at drop time (that's
-            # the only branch that drops), so re-adding with
-            # relation_type="main" matches the intended classification.
-            if mal_id not in visited_ids:
-                seed_info = self.extract_information(anime)
-                if seed_info.get("title") and seed_info.get("media_type"):
-                    all_info[mal_id] = seed_info
-                    related_anime_graph[mal_id] = {
-                        "mal_id": mal_id,
-                        "title": seed_info["title"],
-                        "aired_from": seed_info["aired_from"],
-                        "media_type": seed_info["media_type"],
-                        "relation_type": "main",
-                    }
-                    visited_ids.add(mal_id)
-                    logger.info(
-                        "BFS recovered dropped seed mal_id=%s as main (post-loop net)",
-                        mal_id,
-                    )
-
-            # Case that no main story was found but more than one media
-            # will be catched in search_service.py with MainMediaNotFoundError
 
             if related_anime_graph:
                 sorted_graph = dict(
                     sorted(
                         related_anime_graph.items(),
-                        key=lambda item: (item[1]["aired_from"] is None, item[1]["aired_from"])
+                        key=lambda item: (item[1]["aired_from"] is None, item[1]["aired_from"]),
                     )
                 )
-                relations.append((sorted_graph, cross_link_mal_ids))
+                # Drop edges that cross the graph boundary (target was
+                # filtered, blacklisted, or remained in `excluded_ids`).
+                # The classifier only reasons about nodes it actually
+                # received; dangling targets would leak into adjacency
+                # lookups that never resolve.
+                graph_ids = set(sorted_graph.keys())
+                graph_edges = [(a, b, r) for a, b, r in edges if a in graph_ids and b in graph_ids]
+                relations.append((sorted_graph, graph_edges, cross_link_mal_ids))
 
         return relations, all_info, unwanted_media
