@@ -303,6 +303,38 @@ def test_disconnected_subgraph_defaults_to_side_story():
     assert out[1201] == "side_story"
 
 
+def test_currently_airing_tv_with_null_episodes_passes_substance():
+    """Long-running TVs (Conan, Anpanman) have episodes=None because MAL
+    has no terminal count. They must still pass substance — otherwise
+    a sequel Movie / spin-off TV gets picked as anchor over the
+    canonical original. TVSpecial keeps the strict episode requirement."""
+    # Long-running TV anchor + a substance-passing Movie sibling.
+    nodes = {
+        1: _tv(episodes=12, duration_s=1440, aired="1996-01-08"),
+        2: _movie(duration_s=4200, aired="2014-01-01"),
+    }
+    nodes[1]["episodes"] = None
+    edges = [(1, 2, "alternative_version")]
+    out = classify_anime_relations(nodes, edges)
+    # TV with NULL episodes anchors over the substance-passing Movie.
+    assert out[1] == "main"
+    assert out[2] == "alternative_version"
+
+
+def test_tvspecial_with_null_episodes_fails_substance():
+    """TVSpecial is bounded by definition; NULL episodes means MAL data
+    is incomplete, not "ongoing." Stay strict."""
+    nodes = {
+        1: {"media_type": "TVSpecial", "aired_from": "2020-01-01",
+            "episodes": None, "duration_seconds": 1440, "scored_by": 100},
+        2: _tv(episodes=26, duration_s=1440, aired="2021-01-01"),
+    }
+    edges = [(1, 2, "sequel")]
+    out = classify_anime_relations(nodes, edges)
+    # The substance-passing TV anchors; TVSpecial with NULL eps doesn't.
+    assert out[2] == "main"
+
+
 def test_substance_thresholds_match_constants():
     tv_pass = {1300: _tv(episodes=SUBSTANCE_MIN_EPISODES, duration_s=SUBSTANCE_MIN_TV_DURATION_S)}
     tv_below_eps = {1301: _tv(episodes=SUBSTANCE_MIN_EPISODES - 1, duration_s=SUBSTANCE_MIN_TV_DURATION_S)}

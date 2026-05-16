@@ -17,6 +17,7 @@ from app.models.job import JobKind
 from app.seeders.anime_title_backfiller import backfill_anime_title_suffixes
 from app.seeders.embedding_backfiller import backfill_embeddings
 from app.seeders.genre_seeder import seed_genres
+from app.seeders.relation_backfiller import backfill_relations
 from app.seeders.user_seeder import (
     backfill_spoiler_visibility,
     backfill_user_settings,
@@ -52,6 +53,11 @@ async def lifespan(app: FastAPI):
         # search row); these two passes are independent.
         await backfill_anime_title_suffixes(session)
         await backfill_embeddings(session)
+        # Relation backfill runs BEFORE merge-candidate detection so any
+        # anchor/relation rewrites here feed into the title-similarity
+        # signal the detector reads.
+        if settings.RELATION_BACKFILL_ON_STARTUP:
+            await backfill_relations(session)
         await backfill_merge_candidates(session)
         # Mark anything left in `running` as failed — the previous process
         # died mid-job, so the row is stale. User retries from the bell.

@@ -14,13 +14,12 @@ text.
 
 import logging
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.anime import Anime
-from app.models.anime_search import AnimeSearch
 from app.services.anime_service import strip_season_suffix
-from app.services.vector_embedding_service import create_anime_embedding
+from app.services.vector_embedding_service import regenerate_anime_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -41,27 +40,19 @@ async def backfill_anime_title_suffixes(db: AsyncSession) -> int:
         if (new_title, new_eng, new_jap) == (anime.title, anime.name_eng, anime.name_jap):
             continue
 
-        # Compute the would-be-clean title texts WITHOUT mutating the
-        # row, so a failure in embedding regen below leaves the anime
-        # row's stored fields untouched — otherwise stale field mutations
-        # would land at the eventual commit even if the embedding was
-        # never regenerated, leaving the anime with a cleaned title but
-        # an embedding still keyed on the dirty text.
+        # Regen embedding BEFORE mutating row fields — if regen raises,
+        # the row stays consistent with the old (still-valid) embedding
+        # instead of committing rewritten title fields paired with a
+        # stale vector.
         new_title_texts = [new_title, new_eng, new_jap, *(anime.other_names or [])]
-
         try:
             logger.info(
                 "Stripping suffix from Anime id=%d: title=%r → %r, name_eng=%r → %r, name_jap=%r → %r",
                 anime.id, anime.title, new_title, anime.name_eng, new_eng, anime.name_jap, new_jap,
             )
-            await db.execute(delete(AnimeSearch).where(AnimeSearch.anime_id == anime.id))
-            await create_anime_embedding(
-                db,
-                anime_id=anime.id,
-                title_texts=new_title_texts,
-                description_text=anime.description or "",
+            await regenerate_anime_embedding(
+                db, anime.id, new_title_texts, anime.description or "",
             )
-            # Only mutate the row after the embedding regen succeeded.
             anime.title = new_title
             anime.name_eng = new_eng
             anime.name_jap = new_jap

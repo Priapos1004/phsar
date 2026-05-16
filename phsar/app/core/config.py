@@ -56,6 +56,14 @@ class Settings(BaseSettings):
     # is meaningful again.
     JOBS_DEDUPE_HOURS: int = 72
 
+    # Relation-classifier backfill at lifespan startup. Re-runs the
+    # two-pass classifier over every Anime in the catalog and rewrites
+    # Media.relation_type + (when the canonical anchor changes) the
+    # anime row's mal_id / title / name_eng / name_jap fields. Default
+    # on; disable for tight maintenance windows where the lazy MAL
+    # fetch (for media with empty edges) would burn cycles.
+    RELATION_BACKFILL_ON_STARTUP: bool = True
+
     model_config = ConfigDict(env_file=".env")  # Tell Pydantic to load from .env
 
 settings = Settings()

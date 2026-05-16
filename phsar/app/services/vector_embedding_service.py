@@ -2,6 +2,7 @@ import logging
 
 from anyio import to_thread
 from sentence_transformers import SentenceTransformer
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.anime_search import AnimeSearch
@@ -43,3 +44,22 @@ async def create_rating_embedding(db: AsyncSession, rating_id: int, note: str):
     embedding = await generate_embedding(note)
     db.add(RatingSearch(rating_id=rating_id, note_embedding=embedding))
     await db.flush()
+
+
+async def regenerate_anime_embedding(
+    db: AsyncSession, anime_id: int, title_texts: list[str | None], description_text: str,
+) -> None:
+    """Delete the existing AnimeSearch row and create a fresh one. Used
+    by callers that rewrite an anime row's title / name_eng / name_jap
+    (suffix stripper, relation backfiller anchor rewrite, merge
+    survivor refresh).
+
+    Callers pass `title_texts` explicitly so they can defer mutating
+    the anime row until after the embedding regen succeeds — a failure
+    here leaves both the row and the embedding consistent at the next
+    commit boundary.
+    """
+    await db.execute(delete(AnimeSearch).where(AnimeSearch.anime_id == anime_id))
+    await create_anime_embedding(
+        db, anime_id=anime_id, title_texts=title_texts, description_text=description_text,
+    )

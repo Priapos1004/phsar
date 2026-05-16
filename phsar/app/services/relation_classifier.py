@@ -59,9 +59,15 @@ def passes_substance(node: ClassifierNode) -> bool:
     duration = node.get("duration_seconds")
     episodes = node.get("episodes")
     if media_type in _TV_LIKE_TYPES:
-        if episodes is None or duration is None:
+        if duration is None or duration < SUBSTANCE_MIN_TV_DURATION_S:
             return False
-        return episodes >= SUBSTANCE_MIN_EPISODES and duration >= SUBSTANCE_MIN_TV_DURATION_S
+        # TV and ONA: NULL episodes is normal for currently-airing /
+        # long-running shows that have no terminal count (Conan,
+        # Anpanman, mid-arc donghua). For TVSpecial — bounded by
+        # definition — require an explicit count.
+        if media_type == "tvspecial":
+            return episodes is not None and episodes >= SUBSTANCE_MIN_EPISODES
+        return episodes is None or episodes >= SUBSTANCE_MIN_EPISODES
     if media_type in _MOVIE_TYPES:
         if duration is None:
             return False
@@ -83,7 +89,10 @@ def _anchor_sort_key(mal_id: int, node: ClassifierNode) -> tuple:
     return (tier, aired_sort, -scored_by, mal_id)
 
 
-def _pick_anchor(nodes: dict[int, ClassifierNode]) -> int:
+def pick_anchor(nodes: dict[int, ClassifierNode]) -> int:
+    """Return the mal_id the classifier would anchor on for this graph.
+    Same algorithm as `classify_anime_relations` runs internally; call
+    here when you need the anchor without iterating classifications."""
     substance_passing = {m: n for m, n in nodes.items() if passes_substance(n)}
     # Fallback covers donghua / orphan-side-story / standalone-weak-anime
     # cases where nothing passes substance — pick the most main-like
@@ -177,13 +186,13 @@ def classify_anime_relations(
 
     `nodes` maps `mal_id` to a node dict (see ClassifierNode TypedDict).
     `edges` is a list of (a, b, normalized_relation) tuples where
-    `normalized_relation` matches `jikan_scraper._normalize_relation`
+    `normalized_relation` matches `jikan_scraper.normalize_relation`
     output (lowercased, spaces → underscores).
     """
     if not nodes:
         return {}
 
-    anchor = _pick_anchor(nodes)
+    anchor = pick_anchor(nodes)
     adj = _build_adjacency(edges)
 
     main_chain = _closure({anchor}, adj, _MAIN_CHAIN_EDGES, set())

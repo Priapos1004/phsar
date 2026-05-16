@@ -77,12 +77,35 @@ def parse_mal_datetime(value: str | None) -> Optional[datetime]:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
-def _normalize_relation(rel: str) -> str:
+def normalize_relation(rel: str) -> str:
     """MAL emits multi-word relations title-cased with a space
     ("Side Story", "Parent story", "Alternative Setting"). Normalize
     once on entry so every downstream comparison uses the same
     underscore form."""
     return rel.lower().replace(" ", "_")
+
+
+# Relation labels excluded from edge capture: `character` is not a
+# franchise membership signal; `adaptation` and `alternative_setting`
+# label cross-franchise links (manga adaptation, themed-shared but
+# distinct shows) — walking them collapses distinct shows into one
+# anime row.
+_EXCLUDED_EDGE_RELS = frozenset({"character", "adaptation", "alternative_setting"})
+
+
+def parse_relation_edges(raw: list[dict]) -> list[tuple[int, str]]:
+    """Project a MAL `/anime/{id}/relations` response into
+    `[(target_mal_id, normalized_rel), ...]`. Applies the cross-
+    franchise edge filter so callers don't have to re-implement it."""
+    out: list[tuple[int, str]] = []
+    for rel_block in raw:
+        rel = normalize_relation(rel_block.get("relation", ""))
+        if rel in _EXCLUDED_EDGE_RELS:
+            continue
+        for entry in rel_block.get("entry", []) or []:
+            if entry.get("type") == "anime":
+                out.append((entry["mal_id"], rel))
+    return out
 
 
 class JikanScraper:
@@ -429,24 +452,11 @@ class JikanScraper:
                     else:
                         all_related_media = await self.fetch_relations(current_mal_id)
 
-                    for related_media in all_related_media:
-                        rel = _normalize_relation(related_media["relation"])
-                        if rel == "character":
-                            continue
-                        # `alternative_setting` and `adaptation` label
-                        # separate franchises that share themes only
-                        # (Zhe Tian ↔ Wanmei Shijie, Madoka ↔ Magia
-                        # Record); walking them collapses distinct shows
-                        # into one anime row. `crossover` stays — those
-                        # anime really are part of both franchises.
-                        if rel in ("adaptation", "alternative_setting"):
-                            continue
-                        target_mal_ids = self.get_all_anime_media(related_media["entry"])
-                        for target_mal_id in target_mal_ids:
-                            edges.append((current_mal_id, target_mal_id, rel))
-                        left_mal_ids.extend(target_mal_ids)
+                    for target_mal_id, rel in parse_relation_edges(all_related_media):
+                        edges.append((current_mal_id, target_mal_id, rel))
+                        left_mal_ids.append(target_mal_id)
                         if rel == "crossover":
-                            crossover_arrivals.update(target_mal_ids)
+                            crossover_arrivals.add(target_mal_id)
                 elif anime_info.get("airing_status") == AIRING_STATUS_NOT_YET_AIRED:
                     # Skip without blacklisting — MAL fills the type
                     # once the show airs.

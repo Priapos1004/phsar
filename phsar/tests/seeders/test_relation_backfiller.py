@@ -1,0 +1,247 @@
+"""relation_backfiller re-classifies existing media + rewrites the anime
+anchor row when canonical main changes. Tests cover dry-run vs apply,
+lazy MAL fetch for empty edges, and idempotency.
+
+Fixtures use NEGATIVE mal_ids so they can't collide with the dev DB's
+real (always-positive) MAL ids — the test session is transactional but
+reads through the live catalog, so inserts share the unique-mal_id
+namespace.
+"""
+
+from datetime import datetime, timezone
+
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
+
+from app.models.anime import Anime
+from app.models.anime_search import AnimeSearch
+from app.models.media import Media, MediaType, RelationType
+from app.models.media_relation_edges import MediaRelationEdges
+from app.seeders.relation_backfiller import backfill_relations
+from app.services.jikan_scraper import JikanScraper
+from tests._helpers import media_kwargs
+
+
+async def _anime_with_media(db, *, anime_mal_id: int, anime_title: str, media_specs: list[dict]) -> Anime:
+    """media_specs: each dict carries mal_id, title, media_type, episodes,
+    duration_seconds, aired_from, scored_by, relation_type, edges (list)."""
+    anime = Anime(
+        mal_id=anime_mal_id, title=anime_title,
+        name_eng=None, name_jap=None, other_names=[],
+        description="A test anime", cover_image=None,
+    )
+    db.add(anime)
+    await db.flush()
+
+    for spec in media_specs:
+        media = Media(**media_kwargs(
+            anime_id=anime.id,
+            mal_id=spec["mal_id"],
+            title=spec["title"],
+            media_type=spec["media_type"],
+            relation_type=spec["relation_type"],
+            episodes=spec.get("episodes"),
+            duration_seconds=spec.get("duration_seconds"),
+            aired_from=spec.get("aired_from"),
+            scored_by=spec.get("scored_by", 0),
+        ))
+        db.add(media)
+        await db.flush()
+        db.add(MediaRelationEdges(media_id=media.id, edges=spec.get("edges", [])))
+    await db.flush()
+    return anime
+
+
+async def _reload_anime(db, anime_id: int) -> Anime:
+    stmt = (
+        select(Anime).where(Anime.id == anime_id)
+        .options(selectinload(Anime.media).selectinload(Media.relation_edges))
+    )
+    return (await db.execute(stmt)).scalar_one()
+
+
+async def test_dry_run_reports_diff_without_writing(db_session, monkeypatch):
+    """Evangelion-shaped fixture: anime anchored on Movie 1, Original TV
+    is currently side_story. Dry-run reports the anchor change and
+    reclassifications without mutating the rows."""
+    async def _no_fetch(self, mal_id):
+        raise AssertionError("dry-run should not hit MAL when edges are present")
+    monkeypatch.setattr(JikanScraper, "fetch_relations", _no_fetch)
+
+    anime = await _anime_with_media(
+        db_session,
+        anime_mal_id=-2759, anime_title="Evangelion Movie 1: Jo",
+        media_specs=[
+            # Anchored mal_id matches Movie 1.
+            {"mal_id": -2759, "title": "Evangelion 1.0: You Are (Not) Alone",
+             "media_type": MediaType.Movie, "relation_type": RelationType.Main,
+             "episodes": 1, "duration_seconds": 5400,
+             "aired_from": datetime(2007, 9, 1, tzinfo=timezone.utc),
+             "scored_by": 600_000,
+             "edges": [[-30, "alternative_version"], [2760, "sequel"]]},
+            # Original 1995 TV — currently MISCLASSIFIED as SideStory.
+            {"mal_id": -30, "title": "Neon Genesis Evangelion",
+             "media_type": MediaType.TV, "relation_type": RelationType.SideStory,
+             "episodes": 26, "duration_seconds": 1440,
+             "aired_from": datetime(1995, 10, 4, tzinfo=timezone.utc),
+             "scored_by": 1_200_000,
+             "edges": [[-2759, "alternative_version"]]},
+        ],
+    )
+
+    summary = await backfill_relations(db_session, dry_run=True, anime_ids={anime.id})
+
+    assert summary["anime_scanned"] == 1
+    assert summary["anime_changed"] == 1
+    assert summary["anchor_changes"] == 1
+    assert summary["media_reclassified"] == 2
+    assert summary["diffs"][0]["new_anchor_mal_id"] == -30
+    assert summary["diffs"][0]["old_anchor_mal_id"] == -2759
+
+    # No writes happened.
+    refreshed = await _reload_anime(db_session, anime.id)
+    assert refreshed.mal_id == -2759
+    by_mal = {m.mal_id: m for m in refreshed.media}
+    assert by_mal[-30].relation_type == RelationType.SideStory
+    assert by_mal[-2759].relation_type == RelationType.Main
+
+
+async def test_apply_rewrites_anchor_and_reclassifies(db_session, monkeypatch):
+    """Same Evangelion fixture, applied. Expect anchor flipped to mal=30
+    (Original TV), Movie 1 reclassified to alternative_version, and the
+    anime row's title fields rewritten + embedding regenerated."""
+    async def _no_fetch(self, mal_id):
+        raise AssertionError("apply should not hit MAL when edges are present")
+    monkeypatch.setattr(JikanScraper, "fetch_relations", _no_fetch)
+
+    anime = await _anime_with_media(
+        db_session,
+        anime_mal_id=-2759, anime_title="Evangelion Movie 1: Jo",
+        media_specs=[
+            {"mal_id": -2759, "title": "Evangelion 1.0: You Are (Not) Alone",
+             "media_type": MediaType.Movie, "relation_type": RelationType.Main,
+             "episodes": 1, "duration_seconds": 5400,
+             "aired_from": datetime(2007, 9, 1, tzinfo=timezone.utc),
+             "scored_by": 600_000,
+             "edges": [[-30, "alternative_version"]]},
+            {"mal_id": -30, "title": "Neon Genesis Evangelion",
+             "media_type": MediaType.TV, "relation_type": RelationType.SideStory,
+             "episodes": 26, "duration_seconds": 1440,
+             "aired_from": datetime(1995, 10, 4, tzinfo=timezone.utc),
+             "scored_by": 1_200_000,
+             "edges": [[-2759, "alternative_version"]]},
+        ],
+    )
+
+    summary = await backfill_relations(db_session, dry_run=False, anime_ids={anime.id})
+
+    assert summary["anime_changed"] == 1
+    refreshed = await _reload_anime(db_session, anime.id)
+    assert refreshed.mal_id == -30
+    assert refreshed.title == "Neon Genesis Evangelion"
+    by_mal = {m.mal_id: m for m in refreshed.media}
+    assert by_mal[-30].relation_type == RelationType.Main
+    assert by_mal[-2759].relation_type == RelationType.AlternativeVersion
+
+    # Embedding regenerated for the new anchor title.
+    embed = (await db_session.execute(
+        select(AnimeSearch).where(AnimeSearch.anime_id == anime.id)
+    )).scalar_one_or_none()
+    assert embed is not None
+
+
+async def test_idempotent_no_op_on_clean_catalog(db_session, monkeypatch):
+    """Running over a single TV with no peers does nothing — the anchor
+    matches and the only main passes-through unchanged. Empty edges
+    triggers a MAL fetch; stubbed to return no relations."""
+    async def fake_fetch(self, mal_id):
+        return []
+    monkeypatch.setattr(JikanScraper, "fetch_relations", fake_fetch)
+
+    anime = await _anime_with_media(
+        db_session,
+        anime_mal_id=100, anime_title="Solo Show",
+        media_specs=[
+            {"mal_id": 100, "title": "Solo Show",
+             "media_type": MediaType.TV, "relation_type": RelationType.Main,
+             "episodes": 12, "duration_seconds": 1440,
+             "aired_from": datetime(2020, 1, 1, tzinfo=timezone.utc),
+             "scored_by": 10_000, "edges": []},
+        ],
+    )
+
+    summary = await backfill_relations(db_session, dry_run=False, anime_ids={anime.id})
+
+    assert summary["anime_scanned"] == 1
+    assert summary["anime_changed"] == 0
+
+
+async def test_lazy_fetch_populates_missing_edges(db_session, monkeypatch):
+    """Media with empty `edges` triggers a lazy /relations fetch; the
+    fetched edges feed into the classifier for THIS run."""
+    fetch_calls: list[int] = []
+
+    async def fake_fetch(self, mal_id):
+        fetch_calls.append(mal_id)
+        if mal_id == 200:
+            return [
+                {"relation": "Sequel",
+                 "entry": [{"type": "anime", "mal_id": 201}]},
+            ]
+        if mal_id == 201:
+            return [
+                {"relation": "Prequel",
+                 "entry": [{"type": "anime", "mal_id": 200}]},
+            ]
+        return []
+
+    monkeypatch.setattr(JikanScraper, "fetch_relations", fake_fetch)
+
+    anime = await _anime_with_media(
+        db_session,
+        anime_mal_id=200, anime_title="Test Show",
+        media_specs=[
+            {"mal_id": 200, "title": "Test Show",
+             "media_type": MediaType.TV, "relation_type": RelationType.Main,
+             "episodes": 12, "duration_seconds": 1440,
+             "aired_from": datetime(2020, 1, 1, tzinfo=timezone.utc),
+             "scored_by": 10_000, "edges": []},
+            {"mal_id": 201, "title": "Test Show S2",
+             "media_type": MediaType.TV, "relation_type": RelationType.Main,
+             "episodes": 12, "duration_seconds": 1440,
+             "aired_from": datetime(2021, 1, 1, tzinfo=timezone.utc),
+             "scored_by": 8_000, "edges": []},
+        ],
+    )
+
+    summary = await backfill_relations(db_session, dry_run=False, anime_ids={anime.id})
+
+    assert sorted(fetch_calls) == [200, 201]
+    # No reclassification: both are TV in a sequel chain, both stay main.
+    assert summary["anime_changed"] == 0
+    # Sidecar edges now populated.
+    anime = (await db_session.execute(
+        select(Anime).where(Anime.mal_id == 200)
+        .options(selectinload(Anime.media).selectinload(Media.relation_edges))
+    )).scalar_one()
+    by_mal = {m.mal_id: m for m in anime.media}
+    assert by_mal[200].relation_edges.edges == [[201, "sequel"]]
+    assert by_mal[201].relation_edges.edges == [[200, "prequel"]]
+
+
+async def test_anime_without_media_is_skipped(db_session, monkeypatch):
+    async def fake_fetch(self, mal_id):
+        return []
+    monkeypatch.setattr(JikanScraper, "fetch_relations", fake_fetch)
+
+    anime = Anime(
+        mal_id=500, title="Empty",
+        name_eng=None, name_jap=None, other_names=[],
+        description=None, cover_image=None,
+    )
+    db_session.add(anime)
+    await db_session.flush()
+
+    summary = await backfill_relations(db_session, dry_run=False, anime_ids={anime.id})
+    assert summary["anime_scanned"] == 1
+    assert summary["anime_changed"] == 0
