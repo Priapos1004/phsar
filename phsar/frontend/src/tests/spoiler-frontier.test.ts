@@ -112,4 +112,37 @@ describe('computeVisibleMediaUuids', () => {
 		expect(visible.has('s2')).toBe(true);
 		expect(visible.has('unknown')).toBe(false);
 	});
+
+	it('alternative_version acts as anchor (Evangelion shape)', () => {
+		// TV (main) anchored on 1995, four Rebuild Movies as alt_versions.
+		// Each Rebuild gates the next; rating TV reveals Movie 1 but not
+		// Movies 2/3/4.
+		const items = [
+			media('tv', 'main', 1995, 'Fall'),
+			media('death_rebirth', 'side_story', 1997, 'Spring'),
+			media('eoe', 'side_story', 1997, 'Summer'),
+			media('movie1', 'alternative_version', 2007, 'Fall'),
+			media('movie2', 'alternative_version', 2009, 'Summer'),
+			media('movie3', 'alternative_version', 2012, 'Fall'),
+			media('movie4', 'alternative_version', 2021, 'Winter'),
+		];
+
+		// Nothing rated → only TV visible.
+		expect(computeVisibleMediaUuids(items, new Set())).toEqual(new Set(['tv']));
+
+		// TV rated → frontier advances to Movie 1 (side stories sweep along).
+		expect(computeVisibleMediaUuids(items, new Set(['tv']))).toEqual(
+			new Set(['tv', 'death_rebirth', 'eoe', 'movie1']),
+		);
+
+		// TV + Movie 1 rated → frontier advances to Movie 2.
+		expect(computeVisibleMediaUuids(items, new Set(['tv', 'movie1']))).toEqual(
+			new Set(['tv', 'death_rebirth', 'eoe', 'movie1', 'movie2']),
+		);
+
+		// All anchors rated → everything visible.
+		expect(
+			computeVisibleMediaUuids(items, new Set(['tv', 'movie1', 'movie2', 'movie3', 'movie4'])),
+		).toEqual(new Set(items.map((m) => m.uuid)));
+	});
 });

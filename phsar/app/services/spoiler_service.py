@@ -4,9 +4,14 @@ Determines which media are "visible" (non-spoiler) for a user based on
 their watch progress through each anime's main-story backbone.
 
 Algorithm per anime (media sorted chronologically):
-1. Extract main media (relation_type == 'main') in order.
-2. No ratings → only first main media visible (or first media overall).
-3. With ratings → find last rated main → next unrated main is the frontier.
+1. Extract anchor media (relation_type ∈ {'main', 'alternative_version'})
+   in order. Alternative versions count as anchors because retellings
+   like Evangelion's Rebuild Movies extend the story — a user who
+   watched the 1995 TV shouldn't have Rebuild Movie 4 (a different
+   ending) unblurred, but Movie 1 (an early retelling) is fair game.
+2. No ratings → only first anchor visible (or first media overall).
+3. With ratings → find last rated anchor → next unrated anchor is the
+   frontier.
 4. Everything up to and including the frontier is visible.
 5. Everything after the frontier is spoiler-protected.
 
@@ -33,6 +38,16 @@ from app.schemas.rating_schema import SpoilerVisibility
 from app.services.filter_service import SEASON_ORDER
 
 logger = logging.getLogger(__name__)
+
+
+# Relation types that act as spoiler-frontier anchors. `main` is the
+# canonical backbone; `alternative_version` covers retellings that
+# extend or diverge from the canonical story (Evangelion Rebuild
+# Movies, Hokuto no Ken alts) so each gates the next.
+_ANCHOR_TYPES = frozenset({
+    RelationType.Main.value,
+    RelationType.AlternativeVersion.value,
+})
 
 
 class _MediaEntry(NamedTuple):
@@ -68,37 +83,34 @@ def compute_visible_media(
     for _anime_id, media_list in media_by_anime.items():
         sorted_media = sorted(media_list, key=_chronological_sort_key)
 
-        # Find main media indices in chronological order
-        main_indices = [
+        # Anchor indices: main + alternative_version, in air-date order.
+        anchor_indices = [
             i for i, m in enumerate(sorted_media)
-            if m.relation_type == RelationType.Main.value
+            if m.relation_type in _ANCHOR_TYPES
         ]
 
-        if not main_indices:
-            # No main media — show only the first media
+        if not anchor_indices:
+            # No anchor media — show only the first media.
             if sorted_media:
                 visible.add(sorted_media[0].id)
             continue
 
-        # Find the frontier: the first unrated main media after the last rated main
-        last_rated_main_idx = -1
-        for idx in main_indices:
+        last_rated_anchor_idx = -1
+        for idx in anchor_indices:
             if sorted_media[idx].id in rated_media_ids:
-                last_rated_main_idx = idx
+                last_rated_anchor_idx = idx
 
-        if last_rated_main_idx == -1:
-            # No main media rated — frontier is the first main media
-            frontier_idx = main_indices[0]
+        if last_rated_anchor_idx == -1:
+            frontier_idx = anchor_indices[0]
         else:
-            # Find the next unrated main after the last rated one
             frontier_idx = None
-            for idx in main_indices:
-                if idx > last_rated_main_idx and sorted_media[idx].id not in rated_media_ids:
+            for idx in anchor_indices:
+                if idx > last_rated_anchor_idx and sorted_media[idx].id not in rated_media_ids:
                     frontier_idx = idx
                     break
 
             if frontier_idx is None:
-                # All main media rated — everything is visible
+                # All anchors rated — everything is visible.
                 for m in sorted_media:
                     visible.add(m.id)
                 continue
