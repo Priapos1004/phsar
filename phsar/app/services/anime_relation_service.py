@@ -81,27 +81,32 @@ async def reclassify_anime(
 
     # Mirrors create_anime_from_media's field copy + strip so the
     # post-rewrite anime row looks identical to one scraped fresh from
-    # this anchor.
+    # this anchor. Dict-driven so adding an 8th umbrella field (or
+    # changing which fields gate embedding regen) is one edit, not three.
     new_anchor_media = current_by_mal[new_anchor_mal_id]
-    new_title = strip_season_suffix(new_anchor_media.title) or new_anchor_media.title
-    new_name_eng = strip_season_suffix(new_anchor_media.name_eng)
-    new_name_jap = strip_season_suffix(new_anchor_media.name_jap, japanese=True)
-    new_other_names = list(new_anchor_media.other_names or [])
-    new_description = new_anchor_media.description
-    new_cover_image = new_anchor_media.cover_image
+    new_umbrella: dict[str, object] = {
+        "mal_id": new_anchor_mal_id,
+        "title": strip_season_suffix(new_anchor_media.title) or new_anchor_media.title,
+        "name_eng": strip_season_suffix(new_anchor_media.name_eng),
+        "name_jap": strip_season_suffix(new_anchor_media.name_jap, japanese=True),
+        "other_names": list(new_anchor_media.other_names or []),
+        "description": new_anchor_media.description,
+        "cover_image": new_anchor_media.cover_image,
+    }
+    # Fields the AnimeSearch embedding consumes — a cover_image-only
+    # change shouldn't trigger the ~50-100ms encode.
+    _EMBEDDING_FIELDS = ("mal_id", "title", "name_eng", "name_jap", "other_names", "description")
 
-    anchor_changed = new_anchor_mal_id != anime.mal_id
-    # Split drift detection: the embedding only consumes title fields +
-    # description, so a cover_image-only change shouldn't trigger a
-    # ~50-100ms encode.
-    embedding_drifted = anchor_changed or (
-        anime.title != new_title
-        or anime.name_eng != new_name_eng
-        or anime.name_jap != new_name_jap
-        or (anime.other_names or []) != new_other_names
-        or anime.description != new_description
-    )
-    umbrella_drifted = embedding_drifted or anime.cover_image != new_cover_image
+    def _current(field: str) -> object:
+        # Normalize other_names None → [] so the comparison matches
+        # how new_umbrella["other_names"] is built.
+        val = getattr(anime, field)
+        return list(val or []) if field == "other_names" else val
+
+    drifted_fields = {f for f, v in new_umbrella.items() if _current(f) != v}
+    umbrella_drifted = bool(drifted_fields)
+    embedding_drifted = bool(drifted_fields & set(_EMBEDDING_FIELDS))
+    anchor_changed = "mal_id" in drifted_fields
 
     if not reclassified and not umbrella_drifted:
         return None
@@ -127,16 +132,16 @@ async def reclassify_anime(
             # as anime_title_backfiller).
             await regenerate_anime_embedding(
                 db, anime.id,
-                title_texts=[new_title, new_name_eng, new_name_jap, *new_other_names],
-                description_text=new_description or "",
+                title_texts=[
+                    new_umbrella["title"],
+                    new_umbrella["name_eng"],
+                    new_umbrella["name_jap"],
+                    *new_umbrella["other_names"],
+                ],
+                description_text=new_umbrella["description"] or "",
             )
-        anime.mal_id = new_anchor_mal_id
-        anime.title = new_title
-        anime.name_eng = new_name_eng
-        anime.name_jap = new_name_jap
-        anime.other_names = new_other_names
-        anime.description = new_description
-        anime.cover_image = new_cover_image
+        for field, value in new_umbrella.items():
+            setattr(anime, field, value)
 
     return diff
 

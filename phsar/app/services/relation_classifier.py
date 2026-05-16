@@ -89,10 +89,10 @@ def _anchor_sort_key(mal_id: int, node: ClassifierNode) -> tuple:
     return (tier, aired_sort, -scored_by, mal_id)
 
 
-def pick_anchor(nodes: dict[int, ClassifierNode]) -> int:
-    """Return the mal_id the classifier would anchor on for this graph.
-    Same algorithm as `classify_anime_relations` runs internally; call
-    here when you need the anchor without iterating classifications."""
+def _pick_anchor(nodes: dict[int, ClassifierNode]) -> int:
+    """Internal: return the mal_id the classifier would anchor on for
+    this graph. `classify_anime_relations` returns this in its tuple, so
+    external callers don't need it standalone."""
     substance_passing = {m: n for m, n in nodes.items() if passes_substance(n)}
     # Fallback covers donghua / orphan-side-story / standalone-weak-anime
     # cases where nothing passes substance — pick the most main-like
@@ -209,7 +209,7 @@ def classify_anime_relations(
     side_story, summary, crossover. Returns `(classifications, anchor)`
     where `anchor` is the mal_id picked by the substance-gate + tier
     sort (or `None` for empty input). Callers that need the anchor
-    don't have to call `pick_anchor` separately.
+    don't have to call `_pick_anchor` separately.
 
     `nodes` maps `mal_id` to a node dict (see ClassifierNode TypedDict).
     `edges` is a list of (a, b, normalized_relation) tuples where
@@ -219,7 +219,7 @@ def classify_anime_relations(
     if not nodes:
         return {}, None
 
-    anchor = pick_anchor(nodes)
+    anchor = _pick_anchor(nodes)
     adj = _build_adjacency(edges, valid_ids=set(nodes.keys()))
 
     main_chain = _closure({anchor}, adj, _MAIN_CHAIN_EDGES, set())

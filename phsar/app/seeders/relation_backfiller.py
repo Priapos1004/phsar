@@ -99,40 +99,53 @@ async def backfill_relations(
             if not anime.media:
                 continue
 
-            fetched_any = False
-            for media in anime.media:
-                if await _ensure_media_edges(db, scraper, media):
-                    fetched_any = True
+            # Per-anime try/except: one bad MAL response or one embedding
+            # regen failure mustn't abort the remaining catalog. The
+            # rollback wipes uncommitted edge-fetch + reclassify writes
+            # for THIS anime only; previous anime committed cleanly.
+            try:
+                fetched_any = False
+                for media in anime.media:
+                    if await _ensure_media_edges(db, scraper, media):
+                        fetched_any = True
 
-            diff = await reclassify_anime(db, anime, dry_run=dry_run)
+                diff = await reclassify_anime(db, anime, dry_run=dry_run)
 
-            if diff is not None:
-                summary["anime_changed"] += 1
-                summary["media_reclassified"] += len(diff["reclassified"])
-                if diff["anchor_changed"]:
-                    summary["anchor_changes"] += 1
-                summary["diffs"].append({
-                    "anime_id": anime.id,
-                    "anime_title": anime.title,
-                    **diff,
-                })
-                logger.info(
-                    "Backfiller %s: anime id=%d %r — %d media reclassified, "
-                    "anchor_changed=%s, umbrella_drifted=%s",
-                    "would change" if dry_run else "changing",
+                if diff is not None:
+                    summary["anime_changed"] += 1
+                    summary["media_reclassified"] += len(diff["reclassified"])
+                    if diff["anchor_changed"]:
+                        summary["anchor_changes"] += 1
+                    summary["diffs"].append({
+                        "anime_id": anime.id,
+                        "anime_title": anime.title,
+                        **diff,
+                    })
+                    logger.info(
+                        "Backfiller %s: anime id=%d %r — %d media reclassified, "
+                        "anchor_changed=%s, umbrella_drifted=%s",
+                        "would change" if dry_run else "changing",
+                        anime.id, anime.title,
+                        len(diff["reclassified"]),
+                        diff["anchor_changed"], diff["umbrella_drifted"],
+                    )
+
+                # Per-anime commit so lazily-fetched sidecar edges land
+                # incrementally — a crash mid-run doesn't lose hours of
+                # MAL pagination, and a follow-up dry-run inherits the
+                # already-fetched sidecars instead of re-paying the rate-
+                # limited round-trips. In dry_run mode this commits only
+                # the sidecar fetches; reclassify never wrote.
+                if fetched_any or (not dry_run and diff is not None):
+                    await db.commit()
+            except Exception:
+                await db.rollback()
+                logger.exception(
+                    "Backfiller failed on anime id=%d %r — skipping",
                     anime.id, anime.title,
-                    len(diff["reclassified"]),
-                    diff["anchor_changed"], diff["umbrella_drifted"],
                 )
-
-            # Per-anime commit so lazily-fetched sidecar edges land
-            # incrementally — a crash mid-run doesn't lose hours of
-            # MAL pagination, and a follow-up dry-run inherits the
-            # already-fetched sidecars instead of re-paying the rate-
-            # limited round-trips. In dry_run mode this commits only
-            # the sidecar fetches; reclassify never wrote.
-            if fetched_any or (not dry_run and diff is not None):
-                await db.commit()
+                summary.setdefault("anime_failed", 0)
+                summary["anime_failed"] += 1
 
     if summary["anime_changed"]:
         verb = "would change" if dry_run else "changed"

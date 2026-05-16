@@ -183,9 +183,7 @@ Business logic as module-level async functions.
   - Per-graph decision: save as new anime, attach to existing anime, or surface as merge candidate
   - Packages as `SaveAction | AttachToExistingAction` for the caller
   - **`AttachToExistingAction`**: routes orphan side-story graphs (single cross-link to an existing Media, no main of their own) through `save_service.attach_search_result_to_anime` so a tier-1/2 parent's new side-story gets attached under the right anime instead of becoming a duplicate
-  - **`_pick_root_for_promotion`**: seed-mode fallback when `get_first_main_relation` finds no main AND there's no single cross-link
-    - Picks the most main-like graph entry by `(type_tier, aired_from)`: TV/Movie=0, ONA=1, OVA/TVSpecial=2, Special=3 (nulls last on aired_from)
-    - Why: necessary for donghua sub-universes whose canonical main is an ONA, and for pilot-aired-before-the-real-show edge (tier > date)
+  - **Seed-mode anchor fallback** (v0.14.1): when the seeded BFS produces no clear main, the two-pass classifier picks the anchor from the captured nodes by anchor tier (TV > ONA > Movie > other) + substance gate + oldest aired_from. Necessary for donghua sub-universes whose canonical main is an ONA, and pilot-aired-before-the-real-show edge (tier > date)
   - Cross-link signals are filtered to subtract `media_unwanted` mal_ids before the attach-vs-promote decision so filtered Music/PV entries don't get treated as franchise-overlap evidence
   - `alternative_setting` is treated as a graph boundary (like `crossover`) but dropped entirely — MAL's explicit "different story, shared themes" label; conflating those into one Anime row triggered false-positive merge candidates on every sweep
   - All MAL relation strings normalized once on entry via `_normalize_relation(rel) = rel.lower().replace(" ", "_")`

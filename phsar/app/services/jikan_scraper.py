@@ -4,7 +4,7 @@ import re
 from collections import deque
 from datetime import datetime
 from time import monotonic
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import httpx
 from tenacity import (
@@ -69,7 +69,7 @@ AIRING_STATUS_NOT_YET_AIRED = "Not yet aired"
 logger = logging.getLogger(__name__)
 
 
-def parse_mal_datetime(value: str | None) -> Optional[datetime]:
+def parse_mal_datetime(value: str | None) -> datetime | None:
     # MAL emits "+00:00" most of the time but historical payloads sometimes
     # carry "Z". `fromisoformat` accepts the former natively.
     if not value:
@@ -129,7 +129,7 @@ class JikanScraper:
 
     def __init__(self, base_url: str = BASE_URL):
         self.base_url = base_url
-        self.client: Optional[httpx.AsyncClient] = None
+        self.client: httpx.AsyncClient | None = None
         self.timeout = httpx.Timeout(connect=5.0, read=120.0, write=10.0, pool=5.0)
 
     async def __aenter__(self):
@@ -172,7 +172,7 @@ class JikanScraper:
         reraise=True,
         before_sleep=before_sleep_log(logger, logging.DEBUG)
     )
-    async def _get(self, url: str, params: Optional[dict] = None) -> dict:
+    async def _get(self, url: str, params: dict | None = None) -> dict:
         logger.debug(f"Fetching URL: {url} with params: {params}")
         await self._wait_for_rate_limit()
         response = await self.client.get(url, params=params)
@@ -195,7 +195,7 @@ class JikanScraper:
         return cleaned
     
     @staticmethod
-    def __get_anime_season(anime: dict) -> tuple[Optional[str], Optional[int]]:
+    def __get_anime_season(anime: dict) -> tuple[str | None, int | None]:
         season = anime.get("season")
         year = anime.get("year")
         if season and year:
@@ -224,7 +224,7 @@ class JikanScraper:
             return None, None
 
     @staticmethod
-    def _parse_duration_to_seconds(duration: Optional[str]) -> Optional[int]:
+    def _parse_duration_to_seconds(duration: str | None) -> int | None:
         if not duration or "unknown" in duration.lower():
             return None
 

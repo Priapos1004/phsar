@@ -478,8 +478,14 @@ def _apply_media_diff(media: Media, payload: dict) -> bool:
                 changed = True
 
     new_episodes = payload.get("episodes")
-    if media.episodes != new_episodes:
-        if media.episodes is None and new_episodes is not None:
+    # Skip when MAL omitted the field on a populated row — mirrors the
+    # scored_by guard above. extract_information returns None when the
+    # /full response leaves episodes off (observed transient behavior);
+    # writing that back would silently null a populated count and reset
+    # stability. Allow None → value (the reveal direction) and
+    # value → value (legitimate updates).
+    if new_episodes is not None and media.episodes != new_episodes:
+        if media.episodes is None:
             # We don't auto-bump ratings.episodes_watched: a user with
             # the show on their watchlist may have only watched part.
             # Surface in logs so an admin can investigate scope of the
