@@ -713,10 +713,11 @@ def _patch_probe_pipeline(monkeypatch):
     attach_calls: list[dict] = []
     recompute_calls: list[int] = []
 
-    async def fake_attach(db, parent_anime, graph, all_info):
+    async def fake_attach(db, parent_anime, graph, all_info, edges=None):
         attach_calls.append({
             "parent_anime_id": parent_anime.id,
             "graph_mal_ids": list(graph.keys()),
+            "edges": edges or [],
         })
         existing = {m.mal_id for m in parent_anime.media}
         return sum(1 for mal_id in graph if mal_id not in existing)
@@ -935,10 +936,11 @@ async def test_spoiler_recompute_failure_does_not_fail_the_sweep(
 
     attach_calls: list[dict] = []
 
-    async def fake_attach(db, parent_anime, graph, all_info):
+    async def fake_attach(db, parent_anime, graph, all_info, edges=None):
         attach_calls.append({
             "parent_anime_id": parent_anime.id,
             "graph_mal_ids": list(graph.keys()),
+            "edges": edges or [],
         })
         existing = {m.mal_id for m in parent_anime.media}
         return sum(1 for mal_id in graph if mal_id not in existing)

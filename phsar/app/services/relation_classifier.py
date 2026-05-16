@@ -125,6 +125,15 @@ def _closure(
     return visited
 
 
+def outgoing_edges(
+    edges: list[tuple[int, int, str]], source_mal_id: int,
+) -> list[tuple[int, str]]:
+    """Project per-anime edges to the per-media outgoing list persisted
+    on MediaRelationEdges. `[target_mal_id, rel]` pairs match the JSONB
+    column shape the merge/preview/backfill paths read back."""
+    return [(target, rel) for src, target, rel in edges if src == source_mal_id]
+
+
 def build_classifier_nodes(
     graph: dict[int, dict], all_info: dict[int, dict],
 ) -> dict[int, ClassifierNode]:

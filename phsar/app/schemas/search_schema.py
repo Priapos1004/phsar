@@ -11,6 +11,11 @@ class SearchResultDB(BaseModel):
     # non-crossover relation. Resolved to anime ids in save_service and
     # turned into relation_link merge candidates.
     cross_link_mal_ids: set[int] = Field(default_factory=set)
+    # Per-anime MAL relation edges as (source_mal_id, target_mal_id,
+    # normalized_relation). save_service projects per-source for the
+    # MediaRelationEdges sidecar; the merge / backfill paths read the
+    # sidecar back when re-classifying.
+    edges: list[tuple[int, int, str]] = Field(default_factory=list)
 
 
 class AttachToExistingAction(BaseModel):
@@ -24,6 +29,7 @@ class AttachToExistingAction(BaseModel):
     target_mal_id: int
     related_anime_graph: dict
     all_info: dict
+    edges: list[tuple[int, int, str]] = Field(default_factory=list)
 
 
 class SearchResultDBExtended(BaseModel):

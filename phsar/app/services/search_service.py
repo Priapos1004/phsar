@@ -95,6 +95,7 @@ async def search_mal_api(
                     target_mal_id=target_mal_id,
                     related_anime_graph=related_anime_graph,
                     all_info=graph_all_info,
+                    edges=edges,
                 ))
                 logger.info(
                     "Weak-anchor graph will attach to mal_id=%s (anchor=%s)",
@@ -130,6 +131,7 @@ async def search_mal_api(
             anime_mal_id=anime_mal_id,
             unconnected_media_list=unconnected_media_list,
             cross_link_mal_ids=cross_link_mal_ids,
+            edges=edges,
         ))
 
     return SearchResultDBExtended(

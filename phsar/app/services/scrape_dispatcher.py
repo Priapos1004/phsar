@@ -168,6 +168,7 @@ async def _route_attach_actions(
             continue
         attached_total += await attach_search_result_to_anime(
             session, parent, action.related_anime_graph, action.all_info,
+            edges=action.edges,
         )
     return attached_total
 
@@ -412,7 +413,7 @@ async def _probe_relations_for_anime(
             # relation_type here before attach reads it.
             classify_and_stamp(graph, edges, all_info)
             saved_count = await attach_search_result_to_anime(
-                session, anime, graph, all_info,
+                session, anime, graph, all_info, edges=edges,
             )
             if saved_count:
                 saved_anything = True
