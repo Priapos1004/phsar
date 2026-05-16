@@ -25,7 +25,6 @@ from app.services.anime_service import strip_season_suffix
 from app.services.relation_classifier import (
     classify_anime_relations,
     media_to_classifier_node,
-    pick_anchor,
 )
 from app.services.vector_embedding_service import regenerate_anime_embedding
 
@@ -70,8 +69,8 @@ async def reclassify_anime(
     Caller commits.
     """
     nodes, edges = _build_classifier_graph(anime.media)
-    classifications = classify_anime_relations(nodes, edges)
-    new_anchor_mal_id = pick_anchor(nodes)
+    classifications, new_anchor_mal_id = classify_anime_relations(nodes, edges)
+    assert new_anchor_mal_id is not None, "non-empty nodes always yield an anchor"
 
     current_by_mal = {m.mal_id: m for m in anime.media}
     reclassified: list[tuple[int, str, str]] = []
@@ -160,7 +159,7 @@ def preview_reclassifications(
     """
     combined_media = list(anime_a.media) + list(anime_b.media)
     nodes, edges = _build_classifier_graph(combined_media)
-    classifications = classify_anime_relations(nodes, edges)
+    classifications, _ = classify_anime_relations(nodes, edges)
     media_by_mal = {m.mal_id: m for m in combined_media}
 
     out: list[tuple[Media, str, str]] = []

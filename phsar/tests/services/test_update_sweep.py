@@ -25,6 +25,7 @@ from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
 from app.models.media import Media
 from app.models.media_freshness import MediaFreshness
+from app.models.media_relation_edges import MediaRelationEdges
 from app.models.media_unwanted import MediaUnwanted
 from app.services.scrape_dispatcher import (
     _advance_anime_freshness,
@@ -240,7 +241,10 @@ async def _build_anime_with_one_media(
     # the dispatcher gets from select_due_for_sweep.
     result = await db_session.execute(
         select(Anime).where(Anime.id == anime.id).options(
-            selectinload(Anime.media).selectinload(Media.freshness),
+            selectinload(Anime.media).options(
+                selectinload(Media.freshness),
+                selectinload(Media.relation_edges),
+            ),
             selectinload(Anime.freshness),
         )
     )
@@ -330,6 +334,47 @@ async def test_refresh_bumps_last_checked_even_when_unchanged(db_session):
 
     assert anime.freshness.last_checked_at > old_anime_ts
     assert anime.media[0].freshness.last_checked_at > old_media_ts
+
+
+@pytest.mark.asyncio
+async def test_refresh_rewrites_relation_edges_from_full_payload(db_session):
+    """Step 1 of the sweep refreshes `MediaRelationEdges` from the
+    /anime/{id}/full payload's bundled `relations` block. No extra MAL
+    hit — the relations are already in the response that the dispatcher
+    uses for canonical-field diffing. Catches MAL changes (new sequels,
+    new alt-versions) over the nightly sweep cycle and surfaces bridge
+    edges retroactively for pre-v0.14.1 rows."""
+    anime = await _build_anime_with_one_media(
+        db_session, mal_id_a=-9010, mal_id_m=-9110,
+        freshness=AnimeFreshness(last_checked_at=datetime.now(timezone.utc) - timedelta(days=1)),
+        media_freshness=MediaFreshness(last_checked_at=datetime.now(timezone.utc) - timedelta(days=1)),
+        score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
+        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+    )
+    # Seed an existing sidecar with one stale edge; the /full payload
+    # returns two relations, so the rewrite should replace this.
+    db_session.add(MediaRelationEdges(media_id=anime.media[0].id, edges=[[-1, "sequel"]]))
+    await db_session.flush()
+    await db_session.refresh(anime.media[0], ["relation_edges"])
+
+    media_mal_id = anime.media[0].mal_id
+    raw_with_relations = {
+        **_payload(),
+        "relations": [
+            {"relation": "Sequel", "entry": [{"type": "anime", "mal_id": 100}]},
+            {"relation": "Side Story", "entry": [{"type": "anime", "mal_id": 200}]},
+            {"relation": "Adaptation", "entry": [{"type": "manga", "mal_id": 999}]},
+        ],
+    }
+    scraper = _FakeScraper({media_mal_id: raw_with_relations})
+
+    await _refresh_one_anime(db_session, anime, scraper)
+
+    # Adaptation filtered (cross-franchise), manga entry filtered (non-anime).
+    assert anime.media[0].relation_edges.edges == [
+        [100, "sequel"],
+        [200, "side_story"],
+    ]
 
 
 @pytest.mark.asyncio
@@ -552,7 +597,10 @@ def _patch_select_due(monkeypatch, anime_ids: list[int]) -> None:
             .where(Anime.id.in_(anime_ids))
             .order_by(Anime.id.asc())
             .options(
-                selectinload(Anime.media).selectinload(Media.freshness),
+                selectinload(Anime.media).options(
+                    selectinload(Media.freshness),
+                    selectinload(Media.relation_edges),
+                ),
                 selectinload(Anime.freshness),
             )
         )

@@ -195,7 +195,7 @@ def classify_and_stamp(
     graph entry in place. Returns the classifications so callers can
     look up the anchor without re-iterating."""
     nodes = build_classifier_nodes(graph, all_info)
-    classifications = classify_anime_relations(nodes, edges)
+    classifications, _ = classify_anime_relations(nodes, edges)
     for mal_id, relation_type in classifications.items():
         graph[mal_id]["relation_type"] = relation_type
     return classifications
@@ -204,9 +204,12 @@ def classify_and_stamp(
 def classify_anime_relations(
     nodes: dict[int, ClassifierNode],
     edges: list[tuple[int, int, str]],
-) -> dict[int, str]:
+) -> tuple[dict[int, str], int | None]:
     """Classify every node in `nodes` as one of: main, alternative_version,
-    side_story, summary, crossover.
+    side_story, summary, crossover. Returns `(classifications, anchor)`
+    where `anchor` is the mal_id picked by the substance-gate + tier
+    sort (or `None` for empty input). Callers that need the anchor
+    don't have to call `pick_anchor` separately.
 
     `nodes` maps `mal_id` to a node dict (see ClassifierNode TypedDict).
     `edges` is a list of (a, b, normalized_relation) tuples where
@@ -214,7 +217,7 @@ def classify_anime_relations(
     output (lowercased, spaces → underscores).
     """
     if not nodes:
-        return {}
+        return {}, None
 
     anchor = pick_anchor(nodes)
     adj = _build_adjacency(edges, valid_ids=set(nodes.keys()))
@@ -259,4 +262,4 @@ def classify_anime_relations(
         if not passes_substance(nodes[mal_id]):
             classifications[mal_id] = "side_story"
 
-    return classifications
+    return classifications, anchor

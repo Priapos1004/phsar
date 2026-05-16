@@ -138,7 +138,10 @@ class AnimeDAO(MalIdDAO[Anime]):
                 Anime.id.asc(),
             )
             .options(
-                selectinload(Anime.media).selectinload(Media.freshness),
+                selectinload(Anime.media).options(
+                    selectinload(Media.freshness),
+                    selectinload(Media.relation_edges),
+                ),
                 selectinload(Anime.freshness),
             )
             .limit(limit)

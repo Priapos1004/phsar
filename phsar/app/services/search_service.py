@@ -17,7 +17,6 @@ from app.services.relation_classifier import (
     build_classifier_nodes,
     classify_anime_relations,
     passes_substance,
-    pick_anchor,
 )
 from app.services.unwanted_media_service import create_unwanted_media
 
@@ -70,10 +69,9 @@ async def search_mal_api(
         cross_link_mal_ids = cross_link_mal_ids - unwanted_mal_ids
 
         nodes = build_classifier_nodes(related_anime_graph, all_info)
-        classifications = classify_anime_relations(nodes, edges)
+        classifications, anime_mal_id = classify_anime_relations(nodes, edges)
         for mal_id, relation_type in classifications.items():
             related_anime_graph[mal_id]["relation_type"] = relation_type
-        anime_mal_id = pick_anchor(nodes)
 
         # Substance-failing anchor means the graph's "main" is a weak
         # fallback (donghua with sparse metadata, orphan side-story).

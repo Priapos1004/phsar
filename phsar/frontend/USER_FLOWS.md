@@ -203,7 +203,7 @@ Each anime search result card shows:
 ### 6.5 Ratings Overview ("Your Ratings")
 - Appears when the user has rated at least one media in the anime
 - **Stats gauge**: Average score displayed in a gauge chart (formatted to 1 decimal), progress bars for media rated / total and episodes watched / total, dropped count badge
-- **Rating Timeline**: Bar chart with one bar per media in release order, colored by relation type (Main Story = purple, Summary = green, Crossover = yellow, Side Story = red). Dropped items at 50% opacity. HTML legend showing active relation types. Tooltip shows title, media type, relation type, season, and score.
+- **Rating Timeline**: Bar chart with one bar per media in release order, colored by relation type (Main Story = theme primary, Alt Version = yellow, Side Story = accent red, Summary = secondary green, Crossover = theme ring — a muted shade reserved for the rarest type). Dropped items at 50% opacity. HTML legend showing active relation types. Tooltip shows title, media type, relation type, season, and score.
 - **Attribute Summary** (side-by-side on desktop, stacked on mobile):
   - *Quality Radar* (pentagon): 5 quality axes (animation quality, dialogue quality, character depth, story quality, ending quality) normalized to 0–1 scale with 3 split rings. Tooltip shows closest label per axis or "--" for no data. `ending_quality: not_applicable` is excluded from averaging.
   - *Descriptive Pills* (orbital): 6 descriptive attributes (pace, 3D animation, watched format, fan service, ending type, originality) displayed as tilted pills arranged in an elliptical orbit. Each shows "Label: Majority Value" or "--" for no data. Hover straightens and scales the pill. Click triggers a color-burst glow animation cycling through the chart palette.
@@ -288,7 +288,7 @@ Each anime search result card shows:
 - **Off**: No spoiler protection
 - **Blur**: "Blur covers and descriptions to avoid spoilers" — media beyond the spoiler frontier are blurred with a "Click to reveal" overlay on covers and descriptions
 - **Hide**: "Blur covers and descriptions, and hide spoiler media from search results" — same as blur, plus media search results are filtered to only show visible media
-- Spoiler frontier: per anime, all media up to and including the next unwatched main-story entry are visible; individually rated media beyond the frontier are also visible
+- Spoiler frontier: per anime, all media up to and including the next unwatched **anchor** entry are visible; individually rated media beyond the frontier are also visible. Anchors are `main` AND `alternative_version` — retellings extend the story, so each alt-version gates the next (rating Evangelion TV reveals Rebuild Movie 1 but not Movies 2-4)
 - Anime covers and anime-level descriptions are never spoiler-protected
 - On detail pages, "hide" mode falls back to blur behavior (user explicitly navigated there)
 - Visibility data loaded on auth and refreshed after rating changes
@@ -364,6 +364,7 @@ Each anime search result card shows:
   - A `detected_by` label (`title_studio`, `title_desc`, or `relation_link`)
   - Side-by-side anime cards labelled "Anime A (kept)" / "Anime B (merged in)" with title, romanized name, year, media count, rating count, and primary studio names. The recommended A is whichever side has the earliest aired media (with rating count as tiebreak); rating count is shown explicitly so the admin can see the justification.
   - Anime titles link to `/anime?uuid=<uuid>` (open in new tab) for context before deciding
+  - **Reclassification preview** (when the merge would change any media's relation type): a "Pending reclassifications" sub-block lists the per-media diffs (`old_relation_type → new_relation_type`) that would land if A absorbed B. Surfaces substance-gate demotions, alt-version labels, and anchor flips so the admin sees the structural impact before clicking merge.
 - **Swap A/B**: per-row ghost button next to the similarity badge. Flips which side is rendered as A vs B and changes which uuid is sent as `keep_uuid` on merge. Local-only state; refresh resets the toggles.
 - **Refresh**: spinning-arrow icon in the header re-fetches the list silently — existing rows stay rendered while the request is in flight, the spinner spins, and the keyed each-block diffs the result in place. The list never collapses to "Loading…" mid-refresh, so there's no scroll jump.
 - **Re-run detection**: magnifying-glass icon next to the refresh control. Re-runs the existing × existing detection backfill on demand — primarily for the post-restore workflow (restore doesn't bounce the container, so the lifespan-startup backfill never sees the restored catalog). The backfiller is idempotent: already-flagged pairs (any status) skip via `seen_pairs`, so repeat clicks return 0. Shows a "Flagged N new candidate(s)" inline note on success.
@@ -410,6 +411,7 @@ Each anime search result card shows:
 | `/admin/merge-candidates` | GET | Admin page Merge Candidates card (list pending duplicates) |
 | `/admin/merge-candidates/{uuid}/merge` | POST | Admin page Merge Candidates card (merge B into A, delete B) |
 | `/admin/merge-candidates/{uuid}/dismiss` | POST | Admin page Merge Candidates card (mark as reviewed-not-duplicate) |
+| `/admin/merge-candidates/backfill` | POST | Admin page Merge Candidates card "Re-run detection" — re-runs existing × existing detection without a container restart (post-restore workflow) |
 | `/auth/register` | POST | Registration page |
 | `/maintenance/status` | GET | Polled by MaintenanceBanner every 30s on every page (no auth) |
 | `/jobs/scrape` | POST | `/library/add` form submission (enqueues a `user_scrape` job; restricted users rejected by role check) |
@@ -418,6 +420,7 @@ Each anime search result card shows:
 | `/library/recent` | GET | `/library/add` recent-additions panel (global feed of recently-saved anime) |
 | `/admin/jobs/schedule-sweep` | POST | Coolify cron only — bearer token authenticated, enqueues a delayed `update_sweep` |
 | `/admin/jobs/schedule-seasonal` | POST | Coolify cron only — bearer token authenticated, enqueues a delayed `seasonal_sweep` |
+| `/admin/jobs/schedule-nightly` | POST | Coolify cron only — bearer token authenticated, combined daily entry: enqueues `backup` (immediate) + delayed `update_sweep` + (Sundays UTC) delayed `seasonal_sweep` |
 
 ---
 

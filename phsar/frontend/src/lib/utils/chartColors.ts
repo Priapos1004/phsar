@@ -83,15 +83,20 @@ export function getThemedChartColorPalette(): string[] {
  * Returns themed colors for relation types, using the themed palette
  * to avoid hue clashes (e.g. red theme's "main" shouldn't be purple).
  * Palette indices: 0=primary, 1=secondary, 2=yellow, 3=accent, 4=ring.
- * alternative_version uses ring (4) so retellings echo the main hue.
+ *
+ * main / side_story / summary are the three most-common types and frequently
+ * appear adjacent on the timeline, so they get the three highest-contrast
+ * slots (primary, accent red, secondary green). alternative_version takes
+ * the high-saturation yellow. crossover gets the muted ring slot — it's the
+ * rarest type so its low contrast with primary almost never bites in practice.
  */
 export function getThemedRelationTypeColors(): Record<string, string> {
 	const palette = getThemedChartColorPalette();
 	return {
 		main: palette[0],
-		alternative_version: palette[4],
+		alternative_version: palette[2],
 		side_story: palette[3],
 		summary: palette[1],
-		crossover: palette[2],
+		crossover: palette[4],
 	};
 }

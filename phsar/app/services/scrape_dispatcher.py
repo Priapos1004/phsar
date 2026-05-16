@@ -35,11 +35,13 @@ from app.models.anime_freshness import AnimeFreshness
 from app.models.job import Job
 from app.models.media import Media, RelationType
 from app.models.media_freshness import MediaFreshness
+from app.models.media_relation_edges import MediaRelationEdges
 from app.schemas.search_schema import AttachToExistingAction
 from app.services.jikan_scraper import (
     AIRING_STATUS_CURRENTLY_AIRING,
     JikanScraper,
     parse_mal_datetime,
+    parse_relation_edges,
 )
 from app.services.progress_reporter import ProgressReporter
 from app.services.relation_classifier import classify_and_stamp
@@ -320,6 +322,21 @@ async def _refresh_one_anime(
             media.freshness = MediaFreshness(last_checked_at=now)
         else:
             media.freshness.last_checked_at = now
+
+        # `/anime/{id}/full` bundles the relations block; refresh the
+        # sidecar so bridge edges land for pre-v0.14.1 rows scraped
+        # under the dangling-edge filter, and so MAL adding a new
+        # sequel/alt-version flows into the catalog over the nightly
+        # sweep instead of needing a manual re-scrape. Not counted as
+        # anime_changed — edge churn is structural metadata, not the
+        # volatile canonical fields the stable counter tracks.
+        fresh_edges: list[list[int | str]] = [
+            [t, r] for t, r in parse_relation_edges(raw.get("relations") or [])
+        ]
+        if media.relation_edges is None:
+            media.relation_edges = MediaRelationEdges(edges=fresh_edges)
+        elif media.relation_edges.edges != fresh_edges:
+            media.relation_edges.edges = fresh_edges
 
     is_currently_airing = any(
         m.airing_status == AIRING_STATUS_CURRENTLY_AIRING for m in anime.media

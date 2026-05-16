@@ -76,7 +76,7 @@ def test_evangelion_tv_anchors_movies_are_alternative_version():
         (30, 32, "side_story"),
         (30, 33, "side_story"),
     ]
-    out = classify_anime_relations(nodes, edges)
+    out, _ = classify_anime_relations(nodes, edges)
     assert out[30] == "main"
     assert out[2759] == "alternative_version"
     assert out[2760] == "alternative_version"
@@ -106,7 +106,7 @@ def test_overlord_in_graph_weak_mains_become_side_story():
         (29803, 36497, "side_story"),
         (29803, 36683, "other"),
     ]
-    out = classify_anime_relations(nodes, edges)
+    out, _ = classify_anime_relations(nodes, edges)
     assert out[29803] == "main"
     assert out[32615] == "main"
     assert out[37675] == "main"
@@ -124,7 +124,7 @@ def test_overlord_weak_sequel_demoted_by_substance_gate():
         101: _movie(duration_s=60, aired="2017-01-01"),
     }
     edges = [(100, 101, "sequel")]
-    out = classify_anime_relations(nodes, edges)
+    out, _ = classify_anime_relations(nodes, edges)
     assert out[100] == "main"
     assert out[101] == "side_story"
 
@@ -141,7 +141,7 @@ def test_standalone_weak_movie_demoted_after_merge():
         9999: _movie(duration_s=120, aired="2024-01-01"),
     }
     edges = [(29803, 9999, "other")]
-    out = classify_anime_relations(nodes, edges)
+    out, _ = classify_anime_relations(nodes, edges)
     assert out[29803] == "main"
     assert out[9999] == "side_story"
 
@@ -158,7 +158,7 @@ def test_donghua_ona_anchors_when_no_tv_present():
         (200, 201, "sequel"),
         (200, 202, "side_story"),
     ]
-    out = classify_anime_relations(nodes, edges)
+    out, _ = classify_anime_relations(nodes, edges)
     assert out[200] == "main"
     assert out[201] == "main"
     assert out[202] == "side_story"
@@ -172,7 +172,7 @@ def test_summary_edge_classifies_as_summary():
         301: _special(duration_s=600),
     }
     edges = [(300, 301, "summary")]
-    out = classify_anime_relations(nodes, edges)
+    out, _ = classify_anime_relations(nodes, edges)
     assert out[301] == "summary"
 
 
@@ -182,7 +182,7 @@ def test_crossover_edge_classifies_as_crossover():
         401: _movie(),
     }
     edges = [(400, 401, "crossover")]
-    out = classify_anime_relations(nodes, edges)
+    out, _ = classify_anime_relations(nodes, edges)
     assert out[401] == "crossover"
 
 
@@ -195,7 +195,7 @@ def test_summary_outranks_side_story_when_node_has_both_edges():
         (500, 501, "side_story"),
         (500, 501, "summary"),
     ]
-    out = classify_anime_relations(nodes, edges)
+    out, _ = classify_anime_relations(nodes, edges)
     assert out[501] == "summary"
 
 
@@ -207,7 +207,7 @@ def test_tv_beats_movie_even_when_movie_aired_first():
         601: _tv(episodes=12, duration_s=1440, aired="2000-01-01"),  # newer TV
     }
     edges = [(600, 601, "alternative_version")]
-    out = classify_anime_relations(nodes, edges)
+    out, _ = classify_anime_relations(nodes, edges)
     assert out[601] == "main"
     assert out[600] == "alternative_version"
 
@@ -222,7 +222,7 @@ def test_oldest_tv_wins_within_tier():
         (700, 701, "sequel"),
         (701, 702, "sequel"),
     ]
-    out = classify_anime_relations(nodes, edges)
+    out, _ = classify_anime_relations(nodes, edges)
     assert out == {700: "main", 701: "main", 702: "main"}
 
 
@@ -232,7 +232,7 @@ def test_scored_by_breaks_tier_aired_tie():
         801: _tv(aired="2010-01-01", scored_by=100_000),
     }
     edges = [(800, 801, "alternative_version")]
-    out = classify_anime_relations(nodes, edges)
+    out, _ = classify_anime_relations(nodes, edges)
     assert out[801] == "main"
     assert out[800] == "alternative_version"
 
@@ -244,7 +244,7 @@ def test_anchor_falls_back_when_no_node_passes_substance():
     # the anime row.
     nodes = {900: _special(duration_s=300)}
     edges: list[tuple[int, int, str]] = []
-    out = classify_anime_relations(nodes, edges)
+    out, _ = classify_anime_relations(nodes, edges)
     assert out[900] == "main"
 
 
@@ -255,7 +255,7 @@ def test_anchor_fallback_picks_most_main_like_type():
         1001: _movie(duration_s=600, aired="2015-01-01"),
     }
     edges = [(1000, 1001, "side_story")]
-    out = classify_anime_relations(nodes, edges)
+    out, _ = classify_anime_relations(nodes, edges)
     assert out[1001] == "main"
     assert out[1000] == "side_story"
 
@@ -277,7 +277,7 @@ def test_classifier_outputs_are_valid_relation_type_values():
         (1, 3, "summary"),
         (1, 4, "crossover"),
     ]
-    out = classify_anime_relations(nodes, edges)
+    out, _ = classify_anime_relations(nodes, edges)
     valid = {rt.value for rt in RelationType}
     assert set(out.values()) <= valid
 
@@ -297,18 +297,21 @@ def test_classifier_ignores_dangling_edges():
         (2, 999, "sequel"),  # dangling — 999 is not in nodes
         (888, 1, "prequel"),  # dangling — 888 is not in nodes
     ]
-    out = classify_anime_relations(nodes, edges)
+    out, _ = classify_anime_relations(nodes, edges)
     assert out == {1: "main", 2: "main"}
 
 
 def test_empty_graph_returns_empty_dict():
-    assert classify_anime_relations({}, []) == {}
+    classifications, anchor = classify_anime_relations({}, [])
+    assert classifications == {}
+    assert anchor is None
 
 
 def test_single_node_is_main():
     nodes = {1100: _tv()}
-    out = classify_anime_relations(nodes, [])
+    out, anchor = classify_anime_relations(nodes, [])
     assert out == {1100: "main"}
+    assert anchor == 1100
 
 
 def test_disconnected_subgraph_defaults_to_side_story():
@@ -317,7 +320,7 @@ def test_disconnected_subgraph_defaults_to_side_story():
         1201: _movie(),
     }
     edges: list[tuple[int, int, str]] = []
-    out = classify_anime_relations(nodes, edges)
+    out, _ = classify_anime_relations(nodes, edges)
     assert out[1200] == "main"
     assert out[1201] == "side_story"
 
@@ -334,7 +337,7 @@ def test_currently_airing_tv_with_null_episodes_passes_substance():
     }
     nodes[1]["episodes"] = None
     edges = [(1, 2, "alternative_version")]
-    out = classify_anime_relations(nodes, edges)
+    out, _ = classify_anime_relations(nodes, edges)
     # TV with NULL episodes anchors over the substance-passing Movie.
     assert out[1] == "main"
     assert out[2] == "alternative_version"
@@ -349,7 +352,7 @@ def test_tvspecial_with_null_episodes_fails_substance():
         2: _tv(episodes=26, duration_s=1440, aired="2021-01-01"),
     }
     edges = [(1, 2, "sequel")]
-    out = classify_anime_relations(nodes, edges)
+    out, _ = classify_anime_relations(nodes, edges)
     # The substance-passing TV anchors; TVSpecial with NULL eps doesn't.
     assert out[2] == "main"
 
@@ -370,7 +373,7 @@ def test_substance_thresholds_match_constants():
         nodes = {**strong, **weak}
         weak_id = next(iter(weak))
         edges = [(1, weak_id, "sequel")]
-        out = classify_anime_relations(nodes, edges)
+        out, _ = classify_anime_relations(nodes, edges)
         assert out[1] == "main"
         # Weak gets demoted iff it doesn't pass substance.
         if weak_id in (1300, 1303):  # the two passing fixtures

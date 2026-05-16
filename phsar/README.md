@@ -50,6 +50,7 @@ phsar/
 │   │   ├── media.py
 │   │   ├── media_freshness.py
 │   │   ├── media_genre.py
+│   │   ├── media_relation_edges.py
 │   │   ├── media_search.py
 │   │   ├── media_studio.py
 │   │   ├── media_unwanted.py
@@ -96,10 +97,12 @@ phsar/
 │   │   ├── embedding_backfiller.py
 │   │   ├── genre_seeder.py
 │   │   ├── media_seeder.py
+│   │   ├── relation_backfiller.py
 │   │   └── user_seeder.py
 │   └── services/
 │       ├── _pg_subprocess.py
 │       ├── admin_service.py
+│       ├── anime_relation_service.py
 │       ├── anime_search_service.py
 │       ├── anime_service.py
 │       ├── auth_service.py
@@ -116,6 +119,7 @@ phsar/
 │       ├── merge_detection_service.py
 │       ├── progress_reporter.py
 │       ├── rating_service.py
+│       ├── relation_classifier.py
 │       ├── save_service.py
 │       ├── scrape_dispatcher.py
 │       ├── seasonal_sweep_dispatcher.py
@@ -270,6 +274,8 @@ phsar/
 ├── pyproject.toml
 ├── pytest.ini
 ├── requirements.txt
+├── scripts/
+│   └── audit_relation_backfill.py
 └── tests/
     ├── _helpers.py
     ├── conftest.py
@@ -307,6 +313,8 @@ phsar/
         ├── test_merge_detection.py
         ├── test_merge_preservation.py
         ├── test_progress_reporter.py
+        ├── test_relation_classifier.py
+        ├── test_save_service.py
         ├── test_search_service.py
         ├── test_seasonal_sweep.py
         ├── test_spoiler_service.py
@@ -354,6 +362,12 @@ SEARCH_SECRET_KEY=supersecretsearchsecretkey
 # JOBS_DEDUPE_HOURS=72
 # Bounds the nightly update_sweep batch size.
 # JOBS_SWEEP_MAX_PER_RUN=200
+# Re-runs the relation classifier over the catalog at lifespan startup. First
+# cold start lazy-fetches missing MediaRelationEdges sidecars from MAL at
+# 1 req/s (~14 min for an 800-media catalog); subsequent restarts skip already-
+# populated rows and finish in seconds. Disable for tight maintenance windows
+# on fresh deploys.
+# RELATION_BACKFILL_ON_STARTUP=True
 ```
 
 *Change `animeuser`, `animepass`, `admin`, `supersecretpassword`, `supersecretsecretkey`, and `supersecretsearchsecretkey`*
