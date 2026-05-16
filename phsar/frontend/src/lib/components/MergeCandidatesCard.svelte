@@ -4,7 +4,8 @@
     import { Button } from '$lib/components/ui/button';
     import * as Card from '$lib/components/ui/card';
     import { Badge } from '$lib/components/ui/badge';
-    import { GitMerge, X, RefreshCw, ArrowLeftRight, Search } from 'lucide-svelte';
+    import { GitMerge, X, RefreshCw, ArrowLeftRight, Search, ChevronRight, ChevronDown } from 'lucide-svelte';
+    import { formatRelationType } from '$lib/utils/formatString';
     import type {
         MergeBackfillResult,
         MergeCandidateAnimeSummary,
@@ -29,6 +30,7 @@
     // which side is rendered as A vs B and changes the keep_uuid sent on
     // merge — the backend ordering is just a recommendation.
     let swapped = $state<Record<string, boolean>>({});
+    let previewExpanded = $state<Record<string, boolean>>({});
 
     onMount(async () => {
         await fetchCandidates();
@@ -197,6 +199,37 @@
                                 </div>
                             {/each}
                         </div>
+
+                        {#if c.pending_reclassifications.length > 0}
+                            <div class="text-xs">
+                                <button
+                                    type="button"
+                                    class="text-muted-foreground hover:text-primary transition flex items-center gap-1"
+                                    onclick={() => (previewExpanded[c.uuid] = !previewExpanded[c.uuid])}
+                                >
+                                    {#if previewExpanded[c.uuid]}
+                                        <ChevronDown class="size-3" />
+                                    {:else}
+                                        <ChevronRight class="size-3" />
+                                    {/if}
+                                    <span>
+                                        {c.pending_reclassifications.length} media will be reclassified after merge
+                                    </span>
+                                </button>
+                                {#if previewExpanded[c.uuid]}
+                                    <ul class="mt-2 ml-4 space-y-1 text-muted-foreground">
+                                        {#each c.pending_reclassifications as p (p.media_uuid)}
+                                            <li class="flex items-baseline gap-2">
+                                                <span class="text-card-foreground">{p.title}</span>
+                                                <span class="text-xs">
+                                                    {formatRelationType(p.old_relation_type)} → {formatRelationType(p.new_relation_type)}
+                                                </span>
+                                            </li>
+                                        {/each}
+                                    </ul>
+                                {/if}
+                            </div>
+                        {/if}
 
                         <div class="flex justify-end gap-2 pt-1">
                             {#if confirmMergeUuid === c.uuid}

@@ -28,21 +28,20 @@ class MergeCandidateDAO(BaseDAO[MergeCandidate]):
         return result.scalars().first()
 
     async def list_pending_with_anime(self, db: AsyncSession) -> list[MergeCandidate]:
-        """List pending candidates with both anime + media + studios eagerly loaded.
-
-        Admin UI shows side-by-side titles/years/studios per pair, so loading
-        media and studios here keeps the response a single roundtrip."""
-        media_studio_loader = (
-            selectinload(Anime.media)
-            .selectinload(Media.media_studio)
-            .selectinload(MediaStudio.studio)
+        """List pending candidates with both anime + media + studios +
+        relation-edge sidecars eagerly loaded. Admin UI shows side-by-side
+        summaries AND a reclassification preview per pair, so all of this
+        rides one roundtrip."""
+        media_loader = selectinload(Anime.media).options(
+            selectinload(Media.media_studio).selectinload(MediaStudio.studio),
+            selectinload(Media.relation_edges),
         )
         stmt = (
             select(MergeCandidate)
             .where(MergeCandidate.status == MergeCandidateStatus.pending)
             .options(
-                selectinload(MergeCandidate.anime_a).options(media_studio_loader),
-                selectinload(MergeCandidate.anime_b).options(media_studio_loader),
+                selectinload(MergeCandidate.anime_a).options(media_loader),
+                selectinload(MergeCandidate.anime_b).options(media_loader),
             )
             .order_by(MergeCandidate.created_at.asc())
         )

@@ -14,12 +14,13 @@ set are filtered (cross-links, stale targets); the classifier requires
 both endpoints in `nodes`.
 """
 
+from collections.abc import Iterable
 from typing import TypedDict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.anime import Anime
-from app.models.media import RelationType
+from app.models.media import Media, RelationType
 from app.services.anime_service import strip_season_suffix
 from app.services.relation_classifier import (
     classify_anime_relations,
@@ -27,6 +28,27 @@ from app.services.relation_classifier import (
     pick_anchor,
 )
 from app.services.vector_embedding_service import regenerate_anime_embedding
+
+
+def _build_classifier_graph(
+    media: Iterable[Media],
+) -> tuple[dict[int, dict], list[tuple[int, int, str]]]:
+    """Project a media iterable into (nodes, in-graph-only edges) ready
+    for `classify_anime_relations`. Edges pointing outside this media
+    set (cross-links, stale targets) are dropped — the classifier
+    requires both endpoints in `nodes`.
+    """
+    media_list = list(media)
+    nodes = {m.mal_id: media_to_classifier_node(m) for m in media_list}
+    graph_ids = set(nodes.keys())
+    edges: list[tuple[int, int, str]] = []
+    for m in media_list:
+        if m.relation_edges is None:
+            continue
+        for target_mal_id, rel in m.relation_edges.edges:
+            if target_mal_id in graph_ids:
+                edges.append((m.mal_id, target_mal_id, rel))
+    return nodes, edges
 
 
 class ReclassifyDiff(TypedDict):
@@ -47,16 +69,7 @@ async def reclassify_anime(
     Returns `None` when no changes are needed; otherwise a diff dict.
     Caller commits.
     """
-    nodes = {m.mal_id: media_to_classifier_node(m) for m in anime.media}
-    graph_ids = set(nodes.keys())
-    edges: list[tuple[int, int, str]] = []
-    for media in anime.media:
-        if media.relation_edges is None:
-            continue
-        for target_mal_id, rel in media.relation_edges.edges:
-            if target_mal_id in graph_ids:
-                edges.append((media.mal_id, target_mal_id, rel))
-
+    nodes, edges = _build_classifier_graph(anime.media)
     classifications = classify_anime_relations(nodes, edges)
     new_anchor_mal_id = pick_anchor(nodes)
 
@@ -127,3 +140,33 @@ async def reclassify_anime(
         anime.cover_image = new_cover_image
 
     return diff
+
+
+def preview_reclassifications(
+    anime_a: Anime, anime_b: Anime,
+) -> list[tuple[Media, str, str]]:
+    """Return per-media reclassifications that would land if `anime_a`
+    absorbed `anime_b`'s media — as `(media, old_relation_type,
+    new_relation_type)` tuples. Read-only; never mutates either anime.
+    Powers the admin merge-candidate preview.
+
+    Returns raw `(media, str, str)` tuples instead of a Pydantic schema
+    so this domain helper stays decoupled from the admin response
+    shape — the caller (merge_candidate_service.list_pending) maps to
+    PendingReclassification.
+
+    Requires both anime's `media` collection + each media's
+    `relation_edges` sidecar to be pre-loaded by the caller.
+    """
+    combined_media = list(anime_a.media) + list(anime_b.media)
+    nodes, edges = _build_classifier_graph(combined_media)
+    classifications = classify_anime_relations(nodes, edges)
+    media_by_mal = {m.mal_id: m for m in combined_media}
+
+    out: list[tuple[Media, str, str]] = []
+    for mal_id, new_rt in classifications.items():
+        media = media_by_mal[mal_id]
+        old_rt = media.relation_type.value
+        if old_rt != new_rt:
+            out.append((media, old_rt, new_rt))
+    return out

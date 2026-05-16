@@ -26,8 +26,12 @@ from app.models.merge_candidate import MergeCandidate, MergeCandidateStatus
 from app.schemas.admin_schema import (
     MergeCandidateAnimeSummary,
     MergeCandidateListItem,
+    PendingReclassification,
 )
-from app.services.anime_relation_service import reclassify_anime
+from app.services.anime_relation_service import (
+    preview_reclassifications,
+    reclassify_anime,
+)
 from app.services.merge_detection_service import detect_merge_candidates
 from app.services.spoiler_service import refresh_spoiler_cache_for_all_users
 
@@ -93,6 +97,17 @@ async def list_pending(db: AsyncSession) -> list[MergeCandidateListItem]:
     for row in rows:
         a_summary = _summarize(row.anime_a, rating_counts.get(row.anime_a_id, 0))
         b_summary = _summarize(row.anime_b, rating_counts.get(row.anime_b_id, 0))
+        # Compute the preview from the unswapped pair (anime_a is the
+        # survivor by convention) so the diff reflects "A absorbs B".
+        # The recommended-keep swap below only affects which side
+        # shows as 'A' in the card; the merge always re-parents B → A.
+        pending = [
+            PendingReclassification(
+                media_uuid=str(media.uuid), title=media.title,
+                old_relation_type=old_rt, new_relation_type=new_rt,
+            )
+            for media, old_rt, new_rt in preview_reclassifications(row.anime_a, row.anime_b)
+        ]
         if _rank_key(a_summary, row.anime_a_id) > _rank_key(b_summary, row.anime_b_id):
             a_summary, b_summary = b_summary, a_summary
         items.append(MergeCandidateListItem(
@@ -102,6 +117,7 @@ async def list_pending(db: AsyncSession) -> list[MergeCandidateListItem]:
             created_at=row.created_at,
             anime_a=a_summary,
             anime_b=b_summary,
+            pending_reclassifications=pending,
         ))
     return items
 

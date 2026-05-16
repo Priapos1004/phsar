@@ -221,6 +221,62 @@ async def test_merge_keep_uuid_unrelated_raises(db_session):
 
 
 @pytest.mark.asyncio
+async def test_list_pending_includes_reclassification_preview(db_session):
+    """list_pending stamps each candidate with the per-media changes
+    that would land if the admin clicks merge — substance-gate
+    demotions, alt-version labels, anchor flips."""
+    studio = Studio(name="Preview Studio")
+    db_session.add(studio)
+    await db_session.flush()
+
+    a = Anime(mal_id=940101, title="Preview TV")
+    b = Anime(mal_id=940201, title="Preview Manner Movie")
+    db_session.add_all([a, b])
+    await db_session.flush()
+
+    media_a = Media(**media_kwargs(
+        a.id, 940101, title="Preview TV",
+        media_type=MediaType.TV, relation_type=RelationType.Main,
+        episodes=13, duration_seconds=1440,
+        aired_from=datetime(2015, 1, 1, tzinfo=timezone.utc),
+    ))
+    # B's weak Main (1-min Movie) — substance gate will demote it.
+    media_b = Media(**media_kwargs(
+        b.id, 940201, title="Preview Manner Movie",
+        media_type=MediaType.Movie, relation_type=RelationType.Main,
+        episodes=1, duration_seconds=60,
+        aired_from=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    ))
+    db_session.add_all([media_a, media_b])
+    await db_session.flush()
+    db_session.add_all([
+        MediaStudio(media_id=media_a.id, studio_id=studio.id),
+        MediaStudio(media_id=media_b.id, studio_id=studio.id),
+    ])
+    await db_session.flush()
+
+    a_id, b_id = sorted((a.id, b.id))
+    candidate = MergeCandidate(
+        anime_a_id=a_id, anime_b_id=b_id,
+        similarity_score=0.9, detected_by="title_studio",
+        status=MergeCandidateStatus.pending,
+    )
+    db_session.add(candidate)
+    await db_session.flush()
+
+    items = await list_pending(db_session)
+    item = next(it for it in items if it.uuid == str(candidate.uuid))
+    # B's weak Main media is flagged for demotion to side_story.
+    preview_by_uuid = {p.media_uuid: p for p in item.pending_reclassifications}
+    pending = preview_by_uuid.get(str(media_b.uuid))
+    assert pending is not None
+    assert pending.old_relation_type == "main"
+    assert pending.new_relation_type == "side_story"
+    # A's strong Main stays Main → not in the preview.
+    assert str(media_a.uuid) not in preview_by_uuid
+
+
+@pytest.mark.asyncio
 async def test_merge_demotes_weak_main_from_loser(db_session):
     """Overlord 13063 ⇄ 13064 shape: A is a substance-passing TV that's
     already classified as Main. B is a standalone 1-min Movie also
