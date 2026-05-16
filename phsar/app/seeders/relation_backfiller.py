@@ -31,6 +31,7 @@ from sqlalchemy.orm import selectinload
 from app.models.anime import Anime
 from app.models.media import Media, RelationType
 from app.models.media_relation_edges import MediaRelationEdges
+from app.services.anime_service import strip_season_suffix
 from app.services.jikan_scraper import JikanScraper, parse_relation_edges
 from app.services.relation_classifier import (
     classify_anime_relations,
@@ -46,6 +47,12 @@ class BackfillDiff(TypedDict):
     anime_title: str
     reclassified: list[tuple[int, str, str]]  # (mal_id, old_rt, new_rt)
     anchor_changed: bool
+    # True if any of the 7 umbrella fields (mal_id, title, name_eng,
+    # name_jap, other_names, description, cover_image) differs from
+    # the anchor media's current value. anchor_changed implies this;
+    # umbrella_drifted-without-anchor_changed catches old anchor
+    # rewrites that only updated a subset of fields.
+    umbrella_drifted: bool
     old_anchor_mal_id: int
     new_anchor_mal_id: int
 
@@ -146,9 +153,32 @@ async def backfill_relations(
                 if old_rt != new_rt:
                     reclassified.append((mal_id, old_rt, new_rt))
 
-            anchor_changed = new_anchor_mal_id != anime.mal_id
+            # Compute the new umbrella shape from the anchor media.
+            # Mirrors create_anime_from_media's field copy + strip so a
+            # post-backfill anime row looks identical to one scraped
+            # fresh from this anchor.
+            new_anchor_media = current_by_mal[new_anchor_mal_id]
+            new_title = strip_season_suffix(new_anchor_media.title) or new_anchor_media.title
+            new_name_eng = strip_season_suffix(new_anchor_media.name_eng)
+            new_name_jap = strip_season_suffix(new_anchor_media.name_jap, japanese=True)
+            new_other_names = list(new_anchor_media.other_names or [])
+            new_description = new_anchor_media.description
+            new_cover_image = new_anchor_media.cover_image
 
-            if not reclassified and not anchor_changed:
+            anchor_changed = new_anchor_mal_id != anime.mal_id
+            # Split drift detection: the embedding only consumes title
+            # fields + description, so a cover_image-only change
+            # shouldn't trigger a ~50-100ms encode.
+            embedding_drifted = anchor_changed or (
+                anime.title != new_title
+                or anime.name_eng != new_name_eng
+                or anime.name_jap != new_name_jap
+                or (anime.other_names or []) != new_other_names
+                or anime.description != new_description
+            )
+            umbrella_drifted = embedding_drifted or anime.cover_image != new_cover_image
+
+            if not reclassified and not umbrella_drifted:
                 continue
 
             summary["anime_changed"] += 1
@@ -160,38 +190,40 @@ async def backfill_relations(
                 "anime_title": anime.title,
                 "reclassified": reclassified,
                 "anchor_changed": anchor_changed,
+                "umbrella_drifted": umbrella_drifted,
                 "old_anchor_mal_id": anime.mal_id,
                 "new_anchor_mal_id": new_anchor_mal_id,
             })
 
             logger.info(
-                "Backfiller %s: anime id=%d %r — %d media reclassified, anchor_changed=%s",
+                "Backfiller %s: anime id=%d %r — %d media reclassified, "
+                "anchor_changed=%s, umbrella_drifted=%s",
                 "would change" if dry_run else "changing", anime.id, anime.title,
-                len(reclassified), anchor_changed,
+                len(reclassified), anchor_changed, umbrella_drifted,
             )
 
             if not dry_run:
                 for mal_id, _old, new_rt in reclassified:
                     current_by_mal[mal_id].relation_type = RelationType(new_rt)
 
-                if anchor_changed:
-                    new_anchor_media = current_by_mal[new_anchor_mal_id]
-                    # Regenerate embedding from the new anchor's title
-                    # texts BEFORE mutating the row, so a regen failure
-                    # leaves both row and embedding consistent (same
-                    # discipline as anime_title_backfiller).
-                    await regenerate_anime_embedding(
-                        db, anime.id,
-                        title_texts=[
-                            new_anchor_media.title, new_anchor_media.name_eng,
-                            new_anchor_media.name_jap, *(anime.other_names or []),
-                        ],
-                        description_text=anime.description or "",
-                    )
-                    anime.mal_id = new_anchor_media.mal_id
-                    anime.title = new_anchor_media.title
-                    anime.name_eng = new_anchor_media.name_eng
-                    anime.name_jap = new_anchor_media.name_jap
+                if umbrella_drifted:
+                    if embedding_drifted:
+                        # Regenerate BEFORE mutating the row — a regen
+                        # failure leaves both row and embedding
+                        # consistent (same discipline as
+                        # anime_title_backfiller).
+                        await regenerate_anime_embedding(
+                            db, anime.id,
+                            title_texts=[new_title, new_name_eng, new_name_jap, *new_other_names],
+                            description_text=new_description or "",
+                        )
+                    anime.mal_id = new_anchor_mal_id
+                    anime.title = new_title
+                    anime.name_eng = new_name_eng
+                    anime.name_jap = new_name_jap
+                    anime.other_names = new_other_names
+                    anime.description = new_description
+                    anime.cover_image = new_cover_image
 
             # Per-anime commit so lazily-fetched sidecar edges land
             # incrementally — a crash mid-run doesn't lose hours of
@@ -201,7 +233,7 @@ async def backfill_relations(
             # the sidecar fetches; classification changes were never
             # made.
             should_commit = fetched_any or (
-                not dry_run and (reclassified or anchor_changed)
+                not dry_run and (reclassified or umbrella_drifted)
             )
             if should_commit:
                 await db.commit()

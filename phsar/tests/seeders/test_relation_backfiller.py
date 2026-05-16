@@ -24,11 +24,24 @@ from tests._helpers import media_kwargs
 
 async def _anime_with_media(db, *, anime_mal_id: int, anime_title: str, media_specs: list[dict]) -> Anime:
     """media_specs: each dict carries mal_id, title, media_type, episodes,
-    duration_seconds, aired_from, scored_by, relation_type, edges (list)."""
+    duration_seconds, aired_from, scored_by, relation_type, edges (list).
+    The anime's umbrella fields mirror the matching media spec so the
+    backfiller's drift detector treats the row as in-sync (matches the
+    real `create_anime_from_media` flow).
+    """
+    anchor_spec = next(
+        (s for s in media_specs if s["mal_id"] == anime_mal_id), None,
+    )
+    assert anchor_spec is not None, (
+        f"anime_mal_id={anime_mal_id} must match one of the media_specs"
+    )
     anime = Anime(
         mal_id=anime_mal_id, title=anime_title,
-        name_eng=None, name_jap=None, other_names=[],
-        description="A test anime", cover_image=None,
+        name_eng=anchor_spec.get("name_eng"),
+        name_jap=anchor_spec.get("name_jap"),
+        other_names=anchor_spec.get("other_names", []),
+        description=anchor_spec.get("description"),
+        cover_image=anchor_spec.get("cover_image"),
     )
     db.add(anime)
     await db.flush()
@@ -44,6 +57,9 @@ async def _anime_with_media(db, *, anime_mal_id: int, anime_title: str, media_sp
             duration_seconds=spec.get("duration_seconds"),
             aired_from=spec.get("aired_from"),
             scored_by=spec.get("scored_by", 0),
+            cover_image=spec.get("cover_image"),
+            description=spec.get("description"),
+            other_names=spec.get("other_names", []),
         ))
         db.add(media)
         await db.flush()
@@ -123,12 +139,18 @@ async def test_apply_rewrites_anchor_and_reclassifies(db_session, monkeypatch):
              "episodes": 1, "duration_seconds": 5400,
              "aired_from": datetime(2007, 9, 1, tzinfo=timezone.utc),
              "scored_by": 600_000,
+             "cover_image": "https://example/rebuild.jpg",
+             "description": "Rebuild description",
+             "other_names": ["Rebuild Alt"],
              "edges": [[-30, "alternative_version"]]},
             {"mal_id": -30, "title": "Neon Genesis Evangelion",
              "media_type": MediaType.TV, "relation_type": RelationType.SideStory,
              "episodes": 26, "duration_seconds": 1440,
              "aired_from": datetime(1995, 10, 4, tzinfo=timezone.utc),
              "scored_by": 1_200_000,
+             "cover_image": "https://example/originaltv.jpg",
+             "description": "Original TV description",
+             "other_names": ["Shin Seiki Evangelion"],
              "edges": [[-2759, "alternative_version"]]},
         ],
     )
@@ -137,8 +159,12 @@ async def test_apply_rewrites_anchor_and_reclassifies(db_session, monkeypatch):
 
     assert summary["anime_changed"] == 1
     refreshed = await _reload_anime(db_session, anime.id)
+    # All seven umbrella fields rewritten from the new anchor media.
     assert refreshed.mal_id == -30
     assert refreshed.title == "Neon Genesis Evangelion"
+    assert refreshed.cover_image == "https://example/originaltv.jpg"
+    assert refreshed.description == "Original TV description"
+    assert refreshed.other_names == ["Shin Seiki Evangelion"]
     by_mal = {m.mal_id: m for m in refreshed.media}
     assert by_mal[-30].relation_type == RelationType.Main
     assert by_mal[-2759].relation_type == RelationType.AlternativeVersion
