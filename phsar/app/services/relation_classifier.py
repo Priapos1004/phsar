@@ -143,6 +143,20 @@ def outgoing_edges(
     return [(target, rel) for src, target, rel in edges if src == source_mal_id]
 
 
+def media_to_classifier_node(media) -> ClassifierNode:
+    """Project a `Media` ORM row into the ClassifierNode shape. Co-
+    located with `build_classifier_nodes` (the scraper-dict equivalent)
+    so a future ClassifierNode field addition surfaces both projections.
+    """
+    return {
+        "media_type": media.media_type.value,
+        "aired_from": media.aired_from.isoformat() if media.aired_from else None,
+        "episodes": media.episodes,
+        "duration_seconds": media.duration_seconds,
+        "scored_by": media.scored_by or 0,
+    }
+
+
 def build_classifier_nodes(
     graph: dict[int, dict], all_info: dict[int, dict],
 ) -> dict[int, ClassifierNode]:

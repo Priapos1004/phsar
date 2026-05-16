@@ -11,6 +11,7 @@ from uuid import UUID
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.daos.merge_candidate_dao import MergeCandidateDAO
 from app.exceptions import (
@@ -26,10 +27,9 @@ from app.schemas.admin_schema import (
     MergeCandidateAnimeSummary,
     MergeCandidateListItem,
 )
-from app.services.anime_search_service import anime_title_texts
+from app.services.anime_relation_service import reclassify_anime
 from app.services.merge_detection_service import detect_merge_candidates
 from app.services.spoiler_service import refresh_spoiler_cache_for_all_users
-from app.services.vector_embedding_service import regenerate_anime_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -200,15 +200,18 @@ async def merge(
     await db.delete(anime_b)
     await db.flush()
 
-    # Refresh A's title embedding from the merged media list (B's titles
-    # may have surfaced romanizations A didn't have).
+    # Re-classify the consolidated media set: B's absorbed media may
+    # change the canonical anchor (e.g. B's anchor is older), demote
+    # weak-main media via the substance gate, or stamp alt-version
+    # labels surfaced by edges that only existed once both sides
+    # joined. `reclassify_anime` rewrites the umbrella row + embedding
+    # in-place when drift is detected.
     anime_a = (await db.execute(
         select(Anime).where(Anime.id == anime_a_id)
+        .options(selectinload(Anime.media).selectinload(Media.relation_edges))
     )).scalars().first()
     if anime_a is not None:
-        await regenerate_anime_embedding(
-            db, anime_a.id, anime_title_texts(anime_a), anime_a.description or "",
-        )
+        await reclassify_anime(db, anime_a)
 
     await db.commit()
 

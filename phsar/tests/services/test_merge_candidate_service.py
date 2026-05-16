@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.exceptions import InvalidMergeKeepError
 from app.models.anime import Anime
-from app.models.media import Media
+from app.models.media import Media, MediaType, RelationType
 from app.models.media_studio import MediaStudio
 from app.models.merge_candidate import MergeCandidate, MergeCandidateStatus
 from app.models.ratings import Ratings
@@ -156,18 +156,20 @@ async def test_merge_redetects_against_third_anime(db_session):
     await db_session.flush()
 
     # A and B share studio + match titles via containment ("Show" ⊂ "Show 2").
-    a = Anime(mal_id=90701, title="Re-detect Show")
-    b = Anime(mal_id=90702, title="Re-detect Show 2")
+    # Anime mal_id + title mirror the anchor media so reclassify_anime
+    # treats the row as in-sync (matches create_anime_from_media's flow).
+    a = Anime(mal_id=907010, title="Re-detect Show")
+    b = Anime(mal_id=907020, title="Re-detect Show 2")
     # C shares studio with A but its title only matches B's media title —
     # so before the merge, A-C wouldn't flag (low title score), but after
     # the merge B's media sits under A and the detector should re-score.
-    c = Anime(mal_id=90703, title="Re-detect Show Side Story")
+    c = Anime(mal_id=907030, title="Re-detect Show Side Story")
     db_session.add_all([a, b, c])
     await db_session.flush()
 
-    media_a = Media(**media_kwargs(a.id, 907010, title="Re-detect Show TV"))
-    media_b = Media(**media_kwargs(b.id, 907020, title="Re-detect Show 2 TV"))
-    media_c = Media(**media_kwargs(c.id, 907030, title="Re-detect Show Side Story TV"))
+    media_a = Media(**media_kwargs(a.id, 907010, title="Re-detect Show"))
+    media_b = Media(**media_kwargs(b.id, 907020, title="Re-detect Show 2"))
+    media_c = Media(**media_kwargs(c.id, 907030, title="Re-detect Show Side Story"))
     db_session.add_all([media_a, media_b, media_c])
     await db_session.flush()
     db_session.add_all([
@@ -216,3 +218,56 @@ async def test_merge_keep_uuid_unrelated_raises(db_session):
 
     with pytest.raises(InvalidMergeKeepError):
         await merge(db_session, uuid=candidate_uuid, keep_uuid=unrelated.uuid)
+
+
+@pytest.mark.asyncio
+async def test_merge_demotes_weak_main_from_loser(db_session):
+    """Overlord 13063 ⇄ 13064 shape: A is a substance-passing TV that's
+    already classified as Main. B is a standalone 1-min Movie also
+    classified Main (since it was the only media in B's anime). After
+    merging A←B, the classifier runs over A's consolidated media set
+    and demotes B's weak Main to SideStory via the substance gate."""
+    studio = Studio(name="Weak-Demote Studio")
+    db_session.add(studio)
+    await db_session.flush()
+
+    a = Anime(mal_id=950101, title="Demote TV")
+    b = Anime(mal_id=950201, title="Demote Manner Movie")
+    db_session.add_all([a, b])
+    await db_session.flush()
+
+    media_a = Media(**media_kwargs(
+        a.id, 950101, title="Demote TV",
+        media_type=MediaType.TV, relation_type=RelationType.Main,
+        episodes=13, duration_seconds=1440,
+        aired_from=datetime(2015, 1, 1, tzinfo=timezone.utc),
+    ))
+    media_b = Media(**media_kwargs(
+        b.id, 950201, title="Demote Manner Movie",
+        media_type=MediaType.Movie, relation_type=RelationType.Main,
+        episodes=1, duration_seconds=60,
+        aired_from=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    ))
+    db_session.add_all([media_a, media_b])
+    await db_session.flush()
+    db_session.add_all([
+        MediaStudio(media_id=media_a.id, studio_id=studio.id),
+        MediaStudio(media_id=media_b.id, studio_id=studio.id),
+    ])
+    await db_session.flush()
+
+    a_id, b_id = sorted((a.id, b.id))
+    candidate = MergeCandidate(
+        anime_a_id=a_id, anime_b_id=b_id,
+        similarity_score=0.9, detected_by="title_studio",
+        status=MergeCandidateStatus.pending,
+    )
+    db_session.add(candidate)
+    await db_session.flush()
+
+    await merge(db_session, uuid=candidate.uuid)
+
+    refreshed_b_media = (await db_session.execute(
+        select(Media).where(Media.mal_id == 950201)
+    )).scalar_one()
+    assert refreshed_b_media.relation_type == RelationType.SideStory
