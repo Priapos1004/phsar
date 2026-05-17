@@ -261,16 +261,27 @@ async def _try_step1_refresh(
     """Step 1 wrapper: refresh + commit, or rollback + None on failure.
     Always commits durably so a worker crash later in the sweep can't
     take the field-diff work down with it, and a single bad MAL response
-    fails *that* anime only without aborting the loop."""
+    fails *that* anime only without aborting the loop.
+
+    Uses SAVEPOINT (`begin_nested`) instead of session-level rollback —
+    `session.rollback()` would expire every eager-loaded instance the
+    outer `select_due_for_sweep` query preloaded, and the next anime's
+    `media` / `relation_edges` access would then trip `lazy="raise"`
+    and abort the whole sweep. Identifiers captured pre-savepoint so
+    the logger never touches an attribute the rollback path might have
+    expired (same MissingGreenlet trap that hit relation_backfiller).
+    """
+    anime_id_for_log = anime.id
+    anime_title_for_log = anime.title
     try:
-        result = await _refresh_one_anime(session, anime, scraper)
+        async with session.begin_nested():
+            result = await _refresh_one_anime(session, anime, scraper)
         await session.commit()
         return result
     except Exception:
-        await session.rollback()
         logger.exception(
             "Sweep failed to refresh anime %s (%s); skipping",
-            anime.id, anime.title,
+            anime_id_for_log, anime_title_for_log,
         )
         return None
 
@@ -283,18 +294,25 @@ async def _try_step2_probe(
     scraper: JikanScraper,
 ) -> bool | None:
     """Step 2 wrapper: relations probe + return whether new media landed,
-    or None on failure (rolls back, leaves AnimeFreshness untouched so
-    the next sweep retries this anime cleanly)."""
+    or None on failure (savepoint-rolls-back, leaves AnimeFreshness
+    untouched so the next sweep retries this anime cleanly). Outer
+    transaction stays alive — caller commits step2 writes alongside
+    `_advance_anime_freshness` once both succeed.
+
+    See `_try_step1_refresh` for the savepoint + pre-capture rationale.
+    """
+    anime_id_for_log = anime.id
+    anime_title_for_log = anime.title
     try:
-        return await _probe_relations_for_anime(
-            session, anime, raw_payloads, exclusions, scraper,
-        )
+        async with session.begin_nested():
+            return await _probe_relations_for_anime(
+                session, anime, raw_payloads, exclusions, scraper,
+            )
     except Exception:
-        await session.rollback()
         logger.exception(
             "Relations probe failed for anime %s (%s); field-diff "
             "preserved, AnimeFreshness left unchanged so next sweep retries",
-            anime.id, anime.title,
+            anime_id_for_log, anime_title_for_log,
         )
         return None
 

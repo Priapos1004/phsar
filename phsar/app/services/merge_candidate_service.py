@@ -236,12 +236,16 @@ async def merge(
         # B's media is now under A and may match against a third anime that
         # didn't trigger before. seen_pairs short-circuits anything admin
         # already decided, so this only adds genuinely new candidates.
+        #
+        # Use SAVEPOINT instead of session.rollback(): a rollback would
+        # expire `anime_a`, and the `str(anime_a.uuid)` return line below
+        # would then trigger an async lazy reload → MissingGreenlet.
         try:
-            await detect_merge_candidates(db, new_anime_ids=[anime_a.id])
+            async with db.begin_nested():
+                await detect_merge_candidates(db, new_anime_ids=[anime_a.id])
             await db.commit()
         except Exception:
             logger.exception("Post-merge re-detection failed; merge itself succeeded")
-            await db.rollback()
         # Spoiler cache stores media ids, not anime ids, but the frontier
         # algorithm runs per-anime. Recompute globally so frontiers reflect
         # the merged media list.

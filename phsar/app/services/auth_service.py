@@ -86,7 +86,10 @@ async def authenticate(username: str, password: str, db: AsyncSession):
             await db.commit()
         except SQLAlchemyError:
             await db.rollback()
-            logger.exception("Failed to rehash password for user_name=%s", user.username)
+            # Log the in-scope `username` parameter, not `user.username`:
+            # the rollback expires `user`. See scrape_dispatcher
+            # `_try_step1_refresh` for the post-rollback expiry rationale.
+            logger.exception("Failed to rehash password for user_name=%s", username)
             user = await user_dao.get_by_username(db, username)
 
     return user
