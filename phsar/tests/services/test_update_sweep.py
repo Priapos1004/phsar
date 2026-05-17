@@ -25,14 +25,21 @@ from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
 from app.models.media import Media
 from app.models.media_freshness import MediaFreshness
+from app.models.media_genre import MediaGenre
 from app.models.media_relation_edges import MediaRelationEdges
+from app.models.media_studio import MediaStudio
 from app.models.media_unwanted import MediaUnwanted
+from app.models.genre import Genre, GenreType
+from app.models.studio import Studio
 from app.services.scrape_dispatcher import (
     _advance_anime_freshness,
+    _apply_genre_diff,
     _apply_media_diff,
     _apply_metadata_diff,
+    _apply_studio_diff,
     _qualifies_for_relations_probe,
     _refresh_one_anime,
+    _summarize_drift,
     update_sweep_dispatcher,
 )
 from tests._helpers import media_kwargs
@@ -383,6 +390,240 @@ async def test_metadata_diff_other_names_added_regenerates_embedding(monkeypatch
 
 
 # ---------------------------------------------------------------------------
+# _apply_genre_diff + _apply_studio_diff (use db_session)
+# ---------------------------------------------------------------------------
+
+
+async def _seed_genres(db_session, names: list[str]) -> dict[str, Genre]:
+    """Create Genre rows with unique names so two test runs in the same
+    session don't violate the `unique` constraint. The genre_type is
+    fixed to Genres — the diff helper doesn't read genre_type."""
+    objs = {}
+    for name in names:
+        genre = Genre(name=name, genre_type=GenreType.Genres)
+        db_session.add(genre)
+        objs[name] = genre
+    await db_session.flush()
+    return objs
+
+
+async def _build_media_with_taxonomy(
+    db_session, mal_id: int,
+    genre_names: list[str] | None = None,
+    studio_names: list[str] | None = None,
+) -> Media:
+    """Anime + Media with optional MediaGenre / MediaStudio rows wired
+    up. Re-fetched with the sweep's eager-load shape so the diff helpers
+    can read `media.media_genre` / `media.media_studio` without tripping
+    `lazy="raise"`."""
+    anime = Anime(mal_id=mal_id * 10, title=f"A{mal_id}")
+    db_session.add(anime)
+    await db_session.flush()
+    media = Media(**media_kwargs(anime_id=anime.id, mal_id=mal_id))
+    db_session.add(media)
+    await db_session.flush()
+    for name in genre_names or []:
+        g = Genre(name=name, genre_type=GenreType.Genres)
+        db_session.add(g)
+        await db_session.flush()
+        db_session.add(MediaGenre(media_id=media.id, genre_id=g.id))
+    for name in studio_names or []:
+        s = Studio(name=name)
+        db_session.add(s)
+        await db_session.flush()
+        db_session.add(MediaStudio(media_id=media.id, studio_id=s.id))
+    await db_session.flush()
+    result = await db_session.execute(
+        select(Media).where(Media.id == media.id).options(
+            selectinload(Media.media_genre).selectinload(MediaGenre.genre),
+            selectinload(Media.media_studio).selectinload(MediaStudio.studio),
+        )
+    )
+    return result.scalars().first()
+
+
+@pytest.mark.asyncio
+async def test_genre_diff_no_change_returns_none(db_session):
+    media = await _build_media_with_taxonomy(
+        db_session, mal_id=-95000, genre_names=["GD_Action_0"],
+    )
+    assert await _apply_genre_diff(
+        db_session, media, {"genres": ["GD_Action_0"]},
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_genre_diff_known_addition_applied(db_session):
+    """Pure addition where every new tag is already in the genre table
+    is the routine case (MAL retroactively tags an old show with an
+    existing Theme). Append the M2M rows silently — the bell still
+    reports `applied_count` for transparency."""
+    media = await _build_media_with_taxonomy(
+        db_session, mal_id=-95001, genre_names=["GD_Action_1"],
+    )
+    # Seed the addition target as a known genre.
+    await _seed_genres(db_session, ["GD_Drama_1"])
+
+    report = await _apply_genre_diff(
+        db_session, media, {"genres": ["GD_Action_1", "GD_Drama_1"]},
+    )
+    assert report is not None
+    assert report["kind"] == "additions_applied"
+    assert report["unknown_tags"] == []
+
+    # Verify the M2M row landed.
+    result = await db_session.execute(
+        select(MediaGenre).where(MediaGenre.media_id == media.id)
+    )
+    rows = result.scalars().all()
+    assert len(rows) == 2
+
+
+@pytest.mark.asyncio
+async def test_genre_diff_unknown_addition_logs_without_apply(db_session):
+    """If MAL adds a tag we've never seen, log it as `unknown_tags` and
+    skip the WHOLE batch of additions — half-applying would mean the
+    next "what got auto-added since the seeder update?" question can't
+    be answered from result_summary alone."""
+    media = await _build_media_with_taxonomy(
+        db_session, mal_id=-95002, genre_names=["GD_Action_2"],
+    )
+    await _seed_genres(db_session, ["GD_KnownAdded_2"])
+
+    report = await _apply_genre_diff(
+        db_session, media,
+        {"genres": ["GD_Action_2", "GD_KnownAdded_2", "GD_NewTag_2"]},
+    )
+    assert report is not None
+    assert report["kind"] == "additions_unknown"
+    assert report["unknown_tags"] == ["GD_NewTag_2"]
+
+    # All-or-nothing: even the known addition is skipped until seeder
+    # catches up.
+    result = await db_session.execute(
+        select(MediaGenre).where(MediaGenre.media_id == media.id)
+    )
+    rows = result.scalars().all()
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_genre_diff_removal_logs_without_apply(db_session):
+    """MAL removing a genre is rare and worth admin review — never
+    auto-applied (don't auto-drop the row, just flag)."""
+    media = await _build_media_with_taxonomy(
+        db_session, mal_id=-95003, genre_names=["GD_Action_3", "GD_Drama_3"],
+    )
+
+    report = await _apply_genre_diff(
+        db_session, media, {"genres": ["GD_Action_3"]},
+    )
+    assert report is not None
+    assert report["kind"] == "removal_or_replacement"
+
+    # The dropped MediaGenre row is left intact.
+    result = await db_session.execute(
+        select(MediaGenre).where(MediaGenre.media_id == media.id)
+    )
+    rows = result.scalars().all()
+    assert len(rows) == 2
+
+
+@pytest.mark.asyncio
+async def test_genre_diff_replacement_logs_without_apply(db_session):
+    """Add + remove in the same diff classifies as
+    removal_or_replacement (the removal branch wins). Same reasoning as
+    pure removal — don't trust the swap, just surface it."""
+    media = await _build_media_with_taxonomy(
+        db_session, mal_id=-95004, genre_names=["GD_Action_4"],
+    )
+    await _seed_genres(db_session, ["GD_Drama_4"])
+
+    report = await _apply_genre_diff(
+        db_session, media, {"genres": ["GD_Drama_4"]},
+    )
+    assert report is not None
+    assert report["kind"] == "removal_or_replacement"
+
+    # Nothing applied — the original genre stays, the new one doesn't land.
+    result = await db_session.execute(
+        select(MediaGenre).where(MediaGenre.media_id == media.id)
+    )
+    rows = result.scalars().all()
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_studio_diff_no_change_returns_none(db_session):
+    media = await _build_media_with_taxonomy(
+        db_session, mal_id=-96000, studio_names=["SD_Madhouse_0"],
+    )
+    assert await _apply_studio_diff(
+        media, {"studio": ["SD_Madhouse_0"]},
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_studio_diff_addition_logs_without_apply(db_session):
+    """Studio additions DO happen legitimately (co-production credits
+    surface after airing) but rare enough that surfacing every change
+    is preferable to silently rewriting on a possible MAL bug."""
+    media = await _build_media_with_taxonomy(
+        db_session, mal_id=-96001, studio_names=["SD_Madhouse_1"],
+    )
+
+    report = await _apply_studio_diff(
+        media, {"studio": ["SD_Madhouse_1", "SD_MAPPA_1"]},
+    )
+    assert report is not None
+    assert report["kind"] == "any_change"
+    assert report["new"] == ["SD_MAPPA_1", "SD_Madhouse_1"]
+
+
+@pytest.mark.asyncio
+async def test_studio_diff_removal_logs_without_apply(db_session):
+    media = await _build_media_with_taxonomy(
+        db_session, mal_id=-96002, studio_names=["SD_Madhouse_2"],
+    )
+
+    report = await _apply_studio_diff(media, {"studio": []})
+    assert report is not None
+    assert report["kind"] == "any_change"
+
+
+def test_summarize_drift_empty():
+    assert _summarize_drift([]) == {
+        "applied_count": 0, "logged_count": 0, "unknown_tags": [], "samples": [],
+    }
+
+
+def test_summarize_drift_counts_and_unions_unknowns():
+    """Cross-media unknown tags fold into one sorted list so the bell
+    can render "seeder is missing: X, Y" without dedup logic of its own."""
+    reports = [
+        {"kind": "additions_applied", "unknown_tags": []},
+        {"kind": "additions_applied", "unknown_tags": []},
+        {"kind": "additions_unknown", "unknown_tags": ["Survival"]},
+        {"kind": "additions_unknown", "unknown_tags": ["Survival", "Mecha-Sci-Fi"]},
+        {"kind": "removal_or_replacement", "unknown_tags": []},
+    ]
+    out = _summarize_drift(reports)
+    assert out["applied_count"] == 2
+    assert out["logged_count"] == 3
+    assert out["unknown_tags"] == ["Mecha-Sci-Fi", "Survival"]
+    assert out["samples"] == reports  # under 5 → full list
+
+
+def test_summarize_drift_caps_samples_at_5():
+    """`result_summary` is JSONB; bounded samples keep a malformed MAL
+    response (drift for every refreshed media) from bloating the column."""
+    reports = [{"kind": "any_change", "unknown_tags": []} for _ in range(20)]
+    out = _summarize_drift(reports)
+    assert out["logged_count"] == 20
+    assert len(out["samples"]) == 5
+
+
+# ---------------------------------------------------------------------------
 # _refresh_one_anime (uses db_session)
 # ---------------------------------------------------------------------------
 
@@ -411,6 +652,8 @@ async def _build_anime_with_one_media(
             selectinload(Anime.media).options(
                 selectinload(Media.freshness),
                 selectinload(Media.relation_edges),
+                selectinload(Media.media_genre).selectinload(MediaGenre.genre),
+                selectinload(Media.media_studio).selectinload(MediaStudio.studio),
             ),
             selectinload(Anime.freshness),
         )
@@ -767,6 +1010,8 @@ def _patch_select_due(monkeypatch, anime_ids: list[int]) -> None:
                 selectinload(Anime.media).options(
                     selectinload(Media.freshness),
                     selectinload(Media.relation_edges),
+                    selectinload(Media.media_genre).selectinload(MediaGenre.genre),
+                    selectinload(Media.media_studio).selectinload(MediaStudio.studio),
                 ),
                 selectinload(Anime.freshness),
             )

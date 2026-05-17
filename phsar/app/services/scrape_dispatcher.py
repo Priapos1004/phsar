@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.daos.anime_dao import AnimeDAO
+from app.daos.genre_dao import GenreDAO
 from app.daos.media_dao import MediaDAO
 from app.daos.media_unwanted_dao import MediaUnwantedDAO
 from app.exceptions import (
@@ -36,6 +37,7 @@ from app.models.anime_freshness import AnimeFreshness
 from app.models.job import Job
 from app.models.media import Media, RelationType
 from app.models.media_freshness import MediaFreshness
+from app.models.media_genre import MediaGenre
 from app.models.media_relation_edges import MediaRelationEdges
 from app.schemas.search_schema import AttachToExistingAction
 from app.services.anime_relation_service import reclassify_anime
@@ -67,6 +69,18 @@ class RefreshResult(NamedTuple):
     is_currently_airing: bool
     metadata_changed_count: int  # media rows with non-volatile field drift
     umbrella_drifted: bool  # whether reclassify_anime rewrote any umbrella field
+    genre_drifts: list[dict]  # per-media DriftReports (genre); empty if no drift
+    studio_drifts: list[dict]  # per-media DriftReports (studio); empty if no drift
+
+
+# Diff classification for the genre/studio drift detector. Pure-addition
+# of *known* tags is the only branch that auto-applies — every other
+# kind surfaces to result_summary so admins can review without the
+# sweep silently rewriting M2M tables on noise (or worse, on a MAL bug).
+_DRIFT_ADDITIONS_APPLIED = "additions_applied"
+_DRIFT_ADDITIONS_UNKNOWN = "additions_unknown"  # genre only — unknown tag in our table
+_DRIFT_REMOVAL_OR_REPLACEMENT = "removal_or_replacement"
+_DRIFT_ANY_CHANGE = "any_change"  # studio bucket — every change just logs
 
 # Stability threshold for the (score, scored_by) pair, expressed as the
 # absolute change in the weighted score `score * log10(scored_by + 1)`.
@@ -217,6 +231,8 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     probe_succeeded = 0
     probe_failed = 0
     sweep_added_media = False
+    genre_drift_aggregate: list[dict] = []
+    studio_drift_aggregate: list[dict] = []
     async with JikanScraper() as scraper:
         for anime in anime_list:
             step1 = await _try_step1_refresh(session, anime, scraper)
@@ -247,6 +263,8 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
             metadata_changed_media += step1.metadata_changed_count
             if step1.umbrella_drifted:
                 umbrella_reclassed += 1
+            genre_drift_aggregate.extend(step1.genre_drifts)
+            studio_drift_aggregate.extend(step1.studio_drifts)
             await progress.update(items_done=refreshed)
 
     cache_recompute_failed = False
@@ -271,6 +289,34 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
         "probe_succeeded": probe_succeeded,
         "probe_failed": probe_failed,
         "cache_recompute_failed": cache_recompute_failed,
+        "genre_drift": _summarize_drift(genre_drift_aggregate),
+        "studio_drift": _summarize_drift(studio_drift_aggregate),
+    }
+
+
+# Bound on per-bucket drift samples in result_summary so a malformed
+# MAL response that produces drift for every refreshed media doesn't
+# bloat the JSONB column past what's useful for review.
+_DRIFT_SAMPLE_LIMIT = 5
+
+
+def _summarize_drift(reports: list[dict]) -> dict:
+    """Collapse a list of per-media drift reports into the
+    bell-renderable summary shape. `applied_count` and `logged_count`
+    are read from the `kind` field so the bell can render
+    "auto-applied N, flagged M for review" without re-classifying.
+    `unknown_tags` is the union across all reports — useful for the
+    seeder-update workflow on genre drift."""
+    if not reports:
+        return {"applied_count": 0, "logged_count": 0, "unknown_tags": [], "samples": []}
+    applied = sum(1 for r in reports if r["kind"] == _DRIFT_ADDITIONS_APPLIED)
+    logged = len(reports) - applied
+    unknown_tags = sorted({t for r in reports for t in r["unknown_tags"]})
+    return {
+        "applied_count": applied,
+        "logged_count": logged,
+        "unknown_tags": unknown_tags,
+        "samples": reports[:_DRIFT_SAMPLE_LIMIT],
     }
 
 
@@ -355,6 +401,8 @@ async def _refresh_one_anime(
     volatile_changed = False
     metadata_changed_count = 0
     raw_payloads: dict[int, dict] = {}
+    genre_drifts: list[dict] = []
+    studio_drifts: list[dict] = []
 
     for media in anime.media:
         raw = await scraper.refresh_anime(media.mal_id)
@@ -366,6 +414,14 @@ async def _refresh_one_anime(
         metadata_drift = await _apply_metadata_diff(session, media, payload)
         if metadata_drift:
             metadata_changed_count += 1
+
+        genre_drift = await _apply_genre_diff(session, media, payload)
+        if genre_drift:
+            genre_drifts.append(genre_drift)
+
+        studio_drift = await _apply_studio_diff(media, payload)
+        if studio_drift:
+            studio_drifts.append(studio_drift)
 
         if media.freshness is None:
             # Defensive: save_service from 7b creates the sidecar on
@@ -418,6 +474,8 @@ async def _refresh_one_anime(
         is_currently_airing=is_currently_airing,
         metadata_changed_count=metadata_changed_count,
         umbrella_drifted=bool(umbrella_diff and umbrella_diff["umbrella_drifted"]),
+        genre_drifts=genre_drifts,
+        studio_drifts=studio_drifts,
     )
 
 
@@ -602,6 +660,105 @@ async def _apply_metadata_diff(
         )
 
     return text_changed or other_changed
+
+
+def _emit_drift_report(
+    media: Media, field: str, kind: str, old: set[str], new: set[str],
+    *, unknown_tags: list[str] | None = None,
+) -> dict:
+    """Build the plain-dict report (the sweep stashes it directly in
+    `result_summary`'s JSONB — no Pydantic round-trip needed) and emit
+    the matching WARNING log in one go. Centralized so the per-branch
+    callers stay one line each and the log copy stays in sync with the
+    report shape.
+
+    `additions_applied` is intentionally not logged — it represents the
+    auto-apply path that runs silently; the count surfaces via
+    `_summarize_drift` for the bell.
+    """
+    report = {
+        "field": field,
+        "media_mal_id": media.mal_id,
+        "media_title": media.title,
+        "kind": kind,
+        "old": sorted(old),
+        "new": sorted(new),
+        "unknown_tags": unknown_tags or [],
+    }
+    if kind == _DRIFT_ADDITIONS_UNKNOWN:
+        logger.warning(
+            "%s drift (unknown additions) on media %s (mal_id=%s): unknown=%s; "
+            "skipping all additions until seeder is updated",
+            field, media.title, media.mal_id, report["unknown_tags"],
+        )
+    elif kind in (_DRIFT_REMOVAL_OR_REPLACEMENT, _DRIFT_ANY_CHANGE):
+        logger.warning(
+            "%s drift on media %s (mal_id=%s): %s → %s",
+            field, media.title, media.mal_id, report["old"], report["new"],
+        )
+    return report
+
+
+async def _apply_genre_diff(
+    session: AsyncSession, media: Media, payload: dict,
+) -> dict | None:
+    """Detect genre drift between the catalog row and MAL's latest tags.
+
+    Genre rule (matches user agreement):
+    - Pure-addition of tags already in our `genre` table → silently
+      append the M2M rows. The seeded set is what we believe the genre
+      universe is; new known tags are routine MAL backfills (themes
+      retroactively applied to old shows are common).
+    - Pure-addition that includes an unknown tag → log, do NOT apply
+      ANY of them. All-or-nothing: half-applying would mean the next
+      admin "what genres did we silently add?" question can't be
+      answered from logs alone.
+    - Removal or replacement → log, do NOT apply. Genre/theme removals
+      from MAL are rare enough to warrant human review.
+    """
+    current = {mg.genre.name for mg in media.media_genre}
+    new = set(payload.get("genres") or [])
+    if current == new:
+        return None
+
+    removed = current - new
+    added = new - current
+
+    if removed:
+        return _emit_drift_report(
+            media, "genres", _DRIFT_REMOVAL_OR_REPLACEMENT, current, new,
+        )
+
+    known = {
+        g.name: g for g in await GenreDAO().get_all_by_field(session, "name", list(added))
+    }
+    unknown = sorted(added - set(known))
+    if unknown:
+        return _emit_drift_report(
+            media, "genres", _DRIFT_ADDITIONS_UNKNOWN, current, new,
+            unknown_tags=unknown,
+        )
+
+    for name in added:
+        session.add(MediaGenre(media_id=media.id, genre_id=known[name].id))
+    await session.flush()
+    return _emit_drift_report(
+        media, "genres", _DRIFT_ADDITIONS_APPLIED, current, new,
+    )
+
+
+async def _apply_studio_diff(media: Media, payload: dict) -> dict | None:
+    """Studio drift always logs and never auto-applies — legitimate
+    studio additions exist (co-production credits surface after airing,
+    outsourced animation studios appear in end credits) but are rare
+    enough that surfacing every change for admin review is preferable
+    to silently rewriting the M2M on a possible MAL data bug.
+    """
+    current = {ms.studio.name for ms in media.media_studio}
+    new = set(payload.get("studio") or [])
+    if current == new:
+        return None
+    return _emit_drift_report(media, "studios", _DRIFT_ANY_CHANGE, current, new)
 
 
 def _apply_media_diff(media: Media, payload: dict) -> bool:
