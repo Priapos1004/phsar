@@ -10,6 +10,16 @@
     }
 
     let { isAuthenticated, username = null, isAdmin = false, onLogout }: Props = $props();
+
+    const menuItems: { href: string; label: string; adminOnly?: boolean }[] = [
+        { href: '/settings', label: 'User Settings' },
+        { href: '/library/add', label: 'Add to Library' },
+        { href: '/admin', label: 'Admin', adminOnly: true },
+        { href: '/statistics', label: 'Statistics' },
+        { href: '/getting-started', label: 'Getting Started' },
+    ];
+
+    let visibleMenuItems = $derived(menuItems.filter((i) => !i.adminOnly || isAdmin));
 </script>
 
 <nav class="h-16 flex justify-between items-center px-8 py-4 bg-black/10 backdrop-blur">
@@ -37,23 +47,18 @@
                     <span class="text-white text-sm font-semibold">{username ? username[0].toUpperCase() : 'U'}</span>
                 </DropdownMenu.Trigger>
                 <DropdownMenu.Content class="w-48" align="end">
-                    <DropdownMenu.Item>
-                        <a href="/settings" class="w-full">User Settings</a>
-                    </DropdownMenu.Item>
-                    <DropdownMenu.Item>
-                        <a href="/library/add" class="w-full">Add to Library</a>
-                    </DropdownMenu.Item>
-                    {#if isAdmin}
+                    <!-- The `child` snippet renders the menu item AS the <a>
+                         so the whole padded area is the link target. Wrapping
+                         <a href> inside a default <DropdownMenu.Item> made the
+                         click target the menu-item div when users clicked the
+                         padding; the menu closed but no navigation fired. -->
+                    {#each visibleMenuItems as item (item.href)}
                         <DropdownMenu.Item>
-                            <a href="/admin" class="w-full">Admin</a>
+                            {#snippet child({ props })}
+                                <a href={item.href} {...props}>{item.label}</a>
+                            {/snippet}
                         </DropdownMenu.Item>
-                    {/if}
-                    <DropdownMenu.Item>
-                        <a href="/statistics" class="w-full">Statistics</a>
-                    </DropdownMenu.Item>
-                    <DropdownMenu.Item>
-                        <a href="/getting-started" class="w-full">Getting Started</a>
-                    </DropdownMenu.Item>
+                    {/each}
                     <DropdownMenu.Separator />
                     <DropdownMenu.Item variant="destructive" onclick={onLogout}>
                         Logout
