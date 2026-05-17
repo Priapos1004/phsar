@@ -8,11 +8,14 @@ tests/routers/conftest.py.
 import asyncio
 
 import pytest
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.core import maintenance
-from app.core.db import DATABASE_URL, engine as global_engine
+from app.core.db import DATABASE_URL, async_session_maker
+from app.core.db import engine as global_engine
+from app.models.job import Job
 
 
 @pytest.fixture(autouse=True)
@@ -59,6 +62,19 @@ async def db_engine():
     yield engine
     await engine.dispose()
     await _drain_async_close()
+
+
+@pytest.fixture
+async def tracked_jobs():
+    """Tests that insert Jobs via real commits (worker integration tests,
+    backup audit tests) collect their ids here for explicit teardown —
+    the rolled-back `db_session` doesn't reach committed rows."""
+    ids: list[int] = []
+    yield ids
+    if ids:
+        async with async_session_maker() as s:
+            await s.execute(delete(Job).where(Job.id.in_(ids)))
+            await s.commit()
 
 
 @pytest.fixture

@@ -9,7 +9,6 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import delete
 
 from app.core import maintenance
 from app.core.db import async_session_maker
@@ -19,18 +18,6 @@ from app.services import job_worker as job_worker_module
 from app.services.job_worker import JobWorker
 
 dao = JobDAO()
-
-
-@pytest.fixture
-async def tracked_jobs():
-    """Yields a list to which tests append job ids; teardown deletes those
-    rows so the table is clean for the next test."""
-    ids: list[int] = []
-    yield ids
-    if ids:
-        async with async_session_maker() as s:
-            await s.execute(delete(Job).where(Job.id.in_(ids)))
-            await s.commit()
 
 
 async def _enqueue(payload: dict | None = None, kind: JobKind = JobKind.user_scrape) -> int:

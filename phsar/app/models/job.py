@@ -12,6 +12,12 @@ class JobKind(str, enum.Enum):
     update_sweep = "update_sweep"
     seasonal_sweep = "seasonal_sweep"
     backup = "backup"
+    # `restore` rows are inserted synchronously by restore_backup AFTER the
+    # operation completes (always at status=succeeded). They are never
+    # claimed by the worker — there's no dispatcher registered for this
+    # kind. The row exists purely so the jobs table tells a chronologically
+    # complete story of system-mutating operations.
+    restore = "restore"
 
 
 class JobStatus(str, enum.Enum):

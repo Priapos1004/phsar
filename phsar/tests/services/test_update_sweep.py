@@ -23,13 +23,13 @@ from app.core.db import async_session_maker
 from app.daos.anime_dao import AnimeDAO
 from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
+from app.models.genre import Genre, GenreType
 from app.models.media import Media
 from app.models.media_freshness import MediaFreshness
 from app.models.media_genre import MediaGenre
 from app.models.media_relation_edges import MediaRelationEdges
 from app.models.media_studio import MediaStudio
 from app.models.media_unwanted import MediaUnwanted
-from app.models.genre import Genre, GenreType
 from app.models.studio import Studio
 from app.services.scrape_dispatcher import (
     _advance_anime_freshness,

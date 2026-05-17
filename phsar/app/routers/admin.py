@@ -121,7 +121,8 @@ async def restore_backup(
     # whole pool; otherwise get_db's cleanup tries to rollback on a closed conn.
     await db.close()
     return await backup_service.restore_backup(
-        filename=filename, confirm=data.confirm, caller_username=current_user.username,
+        filename=filename, confirm=data.confirm,
+        caller_username=current_user.username, caller_user_id=current_user.id,
     )
 
 

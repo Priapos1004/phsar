@@ -190,7 +190,7 @@
 		if (job.status === 'failed') return XCircle;
 		// Queued is the most ambiguous state — convey kind here. Lifecycle
 		// icons (spinner/check/X) are universal once work starts.
-		if (job.kind === 'backup') return Database;
+		if (job.kind === 'backup' || job.kind === 'restore') return Database;
 		return Bell;
 	}
 
@@ -208,6 +208,10 @@
 
 	function describeJob(job: Job): string {
 		if (job.kind === 'backup') return 'Backup';
+		if (job.kind === 'restore') {
+			const filename = typeof job.payload?.filename === 'string' ? job.payload.filename : null;
+			return filename ? `Restored from ${filename}` : 'Restore';
+		}
 		const query = typeof job.payload?.query === 'string' ? job.payload.query : null;
 		if (query) return `Add: "${query}"`;
 		return job.kind.replace('_', ' ');
