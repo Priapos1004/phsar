@@ -17,6 +17,7 @@ from app.services.merge_detection_service import (
     resolve_cross_link_pairs,
 )
 from app.services.progress_reporter import ProgressReporter
+from app.services.relation_classifier import outgoing_edges
 from app.services.spoiler_service import refresh_spoiler_cache_for_all_users
 from app.services.vector_embedding_service import create_anime_embedding
 
@@ -68,6 +69,7 @@ async def save_search_results(
         for media_in in result.unconnected_media_list:
             media_obj = await persist_media_with_links(
                 db, media_in, anime_id=anime.id, last_checked_at=None,
+                relation_edges=outgoing_edges(result.edges, media_in.mal_id),
             )
             logger.info(f"Created Media: {media_obj.title} (ID: {media_obj.id})")
 
@@ -81,7 +83,7 @@ async def save_search_results(
     if new_anime_ids or cross_link_pairs:
         await detect_merge_candidates(db, new_anime_ids, cross_link_pairs)
 
-    await db.commit()  # Single commit at the end!
+    await db.commit()
 
     if saved_anything:
         # Existing users' spoiler caches need a recompute against the new
@@ -95,10 +97,14 @@ async def attach_search_result_to_anime(
     parent_anime: Anime,
     related_anime_graph: dict[int, dict],
     all_info: dict[int, dict],
+    edges: list[tuple[int, int, str]] | None = None,
 ) -> int:
     """Attach probe-discovered media as Media rows under an existing parent.
     Skips mal_ids already attached to the parent (the BFS seed is one of
-    them). Returns count of newly-saved Media rows."""
+    them). Returns count of newly-saved Media rows. `edges` is the per-
+    anime BFS edge list; outgoing slices are persisted to each new
+    media's MediaRelationEdges sidecar."""
+    edges = edges or []
     existing_parent_mal_ids = {m.mal_id for m in parent_anime.media}
     saved_count = 0
     now = datetime.now(timezone.utc)
@@ -110,6 +116,7 @@ async def attach_search_result_to_anime(
         )
         await persist_media_with_links(
             db, media_in, anime_id=parent_anime.id, last_checked_at=now,
+            relation_edges=outgoing_edges(edges, mal_id),
         )
         saved_count += 1
     return saved_count

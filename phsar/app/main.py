@@ -14,8 +14,10 @@ from app.core.maintenance_middleware import MaintenanceGateMiddleware
 from app.daos.job_dao import JobDAO
 from app.exceptions import PhsarBaseError
 from app.models.job import JobKind
+from app.seeders.anime_title_backfiller import backfill_anime_title_suffixes
 from app.seeders.embedding_backfiller import backfill_embeddings
 from app.seeders.genre_seeder import seed_genres
+from app.seeders.relation_backfiller import backfill_relations
 from app.seeders.user_seeder import (
     backfill_spoiler_visibility,
     backfill_user_settings,
@@ -34,6 +36,36 @@ from app.services.seasonal_sweep_dispatcher import seasonal_sweep_dispatcher
 setup_logging()
 logger = logging.getLogger(__name__)
 
+async def _post_yield_backfills() -> None:
+    """Long-running catalog backfills that must not block /health.
+
+    On the first v0.14.1 deploy against an existing v0.14.0 DB the
+    relation backfiller lazy-fetches missing MediaRelationEdges from MAL
+    at ~1 req/s — ~14 min for an 800-media catalog. Running synchronously
+    in lifespan would starve Coolify's liveness probe and trigger a
+    restart loop. Fired as `asyncio.create_task` after `yield` so the
+    HTTP layer responds immediately; per-anime commit checkpoints in
+    `backfill_relations` already tolerate abrupt termination.
+
+    Merge-candidate detection runs AFTER relation backfill in the same
+    task so it sees the rewritten relation types in the title-similarity
+    signal. While the task is in flight, save-time merge detection
+    (inside `save_search_results`) still works against the pre-backfill
+    catalog — the task's tail re-runs detection at the end, so any
+    pre-backfill miss self-heals.
+    """
+    try:
+        async with async_session_maker() as session:
+            if settings.RELATION_BACKFILL_ON_STARTUP:
+                await backfill_relations(session)
+            await backfill_merge_candidates(session)
+    except asyncio.CancelledError:
+        logger.info("Post-yield backfill cancelled by shutdown")
+        raise
+    except Exception:
+        logger.exception("Post-yield backfill failed — catalog hygiene incomplete")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 Starting up FastAPI app")
@@ -44,8 +76,13 @@ async def lifespan(app: FastAPI):
         await seed_guest_user(session)
         await backfill_user_settings(session)
         await backfill_spoiler_visibility(session)
+        # Title-suffix stripper runs BEFORE the embedding backfiller so a
+        # row whose suffix is stripped here gets its regenerated embedding
+        # immediately. The embedding backfiller below covers the
+        # missing-embedding case (model swap / new rows without a
+        # search row); these two passes are independent.
+        await backfill_anime_title_suffixes(session)
         await backfill_embeddings(session)
-        await backfill_merge_candidates(session)
         # Mark anything left in `running` as failed — the previous process
         # died mid-job, so the row is stale. User retries from the bell.
         reaped = await JobDAO().reap_orphans(session)
@@ -59,8 +96,19 @@ async def lifespan(app: FastAPI):
     job_worker.register_dispatcher(JobKind.backup, backup_dispatcher)
     await job_worker.start()
 
-    yield  # Startup complete
+    backfill_task = asyncio.create_task(_post_yield_backfills())
 
+    yield  # Startup complete — /health responds even while backfill runs
+
+    backfill_task.cancel()
+    try:
+        await backfill_task
+    except asyncio.CancelledError:
+        pass
+    # Any non-cancellation exception was already logged by the task's
+    # own except clause; letting it propagate here would just abort
+    # shutdown after job_worker.stop() never ran, so we trust the task
+    # to log and swallow.
     await job_worker.stop()
     logger.info("🛑 Shutting down FastAPI app")
 

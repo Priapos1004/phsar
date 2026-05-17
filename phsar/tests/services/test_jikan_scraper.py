@@ -87,11 +87,11 @@ async def test_search_title_skips_relations_for_crossover_node(monkeypatch):
         )
 
     assert len(relations) == 1, "Expected exactly one relation graph from one search hit"
-    graph, cross_link_mal_ids = relations[0]
+    graph, edges, cross_link_mal_ids = relations[0]
 
-    # Crossover anime IS in the graph...
+    # Crossover anime IS in the graph and the edge to it is recorded...
     assert 99 in graph
-    assert graph[99]["relation_type"] == "crossover"
+    assert (1, 99, "crossover") in edges
     # ...but its relations were never fetched.
     assert 99 not in relations_calls
     # Non-crossover branch (sequel chain) still BFS'd: anime 2 was traversed.
@@ -148,7 +148,7 @@ async def test_search_title_records_cross_link_for_pre_excluded_relation(monkeyp
         )
 
     assert len(relations) == 1
-    graph, cross_link_mal_ids = relations[0]
+    graph, _edges, cross_link_mal_ids = relations[0]
 
     # 42 was pre-excluded so it doesn't appear in the graph...
     assert 42 not in graph
@@ -196,7 +196,7 @@ async def test_search_title_no_cross_link_for_crossover_relation(monkeypatch):
             title="Origin", excluded_mal_ids={99},
         )
 
-    _graph, cross_link_mal_ids = relations[0]
+    _graph, _edges, cross_link_mal_ids = relations[0]
     assert cross_link_mal_ids == set()
 
 
@@ -244,7 +244,7 @@ async def test_search_title_seed_empty_data_raises_transient_not_permanent(monke
     PermanentPhsarError, so the worker stamps retryable=True and the
     bell shows its retry button. The old behavior produced retryable=False
     + an opaque 'mal_id=N not found' message, locking the user out for
-    the 72h dedup window for a transient MAL anomaly."""
+    the dedup window for a transient MAL anomaly."""
     from app.exceptions import AnimeNotFoundError, TransientUpstreamError
 
     async def fake_get(self, url: str, params=None):
@@ -272,24 +272,10 @@ async def test_search_title_seed_empty_data_raises_transient_not_permanent(monke
 
 
 @pytest.mark.asyncio
-async def test_search_title_recovers_dropped_seed_post_loop(monkeypatch):
-    """The pre-existing BFS bug (and its fix): when the seed is
-    classified as is_main_story=True AND has outgoing relations, the
-    BFS drops it from `visited_ids` and the graph, expecting organic
-    rediscovery via a back-pointing relation. For franchises like
-    Rilakkuma (60153) whose only relation is `Other` and where no
-    sub-graph node points back, no rediscovery happens, AND the
-    inline bottom-of-loop re-enqueue is bypassed when the last popped
-    node hits a `continue` path (cross-link in our test setup).
-    Post-loop net adds the seed back as main; without it, the graph
-    ends with no `main` and MainMediaNotFoundError fires.
-
-    Setup mirrors Rilakkuma exactly:
-    - Seed 1 (TV, no parent_story) → Other → 2 (the related show)
-    - 2's relations point forward, never back to 1
-    - 3 is in excluded_mal_ids (cross-link) so the last pop hits
-      `continue` and bypasses the bottom-of-loop re-enqueue.
-    """
+async def test_search_title_seed_always_in_graph(monkeypatch):
+    """Seed always appears in the graph from t=0 — no drop, no
+    post-loop recovery. Works even for Rilakkuma-shaped franchises
+    where the seed's only relation is `Other` and no node points back."""
     async def fake_get(self, url: str, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
             return {"data": [_make_anime(1, "Origin TV")]}
@@ -298,8 +284,6 @@ async def test_search_title_recovers_dropped_seed_post_loop(monkeypatch):
             if mal_id == 1:
                 return {"data": [{"relation": "Other", "entry": [{"type": "anime", "mal_id": 2}]}]}
             if mal_id == 2:
-                # 2's only relation goes to 3 (which is pre-excluded).
-                # CRITICALLY: no relation points back to 1.
                 return {"data": [{"relation": "Other", "entry": [{"type": "anime", "mal_id": 3}]}]}
             return {"data": []}
         if "/anime/" in url:
@@ -315,11 +299,8 @@ async def test_search_title_recovers_dropped_seed_post_loop(monkeypatch):
         )
 
     assert len(relations) == 1
-    graph, _cross_links = relations[0]
-    # The post-loop net recovered the dropped seed as main.
+    graph, _edges, _cross_links = relations[0]
     assert 1 in graph
-    assert graph[1]["relation_type"] == "main"
-    # And all_info has the seed entry (also restored by the net).
     assert 1 in all_info
 
 
@@ -370,7 +351,7 @@ async def test_search_title_skips_alternative_setting_relations(monkeypatch):
         )
 
     assert len(relations) == 1
-    graph, _cross_links = relations[0]
+    graph, _edges, _cross_links = relations[0]
     # The sequel branch was walked; the alt-setting branch wasn't.
     assert 2 in graph
     assert 99 not in graph
@@ -379,33 +360,17 @@ async def test_search_title_skips_alternative_setting_relations(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_search_title_normalizes_relation_strings_so_franchise_movies_are_side_story(monkeypatch):
-    """Franchise movies / OVAs reached via `Side Story` from a main TV
-    show must classify as `side_story`, not `main`.
+async def test_search_title_captures_normalized_edges(monkeypatch):
+    """BFS captures every edge with the normalized MAL relation string.
+    MAL emits multi-word relations title-cased (`"Side Story"`,
+    `"Parent story"`); `_normalize_relation` lowercases + underscores so
+    the classifier sees a stable taxonomy.
 
-    Regression guard for the MAL relation-string normalization. MAL
-    emits multi-word relations title-cased with a space (`"Side Story"`,
-    `"Parent story"`, `"Full story"`). Two BFS checks gate
-    `is_main_story` on the popped node's relations containing
-    `"parent_story"` / `"full_story"`. If those checks compare raw
-    against the title-cased list, they always pass, and any TV/Movie
-    node with a `Parent story` upward link leaks into the catalog as
-    `relation_type="main"`. In practice every Naruto/Bleach/Demon Slayer
-    movie classified as a separate `main` story instead of a side story
-    under its parent series.
-
-    Naruto-shaped fixture:
-      20  Naruto             (TV,    no parent)
-      1735 Naruto Shippuden  (TV,    Prequel → 20)
-      894  Naruto Movie 1    (Movie, Parent story → 20)
-      936  Naruto OVA        (OVA,   Parent story → 20)
-      5085 Shippuden Movie   (Movie, Parent story → 1735)
-
-    Only 20 and 1735 may end up with `relation_type="main"`. Everything
-    that has a `Parent story` upward link must be `side_story`.
+    Naruto-shaped fixture verifies the full franchise traverses and
+    that all the expected edges appear with their normalized labels.
+    Classification semantics (movies-via-parent_story → side_story)
+    are tested in test_relation_classifier.py.
     """
-    # Movies + OVA each have a `Parent story` upward link — the exact
-    # MAL convention the underscore-form check used to miss.
     relations_by_id = {
         20: [
             {"relation": "Sequel", "entry": [{"type": "anime", "mal_id": 1735}]},
@@ -448,23 +413,18 @@ async def test_search_title_normalizes_relation_strings_so_franchise_movies_are_
         )
 
     assert len(relations) == 1
-    graph, _cross_links = relations[0]
+    graph, edges, _cross_links = relations[0]
 
-    # All five nodes reached.
     assert set(graph.keys()) == {20, 1735, 894, 936, 5085}
 
-    # Exactly the two TV series are main; movies + OVA are side_story.
-    mains = {mal_id for mal_id, node in graph.items() if node["relation_type"] == "main"}
-    assert mains == {20, 1735}, (
-        f"Only the TV series should be main; got mains={mains}. "
-        "If franchise movies leak into this set, the relation-string "
-        "normalization in jikan_scraper has regressed."
-    )
-    for child_id in (894, 936, 5085):
-        assert graph[child_id]["relation_type"] == "side_story", (
-            f"mal_id={child_id} ({title_by_id[child_id]}) should be "
-            f"side_story; got {graph[child_id]['relation_type']}"
-        )
+    # Every MAL relation string lands as a normalized edge label.
+    edge_set = {(a, b, r) for a, b, r in edges}
+    assert (20, 1735, "sequel") in edge_set
+    assert (20, 894, "side_story") in edge_set
+    assert (20, 936, "side_story") in edge_set
+    assert (1735, 5085, "side_story") in edge_set
+    assert (894, 20, "parent_story") in edge_set
+    assert (5085, 1735, "parent_story") in edge_set
 
 
 @pytest.mark.asyncio

@@ -264,6 +264,13 @@ export interface MergeCandidateAnimeSummary {
 	rating_count: number;
 }
 
+export interface PendingReclassification {
+	media_uuid: string;
+	title: string;
+	old_relation_type: string;
+	new_relation_type: string;
+}
+
 export interface MergeCandidateListItem {
 	uuid: string;
 	similarity_score: number;
@@ -271,6 +278,11 @@ export interface MergeCandidateListItem {
 	created_at: string;
 	anime_a: MergeCandidateAnimeSummary;
 	anime_b: MergeCandidateAnimeSummary;
+	pending_reclassifications: PendingReclassification[];
+}
+
+export interface MergeBackfillResult {
+	inserted: number;
 }
 
 // Admin — Registration tokens

@@ -35,13 +35,16 @@ from app.models.anime_freshness import AnimeFreshness
 from app.models.job import Job
 from app.models.media import Media, RelationType
 from app.models.media_freshness import MediaFreshness
+from app.models.media_relation_edges import MediaRelationEdges
 from app.schemas.search_schema import AttachToExistingAction
 from app.services.jikan_scraper import (
     AIRING_STATUS_CURRENTLY_AIRING,
     JikanScraper,
     parse_mal_datetime,
+    parse_relation_edges,
 )
 from app.services.progress_reporter import ProgressReporter
+from app.services.relation_classifier import classify_and_stamp
 from app.services.save_service import attach_search_result_to_anime, save_search_results
 from app.services.search_service import handle_search_mal_api_results
 from app.services.spoiler_service import refresh_spoiler_cache_for_all_users
@@ -167,6 +170,7 @@ async def _route_attach_actions(
             continue
         attached_total += await attach_search_result_to_anime(
             session, parent, action.related_anime_graph, action.all_info,
+            edges=action.edges,
         )
     return attached_total
 
@@ -319,6 +323,21 @@ async def _refresh_one_anime(
         else:
             media.freshness.last_checked_at = now
 
+        # `/anime/{id}/full` bundles the relations block; refresh the
+        # sidecar so bridge edges land for pre-v0.14.1 rows scraped
+        # under the dangling-edge filter, and so MAL adding a new
+        # sequel/alt-version flows into the catalog over the nightly
+        # sweep instead of needing a manual re-scrape. Not counted as
+        # anime_changed — edge churn is structural metadata, not the
+        # volatile canonical fields the stable counter tracks.
+        fresh_edges: list[list[int | str]] = [
+            [t, r] for t, r in parse_relation_edges(raw.get("relations") or [])
+        ]
+        if media.relation_edges is None:
+            media.relation_edges = MediaRelationEdges(edges=fresh_edges)
+        elif media.relation_edges.edges != fresh_edges:
+            media.relation_edges.edges = fresh_edges
+
     is_currently_airing = any(
         m.airing_status == AIRING_STATUS_CURRENTLY_AIRING for m in anime.media
     )
@@ -406,9 +425,12 @@ async def _probe_relations_for_anime(
             for mal_id, _title, _reason in unwanted_media:
                 exclusions.add(mal_id)
 
-        for graph, _cross_links in relations_list:
+        for graph, edges, _cross_links in relations_list:
+            # Probe path doesn't pass through search_mal_api, so stamp
+            # relation_type here before attach reads it.
+            classify_and_stamp(graph, edges, all_info)
             saved_count = await attach_search_result_to_anime(
-                session, anime, graph, all_info,
+                session, anime, graph, all_info, edges=edges,
             )
             if saved_count:
                 saved_anything = True
@@ -456,8 +478,14 @@ def _apply_media_diff(media: Media, payload: dict) -> bool:
                 changed = True
 
     new_episodes = payload.get("episodes")
-    if media.episodes != new_episodes:
-        if media.episodes is None and new_episodes is not None:
+    # Skip when MAL omitted the field on a populated row — mirrors the
+    # scored_by guard above. extract_information returns None when the
+    # /full response leaves episodes off (observed transient behavior);
+    # writing that back would silently null a populated count and reset
+    # stability. Allow None → value (the reveal direction) and
+    # value → value (legitimate updates).
+    if new_episodes is not None and media.episodes != new_episodes:
+        if media.episodes is None:
             # We don't auto-bump ratings.episodes_watched: a user with
             # the show on their watchlist may have only watched part.
             # Surface in logs so an admin can investigate scope of the

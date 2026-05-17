@@ -185,14 +185,40 @@ async def test_detect_skips_when_titles_too_different(db_session):
 
 
 @pytest.mark.asyncio
-async def test_detect_does_not_flag_new_against_new(db_session):
-    """Two new anime saved together aren't flagged against each other —
-    a scrape produces related entries that shouldn't auto-flag as duplicates."""
+async def test_detect_flags_new_against_new(db_session):
+    """A single scrape can split one franchise across two anime rows
+    (top-N title search returning near-duplicates). The new × new pass
+    flags them so admin sees the candidate without waiting for a restart."""
     a = await _make_anime_with_studio(
         db_session, mal_id=70031, title="Sibling Show", studio_name="Sibling Studio",
     )
     b = await _make_anime_with_studio(
         db_session, mal_id=70032, title="Sibling Show Season 2", studio_name="Sibling Studio",
+    )
+
+    inserted = await detect_merge_candidates(db_session, [a.id, b.id])
+    assert inserted == 1
+
+    a_id, b_id = sorted((a.id, b.id))
+    rows = (await db_session.execute(
+        select(MergeCandidate).where(
+            MergeCandidate.anime_a_id == a_id,
+            MergeCandidate.anime_b_id == b_id,
+        )
+    )).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].detected_by == DETECTOR_TITLE_STUDIO
+
+
+@pytest.mark.asyncio
+async def test_detect_new_against_new_skips_disjoint_studios(db_session):
+    """The studio-overlap gate still applies to new × new — unrelated
+    titles sharing only a name fragment don't flag without studio overlap."""
+    a = await _make_anime_with_studio(
+        db_session, mal_id=70033, title="Lonely Sibling", studio_name="Studio A",
+    )
+    b = await _make_anime_with_studio(
+        db_session, mal_id=70034, title="Lonely Sibling Season 2", studio_name="Studio B",
     )
 
     inserted = await detect_merge_candidates(db_session, [a.id, b.id])

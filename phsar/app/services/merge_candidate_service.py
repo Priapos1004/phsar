@@ -26,11 +26,14 @@ from app.models.merge_candidate import MergeCandidate, MergeCandidateStatus
 from app.schemas.admin_schema import (
     MergeCandidateAnimeSummary,
     MergeCandidateListItem,
+    PendingReclassification,
 )
-from app.services.anime_search_service import anime_title_texts
+from app.services.anime_relation_service import (
+    preview_reclassifications,
+    reclassify_anime,
+)
 from app.services.merge_detection_service import detect_merge_candidates
 from app.services.spoiler_service import refresh_spoiler_cache_for_all_users
-from app.services.vector_embedding_service import create_anime_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +97,17 @@ async def list_pending(db: AsyncSession) -> list[MergeCandidateListItem]:
     for row in rows:
         a_summary = _summarize(row.anime_a, rating_counts.get(row.anime_a_id, 0))
         b_summary = _summarize(row.anime_b, rating_counts.get(row.anime_b_id, 0))
+        # Compute the preview from the unswapped pair (anime_a is the
+        # survivor by convention) so the diff reflects "A absorbs B".
+        # The recommended-keep swap below only affects which side
+        # shows as 'A' in the card; the merge always re-parents B → A.
+        pending = [
+            PendingReclassification(
+                media_uuid=str(media.uuid), title=media.title,
+                old_relation_type=old_rt, new_relation_type=new_rt,
+            )
+            for media, old_rt, new_rt in preview_reclassifications(row.anime_a, row.anime_b)
+        ]
         if _rank_key(a_summary, row.anime_a_id) > _rank_key(b_summary, row.anime_b_id):
             a_summary, b_summary = b_summary, a_summary
         items.append(MergeCandidateListItem(
@@ -103,6 +117,7 @@ async def list_pending(db: AsyncSession) -> list[MergeCandidateListItem]:
             created_at=row.created_at,
             anime_a=a_summary,
             anime_b=b_summary,
+            pending_reclassifications=pending,
         ))
     return items
 
@@ -201,25 +216,18 @@ async def merge(
     await db.delete(anime_b)
     await db.flush()
 
-    # Refresh A's title embedding from the merged media list (B's titles may
-    # have surfaced romanizations A didn't have). Drop the old AnimeSearch
-    # row first since create_anime_embedding inserts a fresh row.
-    anime_a_stmt = (
-        select(Anime)
-        .where(Anime.id == anime_a_id)
-        .options(selectinload(Anime.anime_search))
-    )
-    anime_a = (await db.execute(anime_a_stmt)).scalars().first()
-    if anime_a is not None and anime_a.anime_search is not None:
-        await db.delete(anime_a.anime_search)
-        await db.flush()
+    # Re-classify the consolidated media set: B's absorbed media may
+    # change the canonical anchor (e.g. B's anchor is older), demote
+    # weak-main media via the substance gate, or stamp alt-version
+    # labels surfaced by edges that only existed once both sides
+    # joined. `reclassify_anime` rewrites the umbrella row + embedding
+    # in-place when drift is detected.
+    anime_a = (await db.execute(
+        select(Anime).where(Anime.id == anime_a_id)
+        .options(selectinload(Anime.media).selectinload(Media.relation_edges))
+    )).scalars().first()
     if anime_a is not None:
-        await create_anime_embedding(
-            db,
-            anime_id=anime_a.id,
-            title_texts=anime_title_texts(anime_a),
-            description_text=anime_a.description or "",
-        )
+        await reclassify_anime(db, anime_a)
 
     await db.commit()
 

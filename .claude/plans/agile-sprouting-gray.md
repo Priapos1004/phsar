@@ -169,10 +169,10 @@ Once all features are discussed, this becomes the basis for GitHub issues and mi
 - `hide` — In media search: backend filters out media beyond the frontier (correct pagination via `WHERE media.id IN (...)`). On detail pages: falls back to blur behavior (user explicitly navigated there).
 
 **Spoiler Frontier Algorithm** (per anime, media sorted chronologically by `season_year → season_name → mal_id`):
-1. Extract main media (`relation_type == 'main'`) in chronological order
-2. If no ratings exist: first main media is visible (or first media if no main exists), everything else is protected
-3. If ratings exist: find the last rated main media → the next unrated main media after it is the **frontier**
-4. All media chronologically up to and including the frontier are visible (including side stories, summaries, ONAs between rated mains and frontier)
+1. Extract **anchor** media in chronological order. Anchors are `relation_type == 'main'` OR `relation_type == 'alternative_version'` (refined in v0.14.1: retellings extend the story, so each alt-version gates the next — rating Eva TV reveals Rebuild Movie 1 but not Movies 2-4)
+2. If no ratings exist: first anchor media is visible (or first media if no anchor exists), everything else is protected
+3. If ratings exist: find the last rated anchor → the next unrated anchor after it is the **frontier**
+4. All media chronologically up to and including the frontier are visible (including side stories, summaries, ONAs between rated anchors and frontier)
 5. All media after the frontier are protected
 
 **Example:**
@@ -259,6 +259,12 @@ S5 (main)             → BLUR/HIDE
 - The same BFS now also splits `excluded_ids` (frozen pre-existing catalog) from `visited_ids` (this run) — when BFS pops a node already in the catalog via a non-crossover relation, that mal_id is surfaced as a per-graph cross-link signal that the detector resolves to an owning anime id and inserts as `relation_link`.
 
 **Backfiller:** `merge_detection_service.backfill_merge_candidates` runs in app lifespan after `backfill_embeddings`. One-shot existing × existing pair sweep so duplicates that pre-date the detector get flagged on first restart after upgrade. Idempotent: pre-fetched seen-pairs short-circuits subsequent restarts.
+
+**v0.14.1 extensions:**
+- Detection now also runs at the end of `save_search_results` covering new × new (single-scrape duplicates surface without waiting for a restart). Save-time + startup-backfill together cover all three pair classes (new × new, new × existing, existing × existing).
+- Admin can re-trigger the existing × existing backfill on demand via `POST /admin/merge-candidates/backfill` — primarily for the post-restore workflow (restore is synchronous, so the lifespan-startup backfill never sees the restored catalog).
+- Each pending pair carries a **reclassification preview**: per-media diffs (`old_relation_type → new_relation_type`) that would land if A absorbed B, surfaced inline in the admin card so structural impact (substance-gate demotions, alt-version labels, anchor flips) is visible before clicking merge.
+- Merge survivor flow runs `anime_relation_service.reclassify_anime` over the consolidated set — rewrites the 7 umbrella fields only on cross-field drift, regenerates the anime embedding only when title-affecting fields shifted.
 
 ### Maintenance Window ✓ shipped (commit 7a of v0.14.0)
 
@@ -550,7 +556,8 @@ Eye-catching landing page — light version of browse, serves new and returning 
 | **v0.11.0** | ✓ Anime-level search + anime detail page | Aggregated search as default. Anime↔media navigation loop complete. View toggle (anime/media). View-type-aware filter options. |
 | **v0.12.0** | ✓ User settings + user page UI + data export + admin + account deletion | Settings table, theme system (app color + hero pic via `@property`/`var()` indirection), rating step, name language, spoiler protection. Flat media-level data export (ratings + watchlist + catalog info per media, respects name_language, dated filename). Token expiry dialog. Registration page. Guest account. Admin page for registration token management. Account deletion with glass crack UX, password confirmation, DB cascade (SET NULL on registration tokens). |
 | **v0.13.0** | ✓ Deployment (Coolify) + switch to bun + CI image builds + DB backup/restore | Deployment-ready: Coolify config for db/frontend/backend services. Switch frontend from npm to bun. Build images in GitHub Actions → push to ghcr.io → Coolify pulls (VM too small for on-host bun/SvelteKit build). pg_dump backup system (automated + local download). Prerequisite for content pipeline cron jobs. |
-| **v0.14.0** | Content pipeline (scraper jobs, dedup, updates, seasonal) | User-triggered scraping with job tracking. Automated daily/weekly updates. Seasonal scraping. Dedup + admin merge notifications. |
+| **v0.14.0** | ✓ Content pipeline (scraper jobs, dedup, updates, seasonal) | User-triggered scraping with job tracking. Automated daily/weekly updates. Seasonal scraping. Dedup + admin merge candidates. Maintenance mode + sticky banner. Combined nightly cron endpoint (backup + update_sweep + Sunday seasonal_sweep). |
+| **v0.14.1** | ✓ Search & data fixes (relation classifier redesign) | Two-pass classifier (BFS captures edges; pure-function classifier picks anchor + classifies). `AlternativeVersion` relation type for retellings (Eva Rebuild, Hokuto no Ken alts). `MediaRelationEdges` 1:1 sidecar persists unfiltered edges so bridge edges activate on later merges. Substance gate demotes weak Mains. Spoiler frontier alt-version anchor. Merge survivor reclassification + per-pair preview. Backfiller copies all 7 umbrella fields. Anime-view filters mirror anime-card derivation. Title-search ranking: substring + pg_trgm word_similarity bonus. Season-suffix stripping on umbrella names. New × new merge detection + admin re-trigger backfill. `update_sweep` step 1 also refreshes `MediaRelationEdges` from the `/full` payload (no extra MAL hit). |
 | **v0.15.0** | Watchlist backend + UI | Watchlist CRUD, tags, priority. Watchlist page with filtering. Watchlist icons in search results. |
 | **v0.15.1** | Search enhancements + design polish | "In watchlist"/"already watched" search filters. Search filter QoL improvements. Component design polish. Note: consider enlarging the watchlist bookmark icon on the media detail page for better tap target and visual presence. |
 | **v0.16.0** | Browse page + home page redesign | Crunchyroll-style horizontal card rows. Browse sections with algo selector. Home page as light version. Get-started page. |

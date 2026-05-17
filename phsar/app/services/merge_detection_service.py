@@ -210,12 +210,19 @@ async def detect_merge_candidates(
     new_anime_ids: list[int],
     cross_link_pairs: list[tuple[int, int]] | None = None,
 ) -> int:
-    """Compare each newly saved anime against the existing catalog and
-    insert pending merge candidates.
+    """Compare each newly saved anime against the existing catalog AND
+    against other newly saved anime, and insert pending merge candidates.
 
-    Detection runs new × existing only — not new × new (avoids self-flagging
-    related anime saved in the same scrape) and not existing × existing
-    (those would have been flagged on their own save).
+    Detection runs new × existing and new × new — not existing × existing
+    (those would have been flagged on their own save, or are picked up by
+    the startup `backfill_merge_candidates`). The new × new pass covers
+    the common case where a single user scrape's top-N title search returns
+    two near-duplicates that both land as separate anime in the same job;
+    without it admin would have to wait for a container restart to see
+    them. `_flag_if_similar`'s studio-overlap + title threshold gates filter
+    genuine parent+sequel pairs that just happen to be saved together —
+    when those do flag, admin dismisses once and the seen-pairs set keeps
+    them dismissed.
 
     `cross_link_pairs` carries the relation-graph signal from the BFS:
     pairs (new_anime_id, existing_anime_id) where MAL says the new anime is
@@ -266,7 +273,7 @@ async def detect_merge_candidates(
         else:
             existing_entries.append(entry)
 
-    if not new_entries or not existing_entries:
+    if not new_entries:
         return inserted
 
     norm_cache: dict[int, str] = {}
@@ -276,6 +283,17 @@ async def detect_merge_candidates(
         for existing_entry in existing_entries:
             if await _flag_if_similar(db, new_entry, existing_entry, seen_pairs, norm_cache):
                 inserted += 1
+
+    # New × new: a single scrape can produce two anime that should have
+    # been one. Use index-paired iteration so each unordered pair is
+    # considered exactly once.
+    for i, a in enumerate(new_entries):
+        if not a.studios:
+            continue
+        for b in new_entries[i + 1:]:
+            if await _flag_if_similar(db, a, b, seen_pairs, norm_cache):
+                inserted += 1
+
     return inserted
 
 

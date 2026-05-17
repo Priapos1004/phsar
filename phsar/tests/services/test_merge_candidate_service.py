@@ -13,7 +13,8 @@ from sqlalchemy import select
 
 from app.exceptions import InvalidMergeKeepError
 from app.models.anime import Anime
-from app.models.media import Media
+from app.models.media import Media, MediaType, RelationType
+from app.models.media_relation_edges import MediaRelationEdges
 from app.models.media_studio import MediaStudio
 from app.models.merge_candidate import MergeCandidate, MergeCandidateStatus
 from app.models.ratings import Ratings
@@ -156,18 +157,20 @@ async def test_merge_redetects_against_third_anime(db_session):
     await db_session.flush()
 
     # A and B share studio + match titles via containment ("Show" ⊂ "Show 2").
-    a = Anime(mal_id=90701, title="Re-detect Show")
-    b = Anime(mal_id=90702, title="Re-detect Show 2")
+    # Anime mal_id + title mirror the anchor media so reclassify_anime
+    # treats the row as in-sync (matches create_anime_from_media's flow).
+    a = Anime(mal_id=907010, title="Re-detect Show")
+    b = Anime(mal_id=907020, title="Re-detect Show 2")
     # C shares studio with A but its title only matches B's media title —
     # so before the merge, A-C wouldn't flag (low title score), but after
     # the merge B's media sits under A and the detector should re-score.
-    c = Anime(mal_id=90703, title="Re-detect Show Side Story")
+    c = Anime(mal_id=907030, title="Re-detect Show Side Story")
     db_session.add_all([a, b, c])
     await db_session.flush()
 
-    media_a = Media(**media_kwargs(a.id, 907010, title="Re-detect Show TV"))
-    media_b = Media(**media_kwargs(b.id, 907020, title="Re-detect Show 2 TV"))
-    media_c = Media(**media_kwargs(c.id, 907030, title="Re-detect Show Side Story TV"))
+    media_a = Media(**media_kwargs(a.id, 907010, title="Re-detect Show"))
+    media_b = Media(**media_kwargs(b.id, 907020, title="Re-detect Show 2"))
+    media_c = Media(**media_kwargs(c.id, 907030, title="Re-detect Show Side Story"))
     db_session.add_all([media_a, media_b, media_c])
     await db_session.flush()
     db_session.add_all([
@@ -216,3 +219,190 @@ async def test_merge_keep_uuid_unrelated_raises(db_session):
 
     with pytest.raises(InvalidMergeKeepError):
         await merge(db_session, uuid=candidate_uuid, keep_uuid=unrelated.uuid)
+
+
+@pytest.mark.asyncio
+async def test_list_pending_includes_reclassification_preview(db_session):
+    """list_pending stamps each candidate with the per-media changes
+    that would land if the admin clicks merge — substance-gate
+    demotions, alt-version labels, anchor flips."""
+    studio = Studio(name="Preview Studio")
+    db_session.add(studio)
+    await db_session.flush()
+
+    a = Anime(mal_id=940101, title="Preview TV")
+    b = Anime(mal_id=940201, title="Preview Manner Movie")
+    db_session.add_all([a, b])
+    await db_session.flush()
+
+    media_a = Media(**media_kwargs(
+        a.id, 940101, title="Preview TV",
+        media_type=MediaType.TV, relation_type=RelationType.Main,
+        episodes=13, duration_seconds=1440,
+        aired_from=datetime(2015, 1, 1, tzinfo=timezone.utc),
+    ))
+    # B's weak Main (1-min Movie) — substance gate will demote it.
+    media_b = Media(**media_kwargs(
+        b.id, 940201, title="Preview Manner Movie",
+        media_type=MediaType.Movie, relation_type=RelationType.Main,
+        episodes=1, duration_seconds=60,
+        aired_from=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    ))
+    db_session.add_all([media_a, media_b])
+    await db_session.flush()
+    db_session.add_all([
+        MediaStudio(media_id=media_a.id, studio_id=studio.id),
+        MediaStudio(media_id=media_b.id, studio_id=studio.id),
+    ])
+    await db_session.flush()
+
+    a_id, b_id = sorted((a.id, b.id))
+    candidate = MergeCandidate(
+        anime_a_id=a_id, anime_b_id=b_id,
+        similarity_score=0.9, detected_by="title_studio",
+        status=MergeCandidateStatus.pending,
+    )
+    db_session.add(candidate)
+    await db_session.flush()
+
+    items = await list_pending(db_session)
+    item = next(it for it in items if it.uuid == str(candidate.uuid))
+    # B's weak Main media is flagged for demotion to side_story.
+    preview_by_uuid = {p.media_uuid: p for p in item.pending_reclassifications}
+    pending = preview_by_uuid.get(str(media_b.uuid))
+    assert pending is not None
+    assert pending.old_relation_type == "main"
+    assert pending.new_relation_type == "side_story"
+    # A's strong Main stays Main → not in the preview.
+    assert str(media_a.uuid) not in preview_by_uuid
+
+
+@pytest.mark.asyncio
+async def test_merge_reconnects_main_chain_via_bridge_edges(db_session):
+    """Dr. Stone split-merge shape: A holds S1 + a substance-failing
+    TVSpecial bridge that has a sequel edge to B's S2. The bridge edge
+    was persisted in the sidecar even though it pointed outside A's
+    graph at scrape time. After merge, the consolidated classifier
+    must traverse the bridge so S2 ends up as `main` (not `side_story`
+    via the broken-chain fallback). Bridge itself stays side_story via
+    the substance gate; the chain continues past it."""
+    studio = Studio(name="Bridge Studio")
+    db_session.add(studio)
+    await db_session.flush()
+
+    a = Anime(mal_id=970101, title="Bridge S1")
+    b = Anime(mal_id=970301, title="Bridge S2")
+    db_session.add_all([a, b])
+    await db_session.flush()
+
+    s1 = Media(**media_kwargs(
+        a.id, 970101, title="Bridge S1",
+        media_type=MediaType.TV, relation_type=RelationType.Main,
+        episodes=24, duration_seconds=1440,
+        aired_from=datetime(2019, 7, 5, tzinfo=timezone.utc),
+    ))
+    # The bridge: TVSpecial with 1 ep — fails substance, will be
+    # side_story. But the closure walks through it as long as the
+    # sequel edges are present.
+    bridge = Media(**media_kwargs(
+        a.id, 970201, title="Bridge Special",
+        media_type=MediaType.TVSpecial, relation_type=RelationType.SideStory,
+        episodes=1, duration_seconds=1440,
+        aired_from=datetime(2022, 7, 10, tzinfo=timezone.utc),
+    ))
+    s2 = Media(**media_kwargs(
+        b.id, 970301, title="Bridge S2",
+        media_type=MediaType.TV, relation_type=RelationType.Main,
+        episodes=22, duration_seconds=1440,
+        aired_from=datetime(2023, 4, 6, tzinfo=timezone.utc),
+    ))
+    db_session.add_all([s1, bridge, s2])
+    await db_session.flush()
+    # Bridge sidecar persists the sequel-to-S2 edge despite S2 living
+    # under B at scrape time — this is exactly what the post-fix BFS
+    # now writes (no more dangling-edge filter at storage).
+    db_session.add_all([
+        MediaRelationEdges(media_id=s1.id, edges=[[970201, "sequel"]]),
+        MediaRelationEdges(media_id=bridge.id, edges=[
+            [970101, "prequel"], [970301, "sequel"],
+        ]),
+        MediaRelationEdges(media_id=s2.id, edges=[[970201, "prequel"]]),
+        MediaStudio(media_id=s1.id, studio_id=studio.id),
+        MediaStudio(media_id=bridge.id, studio_id=studio.id),
+        MediaStudio(media_id=s2.id, studio_id=studio.id),
+    ])
+    await db_session.flush()
+
+    a_id, b_id = sorted((a.id, b.id))
+    candidate = MergeCandidate(
+        anime_a_id=a_id, anime_b_id=b_id,
+        similarity_score=0.9, detected_by="title_studio",
+        status=MergeCandidateStatus.pending,
+    )
+    db_session.add(candidate)
+    await db_session.flush()
+
+    await merge(db_session, uuid=candidate.uuid)
+
+    # Re-read both media to verify classification.
+    refreshed = {
+        m.mal_id: m for m in (await db_session.execute(
+            select(Media).where(Media.mal_id.in_([970101, 970201, 970301]))
+        )).scalars().all()
+    }
+    assert refreshed[970101].relation_type == RelationType.Main, "S1 anchor stays main"
+    assert refreshed[970301].relation_type == RelationType.Main, "S2 reached via bridge — main"
+    assert refreshed[970201].relation_type == RelationType.SideStory, "bridge demoted by substance gate"
+
+
+@pytest.mark.asyncio
+async def test_merge_demotes_weak_main_from_loser(db_session):
+    """Overlord 13063 ⇄ 13064 shape: A is a substance-passing TV that's
+    already classified as Main. B is a standalone 1-min Movie also
+    classified Main (since it was the only media in B's anime). After
+    merging A←B, the classifier runs over A's consolidated media set
+    and demotes B's weak Main to SideStory via the substance gate."""
+    studio = Studio(name="Weak-Demote Studio")
+    db_session.add(studio)
+    await db_session.flush()
+
+    a = Anime(mal_id=950101, title="Demote TV")
+    b = Anime(mal_id=950201, title="Demote Manner Movie")
+    db_session.add_all([a, b])
+    await db_session.flush()
+
+    media_a = Media(**media_kwargs(
+        a.id, 950101, title="Demote TV",
+        media_type=MediaType.TV, relation_type=RelationType.Main,
+        episodes=13, duration_seconds=1440,
+        aired_from=datetime(2015, 1, 1, tzinfo=timezone.utc),
+    ))
+    media_b = Media(**media_kwargs(
+        b.id, 950201, title="Demote Manner Movie",
+        media_type=MediaType.Movie, relation_type=RelationType.Main,
+        episodes=1, duration_seconds=60,
+        aired_from=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    ))
+    db_session.add_all([media_a, media_b])
+    await db_session.flush()
+    db_session.add_all([
+        MediaStudio(media_id=media_a.id, studio_id=studio.id),
+        MediaStudio(media_id=media_b.id, studio_id=studio.id),
+    ])
+    await db_session.flush()
+
+    a_id, b_id = sorted((a.id, b.id))
+    candidate = MergeCandidate(
+        anime_a_id=a_id, anime_b_id=b_id,
+        similarity_score=0.9, detected_by="title_studio",
+        status=MergeCandidateStatus.pending,
+    )
+    db_session.add(candidate)
+    await db_session.flush()
+
+    await merge(db_session, uuid=candidate.uuid)
+
+    refreshed_b_media = (await db_session.execute(
+        select(Media).where(Media.mal_id == 950201)
+    )).scalar_one()
+    assert refreshed_b_media.relation_type == RelationType.SideStory

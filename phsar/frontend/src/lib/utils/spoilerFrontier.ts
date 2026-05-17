@@ -3,8 +3,11 @@
  *
  * Mirrors the backend algorithm in spoiler_service.py:
  * determines which media within an anime are visible (not spoiler-protected)
- * based on user's watch progress through the main story backbone.
+ * based on user's watch progress through the anchor backbone (main +
+ * alternative_version — retellings extend the story, so they gate too).
  */
+
+const ANCHOR_TYPES = new Set(['main', 'alternative_version']);
 
 const SEASON_ORDER: Record<string, number> = {
 	Winter: 1,
@@ -51,41 +54,38 @@ export function computeVisibleMediaUuids(
 		compareSortKeys(chronologicalSortKey(a), chronologicalSortKey(b))
 	);
 
-	// Find main media indices
-	const mainIndices = sorted
-		.map((m, i) => (m.relation_type === 'main' ? i : -1))
+	// Anchor indices: main + alternative_version, in air-date order.
+	const anchorIndices = sorted
+		.map((m, i) => (ANCHOR_TYPES.has(m.relation_type) ? i : -1))
 		.filter((i) => i !== -1);
 
-	if (mainIndices.length === 0) {
-		// No main media — only first media visible
+	if (anchorIndices.length === 0) {
+		// No anchor media — only first media visible.
 		return new Set([sorted[0].uuid]);
 	}
 
-	// Find last rated main media index
-	let lastRatedMainIdx = -1;
-	for (const idx of mainIndices) {
+	let lastRatedAnchorIdx = -1;
+	for (const idx of anchorIndices) {
 		if (ratedUuids.has(sorted[idx].uuid)) {
-			lastRatedMainIdx = idx;
+			lastRatedAnchorIdx = idx;
 		}
 	}
 
 	let frontierIdx: number;
 
-	if (lastRatedMainIdx === -1) {
-		// No main rated — frontier is first main
-		frontierIdx = mainIndices[0];
+	if (lastRatedAnchorIdx === -1) {
+		frontierIdx = anchorIndices[0];
 	} else {
-		// Find next unrated main after last rated
 		let nextUnrated: number | null = null;
-		for (const idx of mainIndices) {
-			if (idx > lastRatedMainIdx && !ratedUuids.has(sorted[idx].uuid)) {
+		for (const idx of anchorIndices) {
+			if (idx > lastRatedAnchorIdx && !ratedUuids.has(sorted[idx].uuid)) {
 				nextUnrated = idx;
 				break;
 			}
 		}
 
 		if (nextUnrated === null) {
-			// All main rated — everything visible
+			// All anchors rated — everything visible.
 			return new Set(sorted.map((m) => m.uuid));
 		}
 

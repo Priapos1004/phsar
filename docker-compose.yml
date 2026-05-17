@@ -1,7 +1,9 @@
 # Local parity with the Coolify stack — not the dev flow (see CLAUDE.md
 # for native uvicorn + bun dev with hot-reload).
 #
-# Usage: cp .env.example .env && docker compose up --build
+# Usage: cp phsar/.env.example .env && docker compose up --build
+# (Uncomment the docker-compose-only block in phsar/.env.example before
+# running — CORS_ORIGINS, PUBLIC_API_BASE_URL, APP_VERSION.)
 
 name: phsar
 

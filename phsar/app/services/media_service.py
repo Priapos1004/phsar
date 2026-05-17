@@ -7,6 +7,7 @@ from app.daos.media_dao import MediaDAO
 from app.exceptions import MalIdAlreadyExistsError
 from app.models.media import Media
 from app.models.media_freshness import MediaFreshness
+from app.models.media_relation_edges import MediaRelationEdges
 from app.schemas.media_schema import MediaUnconnected
 from app.services.media_linking_service import (
     link_genres_to_media,
@@ -71,14 +72,25 @@ async def persist_media_with_links(
     media_in: MediaUnconnected,
     anime_id: int,
     last_checked_at: datetime | None,
+    relation_edges: list[tuple[int, str]] | None = None,
 ) -> Media:
-    """Create one Media + its sidecar + genre/studio links + embedding.
+    """Create one Media + its sidecars + genre/studio links + embedding.
     Single source of truth for the per-media insert path so user_scrape
     and the sweep probe can't drift on schema additions. `last_checked_at`
     is None for never-fetched rows (user_scrape on a fresh anime) and
-    `now()` for sweep-probe-discovered rows where MAL data is fresh."""
+    `now()` for sweep-probe-discovered rows where MAL data is fresh.
+    `relation_edges` is the per-media outgoing MAL relations captured by
+    BFS — `[(target_mal_id, normalized_rel), ...]`; defaults to empty
+    so the backfiller can later populate via lazy MAL fetch."""
     media_obj = await create_media(db, media_in, anime_id=anime_id)
     media_obj.freshness = MediaFreshness(last_checked_at=last_checked_at)
+    # Normalize tuples to lists so the in-memory cached attribute
+    # matches the JSONB round-trip shape (asyncpg returns arrays as
+    # lists). Without this, callers reading from the session identity
+    # map see tuples while a fresh SELECT sees lists.
+    media_obj.relation_edges = MediaRelationEdges(
+        edges=[list(edge) for edge in (relation_edges or [])],
+    )
     await link_genres_to_media(db, media_id=media_obj.id, genres=media_in.genres)
     await link_studios_to_media(db, media_id=media_obj.id, studios=media_in.studio)
     await create_media_embedding(

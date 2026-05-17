@@ -59,7 +59,7 @@ docker exec -it anime-postgres psql -U <DB_USER> -d <DB_NAME> \
 ### Docker (production parity)
 ```bash
 # Build + run db + backend + frontend containers end-to-end (NOT the dev flow).
-cp .env.example .env
+cp phsar/.env.example .env
 docker compose up --build
 ```
 
@@ -79,6 +79,7 @@ FastAPI endpoint definitions. Each router maps to an API prefix.
     - `POST /admin/backups` and `POST /admin/backups/auto` (cron-token authed) both enqueue a `backup` job and return 202 with the job uuid so the request thread doesn't block on `pg_dump`
     - Manual backups attribute to the admin user (visible only in their bell); cron is a system job (`requested_by_user_id=null`), invisible to every bell — the dump list is the audit log
   - Merge-candidate review (list pending, merge, dismiss; powered by the duplicate detector)
+    - `POST /admin/merge-candidates/backfill` re-runs existing × existing detection without a container restart — primarily for the post-restore workflow (restore is synchronous, so the lifespan-startup backfill never sees the restored catalog)
   - Three cron-token-authed sweep schedulers:
     - `POST /admin/jobs/schedule-sweep?delay_minutes=N` — enqueues an `update_sweep` job (nightly catalog refresh + relations probe)
     - `POST /admin/jobs/schedule-seasonal?delay_minutes=N` — enqueues a `seasonal_sweep` job (weekly `/seasons/now` scrape)
@@ -145,7 +146,7 @@ Business logic as module-level async functions.
   - **`user_scrape`**: wraps `handle_search_mal_api_results` + `save_search_results` behind a `ProgressReporter`
     - System-enqueued children (from seasonal sweep) carry `seed_mal_id` in payload so each child's BFS skips the fuzzy top-3 lookup and seeds directly off the known mal_id
   - **`update_sweep`**: tier-selects due anime via `AnimeDAO.select_due_for_sweep`, then per anime:
-    - **Step 1** — refreshes child media via `JikanScraper.refresh_anime` (`/anime/{id}/full`), diffs volatile fields (`score`, `scored_by`, `episodes`, `airing_status`, `aired_to`) via `_apply_media_diff`, updates `MediaFreshness`
+    - **Step 1** — refreshes child media via `JikanScraper.refresh_anime` (`/anime/{id}/full`), diffs volatile fields (`score`, `scored_by`, `episodes`, `airing_status`, `aired_to`) via `_apply_media_diff`, updates `MediaFreshness`, and rewrites `MediaRelationEdges` from the bundled `relations` block (steady-state refresh so MAL additions and bridge-edge restoration for pre-v0.14.1 rows flow in nightly; not counted as `anime_changed` for stable-counter purposes — structural metadata, not volatile fields)
     - **Step 2** (only tier 3 + tier 4 — `not currently_airing AND stable_check_count >= 3`) — probes each Main media's relations via `JikanScraper.search_title(seed_mal_id=...)`, attaches discovered media via `save_service.attach_search_result_to_anime`, advances `AnimeFreshness`
     - Two commits per anime + per-anime try/except:
       - Step 1 always commits durably (crash mid-sweep preserves field-diff work; single bad MAL response fails only that anime)
@@ -182,9 +183,7 @@ Business logic as module-level async functions.
   - Per-graph decision: save as new anime, attach to existing anime, or surface as merge candidate
   - Packages as `SaveAction | AttachToExistingAction` for the caller
   - **`AttachToExistingAction`**: routes orphan side-story graphs (single cross-link to an existing Media, no main of their own) through `save_service.attach_search_result_to_anime` so a tier-1/2 parent's new side-story gets attached under the right anime instead of becoming a duplicate
-  - **`_pick_root_for_promotion`**: seed-mode fallback when `get_first_main_relation` finds no main AND there's no single cross-link
-    - Picks the most main-like graph entry by `(type_tier, aired_from)`: TV/Movie=0, ONA=1, OVA/TVSpecial=2, Special=3 (nulls last on aired_from)
-    - Why: necessary for donghua sub-universes whose canonical main is an ONA, and for pilot-aired-before-the-real-show edge (tier > date)
+  - **Seed-mode anchor fallback** (v0.14.1): when the seeded BFS produces no clear main, the two-pass classifier picks the anchor from the captured nodes by anchor tier (TV > ONA > Movie > other) + substance gate + oldest aired_from. Necessary for donghua sub-universes whose canonical main is an ONA, and pilot-aired-before-the-real-show edge (tier > date)
   - Cross-link signals are filtered to subtract `media_unwanted` mal_ids before the attach-vs-promote decision so filtered Music/PV entries don't get treated as franchise-overlap evidence
   - `alternative_setting` is treated as a graph boundary (like `crossover`) but dropped entirely — MAL's explicit "different story, shared themes" label; conflating those into one Anime row triggered false-positive merge candidates on every sweep
   - All MAL relation strings normalized once on entry via `_normalize_relation(rel) = rel.lower().replace(" ", "_")`
@@ -195,6 +194,7 @@ Business logic as module-level async functions.
 - **`vector_embedding_service.py`** — sentence-transformers embeddings
 - **`media_search_service.py`** / **`anime_search_service.py`** — filtered DB search
   - Anime variant uses a two-phase query (GROUP BY + HAVING for filter/order, then detail fetch) with majority-genre logic
+  - **Anime-view filters mirror the card's derivation in `_compute_anime_aggregates`**, not per-media WHERE: `age_rating` filters against `MAX(age_rating_numeric)`, `airing_status` against the priority-collapsed value (Currently → Finished → Not yet aired). Otherwise an anime with one Finished side-story would surface under the "Finished" filter despite the card showing "Currently Airing"
 - **`filter_service.py`** — filter option values; view-type-aware for anime vs media ranges
 - **`auth_service.py`** — registration, authentication, token issuance, account deletion
 - **`user_settings_service.py`** — user settings CRUD + default creation
@@ -207,19 +207,33 @@ Business logic as module-level async functions.
       - Containment additionally requires word-boundary on both sides of the match in the longer string AND a size floor of `MIN_CONTAINMENT_MATCH_CHARS=4` chars OR a full match where the shorter title is itself ≥ `MIN_FULL_MATCH_CHARS=3`
     - `title_desc` — weaker title match + description-embedding cosine ≥ 0.85
     - `relation_link` — BFS surfaced a non-crossover related media under a different anime
-  - Detection runs at the end of `save_search_results` (new × existing); startup `backfill_merge_candidates` covers existing × existing
+  - Detection runs at the end of `save_search_results` (new × existing AND new × new — the latter catches single-scrape duplicates without waiting for a restart); startup `backfill_merge_candidates` covers existing × existing, and admin can re-trigger it any time via the manual `POST /admin/merge-candidates/backfill` endpoint
   - `seen_pairs` pre-fetch short-circuits flagged or admin-resolved pairs before any similarity computation
 
 - **`merge_candidate_service.py`** — admin operations on merge candidates
   - List pending: ranked per-pair by `(earliest aired_from ASC nulls last, rating_count DESC, anime_id ASC)` so recommended-keep side surfaces as A
     - Uses `MergeCandidateDAO.get_rating_counts_for_anime` for tiebreak
+  - Each list-pending item carries `pending_reclassifications: list[{media_uuid, title, old_relation_type, new_relation_type}]` — admin sees the per-media changes that would land before clicking merge (substance-gate demotions, alt-version labels, anchor flips)
   - Dismiss: status flip
-  - Merge: re-parents B's media onto A, deletes B via cascade, refreshes A's anime embedding, runs `detect_merge_candidates` against survivor, recomputes spoiler cache
+  - Merge: re-parents B's media onto A, deletes B via cascade, calls `anime_relation_service.reclassify_anime` over the consolidated set (rewrites umbrella + regenerates embedding only when drift), runs `detect_merge_candidates` against survivor, recomputes spoiler cache
     - Accepts optional `keep_uuid` to swap which side survives — DB invariant `anime_a_id < anime_b_id` unchanged, A/B is presentation only
     - Fail-loud on shared `Media.mal_id` between A and B — global-unique-violation needs human review
 
+- **`relation_classifier.py`** — pure-function two-pass classifier (DB-less)
+  - `classify_anime_relations(nodes, edges) -> dict[mal_id, str]` — picks anchor by substance gate + tier + age, builds main chain via sequel/prequel closure, classifies alt-chain via `alternative_version` edges, defaults rest to `side_story`; demotes weak Mains via substance gate as final layer
+  - Substance gate: TV/ONA needs `episodes>=8 AND duration_seconds>=900` (15min) — NULL episodes acceptable for currently-airing/long-running; Movie needs `duration_seconds>=1800` (30min); TVSpecial strict
+  - Anchor tier: TV(1) > ONA(2) > Movie(3) > other(4); within tier oldest aired_from wins
+  - `media_to_classifier_node` (ORM projection) + `build_classifier_nodes` (scraper-dict projection) co-located so future ClassifierNode field additions surface both
+  - `_build_adjacency(edges, valid_ids)` filters dangling endpoints defensively — sidecars persist unfiltered edges so merge time can resolve previously-dangling bridges
+
+- **`anime_relation_service.py`** — orchestrates `reclassify_anime(db, anime, *, dry_run=False)` over a loaded Anime
+  - Detects drift on any of 7 umbrella fields (mal_id, title, name_eng, name_jap, other_names, description, cover_image); rewrites + regenerates embedding when drift present
+  - `preview_reclassifications(anime_a, anime_b)` returns the per-media diff that would land if A absorbed B — read-only, powers the merge-candidate preview
+  - Called from `relation_backfiller` (per catalog row) and `merge_candidate_service.merge` (survivor reclassification)
+
 - **`rating_service.py`** — rating CRUD + note search; triggers spoiler-visibility recompute on every change
 - **`spoiler_service.py`** — frontier algorithm + precomputed visibility cache in `user_visible_media`
+  - Anchor types include `Main` AND `AlternativeVersion` — retellings extend the story so each alt-version gates the next (rating Eva TV reveals Rebuild Movie 1 but not Movies 2-4)
   - Recomputed per-anime on rating changes, per-user on registration, per-user after new scrapes via `save_service`
 
 - **`export_service.py`** — flat media-level export merging catalog + ratings + watchlist; respects user's `name_language` for localized title columns
@@ -254,6 +268,7 @@ Data access layer.
     - `ix_media_airing_now` — partial index on `media(anime_id) WHERE airing_status = 'Currently Airing'`
     - `ix_media_main_aired_from` — composite `(anime_id, relation_type, aired_from)` for the recent-main EXISTS
 - **`search_filters.py`** — shared filter/ordering helpers for media, anime pre-aggregation (WHERE), and anime post-aggregation (HAVING)
+  - **Title-search ranking**: `apply_vector_ordering` subtracts a two-tier bonus from `cosine_distance` so titles that literally match the query rank ahead of merely thematically-similar shows. Substring (`ilike`) bonus is flat; pg_trgm `similarity()` bonus is scaled linearly above a threshold so typos still surface the intended show. Description and rating-notes search skip both bonuses (semantic queries, not literal). pg_trgm extension enabled via migration `4b8f1e3c7d0a`
 - **`JobDAO`**:
   - Claim-skip-locked dispatch + crash recovery
   - `reap_orphans` — runs at startup, flips any `running` rows to `failed` so a mid-job restart doesn't leave them stuck
@@ -264,6 +279,7 @@ Data access layer.
 SQLAlchemy ORM models mapped to PostgreSQL tables.
 
 - **`media_search.py`** — pgvector embeddings for title and description
+- **`media_relation_edges.py`** — 1:1 sidecar to `media` holding the raw MAL relation list (`[[target_mal_id, normalized_rel], ...]` JSONB). Off the canonical row so `selectinload(Anime.media)` on detail/search hot paths doesn't drag the JSONB through every load. Read at merge / preview / backfill time via explicit `selectinload(Media.relation_edges)`. Edges persisted unfiltered (including targets outside the local catalog) so bridge edges activate when split franchises later get merged
 - **`anime_search.py`** — anime-level embeddings
 - **`rating_search.py`** — note embeddings for rating note search
 - **`user_settings.py`** — per-user preferences (1:1 with Users) with enums for theme, name language, search view, rating step, spoiler level
@@ -296,7 +312,9 @@ SQLAlchemy ORM models mapped to PostgreSQL tables.
   - Seed genres, admin user, and optional guest user (`restricted_user` role)
   - `backfill_user_settings` — ensures all users have a UserSettings row
   - `backfill_spoiler_visibility` — computes visible media for users with **zero** cache rows (new deployments, pre-feature users); does **not** mop up partial-cache drift on existing users
+  - `anime_title_backfiller.backfill_anime_title_suffixes` — strips season suffixes ("Season I", "第2期", "Part 2", " II"…) from `Anime.title`/`name_eng`/`name_jap` on rows scraped before the normalisation landed; regenerates the anime embedding for changed rows. Idempotent; subsequent restarts touch zero rows. `anime_service.create_anime_from_media` applies the same strip on new scrapes so the umbrella row reads like the franchise name, not the per-season identity
   - `embedding_backfiller.py` — detects and regenerates missing anime/media/rating embeddings (enables seamless embedding model swaps via Alembic migration + restart)
+  - `relation_backfiller.backfill_relations` — gated by `RELATION_BACKFILL_ON_STARTUP`. Re-runs the two-pass classifier over every Anime via `anime_relation_service.reclassify_anime`. Per-anime commit: lazily-fetched MAL relations (~1 req/s) checkpoint incrementally so a crash mid-run doesn't lose hours of pagination. `dry_run=True` powers the audit checkpoint (see `phsar/scripts/audit_relation_backfill.py`); supports `anime_ids` filter for the admin re-classify endpoint and tests
   - `merge_detection_service.backfill_merge_candidates` — one-shot existing × existing pair sweep so duplicates pre-dating the detector get flagged on first restart after upgrade
   - `save_service.save_search_results` triggers a full-user spoiler-cache recompute after new animes land — load-bearing for existing `spoiler_level=hide` users whose populated cache stays stale (startup backfill skips them since they have rows)
   - The sweep dispatcher's relations probe goes through `save_service.attach_search_result_to_anime` instead, which intentionally does *not* recompute per-batch; the dispatcher fires one coalesced `refresh_spoiler_cache_for_all_users` at sweep end
@@ -398,6 +416,7 @@ Vitest + @testing-library/svelte component tests.
 - **Role-based access**: three roles — `admin`, `user`, `restricted_user`
 - **Async throughout**: asyncpg driver, SQLAlchemy AsyncSession, async service/DAO methods
   - All ORM relationships use `lazy="raise"` to prevent implicit lazy loading — every relationship access must go through explicit `selectinload` in the DAO query
+  - **🎯 Never `asyncio.gather` coroutines that share one `AsyncSession`** — SQLAlchemy's AsyncSession can't multiplex concurrent operations on a single session, and `gather` corrupts the in-flight query state. Pure-CPU coroutines (e.g. `to_thread.run_sync` over an embedding encode) that don't touch the session are fine to gather; anything that touches the session must run sequentially. See the inline comment at `seasonal_sweep_dispatcher.py:48-51` for the canonical "don't" example and `compound-docs/2026-05-09-v0.14.0-content-pipeline.md` (LANDMINE entry) for the failure mode.
 - **Vector search**: `paraphrase-multilingual-MiniLM-L12-v2` model, pgvector storage
   - `SearchType` enum (`title`, `description`, `rating_notes`) selects the target
   - `ViewType` enum (`anime`, `media`) selects the search mode
@@ -411,8 +430,16 @@ Vitest + @testing-library/svelte component tests.
   - Components use semantic tokens (`bg-primary`, `text-primary`, `ring-ring`)
   - Centralized config in `lib/themes.ts`; FOUC prevention via inline localStorage script in `app.html`
   - Per-theme chart color palettes in `chartColors.ts` avoid hue clashes
+- **Two-pass relation classifier**: scrape-time + merge-time + backfill-time classification of media within an anime (see [compound-docs/2026-05-11-jikan-scraper-quirks.md](compound-docs/2026-05-11-jikan-scraper-quirks.md))
+  - Pass 1 (`jikan_scraper.search_title`) captures relation **edges** during BFS — no classification baked in. Sidecars persist edges unfiltered, including dangling targets
+  - Pass 2 (`relation_classifier.classify_anime_relations`) picks a canonical anchor by substance gate + tier (TV > ONA > Movie) + oldest aired_from, builds main chain via sequel/prequel closure, classifies alt-chain via `alternative_version` edges, defaults rest to `side_story`; demotes weak Mains via substance gate
+  - `RelationType.AlternativeVersion` enum value distinguishes retellings (Evangelion TV ↔ Rebuild Movies, Hokuto no Ken alts) from genuine side stories. Spoiler frontier treats alt-version as an anchor
+  - Same classifier runs at three sites: scrape (per BFS-result), merge survivor (consolidated A∪B), backfiller (per catalog row)
+  - Bridge edges across previously-different-anime boundaries: persisted unfiltered in sidecars; classifier's `_build_adjacency` filters dangling endpoints at adjacency-build time. Merge consolidation surfaces bridges that were dangling at scrape time (Dr. Stone split-merge case)
+  - Backfiller (`relation_backfiller`) lazy-fetches `/anime/{id}/relations` for media with empty sidecars; per-anime commit checkpoints incrementally so a 14-min cold start can't lose progress
+  - `anime_relation_service.reclassify_anime` is the orchestration helper; rewrites all 7 umbrella fields (mal_id, title, name_eng, name_jap, other_names, description, cover_image) on any drift, regenerates embedding only on title-affecting drift
 - **Spoiler protection**: three levels (`off`/`blur`/`hide`) via `SpoilerLevel` user setting
-  - Frontier algorithm: per anime, all media up to and including the next unwatched main-story entry are visible
+  - Frontier algorithm: per anime, all media up to and including the next unwatched **anchor** (`main` or `alternative_version`) entry are visible — retellings extend the story so each alt-version gates the next
   - Precomputed in `user_visible_media` table (updated per-anime on rating changes, per-user on registration, per-user after scrapes via `save_service`)
   - Backend `GET /ratings/spoiler-visibility` returns visible UUIDs; frontend stores as `Set` in `spoilerVisibility` store
   - `SpoilerGuard.svelte` wraps covers/descriptions with blur + click-to-reveal
@@ -464,8 +491,9 @@ Vitest + @testing-library/svelte component tests.
 - `BACKUP_RESTORE_TIMEOUT_SECONDS` — default 600; raise if DB grows large enough that pg_restore legitimately takes >10 min (a mid-restore kill leaves the DB half-dropped)
 - `JOBS_CRON_TOKEN` — shared bearer secret for every cron-authed endpoint (`/admin/backups/auto`, the three sweep schedulers); empty disables all four, they fail closed
 - `JOBS_PER_USER_LIMIT` — default 4; max queued+running user_scrape jobs per non-system user; 5th submission returns 409
-- `JOBS_DEDUPE_HOURS` — default 72; same scrape query within this window returns 409 unless prior job failed
+- `JOBS_DEDUPE_HOURS` — default 24; same scrape query within this window returns 409 unless prior job failed
 - `JOBS_SWEEP_MAX_PER_RUN` — default 200; bounds nightly `update_sweep` batch size
+- `RELATION_BACKFILL_ON_STARTUP` — default `True`; runs `relation_backfiller` at lifespan startup. First cold start fetches missing `MediaRelationEdges` sidecars from MAL at 1 req/s (~14min for an 800-media catalog); subsequent restarts skip already-populated rows and finish in seconds. Disable for tight maintenance windows on fresh deployments
 
 ### Frontend (runtime)
 

@@ -138,7 +138,10 @@ class AnimeDAO(MalIdDAO[Anime]):
                 Anime.id.asc(),
             )
             .options(
-                selectinload(Anime.media).selectinload(Media.freshness),
+                selectinload(Anime.media).options(
+                    selectinload(Media.freshness),
+                    selectinload(Media.relation_edges),
+                ),
                 selectinload(Anime.freshness),
             )
             .limit(limit)
@@ -218,6 +221,8 @@ class AnimeDAO(MalIdDAO[Anime]):
             if search_type == SearchType.TITLE:
                 stmt = apply_vector_ordering(
                     stmt, search_type, query_embedding,
+                    query=query,
+                    title_columns=[Anime.title, Anime.name_eng],
                     extra_columns={SearchType.TITLE: AnimeSearch.title_embedding},
                 )
             elif search_type == SearchType.DESCRIPTION:

@@ -3,9 +3,21 @@ from enum import Enum
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from app.models.users import RoleType
+
+
+class PendingReclassification(BaseModel):
+    """One media row whose relation_type would change if the admin
+    proceeds with the merge. Surfaced under each pending candidate so
+    the admin sees the consequence of the merge — substance-gate
+    demotions, alternative-version labels, anchor flips reflected as
+    main → side_story — before clicking the button."""
+    media_uuid: str
+    title: str
+    old_relation_type: str
+    new_relation_type: str
 
 
 class MergeCandidateAnimeSummary(BaseModel):
@@ -32,6 +44,7 @@ class MergeCandidateListItem(BaseModel):
     created_at: datetime
     anime_a: MergeCandidateAnimeSummary
     anime_b: MergeCandidateAnimeSummary
+    pending_reclassifications: list[PendingReclassification] = Field(default_factory=list)
 
 
 class MergeRequest(BaseModel):
@@ -45,6 +58,13 @@ class MergeResult(BaseModel):
     """Returned after a successful merge so the frontend can navigate to
     the surviving anime detail page."""
     surviving_anime_uuid: str
+
+
+class MergeBackfillResult(BaseModel):
+    """Returned by the manual re-detect trigger. `inserted` is the number
+    of new pending pairs created by this run; the backfiller is idempotent
+    so repeated clicks return 0 once everything is flagged."""
+    inserted: int
 
 
 class ScheduledSweepResponse(BaseModel):

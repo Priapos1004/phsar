@@ -184,3 +184,33 @@ def test_empty_input():
     """No anime at all."""
     visible = compute_visible_media({}, rated_media_ids=set())
     assert visible == set()
+
+
+def test_alternative_version_acts_as_anchor():
+    """Evangelion shape: TV is the main anchor; Rebuild Movies are
+    alternative_version retellings that extend the story. Each Rebuild
+    Movie is its own anchor — rating the TV reveals Movie 1 but not
+    Movie 2+. Side-stories between anchors stay visible up to the
+    frontier."""
+    tv = _entry(1, season_year=1995, season_name="Fall", relation_type="main")
+    death_rebirth = _entry(2, season_year=1997, season_name="Spring", relation_type="side_story")
+    eoe = _entry(3, season_year=1997, season_name="Summer", relation_type="side_story")
+    movie1 = _entry(4, season_year=2007, season_name="Fall", relation_type="alternative_version")
+    movie2 = _entry(5, season_year=2009, season_name="Summer", relation_type="alternative_version")
+    movie3 = _entry(6, season_year=2012, season_name="Fall", relation_type="alternative_version")
+    movie4 = _entry(7, season_year=2021, season_name="Winter", relation_type="alternative_version")
+
+    group = _group(tv, death_rebirth, eoe, movie1, movie2, movie3, movie4)
+
+    # Nothing rated → only TV visible.
+    assert compute_visible_media(group, rated_media_ids=set()) == {1}
+
+    # TV rated → frontier advances to Movie 1; side stories before it
+    # are visible too. Movie 2/3/4 stay blurred.
+    assert compute_visible_media(group, rated_media_ids={1}) == {1, 2, 3, 4}
+
+    # TV + Movie 1 rated → frontier advances to Movie 2.
+    assert compute_visible_media(group, rated_media_ids={1, 4}) == {1, 2, 3, 4, 5}
+
+    # All anchors rated → everything visible.
+    assert compute_visible_media(group, rated_media_ids={1, 4, 5, 6, 7}) == {1, 2, 3, 4, 5, 6, 7}

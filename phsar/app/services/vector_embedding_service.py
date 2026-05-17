@@ -2,6 +2,7 @@ import logging
 
 from anyio import to_thread
 from sentence_transformers import SentenceTransformer
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.anime_search import AnimeSearch
@@ -20,12 +21,23 @@ async def generate_embedding(text: str) -> list[float]:
     return await to_thread.run_sync(lambda: model.encode(text).tolist(), abandon_on_cancel=True)
 
 
-async def _create_search_embedding(db: AsyncSession, model_class, fk_kwargs: dict, title_texts: list[str], description_text: str):
-    """Shared helper for creating title + description embeddings and persisting them."""
+async def _compute_search_embeddings(
+    title_texts: list[str | None], description_text: str,
+) -> tuple[list[float], list[float]]:
+    """Encode title + description embeddings without touching the DB.
+    Returned in title-then-description order. Two sequential awaits;
+    `asyncio.gather` is intentionally avoided (see CLAUDE.md "Async
+    throughout" — the trap surface isn't worth the modest CPU win on
+    a 2-vCPU VM)."""
     combined_text = " ".join([t for t in title_texts if t])
     title_embedding = await generate_embedding(combined_text)
     description_embedding = await generate_embedding(f"{combined_text} {description_text}")
+    return title_embedding, description_embedding
 
+
+async def _create_search_embedding(db: AsyncSession, model_class, fk_kwargs: dict, title_texts: list[str], description_text: str):
+    """Shared helper for creating title + description embeddings and persisting them."""
+    title_embedding, description_embedding = await _compute_search_embeddings(title_texts, description_text)
     obj = model_class(**fk_kwargs, title_embedding=title_embedding, description_embedding=description_embedding)
     db.add(obj)
     await db.flush()
@@ -42,4 +54,30 @@ async def create_anime_embedding(db: AsyncSession, anime_id: int, title_texts: l
 async def create_rating_embedding(db: AsyncSession, rating_id: int, note: str):
     embedding = await generate_embedding(note)
     db.add(RatingSearch(rating_id=rating_id, note_embedding=embedding))
+    await db.flush()
+
+
+async def regenerate_anime_embedding(
+    db: AsyncSession, anime_id: int, title_texts: list[str | None], description_text: str,
+) -> None:
+    """Replace the existing AnimeSearch row with one built from new
+    title / description text. Used by callers that rewrite an anime
+    row's title / name_eng / name_jap (suffix stripper, relation
+    backfiller anchor rewrite, merge survivor refresh).
+
+    Encode FIRST, then DELETE + INSERT, so an encode failure leaves
+    the prior AnimeSearch row intact. Otherwise a model-loading
+    crash mid-call would land a dangling DELETE in the session — and
+    if a caller catches the exception without rolling back (e.g. the
+    per-anime try/except in relation_backfiller), a later commit
+    would persist the deletion with no replacement.
+    """
+    title_embedding, description_embedding = await _compute_search_embeddings(title_texts, description_text)
+
+    await db.execute(delete(AnimeSearch).where(AnimeSearch.anime_id == anime_id))
+    db.add(AnimeSearch(
+        anime_id=anime_id,
+        title_embedding=title_embedding,
+        description_embedding=description_embedding,
+    ))
     await db.flush()

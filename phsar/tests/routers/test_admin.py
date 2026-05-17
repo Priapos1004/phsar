@@ -332,6 +332,68 @@ async def test_merge_unknown_uuid_returns_404(client, admin_auth_headers):
     assert resp.status_code == 404
 
 
+@pytest.fixture
+async def unflagged_pair(db_session):
+    """Two anime sharing a studio with near-identical titles, but no
+    pre-existing merge_candidate row — the backfill endpoint's target."""
+    studio = Studio(name="Backfill Endpoint Studio")
+    db_session.add(studio)
+    await db_session.flush()
+
+    a = Anime(mal_id=80201, title="Backfill Endpoint Show")
+    b = Anime(mal_id=80202, title="Backfill Endpoint Show Season 2")
+    db_session.add_all([a, b])
+    await db_session.flush()
+
+    media_a = Media(**media_kwargs(a.id, 802011, title="Backfill Endpoint Show"))
+    media_b = Media(**media_kwargs(b.id, 802021, title="Backfill Endpoint Show Season 2"))
+    db_session.add_all([media_a, media_b])
+    await db_session.flush()
+
+    db_session.add_all([
+        MediaStudio(media_id=media_a.id, studio_id=studio.id),
+        MediaStudio(media_id=media_b.id, studio_id=studio.id),
+    ])
+    await db_session.flush()
+    return {"a_id": a.id, "b_id": b.id}
+
+
+@pytest.mark.asyncio
+async def test_rerun_merge_detection_flags_unflagged_pair(
+    client, admin_auth_headers, unflagged_pair, db_session,
+):
+    resp = await client.post(f"{MERGE_URL}/backfill", headers=admin_auth_headers)
+    assert resp.status_code == 200
+    assert resp.json()["inserted"] >= 1
+
+    a_id, b_id = sorted((unflagged_pair["a_id"], unflagged_pair["b_id"]))
+    rows = (await db_session.execute(
+        select(MergeCandidate).where(
+            MergeCandidate.anime_a_id == a_id,
+            MergeCandidate.anime_b_id == b_id,
+        )
+    )).scalars().all()
+    assert len(rows) == 1
+    assert rows[0].status == MergeCandidateStatus.pending
+
+
+@pytest.mark.asyncio
+async def test_rerun_merge_detection_idempotent(
+    client, admin_auth_headers, unflagged_pair,
+):
+    first = await client.post(f"{MERGE_URL}/backfill", headers=admin_auth_headers)
+    second = await client.post(f"{MERGE_URL}/backfill", headers=admin_auth_headers)
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert second.json()["inserted"] == 0
+
+
+@pytest.mark.asyncio
+async def test_rerun_merge_detection_requires_admin(client, user_auth_headers):
+    resp = await client.post(f"{MERGE_URL}/backfill", headers=user_auth_headers)
+    assert resp.status_code == 403
+
+
 # ---------------------------------------------------------------------------
 # Async backups — both endpoints now enqueue a `backup` job and return 202
 # instead of blocking on pg_dump in the request thread. These tests pin the

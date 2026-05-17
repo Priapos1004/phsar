@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_db, require_roles
 from app.models.users import RoleType
 from app.schemas import admin_schema
-from app.services import merge_candidate_service
+from app.services import merge_candidate_service, merge_detection_service
 
 require_admin = require_roles(RoleType.Admin)
 
@@ -30,6 +30,19 @@ router = APIRouter(dependencies=[Depends(require_admin)])
 )
 async def list_merge_candidates(db: AsyncSession = Depends(get_db)):
     return await merge_candidate_service.list_pending(db)
+
+
+@router.post(
+    "/merge-candidates/backfill",
+    response_model=admin_schema.MergeBackfillResult,
+)
+async def rerun_merge_detection(db: AsyncSession = Depends(get_db)):
+    """Re-run existing × existing detection on demand. Restore doesn't
+    bounce the container so the lifespan-startup backfill never sees the
+    restored catalog; this endpoint is admin's escape hatch. Idempotent:
+    pairs already flagged (any status) are skipped via seen_pairs."""
+    inserted = await merge_detection_service.backfill_merge_candidates(db)
+    return admin_schema.MergeBackfillResult(inserted=inserted)
 
 
 @router.post(

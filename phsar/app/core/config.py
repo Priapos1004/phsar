@@ -51,10 +51,24 @@ class Settings(BaseSettings):
     JOBS_SWEEP_MAX_PER_RUN: int = 200  # bounds nightly update_sweep batch size
     # Dedupe window for user_scrape: re-running the same query within this
     # window would just produce empty BFS results (everything is in
-    # excluded_mal_ids already) and fail with AnimeNotFoundError. After the
-    # window, the seasonal update may have landed new media so a re-scrape
-    # is meaningful again.
-    JOBS_DEDUPE_HOURS: int = 72
+    # excluded_mal_ids already) and fail with AnimeNotFoundError. Shortened
+    # to 24h in v0.14.1 — long enough to absorb double-clicks and same-day
+    # re-tries, short enough that a user noticing MAL has new data the next
+    # morning can re-scrape without waiting 3 days. Failed jobs still don't
+    # count toward dedupe, so a transient MAL outage never blocks a retry.
+    JOBS_DEDUPE_HOURS: int = 24
+
+    # Relation-classifier backfill at lifespan startup. Re-runs the
+    # two-pass classifier over every Anime, rewriting Media.relation_type
+    # for reclassified media and — on any drift of the 7 umbrella fields
+    # (mal_id, title, name_eng, name_jap, other_names, description,
+    # cover_image) — rewriting the anime row from the new canonical
+    # anchor + regenerating the embedding. First cold start fetches
+    # missing sidecars from MAL at 1 req/s (~14min for 800-media catalog);
+    # per-anime commit means subsequent restarts skip already-populated
+    # rows and run in seconds. Default on; disable for tight maintenance
+    # windows on a fresh deployment.
+    RELATION_BACKFILL_ON_STARTUP: bool = True
 
     model_config = ConfigDict(env_file=".env")  # Tell Pydantic to load from .env
 

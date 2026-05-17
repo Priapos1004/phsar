@@ -74,6 +74,7 @@ jobs:
         async def setup():
             async with engine.begin() as conn:
                 await conn.execute(text('CREATE EXTENSION IF NOT EXISTS vector'))
+                await conn.execute(text('CREATE EXTENSION IF NOT EXISTS pg_trgm'))
                 await conn.run_sync(Base.metadata.create_all)
             async with async_session_maker() as session:
                 await seed_genres(session)

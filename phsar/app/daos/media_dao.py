@@ -69,7 +69,11 @@ class MediaDAO(MalIdDAO[Media]):
         stmt = stmt.options(*self._media_eager_options())
 
         if query != "":
-            stmt = apply_vector_ordering(stmt, search_type, query_embedding)
+            stmt = apply_vector_ordering(
+                stmt, search_type, query_embedding,
+                query=query,
+                title_columns=[Media.title, Media.name_eng],
+            )
         else:
             # log10 chosen over ln to dampen the scored_by weight — prevents very popular
             # but mediocre-scored media from outranking higher-scored niche media

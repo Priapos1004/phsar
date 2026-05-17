@@ -32,6 +32,7 @@ class RelationType(str, enum.Enum):
     Summary = "summary"
     Crossover = "crossover"
     SideStory = "side_story"
+    AlternativeVersion = "alternative_version"
 
 class SeasonType(str, enum.Enum):
     Winter = "Winter"
@@ -133,6 +134,14 @@ class Media(BaseModel):
     # One-to-one freshness sidecar. See AnimeFreshness for rationale.
     freshness = relationship(
         "MediaFreshness",
+        back_populates="media",
+        cascade="all, delete-orphan",
+        uselist=False,
+        lazy="raise",
+    )
+    # One-to-one MAL relation-edges sidecar. See MediaRelationEdges for rationale.
+    relation_edges = relationship(
+        "MediaRelationEdges",
         back_populates="media",
         cascade="all, delete-orphan",
         uselist=False,

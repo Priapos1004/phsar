@@ -40,6 +40,7 @@ function makeCandidate(): MergeCandidateListItem {
 			earliest_aired_from: '2018-10-01T00:00:00Z',
 			rating_count: 0,
 		},
+		pending_reclassifications: [],
 	};
 }
 
