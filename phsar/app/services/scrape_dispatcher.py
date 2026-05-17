@@ -18,6 +18,7 @@ helpers and is purely a discovery pass that hands off to user_scrape.
 import logging
 import math
 from datetime import datetime, timezone
+from typing import NamedTuple
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,6 +38,7 @@ from app.models.media import Media, RelationType
 from app.models.media_freshness import MediaFreshness
 from app.models.media_relation_edges import MediaRelationEdges
 from app.schemas.search_schema import AttachToExistingAction
+from app.services.anime_relation_service import reclassify_anime
 from app.services.jikan_scraper import (
     AIRING_STATUS_CURRENTLY_AIRING,
     JikanScraper,
@@ -49,6 +51,7 @@ from app.services.save_service import attach_search_result_to_anime, save_search
 from app.services.search_service import handle_search_mal_api_results
 from app.services.spoiler_service import refresh_spoiler_cache_for_all_users
 from app.services.unwanted_media_service import create_unwanted_media
+from app.services.vector_embedding_service import regenerate_media_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +59,14 @@ logger = logging.getLogger(__name__)
 # the value keeps the integer bounded and avoids accumulating noise across
 # years of sweeps.
 _STABLE_COUNT_CAP = 99
+
+
+class RefreshResult(NamedTuple):
+    volatile_changed: bool  # gates stability-counter reset
+    raw_payloads: dict[int, dict]
+    is_currently_airing: bool
+    metadata_changed_count: int  # media rows with non-volatile field drift
+    umbrella_drifted: bool  # whether reclassify_anime rewrote any umbrella field
 
 # Stability threshold for the (score, scored_by) pair, expressed as the
 # absolute change in the weighted score `score * log10(scored_by + 1)`.
@@ -201,6 +212,8 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
 
     refreshed = 0
     changed_anime = 0
+    metadata_changed_media = 0
+    umbrella_reclassed = 0
     probe_succeeded = 0
     probe_failed = 0
     sweep_added_media = False
@@ -210,12 +223,11 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
             if step1 is None:
                 await progress.update(items_done=refreshed)
                 continue
-            anime_changed, raw_payloads, is_currently_airing = step1
 
-            if _qualifies_for_relations_probe(anime, is_currently_airing):
+            if _qualifies_for_relations_probe(anime, step1.is_currently_airing):
                 await progress.update(stage="Probing relations")
                 probe_added = await _try_step2_probe(
-                    session, anime, raw_payloads, exclusions, scraper,
+                    session, anime, step1.raw_payloads, exclusions, scraper,
                 )
                 if probe_added is None:
                     probe_failed += 1
@@ -225,11 +237,16 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
                     sweep_added_media = True
                 probe_succeeded += 1
 
-            _advance_anime_freshness(anime, anime_changed, is_currently_airing)
+            _advance_anime_freshness(
+                anime, step1.volatile_changed, step1.is_currently_airing,
+            )
             await session.commit()
             refreshed += 1
-            if anime_changed:
+            if step1.volatile_changed:
                 changed_anime += 1
+            metadata_changed_media += step1.metadata_changed_count
+            if step1.umbrella_drifted:
+                umbrella_reclassed += 1
             await progress.update(items_done=refreshed)
 
     cache_recompute_failed = False
@@ -249,6 +266,8 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     return {
         "anime_refreshed": refreshed,
         "anime_changed": changed_anime,
+        "metadata_changed_media": metadata_changed_media,
+        "umbrella_reclassed": umbrella_reclassed,
         "probe_succeeded": probe_succeeded,
         "probe_failed": probe_failed,
         "cache_recompute_failed": cache_recompute_failed,
@@ -257,7 +276,7 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
 
 async def _try_step1_refresh(
     session: AsyncSession, anime: Anime, scraper: JikanScraper,
-) -> tuple[bool, dict[int, dict], bool] | None:
+) -> RefreshResult | None:
     """Step 1 wrapper: refresh + commit, or rollback + None on failure.
     Always commits durably so a worker crash later in the sweep can't
     take the field-diff work down with it, and a single bad MAL response
@@ -319,12 +338,22 @@ async def _try_step2_probe(
 
 async def _refresh_one_anime(
     session: AsyncSession, anime: Anime, scraper: JikanScraper,
-) -> tuple[bool, dict[int, dict], bool]:
+) -> RefreshResult:
     """AnimeFreshness is intentionally NOT touched here — the dispatcher
     advances it after a successful probe so a failed probe can leave
-    last_checked_at unchanged and force re-selection next sweep."""
+    last_checked_at unchanged and force re-selection next sweep.
+
+    Two diff buckets:
+    - volatile (score/scored_by/episodes/airing_status/aired_to) gates the
+      per-anime stability counter (`volatile_changed`)
+    - metadata (description/title/name_*/cover_image/age_rating/...) does
+      NOT reset stability — a late-arriving English title shouldn't kick
+      a settled tier-4 anime back to weekly polling — but does fire
+      embedding regen + umbrella reclassification so search stays current.
+    """
     now = datetime.now(timezone.utc)
-    anime_changed = False
+    volatile_changed = False
+    metadata_changed_count = 0
     raw_payloads: dict[int, dict] = {}
 
     for media in anime.media:
@@ -332,7 +361,12 @@ async def _refresh_one_anime(
         raw_payloads[media.mal_id] = raw
         payload = scraper.extract_information(raw)
         if _apply_media_diff(media, payload):
-            anime_changed = True
+            volatile_changed = True
+
+        metadata_drift = await _apply_metadata_diff(session, media, payload)
+        if metadata_drift:
+            metadata_changed_count += 1
+
         if media.freshness is None:
             # Defensive: save_service from 7b creates the sidecar on
             # insert and the migration backfilled existing rows, but a
@@ -346,7 +380,7 @@ async def _refresh_one_anime(
         # under the dangling-edge filter, and so MAL adding a new
         # sequel/alt-version flows into the catalog over the nightly
         # sweep instead of needing a manual re-scrape. Not counted as
-        # anime_changed — edge churn is structural metadata, not the
+        # volatile_changed — edge churn is structural metadata, not the
         # volatile canonical fields the stable counter tracks.
         fresh_edges: list[list[int | str]] = [
             [t, r] for t, r in parse_relation_edges(raw.get("relations") or [])
@@ -368,10 +402,23 @@ async def _refresh_one_anime(
             media.relation_edges.edges = fresh_edges
             media.relation_edges.last_fetched_at = now
 
+    # Umbrella reclassification after per-media diffs: if any anchor-
+    # touching field shifted, rewrites the 7 umbrella fields + regenerates
+    # AnimeSearch on its own. Cheap when nothing drifted — drift detection
+    # is a few in-memory comparisons. Called inside step 1's savepoint so
+    # an embedding-regen crash rolls back the per-media writes too.
+    umbrella_diff = await reclassify_anime(session, anime)
+
     is_currently_airing = any(
         m.airing_status == AIRING_STATUS_CURRENTLY_AIRING for m in anime.media
     )
-    return anime_changed, raw_payloads, is_currently_airing
+    return RefreshResult(
+        volatile_changed=volatile_changed,
+        raw_payloads=raw_payloads,
+        is_currently_airing=is_currently_airing,
+        metadata_changed_count=metadata_changed_count,
+        umbrella_drifted=bool(umbrella_diff and umbrella_diff["umbrella_drifted"]),
+    )
 
 
 def _advance_anime_freshness(
@@ -478,6 +525,83 @@ def _weighted_score(score: float | None, scored_by: int | None) -> float | None:
     if score is None or not scored_by:
         return None
     return score * math.log10(scored_by + 1)
+
+
+# Fields whose change regenerates the MediaSearch embedding pair.
+# `_compute_search_embeddings` mixes title into the description embedding,
+# so a title-side change invalidates BOTH embeddings — same reason the
+# anime-side reclassifier collapses these into a single regen trigger.
+_EMBEDDING_TEXT_FIELDS = ("title", "name_eng", "name_jap", "other_names", "description")
+
+# Fields refreshed but not part of any embedding — pure DB updates.
+_METADATA_NONTEXT_FIELDS = ("cover_image", "age_rating", "original_source")
+
+
+async def _apply_metadata_diff(
+    session: AsyncSession, media: Media, payload: dict,
+) -> bool:
+    """Refresh non-volatile fields (description, titles, cover, age rating,
+    source) from MAL. Regenerates the media's MediaSearch embedding pair
+    when any text-bearing field changed. Returns True when something
+    landed so the dispatcher can count it.
+
+    Stability counter is intentionally NOT touched — a late-arriving
+    English title or a polished synopsis should refresh the row without
+    kicking a settled anime back to weekly polling. See `_apply_media_diff`
+    for the volatile bucket that *does* gate stability.
+
+    Genre / studio drift is handled separately (next commit) so the M2M
+    plumbing stays out of this simple-column path.
+    """
+    text_changed = False
+    other_changed = False
+
+    for field in _EMBEDDING_TEXT_FIELDS:
+        new_val = payload.get(field)
+        if field == "other_names":
+            # MAL doesn't return title_synonyms in a stable order, so
+            # compare as a set — without this, a pure reorder would fire
+            # the 50-100ms embedding regen on noise. Storage keeps the
+            # latest order only when the set actually changed.
+            current = list(getattr(media, field) or [])
+            new_val = list(new_val or [])
+            if set(current) != set(new_val):
+                setattr(media, field, new_val)
+                text_changed = True
+            continue
+        # Don't clobber a populated value with None — mirrors the volatile
+        # bucket's "MAL response omitted the field" guard.
+        if new_val is None:
+            continue
+        if getattr(media, field) != new_val:
+            setattr(media, field, new_val)
+            text_changed = True
+
+    for field in _METADATA_NONTEXT_FIELDS:
+        new_val = payload.get(field)
+        if new_val is None:
+            continue
+        if getattr(media, field) != new_val:
+            setattr(media, field, new_val)
+            other_changed = True
+
+    if text_changed:
+        # Same DELETE-then-INSERT discipline as anime-side regen: a new
+        # MediaSearch row replaces the old, encode runs before the DELETE
+        # so an encode failure leaves the prior embedding intact.
+        await regenerate_media_embedding(
+            session,
+            media.id,
+            title_texts=[
+                media.title,
+                media.name_eng,
+                media.name_jap,
+                *(media.other_names or []),
+            ],
+            description_text=media.description or "",
+        )
+
+    return text_changed or other_changed
 
 
 def _apply_media_diff(media: Media, payload: dict) -> bool:

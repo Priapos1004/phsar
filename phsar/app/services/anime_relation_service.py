@@ -103,7 +103,17 @@ async def reclassify_anime(
         val = getattr(anime, field)
         return list(val or []) if field == "other_names" else val
 
-    drifted_fields = {f for f, v in new_umbrella.items() if _current(f) != v}
+    def _drifted(field: str, new_val: object) -> bool:
+        current = _current(field)
+        # MAL's title_synonyms list isn't returned in stable order, so
+        # comparing as ordered lists would flag pure reorders as drift
+        # — and the per-anchor change would then cascade into an
+        # AnimeSearch embedding regen on noise.
+        if field == "other_names":
+            return set(current) != set(new_val)
+        return current != new_val
+
+    drifted_fields = {f for f, v in new_umbrella.items() if _drifted(f, v)}
     umbrella_drifted = bool(drifted_fields)
     embedding_drifted = bool(drifted_fields & set(_EMBEDDING_FIELDS))
     anchor_changed = "mal_id" in drifted_fields
