@@ -334,9 +334,21 @@ async def _refresh_one_anime(
             [t, r] for t, r in parse_relation_edges(raw.get("relations") or [])
         ]
         if media.relation_edges is None:
-            media.relation_edges = MediaRelationEdges(edges=fresh_edges)
-        elif media.relation_edges.edges != fresh_edges:
+            media.relation_edges = MediaRelationEdges(
+                edges=fresh_edges, last_fetched_at=now,
+            )
+        elif (
+            media.relation_edges.edges != fresh_edges
+            or media.relation_edges.last_fetched_at is None
+        ):
+            # Stamp + write only when something actually changed, or
+            # when the timestamp is missing (defensive — backfiller +
+            # migration should have stamped everything, but a sidecar
+            # created without the stamp shouldn't keep escaping the
+            # gate). Steady-state empty-relations rows whose edges
+            # echo back unchanged skip the UPDATE entirely.
             media.relation_edges.edges = fresh_edges
+            media.relation_edges.last_fetched_at = now
 
     is_currently_airing = any(
         m.airing_status == AIRING_STATUS_CURRENTLY_AIRING for m in anime.media

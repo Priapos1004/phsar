@@ -22,6 +22,7 @@ on writes.
 """
 
 import logging
+from datetime import datetime, timezone
 from typing import TypedDict
 
 from sqlalchemy import select
@@ -53,18 +54,26 @@ class BackfillSummary(TypedDict):
 async def _ensure_media_edges(
     db: AsyncSession, scraper: JikanScraper, media: Media,
 ) -> bool:
-    """Populate `media.relation_edges.edges` lazily from MAL if empty.
-    Returns True if a MAL fetch happened, False if the sidecar was
-    already populated. Caller commits."""
+    """Populate `media.relation_edges.edges` lazily from MAL if the
+    sidecar has never been fetched. Returns True if a MAL fetch
+    happened, False if the sidecar was already synced (including the
+    legitimate empty-relations case — standalone anime with no
+    sequels/sides). Caller commits.
+
+    Gates on `last_fetched_at is None` rather than `sidecar.edges`
+    truthiness — the latter falsy-matched empty lists, so zero-
+    relations anime re-fetched on every restart forever.
+    """
     sidecar = media.relation_edges
     if sidecar is None:
         sidecar = MediaRelationEdges(edges=[])
         media.relation_edges = sidecar
-    if sidecar.edges:
+    if sidecar.last_fetched_at is not None:
         return False
     raw = await scraper.fetch_relations(media.mal_id)
     fetched = [[target, rel] for target, rel in parse_relation_edges(raw)]
     sidecar.edges = fetched
+    sidecar.last_fetched_at = datetime.now(timezone.utc)
     logger.debug(
         "Backfiller fetched %d edges for media mal_id=%s", len(fetched), media.mal_id,
     )

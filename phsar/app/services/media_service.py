@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -88,8 +88,18 @@ async def persist_media_with_links(
     # matches the JSONB round-trip shape (asyncpg returns arrays as
     # lists). Without this, callers reading from the session identity
     # map see tuples while a fresh SELECT sees lists.
+    #
+    # `last_fetched_at` stamped only when the caller passed BFS-captured
+    # edges (relation_edges is not None) — those came from MAL during
+    # the scrape, so they count as a confirmed sync even when the list
+    # is empty. If a future caller omits relation_edges entirely, the
+    # sidecar stays None-stamped so the lifespan backfiller picks it up.
+    last_fetched_at = (
+        datetime.now(timezone.utc) if relation_edges is not None else None
+    )
     media_obj.relation_edges = MediaRelationEdges(
         edges=[list(edge) for edge in (relation_edges or [])],
+        last_fetched_at=last_fetched_at,
     )
     await link_genres_to_media(db, media_id=media_obj.id, genres=media_in.genres)
     await link_studios_to_media(db, media_id=media_obj.id, studios=media_in.studio)
