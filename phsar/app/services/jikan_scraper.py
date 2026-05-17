@@ -223,6 +223,32 @@ class JikanScraper:
         except Exception:
             return None, None
 
+    # MAL synopses commonly end with one or more credit tags
+    # ("[Written by MAL Rewrite]", "[Source: AniDB]", "[Source: Anime News
+    # Network]", sometimes stacked). They aren't part of the plot, hurt
+    # description-embedding quality, and read as noise to humans. Stripped
+    # at scrape AND refresh time so existing rows clean up on nightly sweep
+    # once the sweep diffs description (see metadata bucket in
+    # scrape_dispatcher).
+    _SYNOPSIS_CREDIT_TAG_RE = re.compile(
+        r"\s*\[(?:Source|Written by)[^\]]*\]\s*$",
+        re.IGNORECASE,
+    )
+
+    @staticmethod
+    def _clean_synopsis(synopsis: str | None) -> str | None:
+        if not synopsis:
+            return synopsis
+        cleaned = synopsis
+        # Loop to peel stacked tags ("...\n\n[Source: A]\n\n[Written by MAL Rewrite]").
+        while True:
+            stripped = JikanScraper._SYNOPSIS_CREDIT_TAG_RE.sub("", cleaned)
+            if stripped == cleaned:
+                break
+            cleaned = stripped
+        cleaned = cleaned.strip()
+        return cleaned or None
+
     @staticmethod
     def _parse_duration_to_seconds(duration: str | None) -> int | None:
         if not duration or "unknown" in duration.lower():
@@ -260,7 +286,7 @@ class JikanScraper:
             "genres": genres,
             "studio": [studio["name"] for studio in anime.get("studios", [])],
             "age_rating": anime.get("rating"),
-            "description": anime.get("synopsis"),
+            "description": JikanScraper._clean_synopsis(anime.get("synopsis")),
             "original_source": anime.get("source"),
             "cover_image": anime.get("images", {}).get("jpg", {}).get("large_image_url"),
             "score": anime.get("score"),

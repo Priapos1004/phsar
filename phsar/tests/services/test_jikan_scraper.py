@@ -593,6 +593,35 @@ def test_parse_duration_to_seconds_exact(duration_str, expected_seconds):
     assert result == expected_seconds, f"For '{duration_str}', expected {expected_seconds} but got {result}"
 
 
+SYNOPSIS_CLEAN_PAIRS = [
+    # No tags — unchanged.
+    ("Two pilots fight in giant robots.", "Two pilots fight in giant robots."),
+    # Single trailing credit tag.
+    ("Plot.\n\n[Written by MAL Rewrite]", "Plot."),
+    ("Plot.\n[Source: AniDB]", "Plot."),
+    ("Plot. [Source: Anime News Network]", "Plot."),
+    # Stacked trailing tags.
+    ("Plot.\n\n[Source: AniDB]\n\n[Written by MAL Rewrite]", "Plot."),
+    # Case-insensitive.
+    ("Plot. [SOURCE: ANIDB]", "Plot."),
+    # Mid-text tag stays — only trailing tags are credit tags.
+    ("Plot [as cited in Source: A] continues.", "Plot [as cited in Source: A] continues."),
+    # Non-credit bracketed content at the end is kept (avoid being too greedy).
+    ("Plot ends here. [TV spoiler warning]", "Plot ends here. [TV spoiler warning]"),
+    # Empty / None passthrough.
+    (None, None),
+    ("", ""),
+    # Only-credit content collapses to None so the column stays clean.
+    ("[Written by MAL Rewrite]", None),
+    ("   [Source: AniDB]   ", None),
+]
+
+
+@pytest.mark.parametrize("raw, expected", SYNOPSIS_CLEAN_PAIRS)
+def test_clean_synopsis(raw, expected):
+    assert JikanScraper._clean_synopsis(raw) == expected
+
+
 @pytest.mark.asyncio
 async def test_rate_limiter_spaces_consecutive_requests(monkeypatch):
     """Two back-to-back calls must be spaced at least _MIN_REQUEST_INTERVAL_S
