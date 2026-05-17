@@ -19,7 +19,7 @@ import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
-from app.core.db import async_session_maker, engine
+from app.core.db import async_session_maker
 from app.daos.anime_dao import AnimeDAO
 from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
@@ -43,16 +43,6 @@ from app.services.scrape_dispatcher import (
     update_sweep_dispatcher,
 )
 from tests._helpers import media_kwargs
-
-
-@pytest.fixture(autouse=True)
-async def _reset_engine_pool():
-    """Each pytest-asyncio test gets a fresh event loop. Pooled
-    connections are bound to whatever loop opened them — disposing here
-    means the next acquire() rebinds to the current loop. Mirrors the
-    pattern in test_job_worker.py."""
-    await engine.dispose()
-    yield
 
 
 class _FakeScraper:

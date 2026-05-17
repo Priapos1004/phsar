@@ -5,12 +5,14 @@ Router-specific fixtures (auth headers, client, etc.) stay in
 tests/routers/conftest.py.
 """
 
+import asyncio
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.core import maintenance
-from app.core.db import DATABASE_URL
+from app.core.db import DATABASE_URL, engine as global_engine
 
 
 @pytest.fixture(autouse=True)
@@ -25,11 +27,38 @@ def reset_maintenance_state():
     maintenance.set_scheduled_at(None)
 
 
+async def _drain_async_close() -> None:
+    """asyncpg schedules `_call_connection_lost` via `call_soon` when
+    `connection.close()` runs. The callback executes on the next loop
+    iteration, but pytest-asyncio gives each test its own event loop
+    and closes it as soon as the test coroutine returns — if dispose's
+    deferred close-chain hasn't unwound by then, the transport's
+    `__del__` fires `ResourceWarning: unclosed transport` and the trace
+    "Event loop is closed" appears under teardown. A single `sleep(0)`
+    yields to the loop long enough for the chain to complete."""
+    await asyncio.sleep(0)
+
+
+@pytest.fixture(autouse=True)
+async def _reset_global_engine_pool():
+    """Each pytest-asyncio test gets a fresh event loop; asyncpg refuses
+    pooled connections bound to a different loop. Dispose before + after
+    so the next test acquires fresh connections AND this test's
+    connections close cleanly (see `_drain_async_close`). Autouse across
+    the suite — dispose is cheap on an empty pool, so tests that don't
+    touch the global engine pay no real cost."""
+    await global_engine.dispose()
+    yield
+    await global_engine.dispose()
+    await _drain_async_close()
+
+
 @pytest.fixture
 async def db_engine():
     engine = create_async_engine(DATABASE_URL, future=True)
     yield engine
     await engine.dispose()
+    await _drain_async_close()
 
 
 @pytest.fixture

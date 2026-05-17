@@ -20,7 +20,7 @@ from pydantic import ValidationError
 from sqlalchemy import delete
 
 from app.core.config import settings
-from app.core.db import async_session_maker, engine
+from app.core.db import async_session_maker
 from app.daos.job_dao import JobDAO
 from app.exceptions import BackupDiskSpaceError
 from app.models.job import Job, JobKind, JobStatus
@@ -69,15 +69,6 @@ def _patch_progress(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.services.backup_dispatcher.ProgressReporter", _NoopProgressReporter,
     )
-
-
-@pytest.fixture(autouse=True)
-async def _reset_engine_pool():
-    """Each pytest-asyncio test gets a fresh event loop. asyncpg refuses
-    pooled connections that were bound to a different loop, so dispose
-    the engine pool around each test (same pattern as test_job_worker)."""
-    await engine.dispose()
-    yield
 
 
 @pytest.fixture

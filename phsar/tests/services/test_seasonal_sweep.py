@@ -6,9 +6,6 @@ requested_by_user_id=None. Per-row commit means the rolled-back
 db_session fixture won't see the inserts — tests open their own
 async_session_maker sessions and explicitly clean up the inserted
 rows after each test.
-
-Mirrors test_update_sweep.py's harness: engine.dispose() autouse +
-tracked_anime / tracked_jobs fixtures.
 """
 
 from datetime import datetime, timezone
@@ -16,7 +13,7 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy import delete, select
 
-from app.core.db import async_session_maker, engine
+from app.core.db import async_session_maker
 from app.exceptions import (
     AnimeFilteredOutError,
     AnimeNotFoundError,
@@ -41,15 +38,6 @@ def _empty_extended() -> SearchResultDBExtended:
     return SearchResultDBExtended(
         search_result_db_list=[], unwanted_media=set(), attach_actions=[],
     )
-
-
-@pytest.fixture(autouse=True)
-async def _reset_engine_pool():
-    """Same pool-disposal pattern as test_job_worker.py: each
-    pytest-asyncio test runs on a fresh event loop, and asyncpg
-    refuses pooled connections that were bound to a different loop."""
-    await engine.dispose()
-    yield
 
 
 @pytest.fixture
