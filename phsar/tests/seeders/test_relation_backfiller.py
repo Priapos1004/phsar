@@ -303,6 +303,66 @@ async def test_zero_relations_sidecar_does_not_refetch(db_session, monkeypatch):
     assert fetch_calls == [], "subsequent runs must not re-fetch zero-relation rows"
 
 
+async def test_per_anime_failure_does_not_abort_loop(db_session, monkeypatch):
+    """When MAL returns a persistent 5xx for one anime's media, the
+    backfiller must rollback + skip that anime and continue with the
+    rest. Regression for the v0.14.1 prod incident where the rollback
+    expired the anime instance, the subsequent log.exception call
+    triggered a lazy reload on expired attributes, and the resulting
+    MissingGreenlet escaped the except clause — killing the whole
+    backfill loop on the first MAL hiccup."""
+    import httpx
+
+    fetch_calls: list[int] = []
+
+    async def fake_fetch(self, mal_id):
+        fetch_calls.append(mal_id)
+        if mal_id == 700:
+            # Simulate a Jikan 504 that bypasses tenacity's retry budget.
+            request = httpx.Request("GET", f"https://api.jikan.moe/v4/anime/{mal_id}/relations")
+            response = httpx.Response(504, request=request)
+            raise httpx.HTTPStatusError("Gateway Timeout", request=request, response=response)
+        return []
+
+    monkeypatch.setattr(JikanScraper, "fetch_relations", fake_fetch)
+
+    # Two anime: the first triggers a 504 chain, the second has a
+    # populated sidecar and shouldn't be touched.
+    bad = await _anime_with_media(
+        db_session,
+        anime_mal_id=700, anime_title="Bad MAL Anime",
+        media_specs=[
+            {"mal_id": 700, "title": "Bad", "media_type": MediaType.Movie,
+             "relation_type": RelationType.Main, "duration_seconds": 5400,
+             "scored_by": 1000,
+             "aired_from": datetime(2019, 1, 1, tzinfo=timezone.utc),
+             "edges": [], "last_fetched_at": None},
+        ],
+    )
+    good = await _anime_with_media(
+        db_session,
+        anime_mal_id=701, anime_title="Good Anime",
+        media_specs=[
+            {"mal_id": 701, "title": "Good", "media_type": MediaType.TV,
+             "relation_type": RelationType.Main, "episodes": 12,
+             "duration_seconds": 1440, "scored_by": 5000,
+             "aired_from": datetime(2020, 1, 1, tzinfo=timezone.utc),
+             "edges": []},
+        ],
+    )
+
+    summary = await backfill_relations(
+        db_session, dry_run=False, anime_ids={bad.id, good.id},
+    )
+
+    # Bad anime tripped the 504; the loop survived and reached the good one.
+    assert summary["anime_scanned"] == 2
+    assert summary.get("anime_failed") == 1
+    assert 700 in fetch_calls
+    # Good anime's sidecar already stamped — no MAL fetch attempted.
+    assert 701 not in fetch_calls
+
+
 async def test_anime_without_media_is_skipped(db_session, monkeypatch):
     async def fake_fetch(self, mal_id):
         return []
