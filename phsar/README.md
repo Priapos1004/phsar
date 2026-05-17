@@ -359,7 +359,7 @@ SEARCH_SECRET_KEY=supersecretsearchsecretkey
 # — the worker is sequential because of MAL's ~3 req/s rate limit).
 # JOBS_PER_USER_LIMIT=4
 # Dedupe window for /jobs/scrape. Failed jobs don't count.
-# JOBS_DEDUPE_HOURS=72
+# JOBS_DEDUPE_HOURS=24
 # Bounds the nightly update_sweep batch size.
 # JOBS_SWEEP_MAX_PER_RUN=200
 # Re-runs the relation classifier over the catalog at lifespan startup. First

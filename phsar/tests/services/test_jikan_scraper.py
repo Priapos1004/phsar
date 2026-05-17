@@ -244,7 +244,7 @@ async def test_search_title_seed_empty_data_raises_transient_not_permanent(monke
     PermanentPhsarError, so the worker stamps retryable=True and the
     bell shows its retry button. The old behavior produced retryable=False
     + an opaque 'mal_id=N not found' message, locking the user out for
-    the 72h dedup window for a transient MAL anomaly."""
+    the dedup window for a transient MAL anomaly."""
     from app.exceptions import AnimeNotFoundError, TransientUpstreamError
 
     async def fake_get(self, url: str, params=None):

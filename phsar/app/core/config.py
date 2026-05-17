@@ -51,10 +51,12 @@ class Settings(BaseSettings):
     JOBS_SWEEP_MAX_PER_RUN: int = 200  # bounds nightly update_sweep batch size
     # Dedupe window for user_scrape: re-running the same query within this
     # window would just produce empty BFS results (everything is in
-    # excluded_mal_ids already) and fail with AnimeNotFoundError. After the
-    # window, the seasonal update may have landed new media so a re-scrape
-    # is meaningful again.
-    JOBS_DEDUPE_HOURS: int = 72
+    # excluded_mal_ids already) and fail with AnimeNotFoundError. Shortened
+    # to 24h in v0.14.1 — long enough to absorb double-clicks and same-day
+    # re-tries, short enough that a user noticing MAL has new data the next
+    # morning can re-scrape without waiting 3 days. Failed jobs still don't
+    # count toward dedupe, so a transient MAL outage never blocks a retry.
+    JOBS_DEDUPE_HOURS: int = 24
 
     # Relation-classifier backfill at lifespan startup. Re-runs the
     # two-pass classifier over every Anime, rewriting Media.relation_type

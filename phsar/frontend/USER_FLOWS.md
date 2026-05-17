@@ -318,7 +318,7 @@ Each anime search result card shows:
 ### 9.2 Submitting a Scrape Job
 - The query must be at least 4 chars (`minlength` attr + button stays disabled until 4 chars typed). MAL's top-3 search is too ambiguous on shorter queries.
 - Submitting POSTs `{ query }` to `/jobs/scrape`. Successful enqueue returns 202 with the new job uuid; the form clears and bumps `jobsRefresh` (in `lib/stores/jobs.ts`) so the navbar bell refetches in tens of milliseconds instead of waiting for the next 30s poll.
-- 409 dedupe: re-submitting the same normalized query within `JOBS_DEDUPE_HOURS` (default 72) returns "This query is already queued" — failed jobs don't count, so a transient MAL outage doesn't lock the user out for 3 days.
+- 409 dedupe: re-submitting the same normalized query within `JOBS_DEDUPE_HOURS` (default 24) returns "This query is already queued" — failed jobs don't count, so a transient MAL outage doesn't lock the user out for a day.
 - 409 per-user cap: more than `JOBS_PER_USER_LIMIT` (default 4) active/queued user jobs returns "Too many jobs in flight — wait for some to finish."
 - The job's lifecycle is then surfaced by the navbar bell (see 2.1). Long-term history lives on this page's recent-additions panel rather than the bell, which is intentionally session-scoped.
 

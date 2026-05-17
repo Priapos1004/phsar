@@ -416,6 +416,7 @@ Vitest + @testing-library/svelte component tests.
 - **Role-based access**: three roles — `admin`, `user`, `restricted_user`
 - **Async throughout**: asyncpg driver, SQLAlchemy AsyncSession, async service/DAO methods
   - All ORM relationships use `lazy="raise"` to prevent implicit lazy loading — every relationship access must go through explicit `selectinload` in the DAO query
+  - **🎯 Never `asyncio.gather` coroutines that share one `AsyncSession`** — SQLAlchemy's AsyncSession can't multiplex concurrent operations on a single session, and `gather` corrupts the in-flight query state. Pure-CPU coroutines (e.g. `to_thread.run_sync` over an embedding encode) that don't touch the session are fine to gather; anything that touches the session must run sequentially. See the inline comment at `seasonal_sweep_dispatcher.py:48-51` for the canonical "don't" example and `compound-docs/2026-05-09-v0.14.0-content-pipeline.md` (LANDMINE entry) for the failure mode.
 - **Vector search**: `paraphrase-multilingual-MiniLM-L12-v2` model, pgvector storage
   - `SearchType` enum (`title`, `description`, `rating_notes`) selects the target
   - `ViewType` enum (`anime`, `media`) selects the search mode
@@ -490,7 +491,7 @@ Vitest + @testing-library/svelte component tests.
 - `BACKUP_RESTORE_TIMEOUT_SECONDS` — default 600; raise if DB grows large enough that pg_restore legitimately takes >10 min (a mid-restore kill leaves the DB half-dropped)
 - `JOBS_CRON_TOKEN` — shared bearer secret for every cron-authed endpoint (`/admin/backups/auto`, the three sweep schedulers); empty disables all four, they fail closed
 - `JOBS_PER_USER_LIMIT` — default 4; max queued+running user_scrape jobs per non-system user; 5th submission returns 409
-- `JOBS_DEDUPE_HOURS` — default 72; same scrape query within this window returns 409 unless prior job failed
+- `JOBS_DEDUPE_HOURS` — default 24; same scrape query within this window returns 409 unless prior job failed
 - `JOBS_SWEEP_MAX_PER_RUN` — default 200; bounds nightly `update_sweep` batch size
 - `RELATION_BACKFILL_ON_STARTUP` — default `True`; runs `relation_backfiller` at lifespan startup. First cold start fetches missing `MediaRelationEdges` sidecars from MAL at 1 req/s (~14min for an 800-media catalog); subsequent restarts skip already-populated rows and finish in seconds. Disable for tight maintenance windows on fresh deployments
 

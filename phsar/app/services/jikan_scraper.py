@@ -343,7 +343,7 @@ class JikanScraper:
                 # payloads). Use TransientUpstreamError so the worker
                 # marks the job retryable=True; otherwise a single
                 # cosmic-ray MAL response permanently locks the mal_id
-                # out via the 72h dedup window for user jobs and gets
+                # out via the dedup window for user jobs and gets
                 # stamped as a Permanent failure that no one can retry.
                 raise TransientUpstreamError(f"mal_id={seed_mal_id}")
             results = [seed_data]

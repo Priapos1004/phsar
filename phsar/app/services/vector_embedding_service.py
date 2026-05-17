@@ -21,12 +21,23 @@ async def generate_embedding(text: str) -> list[float]:
     return await to_thread.run_sync(lambda: model.encode(text).tolist(), abandon_on_cancel=True)
 
 
-async def _create_search_embedding(db: AsyncSession, model_class, fk_kwargs: dict, title_texts: list[str], description_text: str):
-    """Shared helper for creating title + description embeddings and persisting them."""
+async def _compute_search_embeddings(
+    title_texts: list[str | None], description_text: str,
+) -> tuple[list[float], list[float]]:
+    """Encode title + description embeddings without touching the DB.
+    Returned in title-then-description order. Two sequential awaits;
+    `asyncio.gather` is intentionally avoided (see CLAUDE.md "Async
+    throughout" — the trap surface isn't worth the modest CPU win on
+    a 2-vCPU VM)."""
     combined_text = " ".join([t for t in title_texts if t])
     title_embedding = await generate_embedding(combined_text)
     description_embedding = await generate_embedding(f"{combined_text} {description_text}")
+    return title_embedding, description_embedding
 
+
+async def _create_search_embedding(db: AsyncSession, model_class, fk_kwargs: dict, title_texts: list[str], description_text: str):
+    """Shared helper for creating title + description embeddings and persisting them."""
+    title_embedding, description_embedding = await _compute_search_embeddings(title_texts, description_text)
     obj = model_class(**fk_kwargs, title_embedding=title_embedding, description_embedding=description_embedding)
     db.add(obj)
     await db.flush()
@@ -49,17 +60,24 @@ async def create_rating_embedding(db: AsyncSession, rating_id: int, note: str):
 async def regenerate_anime_embedding(
     db: AsyncSession, anime_id: int, title_texts: list[str | None], description_text: str,
 ) -> None:
-    """Delete the existing AnimeSearch row and create a fresh one. Used
-    by callers that rewrite an anime row's title / name_eng / name_jap
-    (suffix stripper, relation backfiller anchor rewrite, merge
-    survivor refresh).
+    """Replace the existing AnimeSearch row with one built from new
+    title / description text. Used by callers that rewrite an anime
+    row's title / name_eng / name_jap (suffix stripper, relation
+    backfiller anchor rewrite, merge survivor refresh).
 
-    Callers pass `title_texts` explicitly so they can defer mutating
-    the anime row until after the embedding regen succeeds — a failure
-    here leaves both the row and the embedding consistent at the next
-    commit boundary.
+    Encode FIRST, then DELETE + INSERT, so an encode failure leaves
+    the prior AnimeSearch row intact. Otherwise a model-loading
+    crash mid-call would land a dangling DELETE in the session — and
+    if a caller catches the exception without rolling back (e.g. the
+    per-anime try/except in relation_backfiller), a later commit
+    would persist the deletion with no replacement.
     """
+    title_embedding, description_embedding = await _compute_search_embeddings(title_texts, description_text)
+
     await db.execute(delete(AnimeSearch).where(AnimeSearch.anime_id == anime_id))
-    await create_anime_embedding(
-        db, anime_id=anime_id, title_texts=title_texts, description_text=description_text,
-    )
+    db.add(AnimeSearch(
+        anime_id=anime_id,
+        title_embedding=title_embedding,
+        description_embedding=description_embedding,
+    ))
+    await db.flush()
