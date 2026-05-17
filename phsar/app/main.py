@@ -10,6 +10,7 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.core.db import async_session_maker
 from app.core.logging_config import setup_logging
+from app.core.maintenance import get_scheduled_at, is_maintenance_active
 from app.core.maintenance_middleware import MaintenanceGateMiddleware
 from app.daos.job_dao import JobDAO
 from app.exceptions import PhsarBaseError
@@ -69,6 +70,12 @@ async def _post_yield_backfills() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 Starting up FastAPI app")
+    # Paired with the set_maintenance flip log: ops can grep these two
+    # to tell "container restarted" from "flag stuck across restarts".
+    logger.info(
+        "Maintenance state at startup: active=%s, scheduled_at=%s",
+        is_maintenance_active(), get_scheduled_at(),
+    )
 
     async with async_session_maker() as session:
         await seed_genres(session)
