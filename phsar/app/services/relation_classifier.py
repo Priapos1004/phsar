@@ -75,9 +75,19 @@ def passes_substance(node: ClassifierNode) -> bool:
     return False
 
 
+def anchor_tier(media_type: str | None) -> int:
+    """Public tier rank for a MAL media_type string. Lower = more canonical
+    (TV=1 > ONA=2 > Movie=3 > other=4). Normalizes whitespace + case so
+    callers can pass raw MAL `type` fields ("TV Special", "Movie") without
+    pre-processing. Used by the classifier's anchor selection AND the
+    scraper's pre-BFS root sort — keeping them in one helper guarantees
+    the two paths agree on what "more canonical" means.
+    """
+    return _ANCHOR_TIER.get(_normalize_media_type(media_type), _ANCHOR_TIER_FALLBACK)
+
+
 def _anchor_sort_key(mal_id: int, node: ClassifierNode) -> tuple:
-    media_type = _normalize_media_type(node.get("media_type"))
-    tier = _ANCHOR_TIER.get(media_type, _ANCHOR_TIER_FALLBACK)
+    tier = anchor_tier(node.get("media_type"))
     aired = node.get("aired_from")
     scored_by = node.get("scored_by") or 0
     # Bucket nulls last within a tier so a typed-but-undated entry never
