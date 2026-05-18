@@ -41,7 +41,15 @@ class DisjointFranchise(TypedDict):
 
 
 SUBSTANCE_MIN_EPISODES = 8
-SUBSTANCE_MIN_TV_DURATION_S = 900    # 15 min
+# 10 min — includes short-form TV (Isekai Quartet, Aggretsuko, Tonari no
+# Seki-kun, many web anime + spin-off mini-anime). Mini-shorts under 5
+# min stay filtered (they're typically labeled Special/OVA/Music anyway,
+# which fail the TV-like type gate first). Setting too high (e.g. 15 min)
+# would demote every short-form TV in a chain to side_story, leaving a
+# longer Movie at the end of the chain as the only substance-passing
+# anchor — confusing umbrella titles ("Franchise Movie: X" instead of
+# "Franchise"). See compound-docs/2026-05-18-v0.14.3-split-candidates.md.
+SUBSTANCE_MIN_TV_DURATION_S = 600    # 10 min
 SUBSTANCE_MIN_MOVIE_DURATION_S = 1800  # 30 min
 
 _TV_LIKE_TYPES = frozenset({"tv", "ona", "tvspecial"})

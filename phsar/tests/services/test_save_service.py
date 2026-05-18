@@ -86,7 +86,6 @@ async def test_save_search_results_emits_split_candidate_on_disjoint_chains(db_s
     pointing at the new Anime so admin can review + split. Pins the
     BNHA→Vigilante scrape-time flow.
     """
-    from app.daos.split_candidate_dao import SplitCandidateDAO
     from app.models.split_candidate import SplitCandidate, SplitCandidateStatus
 
     result = SearchResultDB(

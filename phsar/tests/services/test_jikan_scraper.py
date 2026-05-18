@@ -1040,8 +1040,8 @@ async def test_search_title_identity_breaking_relation_makes_target_terminal(
         f"A (queued via {rel_normalized}) must be in graph as TERMINAL"
     )
     assert 2 in fetched_relations, (
-        f"A's relations must be fetched — TERMINAL captures outgoing "
-        f"edges for sidecar persistence, even though BFS doesn't recurse"
+        "A's relations must be fetched — TERMINAL captures outgoing "
+        "edges for sidecar persistence, even though BFS doesn't recurse"
     )
     # Therefore B (A's sequel) and C (B's sequel) are unreachable — the
     # BFS never queues them, never fetches their info or relations.
@@ -1763,20 +1763,16 @@ async def test_search_title_weak_anchor_root_releases_visited_ids(monkeypatch):
     search_service must release its visited_ids claims so subsequent roots
     walking through the same chain can include the released mal_ids.
 
-    Production case: Isekai Quartet S1 (38472) is a 11-min TV with empty MAL
-    /relations. Fuzzy search `q=Isekai Quartet` returns [S1, S3, S2] — anchor-
-    tier sort processes S1 first (oldest TV). S1's BFS produces a 1-node
-    graph that fails the TV substance gate (660s < 900s) AND has no
-    cross-link, so search_service drops it. Pre-fix: S1 stayed claimed in
-    visited_ids, S3's BFS walked the prequel chain (Movie → S2 → S1) but
-    S1 was already visited → silently skipped from S3's graph → S1
-    permanently lost from the catalog. Post-fix: S1's claim is rolled back
-    when its graph is detected as weak-anchor-without-cross-link, letting
-    S3's BFS include it.
-
-    Fixture mirrors the real MAL shape (verified via direct /relations
-    fetch): S1 has empty relations, S2 ↔ Movie ↔ S3 are sequel/prequel
-    chained.
+    Production-shaped fixture: short-form franchise with empty-relations
+    first season. Uses 5-min episodes so the TVs fail substance below
+    any reasonable gate; Movie is full-length and passes. Fuzzy search
+    returns [S1, S3] — anchor-tier sort processes S1 first (oldest TV).
+    S1's BFS produces a 1-node graph that fails substance AND has no
+    cross-link, so search_service drops it. Pre-fix: S1 stayed claimed
+    in visited_ids, S3's BFS walked Movie → S2 → S1 but S1 was already
+    visited → silently skipped → S1 permanently lost from the catalog.
+    Post-fix: S1's claim is rolled back when its graph is detected as
+    weak-anchor-without-cross-link, letting S3's BFS include it.
     """
     fetched_relations: list[int] = []
 
@@ -1791,7 +1787,7 @@ async def test_search_title_weak_anchor_root_releases_visited_ids(monkeypatch):
         return _make_anime(
             mal_id, title,
             media_type="TV",
-            duration="11 min per ep",
+            duration="5 min per ep",
             episodes=12,
             aired_from=aired_from,
         )

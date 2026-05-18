@@ -15,7 +15,7 @@ from app.exceptions import (
     SplitCandidateNotFoundError,
 )
 from app.models.anime import Anime
-from app.models.media import Media, MediaType, RelationType
+from app.models.media import Media, RelationType
 from app.models.media_relation_edges import MediaRelationEdges
 from app.models.split_candidate import SplitCandidate, SplitCandidateStatus
 from app.services.split_candidate_service import dismiss, execute_split
