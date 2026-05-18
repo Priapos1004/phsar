@@ -134,7 +134,11 @@ async def test_save_populates_spoiler_cache_for_existing_users(client, user_auth
     save_resp = await client.post("/save/search-results", json=FAKE_SEARCH_RESULTS, headers=user_auth_headers)
     assert save_resp.status_code == 200
 
-    search_resp = await client.get("/search/media", headers=user_auth_headers)
+    # Narrow with a title query so the fake row isn't pushed off the
+    # default 50-row page by real catalog data in a dev DB.
+    search_resp = await client.get(
+        "/search/media", params={"query": "Fake Anime Title"}, headers=user_auth_headers
+    )
     assert search_resp.status_code == 200
     titles = [m["title"] for m in search_resp.json()]
     assert "Fake Anime Title" in titles, f"Expected first main visible under hide, got {titles}"

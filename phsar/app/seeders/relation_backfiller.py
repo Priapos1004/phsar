@@ -158,8 +158,9 @@ async def backfill_relations(
 
                     # Co-located with reclassify_anime: any newly-fetched
                     # TERMINAL sidecar edges (this row was scraped before
-                    # v0.14.3 so its Vigilante / Railgun-shape spin-offs
-                    # had empty sidecars) may now surface disjoint chains.
+                    # the v0.14.2 split-candidates change, so its Vigilante /
+                    # Railgun-shape spin-offs had empty sidecars) may now
+                    # surface disjoint chains.
                     # Per-anime SAVEPOINT covers both writes — atomic.
                     if not dry_run:
                         await detect_split_candidates_for_anime(

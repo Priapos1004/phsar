@@ -48,7 +48,7 @@ SUBSTANCE_MIN_EPISODES = 8
 # would demote every short-form TV in a chain to side_story, leaving a
 # longer Movie at the end of the chain as the only substance-passing
 # anchor — confusing umbrella titles ("Franchise Movie: X" instead of
-# "Franchise"). See compound-docs/2026-05-18-v0.14.3-split-candidates.md.
+# "Franchise"). See compound-docs/2026-05-18-v0.14.2-split-candidates.md.
 SUBSTANCE_MIN_TV_DURATION_S = 600    # 10 min
 SUBSTANCE_MIN_MOVIE_DURATION_S = 1800  # 30 min
 

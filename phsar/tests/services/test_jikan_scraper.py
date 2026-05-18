@@ -1079,7 +1079,7 @@ async def test_search_title_terminal_captures_sequel_chain_for_split_detection(m
                          → sequel → Vigilante S2 (61942, TV, would-be-WALK
                                                      except parent is TERMINAL)
 
-    Under v0.14.3 TERMINAL semantics:
+    Under the v0.14.2 split-candidates TERMINAL semantics:
     - Vigilante S1 IS in the graph.
     - Vigilante S1's /relations IS fetched (so the (60593, 61942, "sequel")
       edge lands in the persisted list).
@@ -1305,7 +1305,7 @@ async def test_search_title_no_cross_link_to_deep_other_chain_target(monkeypatch
 
 
 # Anchor discovery + entry-point invariance tests. Rationale in
-# compound-docs/2026-05-11-jikan-scraper-quirks.md (v0.14.3 notes).
+# compound-docs/2026-05-11-jikan-scraper-quirks.md (v0.14.2 split-candidates notes).
 
 
 def _overlord_relations_fixture() -> dict:

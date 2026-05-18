@@ -24,7 +24,7 @@ MAL API client with retry + client-side rate limiter.
 - Skip rules:
   - Anime with `media_type=None` AND `airing_status="Not yet aired"` are skipped silently — they used to land in `media_unwanted` as `Unknown`, permanently blocking rediscovery once the show aired; now only true anomalies (null `media_type` with a non-Not-yet-aired status) get blacklisted
   - Anime with `title=None` are skipped silently — MAL routinely leaves the romanization field null on freshly-announced donghua/Chinese shows and PV stubs (fills in within hours); blacklisting with a `<mal_id:NNNN>` placeholder would pollute `media_unwanted` and block rediscovery
-- **TERMINAL state semantics (v0.14.3 change):** Nodes arrived via identity-breaking edges (`side_story`/`spin-off`/`parent_story`/`other`/`summary`/`full_story`) are TERMINAL — the BFS captures their outgoing edges (so split-detection can see e.g. Vigilante S1's sequel chain leaking out of BNHA's row) but does NOT recurse from them. The for-loop in `search_title` skips queuing TERMINAL targets via `if current_status is TERMINAL: continue`. Pre-v0.14.3 TERMINAL nodes had empty sidecars (`edges=[]`); post-v0.14.3 they carry their MAL relations like WALK nodes
+- **TERMINAL state semantics (split-candidates change):** Nodes arrived via identity-breaking edges (`side_story`/`spin-off`/`parent_story`/`other`/`summary`/`full_story`) are TERMINAL — the BFS captures their outgoing edges (so split-detection can see e.g. Vigilante S1's sequel chain leaking out of BNHA's row) but does NOT recurse from them. The for-loop in `search_title` skips queuing TERMINAL targets via `if current_status is TERMINAL: continue`. Pre-split-candidates TERMINAL nodes had empty sidecars (`edges=[]`); post-split-candidates they carry their MAL relations like WALK nodes
 
 ## job_worker.py
 
@@ -108,7 +108,7 @@ Orchestrates BFS output into save/attach/merge decisions.
   - Before v0.14.0 comparisons used the underscore form but lists held raw MAL strings (`"Parent story"`), so the `is_main_story` gate silently let every franchise movie classify as `main` instead of `side_story`
   - See [compound-docs/2026-05-11-jikan-scraper-quirks.md](../../../compound-docs/2026-05-11-jikan-scraper-quirks.md)
   - Fix applies to new scrapes only; pre-fix catalog rows keep stale labels until re-scraped
-- **Third-pass split detection runs alongside classification** (v0.14.3): `find_disjoint_franchises(nodes, edges, anchor)` finds substance-passing media outside the anchor's main+alt chain that form their own connected sequel chain. Result rides on `SearchResultDB.disjoint_franchises`; `save_service` upserts a `SplitCandidate` row when non-empty. See [compound-docs/2026-05-18-v0.14.3-split-candidates.md](../../../compound-docs/2026-05-18-v0.14.3-split-candidates.md)
+- **Third-pass split detection runs alongside classification** (v0.14.2 split-candidates): `find_disjoint_franchises(nodes, edges, anchor)` finds substance-passing media outside the anchor's main+alt chain that form their own connected sequel chain. Result rides on `SearchResultDB.disjoint_franchises`; `save_service` upserts a `SplitCandidate` row when non-empty. See [compound-docs/2026-05-18-v0.14.2-split-candidates.md](../../../compound-docs/2026-05-18-v0.14.2-split-candidates.md)
 
 ## Vector + search
 
