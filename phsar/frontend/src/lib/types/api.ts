@@ -285,6 +285,40 @@ export interface MergeBackfillResult {
 	inserted: number;
 }
 
+// Admin — Split candidates
+export interface SplitClusterMember {
+	media_uuid: string;
+	mal_id: number;
+	title: string;
+	media_type: string;
+	relation_type: string;
+}
+
+export interface SplitClusterPreview {
+	suggested_anchor_mal_id: number;
+	members: SplitClusterMember[];
+	substance_member_mal_ids: number[];
+	// (source_mal_id, target_mal_id, normalized_relation) tuples
+	bridge_edges: [number, number, string][];
+}
+
+export interface SplitCandidateListItem {
+	uuid: string;
+	detected_by: string;
+	created_at: string;
+	source_anime: MergeCandidateAnimeSummary;
+	clusters: SplitClusterPreview[];
+}
+
+export interface SplitResult {
+	surviving_anime_uuid: string;
+	new_anime_uuids: string[];
+}
+
+export interface SplitBackfillResult {
+	inserted: number;
+}
+
 // Admin — Registration tokens
 export interface RegistrationTokenListItem {
 	uuid: string;

@@ -78,3 +78,80 @@ async def test_save_search_results_defaults_empty_edges(db_session):
     )
     sidecar = (await db_session.execute(stmt)).scalar_one()
     assert sidecar.edges == []
+
+
+async def test_save_search_results_emits_split_candidate_on_disjoint_chains(db_session):
+    """When SearchResultDB.disjoint_franchises is non-empty (third pass
+    found contamination), save_search_results queues a SplitCandidate row
+    pointing at the new Anime so admin can review + split. Pins the
+    BNHA→Vigilante scrape-time flow.
+    """
+    from app.daos.split_candidate_dao import SplitCandidateDAO
+    from app.models.split_candidate import SplitCandidate, SplitCandidateStatus
+
+    result = SearchResultDB(
+        anime_mal_id=900_020,
+        unconnected_media_list=[
+            _media(900_020, "BNHA-like S1", RelationType.Main),
+            _media(900_021, "Vigilante-like S1", RelationType.SideStory),
+        ],
+        cross_link_mal_ids=set(),
+        edges=[
+            (900_020, 900_021, "spin-off"),
+            # The bridge edge that find_disjoint_franchises uses; we
+            # don't re-run detection here — the caller provided the
+            # already-computed cluster payload below.
+        ],
+        disjoint_franchises=[
+            {
+                "member_mal_ids": [900_021, 900_022],
+                "substance_member_mal_ids": [900_021, 900_022],
+                "suggested_anchor_mal_id": 900_021,
+                "bridge_edges": [[900_020, 900_021, "spin-off"]],
+            }
+        ],
+    )
+    await save_search_results(db_session, [result])
+
+    stmt = (
+        select(SplitCandidate)
+        .join(Anime, Anime.id == SplitCandidate.anime_id)
+        .where(Anime.mal_id == 900_020)
+    )
+    candidate = (await db_session.execute(stmt)).scalar_one()
+    assert candidate.status == SplitCandidateStatus.pending
+    assert candidate.detected_by == "scrape"
+    assert candidate.clusters == [
+        {
+            "member_mal_ids": [900_021, 900_022],
+            "substance_member_mal_ids": [900_021, 900_022],
+            "suggested_anchor_mal_id": 900_021,
+            "bridge_edges": [[900_020, 900_021, "spin-off"]],
+        }
+    ]
+
+
+async def test_save_search_results_clean_graph_no_split_candidate(db_session):
+    """A clean scrape (no disjoint_franchises in the SearchResultDB) does
+    NOT create a SplitCandidate row. Pins the no-false-positive property
+    on the common path.
+    """
+    from app.models.split_candidate import SplitCandidate
+
+    result = SearchResultDB(
+        anime_mal_id=900_030,
+        unconnected_media_list=[
+            _media(900_030, "Clean Show", RelationType.Main),
+        ],
+        cross_link_mal_ids=set(),
+        edges=[],
+    )
+    await save_search_results(db_session, [result])
+
+    stmt = (
+        select(SplitCandidate)
+        .join(Anime, Anime.id == SplitCandidate.anime_id)
+        .where(Anime.mal_id == 900_030)
+    )
+    candidates = (await db_session.execute(stmt)).scalars().all()
+    assert candidates == []

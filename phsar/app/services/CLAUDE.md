@@ -24,6 +24,7 @@ MAL API client with retry + client-side rate limiter.
 - Skip rules:
   - Anime with `media_type=None` AND `airing_status="Not yet aired"` are skipped silently — they used to land in `media_unwanted` as `Unknown`, permanently blocking rediscovery once the show aired; now only true anomalies (null `media_type` with a non-Not-yet-aired status) get blacklisted
   - Anime with `title=None` are skipped silently — MAL routinely leaves the romanization field null on freshly-announced donghua/Chinese shows and PV stubs (fills in within hours); blacklisting with a `<mal_id:NNNN>` placeholder would pollute `media_unwanted` and block rediscovery
+- **TERMINAL state semantics (v0.14.3 change):** Nodes arrived via identity-breaking edges (`side_story`/`spin-off`/`parent_story`/`other`/`summary`/`full_story`) are TERMINAL — the BFS captures their outgoing edges (so split-detection can see e.g. Vigilante S1's sequel chain leaking out of BNHA's row) but does NOT recurse from them. The for-loop in `search_title` skips queuing TERMINAL targets via `if current_status is TERMINAL: continue`. Pre-v0.14.3 TERMINAL nodes had empty sidecars (`edges=[]`); post-v0.14.3 they carry their MAL relations like WALK nodes
 
 ## job_worker.py
 
@@ -107,6 +108,7 @@ Orchestrates BFS output into save/attach/merge decisions.
   - Before v0.14.0 comparisons used the underscore form but lists held raw MAL strings (`"Parent story"`), so the `is_main_story` gate silently let every franchise movie classify as `main` instead of `side_story`
   - See [compound-docs/2026-05-11-jikan-scraper-quirks.md](../../../compound-docs/2026-05-11-jikan-scraper-quirks.md)
   - Fix applies to new scrapes only; pre-fix catalog rows keep stale labels until re-scraped
+- **Third-pass split detection runs alongside classification** (v0.14.3): `find_disjoint_franchises(nodes, edges, anchor)` finds substance-passing media outside the anchor's main+alt chain that form their own connected sequel chain. Result rides on `SearchResultDB.disjoint_franchises`; `save_service` upserts a `SplitCandidate` row when non-empty. See [compound-docs/2026-05-18-v0.14.3-split-candidates.md](../../../compound-docs/2026-05-18-v0.14.3-split-candidates.md)
 
 ## Vector + search
 
@@ -143,10 +145,12 @@ Orchestrates BFS output into save/attach/merge decisions.
     - Accepts optional `keep_uuid` to swap which side survives — DB invariant `anime_a_id < anime_b_id` unchanged, A/B is presentation only
     - Fail-loud on shared `Media.mal_id` between A and B — global-unique-violation needs human review
 
-## Two-pass classifier
+## Two-pass classifier + third-pass split detection
 
-- **`relation_classifier.py`** — pure-function two-pass classifier (DB-less)
-  - `classify_anime_relations(nodes, edges) -> dict[mal_id, str]` — picks anchor by substance gate + tier + age, builds main chain via sequel/prequel closure, classifies alt-chain via `alternative_version` edges, defaults rest to `side_story`; demotes weak Mains via substance gate as final layer
+- **`relation_classifier.py`** — pure-function two-pass classifier + third-pass split detection (all DB-less)
+  - `classify_anime_relations(nodes, edges) -> (dict[mal_id, str], anchor)` — picks anchor by substance gate + tier + age, builds main chain via sequel/prequel closure, classifies alt-chain via `alternative_version` edges, defaults rest to `side_story`; demotes weak Mains via substance gate as final layer
+  - `find_disjoint_franchises(nodes, edges, anchor) -> list[DisjointFranchise]` — third pass. Finds substance-passing media outside the anchor's main+alt closure that form their own connected sequel chain (≥2 substance-passing members per cluster). Returns one cluster per disjoint franchise with `member_mal_ids`, `substance_member_mal_ids`, `suggested_anchor_mal_id`, `bridge_edges`. The Overlord+Eminence shape, BNHA+Vigilante shape, Toaru Index+Railgun shape.
+  - **Conan exception** (`_is_legitimate_side_story_chain`): movie-only clusters bridged to the anchor via `parent_story` or `summary` stay quiet — MAL is asserting "these are child stories" so they're legitimate side-story chains, not sibling franchises. Conan Movies 20/22 + summary clips trip the disjoint-cluster detector via sequel chains between movies; the exception keeps them inside Conan's anime row. Vigilante (TV-tier members) and Railgun (TV-tier members) are unaffected
   - Substance gate: TV/ONA needs `episodes>=8 AND duration_seconds>=900` (15min) — NULL episodes acceptable for currently-airing/long-running; Movie needs `duration_seconds>=1800` (30min); TVSpecial strict
   - Anchor tier: TV(1) > ONA(2) > Movie(3) > other(4); within tier oldest aired_from wins
   - `media_to_classifier_node` (ORM projection) + `build_classifier_nodes` (scraper-dict projection) co-located so future ClassifierNode field additions surface both
@@ -155,7 +159,18 @@ Orchestrates BFS output into save/attach/merge decisions.
 - **`anime_relation_service.py`** — orchestrates `reclassify_anime(db, anime, *, dry_run=False)` over a loaded Anime
   - Detects drift on any of 7 umbrella fields (mal_id, title, name_eng, name_jap, other_names, description, cover_image); rewrites + regenerates embedding when drift present
   - `preview_reclassifications(anime_a, anime_b)` returns the per-media diff that would land if A absorbed B — read-only, powers the merge-candidate preview
+  - `build_classifier_graph(media) -> (nodes, edges)` is the shared ORM→(nodes, edges) projection used at all three call sites (reclassify, audit script, split-candidate backfiller). Public function — earned its public name by virtue of multi-module reuse
   - Called from `relation_backfiller` (per catalog row) and `merge_candidate_service.merge` (survivor reclassification)
+
+- **`split_candidate_service.py`** — admin operations on split candidates (parallel to `merge_candidate_service`)
+  - List pending: uses `SplitCandidateDAO.list_pending_with_anime` which selectinloads source anime + media + relation_edges + media_studio.studio in one roundtrip; rating counts piggybacked from `MergeCandidateDAO.get_rating_counts_for_anime` (shared helper)
+  - Dismiss: status flip
+  - Execute: builds (nodes, edges) from the cluster's media subset, verifies the classifier still picks `suggested_anchor_mal_id` (raises `SplitCandidateStaleError(409)` if MAL data shifted between detection and execution), creates a new Anime per cluster, bulk-UPDATEs Media to re-parent, expires the source anime's `.media` collection (the bulk UPDATE bypasses ORM tracking), reclassifies both sides, runs post-split detection on source + each new anime, runs merge detection on the new anime IDs (a freshly-split franchise may match an existing parallel row)
+  - **Rating safety property**: Media UUIDs are stable across re-parenting — any `Ratings.media_id` row stays attached to the same media; only the anime aggregation shifts
+
+- **`split_candidate_backfiller.py`** — `detect_split_candidates_for_anime(db, anime, detected_by)` per-anime helper called from inside `relation_backfiller`'s SAVEPOINT loop AND from `merge_candidate_service.merge` post-reclassify; `backfill_split_candidates(db, anime_ids=None)` standalone pass for lifespan startup + admin re-trigger endpoint. The DAO's `upsert_pending` dedupes via cluster-signature so re-runs on unchanged data are no-ops
+
+- **`anime_summary.py`** — `summarize_anime(anime, rating_count) -> MergeCandidateAnimeSummary` shared helper. Both `merge_candidate_service.list_pending` and `split_candidate_service.list_pending` render the same side-by-side anime card, so a future schema addition (e.g. `airing_status`) lands in one place
 
 ## Ratings + spoilers
 

@@ -129,14 +129,15 @@ class _ExpandStatus(enum.IntEnum):
     most-permissive status — a node first queued TERMINAL via `side_story`
     upgrades to WALK if a sequel edge from the same parent points at it."""
 
-    TERMINAL = 0  # Info only — no fetch_relations, no further BFS.
+    TERMINAL = 0  # Fetch info + relations (for sidecar edges) but don't queue targets.
     WALK = 1      # Full BFS — propagate WALK only along identity-preserving edges.
 
 
 def _next_expand_status(parent: _ExpandStatus, rel: str) -> _ExpandStatus:
     """State transition: from a WALK parent, only identity-preserving edges
     (sequel/prequel/alternative_version) keep the target WALK. Everything
-    else demotes to TERMINAL (in graph but no relations fetched).
+    else demotes to TERMINAL (in graph with its own outgoing edges
+    captured, but BFS doesn't recurse from there).
     """
     if parent is _ExpandStatus.WALK and rel in _IDENTITY_PRESERVING_RELS:
         return _ExpandStatus.WALK
@@ -647,15 +648,15 @@ class JikanScraper:
                     # TERMINAL nodes (arrived via an identity-breaking
                     # edge — side_story / parent_story / summary /
                     # full_story / other / spin-off) are the v0.14.2
-                    # boundary for cross-franchise contamination: info
-                    # is recorded but relations aren't fetched, so a
-                    # chain of weak edges can't bridge two franchises
-                    # (Overlord → Eminence) and a direct main→other→main
-                    # edge contributes at most one terminal node, not
-                    # the other franchise's full sequel chain.
+                    # boundary for cross-franchise contamination. Their
+                    # outgoing edges ARE captured (so split-detection
+                    # can see e.g. Vigilante's sequel chain leaking out
+                    # of BNHA's row) but the BFS does NOT recurse from
+                    # them — the queue-skip in the edge loop below keeps
+                    # a chain of weak edges from bridging two franchises
+                    # (Overlord → Eminence) or pulling the other
+                    # franchise's full sequel chain into the graph.
                     if current_mal_id in crossover_arrivals:
-                        all_related_media = []
-                    elif current_status is _ExpandStatus.TERMINAL:
                         all_related_media = []
                     elif current_mal_id in relation_cache:
                         # Anchor discovery (or an earlier BFS step) already
@@ -672,6 +673,15 @@ class JikanScraper:
 
                     for target_mal_id, rel in parse_relation_edges(all_related_media):
                         edges.append((current_mal_id, target_mal_id, rel))
+                        # TERMINAL parents capture outgoing edges (above)
+                        # but don't queue targets — the graph stays
+                        # bounded to nodes reachable from the seed via
+                        # WALK propagation. Targets of TERMINAL edges
+                        # land as dangling refs in MediaRelationEdges
+                        # sidecars, same shape as cross-graph bridges,
+                        # filtered defensively at _build_adjacency time.
+                        if current_status is _ExpandStatus.TERMINAL:
+                            continue
                         next_status = _next_expand_status(current_status, rel)
                         # Most-permissive wins so a side_story-then-sequel
                         # arrival from the same WALK parent doesn't get

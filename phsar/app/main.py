@@ -19,6 +19,7 @@ from app.seeders.anime_title_backfiller import backfill_anime_title_suffixes
 from app.seeders.embedding_backfiller import backfill_embeddings
 from app.seeders.genre_seeder import seed_genres
 from app.seeders.relation_backfiller import backfill_relations
+from app.seeders.split_candidate_backfiller import backfill_split_candidates
 from app.seeders.user_seeder import (
     backfill_spoiler_visibility,
     backfill_user_settings,
@@ -60,6 +61,15 @@ async def _post_yield_backfills() -> None:
             if settings.RELATION_BACKFILL_ON_STARTUP:
                 await backfill_relations(session)
             await backfill_merge_candidates(session)
+            # Split-detection runs LAST so it sees the rewritten relation
+            # types from relation_backfiller AND any merges resolved by
+            # backfill_merge_candidates collapsed pairs (which removes
+            # would-be duplicate split-candidates). When the per-anime
+            # hook inside relation_backfiller already covered every row,
+            # this is a no-op pass — upsert_pending is idempotent on
+            # identical cluster payloads.
+            await backfill_split_candidates(session)
+            await session.commit()
     except asyncio.CancelledError:
         logger.info("Post-yield backfill cancelled by shutdown")
         raise

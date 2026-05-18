@@ -29,7 +29,7 @@ from app.services.relation_classifier import (
 from app.services.vector_embedding_service import regenerate_anime_embedding
 
 
-def _build_classifier_graph(
+def build_classifier_graph(
     media: Iterable[Media],
 ) -> tuple[dict[int, dict], list[tuple[int, int, str]]]:
     """Project a media iterable into (nodes, edges) ready for
@@ -68,7 +68,7 @@ async def reclassify_anime(
     Returns `None` when no changes are needed; otherwise a diff dict.
     Caller commits.
     """
-    nodes, edges = _build_classifier_graph(anime.media)
+    nodes, edges = build_classifier_graph(anime.media)
     classifications, new_anchor_mal_id = classify_anime_relations(nodes, edges)
     assert new_anchor_mal_id is not None, "non-empty nodes always yield an anchor"
 
@@ -173,7 +173,7 @@ def preview_reclassifications(
     `relation_edges` sidecar to be pre-loaded by the caller.
     """
     combined_media = list(anime_a.media) + list(anime_b.media)
-    nodes, edges = _build_classifier_graph(combined_media)
+    nodes, edges = build_classifier_graph(combined_media)
     classifications, _ = classify_anime_relations(nodes, edges)
     media_by_mal = {m.mal_id: m for m in combined_media}
 

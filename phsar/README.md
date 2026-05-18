@@ -35,6 +35,7 @@ phsar/
 │   │   ├── rating_dao.py
 │   │   ├── registration_token_dao.py
 │   │   ├── search_filters.py
+│   │   ├── split_candidate_dao.py
 │   │   ├── studio_dao.py
 │   │   ├── user_dao.py
 │   │   └── user_settings_dao.py
@@ -58,6 +59,7 @@ phsar/
 │   │   ├── rating_search.py
 │   │   ├── ratings.py
 │   │   ├── registration_token.py
+│   │   ├── split_candidate.py
 │   │   ├── studio.py
 │   │   ├── tag.py
 │   │   ├── user_settings.py
@@ -69,6 +71,7 @@ phsar/
 │   │   ├── admin.py
 │   │   ├── admin_jobs.py
 │   │   ├── admin_merge.py
+│   │   ├── admin_split.py
 │   │   ├── auth.py
 │   │   ├── filters.py
 │   │   ├── jobs.py
@@ -98,6 +101,7 @@ phsar/
 │   │   ├── genre_seeder.py
 │   │   ├── media_seeder.py
 │   │   ├── relation_backfiller.py
+│   │   ├── split_candidate_backfiller.py
 │   │   └── user_seeder.py
 │   └── services/
 │       ├── _pg_subprocess.py
@@ -105,6 +109,7 @@ phsar/
 │       ├── anime_relation_service.py
 │       ├── anime_search_service.py
 │       ├── anime_service.py
+│       ├── anime_summary.py
 │       ├── auth_service.py
 │       ├── backup_dispatcher.py
 │       ├── backup_service.py
@@ -125,6 +130,7 @@ phsar/
 │       ├── seasonal_sweep_dispatcher.py
 │       ├── search_service.py
 │       ├── spoiler_service.py
+│       ├── split_candidate_service.py
 │       ├── token_service.py
 │       ├── unwanted_media_service.py
 │       ├── user_settings_service.py
@@ -173,6 +179,7 @@ phsar/
 │   │   │   │   ├── SpoilerGuard.svelte
 │   │   │   │   ├── SearchBar.svelte
 │   │   │   │   ├── SkeletonMediaInfo.svelte
+│   │   │   │   ├── SplitCandidatesCard.svelte
 │   │   │   │   ├── TagSelect.svelte
 │   │   │   │   ├── Toast.svelte
 │   │   │   │   ├── TokenExpiryDialog.svelte
@@ -275,7 +282,12 @@ phsar/
 ├── pytest.ini
 ├── requirements.txt
 ├── scripts/
-│   └── audit_relation_backfill.py
+│   ├── audit_cross_franchise.py
+│   ├── audit_relation_backfill.py
+│   ├── delete_anime_by_title.py
+│   ├── find_anime.py
+│   ├── inspect_anime_relations.py
+│   └── inspect_jobs.py
 └── tests/
     ├── _helpers.py
     ├── conftest.py
@@ -318,6 +330,7 @@ phsar/
         ├── test_search_service.py
         ├── test_seasonal_sweep.py
         ├── test_spoiler_service.py
+        ├── test_split_candidate_service.py
         ├── test_update_sweep.py
         └── test_vector_embedding_service.py
 ```

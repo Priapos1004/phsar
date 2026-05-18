@@ -373,6 +373,21 @@ Each anime search result card shows:
 - Already-resolved candidates (merged or dismissed) return 409 if the action is retried.
 - The detector itself is invisible to non-admin users; nothing about it surfaces outside this card.
 
+### 10.6 Split Candidates
+- Card below Merge Candidates. Admin-only.
+- **List**: pending split candidates flagged by `find_disjoint_franchises`, which finds substance-passing media inside one anime row that form their own connected sequel chain — the BNHA↔Vigilante, Toaru Index↔Railgun, Pretty Rhythm↔(PriPara/King of Prism/Pri☆chan/AiPri) shapes. Detection runs on every save (scrape-time), inside the relation-backfiller's per-anime loop (lifespan startup + admin re-trigger), AND after every merge survivor reclassify (so a merge that surfaces previously-dangling bridges gets flagged). Each row shows:
+  - A `N cluster(s)` badge (count of disjoint sub-franchises detected under this anime)
+  - A `detected_by` label (`scrape`, `backfill`, `merge_survivor`, `post_split_source`, `post_split_new`)
+  - **Source anime card** with title, romanized name, year, media count, rating count, primary studios (same shape as the Merge Candidates A/B card)
+  - **Expandable cluster preview**: a chevron-button reveals the per-cluster member list (mal_id, title, media_type, current relation_type) plus the suggested anchor mal_id and bridge-edge labels (the MAL relations that absorbed this cluster into the parent — typically `spin-off`, `parent_story`, or none-if-orphan)
+- **Refresh**: spinning-arrow icon — same silent-refresh pattern as Merge Candidates (keyed each-block diffs in place, no scroll jump).
+- **Re-run detection**: magnifying-glass icon. Re-runs `backfill_split_candidates` across the catalog on demand. Idempotent via cluster-signature supersede: if the payload matches an already-pending row, no insert; if the payload changed (new media absorbed since detection), the old pending row is auto-dismissed and a fresh one is inserted. Shows a "Flagged N new candidate(s)" inline note on success.
+- **Split**: creates one new Anime row per detected cluster, re-parents the cluster's Media rows under the new anime (Media UUIDs are stable so any existing Ratings stay attached), reclassifies both the source and each new anime, then runs merge detection over the newly-split-out rows. The source anime's umbrella may shift if the smaller media set picks a different anchor. Inline confirm/cancel pair; while in flight the button shows "Splitting…" and the row stays visible. On success the list refetches silently and an inline note reports the number of new anime rows created.
+- **Dismiss**: marks the candidate `dismissed` (status flip; row stays in DB so the cluster-signature supersede in the DAO doesn't re-flag the same shape on next detection). Same inline confirm/cancel UX. On success the row is removed from the local list.
+- Already-resolved candidates (split or dismissed) return 409 if the action is retried.
+- **Stale-candidate fail-loud**: if the classifier on the cluster subset picks a different anchor than the candidate's `suggested_anchor_mal_id` at execute time (e.g., MAL added a sequel between detection and execution), the backend returns 409 SplitCandidateStaleError. Admin re-runs detection to refresh the payload.
+- The detector itself is invisible to non-admin users; nothing about it surfaces outside this card.
+
 ---
 
 ## 11. API Endpoints Used by Frontend
@@ -412,6 +427,10 @@ Each anime search result card shows:
 | `/admin/merge-candidates/{uuid}/merge` | POST | Admin page Merge Candidates card (merge B into A, delete B) |
 | `/admin/merge-candidates/{uuid}/dismiss` | POST | Admin page Merge Candidates card (mark as reviewed-not-duplicate) |
 | `/admin/merge-candidates/backfill` | POST | Admin page Merge Candidates card "Re-run detection" — re-runs existing × existing detection without a container restart (post-restore workflow) |
+| `/admin/split-candidates` | GET | Admin page Split Candidates card (list pending disjoint-franchise rows) |
+| `/admin/split-candidates/{uuid}/split` | POST | Admin page Split Candidates card (split clusters into separate anime, re-parent media) |
+| `/admin/split-candidates/{uuid}/dismiss` | POST | Admin page Split Candidates card (mark as reviewed-keep-bundled) |
+| `/admin/split-candidates/backfill` | POST | Admin page Split Candidates card "Re-run detection" — re-runs disjoint-franchise detection across the catalog |
 | `/auth/register` | POST | Registration page |
 | `/maintenance/status` | GET | Polled by MaintenanceBanner every 30s on every page (no auth) |
 | `/jobs/scrape` | POST | `/library/add` form submission (enqueues a `user_scrape` job; restricted users rejected by role check) |

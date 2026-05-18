@@ -67,6 +67,56 @@ class MergeBackfillResult(BaseModel):
     inserted: int
 
 
+class SplitClusterMember(BaseModel):
+    """One media row inside a proposed split cluster. The admin sees a
+    list of these per cluster to verify which media will land in the
+    new anime row after split execution."""
+    media_uuid: str
+    mal_id: int
+    title: str
+    media_type: str
+    relation_type: str
+
+
+class SplitClusterPreview(BaseModel):
+    """A single disjoint substance-passing chain detected under the
+    source anime. After split execution, one new Anime row gets created
+    per cluster, anchored at `suggested_anchor_mal_id`. `bridge_edges`
+    surfaces the MAL relations that absorbed this cluster so admin sees
+    WHY it was bundled (e.g., a single `spin-off` edge to the parent's
+    main, or no edge at all for orphans via dropped/dangling relations).
+    """
+    suggested_anchor_mal_id: int
+    members: list[SplitClusterMember]
+    substance_member_mal_ids: list[int]
+    bridge_edges: list[tuple[int, int, str]] = Field(default_factory=list)
+
+
+class SplitCandidateListItem(BaseModel):
+    """One row in the admin Split Candidates queue. Mirrors
+    MergeCandidateListItem's shape but holds N clusters instead of an
+    A/B pair — the splitter is single-source-multi-target."""
+    uuid: str
+    detected_by: str
+    created_at: datetime
+    source_anime: MergeCandidateAnimeSummary
+    clusters: list[SplitClusterPreview]
+
+
+class SplitResult(BaseModel):
+    """Returned after a successful split. `surviving_anime_uuid` is the
+    source anime (its media set is smaller now). `new_anime_uuids` are
+    the rows created from the orphan clusters — one per cluster."""
+    surviving_anime_uuid: str
+    new_anime_uuids: list[str]
+
+
+class SplitBackfillResult(BaseModel):
+    """Returned by the manual re-detect trigger for SplitCandidates.
+    `inserted` counts new or updated rows; idempotent on no-change reruns."""
+    inserted: int
+
+
 class ScheduledSweepResponse(BaseModel):
     """Returned by POST /admin/jobs/schedule-sweep so the cron can confirm
     the job is queued and (in dev) the admin can poll /maintenance/status

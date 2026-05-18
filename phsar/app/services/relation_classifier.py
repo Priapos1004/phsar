@@ -28,6 +28,18 @@ class ClassifierNode(TypedDict):
     scored_by: int
 
 
+class DisjointFranchise(TypedDict):
+    member_mal_ids: list[int]
+    substance_member_mal_ids: list[int]
+    suggested_anchor_mal_id: int
+    # Edges (a, b, rel) where one endpoint is in `anchored` (main_chain ∪
+    # alt_chain) and the other is in the cluster — the MAL relations that
+    # caused the BFS to absorb this cluster under the parent anime.
+    # Used by split-execution to surface "why was this bundled" to admin
+    # and by the Conan-exclusion heuristic in find_disjoint_franchises.
+    bridge_edges: list[tuple[int, int, str]]
+
+
 SUBSTANCE_MIN_EPISODES = 8
 SUBSTANCE_MIN_TV_DURATION_S = 900    # 15 min
 SUBSTANCE_MIN_MOVIE_DURATION_S = 1800  # 30 min
@@ -273,3 +285,125 @@ def classify_anime_relations(
             classifications[mal_id] = "side_story"
 
     return classifications, anchor
+
+
+# Edge labels that, when present on the bridge between an orphan cluster
+# and the anchored set, mean MAL is explicitly declaring the cluster a
+# child story of the parent franchise (not a sibling franchise). The
+# Conan-style exception (movie-only side-story chains attached via
+# parent_story/summary) uses these to skip flagging legitimate side-story
+# trees as contamination. `side_story` is intentionally absent — MAL also
+# uses it for sibling sub-franchises like Toaru Index → Railgun, so it's
+# not a reliable signal of child-vs-sibling on its own.
+_CHILD_STORY_BRIDGE_RELS = frozenset({"parent_story", "summary"})
+
+
+def find_disjoint_franchises(
+    nodes: dict[int, ClassifierNode],
+    edges: list[tuple[int, int, str]],
+    anchor: int | None,
+) -> list[DisjointFranchise]:
+    """Find substance-passing main-chain clusters under one anime row
+    that the classifier didn't absorb into the anchor's main or alt
+    chain — these are sibling franchises bundled together via MAL's
+    promiscuous `side_story` / `spin-off` / `other` labeling (BNHA→
+    Vigilante, Toaru Index→Railgun, Pretty Rhythm→PriPara/King of Prism).
+
+    Pure function: same `(nodes, edges)` shape as `classify_anime_relations`,
+    no DB or seed knowledge — result is identical at scrape, merge, and
+    backfill time. `anchor` should be the classifier's anchor (the second
+    return value of `classify_anime_relations`); pass `None` for empty
+    graphs and the function returns `[]` immediately.
+
+    Returns one `DisjointFranchise` per detected cluster. Empty list when
+    the graph is clean — the common case.
+
+    Detection algorithm (matches phsar/scripts/audit_cross_franchise.py):
+      1. Compute the anchor's main_chain (sequel/prequel closure) and
+         alt_chain (alternative_version seeds + sequel/prequel/alt-version
+         closure). Union = the `anchored` set.
+      2. Substance-passing nodes outside `anchored` are orphans.
+      3. Cluster orphans by their own main-chain reachability. A cluster
+         with ≥2 substance-passing members signals a disjoint franchise
+         main chain — the Overlord+Eminence shape.
+
+    Conan-exception (must-NOT-flag): if a cluster contains only Movies AND
+    at least one bridge edge to the anchored set is labeled `parent_story`
+    or `summary`, MAL is asserting "this is a child story" and we trust
+    it. Conan Movie-N + summary-of-Movie-N pairs trip the disjoint-cluster
+    detector via sequel chains between movies, but they're legitimate
+    side-stories; the exception keeps them quiet. Vigilante (TV-tier) and
+    Railgun (TV-tier) are unaffected — they're not movie-only.
+    """
+    if not nodes or anchor is None:
+        return []
+
+    adj = _build_adjacency(edges, valid_ids=set(nodes.keys()))
+    main_chain = _closure({anchor}, adj, _MAIN_CHAIN_EDGES, set())
+    alt_seeds = {
+        neighbor
+        for main_node in main_chain
+        for neighbor, rel in adj.get(main_node, [])
+        if rel == "alternative_version" and neighbor not in main_chain
+    }
+    alt_chain = _closure(alt_seeds, adj, _ALT_CHAIN_EDGES, main_chain)
+    anchored = main_chain | alt_chain
+
+    substance_passing = {
+        mal_id for mal_id, node in nodes.items() if passes_substance(node)
+    }
+    orphans = substance_passing - anchored
+
+    franchises: list[DisjointFranchise] = []
+    visited: set[int] = set()
+    for orphan in sorted(orphans):
+        if orphan in visited:
+            continue
+        # `excluded=anchored` is technically redundant (anchored is already
+        # closed under main-chain edges so an orphan's closure can't reach
+        # it), but stating the disjoint-cluster invariant in the call is
+        # cheaper than commenting it for future readers.
+        cluster = _closure({orphan}, adj, _MAIN_CHAIN_EDGES, anchored)
+        visited |= cluster
+        substance_in_cluster = cluster & substance_passing
+        if len(substance_in_cluster) < 2:
+            continue
+
+        bridge_edges = [
+            (a, b, rel) for a, b, rel in edges
+            if (a in anchored and b in cluster) or (a in cluster and b in anchored)
+        ]
+
+        if _is_legitimate_side_story_chain(cluster, nodes, bridge_edges):
+            continue
+
+        cluster_nodes = {mid: nodes[mid] for mid in cluster}
+        suggested_anchor = _pick_anchor(cluster_nodes)
+
+        franchises.append({
+            "member_mal_ids": sorted(cluster),
+            "substance_member_mal_ids": sorted(substance_in_cluster),
+            "suggested_anchor_mal_id": suggested_anchor,
+            "bridge_edges": bridge_edges,
+        })
+
+    return franchises
+
+
+def _is_legitimate_side_story_chain(
+    cluster: set[int],
+    nodes: dict[int, ClassifierNode],
+    bridge_edges: list[tuple[int, int, str]],
+) -> bool:
+    # Conan exception: a movie-only cluster reached via at least one
+    # `parent_story` or `summary` edge is MAL asserting "child story of
+    # the parent franchise" — not a sibling franchise. Mononoke 2024
+    # movie trilogy reached via dropped `alternative_setting` lands here
+    # with empty parent_story bridges → falls through, gets flagged.
+    all_movies = all(
+        _normalize_media_type(nodes[mal_id]["media_type"]) in _MOVIE_TYPES
+        for mal_id in cluster
+    )
+    if not all_movies:
+        return False
+    return any(rel in _CHILD_STORY_BRIDGE_RELS for _, _, rel in bridge_edges)

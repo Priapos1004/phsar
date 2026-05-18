@@ -382,12 +382,12 @@ async def test_search_title_captures_normalized_edges(monkeypatch):
     the classifier sees a stable taxonomy.
 
     Naruto-shaped fixture verifies the full franchise traverses and that
-    all the WALK-node outgoing edges land with their normalized labels.
-    Movies (side_stories) arrive as TERMINAL under the v0.14.2 strict
-    boundary: they're in the graph but their relations aren't fetched,
-    so their outgoing `parent_story` edges back to TV aren't captured —
-    the incoming `side_story` edges from TV already encode the
-    relationship for the classifier.
+    all node outgoing edges land with their normalized labels. Movies
+    (side_stories) arrive as TERMINAL under the v0.14.2 strict boundary:
+    they're in the graph and their outgoing edges ARE captured (so
+    split-detection can later see e.g. a Movie's own sequel chain), but
+    the BFS does NOT recurse from them — Movie targets stay out of the
+    graph unless reached via another WALK path.
 
     Classification semantics (movies-via-parent_story → side_story)
     are tested in test_relation_classifier.py.
@@ -438,19 +438,24 @@ async def test_search_title_captures_normalized_edges(monkeypatch):
 
     assert set(graph.keys()) == {20, 1735, 894, 936, 5085}
 
-    # Every WALK-node outgoing edge lands as a normalized edge label.
-    # 20 (Naruto TV) and 1735 (Shippuuden) walk; the side-stories are
-    # TERMINAL and don't contribute outgoing edges.
+    # Every node's outgoing edges land as normalized edge labels — WALK
+    # AND TERMINAL nodes both contribute. 20 (Naruto TV) and 1735
+    # (Shippuuden) walk; 894/936/5085 are TERMINAL but their /relations
+    # are fetched so the reverse parent_story edges back to TV ARE in
+    # the persisted list. The BFS just doesn't recurse from them — TV's
+    # sequels reached via those parent_story edges stay out of the graph
+    # unless WALK already covered them.
     edge_set = {(a, b, r) for a, b, r in edges}
     assert (20, 1735, "sequel") in edge_set
     assert (20, 894, "side_story") in edge_set
     assert (20, 936, "side_story") in edge_set
     assert (1735, 5085, "side_story") in edge_set
-    # The reverse parent_story edges from Movies/OVA are NOT captured —
-    # those nodes are TERMINAL, so their relations weren't fetched.
-    assert not any(a in {894, 936, 5085} for a, _, _ in edges), (
-        "Side-story nodes (TERMINAL) must not contribute outgoing edges"
-    )
+    # Reverse parent_story edges from the TERMINAL Movies/OVA back to TV
+    # ARE captured — TERMINAL captures outgoing edges so split-detection
+    # has the data it needs to see if a Movie has its own franchise chain.
+    assert (894, 20, "parent_story") in edge_set
+    assert (936, 20, "parent_story") in edge_set
+    assert (5085, 1735, "parent_story") in edge_set
 
 
 @pytest.mark.asyncio
@@ -865,9 +870,12 @@ async def test_search_title_overlord_pleiades_x_kagejitsu_does_not_bridge_to_emi
                                                                 → sequel → Kage no Jitsuryokusha S1 (48316)
 
     Pleiades arrives via `side_story` from Overlord's Main → demoted to
-    TERMINAL. TERMINAL nodes get info but their relations are NOT fetched,
-    so 57034, 56842 and the rest of the Eminence chain stay out of the
-    graph entirely.
+    TERMINAL. TERMINAL nodes capture their outgoing edges in the persisted
+    list (so split-detection can see e.g. Vigilante's sequel chain
+    leaking out of BNHA's row) but the BFS does NOT recurse from them —
+    57034's anime info is never fetched, and 56842, 54595, 48316 stay out
+    of the graph entirely. Pleiades's `/relations` IS fetched (so its
+    outgoing `other` edge to 57034 is recorded), but 57034 onward are not.
 
     Production observation that drove the strict (vs. one-hop) state
     machine: a direct Main(Eva) → other → Main(Ultraman) edge under one-hop
@@ -927,25 +935,29 @@ async def test_search_title_overlord_pleiades_x_kagejitsu_does_not_bridge_to_emi
         f"{bridge_and_eminence & graph.keys()}"
     )
 
-    # The franchise boundary held: relations were never fetched for the
-    # TERMINAL node (Pleiades) or anything reached via its `other` chain.
-    for mal_id in (31138, 57034, 56842, 54595, 48316):
+    # Pleiades's relations ARE fetched (TERMINAL captures outgoing edges
+    # so split-detection has the data), but the Eminence chain stays out:
+    # 57034 onward are never queued because Pleiades is TERMINAL and the
+    # for-loop skips queuing its targets.
+    assert 31138 in fetched_relations, (
+        "Pleiades is TERMINAL — its /relations IS fetched for sidecar edges"
+    )
+    for mal_id in (57034, 56842, 54595, 48316):
         assert mal_id not in fetched_relations, (
             f"fetch_relations({mal_id}) was called — BFS crossed the boundary"
         )
 
-    # TERMINAL nodes record no outgoing edges (relations weren't fetched).
-    # Only Overlord (WALK) and any other Main-chain WALK nodes contribute
-    # outgoing edges to the persisted list.
-    assert not any(a == 31138 for a, _, _ in edges), (
-        "Pleiades is TERMINAL — no outgoing edges captured for it"
+    # Edge persistence: Overlord (WALK) → Pleiades + Pleiades (TERMINAL)
+    # → 57034 are both in the persisted list. Edges from 57034 onward are
+    # NOT — those nodes were never processed by the BFS at all.
+    edge_set = {(a, b, r) for a, b, r in edges}
+    assert (29803, 31138, "side_story") in edge_set
+    assert (31138, 57034, "other") in edge_set, (
+        "Pleiades's outgoing edge to 57034 must be captured for split-detection"
     )
     assert not any(a in {57034, 56842, 54595, 48316} for a, _, _ in edges), (
         "Nodes beyond TERMINAL must have no edges in the persisted list"
     )
-    # The direct edge from Overlord WALK → Pleiades is captured.
-    edge_set = {(a, b, r) for a, b, r in edges}
-    assert (29803, 31138, "side_story") in edge_set
 
 
 @pytest.mark.parametrize(
@@ -963,8 +975,11 @@ async def test_search_title_identity_breaking_relation_makes_target_terminal(
 ):
     """The "pure" identity-breaking relations demote the target to TERMINAL
     in the main BFS AND are not walked by anchor discovery:
-    root (WALK) → rel → A (TERMINAL). A is recorded in the graph, but its
-    relations are NOT fetched, so A's sequel chain stays out.
+    root (WALK) → rel → A (TERMINAL). A is recorded in the graph and ITS
+    outgoing edges are captured for sidecar persistence (so split-
+    detection can later see whether A has its own franchise chain), but
+    the BFS does NOT recurse from A — A's sequel targets B and C never
+    enter the graph.
 
     `parent_story` and `full_story` are NOT in this list — they're walked
     by anchor discovery (target IS the canonical ancestor). See
@@ -1009,27 +1024,122 @@ async def test_search_title_identity_breaking_relation_makes_target_terminal(
 
     # Root walked normally and recorded the edge to A.
     assert 1 in graph and 1 in fetched_relations
-    # A is in the graph (info recorded) but its relations are NOT fetched
-    # — the boundary holds at the identity-breaking edge itself.
+    # A is in the graph (info recorded) AND its relations ARE fetched —
+    # TERMINAL nodes capture outgoing edges for sidecar persistence so
+    # split-detection can later see A's franchise chain. The boundary
+    # holds at A's targets: the BFS does NOT queue them.
     assert 2 in graph, (
         f"A (queued via {rel_normalized}) must be in graph as TERMINAL"
     )
-    assert 2 not in fetched_relations, (
-        f"A's relations must NOT be fetched — the {rel_normalized} edge "
-        f"bounds the BFS at A"
+    assert 2 in fetched_relations, (
+        f"A's relations must be fetched — TERMINAL captures outgoing "
+        f"edges for sidecar persistence, even though BFS doesn't recurse"
     )
-    # Therefore B (A's sequel) and C (B's sequel) are unreachable.
+    # Therefore B (A's sequel) and C (B's sequel) are unreachable — the
+    # BFS never queues them, never fetches their info or relations.
     assert 3 not in graph
     assert 4 not in graph
     assert 3 not in fetched_relations
     assert 4 not in fetched_relations
 
-    # Edge data-shape: root's outgoing edge to A IS recorded; A has no
-    # outgoing edges because its relations weren't fetched.
+    # Edge data-shape: root's outgoing edge to A IS recorded AND A's
+    # outgoing edge to B is recorded (TERMINAL captures edges). B's
+    # outgoing edges are NOT recorded — B was never visited.
     edge_set = {(a, b, r) for a, b, r in edges}
     assert (1, 2, rel_normalized) in edge_set
-    assert not any(a == 2 for a, _, _ in edges), (
-        "TERMINAL node A must have no outgoing edges in the persisted list"
+    assert (2, 3, "sequel") in edge_set, (
+        "TERMINAL node A's outgoing sequel edge to B must be captured "
+        "so split-detection can later see A's franchise chain"
+    )
+    assert not any(a == 3 for a, _, _ in edges), (
+        "B was never visited — no outgoing edges captured for it"
+    )
+
+
+@pytest.mark.asyncio
+async def test_search_title_terminal_captures_sequel_chain_for_split_detection(monkeypatch):
+    """Production case for the split-detection data dependency: scraping
+    BNHA must capture Vigilante S1's outgoing sequel edge to Vigilante S2
+    in the persisted edges list — so split-detection can later see the
+    "this side_story has its own franchise chain" signal — WITHOUT pulling
+    Vigilante S2 into BNHA's anime row.
+
+    Fixture mirrors the real MAL relations (per dev DB inspect):
+        BNHA S1 (31964, TV, Main, WALK)
+          → sequel → BNHA S2 (33486, TV, WALK)
+          → spin-off → Vigilante S1 (60593, TV, TERMINAL)
+                         → sequel → Vigilante S2 (61942, TV, would-be-WALK
+                                                     except parent is TERMINAL)
+
+    Under v0.14.3 TERMINAL semantics:
+    - Vigilante S1 IS in the graph.
+    - Vigilante S1's /relations IS fetched (so the (60593, 61942, "sequel")
+      edge lands in the persisted list).
+    - Vigilante S2 is NOT in the graph (TERMINAL doesn't queue its targets).
+    - Vigilante S2's /relations is NEVER fetched.
+    - Split-detection downstream sees the sequel edge in the sidecar and
+      flags the Vigilante cluster for admin review.
+    """
+    fetched_relations: list[int] = []
+
+    relations_by_id = {
+        31964: [(33486, "Sequel"), (60593, "Spin-off")],
+        33486: [(31964, "Prequel")],
+        60593: [(61942, "Sequel")],
+        61942: [(60593, "Prequel")],
+    }
+    title_by_id = {
+        31964: "Boku no Hero Academia",
+        33486: "Boku no Hero Academia 2nd Season",
+        60593: "Vigilante: Boku no Hero Academia Illegals",
+        61942: "Vigilante: Boku no Hero Academia Illegals 2nd Season",
+    }
+
+    async def fake_get(self, url, params=None):
+        if url.endswith("/anime") and params is not None and params.get("q"):
+            return {"data": [_make_anime(31964, "Boku no Hero Academia")]}
+        if url.endswith("/relations"):
+            mal_id = int(url.rsplit("/", 2)[-2])
+            fetched_relations.append(mal_id)
+            return _relations_response(*relations_by_id.get(mal_id, []))
+        if "/anime/" in url:
+            mal_id = int(url.rsplit("/", 1)[-1])
+            return {"data": _make_anime(mal_id, title_by_id[mal_id])}
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+
+    async with JikanScraper() as scraper:
+        relations, _all_info, _unwanted = await scraper.search_title(
+            title="Boku no Hero Academia", excluded_mal_ids=set(),
+        )
+
+    graph, edges, _ = relations[0]
+
+    # Graph membership: BNHA chain + Vigilante S1 (TERMINAL). Vigilante S2 is
+    # OUT — the contamination boundary held.
+    assert {31964, 33486, 60593} <= set(graph.keys())
+    assert 61942 not in graph, (
+        "Vigilante S2 leaked into BNHA's anime — TERMINAL must not queue targets"
+    )
+
+    # Vigilante S1's /relations IS fetched (TERMINAL captures outgoing
+    # edges) but Vigilante S2's is NOT (never queued).
+    assert 60593 in fetched_relations, (
+        "Vigilante S1 is TERMINAL — its /relations must be fetched so the "
+        "sequel edge to S2 lands in the persisted edge list for split-detection"
+    )
+    assert 61942 not in fetched_relations
+
+    # The bridge edge for split-detection: Vigilante S1 → S2 (sequel) is in
+    # the persisted edges. This is what split-detection looks for: a
+    # substance-passing TERMINAL with its own sequel chain to another
+    # substance-passing media not in the anchor's main chain.
+    edge_set = {(a, b, r) for a, b, r in edges}
+    assert (31964, 60593, "spin-off") in edge_set  # BNHA → Vigilante
+    assert (60593, 61942, "sequel") in edge_set, (
+        "The Vigilante S1 → S2 sequel edge MUST be captured — without it, "
+        "split-detection can't see Vigilante is its own franchise"
     )
 
 

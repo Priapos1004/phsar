@@ -80,6 +80,9 @@ FastAPI endpoint definitions. Each router maps to an API prefix.
     - Manual backups attribute to the admin user (visible only in their bell); cron is a system job (`requested_by_user_id=null`), invisible to every bell — the dump list is the audit log
   - Merge-candidate review (list pending, merge, dismiss; powered by the duplicate detector)
     - `POST /admin/merge-candidates/backfill` re-runs existing × existing detection without a container restart — primarily for the post-restore workflow (restore is synchronous, so the lifespan-startup backfill never sees the restored catalog)
+  - Split-candidate review (list pending, split, dismiss; powered by `find_disjoint_franchises` finding disjoint substance-passing chains under one anime row — the BNHA↔Vigilante, Toaru Index↔Railgun shapes)
+    - `POST /admin/split-candidates/backfill` re-runs detection across the catalog on demand; idempotent via cluster-signature supersede in the DAO
+    - Execute creates one new Anime row per detected cluster, re-parents the cluster's media (UUIDs stable so existing ratings stay attached), reclassifies both sides, and re-runs merge detection on the new rows
   - Three cron-token-authed sweep schedulers:
     - `POST /admin/jobs/schedule-sweep?delay_minutes=N` — enqueues an `update_sweep` job (nightly catalog refresh + relations probe)
     - `POST /admin/jobs/schedule-seasonal?delay_minutes=N` — enqueues a `seasonal_sweep` job (weekly `/seasons/now` scrape)
@@ -116,8 +119,10 @@ Modules:
 - `auth_service.py`, `user_settings_service.py`, `token_service.py`, `admin_service.py`
 - `merge_detection_service.py` — duplicate detector (title_studio / title_desc / relation_link signals)
 - `merge_candidate_service.py` — admin merge operations
-- `relation_classifier.py` — pure-function two-pass classifier (DB-less)
+- `split_candidate_service.py` — admin split operations (list, dismiss, execute_split)
+- `relation_classifier.py` — pure-function two-pass classifier (DB-less) + third-pass `find_disjoint_franchises` for split detection
 - `anime_relation_service.py` — `reclassify_anime` orchestration; umbrella drift detection
+- `anime_summary.py` — shared `summarize_anime(anime, rating_count)` helper for the merge + split admin cards
 - `rating_service.py` — rating CRUD + note search
 - `spoiler_service.py` — frontier algorithm + `user_visible_media` cache
 - `export_service.py` — flat media-level export
@@ -128,7 +133,7 @@ Modules:
 Data access layer.
 
 - **`BaseDAO`** — generic async CRUD
-- **Specialized DAOs** (media, anime, genre, studio, user, user_settings, registration_token, rating, job, merge_candidate) — domain-specific queries with vector similarity, filtering, aggregation
+- **Specialized DAOs** (media, anime, genre, studio, user, user_settings, registration_token, rating, job, merge_candidate, split_candidate) — domain-specific queries with vector similarity, filtering, aggregation
 - **`AnimeDAO`**:
   - `search_anime_aggregated` — two-phase query: SQL GROUP BY with HAVING for filtering/ordering, then detail fetch
   - `select_due_for_sweep` — four-tier sweep selection (airing now / still stabilizing / weekly recent main / 180-day long tail), backed by three indexes:
@@ -156,6 +161,11 @@ SQLAlchemy ORM models mapped to PostgreSQL tables.
   - Status enum: `pending`/`dismissed`/`merged`
   - FK cascades on both anime ids — merging or deleting either anime cleans up dangling rows
   - Unique constraint + check on `(anime_a_id, anime_b_id)` with caller-enforced ascending order so `(A,B)` and `(B,A)` collapse
+- **`split_candidate.py`** — admin-reviewable disjoint-franchise rows
+  - Status enum: `pending`/`dismissed`/`split`
+  - Asymmetric to `merge_candidate`: 1 source anime + JSONB `clusters` payload (one entry per disjoint chain detected). No anime_b_id — splits are single-source-multi-target
+  - FK cascade on `anime_id` — deleting or merging the source anime cleans up the row
+  - One-pending-per-anime convention enforced by DAO: `upsert_pending` supersedes the existing pending row when the cluster signature changes (cheaper than partial-unique-constraint migration on enum-status predicates)
 - **`job.py`** — background job queue
   - `JobKind` enum: `user_scrape`, `update_sweep`, `seasonal_sweep`, `backup`
   - `JobStatus` enum: `queued`/`running`/`succeeded`/`failed`
@@ -182,8 +192,9 @@ SQLAlchemy ORM models mapped to PostgreSQL tables.
   - `backfill_spoiler_visibility` — computes visible media for users with **zero** cache rows (new deployments, pre-feature users); does **not** mop up partial-cache drift on existing users
   - `anime_title_backfiller.backfill_anime_title_suffixes` — strips season suffixes ("Season I", "第2期", "Part 2", " II"…) from `Anime.title`/`name_eng`/`name_jap` on rows scraped before the normalisation landed; regenerates the anime embedding for changed rows. Idempotent; subsequent restarts touch zero rows. `anime_service.create_anime_from_media` applies the same strip on new scrapes so the umbrella row reads like the franchise name, not the per-season identity
   - `embedding_backfiller.py` — detects and regenerates missing anime/media/rating embeddings (enables seamless embedding model swaps via Alembic migration + restart)
-  - `relation_backfiller.backfill_relations` — gated by `RELATION_BACKFILL_ON_STARTUP`. Re-runs the two-pass classifier over every Anime via `anime_relation_service.reclassify_anime`. Per-anime commit: lazily-fetched MAL relations (~1 req/s) checkpoint incrementally so a crash mid-run doesn't lose hours of pagination. `dry_run=True` powers the audit checkpoint (see `phsar/scripts/audit_relation_backfill.py`); supports `anime_ids` filter for the admin re-classify endpoint and tests
+  - `relation_backfiller.backfill_relations` — gated by `RELATION_BACKFILL_ON_STARTUP`. Re-runs the two-pass classifier over every Anime via `anime_relation_service.reclassify_anime` AND `detect_split_candidates_for_anime` inside the same per-anime SAVEPOINT. Lazy-fetches MAL relations (~1 req/s) checkpoint incrementally so a crash mid-run doesn't lose hours of pagination. `dry_run=True` powers the audit checkpoint (see `phsar/scripts/audit_relation_backfill.py`); supports `anime_ids` filter for the admin re-classify endpoint and tests
   - `merge_detection_service.backfill_merge_candidates` — one-shot existing × existing pair sweep so duplicates pre-dating the detector get flagged on first restart after upgrade
+  - `split_candidate_backfiller.backfill_split_candidates` — one-shot disjoint-franchise detection across the catalog; runs after `backfill_merge_candidates` so resolved pairs don't surface duplicate split candidates. Pure structural (no MAL calls); idempotent on repeat restarts
   - `save_service.save_search_results` triggers a full-user spoiler-cache recompute after new animes land — load-bearing for existing `spoiler_level=hide` users whose populated cache stays stale (startup backfill skips them since they have rows)
   - The sweep dispatcher's relations probe goes through `save_service.attach_search_result_to_anime` instead, which intentionally does *not* recompute per-batch; the dispatcher fires one coalesced `refresh_spoiler_cache_for_all_users` at sweep end
 - **exceptions.py** — custom exception hierarchy rooted at `PhsarBaseError` with `status_code` attribute
@@ -195,7 +206,7 @@ SQLAlchemy ORM models mapped to PostgreSQL tables.
     - Bell keeps retry button; `_classify_error` tags as `upstream_outage` for friendly copy
   - `AnimeFilteredOutError` (sibling to `AnimeNotFoundError` under permanent) — surfaces when seeded BFS returns nothing AND seed mal_id is in `media_unwanted`; admin sees `"'X' was filtered out as Music"` instead of misleading "not found"
 - **main.py** — app factory + lifespan
-  - Startup sequence: seeders → embedding backfill → merge-candidate backfill → `JobDAO.reap_orphans` → `job_worker.register_dispatcher` (for each of `user_scrape`, `update_sweep`, `seasonal_sweep`, `backup`) → `job_worker.start()`
+  - Startup sequence: seeders → embedding backfill → `JobDAO.reap_orphans` → `job_worker.register_dispatcher` (for each of `user_scrape`, `update_sweep`, `seasonal_sweep`, `backup`) → `job_worker.start()` → yield → post-yield backfills (relation-backfiller → merge-candidate backfill → split-candidate backfill). Post-yield backfills run in `asyncio.create_task` so /health responds during the ~14-min relation cold start; split detection runs LAST so it sees relation-backfiller's TERMINAL sidecars and merge-backfiller's collapsed pairs
   - Shutdown: `job_worker.stop()`
   - Direct endpoints: `GET /` and `GET /health`
     - Health returns `{status, version, db}` and pings DB with 2s `asyncio.wait_for` so transient unavailability produces a fast 503 instead of riding asyncpg's 60s connect timeout into a Coolify liveness flap
@@ -211,7 +222,7 @@ Quick map:
 - `lib/stores/` — auth, settings, spoiler visibility, bell session, cross-component bumps (`jobs.ts`, `maintenance.ts`, `bell-session.ts`)
 - `lib/utils/` — formatters, search params, chart colors, client-side spoiler frontier
 - `lib/themes.ts` + `src/app.css` — centralized theme system (CSS custom props + `.theme-*` overrides)
-- `lib/components/` — MaintenanceBanner, JobBell, BackupsCard, MergeCandidatesCard, RatingsOverview, attribute viz, etc.
+- `lib/components/` — MaintenanceBanner, JobBell, BackupsCard, MergeCandidatesCard, SplitCandidatesCard, RatingsOverview, attribute viz, etc.
 - `lib/components/ui/` — shadcn-svelte base components
 - `tests/` — Vitest + @testing-library/svelte
 
@@ -235,11 +246,12 @@ Quick map:
   - Components use semantic tokens (`bg-primary`, `text-primary`, `ring-ring`)
   - Centralized config in `lib/themes.ts`; FOUC prevention via inline localStorage script in `app.html`
   - Per-theme chart color palettes in `chartColors.ts` avoid hue clashes
-- **Two-pass relation classifier**: scrape-time + merge-time + backfill-time classification of media within an anime (see [compound-docs/2026-05-11-jikan-scraper-quirks.md](compound-docs/2026-05-11-jikan-scraper-quirks.md))
-  - Pass 1 (`jikan_scraper.search_title`) captures relation **edges** during BFS — no classification baked in. Sidecars persist edges unfiltered, including dangling targets
+- **Two-pass relation classifier + third-pass split detection**: scrape-time + merge-time + backfill-time. See [compound-docs/2026-05-11-jikan-scraper-quirks.md](compound-docs/2026-05-11-jikan-scraper-quirks.md) for v0.14.1 classifier rationale and [compound-docs/2026-05-18-v0.14.3-split-candidates.md](compound-docs/2026-05-18-v0.14.3-split-candidates.md) for the third pass
+  - Pass 1 (`jikan_scraper.search_title`) captures relation **edges** during BFS — no classification baked in. TERMINAL nodes (arrived via identity-breaking edges) now fetch `/relations` so their outgoing edges land in the sidecar (the v0.14.3 change), but the BFS still does NOT recurse from them — the graph stays bounded. Sidecars persist edges unfiltered, including dangling targets
   - Pass 2 (`relation_classifier.classify_anime_relations`) picks a canonical anchor by substance gate + tier (TV > ONA > Movie) + oldest aired_from, builds main chain via sequel/prequel closure, classifies alt-chain via `alternative_version` edges, defaults rest to `side_story`; demotes weak Mains via substance gate
+  - Pass 3 (`relation_classifier.find_disjoint_franchises`) takes the classified graph and flags substance-passing media outside the anchor's main+alt chain that form their own connected sub-chain — the Overlord+Eminence, BNHA+Vigilante, Toaru Index+Railgun shapes. Conan-exception: movie-only clusters bridged via `parent_story` or `summary` are legitimate side-story chains and stay quiet. Surfaces as a `split_candidate` for admin review; never auto-splits
   - `RelationType.AlternativeVersion` enum value distinguishes retellings (Evangelion TV ↔ Rebuild Movies, Hokuto no Ken alts) from genuine side stories. Spoiler frontier treats alt-version as an anchor
-  - Same classifier runs at three sites: scrape (per BFS-result), merge survivor (consolidated A∪B), backfiller (per catalog row)
+  - Same three passes run at three sites: scrape (per BFS-result), merge survivor (consolidated A∪B), backfiller (per catalog row)
   - Bridge edges across previously-different-anime boundaries: persisted unfiltered in sidecars; classifier's `_build_adjacency` filters dangling endpoints at adjacency-build time. Merge consolidation surfaces bridges that were dangling at scrape time (Dr. Stone split-merge case)
   - Backfiller (`relation_backfiller`) lazy-fetches `/anime/{id}/relations` for media with empty sidecars; per-anime commit checkpoints incrementally so a 14-min cold start can't lose progress
   - `anime_relation_service.reclassify_anime` is the orchestration helper; rewrites all 7 umbrella fields (mal_id, title, name_eng, name_jap, other_names, description, cover_image) on any drift, regenerates embedding only on title-affecting drift

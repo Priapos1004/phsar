@@ -16,6 +16,7 @@ from app.services.progress_reporter import ProgressReporter
 from app.services.relation_classifier import (
     build_classifier_nodes,
     classify_anime_relations,
+    find_disjoint_franchises,
     passes_substance,
 )
 from app.services.unwanted_media_service import create_unwanted_media
@@ -73,6 +74,16 @@ async def search_mal_api(
         for mal_id, relation_type in classifications.items():
             related_anime_graph[mal_id]["relation_type"] = relation_type
 
+        # Third pass: detect disjoint substance-passing main chains
+        # bundled into this single anime row via MAL's promiscuous
+        # `side_story` / `spin-off` labeling (BNHA→Vigilante, Toaru
+        # Index→Railgun). Pure structural check on the same (nodes,
+        # edges) the classifier saw — same result at scrape, merge,
+        # and backfill time. Surfaces as a SplitCandidate for admin
+        # review post-save (save_service handles the upsert once the
+        # new Anime row has an id).
+        disjoint_franchises = find_disjoint_franchises(nodes, edges, anime_mal_id)
+
         # Substance-failing anchor means the graph's "main" is a weak
         # fallback (donghua with sparse metadata, orphan side-story).
         # Three-way decision:
@@ -129,6 +140,7 @@ async def search_mal_api(
             unconnected_media_list=unconnected_media_list,
             cross_link_mal_ids=cross_link_mal_ids,
             edges=edges,
+            disjoint_franchises=disjoint_franchises,
         ))
 
     return SearchResultDBExtended(

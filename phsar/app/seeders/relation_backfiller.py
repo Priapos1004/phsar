@@ -32,6 +32,9 @@ from sqlalchemy.orm import selectinload
 from app.models.anime import Anime
 from app.models.media import Media
 from app.models.media_relation_edges import MediaRelationEdges
+from app.seeders.split_candidate_backfiller import (
+    detect_split_candidates_for_anime,
+)
 from app.services.anime_relation_service import ReclassifyDiff, reclassify_anime
 from app.services.jikan_scraper import JikanScraper, parse_relation_edges
 
@@ -151,6 +154,16 @@ async def backfill_relations(
                             anime.id, anime.title,
                             len(diff["reclassified"]),
                             diff["anchor_changed"], diff["umbrella_drifted"],
+                        )
+
+                    # Co-located with reclassify_anime: any newly-fetched
+                    # TERMINAL sidecar edges (this row was scraped before
+                    # v0.14.3 so its Vigilante / Railgun-shape spin-offs
+                    # had empty sidecars) may now surface disjoint chains.
+                    # Per-anime SAVEPOINT covers both writes — atomic.
+                    if not dry_run:
+                        await detect_split_candidates_for_anime(
+                            db, anime, detected_by="backfill",
                         )
 
                 # Per-anime commit so lazily-fetched sidecar edges land
