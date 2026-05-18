@@ -287,6 +287,36 @@ def classify_anime_relations(
     return classifications, anchor
 
 
+def would_be_dropped_as_weak_anchor(
+    nodes: dict[int, ClassifierNode],
+    anchor: int | None,
+    seed_mal_id: int | None,
+    cross_link_mal_ids: set[int],
+) -> bool:
+    """Mirror of the weak-anchor-skip branch in
+    `search_service.search_mal_api`. Returns True when the (nodes, edges)
+    graph would be silently dropped at save time: anchor fails substance
+    AND there's no attach target (single cross-link) AND no seed.
+
+    Used by `jikan_scraper.search_title` to detect this case BEFORE
+    appending the graph to `relations`, so the visited_ids claims for
+    those mal_ids can be rolled back and subsequent roots' BFS can
+    include them. Keeping the predicate in one place couples the
+    rollback decision to the actual save-time decision so future edits
+    to one site can't silently drift from the other — same drift class
+    as the v0.14.0 `_normalize_relation` bug (compound-doc reference).
+    """
+    if anchor is None:
+        return False
+    if passes_substance(nodes[anchor]):
+        return False
+    if seed_mal_id is not None:
+        return False
+    if len(cross_link_mal_ids) == 1:
+        return False
+    return True
+
+
 # Edge labels that, when present on the bridge between an orphan cluster
 # and the anchored set, mean MAL is explicitly declaring the cluster a
 # child story of the parent franchise (not a sibling franchise). The

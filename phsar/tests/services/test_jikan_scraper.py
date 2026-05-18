@@ -18,7 +18,15 @@ def _relations_response(*pairs: tuple[int, str]) -> dict:
     }
 
 
-def _make_anime(mal_id: int, title: str, *, media_type: str = "TV") -> dict:
+def _make_anime(
+    mal_id: int,
+    title: str,
+    *,
+    media_type: str = "TV",
+    duration: str = "23 min per ep",
+    episodes: int = 12,
+    aired_from: str = "2020-04-01T00:00:00+00:00",
+) -> dict:
     """Minimum anime payload accepted by extract_information without nulls."""
     return {
         "mal_id": mal_id,
@@ -39,12 +47,12 @@ def _make_anime(mal_id: int, title: str, *, media_type: str = "TV") -> dict:
         "images": {"jpg": {"large_image_url": "https://example/cover.jpg"}},
         "score": 7.5,
         "scored_by": 1000,
-        "episodes": 12,
+        "episodes": episodes,
         "season": "Spring",
         "year": 2020,
-        "aired": {"from": "2020-04-01T00:00:00+00:00", "to": "2020-06-30T00:00:00+00:00"},
+        "aired": {"from": aired_from, "to": "2020-06-30T00:00:00+00:00"},
         "status": "Finished Airing",
-        "duration": "23 min per ep",
+        "duration": duration,
     }
 
 
@@ -1747,3 +1755,95 @@ async def test_search_title_eva_chao_xianshi_first_does_not_lose_main_chain(monk
                 "Eva TV must have outgoing edges captured — was processed as TERMINAL"
             )
             break
+
+
+@pytest.mark.asyncio
+async def test_search_title_weak_anchor_root_releases_visited_ids(monkeypatch):
+    """Regression: a search root whose graph would be weak-anchor-skipped by
+    search_service must release its visited_ids claims so subsequent roots
+    walking through the same chain can include the released mal_ids.
+
+    Production case: Isekai Quartet S1 (38472) is a 11-min TV with empty MAL
+    /relations. Fuzzy search `q=Isekai Quartet` returns [S1, S3, S2] — anchor-
+    tier sort processes S1 first (oldest TV). S1's BFS produces a 1-node
+    graph that fails the TV substance gate (660s < 900s) AND has no
+    cross-link, so search_service drops it. Pre-fix: S1 stayed claimed in
+    visited_ids, S3's BFS walked the prequel chain (Movie → S2 → S1) but
+    S1 was already visited → silently skipped from S3's graph → S1
+    permanently lost from the catalog. Post-fix: S1's claim is rolled back
+    when its graph is detected as weak-anchor-without-cross-link, letting
+    S3's BFS include it.
+
+    Fixture mirrors the real MAL shape (verified via direct /relations
+    fetch): S1 has empty relations, S2 ↔ Movie ↔ S3 are sequel/prequel
+    chained.
+    """
+    fetched_relations: list[int] = []
+
+    relations_by_id = {
+        38472: [],  # Isekai Quartet S1 — empty (real MAL behavior)
+        39988: [(38472, "Prequel"), (41567, "Sequel")],
+        41567: [(39988, "Prequel"), (61851, "Sequel")],
+        61851: [(41567, "Prequel")],
+    }
+
+    def _short_tv(mal_id: int, title: str, aired_from: str) -> dict:
+        return _make_anime(
+            mal_id, title,
+            media_type="TV",
+            duration="11 min per ep",
+            episodes=12,
+            aired_from=aired_from,
+        )
+
+    def _movie(mal_id: int, title: str, aired_from: str) -> dict:
+        return _make_anime(
+            mal_id, title,
+            media_type="Movie",
+            duration="1 hr 40 min",
+            episodes=1,
+            aired_from=aired_from,
+        )
+
+    anime_by_id = {
+        38472: _short_tv(38472, "Isekai Quartet", "2019-04-09T00:00:00+00:00"),
+        39988: _short_tv(39988, "Isekai Quartet 2", "2020-01-14T00:00:00+00:00"),
+        41567: _movie(41567, "Isekai Quartet Movie", "2022-06-10T00:00:00+00:00"),
+        61851: _short_tv(61851, "Isekai Quartet 3", "2025-04-09T00:00:00+00:00"),
+    }
+
+    async def fake_get(self, url, params=None):
+        if url.endswith("/anime") and params is not None and params.get("q"):
+            # Search returns S1 + S3 (omit S2 + Movie to keep the test
+            # focused on the S1-as-root weak-anchor case). Anchor-tier
+            # sort puts S1 first (older TV beats newer TV; both tier 1).
+            return {"data": [anime_by_id[38472], anime_by_id[61851]]}
+        if url.endswith("/relations"):
+            mal_id = int(url.rsplit("/", 2)[-2])
+            fetched_relations.append(mal_id)
+            pairs = relations_by_id.get(mal_id, [])
+            return _relations_response(*pairs) if pairs else {"data": []}
+        if "/anime/" in url:
+            mal_id = int(url.rsplit("/", 1)[-1])
+            return {"data": anime_by_id[mal_id]}
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+
+    async with JikanScraper() as scraper:
+        relations, _all_info, _unwanted = await scraper.search_title(
+            title="Isekai Quartet", excluded_mal_ids=set(),
+        )
+
+    # One graph survives — the S3 root's, which walked the full chain.
+    # S1's root produced a weak-anchor singleton that got dropped + rolled
+    # back; without the rollback, S3's graph would be missing S1.
+    assert len(relations) == 1, (
+        f"Expected 1 surviving graph (S3's, with full chain) — got {len(relations)}"
+    )
+    graph, _edges, _cross_links = relations[0]
+    assert set(graph.keys()) == {38472, 39988, 41567, 61851}, (
+        f"Surviving graph must include S1 (38472) via S3's BFS walk through "
+        f"the prequel chain — got {sorted(graph.keys())}. If S1 is missing, "
+        f"the rollback didn't fire and S1 stayed claimed in visited_ids."
+    )

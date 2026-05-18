@@ -18,6 +18,7 @@ from app.services.relation_classifier import (
     classify_anime_relations,
     find_disjoint_franchises,
     passes_substance,
+    would_be_dropped_as_weak_anchor,
 )
 from app.services.unwanted_media_service import create_unwanted_media
 
@@ -87,12 +88,21 @@ async def search_mal_api(
         # Substance-failing anchor means the graph's "main" is a weak
         # fallback (donghua with sparse metadata, orphan side-story).
         # Three-way decision:
-        #   (1) Single cross-link to an existing parent → attach instead
+        #   (1) Title-search mode with no attach target → drop (shared
+        #       predicate with search_title's rollback so the two sites
+        #       can't drift; see `would_be_dropped_as_weak_anchor`).
+        #   (2) Single cross-link to an existing parent → attach instead
         #       of creating a duplicate anime row.
-        #   (2) Seeded BFS mode → save as new anime; the seasonal sweep
+        #   (3) Seeded BFS mode → save as new anime; the seasonal sweep
         #       picked this mal_id deliberately.
-        #   (3) Title-search mode with no cross-link → fuzzy-match
-        #       garbage, skip.
+        if would_be_dropped_as_weak_anchor(
+            nodes, anime_mal_id, seed_mal_id, cross_link_mal_ids,
+        ):
+            logger.warning(
+                "Skipping weak-anchor graph (cross_links=%s, anchor=%s)",
+                cross_link_mal_ids, anime_mal_id,
+            )
+            continue
         if not passes_substance(nodes[anime_mal_id]):
             if len(cross_link_mal_ids) == 1:
                 target_mal_id = next(iter(cross_link_mal_ids))
@@ -108,12 +118,6 @@ async def search_mal_api(
                 logger.info(
                     "Weak-anchor graph will attach to mal_id=%s (anchor=%s)",
                     target_mal_id, anime_mal_id,
-                )
-                continue
-            if seed_mal_id is None:
-                logger.warning(
-                    "Skipping weak-anchor graph (cross_links=%s, anchor=%s)",
-                    cross_link_mal_ids, anime_mal_id,
                 )
                 continue
             # Seeded mode: log the weak-anchor save and fall through to

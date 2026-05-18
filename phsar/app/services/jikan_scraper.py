@@ -16,7 +16,12 @@ from tenacity import (
 )
 
 from app.exceptions import AnimeNotFoundError, TransientUpstreamError
-from app.services.relation_classifier import anchor_tier
+from app.services.relation_classifier import (
+    anchor_tier,
+    build_classifier_nodes,
+    classify_anime_relations,
+    would_be_dropped_as_weak_anchor,
+)
 
 
 def _is_transient_mal_error(exc: BaseException) -> bool:
@@ -703,6 +708,30 @@ class JikanScraper:
                 else:
                     logger.warning(f"Anime without media_type:\n{anime_info}")
                     unwanted_media.add((current_mal_id, anime_info["title"], "Unknown"))
+
+            # Roll back visited_ids claims for any graph that save_service
+            # would silently drop. Without this, a short-form franchise
+            # whose first season is a search root (Isekai Quartet S1 —
+            # 11-min TV with empty MAL /relations) produces a 1-node
+            # weak-anchor graph that gets dropped, but its mal_ids stay
+            # claimed in visited_ids — the next root's BFS then skips
+            # those mal_ids and the franchise loses that season
+            # permanently. `would_be_dropped_as_weak_anchor` mirrors
+            # search_service's actual skip predicate so the two sites
+            # can't drift.
+            if related_anime_graph:
+                check_nodes = build_classifier_nodes(related_anime_graph, all_info)
+                _, check_anchor = classify_anime_relations(check_nodes, edges)
+                if would_be_dropped_as_weak_anchor(
+                    check_nodes, check_anchor, seed_mal_id, cross_link_mal_ids,
+                ):
+                    # `visited_ids` is the only state that survives across
+                    # root iterations and carries cross-root claims; the
+                    # per-root locals (related_anime_graph, edges, etc.)
+                    # fall out of scope naturally on `continue`.
+                    for mid in related_anime_graph:
+                        visited_ids.discard(mid)
+                    continue
 
             if related_anime_graph:
                 sorted_graph = dict(
