@@ -31,6 +31,8 @@ alembic revision --autogenerate -m "Describe change"
 alembic upgrade head
 ```
 
+Dev DB helper scripts (audit, inspect, find, delete) live under `phsar/scripts/` — see [phsar/scripts/README.md](phsar/scripts/README.md) for the full list. Read-only by default; mutating scripts require `--apply`.
+
 ### Frontend
 ```bash
 cd phsar/frontend
