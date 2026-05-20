@@ -17,10 +17,11 @@ split, a rating on Vigilante S1 still points to that exact media
 row; the media has just moved to a different anime parent.
 """
 
+import asyncio
 import logging
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -51,9 +52,22 @@ from app.services.merge_detection_service import detect_merge_candidates
 from app.services.relation_classifier import (
     classify_anime_relations,
     media_to_classifier_node,
+    passes_substance,
 )
 from app.services.spoiler_service import refresh_spoiler_cache_for_all_users
 from app.services.vector_embedding_service import create_anime_embedding
+
+# Bound on a single cluster's embedding regen so a stuck encoder thread
+# can't hang the admin request indefinitely. Generous enough that normal
+# encodes complete (typical 50-200 ms); a timeout here surfaces as a 5xx
+# and the session rolls back the partial split — admin re-runs.
+_EMBEDDING_TIMEOUT_S = 60.0
+
+# The detection rule requires ≥2 substance-passing members per cluster
+# (relation_classifier.find_disjoint_franchises). Re-checked at execute
+# time so a cluster whose members got demoted between detection and
+# execute fails loud instead of landing as a 1-media anime row.
+_MIN_SUBSTANCE_MEMBERS = 2
 
 logger = logging.getLogger(__name__)
 
@@ -203,7 +217,24 @@ async def execute_split(db: AsyncSession, uuid: UUID) -> tuple[str, list[str]]:
         sub_classifications, sub_anchor = classify_anime_relations(sub_nodes, sub_edges)
         expected = cluster["suggested_anchor_mal_id"]
         if sub_anchor != expected:
-            raise SplitCandidateStaleError(expected, sub_anchor)
+            raise SplitCandidateStaleError(
+                f"expected cluster anchor mal_id={expected}, classifier "
+                f"now picks {sub_anchor!r}"
+            )
+
+        # Re-verify the detection invariant: cluster must still carry ≥2
+        # substance-passing members. If sweep demoted a member between
+        # detection and execute (episode count dropped below the gate,
+        # MAL relabeled to Music, etc.) we'd otherwise create a
+        # 1-media anime row that contradicts the rule the detector enforces.
+        substance_count = sum(
+            1 for node in sub_nodes.values() if passes_substance(node)
+        )
+        if substance_count < _MIN_SUBSTANCE_MEMBERS:
+            raise SplitCandidateStaleError(
+                f"cluster has only {substance_count} substance-passing "
+                f"member(s) — need ≥{_MIN_SUBSTANCE_MEMBERS}"
+            )
 
         anchor_media = next(m for m in cluster_media if m.mal_id == sub_anchor)
         new_anime = _new_anime_from_anchor(anchor_media)
@@ -215,14 +246,14 @@ async def execute_split(db: AsyncSession, uuid: UUID) -> tuple[str, list[str]]:
         new_anime_uuids.append(str(new_anime.uuid))
         new_anime_ids.append(new_anime.id)
 
-        # Re-parent cluster media. UPDATE in one shot — bulk is cheaper
-        # than per-row and the cascading sidecar tables don't care.
-        cluster_media_ids = [m.id for m in cluster_media]
-        await db.execute(
-            update(Media)
-            .where(Media.id.in_(cluster_media_ids))
-            .values(anime_id=new_anime.id)
-        )
+        # Re-parent cluster media via per-row assignment so the ORM
+        # identity map stays consistent — a bulk UPDATE would leave the
+        # cached `media.anime_id` attribute stale on the moved
+        # instances, which any future reader expecting that column to
+        # match the new parent would silently misread. Per-row cost is
+        # negligible (typical cluster size 2-10).
+        for m in cluster_media:
+            m.anime_id = new_anime.id
 
         # Stamp classifier-derived relation_types on each cluster media.
         # The classifier saw a subset graph so labels may differ from
@@ -232,11 +263,17 @@ async def execute_split(db: AsyncSession, uuid: UUID) -> tuple[str, list[str]]:
             new_rt = sub_classifications[m.mal_id]
             m.relation_type = RelationType(new_rt)
 
-        await create_anime_embedding(
-            db,
-            anime_id=new_anime.id,
-            title_texts=anime_title_texts(new_anime),
-            description_text=new_anime.description or "",
+        # Bound the encode + DB write so a stuck encoder thread can't
+        # hang the admin request indefinitely. Timeout surfaces as a
+        # 5xx and the session rolls back this cluster's writes.
+        await asyncio.wait_for(
+            create_anime_embedding(
+                db,
+                anime_id=new_anime.id,
+                title_texts=anime_title_texts(new_anime),
+                description_text=new_anime.description or "",
+            ),
+            timeout=_EMBEDDING_TIMEOUT_S,
         )
 
         logger.info(
@@ -274,12 +311,12 @@ async def execute_split(db: AsyncSession, uuid: UUID) -> tuple[str, list[str]]:
         await detect_split_candidates_for_anime(
             db, source_anime, detected_by="post_split_source",
         )
-    for new_id in new_anime_ids:
-        new_anime = (await db.execute(
-            select(Anime).where(Anime.id == new_id)
+    if new_anime_ids:
+        new_anime_rows = (await db.execute(
+            select(Anime).where(Anime.id.in_(new_anime_ids))
             .options(selectinload(Anime.media).selectinload(Media.relation_edges))
-        )).scalars().first()
-        if new_anime is not None:
+        )).scalars().all()
+        for new_anime in new_anime_rows:
             await detect_split_candidates_for_anime(
                 db, new_anime, detected_by="post_split_new",
             )
@@ -298,7 +335,13 @@ async def execute_split(db: AsyncSession, uuid: UUID) -> tuple[str, list[str]]:
 
     # Spoiler cache stores media ids, not anime ids, but the frontier
     # algorithm runs per-anime. Recompute globally because anime
-    # boundaries shifted.
-    await refresh_spoiler_cache_for_all_users(db)
+    # boundaries shifted. The split itself is already durably committed
+    # above — a cache-recompute failure shouldn't 5xx the request and
+    # trick the admin into retrying an already-resolved candidate. Same
+    # pattern as scrape_dispatcher's post-sweep recompute.
+    try:
+        await refresh_spoiler_cache_for_all_users(db)
+    except Exception:
+        logger.exception("Spoiler cache recompute failed after split execute")
 
     return str(source_anime.uuid) if source_anime else "", new_anime_uuids

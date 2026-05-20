@@ -406,3 +406,34 @@ async def test_merge_demotes_weak_main_from_loser(db_session):
         select(Media).where(Media.mal_id == 950201)
     )).scalar_one()
     assert refreshed_b_media.relation_type == RelationType.SideStory
+
+
+@pytest.mark.asyncio
+async def test_merge_survives_spoiler_refresh_failure(db_session, monkeypatch):
+    """Post-commit `refresh_spoiler_cache_for_all_users` failure must NOT
+    raise out of merge — the merge itself is already durably committed,
+    so a 5xx would trick admin into retrying an already-resolved
+    candidate and hitting AlreadyResolvedError. Mirrors the sweep
+    dispatcher's soft-warn pattern."""
+    from app.services import merge_candidate_service
+
+    async def _boom(_db):
+        raise RuntimeError("spoiler cache unavailable")
+
+    monkeypatch.setattr(
+        merge_candidate_service,
+        "refresh_spoiler_cache_for_all_users",
+        _boom,
+    )
+
+    a, b, _, _, candidate_uuid = await _make_pair(
+        db_session, a_mal=90601, b_mal=90602,
+    )
+    a_id, b_id = sorted((a.id, b.id))
+    table_a = a if a.id == a_id else b
+    table_b = b if b.id == b_id else a
+
+    surviving_uuid = await merge(db_session, uuid=candidate_uuid)
+    # Merge landed despite the failure.
+    assert surviving_uuid == str(table_a.uuid)
+    assert await db_session.get(Anime, table_b.id) is None

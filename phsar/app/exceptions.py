@@ -470,16 +470,13 @@ class SplitCandidateStaleError(PhsarBaseError):
     """Raised when the cluster payload no longer matches what the
     classifier would produce on the source anime's current graph (e.g.,
     sweep added new media that shifted the structure between detection
-    and execution). Admin re-runs detection to refresh."""
+    and execution, or members got demoted below the substance gate
+    leaving the cluster too small to split). Admin re-runs detection
+    to refresh."""
     status_code = 409
 
-    def __init__(self, expected_anchor_mal_id: int, observed_anchor_mal_id: int | None):
-        message = (
-            f"Split candidate is stale: expected cluster anchor mal_id="
-            f"{expected_anchor_mal_id}, classifier now picks "
-            f"{observed_anchor_mal_id!r}. Re-run detection."
-        )
-        super().__init__(message)
+    def __init__(self, reason: str):
+        super().__init__(f"Split candidate is stale: {reason}. Re-run detection.")
 
 
 class BackupUploadTooLargeError(PhsarBaseError):

@@ -13,6 +13,7 @@ from sqlalchemy.orm import selectinload
 from app.exceptions import (
     SplitCandidateAlreadyResolvedError,
     SplitCandidateNotFoundError,
+    SplitCandidateStaleError,
 )
 from app.models.anime import Anime
 from app.models.media import Media, RelationType
@@ -175,3 +176,63 @@ async def test_execute_split_on_unknown_uuid_raises(db_session):
     import uuid as uuid_module
     with pytest.raises(SplitCandidateNotFoundError):
         await execute_split(db_session, uuid_module.uuid4())
+
+
+@pytest.mark.asyncio
+async def test_execute_split_survives_spoiler_refresh_failure(
+    db_session, monkeypatch,
+):
+    """Post-commit `refresh_spoiler_cache_for_all_users` failure must NOT
+    raise out of execute_split — the split itself is already durably
+    committed, so a 5xx would trick admin into retrying an
+    already-resolved candidate and hitting AlreadyResolvedError.
+    Mirrors the sweep dispatcher's soft-warn pattern."""
+    from app.services import split_candidate_service
+
+    async def _boom(_db):
+        raise RuntimeError("spoiler cache unavailable")
+
+    monkeypatch.setattr(
+        split_candidate_service,
+        "refresh_spoiler_cache_for_all_users",
+        _boom,
+    )
+
+    _, _, candidate_uuid = await _make_bnha_with_vigilante_candidate(db_session)
+    surviving_uuid, new_anime_uuids = await execute_split(db_session, candidate_uuid)
+
+    # Split landed despite the failure.
+    assert surviving_uuid
+    assert len(new_anime_uuids) == 1
+    cand = (await db_session.execute(
+        select(SplitCandidate).where(SplitCandidate.uuid == candidate_uuid)
+    )).scalar_one()
+    assert cand.status == SplitCandidateStatus.split
+
+
+@pytest.mark.asyncio
+async def test_execute_split_raises_on_substance_collapse(db_session):
+    """If members got demoted below the substance gate between detection
+    and execute (sweep dropped episode count, MAL relabeled to a
+    sub-threshold media_type) the cluster may have <2 substance-passing
+    members — but the detector requires ≥2. Fail-loud so admin re-runs
+    detection instead of landing a 1-media anime row that contradicts
+    the rule."""
+    _, media, candidate_uuid = await _make_bnha_with_vigilante_candidate(db_session)
+    _, vig_s1, vig_s2 = media
+
+    # Collapse one Vigilante below the TV substance gate (episodes<8
+    # AND duration<10min). The cluster now has only S1 passing
+    # substance, so execute must raise.
+    vig_s2.episodes = 1
+    vig_s2.duration_seconds = 60
+    await db_session.flush()
+
+    with pytest.raises(SplitCandidateStaleError):
+        await execute_split(db_session, candidate_uuid)
+
+    # Candidate left pending — admin re-runs detection to refresh.
+    cand = (await db_session.execute(
+        select(SplitCandidate).where(SplitCandidate.uuid == candidate_uuid)
+    )).scalar_one()
+    assert cand.status == SplitCandidateStatus.pending

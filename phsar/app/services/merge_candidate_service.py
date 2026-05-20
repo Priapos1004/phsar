@@ -237,7 +237,13 @@ async def merge(
             logger.exception("Post-merge re-detection failed; merge itself succeeded")
         # Spoiler cache stores media ids, not anime ids, but the frontier
         # algorithm runs per-anime. Recompute globally so frontiers reflect
-        # the merged media list.
-        await refresh_spoiler_cache_for_all_users(db)
+        # the merged media list. The merge itself committed above — a
+        # cache-recompute failure shouldn't 5xx the request and trick the
+        # admin into retrying an already-resolved candidate. Same pattern
+        # as scrape_dispatcher's post-sweep recompute.
+        try:
+            await refresh_spoiler_cache_for_all_users(db)
+        except Exception:
+            logger.exception("Spoiler cache recompute failed after merge")
 
     return str(anime_a.uuid) if anime_a else ""
