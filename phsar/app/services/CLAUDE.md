@@ -72,6 +72,7 @@ Handlers for `user_scrape` and `update_sweep` jobs (the catalog-mutation pair th
   - Score/scored_by writes gated on `payload["scored_by"]` being truthy — MAL returns scored_by as None or > 0 (never literally 0), and `extract_information` coerces None → 0 for the not-null column, so a 0 during refresh means the field was omitted; clobbering a populated count would be silent data loss
 - Stability counter: resets to 0 when any media is currently airing or any field changed (above threshold), else `min(prev + 1, 99)`
 - Coalesced `refresh_spoiler_cache_for_all_users` fires once at sweep end if any new media landed — the probe path uses `attach_search_result_to_anime` (never recomputes) instead of `save_search_results` (always does), so a 200-anime sweep with 50 new media triggers one cache recompute instead of 50
+- Coalesced `detect_merge_candidates` fires once at sweep end against anime ids that had media attached via the probe path. The attach path bypasses `save_search_results`'s save-time detection, so without this a tier-3 anime whose probe pulls in a new sibling franchise (Vigilante-shape) would miss the `relation_link` merge flag until container restart
 - **`seasonal_sweep`**: paginates `JikanScraper.fetch_current_season` (`/seasons/now`)
   - Dedupes against `Anime.mal_id ∪ Media.mal_id ∪ MediaUnwanted.mal_id` (plus per-run dedupe so MAL's cross-page duplicates don't double-enqueue)
   - Bulk-inserts one system `user_scrape` child per new mal_id with `requested_by_user_id=null` (system jobs skip per-user cap)
@@ -108,7 +109,7 @@ Orchestrates BFS output into save/attach/merge decisions.
   - Before v0.14.0 comparisons used the underscore form but lists held raw MAL strings (`"Parent story"`), so the `is_main_story` gate silently let every franchise movie classify as `main` instead of `side_story`
   - See [compound-docs/2026-05-11-jikan-scraper-quirks.md](../../../compound-docs/2026-05-11-jikan-scraper-quirks.md)
   - Fix applies to new scrapes only; pre-fix catalog rows keep stale labels until re-scraped
-- **Third-pass split detection runs alongside classification** (v0.14.2 split-candidates): `find_disjoint_franchises(nodes, edges, anchor)` finds substance-passing media outside the anchor's main+alt chain that form their own connected sequel chain. Result rides on `SearchResultDB.disjoint_franchises`; `save_service` upserts a `SplitCandidate` row when non-empty. See [compound-docs/2026-05-18-v0.14.2-split-candidates.md](../../../compound-docs/2026-05-18-v0.14.2-split-candidates.md)
+- **Third-pass split detection runs alongside classification** (v0.14.2 split-candidates): `find_disjoint_franchises(nodes, edges, anchor)` finds substance-passing media outside the anchor's main+alt chain that form their own connected sequel chain. Result rides on `SearchResultDB.disjoint_franchises`; `save_service` upserts a `SplitCandidate` row when non-empty. **Skipped when the anchor itself fails the substance gate** (seeded weak-anchor saves) — with no meaningful main chain, any substance-passing sub-chain would surface as a false-positive split. Real franchise contamination re-detects when the strong-anchor sibling lands. See [compound-docs/2026-05-18-v0.14.2-split-candidates.md](../../../compound-docs/2026-05-18-v0.14.2-split-candidates.md)
 
 ## Vector + search
 

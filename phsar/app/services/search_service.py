@@ -75,15 +75,13 @@ async def search_mal_api(
         for mal_id, relation_type in classifications.items():
             related_anime_graph[mal_id]["relation_type"] = relation_type
 
-        # Third pass: detect disjoint substance-passing main chains
-        # bundled into this single anime row via MAL's promiscuous
-        # `side_story` / `spin-off` labeling (BNHA→Vigilante, Toaru
-        # Index→Railgun). Pure structural check on the same (nodes,
-        # edges) the classifier saw — same result at scrape, merge,
-        # and backfill time. Surfaces as a SplitCandidate for admin
-        # review post-save (save_service handles the upsert once the
-        # new Anime row has an id).
-        disjoint_franchises = find_disjoint_franchises(nodes, edges, anime_mal_id)
+        # Pin the substance verdict once: the upcoming branches read it
+        # both for the weak-anchor-attach decision AND for whether
+        # split-candidate detection makes sense (skipped on weak
+        # anchors — a seeded weak save has no meaningful "main chain"
+        # for the splitter to anchor against, and any substance-passing
+        # sub-chain would surface as a false-positive split candidate).
+        anchor_passes_substance = passes_substance(nodes[anime_mal_id])
 
         # Substance-failing anchor means the graph's "main" is a weak
         # fallback (donghua with sparse metadata, orphan side-story).
@@ -103,7 +101,7 @@ async def search_mal_api(
                 cross_link_mal_ids, anime_mal_id,
             )
             continue
-        if not passes_substance(nodes[anime_mal_id]):
+        if not anchor_passes_substance:
             if len(cross_link_mal_ids) == 1:
                 target_mal_id = next(iter(cross_link_mal_ids))
                 graph_all_info = {
@@ -138,6 +136,16 @@ async def search_mal_api(
                 unconnected_media_list = [media] + unconnected_media_list
             else:
                 unconnected_media_list.append(media)
+
+        # Third pass: detect disjoint substance-passing main chains
+        # bundled into this single anime row via MAL's promiscuous
+        # `side_story` / `spin-off` labeling (BNHA→Vigilante, Toaru
+        # Index→Railgun). Skip on weak-anchor seeded saves — see the
+        # comment at the substance-pin above.
+        disjoint_franchises = (
+            find_disjoint_franchises(nodes, edges, anime_mal_id)
+            if anchor_passes_substance else []
+        )
 
         result_list.append(SearchResultDB(
             anime_mal_id=anime_mal_id,

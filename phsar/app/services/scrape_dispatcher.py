@@ -47,6 +47,7 @@ from app.services.jikan_scraper import (
     parse_mal_datetime,
     parse_relation_edges,
 )
+from app.services.merge_detection_service import detect_merge_candidates
 from app.services.progress_reporter import ProgressReporter
 from app.services.relation_classifier import classify_and_stamp
 from app.services.save_service import attach_search_result_to_anime, save_search_results
@@ -231,6 +232,13 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     probe_succeeded = 0
     probe_failed = 0
     sweep_added_media = False
+    # Track which existing anime had new media attached so we can re-run
+    # merge detection on them at sweep end — a tier-3 anime whose probe
+    # pulled in a new sibling franchise (Vigilante-shape) may now bridge
+    # to a third anime in the catalog via relation_link, and the save-time
+    # detector never sees it because the attach path bypasses
+    # save_search_results.
+    probe_attached_anime_ids: list[int] = []
     genre_drift_aggregate: list[dict] = []
     studio_drift_aggregate: list[dict] = []
     async with JikanScraper() as scraper:
@@ -251,6 +259,7 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
                     continue
                 if probe_added:
                     sweep_added_media = True
+                    probe_attached_anime_ids.append(anime.id)
                 probe_succeeded += 1
 
             _advance_anime_freshness(
@@ -266,6 +275,25 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
             genre_drift_aggregate.extend(step1.genre_drifts)
             studio_drift_aggregate.extend(step1.studio_drifts)
             await progress.update(items_done=refreshed)
+
+    # Re-run merge detection against anime that had new media attached —
+    # mirrors the save-time detection in save_search_results, which the
+    # probe path bypasses (attach_search_result_to_anime never recomputes
+    # detection). Coalesced into one call so the spoiler refresh + merge
+    # detection share the maintenance window. Per-anime catalog work has
+    # already committed, so a detection failure shouldn't fail the whole
+    # sweep — soft-warn into result_summary.
+    merge_detect_failed = False
+    if probe_attached_anime_ids:
+        try:
+            await detect_merge_candidates(
+                session, new_anime_ids=probe_attached_anime_ids,
+            )
+            await session.commit()
+        except Exception:
+            logger.exception("Post-sweep merge detection failed")
+            merge_detect_failed = True
+            await session.rollback()
 
     cache_recompute_failed = False
     if sweep_added_media:
@@ -288,6 +316,8 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
         "umbrella_reclassed": umbrella_reclassed,
         "probe_succeeded": probe_succeeded,
         "probe_failed": probe_failed,
+        "probe_attached_anime_count": len(probe_attached_anime_ids),
+        "merge_detect_failed": merge_detect_failed,
         "cache_recompute_failed": cache_recompute_failed,
         "genre_drift": _summarize_drift(genre_drift_aggregate),
         "studio_drift": _summarize_drift(studio_drift_aggregate),
