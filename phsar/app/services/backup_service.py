@@ -511,20 +511,32 @@ async def restore_backup(
         # append the restore Job row itself. `restore_error` is None on
         # success → status=succeeded; non-None on pg_restore failure →
         # status=failed with the original message preserved. Wrapped in
-        # try/except so the audit step can't deadlock the maintenance gate
-        # — at worst the admin loses one operational log line.
+        # try/except + wait_for so the audit step can't deadlock the
+        # maintenance gate — at worst the admin loses one operational log
+        # line. The wait_for bound protects against a half-restored DB
+        # where `async_session_maker()` hangs on connection acquisition.
         try:
-            await _merge_jobs_audit_and_record_restore(
-                filename=filename,
-                pre_snapshot_filename=pre_snapshot.filename,
-                caller_username=caller_username,
-                caller_user_id=caller_user_id,
-                error=restore_error,
+            await asyncio.wait_for(
+                _merge_jobs_audit_and_record_restore(
+                    filename=filename,
+                    pre_snapshot_filename=pre_snapshot.filename,
+                    caller_username=caller_username,
+                    caller_user_id=caller_user_id,
+                    error=restore_error,
+                ),
+                timeout=30.0,
             )
         except Exception:
             logger.exception("Post-restore jobs-audit merge / restore-row insert failed")
 
-        set_maintenance(False)
+        # set_maintenance writes a log line with stack-tag extraction; a
+        # logger handler failure here would otherwise leave the flag
+        # stuck across the rest of the request lifecycle. Catch + log so
+        # the finally block always completes.
+        try:
+            set_maintenance(False)
+        except Exception:
+            logger.exception("set_maintenance(False) failed in restore finally")
 
     return pre_snapshot
 
@@ -560,6 +572,16 @@ async def _merge_jobs_audit_and_record_restore(
                     "ON CONFLICT (id) DO NOTHING"
                 ))
                 await session.execute(text(f"DROP TABLE {_JOBS_DUMP_STAGING_TABLE}"))
+                # Advance jobs_id_seq past max(id) so the next INSERT
+                # (the restore_job below + every subsequent job creation)
+                # can't collide with rows we just merged in. The restored
+                # sequence value reflects whatever was next at dump time,
+                # which may be ≤ staging's max id if the live DB issued
+                # ids after the dump was taken.
+                await session.execute(text(
+                    "SELECT setval('jobs_id_seq', "
+                    "GREATEST(COALESCE((SELECT MAX(id) FROM jobs), 0), 1))"
+                ))
 
         now = datetime.now(timezone.utc)
         status = JobStatus.failed if error else JobStatus.succeeded

@@ -741,3 +741,56 @@ async def test_merge_audit_on_conflict_preserves_live_row(tracked_jobs):
             tracked_jobs.append(restore_rows[0].id)
     finally:
         await _drop_staging_if_exists()
+
+
+async def test_merge_audit_advances_jobs_id_seq_past_staging_max(tracked_jobs):
+    """After merging staging rows, jobs_id_seq must point past the max
+    inserted id — otherwise the restore_job INSERT (and every subsequent
+    job creation) can collide with a freshly-merged row and IntegrityError
+    out. Simulates a staging row with an id far above whatever the live
+    sequence currently sits at."""
+    # Pick an id that's almost certainly higher than the live sequence value
+    # in a freshly-initialized test DB. The setval() inside the merge step
+    # should advance past this floor.
+    high_id = 1_000_000_001
+    async with async_session_maker() as s:
+        await s.execute(text(
+            f"DROP TABLE IF EXISTS {backup_service._JOBS_DUMP_STAGING_TABLE}"
+        ))
+        await s.execute(text(
+            f"CREATE TABLE {backup_service._JOBS_DUMP_STAGING_TABLE} "
+            "(LIKE jobs INCLUDING ALL)"
+        ))
+        await s.execute(text(
+            f"INSERT INTO {backup_service._JOBS_DUMP_STAGING_TABLE} "
+            "(id, uuid, kind, status, payload, items_done, created_at, modified_at) "
+            "VALUES (:id, gen_random_uuid(), 'user_scrape', 'succeeded', "
+            "  '{}'::jsonb, 0, NOW(), NOW())"
+        ).bindparams(id=high_id))
+        await s.commit()
+        tracked_jobs.append(high_id)
+
+    try:
+        await backup_service._merge_jobs_audit_and_record_restore(
+            filename="seq-test.dump",
+            pre_snapshot_filename="seq-test-pre.dump",
+            caller_username="admin-test",
+            caller_user_id=None,
+            error=None,
+        )
+
+        async with async_session_maker() as s:
+            # The restore row's id MUST be greater than the high staging id —
+            # proves setval moved the sequence forward, so the INSERT got a
+            # collision-free id allocated above the merged max.
+            restore_rows = (await s.execute(
+                Job.__table__.select().where(
+                    Job.kind == JobKind.restore,
+                    Job.payload["filename"].astext == "seq-test.dump",
+                )
+            )).fetchall()
+            assert len(restore_rows) == 1
+            assert restore_rows[0].id > high_id
+            tracked_jobs.append(restore_rows[0].id)
+    finally:
+        await _drop_staging_if_exists()
