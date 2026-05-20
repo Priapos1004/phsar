@@ -49,18 +49,27 @@ async def _post_yield_backfills() -> None:
     HTTP layer responds immediately; per-anime commit checkpoints in
     `backfill_relations` already tolerate abrupt termination.
 
-    Merge-candidate detection runs AFTER relation backfill in the same
-    task so it sees the rewritten relation types in the title-similarity
-    signal. While the task is in flight, save-time merge detection
-    (inside `save_search_results`) still works against the pre-backfill
-    catalog — the task's tail re-runs detection at the end, so any
-    pre-backfill miss self-heals.
+    Merge-candidate detection runs AFTER relation backfill so it sees
+    the rewritten relation types in the title-similarity signal. While
+    the task is in flight, save-time merge detection (inside
+    `save_search_results`) still works against the pre-backfill catalog
+    — the task's tail re-runs detection at the end, so any pre-backfill
+    miss self-heals.
+
+    Each pass runs in its own session so the identity map doesn't grow
+    across the three catalog-wide scans — the relation backfill loads
+    every Anime + Media + sidecar, and reusing one session for all three
+    would pin ~3× the working set in memory through the whole ~14-min
+    cold start.
     """
     try:
-        async with async_session_maker() as session:
-            if settings.RELATION_BACKFILL_ON_STARTUP:
+        if settings.RELATION_BACKFILL_ON_STARTUP:
+            async with async_session_maker() as session:
                 await backfill_relations(session)
+        async with async_session_maker() as session:
             await backfill_merge_candidates(session)
+            await session.commit()
+        async with async_session_maker() as session:
             # Split-detection runs LAST so it sees the rewritten relation
             # types from relation_backfiller AND any merges resolved by
             # backfill_merge_candidates collapsed pairs (which removes
