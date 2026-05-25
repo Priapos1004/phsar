@@ -217,7 +217,15 @@
 		const placeholder = img.nextElementSibling as HTMLElement;
 		if (placeholder) placeholder.style.display = 'flex';
 	}
+
+	let pageTitle = $derived(
+		anime ? `${resolveTitle(anime.title, anime.name_eng, anime.name_jap, nameLanguage)} — Phsar` : 'Anime — Phsar'
+	);
 </script>
+
+<svelte:head>
+	<title>{pageTitle}</title>
+</svelte:head>
 
 <div class={`${cls.container} ${cls.sectionSpacing} py-4`}>
 	{#if loading}

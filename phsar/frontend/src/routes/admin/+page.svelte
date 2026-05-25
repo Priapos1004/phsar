@@ -148,6 +148,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>Admin — Phsar</title>
+</svelte:head>
+
 <div class="mx-auto max-w-3xl space-y-6">
 	<h1 class="text-2xl font-bold text-white">Admin</h1>
 

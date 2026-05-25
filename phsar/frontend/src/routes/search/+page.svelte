@@ -106,6 +106,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>Search — Phsar</title>
+</svelte:head>
+
 <div class={`${cls.container} p-4 space-y-4`}>
 	<!-- View toggle — subtle, top-right, below navbar -->
 	<div class="flex justify-end">

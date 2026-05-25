@@ -113,7 +113,15 @@
 		userRating = null;
 		refreshSpoilerVisibility();
 	}
+
+	let pageTitle = $derived(
+		media ? `${resolveTitle(media.title, media.name_eng, media.name_jap, nameLanguage)} — Phsar` : 'Media — Phsar'
+	);
 </script>
+
+<svelte:head>
+	<title>{pageTitle}</title>
+</svelte:head>
 
 <div class={`${cls.container} ${cls.sectionSpacing} py-4`}>
 	{#if loading}

@@ -14,6 +14,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>Home — Phsar</title>
+</svelte:head>
+
 <div class={`${cls.container} pb-10 ${cls.sectionSpacing}`}>
 	<!-- Top section: InfoDiashow -->
 	<InfoDiashow />
