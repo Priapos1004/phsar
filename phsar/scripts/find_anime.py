@@ -9,8 +9,7 @@ Usage (from `phsar/`):
 import argparse
 import asyncio
 
-from sqlalchemy import cast, or_, select
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import Text, cast, or_, select
 from sqlalchemy.orm import selectinload
 
 from app.core.db import async_session_maker
@@ -35,7 +34,7 @@ async def main(needle: str | None, mal_id: int | None) -> None:
                         Anime.title.ilike(pattern),
                         Anime.name_eng.ilike(pattern),
                         Anime.name_jap.ilike(pattern),
-                        cast(Anime.other_names, JSONB).op("::text").ilike(pattern),
+                        cast(Anime.other_names, Text).ilike(pattern),
                     )
                 )
                 .options(

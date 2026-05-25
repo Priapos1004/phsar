@@ -285,10 +285,10 @@ async def execute_split(db: AsyncSession, uuid: UUID) -> tuple[str, list[str]]:
 
     await db.flush()
 
-    # Expire the cached `.media` collection on the source so the re-load
-    # below sees the now-smaller set. The bulk UPDATE bypasses ORM
-    # relationship tracking; without this, the identity map serves the
-    # pre-split collection and reclassify operates on stale data.
+    # Expire the cached `.media` collection on the source: per-row child FK
+    # assignment does NOT refresh the parent's cached relationship, so
+    # without expire the identity map serves the pre-split set and
+    # reclassify operates on stale data.
     db.expire(source_anime, ["media"])
 
     # Re-load source with its now-smaller media set, then reclassify so
