@@ -76,7 +76,7 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 | `/watchlist` | (placeholder) | Yes |
 | `/settings` | User preferences (theme, language, rating step, spoiler level, data export, account deletion) | Yes |
 | `/library/add` | Add anime via MAL query + recent additions panel | Yes (form disabled for restricted users) |
-| `/admin` | Registration token management (admin only) | Yes (admin) |
+| `/admin` | Admin sections behind a `?tab=` switcher (Tokens / Curation / Backups) | Yes (admin) |
 | `/statistics` | (placeholder) | Yes |
 | `/getting-started` | (placeholder) | Yes |
 
@@ -341,19 +341,22 @@ Each anime search result card shows:
 - Non-admin users are redirected to `/` on mount
 - NavBar dropdown shows "Admin" link only for admin users
 
-### 10.2 Create Registration Token
+### 10.1a Tab navigation
+- Admin sections live behind a tab bar driven by the `?tab=` query param (`/admin?tab=tokens`, `?tab=curation`, `?tab=backups`). Default tab is `tokens` if `?tab=` is absent or unknown — a stale bookmark to a retired tab key still lands the admin somewhere useful instead of a blank page.
+- The active tab is preserved across refresh and is bookmarkable. Tabs eager-render on first admin load and stay mounted across switches — visibility toggles via `class:hidden`, not conditional unmount. Admin sessions usually touch several tabs in a row, so the one-time parallel-fetch cost on first paint buys instant subsequent switches. No card polls, so keeping them mounted doesn't generate ongoing traffic.
+
+### 10.2 Create Registration Token (Tokens tab)
 - Form with role selector (User / Restricted User) and expiry dropdown (1 day / 7 days / 30 days)
 - "Create" button POSTs to `/admin/registration-tokens`
 - On success: token string shown in a highlighted banner with copy button and toast feedback
 - Changing the role or expiry selector dismisses the success banner
 
 ### 10.3 Token List
-- Displays all registration tokens with: truncated token (click to copy), status badge (active/used/expired), role badge, creation date, expiry date, used-by username
+- Displays all registration tokens with: truncated token (click to copy), status badge (active/used/expired), role badge, creation date, and either an expiry date (active/expired tokens) or a "Used &lt;date&gt; by &lt;username&gt;" line (used tokens — once consumed, the expiry date is no longer the useful piece of info, so it's replaced with the consumption date)
 - **Sort options** (dropdown): By Status (default: active → used → expired), Newest First, Expiring Soon (active tokens first by soonest expiry), Recently Used
 - **Delete**: trash icon on unused/expired tokens opens confirm/cancel inline buttons. Used tokens cannot be deleted. DELETE returns 204.
 
-### 10.4 Backups
-- Card below the token list. Admin-only.
+### 10.4 Backups (Backups tab)
 - **Create backup**: POST returns 202 with `{job_uuid}` instead of running pg_dump synchronously. The button shows a toast ("Backup queued. We'll let you know when it's ready.") and disables for 5 seconds to absorb double-clicks. The bell shows a queued row instantly (optimistic stub seeded from the returned uuid; see 2.1) and tracks the job through to completion. When the job succeeds the bell bumps `backupSaved`; this card subscribes via `onBump` and refetches the dump list, so the new row appears with a green `ok` integrity badge and a source badge (`Manual`, `Scheduled`, `Pre-restore`, or `Upload`) without any manual reload. Cron-triggered backups stay system jobs (invisible to every bell) — they appear in this list on the card's next mount or sort change.
 - **Upload**: file input accepts `.dump` files; `/admin/backups/upload` runs `pg_restore -f -` to validate + compute a content hash that ignores per-run timestamps and psql `\restrict` tokens. An upload whose DB state matches an existing dump returns 409 ("identical to `<filename>`"). Uploads never move the "Current" badge — uploaded bytes are external and the backend can't verify they match live DB.
 - **List**: filename, timestamp, human-readable size, integrity badge, source badge. The dump whose content matches the live DB gets a blue "Current" badge (git-branch icon) and a faint blue tint on the row — this is the dump the last restore left, or (when a create dedupes) the pre-existing dump it re-confirmed, or (in the normal create path) the just-created dump itself. Deleting the current dump clears the marker so the badge disappears.
@@ -362,7 +365,7 @@ Each anime search result card shows:
 - **Restore**: rotate-back icon opens a destructive-confirm dialog that requires typing the admin's username. Disabled on `corrupt` rows. Backend auto-snapshots as a `pre-restore` dump *before* entering maintenance mode, then flips the maintenance flag, closes the SQLAlchemy pool, terminates any other DB sessions, and runs `pg_restore --clean --if-exists` (timeout configurable via `BACKUP_RESTORE_TIMEOUT_SECONDS`, default 10 min). After pg_restore returns, the backend warms the connection pool before lifting the maintenance gate so the first post-restore request doesn't flap the liveness probe. Result banner reports the pre-restore filename, and the "Current" badge now follows the restored dump. All non-admin users in the app are bounced to `/login` for the duration; the sticky global banner conveys the maintenance state (see 1.5).
 - **Delete**: trash icon opens inline confirm/cancel buttons. DELETE returns 204.
 
-### 10.5 Merge Candidates
+### 10.5 Merge Candidates (Curation tab)
 - Card below Backups. Admin-only.
 - **List**: pending merge candidates flagged by the duplicate detector (running on every save covering new × new and new × existing pairs, at app startup covering existing × existing, and on admin demand via the Re-run detection button). Each row shows:
   - A "% match" badge (similarity score)
@@ -378,8 +381,8 @@ Each anime search result card shows:
 - Already-resolved candidates (merged or dismissed) return 409 if the action is retried.
 - The detector itself is invisible to non-admin users; nothing about it surfaces outside this card.
 
-### 10.6 Split Candidates
-- Card below Merge Candidates. Admin-only.
+### 10.6 Split Candidates (Curation tab)
+- Stacked below Merge Candidates on the same Curation tab. Admin-only.
 - **List**: pending split candidates flagged by `find_disjoint_franchises`, which finds substance-passing media inside one anime row that form their own connected sequel chain — the BNHA↔Vigilante, Toaru Index↔Railgun, Pretty Rhythm↔(PriPara/King of Prism/Pri☆chan/AiPri) shapes. Detection runs on every save (scrape-time), inside the relation-backfiller's per-anime loop (lifespan startup + admin re-trigger), AND after every merge survivor reclassify (so a merge that surfaces previously-dangling bridges gets flagged). Each row shows:
   - A `N cluster(s)` badge (count of disjoint sub-franchises detected under this anime)
   - A `detected_by` label (`scrape`, `backfill`, `merge_survivor`, `post_split_source`, `post_split_new`)

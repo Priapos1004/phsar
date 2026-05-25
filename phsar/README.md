@@ -157,6 +157,10 @@ phsar/
 │   │   │   │   ├── AttributeRadar.svelte
 │   │   │   │   ├── BackLink.svelte
 │   │   │   │   ├── BackupsCard.svelte
+│   │   │   │   ├── admin/
+│   │   │   │   │   ├── AdminTabNav.svelte
+│   │   │   │   │   ├── RegistrationTokensCard.svelte
+│   │   │   │   │   └── types.ts
 │   │   │   │   ├── BulkRateDialog.svelte
 │   │   │   │   ├── DangerZone.svelte
 │   │   │   │   ├── DoubleRangeSlider.svelte
