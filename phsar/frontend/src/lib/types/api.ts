@@ -388,3 +388,34 @@ export interface BackupMetadata {
 	content_hash?: string | null;
 	is_current?: boolean;
 }
+
+// Admin Overview stats — aggregate counts shown on the Overview tab
+export interface AdminCatalogStats {
+	anime_count: number;
+	media_count: number;
+	anime_added_7d: number;
+	media_added_7d: number;
+}
+
+export interface AdminJobKindStats {
+	kind: JobKind;
+	succeeded: number;
+	failed: number;
+	retryable_failed: number;
+}
+
+export interface AdminJobsStats {
+	by_kind: AdminJobKindStats[];
+}
+
+export interface AdminActivityStats {
+	active_users: number;
+	new_ratings: number;
+	scrapes_submitted: number;
+}
+
+export interface AdminOverviewStats {
+	catalog: AdminCatalogStats;
+	jobs_7d: AdminJobsStats;
+	activity_7d: AdminActivityStats;
+}

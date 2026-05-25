@@ -126,6 +126,7 @@ Orchestrates BFS output into save/attach/merge decisions.
 - **`user_settings_service.py`** — user settings CRUD + default creation
 - **`token_service.py`** — compressed JWT for shareable filter URLs
 - **`admin_service.py`** — registration token list + delete
+- **`admin_stats_service.py`** — aggregate counts for the admin Overview tab (catalog totals, 7d job health by kind with retryable-failed subset, 7d activity counters). All-aggregate by design — no per-user breakdowns; the Jobs Log surfaces that where it's needed for debugging. No caching (admin-only, queries are sub-150ms)
 
 ## Merge detection + reconciliation
 

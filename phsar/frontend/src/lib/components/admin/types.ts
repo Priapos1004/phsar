@@ -2,4 +2,4 @@
  *  - adding the new entry to TABS in routes/admin/+page.svelte
  *  - rendering the corresponding content branch in that file
  */
-export type AdminTabKey = 'tokens' | 'curation' | 'backups';
+export type AdminTabKey = 'overview' | 'tokens' | 'curation' | 'backups';

@@ -495,3 +495,72 @@ async def test_backup_auto_requires_cron_token(cron_client):
         AUTO_BACKUP_URL, headers={"Authorization": "Bearer wrong"},
     )
     assert resp.status_code == 401
+
+
+STATS_URL = "/admin/stats/overview"
+
+
+@pytest.mark.asyncio
+async def test_stats_overview_returns_shape(client, admin_auth_headers):
+    """Endpoint returns the full nested shape — catalog totals, jobs_7d
+    per kind, activity_7d counters. Numbers depend on whatever the
+    rolled-back test DB contains, so this test only asserts the
+    structure + that every JobKind appears in jobs_7d.by_kind."""
+    resp = await client.get(STATS_URL, headers=admin_auth_headers)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+
+    assert set(data.keys()) == {"catalog", "jobs_7d", "activity_7d"}
+    assert set(data["catalog"].keys()) == {
+        "anime_count", "media_count", "anime_added_7d", "media_added_7d",
+    }
+    assert set(data["activity_7d"].keys()) == {
+        "active_users", "new_ratings", "scrapes_submitted",
+    }
+    kinds_returned = {row["kind"] for row in data["jobs_7d"]["by_kind"]}
+    assert kinds_returned == {k.value for k in JobKind}
+
+
+def _user_scrape_row(resp_json: dict) -> dict:
+    return next(
+        row for row in resp_json["jobs_7d"]["by_kind"]
+        if row["kind"] == JobKind.user_scrape.value
+    )
+
+
+@pytest.mark.asyncio
+async def test_stats_overview_reflects_seeded_jobs(client, admin_auth_headers, db_session):
+    """Seed one succeeded user_scrape + one permanently-failed user_scrape
+    and verify the per-kind counters move accordingly. Failed-with-
+    retryable=False should bump `failed` but NOT `retryable_failed`."""
+    before = _user_scrape_row(
+        (await client.get(STATS_URL, headers=admin_auth_headers)).json()
+    )
+
+    succeeded = Job(
+        kind=JobKind.user_scrape, status=JobStatus.succeeded,
+        payload={"query": "stats-test-succeeded"},
+        result_summary={"retryable": True},
+    )
+    failed_permanent = Job(
+        kind=JobKind.user_scrape, status=JobStatus.failed,
+        payload={"query": "stats-test-failed"},
+        result_summary={"retryable": False},
+    )
+    db_session.add_all([succeeded, failed_permanent])
+    await db_session.flush()
+
+    after = _user_scrape_row(
+        (await client.get(STATS_URL, headers=admin_auth_headers)).json()
+    )
+    assert after["succeeded"] - before["succeeded"] == 1
+    assert after["failed"] - before["failed"] == 1
+    # Permanently-failed must NOT bump retryable_failed — that's the
+    # whole point of the PermanentPhsarError marker.
+    assert after["retryable_failed"] - before["retryable_failed"] == 0
+
+
+@pytest.mark.asyncio
+async def test_stats_overview_requires_admin(client, user_auth_headers):
+    resp = await client.get(STATS_URL, headers=user_auth_headers)
+    assert resp.status_code == 403

@@ -342,8 +342,16 @@ Each anime search result card shows:
 - NavBar dropdown shows "Admin" link only for admin users
 
 ### 10.1a Tab navigation
-- Admin sections live behind a tab bar driven by the `?tab=` query param (`/admin?tab=tokens`, `?tab=curation`, `?tab=backups`). Default tab is `tokens` if `?tab=` is absent or unknown — a stale bookmark to a retired tab key still lands the admin somewhere useful instead of a blank page.
+- Admin sections live behind a tab bar driven by the `?tab=` query param (`/admin?tab=overview`, `?tab=tokens`, `?tab=curation`, `?tab=backups`). Default tab is `overview` if `?tab=` is absent or unknown — a stale bookmark to a retired tab key still lands the admin somewhere useful instead of a blank page.
 - The active tab is preserved across refresh and is bookmarkable. Tabs eager-render on first admin load and stay mounted across switches — visibility toggles via `class:hidden`, not conditional unmount. Admin sessions usually touch several tabs in a row, so the one-time parallel-fetch cost on first paint buys instant subsequent switches. No card polls, so keeping them mounted doesn't generate ongoing traffic.
+
+### 10.1b Overview tab (default)
+- Three stat cards sourced from `GET /admin/stats/overview`:
+  - **Catalog**: total anime count, total media count, anime added in the last 7 days, media added in the last 7 days
+  - **Job health (7d)**: per-kind succeeded/failed counts, parenthesized retryable-failed subset (so admin can spot user_scrape jobs stuck on transient MAL outages vs. permanently-dead deterministic failures), and a colored success-rate percentage (primary green at 100%, neutral 80-99%, destructive red below 80%)
+  - **User activity (7d)**: active users (distinct user_ids touching ratings or jobs), new ratings, scrapes submitted (user-attributed only)
+- All counts are aggregate. The Overview tab is leaderboard-free — per-user breakdowns are scoped to the Jobs Log tab where they're needed for debugging
+- Cache: none. Admin-only, queries are sub-150ms
 
 ### 10.2 Create Registration Token (Tokens tab)
 - Form with role selector (User / Restricted User) and expiry dropdown (1 day / 7 days / 30 days)
@@ -422,6 +430,7 @@ Each anime search result card shows:
 | `/users/settings` | PUT | Settings page (update preferences) |
 | `/users/export?format=json\|csv` | GET | Settings page (data export download — flat media-level rows, filename includes username + date) |
 | `/users/account` | DELETE | Settings page (account deletion with password) |
+| `/admin/stats/overview` | GET | Admin Overview tab (aggregate catalog + job health + activity counters) |
 | `/admin/registration-tokens` | GET | Admin page (list all tokens) |
 | `/admin/registration-tokens` | POST | Admin page (create token) |
 | `/admin/registration-tokens/{uuid}` | DELETE | Admin page (delete unused token) |

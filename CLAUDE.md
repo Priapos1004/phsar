@@ -76,6 +76,7 @@ Layered architecture with strict dependency flow: **routers → services → DAO
 FastAPI endpoint definitions. Each router maps to an API prefix.
 
 - **`/admin`** — admin-only operations
+  - `GET /admin/stats/overview` — aggregate stats for the admin Overview tab (catalog totals, 7d job health by kind with retryable-failed subset, 7d activity counters). Aggregate only — no per-user breakdowns; the Jobs Log surfaces those where they're needed for debugging
   - Registration token management (list, create, delete)
   - Database backups (list, download, delete, restore, upload)
     - `POST /admin/backups` and `POST /admin/backups/auto` (cron-token authed) both enqueue a `backup` job and return 202 with the job uuid so the request thread doesn't block on `pg_dump`

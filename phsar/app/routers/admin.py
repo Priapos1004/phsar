@@ -22,7 +22,12 @@ from app.routers.admin_jobs import router as admin_jobs_router
 from app.routers.admin_merge import router as admin_merge_router
 from app.routers.admin_split import router as admin_split_router
 from app.schemas import admin_schema, auth_schema, backup_schema
-from app.services import admin_service, auth_service, backup_service
+from app.services import (
+    admin_service,
+    admin_stats_service,
+    auth_service,
+    backup_service,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -61,6 +66,16 @@ async def delete_registration_token(
     current_user=Depends(require_admin),
 ):
     await admin_service.delete_registration_token(db, uuid)
+
+
+@router.get("/stats/overview", response_model=admin_schema.AdminOverviewStats)
+async def get_stats_overview(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """Aggregate stats for the admin Overview tab. Catalog totals,
+    7-day job health by kind, and 7-day activity counters."""
+    return await admin_stats_service.get_overview_stats(db)
 
 
 # Router-level admin dep — only `restore` actually reads the caller's username,

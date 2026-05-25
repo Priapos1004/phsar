@@ -106,6 +106,7 @@ phsar/
 │   └── services/
 │       ├── _pg_subprocess.py
 │       ├── admin_service.py
+│       ├── admin_stats_service.py
 │       ├── anime_relation_service.py
 │       ├── anime_search_service.py
 │       ├── anime_service.py
@@ -158,6 +159,7 @@ phsar/
 │   │   │   │   ├── BackLink.svelte
 │   │   │   │   ├── BackupsCard.svelte
 │   │   │   │   ├── admin/
+│   │   │   │   │   ├── AdminOverviewTab.svelte
 │   │   │   │   │   ├── AdminTabNav.svelte
 │   │   │   │   │   ├── RegistrationTokensCard.svelte
 │   │   │   │   │   └── types.ts
