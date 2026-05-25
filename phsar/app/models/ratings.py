@@ -26,7 +26,7 @@ class AnimationQuality(str, enum.Enum):
     bad = "bad"
     normal = "normal"
     good = "good"
-    outstanding = "outstanding"
+    very_good = "very_good"
 
 class ThreeDAnimation(str, enum.Enum):
     none = "none"
@@ -41,7 +41,7 @@ class WatchedFormat(str, enum.Enum):
 class FanService(str, enum.Enum):
     none = "none"
     rare = "rare"
-    normal = "normal"
+    medium = "medium"
     heavy = "heavy"
 
 class DialogueQuality(str, enum.Enum):
@@ -62,7 +62,7 @@ class EndingType(str, enum.Enum):
 class EndingQuality(str, enum.Enum):
     unsatisfying = "unsatisfying"
     satisfying = "satisfying"
-    exceptional = "exceptional"
+    very_satisfying = "very_satisfying"
     not_applicable = "not_applicable"
 
 class StoryQuality(str, enum.Enum):

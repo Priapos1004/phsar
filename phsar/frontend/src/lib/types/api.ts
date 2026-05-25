@@ -91,14 +91,14 @@ export interface MediaDetail extends MediaConnected {
 
 // Rating attribute enums
 export type Pace = 'slow' | 'normal' | 'fast';
-export type AnimationQuality = 'bad' | 'normal' | 'good' | 'outstanding';
+export type AnimationQuality = 'bad' | 'normal' | 'good' | 'very_good';
 export type ThreeDAnimation = 'none' | 'partial' | 'full';
 export type WatchedFormat = 'sub' | 'dub' | 'both';
-export type FanService = 'none' | 'rare' | 'normal' | 'heavy';
+export type FanService = 'none' | 'rare' | 'medium' | 'heavy';
 export type DialogueQuality = 'flat' | 'normal' | 'deep';
 export type CharacterDepth = 'flat' | 'normal' | 'complex';
 export type EndingType = 'open' | 'closed' | 'cliffhanger';
-export type EndingQuality = 'unsatisfying' | 'satisfying' | 'exceptional' | 'not_applicable';
+export type EndingQuality = 'unsatisfying' | 'satisfying' | 'very_satisfying' | 'not_applicable';
 export type StoryQuality = 'weak' | 'average' | 'good' | 'outstanding';
 export type Originality = 'conventional' | 'unique' | 'experimental';
 
@@ -155,14 +155,14 @@ export function getRatingAttr(obj: RatingOut | RatingCreate, key: string): strin
 /** Maps each rating attribute to its display label and possible values. */
 export const RATING_ATTRIBUTE_OPTIONS: Record<string, { label: string; options: { value: string; label: string }[] }> = {
 	pace: { label: 'Pace', options: [{ value: 'slow', label: 'Slow' }, { value: 'normal', label: 'Normal' }, { value: 'fast', label: 'Fast' }] },
-	animation_quality: { label: 'Animation Quality', options: [{ value: 'bad', label: 'Bad' }, { value: 'normal', label: 'Normal' }, { value: 'good', label: 'Good' }, { value: 'outstanding', label: 'Outstanding' }] },
+	animation_quality: { label: 'Animation Quality', options: [{ value: 'bad', label: 'Bad' }, { value: 'normal', label: 'Normal' }, { value: 'good', label: 'Good' }, { value: 'very_good', label: 'Very Good' }] },
 	has_3d_animation: { label: '3D Animation', options: [{ value: 'none', label: 'None' }, { value: 'partial', label: 'Partial' }, { value: 'full', label: 'Full' }] },
 	watched_format: { label: 'Watched Format', options: [{ value: 'sub', label: 'Sub' }, { value: 'dub', label: 'Dub' }, { value: 'both', label: 'Both' }] },
-	fan_service: { label: 'Fan Service', options: [{ value: 'none', label: 'None' }, { value: 'rare', label: 'Rare' }, { value: 'normal', label: 'Normal' }, { value: 'heavy', label: 'Heavy' }] },
+	fan_service: { label: 'Fan Service', options: [{ value: 'none', label: 'None' }, { value: 'rare', label: 'Rare' }, { value: 'medium', label: 'Medium' }, { value: 'heavy', label: 'Heavy' }] },
 	dialogue_quality: { label: 'Dialogue Quality', options: [{ value: 'flat', label: 'Flat' }, { value: 'normal', label: 'Normal' }, { value: 'deep', label: 'Deep' }] },
 	character_depth: { label: 'Character Depth', options: [{ value: 'flat', label: 'Flat' }, { value: 'normal', label: 'Normal' }, { value: 'complex', label: 'Complex' }] },
 	ending_type: { label: 'Ending Type', options: [{ value: 'open', label: 'Open' }, { value: 'closed', label: 'Closed' }, { value: 'cliffhanger', label: 'Cliffhanger' }] },
-	ending_quality: { label: 'Ending Quality', options: [{ value: 'unsatisfying', label: 'Unsatisfying' }, { value: 'satisfying', label: 'Satisfying' }, { value: 'exceptional', label: 'Exceptional' }, { value: 'not_applicable', label: 'Not Applicable' }] },
+	ending_quality: { label: 'Ending Quality', options: [{ value: 'unsatisfying', label: 'Unsatisfying' }, { value: 'satisfying', label: 'Satisfying' }, { value: 'very_satisfying', label: 'Very Satisfying' }, { value: 'not_applicable', label: 'Not Applicable' }] },
 	story_quality: { label: 'Story Quality', options: [{ value: 'weak', label: 'Weak' }, { value: 'average', label: 'Average' }, { value: 'good', label: 'Good' }, { value: 'outstanding', label: 'Outstanding' }] },
 	originality: { label: 'Originality', options: [{ value: 'conventional', label: 'Conventional' }, { value: 'unique', label: 'Unique' }, { value: 'experimental', label: 'Experimental' }] },
 };

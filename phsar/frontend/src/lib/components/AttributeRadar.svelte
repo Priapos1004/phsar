@@ -14,11 +14,11 @@
 	// ending_quality deliberately excludes "not_applicable" — those ratings are
 	// skipped by the scoreMap[val] !== undefined check in the averaging loop.
 	const ATTR_SCORE_MAP: Record<string, Record<string, number>> = {
-		animation_quality: { bad: 1, normal: 2, good: 3, outstanding: 4 },
+		animation_quality: { bad: 1, normal: 2, good: 3, very_good: 4 },
 		dialogue_quality: { flat: 1, normal: 2, deep: 3 },
 		character_depth: { flat: 1, normal: 2, complex: 3 },
 		story_quality: { weak: 1, average: 2, good: 3, outstanding: 4 },
-		ending_quality: { unsatisfying: 1, satisfying: 2, exceptional: 3 },
+		ending_quality: { unsatisfying: 1, satisfying: 2, very_satisfying: 3 },
 	};
 
 	const RADAR_KEYS = Object.keys(ATTR_SCORE_MAP);
