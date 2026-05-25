@@ -368,6 +368,23 @@ class JobQueueLimitExceededError(PhsarBaseError):
         super().__init__(message)
 
 
+class DailyJobLimitExceededError(PermanentPhsarError):
+    """Raised when a user exhausts the rolling 24h user_scrape quota.
+
+    Marked permanent so the bell hides the retry button — retrying today
+    still hits the same wall. The user must wait for the window to roll
+    forward (the oldest in-window job's created_at + 24h)."""
+    status_code = 429
+
+    def __init__(self, limit: int):
+        self.limit = limit
+        message = (
+            f"You've hit your daily limit of {limit} anime additions. "
+            "Please try again tomorrow."
+        )
+        super().__init__(message)
+
+
 class JobNotFoundError(PhsarBaseError):
     """Raised when a job UUID doesn't resolve, or the requester isn't allowed to see it."""
     status_code = 404

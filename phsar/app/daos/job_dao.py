@@ -49,6 +49,26 @@ class JobDAO(BaseDAO[Job]):
         )
         return (await db.execute(stmt)).scalar_one()
 
+    async def count_user_scrapes_in_window(
+        self, db: AsyncSession, user_id: int, hours: int = 24
+    ) -> int:
+        """Counts user_scrape jobs by a user within the trailing window,
+        used to enforce the daily submission cap. Counts every status —
+        a failed scrape still hit MAL, so it shouldn't free up a slot.
+
+        Backed by ix_jobs_user_scrape_recent (partial composite on
+        user + created_at DESC, kind='user_scrape') so the lookup stays
+        O(in-window-rows) even for users with thousands of historical
+        scrapes."""
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        stmt = (
+            select(func.count(Job.id))
+            .where(Job.requested_by_user_id == user_id)
+            .where(Job.kind == JobKind.user_scrape)
+            .where(Job.created_at >= cutoff)
+        )
+        return (await db.execute(stmt)).scalar_one()
+
     async def list_for_user(self, db: AsyncSession, user_id: int, limit: int = 25) -> list[Job]:
         """Recent jobs for the navbar bell. Active first (running, then queued),
         then finished by recency. The bell renders the response order directly,

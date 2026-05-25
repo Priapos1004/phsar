@@ -267,7 +267,8 @@ Quick map:
   - Anime covers/descriptions are never spoiler-protected
 - **Background jobs**: single asyncio FIFO worker (`job_worker.py`) drains the `jobs` table
   - JobKinds: `user_scrape`, `update_sweep` + `seasonal_sweep` (bracket maintenance), `backup` (does NOT bracket)
-  - Per-user cap: `JOBS_PER_USER_LIMIT=4` enforced at submission time (bounds queue depth, not concurrency — worker stays sequential because MAL's rate limit means parallel jobs just fragment bandwidth)
+  - Per-user concurrent cap: `JOBS_PER_USER_LIMIT=4` enforced at submission time (bounds queue depth, not concurrency — worker stays sequential because MAL's rate limit means parallel jobs just fragment bandwidth)
+  - Per-user daily cap: `JOBS_DAILY_LIMIT=50` rolling 24h on top of the concurrent cap. Counts every status (succeeded/failed too) so a fast-failing client can't cycle through the limit; 51st submission returns 429 marked `PermanentPhsarError` so the bell hides retry. Backed by partial composite `ix_jobs_user_scrape_recent (requested_by_user_id, created_at DESC) WHERE kind='user_scrape'` so per-POST cost stays O(in-window-rows)
   - System jobs submit with `requested_by_user_id=null` to skip cap
   - `ProgressReporter`: handlers stream `(stage, items_done, items_total)` to the bell before the job tx commits (autocommit txes, 0.5s throttle)
   - `PermanentPhsarError` gates retry: deterministic failures stamp `retryable = False`, bell hides retry button
@@ -310,6 +311,7 @@ Quick map:
 - `BACKUP_RESTORE_TIMEOUT_SECONDS` — default 600; raise if DB grows large enough that pg_restore legitimately takes >10 min (a mid-restore kill leaves the DB half-dropped)
 - `JOBS_CRON_TOKEN` — shared bearer secret for every cron-authed endpoint (`/admin/backups/auto`, the three sweep schedulers); empty disables all four, they fail closed
 - `JOBS_PER_USER_LIMIT` — default 4; max queued+running user_scrape jobs per non-system user; 5th submission returns 409
+- `JOBS_DAILY_LIMIT` — default 50; max user_scrape submissions per non-system user in any trailing 24h window (counts all statuses); 51st returns 429
 - `JOBS_DEDUPE_HOURS` — default 24; same scrape query within this window returns 409 unless prior job failed
 - `JOBS_SWEEP_MAX_PER_RUN` — default 200; bounds nightly `update_sweep` batch size
 - `RELATION_BACKFILL_ON_STARTUP` — default `True`; runs `relation_backfiller` at lifespan startup. First cold start fetches missing `MediaRelationEdges` sidecars from MAL at 1 req/s (~14min for an 800-media catalog); subsequent restarts skip already-populated rows and finish in seconds. Disable for tight maintenance windows on fresh deployments

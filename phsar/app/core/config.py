@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     # disables those endpoints — they all fail closed.
     JOBS_CRON_TOKEN: str = ""
     JOBS_PER_USER_LIMIT: int = 4  # max queued+running scrape jobs per user
+    # Rolling 24h cap on user_scrape submissions per user. The per-user limit
+    # above only bounds concurrency; without a volume cap, a hostile or
+    # buggy client could keep 4 in flight indefinitely. 50/day is generous
+    # for legit binge-adding (more than a season worth per day) and blocks
+    # runaway scripts. Counts all statuses — failed jobs still cost MAL
+    # API quota and admin attention.
+    JOBS_DAILY_LIMIT: int = 50
     JOBS_SWEEP_MAX_PER_RUN: int = 200  # bounds nightly update_sweep batch size
     # Dedupe window for user_scrape: re-running the same query within this
     # window would just produce empty BFS results (everything is in
