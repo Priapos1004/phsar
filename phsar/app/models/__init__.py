@@ -14,6 +14,7 @@ from app.models.merge_candidate import MergeCandidate
 from app.models.rating_search import RatingSearch
 from app.models.ratings import Ratings
 from app.models.registration_token import RegistrationToken
+from app.models.split_candidate import SplitCandidate
 from app.models.studio import Studio
 from app.models.tag import Tag
 from app.models.user_settings import UserSettings

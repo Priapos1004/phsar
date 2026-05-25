@@ -63,7 +63,14 @@ async def _anime_with_media(db, *, anime_mal_id: int, anime_title: str, media_sp
         ))
         db.add(media)
         await db.flush()
-        db.add(MediaRelationEdges(media_id=media.id, edges=spec.get("edges", [])))
+        # Stamp last_fetched_at on pre-populated fixtures so the
+        # backfiller treats them as already synced — tests should opt
+        # into the lazy-fetch path explicitly by omitting the stamp.
+        db.add(MediaRelationEdges(
+            media_id=media.id,
+            edges=spec.get("edges", []),
+            last_fetched_at=spec.get("last_fetched_at", datetime.now(timezone.utc)),
+        ))
     await db.flush()
     return anime
 
@@ -186,9 +193,9 @@ async def test_idempotent_no_op_on_clean_catalog(db_session, monkeypatch):
 
     anime = await _anime_with_media(
         db_session,
-        anime_mal_id=100, anime_title="Solo Show",
+        anime_mal_id=-100, anime_title="Solo Show",
         media_specs=[
-            {"mal_id": 100, "title": "Solo Show",
+            {"mal_id": -100, "title": "Solo Show",
              "media_type": MediaType.TV, "relation_type": RelationType.Main,
              "episodes": 12, "duration_seconds": 1440,
              "aired_from": datetime(2020, 1, 1, tzinfo=timezone.utc),
@@ -209,15 +216,15 @@ async def test_lazy_fetch_populates_missing_edges(db_session, monkeypatch):
 
     async def fake_fetch(self, mal_id):
         fetch_calls.append(mal_id)
-        if mal_id == 200:
+        if mal_id == -200:
             return [
                 {"relation": "Sequel",
-                 "entry": [{"type": "anime", "mal_id": 201}]},
+                 "entry": [{"type": "anime", "mal_id": -201}]},
             ]
-        if mal_id == 201:
+        if mal_id == -201:
             return [
                 {"relation": "Prequel",
-                 "entry": [{"type": "anime", "mal_id": 200}]},
+                 "entry": [{"type": "anime", "mal_id": -200}]},
             ]
         return []
 
@@ -225,34 +232,135 @@ async def test_lazy_fetch_populates_missing_edges(db_session, monkeypatch):
 
     anime = await _anime_with_media(
         db_session,
-        anime_mal_id=200, anime_title="Test Show",
+        anime_mal_id=-200, anime_title="Test Show",
         media_specs=[
-            {"mal_id": 200, "title": "Test Show",
+            # last_fetched_at=None opts into the lazy MAL fetch path —
+            # otherwise the fixture defaults to "already synced".
+            {"mal_id": -200, "title": "Test Show",
              "media_type": MediaType.TV, "relation_type": RelationType.Main,
              "episodes": 12, "duration_seconds": 1440,
              "aired_from": datetime(2020, 1, 1, tzinfo=timezone.utc),
-             "scored_by": 10_000, "edges": []},
-            {"mal_id": 201, "title": "Test Show S2",
+             "scored_by": 10_000, "edges": [], "last_fetched_at": None},
+            {"mal_id": -201, "title": "Test Show S2",
              "media_type": MediaType.TV, "relation_type": RelationType.Main,
              "episodes": 12, "duration_seconds": 1440,
              "aired_from": datetime(2021, 1, 1, tzinfo=timezone.utc),
-             "scored_by": 8_000, "edges": []},
+             "scored_by": 8_000, "edges": [], "last_fetched_at": None},
         ],
     )
 
     summary = await backfill_relations(db_session, dry_run=False, anime_ids={anime.id})
 
-    assert sorted(fetch_calls) == [200, 201]
+    assert sorted(fetch_calls) == [-201, -200]
     # No reclassification: both are TV in a sequel chain, both stay main.
     assert summary["anime_changed"] == 0
     # Sidecar edges now populated.
     anime = (await db_session.execute(
-        select(Anime).where(Anime.mal_id == 200)
+        select(Anime).where(Anime.mal_id == -200)
         .options(selectinload(Anime.media).selectinload(Media.relation_edges))
     )).scalar_one()
     by_mal = {m.mal_id: m for m in anime.media}
-    assert by_mal[200].relation_edges.edges == [[201, "sequel"]]
-    assert by_mal[201].relation_edges.edges == [[200, "prequel"]]
+    assert by_mal[-200].relation_edges.edges == [[-201, "sequel"]]
+    assert by_mal[-201].relation_edges.edges == [[-200, "prequel"]]
+
+
+async def test_zero_relations_sidecar_does_not_refetch(db_session, monkeypatch):
+    """Anime with legitimately zero relations (standalone movie/special)
+    must NOT re-fetch on subsequent restarts. Regression test for the
+    v0.14.1 bug where `if sidecar.edges:` falsy-matched the empty list,
+    so every restart re-fetched these rows from MAL at 1 req/s forever.
+    The fix gates on `last_fetched_at is None` instead."""
+    fetch_calls: list[int] = []
+
+    async def fake_fetch(self, mal_id):
+        fetch_calls.append(mal_id)
+        return []
+
+    monkeypatch.setattr(JikanScraper, "fetch_relations", fake_fetch)
+
+    # First-fetch scenario: sidecar has empty edges and no
+    # last_fetched_at stamp. Backfiller fetches MAL once, gets empty,
+    # stamps last_fetched_at.
+    anime = await _anime_with_media(
+        db_session,
+        anime_mal_id=-900, anime_title="Standalone Movie",
+        media_specs=[
+            {"mal_id": -900, "title": "Standalone Movie",
+             "media_type": MediaType.Movie, "relation_type": RelationType.Main,
+             "duration_seconds": 5400, "scored_by": 5000,
+             "aired_from": datetime(2018, 1, 1, tzinfo=timezone.utc),
+             "edges": [], "last_fetched_at": None},
+        ],
+    )
+
+    await backfill_relations(db_session, dry_run=False, anime_ids={anime.id})
+    assert fetch_calls == [-900], "first run should fetch once"
+    fetch_calls.clear()
+
+    # Second pass simulates a restart. The previous run stamped
+    # last_fetched_at; the gate should now skip the MAL call entirely.
+    await backfill_relations(db_session, dry_run=False, anime_ids={anime.id})
+    assert fetch_calls == [], "subsequent runs must not re-fetch zero-relation rows"
+
+
+async def test_per_anime_failure_does_not_abort_loop(db_session, monkeypatch):
+    """When MAL returns a persistent 5xx for one anime's media, the
+    backfiller must rollback + skip that anime and continue with the
+    rest. Regression for the v0.14.1 prod incident where the rollback
+    expired the anime instance, the subsequent log.exception call
+    triggered a lazy reload on expired attributes, and the resulting
+    MissingGreenlet escaped the except clause — killing the whole
+    backfill loop on the first MAL hiccup."""
+    import httpx
+
+    fetch_calls: list[int] = []
+
+    async def fake_fetch(self, mal_id):
+        fetch_calls.append(mal_id)
+        if mal_id == -700:
+            # Simulate a Jikan 504 that bypasses tenacity's retry budget.
+            request = httpx.Request("GET", f"https://api.jikan.moe/v4/anime/{mal_id}/relations")
+            response = httpx.Response(504, request=request)
+            raise httpx.HTTPStatusError("Gateway Timeout", request=request, response=response)
+        return []
+
+    monkeypatch.setattr(JikanScraper, "fetch_relations", fake_fetch)
+
+    # Two anime: the first triggers a 504 chain, the second has a
+    # populated sidecar and shouldn't be touched.
+    bad = await _anime_with_media(
+        db_session,
+        anime_mal_id=-700, anime_title="Bad MAL Anime",
+        media_specs=[
+            {"mal_id": -700, "title": "Bad", "media_type": MediaType.Movie,
+             "relation_type": RelationType.Main, "duration_seconds": 5400,
+             "scored_by": 1000,
+             "aired_from": datetime(2019, 1, 1, tzinfo=timezone.utc),
+             "edges": [], "last_fetched_at": None},
+        ],
+    )
+    good = await _anime_with_media(
+        db_session,
+        anime_mal_id=-701, anime_title="Good Anime",
+        media_specs=[
+            {"mal_id": -701, "title": "Good", "media_type": MediaType.TV,
+             "relation_type": RelationType.Main, "episodes": 12,
+             "duration_seconds": 1440, "scored_by": 5000,
+             "aired_from": datetime(2020, 1, 1, tzinfo=timezone.utc),
+             "edges": []},
+        ],
+    )
+
+    summary = await backfill_relations(
+        db_session, dry_run=False, anime_ids={bad.id, good.id},
+    )
+
+    # Bad anime tripped the 504; the loop survived and reached the good one.
+    assert summary["anime_scanned"] == 2
+    assert summary.get("anime_failed") == 1
+    assert -700 in fetch_calls
+    # Good anime's sidecar already stamped — no MAL fetch attempted.
+    assert -701 not in fetch_calls
 
 
 async def test_anime_without_media_is_skipped(db_session, monkeypatch):
@@ -261,7 +369,7 @@ async def test_anime_without_media_is_skipped(db_session, monkeypatch):
     monkeypatch.setattr(JikanScraper, "fetch_relations", fake_fetch)
 
     anime = Anime(
-        mal_id=500, title="Empty",
+        mal_id=-500, title="Empty",
         name_eng=None, name_jap=None, other_names=[],
         description=None, cover_image=None,
     )

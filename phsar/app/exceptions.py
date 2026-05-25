@@ -447,6 +447,38 @@ class InvalidMergeKeepError(PhsarBaseError):
         super().__init__(message)
 
 
+class SplitCandidateNotFoundError(PhsarBaseError):
+    """Raised when a split candidate UUID doesn't resolve."""
+    status_code = 404
+
+    def __init__(self, uuid: str):
+        message = f"Split candidate not found: '{uuid}'."
+        super().__init__(message)
+
+
+class SplitCandidateAlreadyResolvedError(PhsarBaseError):
+    """Raised when admin tries to split or dismiss a candidate that's
+    already in a terminal state."""
+    status_code = 409
+
+    def __init__(self, status: str):
+        message = f"Split candidate is already {status} — cannot resolve again."
+        super().__init__(message)
+
+
+class SplitCandidateStaleError(PhsarBaseError):
+    """Raised when the cluster payload no longer matches what the
+    classifier would produce on the source anime's current graph (e.g.,
+    sweep added new media that shifted the structure between detection
+    and execution, or members got demoted below the substance gate
+    leaving the cluster too small to split). Admin re-runs detection
+    to refresh."""
+    status_code = 409
+
+    def __init__(self, reason: str):
+        super().__init__(f"Split candidate is stale: {reason}. Re-run detection.")
+
+
 class BackupUploadTooLargeError(PhsarBaseError):
     status_code = 413
 

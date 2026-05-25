@@ -11,11 +11,15 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi import UploadFile
+from sqlalchemy import text
 
 from app.core.config import settings
+from app.core.db import async_session_maker
 from app.exceptions import DuplicateBackupError
+from app.models.job import Job, JobKind, JobStatus
 from app.schemas.backup_schema import BackupSource
 from app.services import backup_service
+from app.services._pg_subprocess import run_capture
 
 
 @pytest.fixture
@@ -487,3 +491,306 @@ async def test_retention_pins_is_current_upload_against_eviction(backup_dir):
     deleted = await backup_service.apply_retention()
     assert pinned_filename not in deleted
     assert pinned_path.is_file()
+
+
+# ---------------------------------------------------------------------------
+# Jobs-table staging + restore audit row (v0.14.2)
+# ---------------------------------------------------------------------------
+
+
+async def _create_jobs_with_statuses(statuses: list[JobStatus]) -> list[int]:
+    """Create one Job per status, return their ids. Caller is responsible
+    for cleanup via the `tracked_jobs` fixture."""
+    ids: list[int] = []
+    async with async_session_maker() as s:
+        for status in statuses:
+            job = Job(kind=JobKind.user_scrape, status=status, payload={})
+            s.add(job)
+            await s.flush()
+            ids.append(job.id)
+        await s.commit()
+    return ids
+
+
+async def _staging_row_ids() -> list[int]:
+    async with async_session_maker() as s:
+        result = await s.execute(text(
+            f"SELECT id FROM {backup_service._JOBS_DUMP_STAGING_TABLE} ORDER BY id"
+        ))
+        return [r[0] for r in result.fetchall()]
+
+
+async def _drop_staging_if_exists() -> None:
+    async with async_session_maker() as s:
+        await s.execute(text(
+            f"DROP TABLE IF EXISTS {backup_service._JOBS_DUMP_STAGING_TABLE}"
+        ))
+        await s.commit()
+
+
+async def test_stage_jobs_includes_only_terminal_status_rows(tracked_jobs):
+    """Staging captures only succeeded + failed rows. Queued and running
+    rows would resurrect as zombies after restore (no in-process worker
+    driving them); excluding them at dump time is what makes the post-
+    restore jobs table sane."""
+    ids = await _create_jobs_with_statuses([
+        JobStatus.queued, JobStatus.running, JobStatus.succeeded, JobStatus.failed,
+    ])
+    tracked_jobs.extend(ids)
+    queued_id, running_id, succeeded_id, failed_id = ids
+
+    try:
+        await backup_service._stage_jobs_for_dump()
+        staged = await _staging_row_ids()
+        assert succeeded_id in staged
+        assert failed_id in staged
+        assert queued_id not in staged
+        assert running_id not in staged
+    finally:
+        await _drop_staging_if_exists()
+
+
+async def test_drop_jobs_staging_is_idempotent(tracked_jobs):
+    """Always-called-in-finally pattern: a fresh-on-disk install or a
+    sequential failure must not raise on a missing staging table."""
+    # Drop twice on a no-table-exists state.
+    await backup_service._drop_jobs_staging()
+    await backup_service._drop_jobs_staging()
+
+
+async def test_backup_dump_excludes_live_jobs_data_and_includes_staging(backup_dir):
+    """Jobs ROW data must NOT appear in the dump's TOC, but the table
+    schema MUST (without DDL in the dump, pg_restore --clean fails to
+    drop `users` because jobs.requested_by_user_id keeps a live FK on
+    users(id) — see the --exclude-table-data comment in
+    backup_service.create_backup). `_jobs_dump_staging` is dumped so
+    the audit rows ride through.
+    """
+    meta = await backup_service.create_backup(source=BackupSource.manual)
+    dump_path = backup_dir / meta.filename
+
+    returncode, stdout, _ = await run_capture(
+        ["pg_restore", "--list", str(dump_path)], env=os.environ.copy(),
+    )
+    assert returncode == 0
+    toc = stdout.decode(errors="replace")
+
+    # `TABLE DATA public jobs` is the row-data entry; absent under
+    # --exclude-table-data. The bare `TABLE public jobs` schema entry
+    # SHOULD still be present.
+    assert "TABLE DATA public jobs " not in toc, (
+        f"Live jobs row data leaked into dump TOC:\n{toc}"
+    )
+    assert "TABLE public jobs " in toc, (
+        f"Jobs schema missing from dump TOC — restore will fail on the "
+        f"users FK:\n{toc}"
+    )
+    assert backup_service._JOBS_DUMP_STAGING_TABLE in toc, (
+        f"Staging table missing from dump TOC:\n{toc}"
+    )
+
+
+async def test_merge_audit_inserts_restore_row_and_drops_staging(tracked_jobs):
+    """Post-restore: the staging table left by pg_restore is merged into
+    live jobs (no-op if empty) and the restore operation itself lands as
+    a Job row at status=succeeded with payload pointing back at the dump
+    + the pre-restore snapshot. The staging table is dropped so a future
+    backup's CREATE TABLE doesn't trip on a stale leftover."""
+    # Simulate what pg_restore brings in: a populated staging table.
+    async with async_session_maker() as s:
+        await s.execute(text(
+            f"DROP TABLE IF EXISTS {backup_service._JOBS_DUMP_STAGING_TABLE}"
+        ))
+        # Mirror the real `jobs` schema for the staging table; the merge
+        # is `INSERT INTO jobs SELECT * FROM staging`, so the column lists
+        # must align. CREATE TABLE LIKE copies the schema cleanly without
+        # us re-listing 12 columns by hand.
+        await s.execute(text(
+            f"CREATE TABLE {backup_service._JOBS_DUMP_STAGING_TABLE} "
+            "(LIKE jobs INCLUDING ALL)"
+        ))
+        await s.commit()
+
+    try:
+        await backup_service._merge_jobs_audit_and_record_restore(
+            filename="phsar-20260517T150000Z-manual.dump",
+            pre_snapshot_filename="phsar-20260517T145959Z-pre_restore.dump",
+            caller_username="admin-test",
+            caller_user_id=None,  # FK nullable; avoids needing a real user row
+            error=None,
+        )
+
+        # Staging dropped.
+        async with async_session_maker() as s:
+            exists = await s.scalar(text(
+                "SELECT EXISTS ("
+                "  SELECT 1 FROM information_schema.tables "
+                "  WHERE table_schema = current_schema() "
+                f"  AND table_name = '{backup_service._JOBS_DUMP_STAGING_TABLE}'"
+                ")"
+            ))
+            assert exists is False
+
+            # Restore Job row landed.
+            result = await s.execute(
+                Job.__table__.select().where(
+                    Job.kind == JobKind.restore,
+                    Job.payload["filename"].astext == "phsar-20260517T150000Z-manual.dump",
+                )
+            )
+            rows = result.fetchall()
+            assert len(rows) == 1
+            row = rows[0]
+            assert row.status == JobStatus.succeeded
+            assert row.payload["pre_snapshot_filename"] == "phsar-20260517T145959Z-pre_restore.dump"
+            assert row.payload["caller_username"] == "admin-test"
+            # Track for cleanup.
+            tracked_jobs.append(row.id)
+    finally:
+        await _drop_staging_if_exists()
+
+
+async def test_merge_audit_records_failed_restore_with_error_message(tracked_jobs):
+    """A failed pg_restore (e.g. FK-blocked DROP, disk full, corrupt
+    dump) must land in the jobs table at status=failed with the original
+    error message preserved — otherwise the audit log lies and admins
+    can't tell from `jobs` alone that the restore didn't actually
+    happen. The staging-table merge is skipped on failure because the
+    schema may be half-dropped and the INSERT would error too."""
+    error_msg = "pg_restore: error: could not execute query: ERROR: cannot drop ..."
+    await backup_service._merge_jobs_audit_and_record_restore(
+        filename="bad-restore.dump",
+        pre_snapshot_filename="bad-restore-pre.dump",
+        caller_username="admin-test",
+        caller_user_id=None,
+        error=error_msg,
+    )
+
+    async with async_session_maker() as s:
+        result = await s.execute(
+            Job.__table__.select().where(
+                Job.kind == JobKind.restore,
+                Job.payload["filename"].astext == "bad-restore.dump",
+            )
+        )
+        rows = result.fetchall()
+        assert len(rows) == 1
+        row = rows[0]
+        assert row.status == JobStatus.failed
+        assert row.error_message == error_msg
+        tracked_jobs.append(row.id)
+
+
+async def test_merge_audit_on_conflict_preserves_live_row(tracked_jobs):
+    """A staged row whose id collides with a live row must NOT overwrite
+    — live state reflects more-recent reality (e.g. a job that was
+    'running' in the dump's snapshot moved to 'succeeded' after the
+    snapshot but before the restore was triggered)."""
+    live_ids = await _create_jobs_with_statuses([JobStatus.succeeded])
+    tracked_jobs.extend(live_ids)
+    live_id = live_ids[0]
+
+    # Mark the live row with a distinguishing payload so we can detect
+    # whether the merge overwrote it.
+    async with async_session_maker() as s:
+        await s.execute(text(
+            "UPDATE jobs SET payload = '{\"marker\": \"live\"}'::jsonb WHERE id = :id"
+        ).bindparams(id=live_id))
+        await s.commit()
+
+        await s.execute(text(
+            f"DROP TABLE IF EXISTS {backup_service._JOBS_DUMP_STAGING_TABLE}"
+        ))
+        await s.execute(text(
+            f"CREATE TABLE {backup_service._JOBS_DUMP_STAGING_TABLE} "
+            "(LIKE jobs INCLUDING ALL)"
+        ))
+        # Insert a STAGING row with the SAME id but a different marker —
+        # ON CONFLICT DO NOTHING means the live marker should survive.
+        await s.execute(text(
+            f"INSERT INTO {backup_service._JOBS_DUMP_STAGING_TABLE} "
+            "(id, uuid, kind, status, payload, items_done, created_at, modified_at) "
+            "VALUES (:id, gen_random_uuid(), 'user_scrape', 'succeeded', "
+            "  '{\"marker\": \"staged\"}'::jsonb, 0, NOW(), NOW())"
+        ).bindparams(id=live_id))
+        await s.commit()
+
+    try:
+        await backup_service._merge_jobs_audit_and_record_restore(
+            filename="conflict-test.dump",
+            pre_snapshot_filename="conflict-test-pre.dump",
+            caller_username="admin-test",
+            caller_user_id=None,
+            error=None,
+        )
+
+        async with async_session_maker() as s:
+            row = (await s.execute(
+                Job.__table__.select().where(Job.id == live_id)
+            )).fetchone()
+            assert row.payload == {"marker": "live"}
+
+            # The restore-row insert still landed.
+            restore_rows = (await s.execute(
+                Job.__table__.select().where(
+                    Job.kind == JobKind.restore,
+                    Job.payload["filename"].astext == "conflict-test.dump",
+                )
+            )).fetchall()
+            assert len(restore_rows) == 1
+            tracked_jobs.append(restore_rows[0].id)
+    finally:
+        await _drop_staging_if_exists()
+
+
+async def test_merge_audit_advances_jobs_id_seq_past_staging_max(tracked_jobs):
+    """After merging staging rows, jobs_id_seq must point past the max
+    inserted id — otherwise the restore_job INSERT (and every subsequent
+    job creation) can collide with a freshly-merged row and IntegrityError
+    out. Simulates a staging row with an id far above whatever the live
+    sequence currently sits at."""
+    # Pick an id that's almost certainly higher than the live sequence value
+    # in a freshly-initialized test DB. The setval() inside the merge step
+    # should advance past this floor.
+    high_id = 1_000_000_001
+    async with async_session_maker() as s:
+        await s.execute(text(
+            f"DROP TABLE IF EXISTS {backup_service._JOBS_DUMP_STAGING_TABLE}"
+        ))
+        await s.execute(text(
+            f"CREATE TABLE {backup_service._JOBS_DUMP_STAGING_TABLE} "
+            "(LIKE jobs INCLUDING ALL)"
+        ))
+        await s.execute(text(
+            f"INSERT INTO {backup_service._JOBS_DUMP_STAGING_TABLE} "
+            "(id, uuid, kind, status, payload, items_done, created_at, modified_at) "
+            "VALUES (:id, gen_random_uuid(), 'user_scrape', 'succeeded', "
+            "  '{}'::jsonb, 0, NOW(), NOW())"
+        ).bindparams(id=high_id))
+        await s.commit()
+        tracked_jobs.append(high_id)
+
+    try:
+        await backup_service._merge_jobs_audit_and_record_restore(
+            filename="seq-test.dump",
+            pre_snapshot_filename="seq-test-pre.dump",
+            caller_username="admin-test",
+            caller_user_id=None,
+            error=None,
+        )
+
+        async with async_session_maker() as s:
+            # The restore row's id MUST be greater than the high staging id —
+            # proves setval moved the sequence forward, so the INSERT got a
+            # collision-free id allocated above the merged max.
+            restore_rows = (await s.execute(
+                Job.__table__.select().where(
+                    Job.kind == JobKind.restore,
+                    Job.payload["filename"].astext == "seq-test.dump",
+                )
+            )).fetchall()
+            assert len(restore_rows) == 1
+            assert restore_rows[0].id > high_id
+            tracked_jobs.append(restore_rows[0].id)
+    finally:
+        await _drop_staging_if_exists()

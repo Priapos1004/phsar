@@ -12,6 +12,15 @@ class JobKind(str, enum.Enum):
     update_sweep = "update_sweep"
     seasonal_sweep = "seasonal_sweep"
     backup = "backup"
+    # `restore` rows are inserted synchronously by restore_backup AFTER the
+    # operation completes — terminal-state on creation. status=succeeded
+    # on pg_restore success; status=failed (with error_message populated)
+    # when pg_restore raised. Never inserted at queued/running, never
+    # claimed by the worker (no dispatcher registered for this kind), so
+    # JobDAO.reap_orphans can't touch them. The row exists purely so the
+    # jobs table tells a chronologically complete story of system-mutating
+    # operations.
+    restore = "restore"
 
 
 class JobStatus(str, enum.Enum):

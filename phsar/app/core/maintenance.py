@@ -25,9 +25,16 @@ an admin restore endpoint added to `_ALLOWED_PATHS` in
 flag from under the outer owner. Either keep the single-owner invariant or
 convert this to a refcount with explicit owners before allowlisting `/restore`
 or any other destructive endpoint.
+
+Flip logging: `set_maintenance` logs each actual flip at INFO with a
+stack-tag so a stuck-flag report can be traced from logs alone.
 """
 
+import logging
+import traceback
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 _active: bool = False
 _scheduled_at: datetime | None = None
@@ -38,8 +45,23 @@ def is_maintenance_active() -> bool:
 
 
 def set_maintenance(active: bool) -> None:
+    """Flip the maintenance gate. Real transitions log at INFO with a
+    3-frame stack tag so a stuck-flag report can be traced from logs;
+    no-op flips (steady-state test resets etc.) stay silent."""
     global _active
+    if _active == active:
+        return
+    prior = _active
     _active = active
+    # Caller frame + one above: enough to point at restore vs sweep
+    # without serializing the whole stack into the log.
+    stack_tag = " <- ".join(
+        f"{frame.filename.rsplit('/', 1)[-1]}:{frame.lineno}"
+        for frame in traceback.extract_stack(limit=4)[:-1]
+    )
+    logger.info(
+        "Maintenance flag %s → %s (caller: %s)", prior, active, stack_tag,
+    )
 
 
 def get_scheduled_at() -> datetime | None:

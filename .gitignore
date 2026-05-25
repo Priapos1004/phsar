@@ -180,3 +180,6 @@ cython_debug/
 
 # Local backup dumps
 backups/
+
+# Generated dev-DB script output (audit_cross_franchise.py etc.)
+phsar/scripts/*.json

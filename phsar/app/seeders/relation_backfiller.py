@@ -22,6 +22,7 @@ on writes.
 """
 
 import logging
+from datetime import datetime, timezone
 from typing import TypedDict
 
 from sqlalchemy import select
@@ -31,6 +32,9 @@ from sqlalchemy.orm import selectinload
 from app.models.anime import Anime
 from app.models.media import Media
 from app.models.media_relation_edges import MediaRelationEdges
+from app.seeders.split_candidate_backfiller import (
+    detect_split_candidates_for_anime,
+)
 from app.services.anime_relation_service import ReclassifyDiff, reclassify_anime
 from app.services.jikan_scraper import JikanScraper, parse_relation_edges
 
@@ -53,18 +57,26 @@ class BackfillSummary(TypedDict):
 async def _ensure_media_edges(
     db: AsyncSession, scraper: JikanScraper, media: Media,
 ) -> bool:
-    """Populate `media.relation_edges.edges` lazily from MAL if empty.
-    Returns True if a MAL fetch happened, False if the sidecar was
-    already populated. Caller commits."""
+    """Populate `media.relation_edges.edges` lazily from MAL if the
+    sidecar has never been fetched. Returns True if a MAL fetch
+    happened, False if the sidecar was already synced (including the
+    legitimate empty-relations case — standalone anime with no
+    sequels/sides). Caller commits.
+
+    Gates on `last_fetched_at is None` rather than `sidecar.edges`
+    truthiness — the latter falsy-matched empty lists, so zero-
+    relations anime re-fetched on every restart forever.
+    """
     sidecar = media.relation_edges
     if sidecar is None:
         sidecar = MediaRelationEdges(edges=[])
         media.relation_edges = sidecar
-    if sidecar.edges:
+    if sidecar.last_fetched_at is not None:
         return False
     raw = await scraper.fetch_relations(media.mal_id)
     fetched = [[target, rel] for target, rel in parse_relation_edges(raw)]
     sidecar.edges = fetched
+    sidecar.last_fetched_at = datetime.now(timezone.utc)
     logger.debug(
         "Backfiller fetched %d edges for media mal_id=%s", len(fetched), media.mal_id,
     )
@@ -99,36 +111,61 @@ async def backfill_relations(
             if not anime.media:
                 continue
 
-            # Per-anime try/except: one bad MAL response or one embedding
-            # regen failure mustn't abort the remaining catalog. The
-            # rollback wipes uncommitted edge-fetch + reclassify writes
-            # for THIS anime only; previous anime committed cleanly.
+            # Capture PK + title BEFORE the try block — `session.rollback`
+            # paths in the except branch expire every loaded instance,
+            # so `anime.id` / `anime.title` would then trigger an async
+            # lazy reload from inside the synchronous logger call,
+            # which raises MissingGreenlet and escapes the except,
+            # aborting the entire backfill loop (observed in prod on
+            # a Jikan 504 burst).
+            anime_id_for_log = anime.id
+            anime_title_for_log = anime.title
+
+            # Per-anime SAVEPOINT: a bad MAL response or embedding regen
+            # failure rolls back only this anime's writes. A full
+            # `session.rollback()` would expire every eager-loaded
+            # Anime / Media / sidecar in the outer query — `lazy="raise"`
+            # then blocks the next iteration's `media.relation_edges`
+            # access and the whole loop dies. SAVEPOINT keeps the outer
+            # transaction (and its loaded instance state) alive.
             try:
-                fetched_any = False
-                for media in anime.media:
-                    if await _ensure_media_edges(db, scraper, media):
-                        fetched_any = True
+                async with db.begin_nested():
+                    fetched_any = False
+                    for media in anime.media:
+                        if await _ensure_media_edges(db, scraper, media):
+                            fetched_any = True
 
-                diff = await reclassify_anime(db, anime, dry_run=dry_run)
+                    diff = await reclassify_anime(db, anime, dry_run=dry_run)
 
-                if diff is not None:
-                    summary["anime_changed"] += 1
-                    summary["media_reclassified"] += len(diff["reclassified"])
-                    if diff["anchor_changed"]:
-                        summary["anchor_changes"] += 1
-                    summary["diffs"].append({
-                        "anime_id": anime.id,
-                        "anime_title": anime.title,
-                        **diff,
-                    })
-                    logger.info(
-                        "Backfiller %s: anime id=%d %r — %d media reclassified, "
-                        "anchor_changed=%s, umbrella_drifted=%s",
-                        "would change" if dry_run else "changing",
-                        anime.id, anime.title,
-                        len(diff["reclassified"]),
-                        diff["anchor_changed"], diff["umbrella_drifted"],
-                    )
+                    if diff is not None:
+                        summary["anime_changed"] += 1
+                        summary["media_reclassified"] += len(diff["reclassified"])
+                        if diff["anchor_changed"]:
+                            summary["anchor_changes"] += 1
+                        summary["diffs"].append({
+                            "anime_id": anime.id,
+                            "anime_title": anime.title,
+                            **diff,
+                        })
+                        logger.info(
+                            "Backfiller %s: anime id=%d %r — %d media reclassified, "
+                            "anchor_changed=%s, umbrella_drifted=%s",
+                            "would change" if dry_run else "changing",
+                            anime.id, anime.title,
+                            len(diff["reclassified"]),
+                            diff["anchor_changed"], diff["umbrella_drifted"],
+                        )
+
+                    # Co-located with reclassify_anime: any newly-fetched
+                    # TERMINAL sidecar edges (this row was scraped before
+                    # the v0.14.2 split-candidates change, so its Vigilante /
+                    # Railgun-shape spin-offs had empty sidecars) may now
+                    # surface disjoint chains.
+                    # Per-anime SAVEPOINT covers both writes — atomic.
+                    if not dry_run:
+                        await detect_split_candidates_for_anime(
+                            db, anime, detected_by="backfill",
+                        )
 
                 # Per-anime commit so lazily-fetched sidecar edges land
                 # incrementally — a crash mid-run doesn't lose hours of
@@ -139,10 +176,11 @@ async def backfill_relations(
                 if fetched_any or (not dry_run and diff is not None):
                     await db.commit()
             except Exception:
-                await db.rollback()
+                # SAVEPOINT already rolled back via begin_nested's exit.
+                # Outer transaction + loaded instances stay valid.
                 logger.exception(
                     "Backfiller failed on anime id=%d %r — skipping",
-                    anime.id, anime.title,
+                    anime_id_for_log, anime_title_for_log,
                 )
                 summary.setdefault("anime_failed", 0)
                 summary["anime_failed"] += 1

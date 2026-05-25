@@ -9,39 +9,15 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import delete
 
 from app.core import maintenance
-from app.core.db import async_session_maker, engine
+from app.core.db import async_session_maker
 from app.daos.job_dao import JobDAO
 from app.models.job import Job, JobKind, JobStatus
 from app.services import job_worker as job_worker_module
 from app.services.job_worker import JobWorker
 
 dao = JobDAO()
-
-
-@pytest.fixture(autouse=True)
-async def _reset_engine_pool():
-    """Each pytest-asyncio test gets a fresh event loop. The global engine's
-    pooled connections are bound to whatever loop opened them — once that
-    loop is gone, asyncpg refuses to use them ('another operation is in
-    progress'). Disposing the pool here makes the next acquire() bind to the
-    current loop."""
-    await engine.dispose()
-    yield
-
-
-@pytest.fixture
-async def tracked_jobs():
-    """Yields a list to which tests append job ids; teardown deletes those
-    rows so the table is clean for the next test."""
-    ids: list[int] = []
-    yield ids
-    if ids:
-        async with async_session_maker() as s:
-            await s.execute(delete(Job).where(Job.id.in_(ids)))
-            await s.commit()
 
 
 async def _enqueue(payload: dict | None = None, kind: JobKind = JobKind.user_scrape) -> int:

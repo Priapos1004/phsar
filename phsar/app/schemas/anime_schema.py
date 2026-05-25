@@ -33,11 +33,10 @@ class AnimeCreate(AnimeBase):
     pass
 
 class AnimeOut(AnimeBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: int
     uuid: UUID
-
-    class Config:
-        orm_mode = True
 
 
 # --- Anime search result schemas ---

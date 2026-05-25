@@ -11,6 +11,7 @@
 	import Toast from '$lib/components/Toast.svelte';
 	import BackupsCard from '$lib/components/BackupsCard.svelte';
 	import MergeCandidatesCard from '$lib/components/MergeCandidatesCard.svelte';
+	import SplitCandidatesCard from '$lib/components/SplitCandidatesCard.svelte';
 	import { formatShortDate } from '$lib/utils/formatString';
 	import type { RegistrationTokenListItem } from '$lib/types/api';
 
@@ -289,6 +290,8 @@
 	</Card.Root>
 
 	<MergeCandidatesCard />
+
+	<SplitCandidatesCard />
 
 	<BackupsCard currentUsername={getUsername() ?? ''} />
 </div>

@@ -1,4 +1,5 @@
 import asyncio
+import enum
 import logging
 import re
 from collections import deque
@@ -15,6 +16,12 @@ from tenacity import (
 )
 
 from app.exceptions import AnimeNotFoundError, TransientUpstreamError
+from app.services.relation_classifier import (
+    anchor_tier,
+    build_classifier_nodes,
+    classify_anime_relations,
+    would_be_dropped_as_weak_anchor,
+)
 
 
 def _is_transient_mal_error(exc: BaseException) -> bool:
@@ -91,6 +98,55 @@ def normalize_relation(rel: str) -> str:
 # distinct shows) — walking them collapses distinct shows into one
 # anime row.
 _EXCLUDED_EDGE_RELS = frozenset({"character", "adaptation", "alternative_setting"})
+
+
+# Relations that propagate "could be main chain of this graph" identity.
+# Everything else MAL emits (side_story, parent_story, summary, full_story,
+# other, spin-off) is identity-breaking: it connects related-but-distinct
+# members. Without bounding the BFS at identity-breaking edges, a chain of
+# weak edges (typically `other → other`) bridges two franchises — the
+# Overlord → Eminence in Shadow regression caused by MAL labeling the
+# `Ple Ple Pleiades x Kagejitsu!` collab special with relation `Other`
+# instead of `Crossover`. See tests/services/test_jikan_scraper.py::
+# test_search_title_overlord_pleiades_x_kagejitsu_does_not_bridge_to_eminence.
+_IDENTITY_PRESERVING_RELS = frozenset({"sequel", "prequel", "alternative_version"})
+
+
+# Relations MAL uses to point a derivative work at its canonical ancestor
+# (Movie → full_story → TV; side-story → parent_story → TV; later-in-chain
+# → prequel → earlier). Anchor discovery walks ONLY these to find the
+# canonical Main from any starting point in the franchise. Critically,
+# `other` is intentionally absent — that's where cross-franchise bridges
+# live (Ple Ple Pleiades x Kagejitsu, Eva ↔ Ultraman). `alternative_version`
+# is also absent: it's lateral within a franchise (Eva TV ↔ Rebuilds), and
+# the main BFS already propagates WALK across it as an identity-preserving
+# relation, so we don't need to fetch via the anchor pass.
+_STRUCTURAL_UPWARD_RELS = frozenset({"prequel", "parent_story", "full_story"})
+
+# Defensive cap on the upward walk in case MAL data has pathological
+# structure (cycles, absurdly long chains). Typical franchises are 2-5
+# hops; 10 is comfortably above worst-case observed.
+_ANCHOR_DISCOVERY_MAX_HOPS = 10
+
+
+class _ExpandStatus(enum.IntEnum):
+    """Ordered ascending so `max()` resolves multi-path arrivals to the
+    most-permissive status — a node first queued TERMINAL via `side_story`
+    upgrades to WALK if a sequel edge from the same parent points at it."""
+
+    TERMINAL = 0  # Fetch info + relations (for sidecar edges) but don't queue targets.
+    WALK = 1      # Full BFS — propagate WALK only along identity-preserving edges.
+
+
+def _next_expand_status(parent: _ExpandStatus, rel: str) -> _ExpandStatus:
+    """State transition: from a WALK parent, only identity-preserving edges
+    (sequel/prequel/alternative_version) keep the target WALK. Everything
+    else demotes to TERMINAL (in graph with its own outgoing edges
+    captured, but BFS doesn't recurse from there).
+    """
+    if parent is _ExpandStatus.WALK and rel in _IDENTITY_PRESERVING_RELS:
+        return _ExpandStatus.WALK
+    return _ExpandStatus.TERMINAL
 
 
 def parse_relation_edges(raw: list[dict]) -> list[tuple[int, str]]:
@@ -223,6 +279,32 @@ class JikanScraper:
         except Exception:
             return None, None
 
+    # MAL synopses commonly end with one or more credit tags
+    # ("[Written by MAL Rewrite]", "[Source: AniDB]", "[Source: Anime News
+    # Network]", sometimes stacked). They aren't part of the plot, hurt
+    # description-embedding quality, and read as noise to humans. Stripped
+    # at scrape AND refresh time so existing rows clean up on nightly sweep
+    # once the sweep diffs description (see metadata bucket in
+    # scrape_dispatcher).
+    _SYNOPSIS_CREDIT_TAG_RE = re.compile(
+        r"\s*\[(?:Source|Written by)[^\]]*\]\s*$",
+        re.IGNORECASE,
+    )
+
+    @staticmethod
+    def _clean_synopsis(synopsis: str | None) -> str | None:
+        if not synopsis:
+            return synopsis
+        cleaned = synopsis
+        # Loop to peel stacked tags ("...\n\n[Source: A]\n\n[Written by MAL Rewrite]").
+        while True:
+            stripped = JikanScraper._SYNOPSIS_CREDIT_TAG_RE.sub("", cleaned)
+            if stripped == cleaned:
+                break
+            cleaned = stripped
+        cleaned = cleaned.strip()
+        return cleaned or None
+
     @staticmethod
     def _parse_duration_to_seconds(duration: str | None) -> int | None:
         if not duration or "unknown" in duration.lower():
@@ -260,7 +342,7 @@ class JikanScraper:
             "genres": genres,
             "studio": [studio["name"] for studio in anime.get("studios", [])],
             "age_rating": anime.get("rating"),
-            "description": anime.get("synopsis"),
+            "description": JikanScraper._clean_synopsis(anime.get("synopsis")),
             "original_source": anime.get("source"),
             "cover_image": anime.get("images", {}).get("jpg", {}).get("large_image_url"),
             "score": anime.get("score"),
@@ -278,6 +360,83 @@ class JikanScraper:
     async def fetch_relations(self, mal_id: int) -> list[dict]:
         data = await self._get(f"{self.base_url}/anime/{mal_id}/relations")
         return data.get("data", [])
+
+    async def _discover_anchors_upward(
+        self,
+        start_mal_id: int,
+        excluded_ids: frozenset[int],
+        relation_cache: dict[int, list[dict]],
+    ) -> set[int]:
+        """Walk structural-upward (`prequel` / `parent_story` / `full_story`)
+        from `start_mal_id` and return the upmost non-catalog mal_ids reached.
+
+        Used as a pre-BFS pass in `search_title` so a fuzzy MAL search that
+        lands on a side-story / summary movie still discovers the franchise's
+        canonical Main (e.g. Overlord Movie 1 → full_story → Overlord S1).
+        Without this, strict-BFS produces entry-point-dependent graphs when
+        no search root is on the canonical sequel chain.
+
+        `other` is intentionally NOT walked — cross-franchise bridges live
+        there. `alternative_version` is also out: it's lateral within a
+        franchise, and the main BFS propagates WALK across it natively.
+
+        Stops at:
+          - `excluded_ids` (catalog members): main BFS surfaces as cross_link.
+          - terminal nodes (no upward edges): added to `discovered`.
+          - `_ANCHOR_DISCOVERY_MAX_HOPS`: frontier becomes fallback anchors
+            so pathological data never produces zero output.
+
+        Caches fetched `/relations` payloads into `relation_cache` so the
+        main BFS doesn't re-fetch.
+        """
+        discovered: set[int] = set()
+        visited: set[int] = {start_mal_id}
+        frontier: list[int] = [start_mal_id]
+        hops = 0
+
+        while frontier and hops < _ANCHOR_DISCOVERY_MAX_HOPS:
+            next_frontier: list[int] = []
+            for mal_id in frontier:
+                if mal_id != start_mal_id and mal_id in excluded_ids:
+                    continue
+
+                if mal_id not in relation_cache:
+                    relation_cache[mal_id] = await self.fetch_relations(mal_id)
+
+                all_upward = [
+                    target for target, rel in parse_relation_edges(
+                        relation_cache[mal_id],
+                    )
+                    if rel in _STRUCTURAL_UPWARD_RELS
+                ]
+
+                # A node is an anchor candidate only if it has NO upward
+                # edges at all — i.e. it's a true chain start (S1, Eva TV,
+                # etc.). Intermediate nodes whose upward targets are
+                # already-visited or excluded are NOT anchors — adding them
+                # would prepend a mid-chain node ahead of the true root,
+                # which then walks to the root via an identity-breaking
+                # edge (e.g. Movie 1 → full_story → S1) and demotes the
+                # root to TERMINAL.
+                if not all_upward:
+                    if mal_id != start_mal_id:
+                        discovered.add(mal_id)
+                    continue
+
+                for target in all_upward:
+                    if target in visited or target in excluded_ids:
+                        continue
+                    visited.add(target)
+                    next_frontier.append(target)
+
+            frontier = next_frontier
+            hops += 1
+
+        # Pathological-chain fallback: if we hit the hop cap with non-empty
+        # frontier, treat those as discovered anchors. Better to over-fetch
+        # than to silently fail to find an anchor.
+        discovered.update(frontier)
+        return discovered
 
     async def search_by_malid(self, mal_id: int) -> dict:
         data = await self._get(f"{self.base_url}/anime/{mal_id}")
@@ -361,6 +520,48 @@ class JikanScraper:
             # in the catalog" — that's the relation_link merge-candidate signal.
             excluded_ids: frozenset[int] = frozenset(excluded_mal_ids)
 
+        # Anchor discovery pre-pass: from each search root, walk structural-
+        # upward relations to find the canonical chain start. Prepend
+        # discovered anchors to `results` so they're processed FIRST in the
+        # main BFS — their WALK propagation populates `visited_ids` with the
+        # full franchise before subsequent (often side-story-shaped)
+        # original-seed iterations run. Cache /relations payloads here so
+        # the main BFS doesn't re-fetch.
+        relation_cache: dict[int, list[dict]] = {}
+        if seed_payload is not None and seed_mal_id is not None:
+            relation_cache[seed_mal_id] = seed_payload.get("relations") or []
+
+        existing_mal_ids = {result["mal_id"] for result in results}
+        anchor_candidates: list[int] = []
+        for result in results:
+            discovered_anchors = await self._discover_anchors_upward(
+                result["mal_id"], excluded_ids, relation_cache,
+            )
+            for mal_id in discovered_anchors:
+                if mal_id not in existing_mal_ids and mal_id not in anchor_candidates:
+                    anchor_candidates.append(mal_id)
+
+        if anchor_candidates:
+            anchor_results: list[dict] = []
+            for mal_id in anchor_candidates:
+                payload = await self.search_by_malid(mal_id)
+                if payload:
+                    anchor_results.append(payload)
+            results = anchor_results + results
+
+        # Process the canonical-est node first. `visited_ids` is shared
+        # across iters, so if MAL's fuzzy search returns a non-canonical
+        # entry first (Eva case: top hit `Evangelion: Chao Xianshi` ONA
+        # has `other → Eva TV`, which would demote Eva TV to TERMINAL and
+        # lock it out of iter 3 where Eva TV is the actual root), sorting
+        # ensures the TV-shaped chain root walks the franchise BEFORE any
+        # side-story-shaped result iter does.
+        def _search_result_tier_sort(payload: dict) -> tuple:
+            aired_from = (payload.get("aired") or {}).get("from") or ""
+            return (anchor_tier(payload.get("type")), aired_from)
+
+        results.sort(key=_search_result_tier_sort)
+
         all_info: dict[int, dict] = {}
         visited_ids: set[int] = set()
         relations: list[tuple[dict, list[tuple[int, int, str]], set[int]]] = []
@@ -374,6 +575,7 @@ class JikanScraper:
             edges: list[tuple[int, int, str]] = []
             cross_link_mal_ids: set[int] = set()
             left_mal_ids = deque([mal_id])
+            expand_by_mal_id: dict[int, _ExpandStatus] = {mal_id: _ExpandStatus.WALK}
             # Tracks mal_ids queued via a `crossover` edge so they're
             # treated as franchise boundaries (no further walking, no
             # relation_link signal).
@@ -439,21 +641,60 @@ class JikanScraper:
                         "media_type": anime_info["media_type"],
                     }
 
+                    current_status = expand_by_mal_id.get(
+                        current_mal_id, _ExpandStatus.TERMINAL,
+                    )
+
                     # Crossover nodes are a franchise boundary — record
                     # the anime in the graph but don't BFS further.
                     # Without this, a single Fate × Tsukihime crossover
                     # collapses both franchises into one anime row.
+                    #
+                    # TERMINAL nodes (arrived via an identity-breaking
+                    # edge — side_story / parent_story / summary /
+                    # full_story / other / spin-off) are the v0.14.2
+                    # boundary for cross-franchise contamination. Their
+                    # outgoing edges ARE captured (so split-detection
+                    # can see e.g. Vigilante's sequel chain leaking out
+                    # of BNHA's row) but the BFS does NOT recurse from
+                    # them — the queue-skip in the edge loop below keeps
+                    # a chain of weak edges from bridging two franchises
+                    # (Overlord → Eminence) or pulling the other
+                    # franchise's full sequel chain into the graph.
                     if current_mal_id in crossover_arrivals:
                         all_related_media = []
+                    elif current_mal_id in relation_cache:
+                        # Anchor discovery (or an earlier BFS step) already
+                        # fetched these — reuse to avoid the second MAL hit.
+                        all_related_media = relation_cache[current_mal_id]
                     elif current_mal_id == mal_id and seed_payload is not None:
                         # The /full payload the dispatcher just fetched
                         # already bundles relations; reuse them.
                         all_related_media = seed_payload.get("relations") or []
+                        relation_cache[current_mal_id] = all_related_media
                     else:
                         all_related_media = await self.fetch_relations(current_mal_id)
+                        relation_cache[current_mal_id] = all_related_media
 
                     for target_mal_id, rel in parse_relation_edges(all_related_media):
                         edges.append((current_mal_id, target_mal_id, rel))
+                        # TERMINAL parents capture outgoing edges (above)
+                        # but don't queue targets — the graph stays
+                        # bounded to nodes reachable from the seed via
+                        # WALK propagation. Targets of TERMINAL edges
+                        # land as dangling refs in MediaRelationEdges
+                        # sidecars, same shape as cross-graph bridges,
+                        # filtered defensively at _build_adjacency time.
+                        if current_status is _ExpandStatus.TERMINAL:
+                            continue
+                        next_status = _next_expand_status(current_status, rel)
+                        # Most-permissive wins so a side_story-then-sequel
+                        # arrival from the same WALK parent doesn't get
+                        # silently downgraded.
+                        expand_by_mal_id[target_mal_id] = max(
+                            expand_by_mal_id.get(target_mal_id, _ExpandStatus.TERMINAL),
+                            next_status,
+                        )
                         left_mal_ids.append(target_mal_id)
                         if rel == "crossover":
                             crossover_arrivals.add(target_mal_id)
@@ -467,6 +708,30 @@ class JikanScraper:
                 else:
                     logger.warning(f"Anime without media_type:\n{anime_info}")
                     unwanted_media.add((current_mal_id, anime_info["title"], "Unknown"))
+
+            # Roll back visited_ids claims for any graph that save_service
+            # would silently drop. Without this, a short-form franchise
+            # whose first season is a search root (Isekai Quartet S1 —
+            # 11-min TV with empty MAL /relations) produces a 1-node
+            # weak-anchor graph that gets dropped, but its mal_ids stay
+            # claimed in visited_ids — the next root's BFS then skips
+            # those mal_ids and the franchise loses that season
+            # permanently. `would_be_dropped_as_weak_anchor` mirrors
+            # search_service's actual skip predicate so the two sites
+            # can't drift.
+            if related_anime_graph:
+                check_nodes = build_classifier_nodes(related_anime_graph, all_info)
+                _, check_anchor = classify_anime_relations(check_nodes, edges)
+                if would_be_dropped_as_weak_anchor(
+                    check_nodes, check_anchor, seed_mal_id, cross_link_mal_ids,
+                ):
+                    # `visited_ids` is the only state that survives across
+                    # root iterations and carries cross-root claims; the
+                    # per-root locals (related_anime_graph, edges, etc.)
+                    # fall out of scope naturally on `continue`.
+                    for mid in related_anime_graph:
+                        visited_ids.discard(mid)
+                    continue
 
             if related_anime_graph:
                 sorted_graph = dict(

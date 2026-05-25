@@ -10,6 +10,7 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.core.db import async_session_maker
 from app.core.logging_config import setup_logging
+from app.core.maintenance import get_scheduled_at, is_maintenance_active
 from app.core.maintenance_middleware import MaintenanceGateMiddleware
 from app.daos.job_dao import JobDAO
 from app.exceptions import PhsarBaseError
@@ -18,6 +19,7 @@ from app.seeders.anime_title_backfiller import backfill_anime_title_suffixes
 from app.seeders.embedding_backfiller import backfill_embeddings
 from app.seeders.genre_seeder import seed_genres
 from app.seeders.relation_backfiller import backfill_relations
+from app.seeders.split_candidate_backfiller import backfill_split_candidates
 from app.seeders.user_seeder import (
     backfill_spoiler_visibility,
     backfill_user_settings,
@@ -47,18 +49,36 @@ async def _post_yield_backfills() -> None:
     HTTP layer responds immediately; per-anime commit checkpoints in
     `backfill_relations` already tolerate abrupt termination.
 
-    Merge-candidate detection runs AFTER relation backfill in the same
-    task so it sees the rewritten relation types in the title-similarity
-    signal. While the task is in flight, save-time merge detection
-    (inside `save_search_results`) still works against the pre-backfill
-    catalog — the task's tail re-runs detection at the end, so any
-    pre-backfill miss self-heals.
+    Merge-candidate detection runs AFTER relation backfill so it sees
+    the rewritten relation types in the title-similarity signal. While
+    the task is in flight, save-time merge detection (inside
+    `save_search_results`) still works against the pre-backfill catalog
+    — the task's tail re-runs detection at the end, so any pre-backfill
+    miss self-heals.
+
+    Each pass runs in its own session so the identity map doesn't grow
+    across the three catalog-wide scans — the relation backfill loads
+    every Anime + Media + sidecar, and reusing one session for all three
+    would pin ~3× the working set in memory through the whole ~14-min
+    cold start.
     """
     try:
-        async with async_session_maker() as session:
-            if settings.RELATION_BACKFILL_ON_STARTUP:
+        if settings.RELATION_BACKFILL_ON_STARTUP:
+            async with async_session_maker() as session:
                 await backfill_relations(session)
+        async with async_session_maker() as session:
             await backfill_merge_candidates(session)
+            await session.commit()
+        async with async_session_maker() as session:
+            # Split-detection runs LAST so it sees the rewritten relation
+            # types from relation_backfiller AND any merges resolved by
+            # backfill_merge_candidates collapsed pairs (which removes
+            # would-be duplicate split-candidates). When the per-anime
+            # hook inside relation_backfiller already covered every row,
+            # this is a no-op pass — upsert_pending is idempotent on
+            # identical cluster payloads.
+            await backfill_split_candidates(session)
+            await session.commit()
     except asyncio.CancelledError:
         logger.info("Post-yield backfill cancelled by shutdown")
         raise
@@ -69,6 +89,12 @@ async def _post_yield_backfills() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 Starting up FastAPI app")
+    # Paired with the set_maintenance flip log: ops can grep these two
+    # to tell "container restarted" from "flag stuck across restarts".
+    logger.info(
+        "Maintenance state at startup: active=%s, scheduled_at=%s",
+        is_maintenance_active(), get_scheduled_at(),
+    )
 
     async with async_session_maker() as session:
         await seed_genres(session)

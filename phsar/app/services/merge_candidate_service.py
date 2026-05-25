@@ -28,40 +28,20 @@ from app.schemas.admin_schema import (
     MergeCandidateListItem,
     PendingReclassification,
 )
+from app.seeders.split_candidate_backfiller import (
+    detect_split_candidates_for_anime,
+)
 from app.services.anime_relation_service import (
     preview_reclassifications,
     reclassify_anime,
 )
+from app.services.anime_summary import summarize_anime
 from app.services.merge_detection_service import detect_merge_candidates
 from app.services.spoiler_service import refresh_spoiler_cache_for_all_users
 
 logger = logging.getLogger(__name__)
 
 merge_candidate_dao = MergeCandidateDAO()
-
-
-def _summarize(anime: Anime, rating_count: int) -> MergeCandidateAnimeSummary:
-    studio_names: set[str] = set()
-    years: list[int] = []
-    aired_from_dates: list[datetime] = []
-    for media in anime.media:
-        for ms in media.media_studio:
-            studio_names.add(ms.studio.name)
-        if media.anime_season_year is not None:
-            years.append(media.anime_season_year)
-        if media.aired_from is not None:
-            aired_from_dates.append(media.aired_from)
-    return MergeCandidateAnimeSummary(
-        uuid=str(anime.uuid),
-        title=anime.title,
-        name_eng=anime.name_eng,
-        name_jap=anime.name_jap,
-        media_count=len(anime.media),
-        studios=sorted(studio_names),
-        earliest_year=min(years) if years else None,
-        earliest_aired_from=min(aired_from_dates) if aired_from_dates else None,
-        rating_count=rating_count,
-    )
 
 
 _AIRED_FROM_NULL_SENTINEL = datetime.max.replace(tzinfo=timezone.utc)
@@ -95,8 +75,8 @@ async def list_pending(db: AsyncSession) -> list[MergeCandidateListItem]:
 
     items: list[MergeCandidateListItem] = []
     for row in rows:
-        a_summary = _summarize(row.anime_a, rating_counts.get(row.anime_a_id, 0))
-        b_summary = _summarize(row.anime_b, rating_counts.get(row.anime_b_id, 0))
+        a_summary = summarize_anime(row.anime_a, rating_counts.get(row.anime_a_id, 0))
+        b_summary = summarize_anime(row.anime_b, rating_counts.get(row.anime_b_id, 0))
         # Compute the preview from the unswapped pair (anime_a is the
         # survivor by convention) so the diff reflects "A absorbs B".
         # The recommended-keep swap below only affects which side
@@ -228,6 +208,15 @@ async def merge(
     )).scalars().first()
     if anime_a is not None:
         await reclassify_anime(db, anime_a)
+        # A merge can surface previously-dangling bridge edges that
+        # connect B's media into a substance-passing chain disjoint
+        # from A's main — the Dr. Stone split-merge case generalizes
+        # to any consolidated graph. Detect once the survivor's
+        # reclassify lands so split-candidates reflect the post-merge
+        # state.
+        await detect_split_candidates_for_anime(
+            db, anime_a, detected_by="merge_survivor",
+        )
 
     await db.commit()
 
@@ -236,15 +225,25 @@ async def merge(
         # B's media is now under A and may match against a third anime that
         # didn't trigger before. seen_pairs short-circuits anything admin
         # already decided, so this only adds genuinely new candidates.
+        #
+        # Use SAVEPOINT instead of session.rollback(): a rollback would
+        # expire `anime_a`, and the `str(anime_a.uuid)` return line below
+        # would then trigger an async lazy reload → MissingGreenlet.
         try:
-            await detect_merge_candidates(db, new_anime_ids=[anime_a.id])
+            async with db.begin_nested():
+                await detect_merge_candidates(db, new_anime_ids=[anime_a.id])
             await db.commit()
         except Exception:
             logger.exception("Post-merge re-detection failed; merge itself succeeded")
-            await db.rollback()
         # Spoiler cache stores media ids, not anime ids, but the frontier
         # algorithm runs per-anime. Recompute globally so frontiers reflect
-        # the merged media list.
-        await refresh_spoiler_cache_for_all_users(db)
+        # the merged media list. The merge itself committed above — a
+        # cache-recompute failure shouldn't 5xx the request and trick the
+        # admin into retrying an already-resolved candidate. Same pattern
+        # as scrape_dispatcher's post-sweep recompute.
+        try:
+            await refresh_spoiler_cache_for_all_users(db)
+        except Exception:
+            logger.exception("Spoiler cache recompute failed after merge")
 
     return str(anime_a.uuid) if anime_a else ""

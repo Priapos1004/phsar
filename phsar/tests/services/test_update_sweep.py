@@ -19,32 +19,30 @@ import pytest
 from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
-from app.core.db import async_session_maker, engine
+from app.core.db import async_session_maker
 from app.daos.anime_dao import AnimeDAO
 from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
+from app.models.genre import Genre, GenreType
 from app.models.media import Media
 from app.models.media_freshness import MediaFreshness
+from app.models.media_genre import MediaGenre
 from app.models.media_relation_edges import MediaRelationEdges
+from app.models.media_studio import MediaStudio
 from app.models.media_unwanted import MediaUnwanted
+from app.models.studio import Studio
 from app.services.scrape_dispatcher import (
     _advance_anime_freshness,
+    _apply_genre_diff,
     _apply_media_diff,
+    _apply_metadata_diff,
+    _apply_studio_diff,
     _qualifies_for_relations_probe,
     _refresh_one_anime,
+    _summarize_drift,
     update_sweep_dispatcher,
 )
 from tests._helpers import media_kwargs
-
-
-@pytest.fixture(autouse=True)
-async def _reset_engine_pool():
-    """Each pytest-asyncio test gets a fresh event loop. Pooled
-    connections are bound to whatever loop opened them — disposing here
-    means the next acquire() rebinds to the current loop. Mirrors the
-    pattern in test_job_worker.py."""
-    await engine.dispose()
-    yield
 
 
 class _FakeScraper:
@@ -216,6 +214,406 @@ def test_diff_refuses_to_clobber_score_with_omitted_field():
 
 
 # ---------------------------------------------------------------------------
+# _apply_metadata_diff (mutates Media; embedding regen monkeypatched)
+# ---------------------------------------------------------------------------
+
+
+_METADATA_BASE = {
+    "title": "Title",
+    "name_eng": "English Title",
+    "name_jap": "日本語タイトル",
+    "other_names": [],
+    "description": "Plot.",
+    "cover_image": "https://example/cover.jpg",
+    "age_rating": "PG-13 - Teens 13 or older",
+    "original_source": "Manga",
+}
+
+
+def _metadata_payload(**overrides) -> dict:
+    """Minimum metadata-bucket fields. Pass overrides to mutate any
+    single field; pass None explicitly to exercise the "MAL omitted the
+    field" guard."""
+    return {**_METADATA_BASE, **overrides}
+
+
+def _aligned_media(mal_id: int, **media_overrides):
+    """Build a Media whose metadata fields already match _METADATA_BASE,
+    so a diff with an unmodified `_metadata_payload()` is a no-op. Pass
+    overrides to mutate one field at a time — that's the only delta the
+    diff should pick up."""
+    return Media(**media_kwargs(
+        anime_id=1, mal_id=mal_id, **{**_METADATA_BASE, **media_overrides},
+    ))
+
+
+def _patch_regen(monkeypatch) -> list[dict]:
+    """Capture calls to regenerate_media_embedding so the metadata diff
+    tests don't pay the 50-100ms encode and don't require a real
+    MediaSearch row. Returns a list the test asserts against."""
+    calls: list[dict] = []
+
+    async def fake_regen(session, media_id, *, title_texts, description_text):
+        calls.append({
+            "media_id": media_id,
+            "title_texts": list(title_texts),
+            "description_text": description_text,
+        })
+
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.regenerate_media_embedding", fake_regen,
+    )
+    return calls
+
+
+@pytest.mark.asyncio
+async def test_metadata_diff_no_change_returns_false(monkeypatch):
+    calls = _patch_regen(monkeypatch)
+    media = _aligned_media(mal_id=1)
+    assert await _apply_metadata_diff(None, media, _metadata_payload()) is False
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_metadata_diff_description_change_regenerates_embedding(monkeypatch):
+    """Description drift (e.g. MAL replaces a placeholder synopsis with a
+    real one) flips the diff and re-encodes — search hits the new text on
+    the next request."""
+    calls = _patch_regen(monkeypatch)
+    media = _aligned_media(mal_id=1, description="Old plot.")
+    assert await _apply_metadata_diff(
+        None, media, _metadata_payload(description="Fresh plot."),
+    ) is True
+    assert media.description == "Fresh plot."
+    assert len(calls) == 1
+    assert calls[0]["description_text"] == "Fresh plot."
+
+
+@pytest.mark.asyncio
+async def test_metadata_diff_cover_only_change_skips_embedding(monkeypatch):
+    """Cover image is not part of any embedding text — a cover-only
+    update should write the column without paying for an encode."""
+    calls = _patch_regen(monkeypatch)
+    media = _aligned_media(mal_id=1, cover_image="https://example/old.jpg")
+    payload = _metadata_payload(cover_image="https://example/new.jpg")
+    assert await _apply_metadata_diff(None, media, payload) is True
+    assert media.cover_image == "https://example/new.jpg"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_metadata_diff_title_change_regenerates_embedding(monkeypatch):
+    """Title sits inside the description-embedding text too (`title +
+    description` mix), so a title-only change still requires re-encoding
+    both."""
+    calls = _patch_regen(monkeypatch)
+    media = _aligned_media(mal_id=1, title="Old Title")
+    assert await _apply_metadata_diff(
+        None, media, _metadata_payload(title="New Title"),
+    ) is True
+    assert media.title == "New Title"
+    assert len(calls) == 1
+    assert "New Title" in calls[0]["title_texts"]
+
+
+@pytest.mark.asyncio
+async def test_metadata_diff_none_passthrough_does_not_clobber(monkeypatch):
+    """Mirrors the volatile bucket's None-guard: a missing field in the
+    refresh payload (rare, defensive) must not overwrite a populated
+    column with NULL."""
+    calls = _patch_regen(monkeypatch)
+    media = _aligned_media(mal_id=1, name_eng="Existing English")
+    payload = _metadata_payload(name_eng=None)
+    assert await _apply_metadata_diff(None, media, payload) is False
+    assert media.name_eng == "Existing English"
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_metadata_diff_name_eng_revealed_regenerates_embedding(monkeypatch):
+    """English title arriving late (announcement → simulcast licensing)
+    is the most common metadata change on MAL — must propagate to the
+    title embedding so search picks up the new alias."""
+    calls = _patch_regen(monkeypatch)
+    media = _aligned_media(mal_id=1, name_eng=None)
+    assert await _apply_metadata_diff(
+        None, media, _metadata_payload(name_eng="New English"),
+    ) is True
+    assert media.name_eng == "New English"
+    assert len(calls) == 1
+    assert "New English" in calls[0]["title_texts"]
+
+
+@pytest.mark.asyncio
+async def test_metadata_diff_other_names_no_change_skips_regen(monkeypatch):
+    """`other_names` is JSON list. Identical content (same order) is the
+    common case for a steady-state refresh — no regen, no write."""
+    calls = _patch_regen(monkeypatch)
+    media = _aligned_media(mal_id=1, other_names=["alpha", "beta"])
+    payload = _metadata_payload(other_names=["alpha", "beta"])
+    assert await _apply_metadata_diff(None, media, payload) is False
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_metadata_diff_other_names_reorder_skips_regen(monkeypatch):
+    """MAL doesn't return title_synonyms in a stable order — a pure
+    reorder must not fire the 50-100ms embedding regen on noise."""
+    calls = _patch_regen(monkeypatch)
+    media = _aligned_media(mal_id=1, other_names=["alpha", "beta"])
+    payload = _metadata_payload(other_names=["beta", "alpha"])
+    assert await _apply_metadata_diff(None, media, payload) is False
+    assert calls == []
+
+
+@pytest.mark.asyncio
+async def test_metadata_diff_other_names_added_regenerates_embedding(monkeypatch):
+    """A new synonym landing on MAL must flow into the title embedding
+    so search-by-alias hits the row on the next query."""
+    calls = _patch_regen(monkeypatch)
+    media = _aligned_media(mal_id=1, other_names=["alpha"])
+    payload = _metadata_payload(other_names=["alpha", "beta"])
+    assert await _apply_metadata_diff(None, media, payload) is True
+    assert media.other_names == ["alpha", "beta"]
+    assert len(calls) == 1
+    assert "beta" in calls[0]["title_texts"]
+
+
+# ---------------------------------------------------------------------------
+# _apply_genre_diff + _apply_studio_diff (use db_session)
+# ---------------------------------------------------------------------------
+
+
+async def _seed_genres(db_session, names: list[str]) -> dict[str, Genre]:
+    """Create Genre rows with unique names so two test runs in the same
+    session don't violate the `unique` constraint. The genre_type is
+    fixed to Genres — the diff helper doesn't read genre_type."""
+    objs = {}
+    for name in names:
+        genre = Genre(name=name, genre_type=GenreType.Genres)
+        db_session.add(genre)
+        objs[name] = genre
+    await db_session.flush()
+    return objs
+
+
+async def _build_media_with_taxonomy(
+    db_session, mal_id: int,
+    genre_names: list[str] | None = None,
+    studio_names: list[str] | None = None,
+) -> Media:
+    """Anime + Media with optional MediaGenre / MediaStudio rows wired
+    up. Re-fetched with the sweep's eager-load shape so the diff helpers
+    can read `media.media_genre` / `media.media_studio` without tripping
+    `lazy="raise"`."""
+    anime = Anime(mal_id=mal_id * 10, title=f"A{mal_id}")
+    db_session.add(anime)
+    await db_session.flush()
+    media = Media(**media_kwargs(anime_id=anime.id, mal_id=mal_id))
+    db_session.add(media)
+    await db_session.flush()
+    for name in genre_names or []:
+        g = Genre(name=name, genre_type=GenreType.Genres)
+        db_session.add(g)
+        await db_session.flush()
+        db_session.add(MediaGenre(media_id=media.id, genre_id=g.id))
+    for name in studio_names or []:
+        s = Studio(name=name)
+        db_session.add(s)
+        await db_session.flush()
+        db_session.add(MediaStudio(media_id=media.id, studio_id=s.id))
+    await db_session.flush()
+    result = await db_session.execute(
+        select(Media).where(Media.id == media.id).options(
+            selectinload(Media.media_genre).selectinload(MediaGenre.genre),
+            selectinload(Media.media_studio).selectinload(MediaStudio.studio),
+        )
+    )
+    return result.scalars().first()
+
+
+@pytest.mark.asyncio
+async def test_genre_diff_no_change_returns_none(db_session):
+    media = await _build_media_with_taxonomy(
+        db_session, mal_id=-95000, genre_names=["GD_Action_0"],
+    )
+    assert await _apply_genre_diff(
+        db_session, media, {"genres": ["GD_Action_0"]},
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_genre_diff_known_addition_applied(db_session):
+    """Pure addition where every new tag is already in the genre table
+    is the routine case (MAL retroactively tags an old show with an
+    existing Theme). Append the M2M rows silently — the bell still
+    reports `applied_count` for transparency."""
+    media = await _build_media_with_taxonomy(
+        db_session, mal_id=-95001, genre_names=["GD_Action_1"],
+    )
+    # Seed the addition target as a known genre.
+    await _seed_genres(db_session, ["GD_Drama_1"])
+
+    report = await _apply_genre_diff(
+        db_session, media, {"genres": ["GD_Action_1", "GD_Drama_1"]},
+    )
+    assert report is not None
+    assert report["kind"] == "additions_applied"
+    assert report["unknown_tags"] == []
+
+    # Verify the M2M row landed.
+    result = await db_session.execute(
+        select(MediaGenre).where(MediaGenre.media_id == media.id)
+    )
+    rows = result.scalars().all()
+    assert len(rows) == 2
+
+
+@pytest.mark.asyncio
+async def test_genre_diff_unknown_addition_logs_without_apply(db_session):
+    """If MAL adds a tag we've never seen, log it as `unknown_tags` and
+    skip the WHOLE batch of additions — half-applying would mean the
+    next "what got auto-added since the seeder update?" question can't
+    be answered from result_summary alone."""
+    media = await _build_media_with_taxonomy(
+        db_session, mal_id=-95002, genre_names=["GD_Action_2"],
+    )
+    await _seed_genres(db_session, ["GD_KnownAdded_2"])
+
+    report = await _apply_genre_diff(
+        db_session, media,
+        {"genres": ["GD_Action_2", "GD_KnownAdded_2", "GD_NewTag_2"]},
+    )
+    assert report is not None
+    assert report["kind"] == "additions_unknown"
+    assert report["unknown_tags"] == ["GD_NewTag_2"]
+
+    # All-or-nothing: even the known addition is skipped until seeder
+    # catches up.
+    result = await db_session.execute(
+        select(MediaGenre).where(MediaGenre.media_id == media.id)
+    )
+    rows = result.scalars().all()
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_genre_diff_removal_logs_without_apply(db_session):
+    """MAL removing a genre is rare and worth admin review — never
+    auto-applied (don't auto-drop the row, just flag)."""
+    media = await _build_media_with_taxonomy(
+        db_session, mal_id=-95003, genre_names=["GD_Action_3", "GD_Drama_3"],
+    )
+
+    report = await _apply_genre_diff(
+        db_session, media, {"genres": ["GD_Action_3"]},
+    )
+    assert report is not None
+    assert report["kind"] == "removal_or_replacement"
+
+    # The dropped MediaGenre row is left intact.
+    result = await db_session.execute(
+        select(MediaGenre).where(MediaGenre.media_id == media.id)
+    )
+    rows = result.scalars().all()
+    assert len(rows) == 2
+
+
+@pytest.mark.asyncio
+async def test_genre_diff_replacement_logs_without_apply(db_session):
+    """Add + remove in the same diff classifies as
+    removal_or_replacement (the removal branch wins). Same reasoning as
+    pure removal — don't trust the swap, just surface it."""
+    media = await _build_media_with_taxonomy(
+        db_session, mal_id=-95004, genre_names=["GD_Action_4"],
+    )
+    await _seed_genres(db_session, ["GD_Drama_4"])
+
+    report = await _apply_genre_diff(
+        db_session, media, {"genres": ["GD_Drama_4"]},
+    )
+    assert report is not None
+    assert report["kind"] == "removal_or_replacement"
+
+    # Nothing applied — the original genre stays, the new one doesn't land.
+    result = await db_session.execute(
+        select(MediaGenre).where(MediaGenre.media_id == media.id)
+    )
+    rows = result.scalars().all()
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_studio_diff_no_change_returns_none(db_session):
+    media = await _build_media_with_taxonomy(
+        db_session, mal_id=-96000, studio_names=["SD_Madhouse_0"],
+    )
+    assert await _apply_studio_diff(
+        media, {"studio": ["SD_Madhouse_0"]},
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_studio_diff_addition_logs_without_apply(db_session):
+    """Studio additions DO happen legitimately (co-production credits
+    surface after airing) but rare enough that surfacing every change
+    is preferable to silently rewriting on a possible MAL bug."""
+    media = await _build_media_with_taxonomy(
+        db_session, mal_id=-96001, studio_names=["SD_Madhouse_1"],
+    )
+
+    report = await _apply_studio_diff(
+        media, {"studio": ["SD_Madhouse_1", "SD_MAPPA_1"]},
+    )
+    assert report is not None
+    assert report["kind"] == "any_change"
+    assert report["new"] == ["SD_MAPPA_1", "SD_Madhouse_1"]
+
+
+@pytest.mark.asyncio
+async def test_studio_diff_removal_logs_without_apply(db_session):
+    media = await _build_media_with_taxonomy(
+        db_session, mal_id=-96002, studio_names=["SD_Madhouse_2"],
+    )
+
+    report = await _apply_studio_diff(media, {"studio": []})
+    assert report is not None
+    assert report["kind"] == "any_change"
+
+
+def test_summarize_drift_empty():
+    assert _summarize_drift([]) == {
+        "applied_count": 0, "logged_count": 0, "unknown_tags": [], "samples": [],
+    }
+
+
+def test_summarize_drift_counts_and_unions_unknowns():
+    """Cross-media unknown tags fold into one sorted list so the bell
+    can render "seeder is missing: X, Y" without dedup logic of its own."""
+    reports = [
+        {"kind": "additions_applied", "unknown_tags": []},
+        {"kind": "additions_applied", "unknown_tags": []},
+        {"kind": "additions_unknown", "unknown_tags": ["Survival"]},
+        {"kind": "additions_unknown", "unknown_tags": ["Survival", "Mecha-Sci-Fi"]},
+        {"kind": "removal_or_replacement", "unknown_tags": []},
+    ]
+    out = _summarize_drift(reports)
+    assert out["applied_count"] == 2
+    assert out["logged_count"] == 3
+    assert out["unknown_tags"] == ["Mecha-Sci-Fi", "Survival"]
+    assert out["samples"] == reports  # under 5 → full list
+
+
+def test_summarize_drift_caps_samples_at_5():
+    """`result_summary` is JSONB; bounded samples keep a malformed MAL
+    response (drift for every refreshed media) from bloating the column."""
+    reports = [{"kind": "any_change", "unknown_tags": []} for _ in range(20)]
+    out = _summarize_drift(reports)
+    assert out["logged_count"] == 20
+    assert len(out["samples"]) == 5
+
+
+# ---------------------------------------------------------------------------
 # _refresh_one_anime (uses db_session)
 # ---------------------------------------------------------------------------
 
@@ -244,6 +642,8 @@ async def _build_anime_with_one_media(
             selectinload(Anime.media).options(
                 selectinload(Media.freshness),
                 selectinload(Media.relation_edges),
+                selectinload(Media.media_genre).selectinload(MediaGenre.genre),
+                selectinload(Media.media_studio).selectinload(MediaStudio.studio),
             ),
             selectinload(Anime.freshness),
         )
@@ -263,12 +663,12 @@ async def test_refresh_increments_counter_when_unchanged(db_session):
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper({media_mal_id: _payload()})
 
-    changed, raw, is_airing = await _refresh_one_anime(db_session, anime, scraper)
-    _advance_anime_freshness(anime, changed, is_airing)
+    result = await _refresh_one_anime(db_session, anime, scraper)
+    _advance_anime_freshness(anime, result.volatile_changed, result.is_currently_airing)
 
-    assert changed is False
-    assert is_airing is False
-    assert raw == {media_mal_id: _payload()}
+    assert result.volatile_changed is False
+    assert result.is_currently_airing is False
+    assert result.raw_payloads == {media_mal_id: _payload()}
     assert anime.freshness.stable_check_count == 6
 
 
@@ -284,10 +684,10 @@ async def test_refresh_resets_counter_on_score_change(db_session):
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper({media_mal_id: _payload(score=8.0)})
 
-    changed, _raw, is_airing = await _refresh_one_anime(db_session, anime, scraper)
-    _advance_anime_freshness(anime, changed, is_airing)
+    result = await _refresh_one_anime(db_session, anime, scraper)
+    _advance_anime_freshness(anime, result.volatile_changed, result.is_currently_airing)
 
-    assert changed is True
+    assert result.volatile_changed is True
     assert anime.freshness.stable_check_count == 0
     assert anime.media[0].score == 8.0
 
@@ -307,11 +707,11 @@ async def test_refresh_currently_airing_resets_counter_without_diff(db_session):
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper({media_mal_id: _payload(airing_status="Currently Airing", aired_to=None)})
 
-    changed, _raw, is_airing = await _refresh_one_anime(db_session, anime, scraper)
-    _advance_anime_freshness(anime, changed, is_airing)
+    result = await _refresh_one_anime(db_session, anime, scraper)
+    _advance_anime_freshness(anime, result.volatile_changed, result.is_currently_airing)
 
-    assert changed is False
-    assert is_airing is True
+    assert result.volatile_changed is False
+    assert result.is_currently_airing is True
     assert anime.freshness.stable_check_count == 0
 
 
@@ -329,8 +729,8 @@ async def test_refresh_bumps_last_checked_even_when_unchanged(db_session):
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper({media_mal_id: _payload()})
 
-    changed, _raw, is_airing = await _refresh_one_anime(db_session, anime, scraper)
-    _advance_anime_freshness(anime, changed, is_airing)
+    result = await _refresh_one_anime(db_session, anime, scraper)
+    _advance_anime_freshness(anime, result.volatile_changed, result.is_currently_airing)
 
     assert anime.freshness.last_checked_at > old_anime_ts
     assert anime.media[0].freshness.last_checked_at > old_media_ts
@@ -394,9 +794,9 @@ async def test_refresh_creates_missing_sidecars_defensively(db_session):
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper({media_mal_id: _payload()})
 
-    changed, _raw, is_airing = await _refresh_one_anime(db_session, anime, scraper)
+    result = await _refresh_one_anime(db_session, anime, scraper)
     assert anime.media[0].freshness is not None
-    _advance_anime_freshness(anime, changed, is_airing)
+    _advance_anime_freshness(anime, result.volatile_changed, result.is_currently_airing)
 
     assert anime.freshness is not None
     assert anime.freshness.stable_check_count == 0
@@ -600,6 +1000,8 @@ def _patch_select_due(monkeypatch, anime_ids: list[int]) -> None:
                 selectinload(Anime.media).options(
                     selectinload(Media.freshness),
                     selectinload(Media.relation_edges),
+                    selectinload(Media.media_genre).selectinload(MediaGenre.genre),
+                    selectinload(Media.media_studio).selectinload(MediaStudio.studio),
                 ),
                 selectinload(Anime.freshness),
             )
@@ -850,25 +1252,64 @@ async def test_probe_seeds_search_title_with_each_main_mal_id(
 ):
     """Probe must call search_title once per Main media on the parent
     anime — needed to reach disjoint sub-graphs (e.g., a side-story
-    branch like Vigilante off BNHA's main). _real_seed creates one
-    main per anime; we attach a second main inline."""
+    branch like Vigilante off BNHA's main). _real_seed creates one main
+    per anime; we attach a second main inline. Sidecar edges seeded so
+    the in-sweep classifier walks the sequel chain and keeps BOTH labeled
+    Main (substance-gate + chain rules promote sequels of the anchor)."""
+    from app.models.media import RelationType
+    first_main_mal_id = -8410 * 100
     a_id = await _real_seed(
         mal_id=-8410, last_checked_at=datetime.now(timezone.utc) - timedelta(days=10),
         stable_check_count=5,
     )
     tracked_anime.append(a_id)
 
-    second_main_mal_id = -8410 * 100 + 1
+    second_main_mal_id = first_main_mal_id + 1
     async with async_session_maker() as s:
-        media2 = Media(**media_kwargs(anime_id=a_id, mal_id=second_main_mal_id))
+        # _real_seed media already has a freshness row; fetch its id so
+        # we can stamp a sequel edge from it to media2. Stamp episodes +
+        # duration_seconds on both so the classifier's substance gate
+        # passes — otherwise the non-anchor in the chain gets demoted to
+        # side_story and the probe only seeds the anchor.
+        result = await s.execute(
+            select(Media).where(Media.anime_id == a_id).options(selectinload(Media.relation_edges)),
+        )
+        first_media = result.scalars().first()
+        first_media.episodes = 12
+        first_media.duration_seconds = 1440
+        s.add(MediaRelationEdges(
+            media_id=first_media.id, edges=[[second_main_mal_id, "sequel"]],
+        ))
+        media2 = Media(**media_kwargs(
+            anime_id=a_id, mal_id=second_main_mal_id,
+            relation_type=RelationType.Main,
+            episodes=12, duration_seconds=1440,
+        ))
         s.add(media2)
         await s.flush()
         s.add(MediaFreshness(media_id=media2.id, last_checked_at=None))
+        s.add(MediaRelationEdges(
+            media_id=media2.id, edges=[[first_main_mal_id, "prequel"]],
+        ))
         await s.commit()
 
+    # Sweep refreshes sidecars from each payload's `relations` block, so
+    # the chain edges must round-trip through the payload too — otherwise
+    # _refresh_one_anime clobbers the seeded edges with [] and the
+    # in-sweep classifier demotes media2 to side_story before the probe.
     payloads = {
-        -8410 * 100: _payload(),
-        second_main_mal_id: _payload(),
+        first_main_mal_id: {
+            **_payload(),
+            "relations": [
+                {"relation": "Sequel", "entry": [{"type": "anime", "mal_id": second_main_mal_id}]},
+            ],
+        },
+        second_main_mal_id: {
+            **_payload(),
+            "relations": [
+                {"relation": "Prequel", "entry": [{"type": "anime", "mal_id": first_main_mal_id}]},
+            ],
+        },
     }
     fake_scraper = _FakeScraper(payloads)
     await _run_dispatcher_harness(
@@ -876,7 +1317,7 @@ async def test_probe_seeds_search_title_with_each_main_mal_id(
     )
 
     assert sorted(fake_scraper.search_title_calls) == sorted(
-        [-8410 * 100, second_main_mal_id]
+        [first_main_mal_id, second_main_mal_id]
     )
 
 

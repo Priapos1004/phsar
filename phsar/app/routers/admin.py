@@ -20,6 +20,7 @@ from app.models.users import RoleType
 from app.routers.admin_jobs import enqueue_backup_job
 from app.routers.admin_jobs import router as admin_jobs_router
 from app.routers.admin_merge import router as admin_merge_router
+from app.routers.admin_split import router as admin_split_router
 from app.schemas import admin_schema, auth_schema, backup_schema
 from app.services import admin_service, auth_service, backup_service
 
@@ -121,7 +122,8 @@ async def restore_backup(
     # whole pool; otherwise get_db's cleanup tries to rollback on a closed conn.
     await db.close()
     return await backup_service.restore_backup(
-        filename=filename, confirm=data.confirm, caller_username=current_user.username,
+        filename=filename, confirm=data.confirm,
+        caller_username=current_user.username, caller_user_id=current_user.id,
     )
 
 
@@ -133,3 +135,4 @@ async def upload_backup(file: UploadFile):
 router.include_router(backups_router)
 router.include_router(admin_jobs_router)
 router.include_router(admin_merge_router)
+router.include_router(admin_split_router)

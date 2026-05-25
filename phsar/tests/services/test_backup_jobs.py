@@ -17,10 +17,9 @@ required.
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import delete
 
 from app.core.config import settings
-from app.core.db import async_session_maker, engine
+from app.core.db import async_session_maker
 from app.daos.job_dao import JobDAO
 from app.exceptions import BackupDiskSpaceError
 from app.models.job import Job, JobKind, JobStatus
@@ -71,31 +70,10 @@ def _patch_progress(monkeypatch) -> None:
     )
 
 
-@pytest.fixture(autouse=True)
-async def _reset_engine_pool():
-    """Each pytest-asyncio test gets a fresh event loop. asyncpg refuses
-    pooled connections that were bound to a different loop, so dispose
-    the engine pool around each test (same pattern as test_job_worker)."""
-    await engine.dispose()
-    yield
-
-
 @pytest.fixture
 def backup_dir(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "BACKUP_DIR", str(tmp_path))
     return tmp_path
-
-
-@pytest.fixture
-async def tracked_jobs():
-    """Jobs are inserted with real commits so the worker's fresh sessions
-    can see them — clean them up explicitly. Mirrors test_job_worker."""
-    ids: list[int] = []
-    yield ids
-    if ids:
-        async with async_session_maker() as s:
-            await s.execute(delete(Job).where(Job.id.in_(ids)))
-            await s.commit()
 
 
 async def _enqueue_backup_job(payload: dict) -> int:

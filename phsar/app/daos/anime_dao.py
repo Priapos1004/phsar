@@ -141,6 +141,11 @@ class AnimeDAO(MalIdDAO[Anime]):
                 selectinload(Anime.media).options(
                     selectinload(Media.freshness),
                     selectinload(Media.relation_edges),
+                    # Genre + studio M2M needed by the metadata drift
+                    # detectors in scrape_dispatcher — without these the
+                    # drift compare trips `lazy="raise"`.
+                    selectinload(Media.media_genre).selectinload(MediaGenre.genre),
+                    selectinload(Media.media_studio).selectinload(MediaStudio.studio),
                 ),
                 selectinload(Anime.freshness),
             )

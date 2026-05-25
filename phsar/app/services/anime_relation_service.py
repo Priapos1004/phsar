@@ -29,7 +29,7 @@ from app.services.relation_classifier import (
 from app.services.vector_embedding_service import regenerate_anime_embedding
 
 
-def _build_classifier_graph(
+def build_classifier_graph(
     media: Iterable[Media],
 ) -> tuple[dict[int, dict], list[tuple[int, int, str]]]:
     """Project a media iterable into (nodes, edges) ready for
@@ -68,7 +68,7 @@ async def reclassify_anime(
     Returns `None` when no changes are needed; otherwise a diff dict.
     Caller commits.
     """
-    nodes, edges = _build_classifier_graph(anime.media)
+    nodes, edges = build_classifier_graph(anime.media)
     classifications, new_anchor_mal_id = classify_anime_relations(nodes, edges)
     assert new_anchor_mal_id is not None, "non-empty nodes always yield an anchor"
 
@@ -103,7 +103,17 @@ async def reclassify_anime(
         val = getattr(anime, field)
         return list(val or []) if field == "other_names" else val
 
-    drifted_fields = {f for f, v in new_umbrella.items() if _current(f) != v}
+    def _drifted(field: str, new_val: object) -> bool:
+        current = _current(field)
+        # MAL's title_synonyms list isn't returned in stable order, so
+        # comparing as ordered lists would flag pure reorders as drift
+        # — and the per-anchor change would then cascade into an
+        # AnimeSearch embedding regen on noise.
+        if field == "other_names":
+            return set(current) != set(new_val)
+        return current != new_val
+
+    drifted_fields = {f for f, v in new_umbrella.items() if _drifted(f, v)}
     umbrella_drifted = bool(drifted_fields)
     embedding_drifted = bool(drifted_fields & set(_EMBEDDING_FIELDS))
     anchor_changed = "mal_id" in drifted_fields
@@ -163,7 +173,7 @@ def preview_reclassifications(
     `relation_edges` sidecar to be pre-loaded by the caller.
     """
     combined_media = list(anime_a.media) + list(anime_b.media)
-    nodes, edges = _build_classifier_graph(combined_media)
+    nodes, edges = build_classifier_graph(combined_media)
     classifications, _ = classify_anime_relations(nodes, edges)
     media_by_mal = {m.mal_id: m for m in combined_media}
 

@@ -57,27 +57,44 @@ async def create_rating_embedding(db: AsyncSession, rating_id: int, note: str):
     await db.flush()
 
 
-async def regenerate_anime_embedding(
-    db: AsyncSession, anime_id: int, title_texts: list[str | None], description_text: str,
+async def _regenerate_search_embedding(
+    db: AsyncSession, model_class, fk_column, fk_value: int,
+    title_texts: list[str | None], description_text: str,
 ) -> None:
-    """Replace the existing AnimeSearch row with one built from new
-    title / description text. Used by callers that rewrite an anime
-    row's title / name_eng / name_jap (suffix stripper, relation
-    backfiller anchor rewrite, merge survivor refresh).
+    """Replace the existing search-embedding row with one built from
+    fresh text. Encode FIRST, then DELETE + INSERT, so an encode failure
+    leaves the prior row intact — without this discipline a model-loading
+    crash mid-call would land a dangling DELETE in the session, and a
+    caller catching the exception without rolling back (per-anime
+    try/except in relation_backfiller etc.) would commit the deletion
+    with no replacement.
 
-    Encode FIRST, then DELETE + INSERT, so an encode failure leaves
-    the prior AnimeSearch row intact. Otherwise a model-loading
-    crash mid-call would land a dangling DELETE in the session — and
-    if a caller catches the exception without rolling back (e.g. the
-    per-anime try/except in relation_backfiller), a later commit
-    would persist the deletion with no replacement.
+    Title and description embeddings are both rebuilt: title text mixes
+    into the description embedding (see `_compute_search_embeddings`),
+    so any title-side change invalidates both anyway.
     """
     title_embedding, description_embedding = await _compute_search_embeddings(title_texts, description_text)
 
-    await db.execute(delete(AnimeSearch).where(AnimeSearch.anime_id == anime_id))
-    db.add(AnimeSearch(
-        anime_id=anime_id,
+    await db.execute(delete(model_class).where(fk_column == fk_value))
+    db.add(model_class(
+        **{fk_column.key: fk_value},
         title_embedding=title_embedding,
         description_embedding=description_embedding,
     ))
     await db.flush()
+
+
+async def regenerate_media_embedding(
+    db: AsyncSession, media_id: int, title_texts: list[str | None], description_text: str,
+) -> None:
+    await _regenerate_search_embedding(
+        db, MediaSearch, MediaSearch.media_id, media_id, title_texts, description_text,
+    )
+
+
+async def regenerate_anime_embedding(
+    db: AsyncSession, anime_id: int, title_texts: list[str | None], description_text: str,
+) -> None:
+    await _regenerate_search_embedding(
+        db, AnimeSearch, AnimeSearch.anime_id, anime_id, title_texts, description_text,
+    )

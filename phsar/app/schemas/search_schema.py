@@ -16,6 +16,12 @@ class SearchResultDB(BaseModel):
     # MediaRelationEdges sidecar; the merge / backfill paths read the
     # sidecar back when re-classifying.
     edges: list[tuple[int, int, str]] = Field(default_factory=list)
+    # Disjoint substance-passing franchises detected by
+    # `find_disjoint_franchises` on the classified graph — empty in the
+    # clean case. save_service inserts a SplitCandidate row after the
+    # new Anime lands if this is non-empty, so admin can review and
+    # split. See app/services/relation_classifier.py.
+    disjoint_franchises: list[dict] = Field(default_factory=list)
 
 
 class AttachToExistingAction(BaseModel):

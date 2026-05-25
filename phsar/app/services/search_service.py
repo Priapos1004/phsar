@@ -16,7 +16,9 @@ from app.services.progress_reporter import ProgressReporter
 from app.services.relation_classifier import (
     build_classifier_nodes,
     classify_anime_relations,
+    find_disjoint_franchises,
     passes_substance,
+    would_be_dropped_as_weak_anchor,
 )
 from app.services.unwanted_media_service import create_unwanted_media
 
@@ -73,16 +75,33 @@ async def search_mal_api(
         for mal_id, relation_type in classifications.items():
             related_anime_graph[mal_id]["relation_type"] = relation_type
 
+        # Pin the substance verdict once: the upcoming branches read it
+        # both for the weak-anchor-attach decision AND for whether
+        # split-candidate detection makes sense (skipped on weak
+        # anchors — a seeded weak save has no meaningful "main chain"
+        # for the splitter to anchor against, and any substance-passing
+        # sub-chain would surface as a false-positive split candidate).
+        anchor_passes_substance = passes_substance(nodes[anime_mal_id])
+
         # Substance-failing anchor means the graph's "main" is a weak
         # fallback (donghua with sparse metadata, orphan side-story).
         # Three-way decision:
-        #   (1) Single cross-link to an existing parent → attach instead
+        #   (1) Title-search mode with no attach target → drop (shared
+        #       predicate with search_title's rollback so the two sites
+        #       can't drift; see `would_be_dropped_as_weak_anchor`).
+        #   (2) Single cross-link to an existing parent → attach instead
         #       of creating a duplicate anime row.
-        #   (2) Seeded BFS mode → save as new anime; the seasonal sweep
+        #   (3) Seeded BFS mode → save as new anime; the seasonal sweep
         #       picked this mal_id deliberately.
-        #   (3) Title-search mode with no cross-link → fuzzy-match
-        #       garbage, skip.
-        if not passes_substance(nodes[anime_mal_id]):
+        if would_be_dropped_as_weak_anchor(
+            nodes, anime_mal_id, seed_mal_id, cross_link_mal_ids,
+        ):
+            logger.warning(
+                "Skipping weak-anchor graph (cross_links=%s, anchor=%s)",
+                cross_link_mal_ids, anime_mal_id,
+            )
+            continue
+        if not anchor_passes_substance:
             if len(cross_link_mal_ids) == 1:
                 target_mal_id = next(iter(cross_link_mal_ids))
                 graph_all_info = {
@@ -97,12 +116,6 @@ async def search_mal_api(
                 logger.info(
                     "Weak-anchor graph will attach to mal_id=%s (anchor=%s)",
                     target_mal_id, anime_mal_id,
-                )
-                continue
-            if seed_mal_id is None:
-                logger.warning(
-                    "Skipping weak-anchor graph (cross_links=%s, anchor=%s)",
-                    cross_link_mal_ids, anime_mal_id,
                 )
                 continue
             # Seeded mode: log the weak-anchor save and fall through to
@@ -124,11 +137,22 @@ async def search_mal_api(
             else:
                 unconnected_media_list.append(media)
 
+        # Third pass: detect disjoint substance-passing main chains
+        # bundled into this single anime row via MAL's promiscuous
+        # `side_story` / `spin-off` labeling (BNHA→Vigilante, Toaru
+        # Index→Railgun). Skip on weak-anchor seeded saves — see the
+        # comment at the substance-pin above.
+        disjoint_franchises = (
+            find_disjoint_franchises(nodes, edges, anime_mal_id)
+            if anchor_passes_substance else []
+        )
+
         result_list.append(SearchResultDB(
             anime_mal_id=anime_mal_id,
             unconnected_media_list=unconnected_media_list,
             cross_link_mal_ids=cross_link_mal_ids,
             edges=edges,
+            disjoint_franchises=disjoint_franchises,
         ))
 
     return SearchResultDBExtended(

@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.daos.split_candidate_dao import SplitCandidateDAO
 from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
 from app.schemas.search_schema import SearchResultDB
@@ -22,6 +23,7 @@ from app.services.spoiler_service import refresh_spoiler_cache_for_all_users
 from app.services.vector_embedding_service import create_anime_embedding
 
 logger = logging.getLogger(__name__)
+split_candidate_dao = SplitCandidateDAO()
 
 async def save_search_results(
     db: AsyncSession,
@@ -76,6 +78,23 @@ async def save_search_results(
             saved_media_count += 1
             if progress is not None:
                 await progress.update(items_done=saved_media_count)
+
+        # If the third pass found disjoint substance-passing chains in
+        # this graph (BNHA→Vigilante, Toaru Index→Railgun shape), queue
+        # a SplitCandidate for admin review. The new Anime row lands as
+        # usual — split execution is opt-in via the admin UI so the
+        # easier-to-merge-than-split invariant holds.
+        if result.disjoint_franchises:
+            inserted = await split_candidate_dao.upsert_pending(
+                db, anime_id=anime.id,
+                clusters=result.disjoint_franchises,
+                detected_by="scrape",
+            )
+            if inserted:
+                logger.info(
+                    "Flagged SplitCandidate (scrape): anime_id=%d %r, %d clusters",
+                    anime.id, anime.title, len(result.disjoint_franchises),
+                )
 
     # Detect potential duplicate anime against the existing catalog before
     # the final commit. Same-tx so detection rolls back with the save if

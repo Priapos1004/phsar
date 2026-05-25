@@ -11,6 +11,7 @@ from app.services.relation_classifier import (
     SUBSTANCE_MIN_MOVIE_DURATION_S,
     SUBSTANCE_MIN_TV_DURATION_S,
     classify_anime_relations,
+    find_disjoint_franchises,
 )
 
 
@@ -380,3 +381,369 @@ def test_substance_thresholds_match_constants():
             assert out[weak_id] == "main", f"{weak_id} should pass substance"
         else:
             assert out[weak_id] == "side_story", f"{weak_id} should fail substance"
+
+
+# --- find_disjoint_franchises: cross-franchise split detection ---------
+#
+# Pins every contamination shape we identified in the Phase A audit + the
+# Phase B Toaru/BNHA scrapes so a future refactor (substance-gate tweak,
+# new edge type, anchor-tier change) can't silently re-introduce what we
+# just fixed. Two buckets: must-flag (the function returns a non-empty
+# list of clusters) and must-NOT-flag (returns []).
+
+
+def _bnha_like_nodes_and_edges():
+    """BNHA + Vigilante shape. Anchor=BNHA S1. Cluster={Vigilante S1, S2}
+    via spin-off bridge. The single-cluster reference fixture."""
+    nodes = {
+        # BNHA chain
+        31964: _tv(episodes=13, duration_s=1440, aired="2016-04-03"),
+        33486: _tv(episodes=25, duration_s=1440, aired="2017-04-01"),
+        36456: _tv(episodes=25, duration_s=1440, aired="2018-04-07"),
+        # Vigilante cluster (orphan sub-franchise)
+        60593: _tv(episodes=13, duration_s=1440, aired="2025-04-01"),
+        61942: _tv(episodes=13, duration_s=1440, aired="2026-01-01"),
+    }
+    edges = [
+        # BNHA main chain
+        (31964, 33486, "sequel"),
+        (33486, 36456, "sequel"),
+        # The contamination bridge (MAL labels Vigilante as a spin-off
+        # of BNHA, so v0.14.2 BFS absorbs it as a TERMINAL)
+        (31964, 60593, "spin-off"),
+        (60593, 31964, "parent_story"),
+        # Vigilante's own sequel chain — captured at scrape time thanks
+        # to TERMINAL-fetches-relations (Step 1)
+        (60593, 61942, "sequel"),
+    ]
+    return nodes, edges
+
+
+# --- Must-flag cases ---------------------------------------------------
+
+
+def test_bnha_vigilante_is_disjoint_franchise():
+    nodes, edges = _bnha_like_nodes_and_edges()
+    _, anchor = classify_anime_relations(nodes, edges)
+    franchises = find_disjoint_franchises(nodes, edges, anchor)
+
+    assert len(franchises) == 1
+    cluster = franchises[0]
+    assert cluster["member_mal_ids"] == [60593, 61942]
+    assert cluster["substance_member_mal_ids"] == [60593, 61942]
+    # Vigilante S1 is the oldest TV in the cluster → suggested anchor.
+    assert cluster["suggested_anchor_mal_id"] == 60593
+    # Bridge edge captures the MAL relation that absorbed the cluster.
+    bridge_rels = {rel for _, _, rel in cluster["bridge_edges"]}
+    assert "spin-off" in bridge_rels
+
+
+def test_toaru_index_railgun_is_disjoint_franchise():
+    """Toaru Index S1 is the anchor. Railgun S1/S/T form a TV sequel chain
+    bridged via `side_story` (MAL's labeling). The classifier doesn't
+    pull them into Index's main_chain (they're labeled side_story, not
+    sequel/prequel/alt-version), but the BFS now captures Railgun S1's
+    sequel chain via TERMINAL-fetches-relations so the splitter has the
+    data."""
+    nodes = {
+        # Index trilogy
+        4654: _tv(episodes=24, duration_s=1440, aired="2008-10-04"),
+        8937: _tv(episodes=24, duration_s=1440, aired="2010-10-08"),
+        36432: _tv(episodes=26, duration_s=1440, aired="2018-10-05"),
+        # Railgun cluster
+        6213: _tv(episodes=24, duration_s=1440, aired="2009-10-03"),
+        16049: _tv(episodes=24, duration_s=1440, aired="2013-04-12"),
+        38481: _tv(episodes=25, duration_s=1440, aired="2020-01-10"),
+    }
+    edges = [
+        # Index main chain
+        (4654, 8937, "sequel"),
+        (8937, 36432, "sequel"),
+        # MAL's promiscuous side_story labels: Index S1 lists every
+        # Railgun season as a side_story.
+        (4654, 6213, "side_story"),
+        (4654, 16049, "side_story"),
+        (4654, 38481, "side_story"),
+        # Railgun's own sequel chain
+        (6213, 16049, "sequel"),
+        (16049, 38481, "sequel"),
+    ]
+    _, anchor = classify_anime_relations(nodes, edges)
+    assert anchor == 4654
+
+    franchises = find_disjoint_franchises(nodes, edges, anchor)
+    assert len(franchises) == 1
+    cluster = franchises[0]
+    assert set(cluster["member_mal_ids"]) == {6213, 16049, 38481}
+    assert cluster["suggested_anchor_mal_id"] == 6213
+    bridge_rels = {rel for _, _, rel in cluster["bridge_edges"]}
+    assert "side_story" in bridge_rels
+
+
+def test_pretty_rhythm_multi_franchise_contamination():
+    """Worst-case shape from the Phase A audit: Pretty Rhythm anchor +
+    three disjoint sub-franchises (PriPara, King of Prism, Pri☆chan)
+    each with their own sequel chain. Asserts 3 clusters flagged.
+    """
+    nodes = {
+        # Pretty Rhythm trilogy (anchor chain)
+        10257: _tv(episodes=51, duration_s=1440, aired="2011-04-09"),
+        12863: _tv(episodes=51, duration_s=1440, aired="2012-04-07"),
+        17249: _tv(episodes=51, duration_s=1440, aired="2013-04-06"),
+        # PriPara
+        23135: _tv(episodes=51, duration_s=1440, aired="2014-07-01"),
+        34787: _tv(episodes=51, duration_s=1440, aired="2017-04-04"),
+        # King of Prism (theatrical chain — only the TV is here so the
+        # cluster qualifies as substance-passing TV-tier members)
+        39699: _tv(episodes=12, duration_s=1440, aired="2019-04-08"),
+        # Make it ≥2 substance TVs by adding the S2
+        51371: _tv(episodes=12, duration_s=1440, aired="2022-01-10"),
+        # Kiratto Pri☆chan
+        37178: _tv(episodes=51, duration_s=1440, aired="2018-04-08"),
+        38804: _tv(episodes=51, duration_s=1440, aired="2019-04-07"),
+    }
+    edges = [
+        # Pretty Rhythm chain
+        (10257, 12863, "sequel"),
+        (12863, 17249, "sequel"),
+        # PriPara cluster — bridged via alternative_setting (MAL's label
+        # here, which is dropped at BFS so wouldn't actually appear; the
+        # remaining bridge is the spin-off-style `other` edge MAL
+        # sometimes emits)
+        (10257, 23135, "other"),
+        (23135, 34787, "sequel"),
+        # King of Prism cluster — bridged via spin-off
+        (17249, 39699, "spin-off"),
+        (39699, 51371, "sequel"),
+        # Pri☆chan cluster — bridged via `other`
+        (23135, 37178, "other"),
+        (37178, 38804, "sequel"),
+    ]
+    _, anchor = classify_anime_relations(nodes, edges)
+    franchises = find_disjoint_franchises(nodes, edges, anchor)
+    assert len(franchises) == 3, (
+        f"Expected 3 disjoint sub-franchises, got {len(franchises)}: "
+        f"{[f['member_mal_ids'] for f in franchises]}"
+    )
+
+
+def test_qin_shi_mingyue_tunshi_xingkong_orphan_no_bridge_edges():
+    """Real Phase A finding: 4-ONA Tunshi Xingkong cluster sits under
+    Qin Shi Mingyue with NO direct bridge edges (entered via dropped
+    edges to a third party). The cluster still flags because its
+    members form a connected substance-passing chain.
+    """
+    nodes = {
+        # QSM chain (3 TVs)
+        9806: _tv(episodes=32, duration_s=1440, aired="2007-10-01"),
+        11835: _tv(episodes=32, duration_s=1440, aired="2008-10-01"),
+        11841: _tv(episodes=32, duration_s=1440, aired="2010-10-01"),
+        # Tunshi Xingkong cluster (4 ONAs)
+        44218: _ona(episodes=26, duration_s=1440, aired="2020-07-01"),
+        49571: _ona(episodes=26, duration_s=1440, aired="2021-07-01"),
+        56523: _ona(episodes=26, duration_s=1440, aired="2023-07-01"),
+        56524: _ona(episodes=26, duration_s=1440, aired="2024-07-01"),
+    }
+    edges = [
+        # QSM main chain
+        (9806, 11835, "sequel"),
+        (11835, 11841, "sequel"),
+        # Tunshi Xingkong's own chain (no direct edge to QSM — got
+        # absorbed via some intermediate node that's not in this graph)
+        (44218, 49571, "sequel"),
+        (49571, 56523, "sequel"),
+        (56523, 56524, "sequel"),
+    ]
+    _, anchor = classify_anime_relations(nodes, edges)
+    franchises = find_disjoint_franchises(nodes, edges, anchor)
+    assert len(franchises) == 1
+    cluster = franchises[0]
+    assert set(cluster["member_mal_ids"]) == {44218, 49571, 56523, 56524}
+    assert cluster["bridge_edges"] == [], (
+        "Tunshi Xingkong arrived as a structurally-disconnected cluster — "
+        "the no-bridge-edges signal is its own diagnostic"
+    )
+
+
+def test_mononoke_2024_movie_trilogy_flagged_after_alternative_setting_drop():
+    """The 2024 Mononoke movie trilogy (3 Movies sequel-chained) attaches
+    to the original Mononoke TV via `alternative_setting`. That label is
+    dropped at BFS, so by the time find_disjoint_franchises runs the
+    trilogy has no bridge to the anchored set. The Conan exception
+    requires a `parent_story` or `summary` bridge — none exists here, so
+    the trilogy flags. Locks in the plan-time decision.
+    """
+    nodes = {
+        # Ayakashi + Mononoke 2007 main chain
+        586: _tv(episodes=11, duration_s=1440, aired="2006-01-12"),
+        2246: _tv(episodes=12, duration_s=1440, aired="2007-07-13"),
+        # 2024 Mononoke movie trilogy — substance via duration
+        52107: _movie(duration_s=5400, aired="2024-07-26"),
+        59408: _movie(duration_s=5400, aired="2025-01-01"),
+        61202: _movie(duration_s=5400, aired="2025-09-01"),
+    }
+    edges = [
+        # Anchor chain
+        (586, 2246, "sequel"),
+        # Movie trilogy's own sequel chain — no bridge to anchor (alt_setting dropped)
+        (52107, 59408, "sequel"),
+        (59408, 61202, "sequel"),
+    ]
+    _, anchor = classify_anime_relations(nodes, edges)
+    franchises = find_disjoint_franchises(nodes, edges, anchor)
+    assert len(franchises) == 1, (
+        "Mononoke 2024 trilogy (no parent_story/summary bridge) MUST flag — "
+        "the Conan exception only applies when MAL declares child-of-parent"
+    )
+    cluster = franchises[0]
+    assert set(cluster["member_mal_ids"]) == {52107, 59408, 61202}
+
+
+# --- Must-NOT-flag cases -----------------------------------------------
+
+
+def test_fma_brotherhood_2003_alt_version_not_flagged():
+    """FMA Brotherhood + 2003 collapsed into one row via alternative_version.
+    The 2003 chain lives inside alt_chain (not orphaned), so the splitter
+    must not produce a candidate. Pins the v0.14.1 alt-version-as-internal
+    decision."""
+    nodes = {
+        # Brotherhood (anchor) + Conqueror of Shamballa
+        5114: _tv(episodes=64, duration_s=1440, aired="2009-04-05"),
+        2025: _movie(duration_s=6000, aired="2011-07-02"),
+        # 2003 TV + 2005 movie — bridged via alternative_version
+        121: _tv(episodes=51, duration_s=1440, aired="2003-10-04"),
+        430: _movie(duration_s=6300, aired="2005-07-23"),
+    }
+    edges = [
+        (5114, 2025, "sequel"),
+        (5114, 121, "alternative_version"),
+        (121, 430, "sequel"),
+    ]
+    _, anchor = classify_anime_relations(nodes, edges)
+    franchises = find_disjoint_franchises(nodes, edges, anchor)
+    assert franchises == [], (
+        f"Alt-version members must be absorbed into the anchor's alt_chain, "
+        f"not flagged as a separate franchise. Got: {franchises}"
+    )
+
+
+def test_higurashi_gou_alt_version_not_flagged():
+    """Higurashi 2006 chain + Gou + Sotsu, alt-version bridged. Same shape
+    as FMA — alt_chain absorbs Gou/Sotsu, splitter stays quiet."""
+    nodes = {
+        934: _tv(episodes=26, duration_s=1440, aired="2006-04-04"),   # Higurashi
+        1936: _tv(episodes=24, duration_s=1440, aired="2007-07-06"),  # Kai
+        41006: _tv(episodes=24, duration_s=1440, aired="2020-10-01"), # Gou
+        46100: _tv(episodes=15, duration_s=1440, aired="2021-07-01"), # Sotsu
+    }
+    edges = [
+        (934, 1936, "sequel"),
+        (934, 41006, "alternative_version"),
+        (41006, 46100, "sequel"),
+    ]
+    _, anchor = classify_anime_relations(nodes, edges)
+    franchises = find_disjoint_franchises(nodes, edges, anchor)
+    assert franchises == []
+
+
+def test_conan_movie_chain_attached_via_parent_story_not_flagged():
+    """The Conan false-positive from Phase A: a chain of substance-passing
+    Movies attached to the TV main via parent_story/summary edges. They're
+    legitimate side-story movies, not a sibling franchise. The Conan
+    exception (movies-only + parent_story/summary bridge) keeps the
+    splitter quiet."""
+    nodes = {
+        # Conan TV (main)
+        235: _tv(episodes=200, duration_s=1500, aired="1996-01-08"),
+        # Two consecutive movies + a summary movie pair
+        32005: _movie(duration_s=6300, aired="2016-04-16"),
+        35798: _movie(duration_s=6300, aired="2018-04-13"),
+        # And a Movie-with-summary pair (Movie 24 + summary)
+        39764: _movie(duration_s=6300, aired="2021-04-16"),
+        47413: _movie(duration_s=5400, aired="2023-04-14"),
+    }
+    edges = [
+        # Anchor → movies labeled side_story (and back parent_story)
+        (235, 32005, "side_story"),
+        (32005, 235, "parent_story"),
+        (235, 35798, "side_story"),
+        (35798, 235, "parent_story"),
+        # Movies sequel-chained to each other (the trigger for the
+        # disjoint-cluster heuristic before the Conan exception)
+        (32005, 35798, "sequel"),
+        # The summary movie
+        (235, 39764, "side_story"),
+        (39764, 235, "parent_story"),
+        (235, 47413, "summary"),
+        (47413, 235, "full_story"),
+        (39764, 47413, "sequel"),
+    ]
+    _, anchor = classify_anime_relations(nodes, edges)
+    franchises = find_disjoint_franchises(nodes, edges, anchor)
+    assert franchises == [], (
+        f"Conan movie chains attached via parent_story/summary must NOT "
+        f"flag — they're legitimate side-stories, not sibling franchises. "
+        f"Got: {franchises}"
+    )
+
+
+def test_standalone_substance_side_story_not_flagged():
+    """A single substance-passing Movie with no sequel chain of its own
+    (Index: Endymion movie shape) does NOT cluster — singletons fall
+    below the ≥2 substance-passing-member threshold. Pins that single
+    substance-passing orphans don't trigger the splitter."""
+    nodes = {
+        # Index trilogy + standalone Endymion movie
+        4654: _tv(episodes=24, duration_s=1440, aired="2008-10-04"),
+        8937: _tv(episodes=24, duration_s=1440, aired="2010-10-08"),
+        11743: _movie(duration_s=6000, aired="2013-02-23"),
+    }
+    edges = [
+        (4654, 8937, "sequel"),
+        (4654, 11743, "side_story"),
+        (11743, 4654, "parent_story"),
+    ]
+    _, anchor = classify_anime_relations(nodes, edges)
+    franchises = find_disjoint_franchises(nodes, edges, anchor)
+    assert franchises == []
+
+
+def test_anime_with_only_main_chain_not_flagged():
+    """Trivial happy-path: a clean sequel chain with no other media.
+    Pins the no-false-positive-on-the-common-case property."""
+    nodes = {
+        1: _tv(episodes=12, aired="2015-01-01"),
+        2: _tv(episodes=12, aired="2016-01-01"),
+        3: _tv(episodes=12, aired="2017-01-01"),
+    }
+    edges = [(1, 2, "sequel"), (2, 3, "sequel")]
+    _, anchor = classify_anime_relations(nodes, edges)
+    franchises = find_disjoint_franchises(nodes, edges, anchor)
+    assert franchises == []
+
+
+def test_empty_graph_returns_empty_list():
+    """Defensive: empty graph (anchor=None) returns []."""
+    assert find_disjoint_franchises({}, [], None) == []
+
+
+def test_single_substance_orphan_below_threshold_not_flagged():
+    """A substance-passing TV reached via side_story but with no sequel
+    partner — singleton cluster, falls below the ≥2 threshold. Same as
+    the Endymion case but the orphan is TV-tier."""
+    nodes = {
+        1: _tv(episodes=12, aired="2015-01-01"),
+        2: _tv(episodes=12, aired="2016-01-01"),  # main sequel
+        3: _tv(episodes=12, aired="2017-01-01"),  # orphan TV, no chain
+    }
+    edges = [
+        (1, 2, "sequel"),
+        (1, 3, "side_story"),
+    ]
+    _, anchor = classify_anime_relations(nodes, edges)
+    franchises = find_disjoint_franchises(nodes, edges, anchor)
+    assert franchises == [], (
+        "A lone substance-passing TV orphan (no sequel partner) is below "
+        "the ≥2 threshold — must not flag"
+    )

@@ -12,7 +12,7 @@ from fastapi import UploadFile
 from sqlalchemy import text
 
 from app.core.config import settings
-from app.core.db import engine
+from app.core.db import async_session_maker, engine
 from app.core.maintenance import set_maintenance
 from app.exceptions import (
     BackupConfirmationMismatchError,
@@ -23,6 +23,7 @@ from app.exceptions import (
     BackupUploadTooLargeError,
     DuplicateBackupError,
 )
+from app.models.job import Job, JobKind, JobStatus
 from app.schemas.backup_schema import BackupIntegrity, BackupMetadata, BackupSource
 from app.services._pg_subprocess import run_capture
 
@@ -337,6 +338,39 @@ async def _finalize_partial_dump(
     return metadata, False
 
 
+# Name leads with an underscore so admins skimming `\dt` recognize it as
+# a transient internal table, not part of the schema. Created and dropped
+# inside `_BACKUP_WRITE_LOCK` so concurrent backups can't race the name.
+_JOBS_DUMP_STAGING_TABLE = "_jobs_dump_staging"
+
+
+async def _stage_jobs_for_dump() -> None:
+    """Snapshot the terminal-state (succeeded/failed) `jobs` rows into a
+    staging table that pg_dump will include in place of the live `jobs`
+    table. Running/queued rows are intentionally excluded — the dump is
+    a point-in-time MVCC snapshot, so in-flight rows would resurrect as
+    zombies after restore (no in-process worker driving them).
+    """
+    async with async_session_maker() as session:
+        await session.execute(text(f"DROP TABLE IF EXISTS {_JOBS_DUMP_STAGING_TABLE}"))
+        await session.execute(text(
+            f"CREATE TABLE {_JOBS_DUMP_STAGING_TABLE} AS "
+            "SELECT * FROM jobs WHERE status IN ('succeeded', 'failed')"
+        ))
+        await session.commit()
+
+
+async def _drop_jobs_staging() -> None:
+    """Best-effort drop. Always called in a finally so a pg_dump crash
+    can't leave the staging table behind for the next run to trip over."""
+    try:
+        async with async_session_maker() as session:
+            await session.execute(text(f"DROP TABLE IF EXISTS {_JOBS_DUMP_STAGING_TABLE}"))
+            await session.commit()
+    except Exception:
+        logger.exception("Failed to drop jobs-dump staging table")
+
+
 async def create_backup(
     source: BackupSource = BackupSource.manual,
     label: str | None = None,
@@ -349,15 +383,30 @@ async def create_backup(
         partial_path = backup_dir / f"{filename}.partial"
         final_path = backup_dir / filename
 
-        returncode, _, stderr = await run_capture(
-            [
-                "pg_dump",
-                *_pg_connection_args(),
-                "-Fc",
-                "-f", str(partial_path),
-            ],
-            env=_pg_env(),
-        )
+        await _stage_jobs_for_dump()
+        try:
+            returncode, _, stderr = await run_capture(
+                [
+                    "pg_dump",
+                    *_pg_connection_args(),
+                    "-Fc",
+                    # Skip jobs ROW data; its terminal rows ride in via
+                    # `_jobs_dump_staging` (created above). The table
+                    # schema is intentionally retained — without DDL in
+                    # the dump, pg_restore --clean would fail to drop
+                    # `users` because jobs.requested_by_user_id keeps a
+                    # live FK on users(id). With --exclude-table-data the
+                    # jobs table is dropped + recreated empty at restore
+                    # time, the merge below repopulates the audit rows,
+                    # and the live in-flight rows (if any) disappear
+                    # alongside the rest of the rolled-back state.
+                    "--exclude-table-data=jobs",
+                    "-f", str(partial_path),
+                ],
+                env=_pg_env(),
+            )
+        finally:
+            await _drop_jobs_staging()
         if returncode != 0:
             partial_path.unlink(missing_ok=True)
             raise BackupIntegrityError(filename, stderr.decode(errors="replace").strip()[:500])
@@ -411,6 +460,7 @@ async def restore_backup(
     filename: str,
     confirm: str,
     caller_username: str,
+    caller_user_id: int,
 ) -> BackupMetadata:
     if confirm != caller_username:
         raise BackupConfirmationMismatchError()
@@ -423,6 +473,7 @@ async def restore_backup(
     pre_snapshot = await create_backup(source=BackupSource.pre_restore)
 
     set_maintenance(True)
+    restore_error: str | None = None
     try:
         # pg_restore --clean needs ACCESS EXCLUSIVE locks to DROP tables.
         # Anything else holding even ACCESS SHARE makes it hang.
@@ -437,9 +488,13 @@ async def restore_backup(
         await asyncio.sleep(0.1)
         await _terminate_other_sessions()
 
-        await _run_pg_restore(target_path, filename)
-
-        _mark_current_db_restored(filename)
+        try:
+            await _run_pg_restore(target_path, filename)
+            _mark_current_db_restored(filename)
+        except Exception as exc:
+            # Captured for the audit row in `finally`; re-raised so HTTP still 5xx's.
+            restore_error = str(exc)
+            raise
     finally:
         # Prime the pool BEFORE lifting the maintenance gate so user requests
         # don't race the first post-restore connect (which would otherwise
@@ -451,9 +506,104 @@ async def restore_backup(
                 await asyncio.wait_for(conn.execute(text("SELECT 1")), timeout=5.0)
         except Exception:
             logger.warning("Post-restore engine warm-up failed", exc_info=True)
-        set_maintenance(False)
+
+        # Merge the restored audit rows back into the live `jobs` table and
+        # append the restore Job row itself. `restore_error` is None on
+        # success → status=succeeded; non-None on pg_restore failure →
+        # status=failed with the original message preserved. Wrapped in
+        # try/except + wait_for so the audit step can't deadlock the
+        # maintenance gate — at worst the admin loses one operational log
+        # line. The wait_for bound protects against a half-restored DB
+        # where `async_session_maker()` hangs on connection acquisition.
+        try:
+            await asyncio.wait_for(
+                _merge_jobs_audit_and_record_restore(
+                    filename=filename,
+                    pre_snapshot_filename=pre_snapshot.filename,
+                    caller_username=caller_username,
+                    caller_user_id=caller_user_id,
+                    error=restore_error,
+                ),
+                timeout=30.0,
+            )
+        except Exception:
+            logger.exception("Post-restore jobs-audit merge / restore-row insert failed")
+
+        # set_maintenance writes a log line with stack-tag extraction; a
+        # logger handler failure here would otherwise leave the flag
+        # stuck across the rest of the request lifecycle. Catch + log so
+        # the finally block always completes.
+        try:
+            set_maintenance(False)
+        except Exception:
+            logger.exception("set_maintenance(False) failed in restore finally")
 
     return pre_snapshot
+
+
+async def _merge_jobs_audit_and_record_restore(
+    *,
+    filename: str,
+    pre_snapshot_filename: str,
+    caller_username: str,
+    caller_user_id: int,
+    error: str | None,
+) -> None:
+    """Merge the staged audit rows into the live `jobs` table (only on a
+    successful pg_restore — a failed restore may have half-dropped the
+    schema), then append a single Job row recording this restore itself.
+
+    `caller_username` is denormed into the payload so deleting the admin
+    user later doesn't erase the audit string. `error` carries the
+    pg_restore failure message through to `error_message`.
+    """
+    async with async_session_maker() as session:
+        if error is None:
+            staging_exists = await session.scalar(text(
+                "SELECT EXISTS ("
+                "  SELECT 1 FROM information_schema.tables "
+                "  WHERE table_schema = current_schema() "
+                f"  AND table_name = '{_JOBS_DUMP_STAGING_TABLE}'"
+                ")"
+            ))
+            if staging_exists:
+                await session.execute(text(
+                    f"INSERT INTO jobs SELECT * FROM {_JOBS_DUMP_STAGING_TABLE} "
+                    "ON CONFLICT (id) DO NOTHING"
+                ))
+                await session.execute(text(f"DROP TABLE {_JOBS_DUMP_STAGING_TABLE}"))
+                # Advance jobs_id_seq past max(id) so the next INSERT
+                # (the restore_job below + every subsequent job creation)
+                # can't collide with rows we just merged in. The restored
+                # sequence value reflects whatever was next at dump time,
+                # which may be ≤ staging's max id if the live DB issued
+                # ids after the dump was taken.
+                await session.execute(text(
+                    "SELECT setval('jobs_id_seq', "
+                    "GREATEST(COALESCE((SELECT MAX(id) FROM jobs), 0), 1))"
+                ))
+
+        now = datetime.now(timezone.utc)
+        status = JobStatus.failed if error else JobStatus.succeeded
+        restore_job = Job(
+            kind=JobKind.restore,
+            status=status,
+            requested_by_user_id=caller_user_id,
+            payload={
+                "filename": filename,
+                "pre_snapshot_filename": pre_snapshot_filename,
+                "caller_username": caller_username,
+            },
+            result_summary={
+                "restored_from": filename,
+                "pre_restore_snapshot": pre_snapshot_filename,
+            },
+            error_message=error,
+            started_at=now,
+            finished_at=now,
+        )
+        session.add(restore_job)
+        await session.commit()
 
 
 async def _run_pg_restore(target_path: Path, filename: str) -> None:
