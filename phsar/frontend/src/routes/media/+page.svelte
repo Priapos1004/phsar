@@ -330,7 +330,7 @@
 					>{resolveTitle(media.anime_title, media.anime_name_eng, media.anime_name_jap, nameLanguage)}</a>
 				</p>
 				{#if media.sibling_media.length}
-					<RelatedMediaCarousel siblings={media.sibling_media} {searchToken} {fromParam} />
+					<RelatedMediaCarousel siblings={media.sibling_media} currentPosition={media.current_position} {searchToken} {fromParam} />
 				{:else}
 					<p class="text-muted-foreground/70 text-sm mt-2">No other media in this anime</p>
 				{/if}

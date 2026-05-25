@@ -87,6 +87,9 @@ export interface MediaSibling {
 
 export interface MediaDetail extends MediaConnected {
 	sibling_media: MediaSibling[];
+	/** Insertion index for the "you are here" marker in the chronological
+	 * sibling order. 0 = current media precedes every sibling, sibling_media.length = trails all. */
+	current_position: number;
 }
 
 // Rating attribute enums

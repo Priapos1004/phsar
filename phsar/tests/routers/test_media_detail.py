@@ -13,7 +13,10 @@ from tests._helpers import media_kwargs
 
 @pytest.fixture
 async def test_anime_with_siblings(db_session):
-    """Create an Anime with 3 Media entries (different types/relations), each with a genre and studio."""
+    """Anime with 3 Media entries staggered across seasons so sibling
+    ordering is testable: OVA (Spring 2019) → main S1 (Winter 2020) →
+    Movie (Fall 2021). Querying any of the three exercises a different
+    "you are here" slot (0 / 1 / 2) without re-seeding."""
     genre = Genre(name="TestGenreDetail", genre_type=GenreType.Genres)
     studio = Studio(name="TestStudioDetail")
     db_session.add_all([genre, studio])
@@ -31,6 +34,8 @@ async def test_anime_with_siblings(db_session):
         score=8.5,
         episodes=12,
         description="A great anime about testing.",
+        anime_season_name="Winter",
+        anime_season_year=2020,
     ))
     media_ova = Media(**media_kwargs(
         anime.id, 77702,
@@ -40,6 +45,8 @@ async def test_anime_with_siblings(db_session):
         scored_by=200,
         score=7.0,
         episodes=2,
+        anime_season_name="Spring",
+        anime_season_year=2019,
     ))
     media_movie = Media(**media_kwargs(
         anime.id, 77703,
@@ -49,6 +56,8 @@ async def test_anime_with_siblings(db_session):
         scored_by=500,
         score=9.0,
         episodes=1,
+        anime_season_name="Fall",
+        anime_season_year=2021,
     ))
     db_session.add_all([media_main, media_ova, media_movie])
     await db_session.flush()
@@ -85,16 +94,39 @@ async def test_get_media_detail(client, user_auth_headers, test_anime_with_sibli
     assert "TestGenreDetail" in data["genres"]
     assert "TestStudioDetail" in data["studio"]
 
-    # Siblings (excludes self)
-    assert len(data["sibling_media"]) == 2
-    sibling_titles = {s["title"] for s in data["sibling_media"]}
-    assert sibling_titles == {"Test Anime OVA", "Test Anime Movie"}
+    # Siblings (excludes self) — chronological order: OVA (Spring 2019) →
+    # Movie (Fall 2021). The main S1 (Winter 2020) sits between them, so the
+    # marker renders at current_position=1.
+    assert [s["title"] for s in data["sibling_media"]] == ["Test Anime OVA", "Test Anime Movie"]
+    assert data["current_position"] == 1
 
     # Sibling schema includes season fields, not score
     for sibling in data["sibling_media"]:
         assert "anime_season_name" in sibling
         assert "anime_season_year" in sibling
         assert "score" not in sibling
+
+
+async def test_sibling_position_when_current_is_oldest(client, user_auth_headers, test_anime_with_siblings):
+    """Querying the OVA (Spring 2019, oldest) puts the marker before every
+    sibling — exercises the leading boundary."""
+    ova = test_anime_with_siblings["ova"]
+    response = await client.get(f"/media/{ova.uuid}", headers=user_auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert [s["title"] for s in data["sibling_media"]] == ["Test Anime S1", "Test Anime Movie"]
+    assert data["current_position"] == 0
+
+
+async def test_sibling_position_when_current_is_newest(client, user_auth_headers, test_anime_with_siblings):
+    """Querying the Movie (Fall 2021, newest) puts the marker after every
+    sibling — exercises the trailing-branch render path in the carousel."""
+    movie = test_anime_with_siblings["movie"]
+    response = await client.get(f"/media/{movie.uuid}", headers=user_auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert [s["title"] for s in data["sibling_media"]] == ["Test Anime OVA", "Test Anime S1"]
+    assert data["current_position"] == 2
 
 
 async def test_get_media_detail_not_found(client, user_auth_headers):

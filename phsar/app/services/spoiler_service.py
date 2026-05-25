@@ -35,7 +35,7 @@ from app.models.ratings import Ratings
 from app.models.user_visible_media import UserVisibleMedia
 from app.models.users import Users
 from app.schemas.rating_schema import SpoilerVisibility
-from app.services.filter_service import SEASON_ORDER
+from app.services.filter_service import chronological_media_key
 
 logger = logging.getLogger(__name__)
 
@@ -62,12 +62,10 @@ class _MediaEntry(NamedTuple):
 
 
 def _chronological_sort_key(m: _MediaEntry) -> tuple:
-    """Sort key matching anime_search_service: year → season → mal_id."""
-    return (
-        m.season_year or 9999,
-        SEASON_ORDER.get(m.season_name or "", 0),
-        m.mal_id,
-    )
+    """Thin adapter over `chronological_media_key` for the local `_MediaEntry`
+    projection — keeps the frontier walk in lockstep with anime_search_service
+    and media_search_service via the shared helper."""
+    return chronological_media_key(m.season_year, m.season_name, m.mal_id)
 
 
 def compute_visible_media(

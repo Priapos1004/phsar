@@ -22,6 +22,7 @@ App components using Svelte 5 `$props()`, `$state()`, `$derived()`, `$effect()`.
 - **LoadingScreen** — themed sakura-ring loader shown during initial boot + ~1.5s logout transition
 - **Notice** — shared yellow info card (rounded `bg-yellow-50` surface + `AlertTriangle` icon — solid surface so it reads on the dark body gradient)
 - **BackLink** — shared back-button used by anime/media detail pages; renders nothing when neither `searchToken` nor a known `fromParam` is set (so direct-URL arrivals stay clean)
+- **RelatedMediaCarousel** — sibling-media row on the media detail page. Backend (`media_search_service.get_media_detail`) returns `sibling_media` chronologically via the shared `chronological_media_key()` helper in `filter_service.py` — same key the spoiler frontier and anime-detail media table use — and a `current_position` insertion index. The carousel renders a "You are here" divider at that slot; frontend doesn't compare dates, the backend owns the ordering
 - **BackupsCard** — admin-only dump list
   - Create/upload/download/restore/delete with a "Current" badge on the row the DB was last restored from
 - **MergeCandidatesCard** — admin-only review surface for pending merge candidates

@@ -118,6 +118,7 @@ Orchestrates BFS output into save/attach/merge decisions.
   - Anime variant uses a two-phase query (GROUP BY + HAVING for filter/order, then detail fetch) with majority-genre logic
   - **Anime-view filters mirror the card's derivation in `_compute_anime_aggregates`**, not per-media WHERE: `age_rating` filters against `MAX(age_rating_numeric)`, `airing_status` against the priority-collapsed value (Currently → Finished → Not yet aired). Otherwise an anime with one Finished side-story would surface under the "Finished" filter despite the card showing "Currently Airing"
 - **`filter_service.py`** — filter option values; view-type-aware for anime vs media ranges
+  - Also home to `chronological_media_key(season_year, season_name, mal_id)` — the project-wide sort key for media within an anime. Used by `spoiler_service` (frontier walk), `anime_search_service` (anime-detail media table + timeline chart), and `media_search_service` (related-media carousel + `current_position` marker). All three call sites go through this helper so the order users see in the carousel matches the anime page table matches what the frontier walks — diverging keys = silent UX bug
 
 ## Auth / settings / tokens
 

@@ -8,6 +8,7 @@ from app.exceptions import MediaNotFoundError
 from app.models.media import Media
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
 from app.schemas.media_schema import MediaConnected, MediaDetail, MediaSibling
+from app.services.filter_service import chronological_media_key
 
 logger = logging.getLogger(__name__)
 
@@ -101,8 +102,21 @@ async def get_media_detail(db: AsyncSession, media_uuid: UUID) -> MediaDetail:
     if not media:
         raise MediaNotFoundError(str(media_uuid))
 
-    siblings = [
-        _media_to_sibling(m) for m in media.anime.media if m.id != media.id
-    ]
+    # Chronological order via the shared helper so the carousel agrees with
+    # the spoiler frontier and the anime-detail media table.
+    sorted_anime_media = sorted(
+        media.anime.media,
+        key=lambda m: chronological_media_key(
+            m.anime_season_year, m.anime_season_name, m.mal_id,
+        ),
+    )
+    current_position = next(
+        i for i, m in enumerate(sorted_anime_media) if m.id == media.id
+    )
+    siblings = [_media_to_sibling(m) for m in sorted_anime_media if m.id != media.id]
 
-    return MediaDetail(**media_to_dict(media), sibling_media=siblings)
+    return MediaDetail(
+        **media_to_dict(media),
+        sibling_media=siblings,
+        current_position=current_position,
+    )

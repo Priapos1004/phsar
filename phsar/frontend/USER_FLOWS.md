@@ -259,9 +259,10 @@ Each anime search result card shows:
 
 ### 7.5 Related Media Carousel
 - Always shown — displays parent anime name as a clickable link to the anime detail page
-- If sibling media exist: horizontal scrollable row of compact cards (snap scrolling)
+- If sibling media exist: horizontal scrollable row of compact cards (snap scrolling), **sorted chronologically via the shared `chronological_media_key()` helper** (`(season_year, season_quarter, mal_id)`) — same key as the anime page's media table and the spoiler frontier so the three surfaces never disagree on order
   - Each card: cover image (with fallback; blurred when spoiler-protected), title, media type + relation type badges, season or episode count
   - Clicking a sibling card navigates to that media's detail page (origin params preserved — see 7.6)
+  - **"You are here" marker**: a thin primary-colored vertical divider with a small pill label slots into the row at the position the current media occupies in the chronological chain. Backend computes the index (`current_position`) so the frontend doesn't need to compare dates client-side. Position 0 = current is the oldest entry (marker leads the row); position == siblings.length = current is the newest (marker trails the row)
 - If no siblings: "No other media in this anime" message
 
 ### 7.6 Back Navigation
