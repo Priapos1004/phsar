@@ -259,7 +259,7 @@
 					</div>
 
 					{#if media.studio.length}
-						<div class="flex items-center gap-2">
+						<div class="flex flex-wrap items-center gap-x-2 gap-y-1.5">
 							<span class="text-muted-foreground font-medium">Studio</span>
 							{#each media.studio as studio}
 								<span class="px-2.5 py-0.5 rounded-md font-medium bg-card-foreground/8 text-card-foreground border border-border">
