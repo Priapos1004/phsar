@@ -155,6 +155,7 @@ phsar/
 │   │   │   │   ├── AttributeBadges.svelte
 │   │   │   │   ├── AttributeDetailBars.svelte
 │   │   │   │   ├── AttributeRadar.svelte
+│   │   │   │   ├── BackLink.svelte
 │   │   │   │   ├── BackupsCard.svelte
 │   │   │   │   ├── BulkRateDialog.svelte
 │   │   │   │   ├── DangerZone.svelte
@@ -257,6 +258,7 @@ phsar/
 │   │       ├── maintenance-banner.test.ts
 │   │       ├── media-detail.test.ts
 │   │       ├── navbar.test.ts
+│   │       ├── navigation.test.ts
 │   │       ├── rating-modal.test.ts
 │   │       ├── searchbar.test.ts
 │   │       ├── spoiler-frontier.test.ts
@@ -371,6 +373,10 @@ SEARCH_SECRET_KEY=supersecretsearchsecretkey
 # Max queued+running scrape jobs per user (bounds queue DEPTH, not parallelism
 # — the worker is sequential because of MAL's ~3 req/s rate limit).
 # JOBS_PER_USER_LIMIT=4
+# Max user_scrape submissions per user in any trailing 24h window. Counts
+# every status (succeeded/failed too) so transient MAL failures can't grant
+# unlimited retries; 51st submission returns 429.
+# JOBS_DAILY_LIMIT=50
 # Dedupe window for /jobs/scrape. Failed jobs don't count.
 # JOBS_DEDUPE_HOURS=24
 # Bounds the nightly update_sweep batch size.

@@ -4,9 +4,28 @@ import { api, ApiError } from '$lib/api';
 import type { SearchTokenResponse } from '$lib/types/api';
 import { token } from '$lib/stores/auth';
 
-export function buildDetailHref(type: 'anime' | 'media', uuid: string, searchToken: string | null): string {
-    const base = `/${type}?uuid=${uuid}`;
-    return searchToken ? `${base}&q=${encodeURIComponent(searchToken)}` : base;
+/** Closed set of non-search origin markers that detail pages handle.
+ * Extend this union (and BackLink.svelte's `target` switch) when a new
+ * entry point needs a labeled back button. */
+export type DetailOrigin = 'library';
+
+export interface DetailHrefOptions {
+    /** Search token to propagate so the detail page renders "Back to search". */
+    q?: string | null;
+    /** Origin marker for non-search entry points. The detail page reads
+     * this to render a labeled back button like "Back to library". */
+    from?: DetailOrigin | null;
+}
+
+export function buildDetailHref(
+    type: 'anime' | 'media',
+    uuid: string,
+    opts?: DetailHrefOptions,
+): string {
+    const params = new URLSearchParams({ uuid });
+    if (opts?.q) params.set('q', opts.q);
+    if (opts?.from) params.set('from', opts.from);
+    return `/${type}?${params.toString()}`;
 }
 
 export async function navigateToSearch(params: MediaSearchFilters) {

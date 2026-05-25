@@ -189,7 +189,7 @@ Each anime search result card shows:
 ### 6.4 Media Table
 - Compact table with rows for each media in the anime
 - Each row: small cover thumbnail (40x56px, blurred when spoiler-protected), title + relation/media type badges, season, score, airing status dot
-- Clicking a row navigates to `/media?uuid=<uuid>` (with search token preserved)
+- Clicking a row navigates to `/media?uuid=<uuid>` (origin params preserved — see 7.6)
 - **Select mode**: "Select" button in table header toggles select mode
   - Checkboxes appear on left of each row
   - Clicking rows toggles selection instead of navigating
@@ -261,13 +261,16 @@ Each anime search result card shows:
 - Always shown — displays parent anime name as a clickable link to the anime detail page
 - If sibling media exist: horizontal scrollable row of compact cards (snap scrolling)
   - Each card: cover image (with fallback; blurred when spoiler-protected), title, media type + relation type badges, season or episode count
-  - Clicking a sibling card navigates to that media's detail page (search token preserved)
+  - Clicking a sibling card navigates to that media's detail page (origin params preserved — see 7.6)
 - If no siblings: "No other media in this anime" message
 
 ### 7.6 Back Navigation
-- "Back to search" link appears when `q` search token is present in URL
-- Search token is preserved across the entire navigation chain: search → anime → media → sibling media → back to search
-- Token includes `view_type`, so returning to search restores the correct anime/media toggle
+- Shared `<BackLink>` component (in `lib/components/`) decides which back button to render based on URL params:
+  - `?q=<token>` → "Back to search" (search-origin pattern, returns to `/search?q=token`; the token's `view_type` restores the correct anime/media toggle)
+  - `?from=library` → "Back to library" (non-search origin used by the recent-additions panel)
+  - neither → no back button (direct-URL arrivals stay clean)
+- Both flags propagate across the entire anime↔media jump chain (anime → media tile, media → anime link, related-media carousel) via `buildDetailHref`'s options bag, so a deep dive like library → anime → media → sibling stays linkable back to the origin
+- Origin set is a closed `DetailOrigin` TS union (`'library'` today); extending it requires updating both `lib/utils/navigation.ts` AND `BackLink.svelte`'s switch — surfaces as a type error otherwise
 
 ---
 
@@ -319,11 +322,12 @@ Each anime search result card shows:
 - The query must be at least 4 chars (`minlength` attr + button stays disabled until 4 chars typed). MAL's top-3 search is too ambiguous on shorter queries.
 - Submitting POSTs `{ query }` to `/jobs/scrape`. Successful enqueue returns 202 with the new job uuid; the form clears and bumps `jobsRefresh` (in `lib/stores/jobs.ts`) so the navbar bell refetches in tens of milliseconds instead of waiting for the next 30s poll.
 - 409 dedupe: re-submitting the same normalized query within `JOBS_DEDUPE_HOURS` (default 24) returns "This query is already queued" — failed jobs don't count, so a transient MAL outage doesn't lock the user out for a day.
-- 409 per-user cap: more than `JOBS_PER_USER_LIMIT` (default 4) active/queued user jobs returns "Too many jobs in flight — wait for some to finish."
+- 409 per-user cap: more than `JOBS_PER_USER_LIMIT` (default 4) active/queued user jobs returns "You already have 4 active scrape jobs. Wait for one to finish before queueing more."
+- 429 daily cap: more than `JOBS_DAILY_LIMIT` (default 50) user_scrape submissions in any trailing 24h window — counts every status, including failed jobs, so a fast-failing client can't cycle through the limit — returns "You've hit your daily limit of 50 anime additions. Please try again tomorrow." Marked permanent so the bell hides retry.
 - The job's lifecycle is then surfaced by the navbar bell (see 2.1). Long-term history lives on this page's recent-additions panel rather than the bell, which is intentionally session-scoped.
 
 ### 9.3 Recent Additions Panel
-- Server-rendered list from `GET /library/recent` returning the most recent anime saved across the catalog (not just this user's scrapes). Each row links to the anime detail page.
+- Server-rendered list from `GET /library/recent` returning the most recent anime saved across the catalog (not just this user's scrapes). Each row links to the anime detail page with `?from=library` so the destination renders a "Back to library" button (see 7.6).
 - Carries `name_eng` + `name_jap` so the frontend can call `resolveTitle(...)` with the user's `name_language` setting — no second fetch.
 - Refreshes automatically when the bell observes a NEW `succeeded` `user_scrape` (bumps `librarySaved` in `lib/stores/jobs.ts`; this panel subscribes via `onBump`). No manual reload required.
 

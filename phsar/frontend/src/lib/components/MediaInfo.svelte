@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { formatNumber, formatAiringStatus, formatRelationType, formatMediaType } from '$lib/utils/formatString';
-	import { buildDetailHref } from '$lib/utils/navigation';
+	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
 	import { Bookmark } from 'lucide-svelte';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -29,6 +29,7 @@
 		on_watchlist?: boolean;
 		media_uuid: string;
 		searchToken?: string | null;
+		fromParam?: DetailOrigin | null;
 	}
 
 	let {
@@ -37,12 +38,13 @@
 		has_upcoming = false, age_rating_numeric = null,
 		genres = null, media_type = null, media_types = null,
 		relation_type = null, relation_types = null, watchtime = null,
-		imageUrl = null, on_watchlist = false, media_uuid, searchToken = null
+		imageUrl = null, on_watchlist = false, media_uuid,
+		searchToken = null, fromParam = null,
 	}: Props = $props();
 
 	let imgFailed = $state(false);
 
-	let href = $derived(buildDetailHref(info_type, media_uuid, searchToken));
+	let href = $derived(buildDetailHref(info_type, media_uuid, { q: searchToken, from: fromParam }));
 
 	let displaySeason = $derived(season_range ?? anime_season);
 	let displayStatus = $derived(formatAiringStatus(airing_status, has_upcoming));

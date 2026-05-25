@@ -160,7 +160,7 @@
 						nameLanguage,
 					)}
 					<a
-						href={buildDetailHref('anime', anime.uuid, null)}
+						href={buildDetailHref('anime', anime.uuid, { from: 'library' })}
 						class="group flex flex-col gap-2 hover:opacity-90 transition"
 					>
 						<div class="aspect-[2/3] bg-muted rounded overflow-hidden">

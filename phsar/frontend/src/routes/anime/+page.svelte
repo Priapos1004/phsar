@@ -3,18 +3,19 @@
 	import { getContext } from 'svelte';
 	import { api, ApiError } from '$lib/api';
 	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, formatAiringStatus, resolveTitle, resolveSubtitles, decimalPlaces, formatRelationType, formatMediaType } from '$lib/utils/formatString';
-	import { buildDetailHref } from '$lib/utils/navigation';
+	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { ArrowLeft, Bookmark, Star, Tv, Calendar, Film, Layers, X, ListChecks, BookmarkPlus, Trash2 } from 'lucide-svelte';
+	import { Bookmark, Star, Tv, Calendar, Film, Layers, X, ListChecks, BookmarkPlus, Trash2 } from 'lucide-svelte';
 	import * as cls from '$lib/styles/classes';
 	import { userSettings } from '$lib/stores/userSettings';
 	import type { AnimeDetail, AnimeMediaItem, RatingOut } from '$lib/types/api';
 	import RatingsOverview from '$lib/components/RatingsOverview.svelte';
 	import BulkRateDialog from '$lib/components/BulkRateDialog.svelte';
+	import BackLink from '$lib/components/BackLink.svelte';
 	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
 	import { refreshSpoilerVisibility } from '$lib/stores/spoilerVisibility';
 	import { computeVisibleMediaUuids } from '$lib/utils/spoilerFrontier';
@@ -117,6 +118,7 @@
 
 	let isRestricted = $derived(getUserRole() === 'restricted_user');
 	let searchToken = $derived(page.url.searchParams.get('q'));
+	let fromParam = $derived(page.url.searchParams.get('from') as DetailOrigin | null);
 
 	let cleanedDescription = $derived(anime?.description ? cleanDescription(anime.description) : null);
 
@@ -208,7 +210,7 @@
 	}
 
 	function mediaHref(item: AnimeMediaItem): string {
-		return buildDetailHref('media', item.uuid, searchToken);
+		return buildDetailHref('media', item.uuid, { q: searchToken, from: fromParam });
 	}
 
 	function imgFailed(e: Event) {
@@ -235,14 +237,7 @@
 	{:else if error}
 		<div class="text-center text-destructive py-20">{error}</div>
 	{:else if anime}
-		{#if searchToken}
-			<a
-				href={`/search?q=${encodeURIComponent(searchToken)}`}
-				class="inline-flex items-center gap-1.5 text-sm text-white/70 hover:text-white transition mb-2"
-			>
-				<ArrowLeft class="size-4" /> Back to search
-			</a>
-		{/if}
+		<BackLink {searchToken} {fromParam} />
 
 		<!-- Hero section -->
 		<div class="relative rounded-xl overflow-hidden">

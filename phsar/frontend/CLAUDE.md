@@ -9,6 +9,7 @@ Pages: home (`/`), login (`/login`), register (`/register`), search (`/search`),
 - `GET /health` endpoint returning `{status, version}` for Coolify liveness — deliberately does not probe backend (liveness should only check what restarting this container can fix)
 - `/library/add` — query-input + recent-additions panel; submitting POSTs to `/jobs/scrape` and the navbar bell takes over from there; restricted users see the page but the form is disabled
 - **Tab title convention**: every route declares its own `<svelte:head><title>…</title></svelte:head>` in the format `<Page> — Phsar` (em dash, "Phsar" title case). Page name first so users with several PHSAR tabs open can distinguish them in the tab strip; the favicon already conveys "this is PHSAR". Detail pages (anime/media) bind the title reactively to the resolved name and fall back to a generic label while loading. `app.html` only sets the default `PHSAR` so the very first paint isn't blank — every route is expected to override
+- **Detail-page back button**: anime/media routes render `<BackLink searchToken fromParam />` near the top. It decides between "Back to search" (when `?q=<token>` is present, from search results) and "Back to library" (when `?from=library`, e.g. recent-additions panel). New origins extend the `DetailOrigin` type union in `lib/utils/navigation.ts` AND the `target` switch in `BackLink.svelte`. `buildDetailHref()` propagates both flags on internal anime↔media jumps so a deep dive (library → anime → media) stays linkable back to the origin
 
 ## lib/components/
 
@@ -20,6 +21,7 @@ App components using Svelte 5 `$props()`, `$state()`, `$derived()`, `$effect()`.
 - **VersionFooter** — renders at the bottom of every page, reads `PUBLIC_APP_VERSION` from `$env/dynamic/public`
 - **LoadingScreen** — themed sakura-ring loader shown during initial boot + ~1.5s logout transition
 - **Notice** — shared yellow info card (rounded `bg-yellow-50` surface + `AlertTriangle` icon — solid surface so it reads on the dark body gradient)
+- **BackLink** — shared back-button used by anime/media detail pages; renders nothing when neither `searchToken` nor a known `fromParam` is set (so direct-URL arrivals stay clean)
 - **BackupsCard** — admin-only dump list
   - Create/upload/download/restore/delete with a "Current" badge on the row the DB was last restored from
 - **MergeCandidatesCard** — admin-only review surface for pending merge candidates

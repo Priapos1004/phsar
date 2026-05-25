@@ -2,7 +2,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { formatSeason, resolveTitle, formatRelationType, formatMediaType } from '$lib/utils/formatString';
-	import { buildDetailHref } from '$lib/utils/navigation';
+	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
 	import { userSettings } from '$lib/stores/userSettings';
 	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
 	import { visibleMediaSet } from '$lib/stores/spoilerVisibility';
@@ -14,9 +14,10 @@
 	interface Props {
 		siblings: MediaSibling[];
 		searchToken?: string | null;
+		fromParam?: DetailOrigin | null;
 	}
 
-	let { siblings, searchToken = null }: Props = $props();
+	let { siblings, searchToken = null, fromParam = null }: Props = $props();
 
 	let imgFailed = $state<Record<string, boolean>>({});
 </script>
@@ -24,7 +25,7 @@
 <div class="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2 no-scrollbar">
 	{#each siblings as sibling}
 		<a
-			href={buildDetailHref('media', sibling.uuid, searchToken)}
+			href={buildDetailHref('media', sibling.uuid, { q: searchToken, from: fromParam })}
 			class="snap-start shrink-0 w-40 transition duration-200 transform hover:scale-[1.03]"
 		>
 			<Card.Root class="h-full {cls.cardGlass}">

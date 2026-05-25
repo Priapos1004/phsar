@@ -81,10 +81,11 @@ describe('Library Add page', () => {
 
 		await vi.waitFor(() => {
 			const link = screen.getByRole('link', { name: /Naruto/ });
-			// buildDetailHref('anime', uuid, null) → "/anime?uuid={uuid}"
+			// Recent-additions links pass from=library so the detail page
+			// renders "Back to library" instead of stranding the user.
 			expect(link).toHaveAttribute(
 				'href',
-				`/anime?uuid=${items[0].uuid}`,
+				`/anime?uuid=${items[0].uuid}&from=library`,
 			);
 		});
 	});

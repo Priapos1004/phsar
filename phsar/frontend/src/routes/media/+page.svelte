@@ -3,13 +3,14 @@
 	import { getContext } from 'svelte';
 	import { api, ApiError } from '$lib/api';
 	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, resolveTitle, resolveSubtitles, formatRelationType, formatMediaType } from '$lib/utils/formatString';
-	import { buildDetailHref } from '$lib/utils/navigation';
+	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
 	import RelatedMediaCarousel from '$lib/components/RelatedMediaCarousel.svelte';
 	import RatingCard from '$lib/components/RatingCard.svelte';
-	import { ArrowLeft, Bookmark, Star, Tv, Clock, Calendar, Film } from 'lucide-svelte';
+	import BackLink from '$lib/components/BackLink.svelte';
+	import { Bookmark, Star, Tv, Clock, Calendar, Film } from 'lucide-svelte';
 	import * as cls from '$lib/styles/classes';
 	import { userSettings } from '$lib/stores/userSettings';
 	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
@@ -46,6 +47,7 @@
 
 	let isRestricted = $derived(getUserRole() === 'restricted_user');
 	let searchToken = $derived(page.url.searchParams.get('q'));
+	let fromParam = $derived(page.url.searchParams.get('from') as DetailOrigin | null);
 
 	let cleanedDescription = $derived(media?.description ? cleanDescription(media.description) : null);
 	// OR with userRating prevents a brief blur flash after rating: the local
@@ -131,14 +133,7 @@
 	{:else if error}
 		<div class="text-center text-destructive py-20">{error}</div>
 	{:else if media}
-		{#if searchToken}
-			<a
-				href={`/search?q=${encodeURIComponent(searchToken)}`}
-				class="inline-flex items-center gap-1.5 text-sm text-white/70 hover:text-white transition mb-2"
-			>
-				<ArrowLeft class="size-4" /> Back to search
-			</a>
-		{/if}
+		<BackLink {searchToken} {fromParam} />
 
 		<div class="relative rounded-xl overflow-hidden">
 			{#if media.cover_image && !coverFailed}
@@ -330,12 +325,12 @@
 				<p class="text-muted-foreground {media.sibling_media.length ? 'mb-3' : ''}">
 					Part of anime:
 					<a
-						href={buildDetailHref('anime', media.anime_uuid, searchToken)}
+						href={buildDetailHref('anime', media.anime_uuid, { q: searchToken, from: fromParam })}
 						class="text-primary font-medium hover:underline"
 					>{resolveTitle(media.anime_title, media.anime_name_eng, media.anime_name_jap, nameLanguage)}</a>
 				</p>
 				{#if media.sibling_media.length}
-					<RelatedMediaCarousel siblings={media.sibling_media} {searchToken} />
+					<RelatedMediaCarousel siblings={media.sibling_media} {searchToken} {fromParam} />
 				{:else}
 					<p class="text-muted-foreground/70 text-sm mt-2">No other media in this anime</p>
 				{/if}
