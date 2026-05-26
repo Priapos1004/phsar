@@ -8,6 +8,7 @@ from sqlalchemy import (
     Index,
     Integer,
     String,
+    desc,
     func,
     text,
 )
@@ -102,16 +103,16 @@ class Job(BaseModel):
         Index("ix_jobs_user_status", "requested_by_user_id", "status"),
         # Backs JobDAO.list_admin_paginated — the Jobs Log tab's default
         # (unfiltered) view does ORDER BY created_at DESC LIMIT 50 plus a
-        # matching COUNT. Plain btree — PG scans backward for DESC, no
-        # need to pin order.
-        Index("ix_jobs_created_at_desc", "created_at"),
+        # matching COUNT. DESC pinned in metadata to match the migration
+        # so Alembic autogenerate doesn't keep flagging drift.
+        Index("ix_jobs_created_at_desc", desc("created_at")),
         # Backs JobDAO.count_user_scrapes_in_window — the daily-cap
         # check fires on every /jobs/scrape POST. Partial on user_scrape
         # so the index stays small relative to the full jobs history.
         Index(
             "ix_jobs_user_scrape_recent",
             "requested_by_user_id",
-            "created_at",
+            desc("created_at"),
             postgresql_where=text("kind = 'user_scrape'"),
         ),
         # Backs `?parent_uuid=…` lookups on the admin Jobs Log when the

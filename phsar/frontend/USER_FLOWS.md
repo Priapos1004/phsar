@@ -78,7 +78,7 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 | `/watchlist` | (placeholder) | Yes |
 | `/settings` | User preferences (theme, language, rating step, spoiler level, data export, account deletion) | Yes |
 | `/library/add` | Add anime via MAL query + recent additions panel | Yes (form disabled for restricted users) |
-| `/admin` | Admin sections behind a `?tab=` switcher (Tokens / Curation / Backups) | Yes (admin) |
+| `/admin` | Admin sections behind a `?tab=` switcher (Overview / Jobs Log / Tokens / Curation / Backups) | Yes (admin) |
 | `/statistics` | (placeholder) | Yes |
 | `/getting-started` | (placeholder) | Yes |
 

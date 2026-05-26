@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { ArrowLeft } from 'lucide-svelte';
+	import type { DetailOrigin } from '$lib/utils/navigation';
 
 	interface Props {
 		searchToken: string | null;
-		fromParam: 'library' | null;
+		fromParam: DetailOrigin | null;
 	}
 
 	let { searchToken, fromParam }: Props = $props();
