@@ -729,6 +729,27 @@ async def test_admin_jobs_log_hides_children_by_default(client, admin_auth_heade
         assert row["parent_job_uuid"] == str(parent.uuid)
 
 
+CURATION_COUNTS_URL = "/admin/curation/pending-counts"
+
+
+@pytest.mark.asyncio
+async def test_curation_pending_counts_shape(client, admin_auth_headers):
+    resp = await client.get(CURATION_COUNTS_URL, headers=admin_auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert set(data.keys()) == {"merge", "split"}
+    assert isinstance(data["merge"], int)
+    assert isinstance(data["split"], int)
+    assert data["merge"] >= 0
+    assert data["split"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_curation_pending_counts_requires_admin(client, user_auth_headers):
+    resp = await client.get(CURATION_COUNTS_URL, headers=user_auth_headers)
+    assert resp.status_code == 403
+
+
 @pytest.mark.asyncio
 async def test_admin_jobs_log_unknown_parent_returns_empty(client, admin_auth_headers):
     """A stale `?parent_uuid` (parent deleted between page load and

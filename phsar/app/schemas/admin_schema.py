@@ -189,6 +189,14 @@ class AdminOverviewStats(BaseModel):
     activity_7d: ActivityStats
 
 
+class CurationPendingCounts(BaseModel):
+    """Lightweight payload for the admin bell's pinned reminder. The bell
+    polls this on every tick (alongside /jobs/mine), so the endpoint
+    intentionally returns just the counts — no candidate detail."""
+    merge: int
+    split: int
+
+
 class ExpiryPreset(int, Enum):
     """Allowed token expiry durations in days."""
     one_day = 1

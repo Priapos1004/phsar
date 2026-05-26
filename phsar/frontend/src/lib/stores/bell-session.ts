@@ -12,9 +12,15 @@
 
 export const BELL_LOGIN_KEY = 'phsar.bellLoginAt';
 export const BELL_SEEN_KEY = 'phsar.bellSeenJobs';
+// Highest pending curation count (merge + split) the admin has acknowledged
+// by opening the bell this session. The badge contribution is max(0,
+// totalPending - this), so a session that starts with 3 pending shows
+// a 3-badge, opening the bell clears it, a new candidate later bumps to 1.
+export const BELL_CURATION_SEEN_KEY = 'phsar.bellCurationSeenCount';
 
 export function clearBellSession(): void {
     if (typeof sessionStorage === 'undefined') return;
     sessionStorage.removeItem(BELL_LOGIN_KEY);
     sessionStorage.removeItem(BELL_SEEN_KEY);
+    sessionStorage.removeItem(BELL_CURATION_SEEN_KEY);
 }

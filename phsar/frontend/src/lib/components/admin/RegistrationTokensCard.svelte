@@ -192,7 +192,7 @@
 	<Card.Root>
 		<Card.Header>
 			<div class="flex items-center justify-between">
-				<h2 class="text-lg font-semibold text-card-foreground">Registration Tokens</h2>
+				<h2 class="text-lg font-semibold text-card-foreground">Registration Tokens ({tokens.length})</h2>
 				<div class="flex items-center gap-2">
 					<ArrowUpDown class="size-4 text-muted-foreground" />
 					<Select.Root type="single" value={sortBy} onValueChange={(v) => { if (v) sortBy = v as SortOption; }}>

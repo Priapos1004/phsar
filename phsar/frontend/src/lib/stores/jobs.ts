@@ -16,6 +16,13 @@ export const [librarySaved, bumpLibrarySaved] = createBumpStore();
 // picks those up the next time the admin opens the page.
 export const [backupSaved, bumpBackupSaved] = createBumpStore();
 
+// Merge/Split candidate cards bump this after a successful merge / dismiss
+// / split / dismiss action so the bell's pinned reminder reflects the new
+// pending count without waiting for its next idle poll. Same pattern as
+// jobsRefresh — pages bump after a state-changing action, bell subscribes
+// and refetches in milliseconds.
+export const [curationRefresh, bumpCurationRefresh] = createBumpStore();
+
 /**
  * In-memory list of jobs that callers (e.g. BackupsCard, /library/add) push
  * right after a successful enqueue, so the bell can render the queued row

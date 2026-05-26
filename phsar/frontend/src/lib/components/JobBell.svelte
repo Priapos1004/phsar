@@ -1,19 +1,23 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
-	import { Bell, Database, RefreshCw, CheckCircle2, XCircle, Loader2 } from 'lucide-svelte';
+	import { getContext, onDestroy } from 'svelte';
+	import { Bell, ChevronRight, Database, RefreshCw, Settings, CheckCircle2, XCircle, Loader2 } from 'lucide-svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { api, ApiError } from '$lib/api';
 	import {
 		bumpBackupSaved,
 		bumpLibrarySaved,
+		curationRefresh,
 		jobsRefresh,
 		onBump,
 		optimisticJobs,
 		reconcileOptimisticJobs,
 	} from '$lib/stores/jobs';
-	import { BELL_LOGIN_KEY, BELL_SEEN_KEY } from '$lib/stores/bell-session';
+	import { BELL_CURATION_SEEN_KEY, BELL_LOGIN_KEY, BELL_SEEN_KEY } from '$lib/stores/bell-session';
 	import { formatBytes } from '$lib/utils/formatString';
-	import type { BackupResultSummary, Job } from '$lib/types/api';
+	import type { BackupResultSummary, CurationPendingCounts, Job } from '$lib/types/api';
+
+	const getUserRole = getContext<() => string | null>('userRole');
+	let isAdmin = $derived(getUserRole?.() === 'admin');
 
 	// 2s while anything is queued/running — short backups can transition
 	// Dumping → Applying retention → Done in 3–5s total, so the previous 4s
@@ -50,9 +54,26 @@
 		}
 	}
 
+	function loadCurationSeen(): number {
+		if (typeof sessionStorage === 'undefined') return 0;
+		const raw = sessionStorage.getItem(BELL_CURATION_SEEN_KEY);
+		if (!raw) return 0;
+		const n = Number(raw);
+		return Number.isFinite(n) && n >= 0 ? n : 0;
+	}
+
 	const sessionStart = readOrInitSessionTimestamp(BELL_LOGIN_KEY);
 
 	let jobs = $state<Job[]>([]);
+	// Pinned admin reminder: pending merge + split candidates. Polled
+	// alongside /jobs/mine when isAdmin, otherwise stays at 0. The badge
+	// counts (pending - already-acknowledged) so a fresh login surfaces
+	// the work, opening the bell clears it, and later-arriving candidates
+	// re-bump.
+	let curationCounts = $state<CurationPendingCounts>({ merge: 0, split: 0 });
+	let curationSeenCount = $state(loadCurationSeen());
+	let totalPending = $derived(curationCounts.merge + curationCounts.split);
+	let unseenCuration = $derived(Math.max(0, totalPending - curationSeenCount));
 	// UUID-based "seen" tracking: storing finished_at would couple "seen"
 	// detection to client-server clock alignment. UUIDs are stable.
 	let seenUuids = $state(loadSeen());
@@ -89,9 +110,22 @@
 				(j.status === 'succeeded' || j.status === 'failed') && !seenUuids.has(j.uuid),
 		),
 	);
-	let badgeCount = $derived(activeJobs.length + unseenFinished.length);
+	let badgeCount = $derived(activeJobs.length + unseenFinished.length + unseenCuration);
 	let hiddenCount = $derived(Math.max(0, visibleJobs.length - MAX_VISIBLE));
 	let pollDelay = $derived(activeJobs.length > 0 ? ACTIVE_POLL_MS : IDLE_POLL_MS);
+
+	async function fetchCurationCounts() {
+		if (!isAdmin) return;
+		try {
+			curationCounts = await api.get<CurationPendingCounts>('/admin/curation/pending-counts');
+		} catch (err) {
+			// Quiet failure — the bell still works without the pinned row.
+			// 401 will be handled by the regular fetchJobs path which also runs each tick.
+			if (!(err instanceof ApiError && err.status === 401)) {
+				console.error('Curation counts poll failed:', err);
+			}
+		}
+	}
 
 	async function fetchJobs() {
 		try {
@@ -137,6 +171,7 @@
 		clearTimer();
 		pollTimer = setTimeout(async () => {
 			await fetchJobs();
+			await fetchCurationCounts();
 			schedule();
 		}, pollDelay);
 	}
@@ -156,7 +191,11 @@
 	$effect(() => {
 		// Kick off the first fetch immediately on mount; subsequent ticks
 		// follow the active/idle cadence.
-		void fetchJobs().then(schedule);
+		void (async () => {
+			await fetchJobs();
+			await fetchCurationCounts();
+			schedule();
+		})();
 		return stopPolling;
 	});
 
@@ -165,6 +204,9 @@
 	// idle poll. onBump skips the initial synchronous fire so this doesn't
 	// double-fetch with the mount-time fetchJobs above.
 	$effect(() => onBump(jobsRefresh, () => void fetchJobs()));
+	// Merge/split candidate actions bump curationRefresh so the pinned
+	// reminder drops the resolved item without waiting for the next poll.
+	$effect(() => onBump(curationRefresh, () => void fetchCurationCounts()));
 
 	$effect(() => {
 		// Mark all currently-finished jobs as seen the moment the dropdown opens.
@@ -181,6 +223,30 @@
 		seenUuids = updated;
 		if (typeof sessionStorage !== 'undefined') {
 			sessionStorage.setItem(BELL_SEEN_KEY, JSON.stringify([...updated]));
+		}
+	});
+
+	$effect(() => {
+		// Same pattern as the finished-jobs ack above, but for curation.
+		// Snapshotting the current total clears the unseen contribution
+		// and "raises the floor" so a later-arriving candidate re-bumps.
+		if (!dropdownOpen) return;
+		if (totalPending <= curationSeenCount) return;
+		curationSeenCount = totalPending;
+		if (typeof sessionStorage !== 'undefined') {
+			sessionStorage.setItem(BELL_CURATION_SEEN_KEY, String(totalPending));
+		}
+	});
+
+	$effect(() => {
+		// When admin resolves a candidate, totalPending drops; without
+		// this clamp the seenCount stays stale-high and a later-arriving
+		// candidate that brings total back up to the old number wouldn't
+		// re-bump the badge.
+		if (curationSeenCount <= totalPending) return;
+		curationSeenCount = totalPending;
+		if (typeof sessionStorage !== 'undefined') {
+			sessionStorage.setItem(BELL_CURATION_SEEN_KEY, String(totalPending));
 		}
 	});
 
@@ -289,7 +355,22 @@
 			</span>
 		{/if}
 	</DropdownMenu.Trigger>
-	<DropdownMenu.Content class="w-80" align="end">
+	<DropdownMenu.Content class="w-80 p-0 overflow-hidden" align="end">
+		{#if isAdmin && (curationCounts.merge > 0 || curationCounts.split > 0)}
+			<a
+				href="/admin?tab=curation"
+				class="flex items-center gap-2 px-3 py-2 border-b hover:bg-primary/10 transition"
+			>
+				<Settings class="w-4 h-4 shrink-0 text-primary" />
+				<div class="flex-1 min-w-0">
+					<div class="text-sm font-medium text-card-foreground">Admin tasks</div>
+					<div class="text-xs text-muted-foreground">
+						{#if curationCounts.merge > 0}{curationCounts.merge} merge{curationCounts.merge === 1 ? '' : 's'}{/if}{#if curationCounts.merge > 0 && curationCounts.split > 0}, {/if}{#if curationCounts.split > 0}{curationCounts.split} split{curationCounts.split === 1 ? '' : 's'}{/if} pending
+					</div>
+				</div>
+				<ChevronRight class="w-4 h-4 shrink-0 text-muted-foreground" />
+			</a>
+		{/if}
 		{#if visibleJobs.length === 0}
 			<div class="px-3 py-4 text-sm text-muted-foreground text-center">
 				Currently no background jobs.

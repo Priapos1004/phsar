@@ -260,7 +260,7 @@
 <Card.Root>
     <Card.Header>
         <div class="flex items-center justify-between flex-wrap gap-2">
-            <h2 class="text-lg font-semibold text-card-foreground">Backups</h2>
+            <h2 class="text-lg font-semibold text-card-foreground">Backups ({backups.length})</h2>
             <div class="flex items-center gap-2">
                 <Button size="sm" onclick={handleCreate} disabled={creating}>
                     <Plus class="size-4 mr-1" />

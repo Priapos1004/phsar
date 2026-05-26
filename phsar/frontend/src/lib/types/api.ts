@@ -434,3 +434,9 @@ export interface AdminJobsPage {
 	limit: number;
 	offset: number;
 }
+
+// Admin bell pinned curation reminder — pending counts only, no detail
+export interface CurationPendingCounts {
+	merge: number;
+	split: number;
+}

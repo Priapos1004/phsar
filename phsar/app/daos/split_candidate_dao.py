@@ -9,7 +9,7 @@ so the queries don't share a base.
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -41,6 +41,16 @@ class SplitCandidateDAO(BaseDAO[SplitCandidate]):
     ) -> SplitCandidate | None:
         stmt = select(SplitCandidate).where(SplitCandidate.uuid == uuid)
         return (await db.execute(stmt)).scalars().first()
+
+    async def count_pending(self, db: AsyncSession) -> int:
+        """Cheap status='pending' count for the admin bell's pinned
+        reminder — paired with MergeCandidateDAO.count_pending. Sub-
+        millisecond on the small pending set."""
+        stmt = (
+            select(func.count(SplitCandidate.id))
+            .where(SplitCandidate.status == SplitCandidateStatus.pending)
+        )
+        return (await db.execute(stmt)).scalar_one()
 
     async def list_pending_with_anime(
         self, db: AsyncSession

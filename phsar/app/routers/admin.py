@@ -17,6 +17,8 @@ from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_db, require_roles
+from app.daos.merge_candidate_dao import MergeCandidateDAO
+from app.daos.split_candidate_dao import SplitCandidateDAO
 from app.models.job import JobKind, JobStatus
 from app.models.users import RoleType
 from app.routers.admin_jobs import enqueue_backup_job
@@ -78,6 +80,31 @@ async def get_stats_overview(
     """Aggregate stats for the admin Overview tab. Catalog totals,
     7-day job health by kind, and 7-day activity counters."""
     return await admin_stats_service.get_overview_stats(db)
+
+
+_merge_candidate_dao = MergeCandidateDAO()
+_split_candidate_dao = SplitCandidateDAO()
+
+
+@router.get("/curation/pending-counts", response_model=admin_schema.CurationPendingCounts)
+async def get_curation_pending_counts(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """Pending merge + split candidate counts for the admin bell's
+    pinned reminder. The bell polls this each tick (admin-only, so a
+    regular user's bell isn't paying for these queries) — separate
+    endpoint from the list ones because the list calls eager-load
+    anime + media + sidecars for the curation cards, way more than
+    the bell needs.
+
+    Sequential awaits, not asyncio.gather: AsyncSession can't multiplex
+    concurrent ops on one session (see CLAUDE.md LANDMINE). Both
+    queries are sub-millisecond COUNTs, so the cost is irrelevant."""
+    return admin_schema.CurationPendingCounts(
+        merge=await _merge_candidate_dao.count_pending(db),
+        split=await _split_candidate_dao.count_pending(db),
+    )
 
 
 @router.get("/jobs", response_model=job_schema.AdminJobsPage)

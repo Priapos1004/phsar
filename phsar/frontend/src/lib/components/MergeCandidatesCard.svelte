@@ -5,6 +5,7 @@
     import * as Card from '$lib/components/ui/card';
     import { Badge } from '$lib/components/ui/badge';
     import { GitMerge, X, RefreshCw, ArrowLeftRight, Search, ChevronRight, ChevronDown } from 'lucide-svelte';
+    import { bumpCurationRefresh } from '$lib/stores/jobs';
     import { formatRelationType } from '$lib/utils/formatString';
     import type {
         MergeBackfillResult,
@@ -74,6 +75,7 @@
             // drops out, any cascade-resolved candidates drop with it, and
             // re-detection may surface fresh pairs against the survivor.
             await fetchCandidates();
+            bumpCurationRefresh();
         } catch (err) {
             error = err instanceof ApiError ? err.detail : 'Failed to merge';
         } finally {
@@ -91,6 +93,7 @@
                 ? 'No new candidates found.'
                 : `Flagged ${result.inserted} new candidate${result.inserted === 1 ? '' : 's'}.`;
             await fetchCandidates();
+            if (result.inserted > 0) bumpCurationRefresh();
         } catch (err) {
             error = err instanceof ApiError ? err.detail : 'Failed to re-run detection';
         } finally {
@@ -106,6 +109,7 @@
             await api.post(`/admin/merge-candidates/${uuid}/dismiss`, {});
             confirmDismissUuid = null;
             candidates = candidates.filter((c) => c.uuid !== uuid);
+            bumpCurationRefresh();
         } catch (err) {
             error = err instanceof ApiError ? err.detail : 'Failed to dismiss';
         } finally {
@@ -126,7 +130,7 @@
 <Card.Root>
     <Card.Header>
         <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold text-card-foreground">Merge Candidates</h2>
+            <h2 class="text-lg font-semibold text-card-foreground">Merge Candidates ({candidates.length})</h2>
             <div class="flex items-center gap-1">
                 <Button
                     variant="ghost"

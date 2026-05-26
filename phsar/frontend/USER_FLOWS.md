@@ -51,6 +51,8 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
     - `backup`: `Backup`, Database icon for the queued state (vs the default Bell), stage Dumping → Applying retention → Done. On succeeded: `Backup ready (12.4 MB)` substext (using `formatBytes`), or `Re-confirmed existing dump (no new data)` when the create deduped against an existing dump.
     - Failed rows show a friendly error + retry button. Retry is hidden when `result_summary.retryable === false` (permanent failures: `AnimeNotFoundError`, `MainMediaNotFoundError`, `MalIdAlreadyExistsError`, `AnimeFilteredOutError`). Backup-specific error categories (`backup_disk_full`, `backup_corrupt`) render friendly copy instead of the raw stderr — both stay retryable so admin can free space or re-run. While one retry is in flight, every retry button in the dropdown is disabled. Bell stops polling on 401 (token dead).
     - Optimistic-stub pattern: when `/library/add` or the BackupsCard `Create backup` button POSTs, the page pushes a `queued` row into the `optimisticJobs` store with the returned `job_uuid` so the bell renders it instantly without waiting for the next poll. The next `/jobs/mine` fetch reconciles it (UUID match) and replaces the stub with the real row.
+    - **Admin pinned reminder**: when the user role is `admin`, the bell also polls `GET /admin/curation/pending-counts` each tick. If `merge + split > 0` the dropdown renders a non-dismissible row at the top (Settings icon, "Admin tasks" title, "N merge, M split pending" detail, chevron-right) linking to `/admin?tab=curation`. The row hover-tints (no idle background) and sits flush against the top corner — `DropdownMenu.Content` is `p-0 overflow-hidden`. The badge contribution counts as "unseen" via the same session-scoped acknowledgment as jobs: `unseenCuration = max(0, totalPending − BELL_CURATION_SEEN_KEY)`. Opening the dropdown snapshots `totalPending` into the sessionStorage key (so the badge clears); resolving a candidate that drops `totalPending` below the snapshot clamps the snapshot down too, so a later-arriving candidate that brings total back up still re-bumps the badge.
+    - **Auto-refresh on curation actions**: MergeCandidatesCard and SplitCandidatesCard bump `curationRefresh` (lib/stores/jobs.ts) after a successful merge/dismiss/split/dismiss action (and after a re-detect that flagged new candidates). The bell subscribes via `onBump` and refetches the pending counts in milliseconds — same pattern as `jobsRefresh` / `librarySaved` / `backupSaved`.
   - User button (first letter of username) toggling a dropdown with:
     - User Settings → `/settings`
     - Admin → `/admin` (visible only to admin role)
@@ -374,11 +376,13 @@ Each anime search result card shows:
 - Changing the role or expiry selector dismisses the success banner
 
 ### 10.3 Token List
+- Card title shows the live count: `Registration Tokens (N)`.
 - Displays all registration tokens with: truncated token (click to copy), status badge (active/used/expired), role badge, creation date, and either an expiry date (active/expired tokens) or a "Used &lt;date&gt; by &lt;username&gt;" line (used tokens — once consumed, the expiry date is no longer the useful piece of info, so it's replaced with the consumption date)
 - **Sort options** (dropdown): By Status (default: active → used → expired), Newest First, Expiring Soon (active tokens first by soonest expiry), Recently Used
 - **Delete**: trash icon on unused/expired tokens opens confirm/cancel inline buttons. Used tokens cannot be deleted. DELETE returns 204.
 
 ### 10.4 Backups (Backups tab)
+- Card title shows the live count: `Backups (N)`.
 - **Create backup**: POST returns 202 with `{job_uuid}` instead of running pg_dump synchronously. The button shows a toast ("Backup queued. We'll let you know when it's ready.") and disables for 5 seconds to absorb double-clicks. The bell shows a queued row instantly (optimistic stub seeded from the returned uuid; see 2.1) and tracks the job through to completion. When the job succeeds the bell bumps `backupSaved`; this card subscribes via `onBump` and refetches the dump list, so the new row appears with a green `ok` integrity badge and a source badge (`Manual`, `Scheduled`, `Pre-restore`, or `Upload`) without any manual reload. Cron-triggered backups stay system jobs (invisible to every bell) — they appear in this list on the card's next mount or sort change.
 - **Upload**: file input accepts `.dump` files; `/admin/backups/upload` runs `pg_restore -f -` to validate + compute a content hash that ignores per-run timestamps and psql `\restrict` tokens. An upload whose DB state matches an existing dump returns 409 ("identical to `<filename>`"). Uploads never move the "Current" badge — uploaded bytes are external and the backend can't verify they match live DB.
 - **List**: filename, timestamp, human-readable size, integrity badge, source badge. The dump whose content matches the live DB gets a blue "Current" badge (git-branch icon) and a faint blue tint on the row — this is the dump the last restore left, or (when a create dedupes) the pre-existing dump it re-confirmed, or (in the normal create path) the just-created dump itself. Deleting the current dump clears the marker so the badge disappears.
@@ -388,7 +392,8 @@ Each anime search result card shows:
 - **Delete**: trash icon opens inline confirm/cancel buttons. DELETE returns 204.
 
 ### 10.5 Merge Candidates (Curation tab)
-- Card below Backups. Admin-only.
+- Card title shows the live count: `Merge Candidates (N)`.
+- Admin-only.
 - **List**: pending merge candidates flagged by the duplicate detector (running on every save covering new × new and new × existing pairs, at app startup covering existing × existing, and on admin demand via the Re-run detection button). Each row shows:
   - A "% match" badge (similarity score)
   - A `detected_by` label (`title_studio`, `title_desc`, or `relation_link`)
@@ -400,10 +405,12 @@ Each anime search result card shows:
 - **Re-run detection**: magnifying-glass icon next to the refresh control. Re-runs the existing × existing detection backfill on demand — primarily for the post-restore workflow (restore doesn't bounce the container, so the lifespan-startup backfill never sees the restored catalog). The backfiller is idempotent: already-flagged pairs (any status) skip via `seen_pairs`, so repeat clicks return 0. Shows a "Flagged N new candidate(s)" inline note on success.
 - **Merge**: re-parents B's media onto A and deletes B (cascade-removes the candidate row + any other pending pairs referencing B). A's anime embedding is regenerated, the duplicate detector re-runs against the survivor (so freshly-valid pairs from the merged-in media surface as new candidates), and the spoiler-cache is recomputed for all users. Merge button opens an inline confirm/cancel pair; while in flight the button shows "Merging…" and the row stays visible. On success the list refetches automatically (silent), so cascade-resolved rows leave and any re-detected pairs appear in one update. Backend rejects with 409 if A and B share any `Media.mal_id` (a should-never-happen invariant; admin investigates manually).
 - **Dismiss**: marks the candidate `dismissed` (status flip; row stays in DB so the seen-pairs filter prevents re-flagging). Same inline confirm/cancel UX. On success the row is removed from the local list.
+- Merge / dismiss / re-detect-with-new-rows all bump `curationRefresh` (lib/stores/jobs.ts) so the navbar bell's pinned admin reminder + badge contribution refresh in milliseconds.
 - Already-resolved candidates (merged or dismissed) return 409 if the action is retried.
 - The detector itself is invisible to non-admin users; nothing about it surfaces outside this card.
 
 ### 10.6 Split Candidates (Curation tab)
+- Card title shows the live count: `Split Candidates (N)`.
 - Stacked below Merge Candidates on the same Curation tab. Admin-only.
 - **List**: pending split candidates flagged by `find_disjoint_franchises`, which finds substance-passing media inside one anime row that form their own connected sequel chain — the BNHA↔Vigilante, Toaru Index↔Railgun, Pretty Rhythm↔(PriPara/King of Prism/Pri☆chan/AiPri) shapes. Detection runs on every save (scrape-time), inside the relation-backfiller's per-anime loop (lifespan startup + admin re-trigger), AND after every merge survivor reclassify (so a merge that surfaces previously-dangling bridges gets flagged). Each row shows:
   - A `N cluster(s)` badge (count of disjoint sub-franchises detected under this anime)
@@ -414,6 +421,7 @@ Each anime search result card shows:
 - **Re-run detection**: magnifying-glass icon. Re-runs `backfill_split_candidates` across the catalog on demand. Idempotent via cluster-signature supersede: if the payload matches an already-pending row, no insert; if the payload changed (new media absorbed since detection), the old pending row is auto-dismissed and a fresh one is inserted. Shows a "Flagged N new candidate(s)" inline note on success.
 - **Split**: creates one new Anime row per detected cluster, re-parents the cluster's Media rows under the new anime (Media UUIDs are stable so any existing Ratings stay attached), reclassifies both the source and each new anime, then runs merge detection over the newly-split-out rows. The source anime's umbrella may shift if the smaller media set picks a different anchor. Inline confirm/cancel pair; while in flight the button shows "Splitting…" and the row stays visible. On success the list refetches silently and an inline note reports the number of new anime rows created.
 - **Dismiss**: marks the candidate `dismissed` (status flip; row stays in DB so the cluster-signature supersede in the DAO doesn't re-flag the same shape on next detection). Same inline confirm/cancel UX. On success the row is removed from the local list.
+- Split / dismiss / re-detect-with-new-rows all bump `curationRefresh` so the navbar bell's pinned reminder updates without waiting for the next poll tick.
 - Already-resolved candidates (split or dismissed) return 409 if the action is retried.
 - **Stale-candidate fail-loud**: if the classifier on the cluster subset picks a different anchor than the candidate's `suggested_anchor_mal_id` at execute time (e.g., MAL added a sequel between detection and execution), the backend returns 409 SplitCandidateStaleError. Admin re-runs detection to refresh the payload.
 - The detector itself is invisible to non-admin users; nothing about it surfaces outside this card.
@@ -446,6 +454,7 @@ Each anime search result card shows:
 | `/users/account` | DELETE | Settings page (account deletion with password) |
 | `/admin/stats/overview` | GET | Admin Overview tab (aggregate catalog + job health + activity counters) |
 | `/admin/jobs` | GET | Admin Jobs Log tab (paginated all-jobs list with status/kind/user/date filters) |
+| `/admin/curation/pending-counts` | GET | Polled by JobBell each tick when user role is admin; drives the pinned reminder + badge contribution |
 | `/admin/registration-tokens` | GET | Admin page (list all tokens) |
 | `/admin/registration-tokens` | POST | Admin page (create token) |
 | `/admin/registration-tokens/{uuid}` | DELETE | Admin page (delete unused token) |
