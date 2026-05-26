@@ -248,7 +248,7 @@ async def test_dispatcher_dedupes_against_existing_media_mal_id(
 
 
 @pytest.mark.asyncio
-async def test_dispatcher_empty_season_returns_zeros(monkeypatch):
+async def test_dispatcher_empty_season_returns_zeros(cleanup_seasonal_children, monkeypatch):
     """Off-week or fresh DB: /seasons/now returns nothing. The dispatcher
     must not crash, must return zero-zero summary, and must not touch
     the worker notify channel."""
