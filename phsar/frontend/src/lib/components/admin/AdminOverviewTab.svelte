@@ -79,7 +79,7 @@
 								</div>
 							</div>
 							{#if successRate !== null}
-								<div class="shrink-0 w-14 text-right text-sm font-semibold tabular-nums {successRate >= 90 ? 'text-primary' : successRate >= 75 ? 'text-amber-400' : 'text-destructive'}">
+								<div class="shrink-0 w-14 text-right text-sm font-semibold tabular-nums {successRate >= 90 ? 'text-emerald-400' : successRate >= 75 ? 'text-amber-400' : 'text-destructive'}">
 									{successRate}%
 								</div>
 							{:else}
