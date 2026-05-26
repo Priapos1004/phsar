@@ -2,30 +2,32 @@
 	import { onMount } from 'svelte';
 	import { api, ApiError } from '$lib/api';
 	import * as Card from '$lib/components/ui/card';
-	import { formatNumber } from '$lib/utils/formatString';
+	import { formatJobKind, formatNumber } from '$lib/utils/formatString';
+	import { librarySaved, onBump } from '$lib/stores/jobs';
 	import type { AdminOverviewStats } from '$lib/types/api';
-
-	const JOB_KIND_LABELS: Record<string, string> = {
-		user_scrape: 'User scrapes',
-		update_sweep: 'Nightly update sweep',
-		seasonal_sweep: 'Weekly seasonal sweep',
-		backup: 'Backups',
-		restore: 'Restores',
-	};
 
 	let stats = $state<AdminOverviewStats | null>(null);
 	let loading = $state(true);
 	let error = $state('');
 
-	onMount(async () => {
+	async function load() {
 		try {
 			stats = await api.get<AdminOverviewStats>('/admin/stats/overview');
+			error = '';
 		} catch (err) {
 			error = err instanceof ApiError ? err.detail : 'Failed to load stats';
 		} finally {
 			loading = false;
 		}
-	});
+	}
+
+	onMount(load);
+
+	// Refetch when the bell observes a new succeeded user_scrape — catalog
+	// counts and the activity panel shift, and the admin shouldn't have to
+	// reload to see them. Same pattern as the /library/add recent-additions
+	// panel uses to stay current without manual refresh.
+	$effect(() => onBump(librarySaved, () => void load()));
 </script>
 
 <div class="space-y-6">
@@ -71,17 +73,17 @@
 						{@const successRate = total > 0 ? Math.round((row.succeeded / total) * 100) : null}
 						<div class="flex items-center justify-between gap-4 text-sm">
 							<div class="flex-1 min-w-0">
-								<div class="text-card-foreground font-medium">{JOB_KIND_LABELS[row.kind] ?? row.kind}</div>
+								<div class="text-card-foreground font-medium">{formatJobKind(row.kind)}</div>
 								<div class="text-xs text-muted-foreground">
 									{row.succeeded} ok · {row.failed} failed{#if row.retryable_failed > 0} ({row.retryable_failed} retryable){/if}
 								</div>
 							</div>
 							{#if successRate !== null}
-								<div class="text-right text-sm font-semibold {successRate === 100 ? 'text-primary' : successRate >= 80 ? 'text-card-foreground' : 'text-destructive'}">
+								<div class="shrink-0 w-14 text-right text-sm font-semibold tabular-nums {successRate >= 90 ? 'text-primary' : successRate >= 75 ? 'text-amber-400' : 'text-destructive'}">
 									{successRate}%
 								</div>
 							{:else}
-								<div class="text-right text-xs text-muted-foreground">—</div>
+								<div class="shrink-0 w-14 text-right text-xs text-muted-foreground tabular-nums">—</div>
 							{/if}
 						</div>
 					{/each}

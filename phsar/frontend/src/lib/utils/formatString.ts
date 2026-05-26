@@ -14,6 +14,23 @@ export function formatMediaType(type: string): string {
 	return MEDIA_TYPE_LABELS[type] ?? type;
 }
 
+import type { JobKind } from '$lib/types/api';
+
+export const JOB_KIND_LABELS: Record<JobKind, string> = {
+	user_scrape: 'User scrape',
+	update_sweep: 'Update sweep',
+	seasonal_sweep: 'Seasonal sweep',
+	backup: 'Backup',
+	restore: 'Restore',
+};
+
+/** Formats a JobKind enum value to a user-friendly label. Accepts string
+ * so callers can pass raw backend values without a guard; unknown values
+ * fall through unchanged. */
+export function formatJobKind(kind: JobKind | string): string {
+	return JOB_KIND_LABELS[kind as JobKind] ?? kind;
+}
+
 /**
  * Format a number with commas for thousands, while preserving decimals.
  * Examples:

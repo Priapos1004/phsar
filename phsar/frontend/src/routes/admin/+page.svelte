@@ -5,6 +5,7 @@
 	import BackupsCard from '$lib/components/BackupsCard.svelte';
 	import MergeCandidatesCard from '$lib/components/MergeCandidatesCard.svelte';
 	import SplitCandidatesCard from '$lib/components/SplitCandidatesCard.svelte';
+	import AdminJobsLogTab from '$lib/components/admin/AdminJobsLogTab.svelte';
 	import AdminOverviewTab from '$lib/components/admin/AdminOverviewTab.svelte';
 	import RegistrationTokensCard from '$lib/components/admin/RegistrationTokensCard.svelte';
 	import AdminTabNav from '$lib/components/admin/AdminTabNav.svelte';
@@ -15,6 +16,7 @@
 
 	const TABS: { key: AdminTabKey; label: string }[] = [
 		{ key: 'overview', label: 'Overview' },
+		{ key: 'jobs', label: 'Jobs Log' },
 		{ key: 'tokens', label: 'Tokens' },
 		{ key: 'curation', label: 'Curation' },
 		{ key: 'backups', label: 'Backups' },
@@ -50,6 +52,9 @@
 		 keeping them mounted doesn't generate ongoing traffic. -->
 	<div class:hidden={active !== 'overview'}>
 		<AdminOverviewTab />
+	</div>
+	<div class:hidden={active !== 'jobs'}>
+		<AdminJobsLogTab />
 	</div>
 	<div class:hidden={active !== 'tokens'}>
 		<RegistrationTokensCard />

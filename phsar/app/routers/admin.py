@@ -9,19 +9,21 @@ The split keeps each surface under ~150 lines so future agents don't
 scroll past three unrelated admin concerns to find the fourth.
 """
 
+from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Body, Depends, UploadFile, status
+from fastapi import APIRouter, Body, Depends, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_db, require_roles
+from app.models.job import JobKind, JobStatus
 from app.models.users import RoleType
 from app.routers.admin_jobs import enqueue_backup_job
 from app.routers.admin_jobs import router as admin_jobs_router
 from app.routers.admin_merge import router as admin_merge_router
 from app.routers.admin_split import router as admin_split_router
-from app.schemas import admin_schema, auth_schema, backup_schema
+from app.schemas import admin_schema, auth_schema, backup_schema, job_schema
 from app.services import (
     admin_service,
     admin_stats_service,
@@ -76,6 +78,30 @@ async def get_stats_overview(
     """Aggregate stats for the admin Overview tab. Catalog totals,
     7-day job health by kind, and 7-day activity counters."""
     return await admin_stats_service.get_overview_stats(db)
+
+
+@router.get("/jobs", response_model=job_schema.AdminJobsPage)
+async def list_jobs(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_admin),
+    status: JobStatus | None = Query(default=None),
+    kind: JobKind | None = Query(default=None),
+    user_id: int | None = Query(default=None, ge=1),
+    created_after: datetime | None = Query(default=None),
+    created_before: datetime | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+):
+    """Paginated all-jobs list for the admin Jobs Log tab. Newest-first
+    by created_at. The frontend renders this directly — no client-side
+    re-sort. Bound `limit` at 200 so a misclick doesn't pull thousands
+    of rows over the wire."""
+    return await admin_service.list_jobs_paginated(
+        db,
+        status=status, kind=kind, user_id=user_id,
+        created_after=created_after, created_before=created_before,
+        limit=limit, offset=offset,
+    )
 
 
 # Router-level admin dep — only `restore` actually reads the caller's username,

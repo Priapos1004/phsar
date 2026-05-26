@@ -49,3 +49,21 @@ class JobResponse(BaseModel):
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+
+
+class AdminJobResponse(JobResponse):
+    """Admin-only Jobs Log view. Adds the requested_by username so the
+    admin can attribute user-submitted scrapes without joining client-side
+    against /users. Stays as a subclass (not a flag on JobResponse) so
+    /jobs/mine — owner-scoped, never needs the lookup — can't leak
+    usernames by accident."""
+    requested_by_username: str | None
+
+
+class AdminJobsPage(BaseModel):
+    """Paginated response for GET /admin/jobs. `total` reflects the full
+    filter result; `items` is the current page."""
+    items: list[AdminJobResponse]
+    total: int
+    limit: int
+    offset: int

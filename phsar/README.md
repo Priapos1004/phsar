@@ -159,6 +159,7 @@ phsar/
 │   │   │   │   ├── BackLink.svelte
 │   │   │   │   ├── BackupsCard.svelte
 │   │   │   │   ├── admin/
+│   │   │   │   │   ├── AdminJobsLogTab.svelte
 │   │   │   │   │   ├── AdminOverviewTab.svelte
 │   │   │   │   │   ├── AdminTabNav.svelte
 │   │   │   │   │   ├── RegistrationTokensCard.svelte

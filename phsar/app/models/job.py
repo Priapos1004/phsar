@@ -1,6 +1,16 @@
 import enum
 
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, Index, Integer, String, text
+from sqlalchemy import (
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
@@ -79,4 +89,30 @@ class Job(BaseModel):
         ),
         # Backs count_active_for_user (per-user submission cap).
         Index("ix_jobs_user_status", "requested_by_user_id", "status"),
+        # Backs JobDAO.list_admin_paginated — the Jobs Log tab's default
+        # (unfiltered) view does ORDER BY created_at DESC LIMIT 50 plus a
+        # matching COUNT. Plain btree — PG scans backward for DESC, no
+        # need to pin order.
+        Index("ix_jobs_created_at_desc", "created_at"),
+        # Backs JobDAO.count_user_scrapes_in_window — the daily-cap
+        # check fires on every /jobs/scrape POST. Partial on user_scrape
+        # so the index stays small relative to the full jobs history.
+        Index(
+            "ix_jobs_user_scrape_recent",
+            "requested_by_user_id",
+            "created_at",
+            postgresql_where=text("kind = 'user_scrape'"),
+        ),
     )
+
+
+# Expression index — defined at module scope (rather than in __table_args__)
+# because the leading column is a JSONB extraction. Backs
+# JobDAO.find_recent_scrape_for_query, the dedup check that fires on every
+# /jobs/scrape POST.
+Index(
+    "ix_jobs_scrape_query",
+    func.lower(func.trim(Job.payload["query"].astext)),
+    Job.created_at.desc(),
+    postgresql_where=text("kind = 'user_scrape'"),
+)

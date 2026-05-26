@@ -419,3 +419,15 @@ export interface AdminOverviewStats {
 	jobs_7d: AdminJobsStats;
 	activity_7d: AdminActivityStats;
 }
+
+// Admin Jobs Log — paginated all-jobs view with flattened requested_by
+export interface AdminJobResponse extends Job {
+	requested_by_username: string | null;
+}
+
+export interface AdminJobsPage {
+	items: AdminJobResponse[];
+	total: number;
+	limit: number;
+	offset: number;
+}

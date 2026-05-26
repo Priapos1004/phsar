@@ -564,3 +564,83 @@ async def test_stats_overview_reflects_seeded_jobs(client, admin_auth_headers, d
 async def test_stats_overview_requires_admin(client, user_auth_headers):
     resp = await client.get(STATS_URL, headers=user_auth_headers)
     assert resp.status_code == 403
+
+
+JOBS_LOG_URL = "/admin/jobs"
+
+
+@pytest.mark.asyncio
+async def test_admin_jobs_log_returns_paginated_shape(client, admin_auth_headers, db_session):
+    """Seed two jobs and verify the page payload carries items + total +
+    limit + offset, with each row flattening requested_by to a username
+    string (or null for system jobs)."""
+    user_job = Job(
+        kind=JobKind.user_scrape, status=JobStatus.succeeded,
+        payload={"query": "jobs-log-test-user"},
+    )
+    system_job = Job(
+        kind=JobKind.update_sweep, status=JobStatus.succeeded,
+        payload={"source": "cron"},
+        requested_by_user_id=None,
+    )
+    db_session.add_all([user_job, system_job])
+    await db_session.flush()
+
+    resp = await client.get(JOBS_LOG_URL, headers=admin_auth_headers)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert set(data.keys()) == {"items", "total", "limit", "offset"}
+    assert data["limit"] == 50
+    assert data["offset"] == 0
+    assert data["total"] >= 2
+
+    # Every row carries the flattened username field (null for system jobs).
+    for row in data["items"]:
+        assert "requested_by_username" in row
+        assert "uuid" in row
+        assert "kind" in row
+
+
+@pytest.mark.asyncio
+async def test_admin_jobs_log_filters_by_kind(client, admin_auth_headers, db_session):
+    """kind filter narrows the result; status filter compose-able with kind."""
+    seed = Job(
+        kind=JobKind.backup, status=JobStatus.succeeded,
+        payload={"source": "manual"},
+    )
+    db_session.add(seed)
+    await db_session.flush()
+
+    resp = await client.get(
+        f"{JOBS_LOG_URL}?kind=backup",
+        headers=admin_auth_headers,
+    )
+    assert resp.status_code == 200
+    assert all(row["kind"] == "backup" for row in resp.json()["items"])
+
+
+@pytest.mark.asyncio
+async def test_admin_jobs_log_respects_limit_and_offset(client, admin_auth_headers, db_session):
+    """A small limit truncates the page; non-zero offset skips."""
+    # Seed 3 jobs so there's something to page through even on an empty DB.
+    for i in range(3):
+        db_session.add(Job(
+            kind=JobKind.user_scrape, status=JobStatus.succeeded,
+            payload={"query": f"jobs-log-page-{i}"},
+        ))
+    await db_session.flush()
+
+    page1 = (await client.get(f"{JOBS_LOG_URL}?limit=1", headers=admin_auth_headers)).json()
+    page2 = (await client.get(f"{JOBS_LOG_URL}?limit=1&offset=1", headers=admin_auth_headers)).json()
+    # Floor `total` at the seeded 3 so the offset-advances assertion below
+    # can't pass vacuously against unrelated rows from earlier tests.
+    assert page1["total"] >= 3
+    assert len(page1["items"]) == 1
+    assert len(page2["items"]) == 1
+    assert page1["items"][0]["uuid"] != page2["items"][0]["uuid"]
+
+
+@pytest.mark.asyncio
+async def test_admin_jobs_log_requires_admin(client, user_auth_headers):
+    resp = await client.get(JOBS_LOG_URL, headers=user_auth_headers)
+    assert resp.status_code == 403
