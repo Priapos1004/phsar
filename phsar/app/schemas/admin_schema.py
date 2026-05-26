@@ -146,6 +146,57 @@ class NightlyScheduleResponse(BaseModel):
     scheduled_at: datetime
 
 
+class CatalogStats(BaseModel):
+    anime_count: int
+    media_count: int
+    anime_added_7d: int
+    media_added_7d: int
+
+
+class JobKindStats(BaseModel):
+    """Per-kind breakdown of jobs created in the last 7 days. `failed`
+    counts both retryable and permanent failures; `retryable_failed` is
+    a subset showing how many of those `failed` rows could still recover
+    (so admin can spot user_scrape jobs stuck on transient MAL outages
+    vs. permanently-dead deterministic failures).
+
+    The `user_scrape` row counts user-initiated submissions only; the
+    seasonal-sweep children that share kind=user_scrape but have
+    requested_by_user_id=NULL are excluded so their failure rate
+    (Music/PV/etc. filtering) doesn't dilute the user-facing signal."""
+    kind: str
+    succeeded: int
+    failed: int
+    retryable_failed: int
+
+
+class JobsStats(BaseModel):
+    by_kind: list[JobKindStats]
+
+
+class ActivityStats(BaseModel):
+    """User activity counters over the last 7 days. `active_users` is
+    distinct users with at least one rating change or scrape submission
+    in the window — system jobs (requested_by_user_id IS NULL) excluded."""
+    active_users: int
+    new_ratings: int
+    scrapes_submitted: int
+
+
+class AdminOverviewStats(BaseModel):
+    catalog: CatalogStats
+    jobs_7d: JobsStats
+    activity_7d: ActivityStats
+
+
+class CurationPendingCounts(BaseModel):
+    """Lightweight payload for the admin bell's pinned reminder. The bell
+    polls this on every tick (alongside /jobs/mine), so the endpoint
+    intentionally returns just the counts — no candidate detail."""
+    merge: int
+    split: int
+
+
 class ExpiryPreset(int, Enum):
     """Allowed token expiry durations in days."""
     one_day = 1

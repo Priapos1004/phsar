@@ -86,6 +86,10 @@ async def seasonal_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
             kind=JobKind.user_scrape,
             status=JobStatus.queued,
             requested_by_user_id=None,
+            # Stamp the parent so the admin Jobs Log can collapse this flock
+            # under the seasonal_sweep row instead of cluttering the default
+            # view with N system-attributed scrapes per Sunday.
+            parent_job_id=job.id,
             payload={"query": entry.get("title") or f"mal_id={entry['mal_id']}", "mal_id": entry["mal_id"]},
         )
         for entry in new_entries

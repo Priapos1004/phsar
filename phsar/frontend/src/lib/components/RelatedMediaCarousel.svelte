@@ -2,7 +2,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { formatSeason, resolveTitle, formatRelationType, formatMediaType } from '$lib/utils/formatString';
-	import { buildDetailHref } from '$lib/utils/navigation';
+	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
 	import { userSettings } from '$lib/stores/userSettings';
 	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
 	import { visibleMediaSet } from '$lib/stores/spoilerVisibility';
@@ -13,18 +13,35 @@
 
 	interface Props {
 		siblings: MediaSibling[];
+		/** Index in the chronological sibling chain where the current media slots.
+		 * 0 = before every sibling, siblings.length = after the last. */
+		currentPosition: number;
 		searchToken?: string | null;
+		fromParam?: DetailOrigin | null;
 	}
 
-	let { siblings, searchToken = null }: Props = $props();
+	let { siblings, currentPosition, searchToken = null, fromParam = null }: Props = $props();
 
 	let imgFailed = $state<Record<string, boolean>>({});
 </script>
 
+{#snippet hereMarker()}
+	<div
+		role="separator"
+		aria-label="Current media position in the chain"
+		class="snap-start shrink-0 flex flex-col items-center justify-center gap-1 px-1"
+	>
+		<div class="w-0.5 flex-1 min-h-4 bg-primary/60"></div>
+		<span class="rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider font-semibold text-primary-foreground bg-primary whitespace-nowrap">You are here</span>
+		<div class="w-0.5 flex-1 min-h-4 bg-primary/60"></div>
+	</div>
+{/snippet}
+
 <div class="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2 no-scrollbar">
-	{#each siblings as sibling}
+	{#each siblings as sibling, i}
+		{#if i === currentPosition}{@render hereMarker()}{/if}
 		<a
-			href={buildDetailHref('media', sibling.uuid, searchToken)}
+			href={buildDetailHref('media', sibling.uuid, { q: searchToken, from: fromParam })}
 			class="snap-start shrink-0 w-40 transition duration-200 transform hover:scale-[1.03]"
 		>
 			<Card.Root class="h-full {cls.cardGlass}">
@@ -70,4 +87,5 @@
 			</Card.Root>
 		</a>
 	{/each}
+	{#if currentPosition === siblings.length}{@render hereMarker()}{/if}
 </div>

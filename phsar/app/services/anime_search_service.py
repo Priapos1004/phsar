@@ -16,7 +16,7 @@ from app.schemas.anime_schema import (
     RelationTypeSummary,
 )
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
-from app.services.filter_service import SEASON_ORDER
+from app.services.filter_service import SEASON_ORDER, chronological_media_key
 from app.services.jikan_scraper import (
     AIRING_STATUS_CURRENTLY_AIRING,
     AIRING_STATUS_FINISHED_AIRING,
@@ -211,14 +211,15 @@ async def get_anime_detail(db: AsyncSession, anime_uuid: UUID) -> AnimeDetail:
     if not anime:
         raise AnimeNotFoundByUuidError(str(anime_uuid))
 
-    # Deterministic ordering: by season, then mal_id as tiebreaker.
-    # Ensures timeline chart "release order" is reliable regardless of DB row order.
+    # Deterministic ordering: by season, then mal_id as tiebreaker. Shared
+    # key via chronological_media_key so the timeline chart, related-media
+    # carousel, and spoiler frontier all walk the chain in the same order.
+    # SeasonType is a str-enum, so the dict lookup inside the helper hashes
+    # equivalently whether the column returns the enum or the raw string.
     media_list = sorted(
         anime.media,
-        key=lambda m: (
-            m.anime_season_year or 9999,
-            SEASON_ORDER.get(m.anime_season_name.value if m.anime_season_name else "", 0),
-            m.mal_id,
+        key=lambda m: chronological_media_key(
+            m.anime_season_year, m.anime_season_name, m.mal_id,
         ),
     )
     agg = _compute_anime_aggregates(media_list)

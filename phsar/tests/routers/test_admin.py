@@ -3,13 +3,14 @@ import uuid
 import pytest
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.models.anime import Anime
 from app.models.job import Job, JobKind, JobStatus
 from app.models.media import Media
 from app.models.media_studio import MediaStudio
 from app.models.merge_candidate import MergeCandidate, MergeCandidateStatus
 from app.models.studio import Studio
-from app.models.users import RoleType
+from app.models.users import RoleType, Users
 from tests._helpers import media_kwargs
 from tests.routers.conftest import CRON_AUTH_HEADER
 
@@ -495,3 +496,267 @@ async def test_backup_auto_requires_cron_token(cron_client):
         AUTO_BACKUP_URL, headers={"Authorization": "Bearer wrong"},
     )
     assert resp.status_code == 401
+
+
+STATS_URL = "/admin/stats/overview"
+
+
+@pytest.mark.asyncio
+async def test_stats_overview_returns_shape(client, admin_auth_headers):
+    """Endpoint returns the full nested shape — catalog totals, jobs_7d
+    per kind, activity_7d counters. Numbers depend on whatever the
+    rolled-back test DB contains, so this test only asserts the
+    structure + that every JobKind appears in jobs_7d.by_kind."""
+    resp = await client.get(STATS_URL, headers=admin_auth_headers)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+
+    assert set(data.keys()) == {"catalog", "jobs_7d", "activity_7d"}
+    assert set(data["catalog"].keys()) == {
+        "anime_count", "media_count", "anime_added_7d", "media_added_7d",
+    }
+    assert set(data["activity_7d"].keys()) == {
+        "active_users", "new_ratings", "scrapes_submitted",
+    }
+    kinds_returned = {row["kind"] for row in data["jobs_7d"]["by_kind"]}
+    assert kinds_returned == {k.value for k in JobKind}
+
+
+def _user_scrape_row(resp_json: dict) -> dict:
+    return next(
+        row for row in resp_json["jobs_7d"]["by_kind"]
+        if row["kind"] == JobKind.user_scrape.value
+    )
+
+
+async def _admin_user_id(db_session) -> int:
+    """The Job Health user_scrape row excludes system-attributed rows
+    (requested_by_user_id NULL), so seeded test jobs need a real user
+    to count. The admin is seeded at lifespan startup."""
+    row = (await db_session.execute(
+        select(Users).where(Users.username == settings.ADMIN_USERNAME)
+    )).scalars().one()
+    return row.id
+
+
+@pytest.mark.asyncio
+async def test_stats_overview_reflects_seeded_jobs(client, admin_auth_headers, db_session):
+    """Seed one succeeded user_scrape + one permanently-failed user_scrape
+    and verify the per-kind counters move accordingly. Failed-with-
+    retryable=False should bump `failed` but NOT `retryable_failed`."""
+    before = _user_scrape_row(
+        (await client.get(STATS_URL, headers=admin_auth_headers)).json()
+    )
+    admin_id = await _admin_user_id(db_session)
+
+    succeeded = Job(
+        kind=JobKind.user_scrape, status=JobStatus.succeeded,
+        payload={"query": "stats-test-succeeded"},
+        result_summary={"retryable": True},
+        requested_by_user_id=admin_id,
+    )
+    failed_permanent = Job(
+        kind=JobKind.user_scrape, status=JobStatus.failed,
+        payload={"query": "stats-test-failed"},
+        result_summary={"retryable": False},
+        requested_by_user_id=admin_id,
+    )
+    db_session.add_all([succeeded, failed_permanent])
+    await db_session.flush()
+
+    after = _user_scrape_row(
+        (await client.get(STATS_URL, headers=admin_auth_headers)).json()
+    )
+    assert after["succeeded"] - before["succeeded"] == 1
+    assert after["failed"] - before["failed"] == 1
+    # Permanently-failed must NOT bump retryable_failed — that's the
+    # whole point of the PermanentPhsarError marker.
+    assert after["retryable_failed"] - before["retryable_failed"] == 0
+
+
+@pytest.mark.asyncio
+async def test_stats_overview_excludes_system_user_scrapes(client, admin_auth_headers, db_session):
+    """user_scrape rows with requested_by_user_id NULL (seasonal-sweep
+    children) shouldn't bump the User scrape row in Job Health — that
+    surface is for user-submitted activity. Cover both branches: a
+    succeeded system row shouldn't bump `succeeded`, and a failed one
+    shouldn't bump `failed` (a Music/PV-filtered child would otherwise
+    pollute the success rate)."""
+    before = _user_scrape_row(
+        (await client.get(STATS_URL, headers=admin_auth_headers)).json()
+    )
+
+    db_session.add_all([
+        Job(
+            kind=JobKind.user_scrape, status=JobStatus.succeeded,
+            payload={"query": "system-test-ok", "mal_id": -99001},
+            requested_by_user_id=None,
+        ),
+        Job(
+            kind=JobKind.user_scrape, status=JobStatus.failed,
+            payload={"query": "system-test-fail", "mal_id": -99002},
+            result_summary={"retryable": False},
+            requested_by_user_id=None,
+        ),
+    ])
+    await db_session.flush()
+
+    after = _user_scrape_row(
+        (await client.get(STATS_URL, headers=admin_auth_headers)).json()
+    )
+    assert after["succeeded"] - before["succeeded"] == 0
+    assert after["failed"] - before["failed"] == 0
+    assert after["retryable_failed"] - before["retryable_failed"] == 0
+
+
+@pytest.mark.asyncio
+async def test_stats_overview_requires_admin(client, user_auth_headers):
+    resp = await client.get(STATS_URL, headers=user_auth_headers)
+    assert resp.status_code == 403
+
+
+JOBS_LOG_URL = "/admin/jobs"
+
+
+@pytest.mark.asyncio
+async def test_admin_jobs_log_returns_paginated_shape(client, admin_auth_headers, db_session):
+    """Seed two jobs and verify the page payload carries items + total +
+    limit + offset, with each row flattening requested_by to a username
+    string (or null for system jobs)."""
+    user_job = Job(
+        kind=JobKind.user_scrape, status=JobStatus.succeeded,
+        payload={"query": "jobs-log-test-user"},
+    )
+    system_job = Job(
+        kind=JobKind.update_sweep, status=JobStatus.succeeded,
+        payload={"source": "cron"},
+        requested_by_user_id=None,
+    )
+    db_session.add_all([user_job, system_job])
+    await db_session.flush()
+
+    resp = await client.get(JOBS_LOG_URL, headers=admin_auth_headers)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert set(data.keys()) == {"items", "total", "limit", "offset"}
+    assert data["limit"] == 50
+    assert data["offset"] == 0
+    assert data["total"] >= 2
+
+    # Every row carries the flattened username field (null for system jobs).
+    for row in data["items"]:
+        assert "requested_by_username" in row
+        assert "uuid" in row
+        assert "kind" in row
+
+
+@pytest.mark.asyncio
+async def test_admin_jobs_log_filters_by_kind(client, admin_auth_headers, db_session):
+    """kind filter narrows the result; status filter compose-able with kind."""
+    seed = Job(
+        kind=JobKind.backup, status=JobStatus.succeeded,
+        payload={"source": "manual"},
+    )
+    db_session.add(seed)
+    await db_session.flush()
+
+    resp = await client.get(
+        f"{JOBS_LOG_URL}?kind=backup",
+        headers=admin_auth_headers,
+    )
+    assert resp.status_code == 200
+    assert all(row["kind"] == "backup" for row in resp.json()["items"])
+
+
+@pytest.mark.asyncio
+async def test_admin_jobs_log_respects_limit_and_offset(client, admin_auth_headers, db_session):
+    """A small limit truncates the page; non-zero offset skips."""
+    # Seed 3 jobs so there's something to page through even on an empty DB.
+    for i in range(3):
+        db_session.add(Job(
+            kind=JobKind.user_scrape, status=JobStatus.succeeded,
+            payload={"query": f"jobs-log-page-{i}"},
+        ))
+    await db_session.flush()
+
+    page1 = (await client.get(f"{JOBS_LOG_URL}?limit=1", headers=admin_auth_headers)).json()
+    page2 = (await client.get(f"{JOBS_LOG_URL}?limit=1&offset=1", headers=admin_auth_headers)).json()
+    # Floor `total` at the seeded 3 so the offset-advances assertion below
+    # can't pass vacuously against unrelated rows from earlier tests.
+    assert page1["total"] >= 3
+    assert len(page1["items"]) == 1
+    assert len(page2["items"]) == 1
+    assert page1["items"][0]["uuid"] != page2["items"][0]["uuid"]
+
+
+@pytest.mark.asyncio
+async def test_admin_jobs_log_requires_admin(client, user_auth_headers):
+    resp = await client.get(JOBS_LOG_URL, headers=user_auth_headers)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_jobs_log_hides_children_by_default(client, admin_auth_headers, db_session):
+    """The default unfiltered view excludes rows with a non-null
+    parent_job_id, so seasonal-sweep children don't flood the list.
+    `?parent_uuid=<sweep>` returns just that sweep's children."""
+    parent = Job(kind=JobKind.seasonal_sweep, status=JobStatus.succeeded)
+    db_session.add(parent)
+    await db_session.flush()
+    children = [
+        Job(
+            kind=JobKind.user_scrape, status=JobStatus.succeeded,
+            payload={"query": f"clustered-child-{i}"},
+            parent_job_id=parent.id,
+        )
+        for i in range(3)
+    ]
+    db_session.add_all(children)
+    await db_session.flush()
+
+    default = (await client.get(JOBS_LOG_URL, headers=admin_auth_headers)).json()
+    default_uuids = {row["uuid"] for row in default["items"]}
+    child_uuids = {str(c.uuid) for c in children}
+    assert child_uuids.isdisjoint(default_uuids)
+    assert str(parent.uuid) in default_uuids
+
+    expanded = (await client.get(
+        f"{JOBS_LOG_URL}?parent_uuid={parent.uuid}", headers=admin_auth_headers,
+    )).json()
+    assert expanded["total"] == 3
+    assert {row["uuid"] for row in expanded["items"]} == child_uuids
+    for row in expanded["items"]:
+        assert row["parent_job_uuid"] == str(parent.uuid)
+
+
+CURATION_COUNTS_URL = "/admin/curation/pending-counts"
+
+
+@pytest.mark.asyncio
+async def test_curation_pending_counts_shape(client, admin_auth_headers):
+    resp = await client.get(CURATION_COUNTS_URL, headers=admin_auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert set(data.keys()) == {"merge", "split"}
+    assert isinstance(data["merge"], int)
+    assert isinstance(data["split"], int)
+    assert data["merge"] >= 0
+    assert data["split"] >= 0
+
+
+@pytest.mark.asyncio
+async def test_curation_pending_counts_requires_admin(client, user_auth_headers):
+    resp = await client.get(CURATION_COUNTS_URL, headers=user_auth_headers)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_jobs_log_unknown_parent_returns_empty(client, admin_auth_headers):
+    """A stale `?parent_uuid` (parent deleted between page load and
+    click) returns an empty page rather than 404 — the surrounding
+    view shouldn't break."""
+    resp = await client.get(
+        f"{JOBS_LOG_URL}?parent_uuid={uuid.uuid4()}", headers=admin_auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"items": [], "total": 0, "limit": 50, "offset": 0}

@@ -27,6 +27,17 @@ class MergeCandidateDAO(BaseDAO[MergeCandidate]):
         result = await db.execute(stmt)
         return result.scalars().first()
 
+    async def count_pending(self, db: AsyncSession) -> int:
+        """Cheap status='pending' count for the admin bell's pinned
+        reminder. The bell polls this on every tick when admin is
+        logged in, so it has to stay sub-millisecond — partial index
+        keeps the cardinality bounded to currently-pending rows."""
+        stmt = (
+            select(func.count(MergeCandidate.id))
+            .where(MergeCandidate.status == MergeCandidateStatus.pending)
+        )
+        return (await db.execute(stmt)).scalar_one()
+
     async def list_pending_with_anime(self, db: AsyncSession) -> list[MergeCandidate]:
         """List pending candidates with both anime + media + studios +
         relation-edge sidecars eagerly loaded. Admin UI shows side-by-side

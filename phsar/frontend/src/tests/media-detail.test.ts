@@ -75,6 +75,7 @@ const mockMediaDetail: MediaDetail = {
 			anime_season_year: 2024,
 		},
 	],
+	current_position: 1,
 };
 
 // Mock API

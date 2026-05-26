@@ -87,6 +87,9 @@ export interface MediaSibling {
 
 export interface MediaDetail extends MediaConnected {
 	sibling_media: MediaSibling[];
+	/** Insertion index for the "you are here" marker in the chronological
+	 * sibling order. 0 = current media precedes every sibling, sibling_media.length = trails all. */
+	current_position: number;
 }
 
 // Rating attribute enums
@@ -384,4 +387,56 @@ export interface BackupMetadata {
 	source: BackupSource;
 	content_hash?: string | null;
 	is_current?: boolean;
+}
+
+// Admin Overview stats — aggregate counts shown on the Overview tab
+export interface AdminCatalogStats {
+	anime_count: number;
+	media_count: number;
+	anime_added_7d: number;
+	media_added_7d: number;
+}
+
+export interface AdminJobKindStats {
+	kind: JobKind;
+	succeeded: number;
+	failed: number;
+	retryable_failed: number;
+}
+
+export interface AdminJobsStats {
+	by_kind: AdminJobKindStats[];
+}
+
+export interface AdminActivityStats {
+	active_users: number;
+	new_ratings: number;
+	scrapes_submitted: number;
+}
+
+export interface AdminOverviewStats {
+	catalog: AdminCatalogStats;
+	jobs_7d: AdminJobsStats;
+	activity_7d: AdminActivityStats;
+}
+
+// Admin Jobs Log — paginated all-jobs view with flattened requested_by.
+// `parent_job_uuid` is set on seasonal-sweep children so the Jobs Log can
+// collapse them under the sweep parent expander.
+export interface AdminJobResponse extends Job {
+	requested_by_username: string | null;
+	parent_job_uuid: string | null;
+}
+
+export interface AdminJobsPage {
+	items: AdminJobResponse[];
+	total: number;
+	limit: number;
+	offset: number;
+}
+
+// Admin bell pinned curation reminder — pending counts only, no detail
+export interface CurationPendingCounts {
+	merge: number;
+	split: number;
 }

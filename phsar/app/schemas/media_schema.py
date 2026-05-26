@@ -67,3 +67,8 @@ class MediaSibling(BaseModel):
 class MediaDetail(MediaConnected):
     """Full media detail with sibling media from the same anime."""
     sibling_media: list[MediaSibling] = []
+    # Insertion index for the "you are here" marker in the chronological
+    # sibling order — 0 means the current media precedes every sibling,
+    # len(sibling_media) means it follows them all. Required: 0 is a real
+    # position, so a default would mask a missing field.
+    current_position: int

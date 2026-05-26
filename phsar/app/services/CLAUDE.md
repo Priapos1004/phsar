@@ -118,6 +118,7 @@ Orchestrates BFS output into save/attach/merge decisions.
   - Anime variant uses a two-phase query (GROUP BY + HAVING for filter/order, then detail fetch) with majority-genre logic
   - **Anime-view filters mirror the card's derivation in `_compute_anime_aggregates`**, not per-media WHERE: `age_rating` filters against `MAX(age_rating_numeric)`, `airing_status` against the priority-collapsed value (Currently → Finished → Not yet aired). Otherwise an anime with one Finished side-story would surface under the "Finished" filter despite the card showing "Currently Airing"
 - **`filter_service.py`** — filter option values; view-type-aware for anime vs media ranges
+  - Also home to `chronological_media_key(season_year, season_name, mal_id)` — the project-wide sort key for media within an anime. Used by `spoiler_service` (frontier walk), `anime_search_service` (anime-detail media table + timeline chart), and `media_search_service` (related-media carousel + `current_position` marker). All three call sites go through this helper so the order users see in the carousel matches the anime page table matches what the frontier walks — diverging keys = silent UX bug
 
 ## Auth / settings / tokens
 
@@ -125,6 +126,7 @@ Orchestrates BFS output into save/attach/merge decisions.
 - **`user_settings_service.py`** — user settings CRUD + default creation
 - **`token_service.py`** — compressed JWT for shareable filter URLs
 - **`admin_service.py`** — registration token list + delete
+- **`admin_stats_service.py`** — aggregate counts for the admin Overview tab (catalog totals, 7d job health by kind with retryable-failed subset, 7d activity counters). All-aggregate by design — no per-user breakdowns; the Jobs Log surfaces that where it's needed for debugging. No caching (admin-only, queries are sub-150ms)
 
 ## Merge detection + reconciliation
 

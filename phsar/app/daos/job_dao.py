@@ -49,6 +49,85 @@ class JobDAO(BaseDAO[Job]):
         )
         return (await db.execute(stmt)).scalar_one()
 
+    async def count_user_scrapes_in_window(
+        self, db: AsyncSession, user_id: int, hours: int = 24
+    ) -> int:
+        """Counts user_scrape jobs by a user within the trailing window,
+        used to enforce the daily submission cap. Counts every status —
+        a failed scrape still hit MAL, so it shouldn't free up a slot.
+
+        Backed by ix_jobs_user_scrape_recent (partial composite on
+        user + created_at DESC, kind='user_scrape') so the lookup stays
+        O(in-window-rows) even for users with thousands of historical
+        scrapes."""
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        stmt = (
+            select(func.count(Job.id))
+            .where(Job.requested_by_user_id == user_id)
+            .where(Job.kind == JobKind.user_scrape)
+            .where(Job.created_at >= cutoff)
+        )
+        return (await db.execute(stmt)).scalar_one()
+
+    async def list_admin_paginated(
+        self,
+        db: AsyncSession,
+        *,
+        status: JobStatus | None = None,
+        kind: JobKind | None = None,
+        user_id: int | None = None,
+        created_after: datetime | None = None,
+        created_before: datetime | None = None,
+        parent_job_id: int | None = None,
+        roots_only: bool = True,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[Job], int]:
+        """Admin Jobs Log: paginated listing across every user. Returns
+        the page rows + the matching-total count. Newest-first by
+        created_at so the most recent activity surfaces immediately.
+
+        When `parent_job_id` is set, returns children of that parent;
+        ignores `roots_only`. When `roots_only` is True (default), hides
+        rows that have a parent so the admin's main list doesn't drown
+        in seasonal-sweep children — expand a parent row to see them.
+
+        Each Job eager-loads `requested_by` (for username flattening)
+        and `parent` (so the row's response can carry the parent's uuid
+        without a client-side join)."""
+        filters = []
+        if status is not None:
+            filters.append(Job.status == status)
+        if kind is not None:
+            filters.append(Job.kind == kind)
+        if user_id is not None:
+            filters.append(Job.requested_by_user_id == user_id)
+        if created_after is not None:
+            filters.append(Job.created_at >= created_after)
+        if created_before is not None:
+            filters.append(Job.created_at <= created_before)
+        if parent_job_id is not None:
+            filters.append(Job.parent_job_id == parent_job_id)
+        elif roots_only:
+            filters.append(Job.parent_job_id.is_(None))
+
+        total_stmt = select(func.count(Job.id))
+        if filters:
+            total_stmt = total_stmt.where(*filters)
+        total = (await db.execute(total_stmt)).scalar_one()
+
+        page_stmt = select(Job)
+        if filters:
+            page_stmt = page_stmt.where(*filters)
+        page_stmt = (
+            page_stmt.order_by(Job.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+            .options(selectinload(Job.requested_by), selectinload(Job.parent))
+        )
+        items = list((await db.execute(page_stmt)).scalars().all())
+        return items, total
+
     async def list_for_user(self, db: AsyncSession, user_id: int, limit: int = 25) -> list[Job]:
         """Recent jobs for the navbar bell. Active first (running, then queued),
         then finished by recency. The bell renders the response order directly,

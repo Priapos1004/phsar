@@ -11,6 +11,7 @@ this DB.
 """
 
 import uuid
+from uuid import UUID
 
 from app.core.config import settings
 from app.daos.job_dao import JobDAO
@@ -72,8 +73,6 @@ async def test_enqueue_scrape_enforces_per_user_cap(client, user_auth_headers, m
 async def test_enqueue_scrape_cap_excludes_finished_jobs(client, user_auth_headers, db_session, monkeypatch):
     """A succeeded job from a previous scrape doesn't block the next enqueue —
     only queued + running count toward the cap."""
-    from uuid import UUID
-
     monkeypatch.setattr(settings, "JOBS_PER_USER_LIMIT", 1)
 
     first = await client.post("/jobs/scrape", json={"query": _q("-older")}, headers=user_auth_headers)
@@ -85,6 +84,23 @@ async def test_enqueue_scrape_cap_excludes_finished_jobs(client, user_auth_heade
 
     second = await client.post("/jobs/scrape", json={"query": _q("-newer")}, headers=user_auth_headers)
     assert second.status_code == 200
+
+
+async def test_enqueue_scrape_enforces_daily_cap(client, user_auth_headers, db_session, monkeypatch):
+    """Daily cap counts succeeded jobs — finished work still occupies the
+    24h slot, otherwise a fast turnover would defeat the volume limit."""
+    monkeypatch.setattr(settings, "JOBS_DAILY_LIMIT", 3)
+
+    for _ in range(3):
+        ok = await client.post("/jobs/scrape", json={"query": _q()}, headers=user_auth_headers)
+        assert ok.status_code == 200
+        job = await dao.get_by_uuid(db_session, UUID(ok.json()["uuid"]))
+        job.status = JobStatus.succeeded
+        await db_session.flush()
+
+    over = await client.post("/jobs/scrape", json={"query": _q()}, headers=user_auth_headers)
+    assert over.status_code == 429
+    assert "daily limit" in over.json()["detail"].lower()
 
 
 async def test_enqueue_scrape_blocks_duplicate_recent_query(client, user_auth_headers):
@@ -123,8 +139,6 @@ async def test_enqueue_scrape_allows_retry_after_failed_job(
 ):
     """A failed job (e.g. MAL outage) should NOT lock the query out — the
     user must be able to retry."""
-    from uuid import UUID
-
     query = _q()
     first = await client.post(
         "/jobs/scrape", json={"query": query}, headers=user_auth_headers,

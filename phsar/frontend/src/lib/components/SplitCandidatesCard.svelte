@@ -5,6 +5,7 @@
     import * as Card from '$lib/components/ui/card';
     import { Badge } from '$lib/components/ui/badge';
     import { Split, X, RefreshCw, Search, ChevronRight, ChevronDown } from 'lucide-svelte';
+    import { bumpCurationRefresh } from '$lib/stores/jobs';
     import { formatRelationType } from '$lib/utils/formatString';
     import type {
         SplitBackfillResult,
@@ -62,6 +63,10 @@
             // detection (nested clusters, fresh merge candidates against
             // the new anime) lands on the next paint.
             await fetchCandidates();
+            // A successful split also touches merge candidates (post-split
+            // detection re-runs against the new anime), so bump curation
+            // refresh — covers both surfaces in one signal.
+            bumpCurationRefresh();
         } catch (err) {
             error = err instanceof ApiError ? err.detail : 'Failed to split';
         } finally {
@@ -79,6 +84,7 @@
                 ? 'No new split candidates found.'
                 : `Flagged ${result.inserted} new candidate${result.inserted === 1 ? '' : 's'}.`;
             await fetchCandidates();
+            if (result.inserted > 0) bumpCurationRefresh();
         } catch (err) {
             error = err instanceof ApiError ? err.detail : 'Failed to re-run detection';
         } finally {
@@ -94,6 +100,7 @@
             await api.post(`/admin/split-candidates/${uuid}/dismiss`, {});
             confirmDismissUuid = null;
             candidates = candidates.filter((c) => c.uuid !== uuid);
+            bumpCurationRefresh();
         } catch (err) {
             error = err instanceof ApiError ? err.detail : 'Failed to dismiss';
         } finally {
@@ -115,7 +122,7 @@
 <Card.Root>
     <Card.Header>
         <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold text-card-foreground">Split Candidates</h2>
+            <h2 class="text-lg font-semibold text-card-foreground">Split Candidates ({candidates.length})</h2>
             <div class="flex items-center gap-1">
                 <Button
                     variant="ghost"

@@ -1,6 +1,17 @@
 import enum
 
-from sqlalchemy import Column, DateTime, Enum, ForeignKey, Index, Integer, String, text
+from sqlalchemy import (
+    Column,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    desc,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
@@ -43,6 +54,16 @@ class Job(BaseModel):
         nullable=True,
     )
 
+    # Self-referential FK so seasonal_sweep can stamp the parent's id on each
+    # user_scrape child it enqueues. Admin Jobs Log collapses children under
+    # the parent row. ON DELETE SET NULL keeps the audit history intact if
+    # the parent ever gets deleted.
+    parent_job_id = Column(
+        Integer,
+        ForeignKey("jobs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     # Per-kind input. user_scrape stores {"query": ..., "mal_id": ...};
     # sweeps may stash their own selection criteria. JSONB keeps the schema
     # one table instead of three near-identical tables.
@@ -65,6 +86,7 @@ class Job(BaseModel):
     finished_at = Column(DateTime(timezone=True), nullable=True)
 
     requested_by = relationship("Users", lazy="raise")
+    parent = relationship("Job", remote_side="Job.id", lazy="raise")
 
     __table_args__ = (
         # Partial: only queued rows, ordered by created_at. The worker's
@@ -79,4 +101,39 @@ class Job(BaseModel):
         ),
         # Backs count_active_for_user (per-user submission cap).
         Index("ix_jobs_user_status", "requested_by_user_id", "status"),
+        # Backs JobDAO.list_admin_paginated — the Jobs Log tab's default
+        # (unfiltered) view does ORDER BY created_at DESC LIMIT 50 plus a
+        # matching COUNT. DESC pinned in metadata to match the migration
+        # so Alembic autogenerate doesn't keep flagging drift.
+        Index("ix_jobs_created_at_desc", desc("created_at")),
+        # Backs JobDAO.count_user_scrapes_in_window — the daily-cap
+        # check fires on every /jobs/scrape POST. Partial on user_scrape
+        # so the index stays small relative to the full jobs history.
+        Index(
+            "ix_jobs_user_scrape_recent",
+            "requested_by_user_id",
+            desc("created_at"),
+            postgresql_where=text("kind = 'user_scrape'"),
+        ),
+        # Backs `?parent_uuid=…` lookups on the admin Jobs Log when the
+        # admin expands a seasonal_sweep row. Partial — >99% of jobs are
+        # root rows with parent_job_id NULL, so the index only covers the
+        # small minority where lookups actually fire.
+        Index(
+            "ix_jobs_parent_job_id",
+            "parent_job_id",
+            postgresql_where=text("parent_job_id IS NOT NULL"),
+        ),
     )
+
+
+# Expression index — defined at module scope (rather than in __table_args__)
+# because the leading column is a JSONB extraction. Backs
+# JobDAO.find_recent_scrape_for_query, the dedup check that fires on every
+# /jobs/scrape POST.
+Index(
+    "ix_jobs_scrape_query",
+    func.lower(func.trim(Job.payload["query"].astext)),
+    Job.created_at.desc(),
+    postgresql_where=text("kind = 'user_scrape'"),
+)

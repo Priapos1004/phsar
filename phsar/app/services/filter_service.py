@@ -19,6 +19,26 @@ studio_dao = StudioDAO()
 
 SEASON_ORDER = {"Winter": 1, "Spring": 2, "Summer": 3, "Fall": 4}
 
+
+def chronological_media_key(
+    season_year: int | None,
+    season_name: str | None,
+    mal_id: int,
+) -> tuple:
+    """Project-wide chronological sort key for media within an anime.
+
+    Shared by `spoiler_service` (frontier walk), `anime_search_service`
+    (media table + timeline chart), and `media_search_service` (related-
+    media carousel + 'you are here' marker). Keep call sites going
+    through this helper — diverging keys make the three surfaces disagree
+    on order, which reads as a bug to users."""
+    return (
+        season_year or 9999,
+        SEASON_ORDER.get(season_name or "", 0),
+        mal_id,
+    )
+
+
 def sort_seasons(seasons: list[str]) -> list[str]:
     def season_sort_key(item):
         parts = item.split()

@@ -161,6 +161,39 @@ async def test_dismiss_leaves_db_untouched(db_session):
 
 
 @pytest.mark.asyncio
+async def test_dismiss_is_sticky_against_re_detection(db_session):
+    """Pre-fix: dismissing a candidate just flipped status to dismissed,
+    but the next detection's existence check filtered to pending only
+    and re-inserted a fresh candidate with the same signature. The fix
+    checks ALL prior rows (pending OR dismissed) for matching cluster
+    signature before inserting, honoring the admin's "no"."""
+    from app.daos.split_candidate_dao import SplitCandidateDAO
+
+    bnha, _, candidate_uuid = await _make_bnha_with_vigilante_candidate(db_session)
+    await dismiss(db_session, candidate_uuid)
+    await db_session.flush()
+
+    same_clusters = [{
+        "member_mal_ids": [960593, 961942],
+        "substance_member_mal_ids": [960593, 961942],
+        "suggested_anchor_mal_id": 960593,
+        "bridge_edges": [[931964, 960593, "spin-off"]],
+    }]
+    inserted = await SplitCandidateDAO().upsert_pending(
+        db_session, bnha.id, same_clusters, detected_by="scrape",
+    )
+    assert inserted is False
+
+    pending_count = (await db_session.execute(
+        select(SplitCandidate).where(
+            SplitCandidate.anime_id == bnha.id,
+            SplitCandidate.status == SplitCandidateStatus.pending,
+        )
+    )).scalars().all()
+    assert pending_count == []
+
+
+@pytest.mark.asyncio
 async def test_dismiss_resolved_candidate_raises(db_session):
     """Once dismissed or split, the candidate is terminal — a second
     dismiss raises 409 instead of silently re-flipping."""

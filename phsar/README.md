@@ -106,6 +106,7 @@ phsar/
 │   └── services/
 │       ├── _pg_subprocess.py
 │       ├── admin_service.py
+│       ├── admin_stats_service.py
 │       ├── anime_relation_service.py
 │       ├── anime_search_service.py
 │       ├── anime_service.py
@@ -155,7 +156,14 @@ phsar/
 │   │   │   │   ├── AttributeBadges.svelte
 │   │   │   │   ├── AttributeDetailBars.svelte
 │   │   │   │   ├── AttributeRadar.svelte
+│   │   │   │   ├── BackLink.svelte
 │   │   │   │   ├── BackupsCard.svelte
+│   │   │   │   ├── admin/
+│   │   │   │   │   ├── AdminJobsLogTab.svelte
+│   │   │   │   │   ├── AdminOverviewTab.svelte
+│   │   │   │   │   ├── AdminTabNav.svelte
+│   │   │   │   │   ├── RegistrationTokensCard.svelte
+│   │   │   │   │   └── types.ts
 │   │   │   │   ├── BulkRateDialog.svelte
 │   │   │   │   ├── DangerZone.svelte
 │   │   │   │   ├── DoubleRangeSlider.svelte
@@ -257,6 +265,7 @@ phsar/
 │   │       ├── maintenance-banner.test.ts
 │   │       ├── media-detail.test.ts
 │   │       ├── navbar.test.ts
+│   │       ├── navigation.test.ts
 │   │       ├── rating-modal.test.ts
 │   │       ├── searchbar.test.ts
 │   │       ├── spoiler-frontier.test.ts
@@ -284,6 +293,7 @@ phsar/
 ├── scripts/
 │   ├── audit_cross_franchise.py
 │   ├── audit_relation_backfill.py
+│   ├── backfill_seasonal_sweep_parents.py
 │   ├── delete_anime_by_title.py
 │   ├── find_anime.py
 │   ├── inspect_anime_relations.py
@@ -371,6 +381,10 @@ SEARCH_SECRET_KEY=supersecretsearchsecretkey
 # Max queued+running scrape jobs per user (bounds queue DEPTH, not parallelism
 # — the worker is sequential because of MAL's ~3 req/s rate limit).
 # JOBS_PER_USER_LIMIT=4
+# Max user_scrape submissions per user in any trailing 24h window. Counts
+# every status (succeeded/failed too) so transient MAL failures can't grant
+# unlimited retries; 51st submission returns 429.
+# JOBS_DAILY_LIMIT=50
 # Dedupe window for /jobs/scrape. Failed jobs don't count.
 # JOBS_DEDUPE_HOURS=24
 # Bounds the nightly update_sweep batch size.

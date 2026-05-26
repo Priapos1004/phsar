@@ -9,7 +9,7 @@ so the queries don't share a base.
 
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -42,6 +42,16 @@ class SplitCandidateDAO(BaseDAO[SplitCandidate]):
         stmt = select(SplitCandidate).where(SplitCandidate.uuid == uuid)
         return (await db.execute(stmt)).scalars().first()
 
+    async def count_pending(self, db: AsyncSession) -> int:
+        """Cheap status='pending' count for the admin bell's pinned
+        reminder — paired with MergeCandidateDAO.count_pending. Sub-
+        millisecond on the small pending set."""
+        stmt = (
+            select(func.count(SplitCandidate.id))
+            .where(SplitCandidate.status == SplitCandidateStatus.pending)
+        )
+        return (await db.execute(stmt)).scalar_one()
+
     async def list_pending_with_anime(
         self, db: AsyncSession
     ) -> list[SplitCandidate]:
@@ -62,23 +72,6 @@ class SplitCandidateDAO(BaseDAO[SplitCandidate]):
         )
         return list((await db.execute(stmt)).scalars().all())
 
-    async def get_pending_for_anime(
-        self, db: AsyncSession, anime_id: int
-    ) -> SplitCandidate | None:
-        """At most one pending row per anime by convention (upsert_pending
-        supersedes the existing one when the cluster payload changes).
-        Used by detection sites to check existence before recomputing."""
-        stmt = (
-            select(SplitCandidate)
-            .where(
-                SplitCandidate.anime_id == anime_id,
-                SplitCandidate.status == SplitCandidateStatus.pending,
-            )
-            .order_by(SplitCandidate.created_at.desc())
-            .limit(1)
-        )
-        return (await db.execute(stmt)).scalars().first()
-
     async def upsert_pending(
         self,
         db: AsyncSession,
@@ -89,12 +82,14 @@ class SplitCandidateDAO(BaseDAO[SplitCandidate]):
         """Insert a pending split_candidate for `anime_id`, OR supersede
         an existing one if its cluster signature has changed.
 
-        Returns True if a row was inserted or superseded; False if an
-        existing pending row already matches this cluster payload exactly
-        (no-op idempotent re-detection — the common case after a sweep).
+        Returns True if a row was inserted or superseded; False if a
+        prior candidate (pending OR dismissed) with this exact cluster
+        signature already exists — admin's previous decision sticks and
+        re-detection is a no-op (the common case after a sweep or a
+        backfill pass).
 
-        Supersede semantics: dismissing the old row and inserting a new
-        one preserves admin's prior decisions on other anime (the
+        Supersede semantics: dismissing the old pending row and inserting
+        a new one preserves admin's prior decisions on other anime (the
         dismissed status survives) while ensuring the live queue always
         reflects the latest detection. Two pending rows for the same
         anime should never coexist — the index `ix_split_candidates_pending`
@@ -102,13 +97,35 @@ class SplitCandidateDAO(BaseDAO[SplitCandidate]):
         anime via DAO logic avoids needing a partial-unique-constraint
         migration (PostgreSQL doesn't make those cheap in Alembic).
         """
-        existing = await self.get_pending_for_anime(db, anime_id)
         new_signature = _cluster_signature(clusters)
-        if existing is not None:
-            if _cluster_signature(existing.clusters) == new_signature:
+
+        # Sticky dismissal: if admin previously dismissed (or split — for
+        # symmetry) a candidate with this exact cluster signature, don't
+        # re-flag. Without this guard, dismissing a candidate that the
+        # detector still recomputes the same way next sweep would just
+        # bounce back as a fresh pending row, defeating the dismissal.
+        prior_history = await self._candidates_for_anime(db, anime_id)
+        matching_history = next(
+            (c for c in prior_history if _cluster_signature(c.clusters) == new_signature),
+            None,
+        )
+        if matching_history is not None:
+            if matching_history.status == SplitCandidateStatus.pending:
+                # Already pending with matching signature — idempotent no-op.
                 return False
-            existing.status = SplitCandidateStatus.dismissed
-            existing.notes = (existing.notes or "") + " [auto-superseded]"
+            # Dismissed or split with matching signature — admin's call stands.
+            return False
+
+        # Different signature than any historical row: this is genuinely new
+        # contamination. Supersede the currently-pending row (if any) so
+        # the queue surfaces only the latest shape.
+        existing_pending = next(
+            (c for c in prior_history if c.status == SplitCandidateStatus.pending),
+            None,
+        )
+        if existing_pending is not None:
+            existing_pending.status = SplitCandidateStatus.dismissed
+            existing_pending.notes = (existing_pending.notes or "") + " [auto-superseded]"
             await db.flush()
 
         stmt = pg_insert(SplitCandidate).values(
@@ -119,3 +136,17 @@ class SplitCandidateDAO(BaseDAO[SplitCandidate]):
         )
         await db.execute(stmt)
         return True
+
+    async def _candidates_for_anime(
+        self, db: AsyncSession, anime_id: int
+    ) -> list[SplitCandidate]:
+        """All split_candidate rows for an anime regardless of status.
+        Used by upsert_pending to honor sticky dismissals — admin's
+        previous "no" on a given cluster signature shouldn't be
+        re-flagged by the next detection."""
+        stmt = (
+            select(SplitCandidate)
+            .where(SplitCandidate.anime_id == anime_id)
+            .order_by(SplitCandidate.created_at.asc())
+        )
+        return list((await db.execute(stmt)).scalars().all())
