@@ -644,3 +644,49 @@ async def test_admin_jobs_log_respects_limit_and_offset(client, admin_auth_heade
 async def test_admin_jobs_log_requires_admin(client, user_auth_headers):
     resp = await client.get(JOBS_LOG_URL, headers=user_auth_headers)
     assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_jobs_log_hides_children_by_default(client, admin_auth_headers, db_session):
+    """The default unfiltered view excludes rows with a non-null
+    parent_job_id, so seasonal-sweep children don't flood the list.
+    `?parent_uuid=<sweep>` returns just that sweep's children."""
+    parent = Job(kind=JobKind.seasonal_sweep, status=JobStatus.succeeded)
+    db_session.add(parent)
+    await db_session.flush()
+    children = [
+        Job(
+            kind=JobKind.user_scrape, status=JobStatus.succeeded,
+            payload={"query": f"clustered-child-{i}"},
+            parent_job_id=parent.id,
+        )
+        for i in range(3)
+    ]
+    db_session.add_all(children)
+    await db_session.flush()
+
+    default = (await client.get(JOBS_LOG_URL, headers=admin_auth_headers)).json()
+    default_uuids = {row["uuid"] for row in default["items"]}
+    child_uuids = {str(c.uuid) for c in children}
+    assert child_uuids.isdisjoint(default_uuids)
+    assert str(parent.uuid) in default_uuids
+
+    expanded = (await client.get(
+        f"{JOBS_LOG_URL}?parent_uuid={parent.uuid}", headers=admin_auth_headers,
+    )).json()
+    assert expanded["total"] == 3
+    assert {row["uuid"] for row in expanded["items"]} == child_uuids
+    for row in expanded["items"]:
+        assert row["parent_job_uuid"] == str(parent.uuid)
+
+
+@pytest.mark.asyncio
+async def test_admin_jobs_log_unknown_parent_returns_empty(client, admin_auth_headers):
+    """A stale `?parent_uuid` (parent deleted between page load and
+    click) returns an empty page rather than 404 — the surrounding
+    view shouldn't break."""
+    resp = await client.get(
+        f"{JOBS_LOG_URL}?parent_uuid={uuid.uuid4()}", headers=admin_auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"items": [], "total": 0, "limit": 50, "offset": 0}

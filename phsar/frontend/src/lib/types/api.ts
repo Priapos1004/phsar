@@ -420,9 +420,12 @@ export interface AdminOverviewStats {
 	activity_7d: AdminActivityStats;
 }
 
-// Admin Jobs Log — paginated all-jobs view with flattened requested_by
+// Admin Jobs Log — paginated all-jobs view with flattened requested_by.
+// `parent_job_uuid` is set on seasonal-sweep children so the Jobs Log can
+// collapse them under the sweep parent expander.
 export interface AdminJobResponse extends Job {
 	requested_by_username: string | null;
+	parent_job_uuid: string | null;
 }
 
 export interface AdminJobsPage {

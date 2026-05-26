@@ -53,6 +53,16 @@ class Job(BaseModel):
         nullable=True,
     )
 
+    # Self-referential FK so seasonal_sweep can stamp the parent's id on each
+    # user_scrape child it enqueues. Admin Jobs Log collapses children under
+    # the parent row. ON DELETE SET NULL keeps the audit history intact if
+    # the parent ever gets deleted.
+    parent_job_id = Column(
+        Integer,
+        ForeignKey("jobs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     # Per-kind input. user_scrape stores {"query": ..., "mal_id": ...};
     # sweeps may stash their own selection criteria. JSONB keeps the schema
     # one table instead of three near-identical tables.
@@ -75,6 +85,7 @@ class Job(BaseModel):
     finished_at = Column(DateTime(timezone=True), nullable=True)
 
     requested_by = relationship("Users", lazy="raise")
+    parent = relationship("Job", remote_side="Job.id", lazy="raise")
 
     __table_args__ = (
         # Partial: only queued rows, ordered by created_at. The worker's
@@ -102,6 +113,15 @@ class Job(BaseModel):
             "requested_by_user_id",
             "created_at",
             postgresql_where=text("kind = 'user_scrape'"),
+        ),
+        # Backs `?parent_uuid=…` lookups on the admin Jobs Log when the
+        # admin expands a seasonal_sweep row. Partial — >99% of jobs are
+        # root rows with parent_job_id NULL, so the index only covers the
+        # small minority where lookups actually fire.
+        Index(
+            "ix_jobs_parent_job_id",
+            "parent_job_id",
+            postgresql_where=text("parent_job_id IS NOT NULL"),
         ),
     )
 

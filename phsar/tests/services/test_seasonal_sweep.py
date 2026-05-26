@@ -72,10 +72,17 @@ async def cleanup_seasonal_children():
     started_at = datetime.now(timezone.utc)
     yield
     async with async_session_maker() as s:
+        # Children first — the FK on parent_job_id is ON DELETE SET NULL,
+        # which would orphan the children if we dropped the parent first.
         await s.execute(
             delete(Job)
             .where(Job.kind == JobKind.user_scrape)
             .where(Job.requested_by_user_id.is_(None))
+            .where(Job.created_at >= started_at)
+        )
+        await s.execute(
+            delete(Job)
+            .where(Job.kind == JobKind.seasonal_sweep)
             .where(Job.created_at >= started_at)
         )
         await s.commit()
@@ -133,10 +140,18 @@ def _patch_progress(monkeypatch) -> None:
     )
 
 
-async def _run_dispatcher(job_id: int = 9100) -> dict:
+async def _run_dispatcher() -> dict:
+    """Insert a real seasonal_sweep row so the dispatcher's children can
+    set parent_job_id=<row.id> without tripping the FK. Pre-FK tests
+    passed a synthetic id via a fake-object shim; that no longer works.
+    `cleanup_seasonal_children` removes both the parent and the spawned
+    children by created_at window."""
     async with async_session_maker() as session:
-        job = type("FakeJob", (), {"id": job_id})()
-        return await seasonal_sweep_dispatcher(session, job)
+        parent = Job(kind=JobKind.seasonal_sweep, status=JobStatus.running)
+        session.add(parent)
+        await session.commit()
+        await session.refresh(parent)
+        return await seasonal_sweep_dispatcher(session, parent)
 
 
 async def _fetch_seasonal_children(after: datetime) -> list[Job]:
@@ -180,7 +195,7 @@ async def test_dispatcher_enqueues_only_new_mal_ids(
     monkeypatch.setattr("app.services.seasonal_sweep_dispatcher.job_worker.notify", lambda: None)
 
     started = datetime.now(timezone.utc)
-    summary = await _run_dispatcher(job_id=9001)
+    summary = await _run_dispatcher()
 
     assert summary == {
         "season_entries": 4,
@@ -192,6 +207,11 @@ async def test_dispatcher_enqueues_only_new_mal_ids(
     assert sorted(c.payload["mal_id"] for c in children) == sorted(
         [new_a_mal_id, new_b_mal_id],
     )
+    # All children share one non-null parent_job_id pointing at a real
+    # seasonal_sweep row — the admin Jobs Log relies on this to collapse
+    # them under the parent expander.
+    parent_ids = {c.parent_job_id for c in children}
+    assert len(parent_ids) == 1 and None not in parent_ids
     for child in children:
         assert child.kind is JobKind.user_scrape
         assert child.status is JobStatus.queued
@@ -220,7 +240,7 @@ async def test_dispatcher_dedupes_against_existing_media_mal_id(
     monkeypatch.setattr("app.services.seasonal_sweep_dispatcher.job_worker.notify", lambda: None)
 
     started = datetime.now(timezone.utc)
-    summary = await _run_dispatcher(job_id=9201)
+    summary = await _run_dispatcher()
 
     assert summary["new_entries_enqueued"] == 0
     assert summary["dedup_skipped"] == 1
@@ -241,7 +261,7 @@ async def test_dispatcher_empty_season_returns_zeros(monkeypatch):
         lambda: notify_calls.append(1),
     )
 
-    summary = await _run_dispatcher(job_id=9301)
+    summary = await _run_dispatcher()
 
     assert summary == {
         "season_entries": 0,
@@ -269,7 +289,7 @@ async def test_dispatcher_notifies_worker_after_enqueue(
         lambda: notify_calls.append(1),
     )
 
-    await _run_dispatcher(job_id=9401)
+    await _run_dispatcher()
 
     assert notify_calls == [1]
 
@@ -290,7 +310,7 @@ async def test_dispatcher_skips_entries_with_missing_mal_id(
     monkeypatch.setattr("app.services.seasonal_sweep_dispatcher.job_worker.notify", lambda: None)
 
     started = datetime.now(timezone.utc)
-    summary = await _run_dispatcher(job_id=9501)
+    summary = await _run_dispatcher()
 
     assert summary["new_entries_enqueued"] == 1
     assert summary["dedup_skipped"] == 2
@@ -587,7 +607,7 @@ async def test_dispatcher_dedupes_duplicate_mal_ids_within_one_run(
     monkeypatch.setattr("app.services.seasonal_sweep_dispatcher.job_worker.notify", lambda: None)
 
     started = datetime.now(timezone.utc)
-    summary = await _run_dispatcher(job_id=9601)
+    summary = await _run_dispatcher()
 
     assert summary == {
         "season_entries": 5,

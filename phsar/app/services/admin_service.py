@@ -65,7 +65,7 @@ def _job_to_admin_response(job: Job) -> AdminJobResponse:
     `model_validate(job.__dict__)` would skip SQLAlchemy's lazy-attribute
     machinery and surface internal state, and `model_validate(job)` with
     `from_attributes=True` can't supply the synthetic
-    `requested_by_username` field."""
+    `requested_by_username` / `parent_job_uuid` fields."""
     return AdminJobResponse(
         uuid=job.uuid,
         kind=job.kind,
@@ -80,6 +80,7 @@ def _job_to_admin_response(job: Job) -> AdminJobResponse:
         started_at=job.started_at,
         finished_at=job.finished_at,
         requested_by_username=job.requested_by.username if job.requested_by else None,
+        parent_job_uuid=job.parent.uuid if job.parent else None,
     )
 
 
@@ -91,13 +92,29 @@ async def list_jobs_paginated(
     user_id: int | None,
     created_after: datetime | None,
     created_before: datetime | None,
+    parent_uuid: UUID | None,
     limit: int,
     offset: int,
 ) -> AdminJobsPage:
+    """When `parent_uuid` is set, returns only the children of that
+    parent. Otherwise filters out child rows (parent_job_id IS NULL) so
+    the main Jobs Log isn't dominated by seasonal-sweep children — admin
+    expands a sweep row to see them."""
+    parent_job_id: int | None = None
+    if parent_uuid is not None:
+        parent_job = await job_dao.get_by_uuid(db, parent_uuid)
+        # Unknown parent → empty page (don't 404; an admin reload after a
+        # parent deletion shouldn't break the surrounding view).
+        if parent_job is None:
+            return AdminJobsPage(items=[], total=0, limit=limit, offset=offset)
+        parent_job_id = parent_job.id
+
     items, total = await job_dao.list_admin_paginated(
         db,
         status=status, kind=kind, user_id=user_id,
         created_after=created_after, created_before=created_before,
+        parent_job_id=parent_job_id,
+        roots_only=parent_uuid is None,
         limit=limit, offset=offset,
     )
     return AdminJobsPage(

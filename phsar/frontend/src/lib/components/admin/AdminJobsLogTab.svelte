@@ -6,8 +6,9 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Label } from '$lib/components/ui/label';
+	import { ChevronRight } from 'lucide-svelte';
 	import { JOB_KIND_LABELS, formatJobKind, formatShortDateTime } from '$lib/utils/formatString';
-	import type { AdminJobsPage, JobKind, JobStatus } from '$lib/types/api';
+	import type { AdminJobResponse, AdminJobsPage, JobKind, JobStatus } from '$lib/types/api';
 
 	const PAGE_SIZE = 50;
 
@@ -77,6 +78,49 @@
 	function gotoPage(newOffset: number) {
 		offset = newOffset;
 		void load();
+	}
+
+	// Per-parent expand state. The seasonal_sweep dispatcher is the only
+	// kind that currently spawns parented children, but the gate below
+	// (kind === 'seasonal_sweep') is the *visual* guard — the children
+	// lookup itself accepts any uuid, so future parent-stamping kinds
+	// (e.g. update_sweep child probes) would Just Work.
+	// Carry the response total alongside the rows so the renderer can
+	// surface truncation honestly if a sweep ever exceeds CHILDREN_LIMIT.
+	const CHILDREN_LIMIT = 500;
+	type ChildrenState = { items: AdminJobResponse[]; total: number } | 'loading' | { error: string };
+	let childrenByParent = $state<Record<string, ChildrenState>>({});
+	let expandedUuids = $state<Set<string>>(new Set());
+
+	function isLoaded(s: ChildrenState | undefined): s is { items: AdminJobResponse[]; total: number } {
+		return typeof s === 'object' && s !== null && 'items' in s;
+	}
+
+	async function toggleExpand(parentUuid: string) {
+		const next = new Set(expandedUuids);
+		if (next.has(parentUuid)) {
+			next.delete(parentUuid);
+			expandedUuids = next;
+			return;
+		}
+		next.add(parentUuid);
+		expandedUuids = next;
+		if (isLoaded(childrenByParent[parentUuid])) return;
+		childrenByParent = { ...childrenByParent, [parentUuid]: 'loading' };
+		try {
+			const resp = await api.get<AdminJobsPage>(
+				`/admin/jobs?parent_uuid=${parentUuid}&limit=${CHILDREN_LIMIT}`,
+			);
+			childrenByParent = {
+				...childrenByParent,
+				[parentUuid]: { items: resp.items, total: resp.total },
+			};
+		} catch (err) {
+			childrenByParent = {
+				...childrenByParent,
+				[parentUuid]: { error: err instanceof ApiError ? err.detail : 'Failed to load children' },
+			};
+		}
 	}
 
 	const STATUS_BADGE: Record<JobStatus, string> = {
@@ -170,6 +214,7 @@
 					<table class="w-full text-sm">
 						<thead>
 							<tr class="text-left text-xs uppercase tracking-wide text-muted-foreground border-b border-border">
+								<th class="py-2 pr-2 font-medium w-6"></th>
 								<th class="py-2 pr-3 font-medium">Created</th>
 								<th class="py-2 pr-3 font-medium">Kind</th>
 								<th class="py-2 pr-3 font-medium">Status</th>
@@ -179,7 +224,21 @@
 						</thead>
 						<tbody>
 							{#each page.items as row (row.uuid)}
+								{@const expanded = expandedUuids.has(row.uuid)}
+								{@const expandable = row.kind === 'seasonal_sweep'}
 								<tr class="border-b border-border/50 align-top">
+									<td class="py-2 pr-2 w-6">
+										{#if expandable}
+											<button
+												type="button"
+												class="text-muted-foreground hover:text-card-foreground transition"
+												aria-label={expanded ? 'Collapse children' : 'Expand children'}
+												onclick={() => void toggleExpand(row.uuid)}
+											>
+												<ChevronRight class="size-4 transition-transform {expanded ? 'rotate-90' : ''}" />
+											</button>
+										{/if}
+									</td>
 									<td class="py-2 pr-3 text-card-foreground whitespace-nowrap">{formatShortDateTime(row.created_at)}</td>
 									<td class="py-2 pr-3">
 										<Badge variant="secondary" class="text-[11px]">{row.kind}</Badge>
@@ -198,6 +257,56 @@
 										{/if}
 									</td>
 								</tr>
+								{#if expanded}
+									{@const childState = childrenByParent[row.uuid]}
+									{#if childState === 'loading'}
+										<tr class="border-b border-border/30 bg-muted/10">
+											<td></td>
+											<td class="py-2 pr-3 text-xs text-muted-foreground italic" colspan="5">Loading children…</td>
+										</tr>
+									{:else if childState && !isLoaded(childState)}
+										<tr class="border-b border-border/30 bg-muted/10">
+											<td></td>
+											<td class="py-2 pr-3 text-xs text-destructive" colspan="5">{childState.error}</td>
+										</tr>
+									{:else if isLoaded(childState) && childState.items.length === 0}
+										<tr class="border-b border-border/30 bg-muted/10">
+											<td></td>
+											<td class="py-2 pr-3 text-xs text-muted-foreground italic" colspan="5">No child jobs were enqueued.</td>
+										</tr>
+									{:else if isLoaded(childState)}
+										{#each childState.items as child (child.uuid)}
+											<tr class="border-b border-border/30 bg-muted/10 align-top">
+												<td class="py-1.5 pr-2 border-l-2 border-primary/40"></td>
+												<td class="py-1.5 pr-3 text-card-foreground whitespace-nowrap text-xs">{formatShortDateTime(child.created_at)}</td>
+												<td class="py-1.5 pr-3">
+													<Badge variant="secondary" class="text-[10px]">{child.kind}</Badge>
+												</td>
+												<td class="py-1.5 pr-3">
+													<Badge class="text-[10px] {STATUS_BADGE[child.status]}">{child.status}</Badge>
+												</td>
+												<td class="py-1.5 pr-3 text-card-foreground text-xs">
+													{child.requested_by_username ?? 'system'}
+												</td>
+												<td class="py-1.5 pr-3 text-card-foreground/80 max-w-md truncate text-xs">
+													{#if child.status === 'failed' && child.error_message}
+														<span class="text-destructive">{child.error_message}</span>
+													{:else}
+														{payloadSummary(child)}
+													{/if}
+												</td>
+											</tr>
+										{/each}
+										{#if childState.total > childState.items.length}
+											<tr class="border-b border-border/30 bg-muted/10">
+												<td class="py-1.5 pr-2 border-l-2 border-primary/40"></td>
+												<td class="py-1.5 pr-3 text-xs text-amber-400 italic" colspan="5">
+													Showing {childState.items.length} of {childState.total} children — the rest are older than the {CHILDREN_LIMIT}-row cap.
+												</td>
+											</tr>
+										{/if}
+									{/if}
+								{/if}
 							{/each}
 						</tbody>
 					</table>

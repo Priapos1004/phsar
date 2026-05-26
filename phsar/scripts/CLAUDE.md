@@ -23,6 +23,7 @@ python -m scripts.<script_name> [args]
 | `inspect_anime_relations.py` | read-only | Per-anime detail: prints media count, every Media row's mal_id/type/relation_type/title, and the contents of each `MediaRelationEdges` sidecar. The first place to look when investigating a contamination case. |
 | `inspect_jobs.py` | read-only | Inspect the `jobs` table — queued/running/recently-finished rows with progress fields. Use when worker behavior is suspect (a job appears stuck, a sweep didn't fire, the bell is showing stale state). |
 | `delete_anime_by_title.py` | **mutates** | Delete Anime rows by title substring. Dry-runs by default; pass `--apply` to actually delete. FK cascades clean up media + ratings + watchlists + merge/split candidates. Use to reset state between re-scrape verification tests. |
+| `backfill_seasonal_sweep_parents.py` | **mutates** | One-shot historical fix: attributes pre-clustering `user_scrape` children with `requested_by_user_id IS NULL` to the most recent `seasonal_sweep` whose `created_at` precedes them. Safe because `seasonal_sweep_dispatcher` is the only production source of NULL-user user_scrapes. Idempotent — only touches rows where `parent_job_id IS NULL`. Already applied to the dev DB; kept around so a future restored backup can be cleaned up the same way. |
 
 ## Example invocations
 

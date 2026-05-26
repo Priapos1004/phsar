@@ -89,17 +89,23 @@ async def list_jobs(
     user_id: int | None = Query(default=None, ge=1),
     created_after: datetime | None = Query(default=None),
     created_before: datetime | None = Query(default=None),
-    limit: int = Query(default=50, ge=1, le=200),
+    parent_uuid: UUID | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ):
     """Paginated all-jobs list for the admin Jobs Log tab. Newest-first
     by created_at. The frontend renders this directly — no client-side
     re-sort. Bound `limit` at 200 so a misclick doesn't pull thousands
-    of rows over the wire."""
+    of rows over the wire.
+
+    Without `parent_uuid`, returns only root rows (parent_job_id IS NULL)
+    so the main list doesn't drown in seasonal-sweep children. Set
+    `parent_uuid` to expand a single seasonal_sweep row."""
     return await admin_service.list_jobs_paginated(
         db,
         status=status, kind=kind, user_id=user_id,
         created_after=created_after, created_before=created_before,
+        parent_uuid=parent_uuid,
         limit=limit, offset=offset,
     )
 

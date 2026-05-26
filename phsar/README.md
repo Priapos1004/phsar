@@ -293,6 +293,7 @@ phsar/
 ├── scripts/
 │   ├── audit_cross_franchise.py
 │   ├── audit_relation_backfill.py
+│   ├── backfill_seasonal_sweep_parents.py
 │   ├── delete_anime_by_title.py
 │   ├── find_anime.py
 │   ├── inspect_anime_relations.py

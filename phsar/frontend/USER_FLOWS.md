@@ -356,6 +356,7 @@ Each anime search result card shows:
 
 ### 10.1c Jobs Log tab
 - Paginated all-jobs table sourced from `GET /admin/jobs` (50 rows per page, newest-first by `created_at`). Backed by `ix_jobs_created_at_desc` so the default unfiltered scan + COUNT stays cheap as the jobs table grows
+- **Clustering**: the default view hides rows whose `parent_job_id` is set, so the list isn't dominated by ~50 system user_scrape children that land after every Sunday's seasonal_sweep. Each `seasonal_sweep` row renders an expander chevron — clicking fetches `?parent_uuid=<UUID>&limit=500` and renders the children inline below the parent, indented with a left primary-tinted border. Re-collapse hides them without re-fetching (state cached per parent). If a sweep ever exceeds the 500-row cap, the expanded view surfaces an amber "Showing X of Y children — rest are older than the 500-row cap" notice rather than silently truncating
 - Filters: **Kind** dropdown (All / user_scrape / update_sweep / seasonal_sweep / backup / restore) and **Status** dropdown (All / queued / running / succeeded / failed). Changing either filter resets pagination to page 1 — keeping a stale offset against a narrower filter would strand the admin past the result tail. A monotonic request-id guards against a fast filter-then-page click letting an older response overwrite the newer state
 - Columns:
   - **Created** — short datetime

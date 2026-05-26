@@ -77,7 +77,7 @@ FastAPI endpoint definitions. Each router maps to an API prefix.
 
 - **`/admin`** — admin-only operations
   - `GET /admin/stats/overview` — aggregate stats for the admin Overview tab (catalog totals, 7d job health by kind with retryable-failed subset, 7d activity counters). Aggregate only — no per-user breakdowns; the Jobs Log surfaces those where they're needed for debugging
-  - `GET /admin/jobs` — paginated all-jobs listing for the Jobs Log tab. Filters by status/kind/user_id/created_after/created_before; returns `AdminJobResponse` rows with `requested_by_username` flattened from the eager-loaded relationship. Backed by `ix_jobs_created_at_desc` (newest-first scan + matching COUNT)
+  - `GET /admin/jobs` — paginated all-jobs listing for the Jobs Log tab. Filters by status/kind/user_id/created_after/created_before; returns `AdminJobResponse` rows with `requested_by_username` flattened from the eager-loaded relationship and `parent_job_uuid` for clustered children. Backed by `ix_jobs_created_at_desc` (newest-first scan + matching COUNT). Default hides children (filters `parent_job_id IS NULL`); `?parent_uuid=<UUID>` expands a single seasonal_sweep's flock via the partial `ix_jobs_parent_job_id` index. `limit` capped at 500 so a sweep with hundreds of children can be expanded without paging
   - Registration token management (list, create, delete)
   - Database backups (list, download, delete, restore, upload)
     - `POST /admin/backups` and `POST /admin/backups/auto` (cron-token authed) both enqueue a `backup` job and return 202 with the job uuid so the request thread doesn't block on `pg_dump`
@@ -279,6 +279,7 @@ Quick map:
   - Crash recovery: `JobDAO.reap_orphans` runs at lifespan startup, marks `running` → `failed`
   - Bell cadence: 2s active poll while anything is queued/running, 30s idle
   - Optimistic-stub pattern: pages that enqueue push a `queued` stub keyed on `job_uuid` into `optimisticJobs` store; bell merges optimistic ∪ fetched (UUID-deduped); `reconcileOptimisticJobs(fresh)` prunes landed entries
+  - Parent-child clustering: `seasonal_sweep_dispatcher` stamps `parent_job_id=parent.id` on every enqueued `user_scrape` child (self-referential FK with `ON DELETE SET NULL` so deleting the parent doesn't cascade-delete audit history). Backs the admin Jobs Log expander — default list hides children (`parent_job_id IS NULL`), `?parent_uuid=<UUID>` returns the flock under that sweep. Historical pre-FK rows can be retro-clustered via `scripts/backfill_seasonal_sweep_parents.py` (safe because the dispatcher is the only production source of NULL-user user_scrapes)
 - **Maintenance mode**: destructive ops flip `core/maintenance.py`'s `_active` flag
   - Triggers: backup restore (synchronous, request-scoped), `update_sweep`/`seasonal_sweep` (worker brackets in try/finally)
   - `MaintenanceGateMiddleware` (pure ASGI class in `core/maintenance_middleware.py`) returns 503 `{maintenance: true}` for non-allowlisted requests

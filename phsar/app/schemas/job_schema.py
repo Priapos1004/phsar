@@ -56,8 +56,13 @@ class AdminJobResponse(JobResponse):
     admin can attribute user-submitted scrapes without joining client-side
     against /users. Stays as a subclass (not a flag on JobResponse) so
     /jobs/mine — owner-scoped, never needs the lookup — can't leak
-    usernames by accident."""
+    usernames by accident.
+
+    `parent_job_uuid` exposes the seasonal_sweep parent (or null) so the
+    Jobs Log can collapse the flock of system user_scrape children under
+    their sweep row."""
     requested_by_username: str | None
+    parent_job_uuid: UUID | None
 
 
 class AdminJobsPage(BaseModel):

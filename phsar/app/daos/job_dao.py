@@ -78,6 +78,8 @@ class JobDAO(BaseDAO[Job]):
         user_id: int | None = None,
         created_after: datetime | None = None,
         created_before: datetime | None = None,
+        parent_job_id: int | None = None,
+        roots_only: bool = True,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[Job], int]:
@@ -85,8 +87,14 @@ class JobDAO(BaseDAO[Job]):
         the page rows + the matching-total count. Newest-first by
         created_at so the most recent activity surfaces immediately.
 
-        Each Job eager-loads `requested_by` so the admin response can
-        flatten the username without a per-row N+1."""
+        When `parent_job_id` is set, returns children of that parent;
+        ignores `roots_only`. When `roots_only` is True (default), hides
+        rows that have a parent so the admin's main list doesn't drown
+        in seasonal-sweep children — expand a parent row to see them.
+
+        Each Job eager-loads `requested_by` (for username flattening)
+        and `parent` (so the row's response can carry the parent's uuid
+        without a client-side join)."""
         filters = []
         if status is not None:
             filters.append(Job.status == status)
@@ -98,6 +106,10 @@ class JobDAO(BaseDAO[Job]):
             filters.append(Job.created_at >= created_after)
         if created_before is not None:
             filters.append(Job.created_at <= created_before)
+        if parent_job_id is not None:
+            filters.append(Job.parent_job_id == parent_job_id)
+        elif roots_only:
+            filters.append(Job.parent_job_id.is_(None))
 
         total_stmt = select(func.count(Job.id))
         if filters:
@@ -111,7 +123,7 @@ class JobDAO(BaseDAO[Job]):
             page_stmt.order_by(Job.created_at.desc())
             .limit(limit)
             .offset(offset)
-            .options(selectinload(Job.requested_by))
+            .options(selectinload(Job.requested_by), selectinload(Job.parent))
         )
         items = list((await db.execute(page_stmt)).scalars().all())
         return items, total
