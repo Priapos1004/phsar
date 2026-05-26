@@ -7,7 +7,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Label } from '$lib/components/ui/label';
 	import { ChevronRight } from 'lucide-svelte';
-	import { JOB_KIND_LABELS, formatJobKind, formatShortDateTime } from '$lib/utils/formatString';
+	import { JOB_KIND_LABELS, PARENTING_KINDS, formatJobKind, formatShortDateTime } from '$lib/utils/formatString';
 	import type { AdminJobResponse, AdminJobsPage, JobKind, JobStatus } from '$lib/types/api';
 
 	const PAGE_SIZE = 50;
@@ -80,13 +80,11 @@
 		void load();
 	}
 
-	// Per-parent expand state. The seasonal_sweep dispatcher is the only
-	// kind that currently spawns parented children, but the gate below
-	// (kind === 'seasonal_sweep') is the *visual* guard — the children
-	// lookup itself accepts any uuid, so future parent-stamping kinds
-	// (e.g. update_sweep child probes) would Just Work.
-	// Carry the response total alongside the rows so the renderer can
-	// surface truncation honestly if a sweep ever exceeds CHILDREN_LIMIT.
+	// Backend accepts ?parent_uuid= for any kind, so PARENTING_KINDS is
+	// the frontend's visual guard — adding a future parent-stamping kind
+	// only needs the constant in formatString.ts. Carry the response total
+	// alongside the rows so the renderer can surface truncation honestly
+	// if a sweep ever exceeds CHILDREN_LIMIT.
 	const CHILDREN_LIMIT = 500;
 	type ChildrenState = { items: AdminJobResponse[]; total: number } | 'loading' | { error: string };
 	let childrenByParent = $state<Record<string, ChildrenState>>({});
@@ -225,7 +223,7 @@
 						<tbody>
 							{#each page.items as row (row.uuid)}
 								{@const expanded = expandedUuids.has(row.uuid)}
-								{@const expandable = row.kind === 'seasonal_sweep'}
+								{@const expandable = PARENTING_KINDS.has(row.kind)}
 								<tr class="border-b border-border/50 align-top">
 									<td class="py-2 pr-2 w-6">
 										{#if expandable}

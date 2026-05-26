@@ -38,7 +38,12 @@ _PREVIEW_SQL = text(
             WHERE kind = 'user_scrape'
               AND requested_by_user_id IS NULL
               AND parent_job_id IS NULL
-        ) AS unparented_children
+        ) AS unparented_children,
+        (
+            SELECT COUNT(*) FROM jobs
+            WHERE kind = 'seasonal_sweep'
+              AND status IN ('queued', 'running')
+        ) AS pending_sweeps
     """,
 )
 
@@ -76,6 +81,17 @@ async def main(apply: bool) -> None:
             return
         if not apply:
             print("Dry run — pass --apply to attribute these rows.")
+            return
+        # Refuse to mutate while a seasonal_sweep is queued or mid-enqueue:
+        # a queued sweep with not_before_at in the past will start any moment
+        # and a running one is bulk-inserting children right now — either
+        # would mis-attribute its children to the *prior* sweep on the
+        # time-based heuristic.
+        if row.pending_sweeps > 0:
+            print(
+                f"Refusing to apply — {row.pending_sweeps} seasonal_sweep row(s) are "
+                "queued or running. Wait for them to finish and re-run."
+            )
             return
         updated = (await session.execute(_UPDATE_SQL)).rowcount
         await session.commit()

@@ -1,4 +1,5 @@
 import { RELATION_TYPE_LABELS } from '$lib/utils/chartColors';
+import type { JobKind } from '$lib/types/api';
 
 /** Formats a raw relation_type value to a user-friendly label. */
 export function formatRelationType(type: string): string {
@@ -14,8 +15,6 @@ export function formatMediaType(type: string): string {
 	return MEDIA_TYPE_LABELS[type] ?? type;
 }
 
-import type { JobKind } from '$lib/types/api';
-
 export const JOB_KIND_LABELS: Record<JobKind, string> = {
 	user_scrape: 'User scrape',
 	update_sweep: 'Update sweep',
@@ -23,6 +22,12 @@ export const JOB_KIND_LABELS: Record<JobKind, string> = {
 	backup: 'Backup',
 	restore: 'Restore',
 };
+
+/** Today only seasonal_sweep enqueues parented system children; a future
+ * kind doing the same joins this set and the Jobs Log expander Just Works.
+ * Backend allows `?parent_uuid=` for any kind — this is purely the
+ * frontend's "row deserves a chevron" guard. */
+export const PARENTING_KINDS: ReadonlySet<JobKind> = new Set<JobKind>(['seasonal_sweep']);
 
 /** Formats a JobKind enum value to a user-friendly label. Accepts string
  * so callers can pass raw backend values without a guard; unknown values
