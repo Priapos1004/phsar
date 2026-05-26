@@ -9,7 +9,7 @@ from app.exceptions import CannotDeleteUsedTokenError, RegistrationTokenNotFound
 from app.models.job import Job, JobKind, JobStatus
 from app.models.registration_token import RegistrationToken
 from app.schemas.admin_schema import RegistrationTokenListItem
-from app.schemas.job_schema import AdminJobResponse, AdminJobsPage
+from app.schemas.job_schema import AdminJobResponse, AdminJobsPage, JobResponse
 
 registration_token_dao = RegistrationTokenDAO()
 job_dao = JobDAO()
@@ -56,29 +56,13 @@ async def delete_registration_token(db: AsyncSession, uuid: UUID) -> None:
 
 
 def _job_to_admin_response(job: Job) -> AdminJobResponse:
-    """Flatten the requested_by relationship to a username so the admin
-    Jobs Log can render attribution without a per-row join client-side.
-    System jobs (cron + seasonal-sweep children) have requested_by_user_id
-    NULL → username surfaces as null (rendered as 'system' on the frontend).
-
-    Explicit field-by-field construction mirrors `_token_to_list_item` —
-    `model_validate(job.__dict__)` would skip SQLAlchemy's lazy-attribute
-    machinery and surface internal state, and `model_validate(job)` with
-    `from_attributes=True` can't supply the synthetic
-    `requested_by_username` / `parent_job_uuid` fields."""
+    """Validate the inherited columns through JobResponse (its
+    `from_attributes=True` config handles the ORM read), then add the
+    two synthetic fields. Adding a column to Job + JobResponse picks
+    up here for free — no field list to keep in sync."""
+    base = JobResponse.model_validate(job).model_dump()
     return AdminJobResponse(
-        uuid=job.uuid,
-        kind=job.kind,
-        status=job.status,
-        payload=job.payload,
-        stage=job.stage,
-        items_total=job.items_total,
-        items_done=job.items_done,
-        result_summary=job.result_summary,
-        error_message=job.error_message,
-        created_at=job.created_at,
-        started_at=job.started_at,
-        finished_at=job.finished_at,
+        **base,
         requested_by_username=job.requested_by.username if job.requested_by else None,
         parent_job_uuid=job.parent.uuid if job.parent else None,
     )

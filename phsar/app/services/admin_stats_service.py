@@ -13,6 +13,8 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.daos.merge_candidate_dao import MergeCandidateDAO
+from app.daos.split_candidate_dao import SplitCandidateDAO
 from app.models.anime import Anime
 from app.models.job import Job, JobKind, JobStatus
 from app.models.media import Media
@@ -21,9 +23,13 @@ from app.schemas.admin_schema import (
     ActivityStats,
     AdminOverviewStats,
     CatalogStats,
+    CurationPendingCounts,
     JobKindStats,
     JobsStats,
 )
+
+merge_candidate_dao = MergeCandidateDAO()
+split_candidate_dao = SplitCandidateDAO()
 
 
 async def _catalog_stats(db: AsyncSession, cutoff: datetime) -> CatalogStats:
@@ -128,4 +134,14 @@ async def get_overview_stats(db: AsyncSession) -> AdminOverviewStats:
         catalog=await _catalog_stats(db, cutoff),
         jobs_7d=await _jobs_stats(db, cutoff),
         activity_7d=await _activity_stats(db, cutoff),
+    )
+
+
+async def get_curation_pending_counts(db: AsyncSession) -> CurationPendingCounts:
+    """Sequential awaits, not asyncio.gather: AsyncSession can't multiplex
+    concurrent ops on one session (see CLAUDE.md LANDMINE). Both queries
+    are sub-millisecond pending-only COUNTs, so the cost is irrelevant."""
+    return CurationPendingCounts(
+        merge=await merge_candidate_dao.count_pending(db),
+        split=await split_candidate_dao.count_pending(db),
     )
