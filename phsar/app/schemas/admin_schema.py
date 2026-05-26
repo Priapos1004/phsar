@@ -158,7 +158,12 @@ class JobKindStats(BaseModel):
     counts both retryable and permanent failures; `retryable_failed` is
     a subset showing how many of those `failed` rows could still recover
     (so admin can spot user_scrape jobs stuck on transient MAL outages
-    vs. permanently-dead deterministic failures)."""
+    vs. permanently-dead deterministic failures).
+
+    The `user_scrape` row counts user-initiated submissions only; the
+    seasonal-sweep children that share kind=user_scrape but have
+    requested_by_user_id=NULL are excluded so their failure rate
+    (Music/PV/etc. filtering) doesn't dilute the user-facing signal."""
     kind: str
     succeeded: int
     failed: int

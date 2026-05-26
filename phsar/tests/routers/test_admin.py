@@ -3,13 +3,14 @@ import uuid
 import pytest
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.models.anime import Anime
 from app.models.job import Job, JobKind, JobStatus
 from app.models.media import Media
 from app.models.media_studio import MediaStudio
 from app.models.merge_candidate import MergeCandidate, MergeCandidateStatus
 from app.models.studio import Studio
-from app.models.users import RoleType
+from app.models.users import RoleType, Users
 from tests._helpers import media_kwargs
 from tests.routers.conftest import CRON_AUTH_HEADER
 
@@ -528,6 +529,16 @@ def _user_scrape_row(resp_json: dict) -> dict:
     )
 
 
+async def _admin_user_id(db_session) -> int:
+    """The Job Health user_scrape row excludes system-attributed rows
+    (requested_by_user_id NULL), so seeded test jobs need a real user
+    to count. The admin is seeded at lifespan startup."""
+    row = (await db_session.execute(
+        select(Users).where(Users.username == settings.ADMIN_USERNAME)
+    )).scalars().one()
+    return row.id
+
+
 @pytest.mark.asyncio
 async def test_stats_overview_reflects_seeded_jobs(client, admin_auth_headers, db_session):
     """Seed one succeeded user_scrape + one permanently-failed user_scrape
@@ -536,16 +547,19 @@ async def test_stats_overview_reflects_seeded_jobs(client, admin_auth_headers, d
     before = _user_scrape_row(
         (await client.get(STATS_URL, headers=admin_auth_headers)).json()
     )
+    admin_id = await _admin_user_id(db_session)
 
     succeeded = Job(
         kind=JobKind.user_scrape, status=JobStatus.succeeded,
         payload={"query": "stats-test-succeeded"},
         result_summary={"retryable": True},
+        requested_by_user_id=admin_id,
     )
     failed_permanent = Job(
         kind=JobKind.user_scrape, status=JobStatus.failed,
         payload={"query": "stats-test-failed"},
         result_summary={"retryable": False},
+        requested_by_user_id=admin_id,
     )
     db_session.add_all([succeeded, failed_permanent])
     await db_session.flush()
@@ -557,6 +571,41 @@ async def test_stats_overview_reflects_seeded_jobs(client, admin_auth_headers, d
     assert after["failed"] - before["failed"] == 1
     # Permanently-failed must NOT bump retryable_failed — that's the
     # whole point of the PermanentPhsarError marker.
+    assert after["retryable_failed"] - before["retryable_failed"] == 0
+
+
+@pytest.mark.asyncio
+async def test_stats_overview_excludes_system_user_scrapes(client, admin_auth_headers, db_session):
+    """user_scrape rows with requested_by_user_id NULL (seasonal-sweep
+    children) shouldn't bump the User scrape row in Job Health — that
+    surface is for user-submitted activity. Cover both branches: a
+    succeeded system row shouldn't bump `succeeded`, and a failed one
+    shouldn't bump `failed` (a Music/PV-filtered child would otherwise
+    pollute the success rate)."""
+    before = _user_scrape_row(
+        (await client.get(STATS_URL, headers=admin_auth_headers)).json()
+    )
+
+    db_session.add_all([
+        Job(
+            kind=JobKind.user_scrape, status=JobStatus.succeeded,
+            payload={"query": "system-test-ok", "mal_id": -99001},
+            requested_by_user_id=None,
+        ),
+        Job(
+            kind=JobKind.user_scrape, status=JobStatus.failed,
+            payload={"query": "system-test-fail", "mal_id": -99002},
+            result_summary={"retryable": False},
+            requested_by_user_id=None,
+        ),
+    ])
+    await db_session.flush()
+
+    after = _user_scrape_row(
+        (await client.get(STATS_URL, headers=admin_auth_headers)).json()
+    )
+    assert after["succeeded"] - before["succeeded"] == 0
+    assert after["failed"] - before["failed"] == 0
     assert after["retryable_failed"] - before["retryable_failed"] == 0
 
 
