@@ -122,7 +122,7 @@ Modules:
 - `media_search_service.py` / `anime_search_service.py` — filtered DB search (anime variant: two-phase GROUP BY + HAVING)
 - `filter_service.py` — filter option values; view-type-aware
 - `auth_service.py`, `user_settings_service.py`, `token_service.py`, `admin_service.py`
-- `merge_detection_service.py` — duplicate detector (title_studio / title_desc / relation_link signals)
+- `merge_detection_service.py` — duplicate detector (title_studio / title_desc / relation_link signals). `relation_link` reads from `media_relation_edges` sidecars (single source of truth — see services CLAUDE.md for rationale); three call sites (save, sweep, backfill) converge through `find_cross_anime_relation_pairs` so the signal fires identically regardless of how anime rows entered the catalog
 - `merge_candidate_service.py` — admin merge operations
 - `split_candidate_service.py` — admin split operations (list, dismiss, execute_split)
 - `relation_classifier.py` — pure-function two-pass classifier (DB-less) + third-pass `find_disjoint_franchises` for split detection

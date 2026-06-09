@@ -7,7 +7,9 @@ from sqlalchemy import select
 
 from app.models.anime import Anime
 from app.models.media import Media
+from app.models.media_relation_edges import MediaRelationEdges
 from app.models.media_studio import MediaStudio
+from app.models.media_unwanted import MediaUnwanted
 from app.models.merge_candidate import MergeCandidate, MergeCandidateStatus
 from app.models.studio import Studio
 from app.services.merge_detection_service import (
@@ -19,6 +21,7 @@ from app.services.merge_detection_service import (
     _title_score,
     backfill_merge_candidates,
     detect_merge_candidates,
+    find_cross_anime_relation_pairs,
     normalize_title,
 )
 from tests._helpers import media_kwargs
@@ -283,7 +286,12 @@ async def test_detect_skips_already_dismissed_pair(db_session):
 @pytest.mark.asyncio
 async def test_backfill_flags_existing_catalog_pair(db_session):
     """Two anime that exist in the catalog without a candidate row get
-    flagged on backfill."""
+    flagged on backfill.
+
+    Assertion robust to shared dev-DB state: backfill's relation_link
+    sidecar pass can surface pre-existing prod-data pairs in the test DB.
+    We assert about OUR specific test pair, not the absolute insert count.
+    """
     a = await _make_anime_with_studio(
         db_session, mal_id=70061, title="Backfill Target", studio_name="Backfill Studio",
     )
@@ -291,25 +299,23 @@ async def test_backfill_flags_existing_catalog_pair(db_session):
         db_session, mal_id=70062, title="Backfill Target Season 2", studio_name="Backfill Studio",
     )
 
-    inserted = await backfill_merge_candidates(db_session)
-    assert inserted == 1
+    await backfill_merge_candidates(db_session)
 
-    a_id, b_id = sorted((a.id, b.id))
-    rows = (await db_session.execute(
-        select(MergeCandidate).where(
-            MergeCandidate.anime_a_id == a_id,
-            MergeCandidate.anime_b_id == b_id,
-        )
-    )).scalars().all()
-    assert len(rows) == 1
-    assert rows[0].status == MergeCandidateStatus.pending
+    row = await _our_pair_exists(db_session, a.id, b.id)
+    assert row is not None
+    assert row.status == MergeCandidateStatus.pending
 
 
 @pytest.mark.asyncio
 async def test_backfill_idempotent_across_restarts(db_session):
     """Subsequent backfill runs must produce zero new rows once the first
     run has flagged everything — the pre-fetched seen-pairs set is the
-    optimization that keeps startup cost flat as the catalog grows."""
+    optimization that keeps startup cost flat as the catalog grows.
+
+    Assertion robust to shared dev-DB state: the first call may flag
+    prod-data pairs in addition to our test pair, but the SECOND call
+    must always return 0 (idempotency is the property under test).
+    """
     await _make_anime_with_studio(
         db_session, mal_id=70071, title="Idempotent A", studio_name="Idempotent Studio",
     )
@@ -317,9 +323,8 @@ async def test_backfill_idempotent_across_restarts(db_session):
         db_session, mal_id=70072, title="Idempotent A Season 2", studio_name="Idempotent Studio",
     )
 
-    first = await backfill_merge_candidates(db_session)
+    await backfill_merge_candidates(db_session)
     second = await backfill_merge_candidates(db_session)
-    assert first == 1
     assert second == 0
 
 
@@ -383,12 +388,334 @@ async def test_detect_relation_link_skips_already_seen_pair(db_session):
 
 @pytest.mark.asyncio
 async def test_backfill_skips_when_catalog_too_small(db_session):
-    """No-op when zero or one anime exists — nothing to compare."""
-    inserted = await backfill_merge_candidates(db_session)
-    assert inserted == 0
-
-    await _make_anime_with_studio(
-        db_session, mal_id=70081, title="Solo", studio_name="Solo Studio",
+    """The `len(catalog) < 2` guard is an O(1) optimization for fresh
+    deployments. The test DB is shared with dev so we can't directly
+    assert on it from outside — but we can assert that adding a single
+    NEW solo anime (no sidecars to other anime, no studio collisions)
+    doesn't trigger any merge_candidate involving it.
+    """
+    solo = await _make_anime_with_studio(
+        db_session, mal_id=70081, title="Brand New Solo Show", studio_name="Brand New Solo Studio",
     )
-    inserted = await backfill_merge_candidates(db_session)
-    assert inserted == 0
+    await backfill_merge_candidates(db_session)
+
+    rows = (await db_session.execute(
+        select(MergeCandidate).where(
+            (MergeCandidate.anime_a_id == solo.id)
+            | (MergeCandidate.anime_b_id == solo.id)
+        )
+    )).scalars().all()
+    assert rows == []
+
+
+# ---------------------------------------------------------------------------
+# find_cross_anime_relation_pairs + sidecar-as-truth invariants
+#
+# The sidecar (`media_relation_edges`) is the single source of truth for the
+# relation_link signal. These tests pin the contract: which relations fire,
+# which don't, scope behavior, dismissed-pair short-circuit. Tests below
+# DELIBERATELY don't share studio between A and B — we're verifying the
+# relation_link path independently of title_studio / title_desc gates.
+# ---------------------------------------------------------------------------
+
+
+async def _attach_relation_edges(db_session, media_id: int, edges: list[list]) -> None:
+    """Insert a MediaRelationEdges sidecar for `media_id` with the given
+    `[[target_mal_id, normalized_relation], ...]` payload."""
+    db_session.add(MediaRelationEdges(media_id=media_id, edges=edges))
+    await db_session.flush()
+
+
+async def _media_for_anime(db_session, anime_id: int) -> tuple[int, int]:
+    """Return `(media.id, media.mal_id)` for the single Media row under
+    `anime_id`. `_make_anime_with_studio` creates exactly one, so the
+    `scalar_one` is unambiguous."""
+    return (await db_session.execute(
+        select(Media.id, Media.mal_id).where(Media.anime_id == anime_id)
+    )).one()
+
+
+async def _our_pair_exists(db_session, a_id: int, b_id: int) -> MergeCandidate | None:
+    """Look up the merge_candidates row for the (a_id, b_id) pair (after
+    sorting). Returns the row if present, else None. Tests use this helper
+    instead of asserting on absolute inserted counts because the test DB
+    is shared with the dev DB — pre-existing dev data triggers unrelated
+    inserts that have nothing to do with the test scenario."""
+    a_id, b_id = sorted((a_id, b_id))
+    return (await db_session.execute(
+        select(MergeCandidate).where(
+            MergeCandidate.anime_a_id == a_id,
+            MergeCandidate.anime_b_id == b_id,
+        )
+    )).scalar_one_or_none()
+
+
+@pytest.mark.asyncio
+async def test_sidecar_alt_version_edge_proposes_pair(db_session):
+    """The Evangelion case: A's media sidecar contains an alternative_version
+    edge to B's media mal_id. No shared studio (relation_link must fire
+    without title/studio gates). The pair must land in merge_candidates
+    with detected_by=relation_link, similarity_score=1.0."""
+    a = await _make_anime_with_studio(
+        db_session, mal_id=80001, title="Original NGE Equivalent", studio_name="Studio Gainax",
+    )
+    b = await _make_anime_with_studio(
+        db_session, mal_id=80002, title="Rebuild Equivalent", studio_name="Studio Khara",
+    )
+    a_media = await _media_for_anime(db_session, a.id)
+    b_media = await _media_for_anime(db_session, b.id)
+    await _attach_relation_edges(
+        db_session, a_media.id, [[b_media.mal_id, "alternative_version"]],
+    )
+
+    pairs = await find_cross_anime_relation_pairs(db_session, scope_anime_ids=[a.id, b.id])
+    a_id, b_id = sorted((a.id, b.id))
+    assert (a_id, b_id) in pairs
+
+    await detect_merge_candidates(
+        db_session, new_anime_ids=[], cross_link_pairs=pairs,
+    )
+    row = await _our_pair_exists(db_session, a.id, b.id)
+    assert row is not None
+    assert row.detected_by == DETECTOR_RELATION_LINK
+    assert row.similarity_score == 1.0
+
+
+@pytest.mark.asyncio
+async def test_sidecar_sequel_edge_proposes_pair(db_session):
+    """Defensive coverage: sequel/prequel chains are normally merged at scrape
+    time by the BFS main-chain logic, but if the BFS leaves them dangling
+    across separate jobs, the sidecar-derived path must still propose the
+    pair."""
+    a = await _make_anime_with_studio(
+        db_session, mal_id=80011, title="Some Show A", studio_name="Studio Alpha",
+    )
+    b = await _make_anime_with_studio(
+        db_session, mal_id=80012, title="Some Show B", studio_name="Studio Beta",
+    )
+    a_media = await _media_for_anime(db_session, a.id)
+    b_media = await _media_for_anime(db_session, b.id)
+    await _attach_relation_edges(
+        db_session, a_media.id, [[b_media.mal_id, "sequel"]],
+    )
+
+    pairs = await find_cross_anime_relation_pairs(db_session, scope_anime_ids=[a.id, b.id])
+    a_id, b_id = sorted((a.id, b.id))
+    assert (a_id, b_id) in pairs
+
+
+@pytest.mark.asyncio
+async def test_sidecar_crossover_edge_does_not_propose_pair(db_session):
+    """crossover edges are graph boundaries, not duplicate signals. The
+    BFS's existing crossover_arrivals tracking excludes them — the SQL
+    allowlist must match."""
+    a = await _make_anime_with_studio(
+        db_session, mal_id=80021, title="Show A", studio_name="Studio One",
+    )
+    b = await _make_anime_with_studio(
+        db_session, mal_id=80022, title="Show B", studio_name="Studio Two",
+    )
+    a_media = await _media_for_anime(db_session, a.id)
+    b_media = await _media_for_anime(db_session, b.id)
+    await _attach_relation_edges(
+        db_session, a_media.id, [[b_media.mal_id, "crossover"]],
+    )
+
+    pairs = await find_cross_anime_relation_pairs(db_session, scope_anime_ids=[a.id, b.id])
+    a_id, b_id = sorted((a.id, b.id))
+    assert (a_id, b_id) not in pairs
+
+
+@pytest.mark.asyncio
+async def test_sidecar_target_in_media_unwanted_does_not_propose_pair(db_session):
+    """A target mal_id sitting in media_unwanted is filtered franchise-
+    overlap evidence (Music/PV stripped by jikan_scraper at save time).
+    It must not count as relation_link signal even when the relation type
+    itself is in the allowlist."""
+    a = await _make_anime_with_studio(
+        db_session, mal_id=80031, title="Show A", studio_name="Studio One",
+    )
+    b = await _make_anime_with_studio(
+        db_session, mal_id=80032, title="Show B", studio_name="Studio Two",
+    )
+    a_media = await _media_for_anime(db_session, a.id)
+    b_media = await _media_for_anime(db_session, b.id)
+    db_session.add(MediaUnwanted(
+        mal_id=b_media.mal_id, title="filtered", reason="Music",
+    ))
+    await db_session.flush()
+    await _attach_relation_edges(
+        db_session, a_media.id, [[b_media.mal_id, "alternative_version"]],
+    )
+
+    pairs = await find_cross_anime_relation_pairs(db_session, scope_anime_ids=[a.id, b.id])
+    a_id, b_id = sorted((a.id, b.id))
+    assert (a_id, b_id) not in pairs
+
+
+@pytest.mark.asyncio
+async def test_sidecar_same_anime_target_does_not_propose_pair(db_session):
+    """Intra-umbrella relations (one of an anime's media → another media
+    under the same anime) are not duplicates — that's what umbrellas ARE."""
+    a = await _make_anime_with_studio(
+        db_session, mal_id=80041, title="Show With Many Media", studio_name="Studio Solo",
+    )
+    a_media = await _media_for_anime(db_session, a.id)
+    # Add a second media row under the same anime.
+    second = Media(**media_kwargs(a.id, 80041_99, title="Second Media"))
+    db_session.add(second)
+    await db_session.flush()
+    await _attach_relation_edges(
+        db_session, a_media.id, [[second.mal_id, "sequel"]],
+    )
+
+    pairs = await find_cross_anime_relation_pairs(db_session, scope_anime_ids=[a.id])
+    # Should not propose any pair involving our test anime — same-anime
+    # targets are filtered.
+    assert not any(a.id in pair for pair in pairs)
+
+
+@pytest.mark.asyncio
+async def test_dismissed_pair_not_re_proposed_from_sidecar(db_session):
+    """Pre-existing merge_candidate (any status) short-circuits the
+    relation_link path — admin's prior decisions survive re-detection."""
+    a = await _make_anime_with_studio(
+        db_session, mal_id=80051, title="Show A", studio_name="Studio One",
+    )
+    b = await _make_anime_with_studio(
+        db_session, mal_id=80052, title="Show B", studio_name="Studio Two",
+    )
+    a_id, b_id = sorted((a.id, b.id))
+    db_session.add(MergeCandidate(
+        anime_a_id=a_id, anime_b_id=b_id,
+        similarity_score=0.95, detected_by=DETECTOR_TITLE_DESC,
+        status=MergeCandidateStatus.dismissed,
+    ))
+    await db_session.flush()
+    a_media = await _media_for_anime(db_session, a.id)
+    b_media = await _media_for_anime(db_session, b.id)
+    await _attach_relation_edges(
+        db_session, a_media.id, [[b_media.mal_id, "alternative_version"]],
+    )
+
+    pairs = await find_cross_anime_relation_pairs(db_session, scope_anime_ids=[a.id, b.id])
+    # Pair is reported by the helper (helper is purely structural)…
+    assert (a_id, b_id) in pairs
+    # …and detect_merge_candidates skips it because of seen_pairs — the
+    # pre-existing dismissed row stays dismissed, no new row added.
+    row_count_before = (await db_session.execute(
+        select(MergeCandidate).where(
+            MergeCandidate.anime_a_id == a_id,
+            MergeCandidate.anime_b_id == b_id,
+        )
+    )).scalars().all()
+    await detect_merge_candidates(
+        db_session, new_anime_ids=[], cross_link_pairs=pairs,
+    )
+    row_count_after = (await db_session.execute(
+        select(MergeCandidate).where(
+            MergeCandidate.anime_a_id == a_id,
+            MergeCandidate.anime_b_id == b_id,
+        )
+    )).scalars().all()
+    assert len(row_count_after) == len(row_count_before) == 1
+
+
+@pytest.mark.asyncio
+async def test_scope_anime_ids_filters_pairs(db_session):
+    """scope_anime_ids returns pairs where EITHER side is in scope, so
+    save/sweep callers can pass their touched anime and still see pairs
+    touching them. A pair entirely outside scope is excluded."""
+    a = await _make_anime_with_studio(
+        db_session, mal_id=80061, title="A", studio_name="Studio 1",
+    )
+    b = await _make_anime_with_studio(
+        db_session, mal_id=80062, title="B", studio_name="Studio 2",
+    )
+    c = await _make_anime_with_studio(
+        db_session, mal_id=80063, title="C", studio_name="Studio 3",
+    )
+    a_media = await _media_for_anime(db_session, a.id)
+    b_media = await _media_for_anime(db_session, b.id)
+    c_media = await _media_for_anime(db_session, c.id)
+    await _attach_relation_edges(db_session, a_media.id, [[b_media.mal_id, "alternative_version"]])
+    await _attach_relation_edges(db_session, b_media.id, [[c_media.mal_id, "alternative_version"]])
+
+    a_id, b_id = sorted((a.id, b.id))
+    b_id2, c_id = sorted((b.id, c.id))
+
+    # Scope to {A, B, C} sees both test pairs.
+    all_pairs = await find_cross_anime_relation_pairs(
+        db_session, scope_anime_ids=[a.id, b.id, c.id],
+    )
+    assert (a_id, b_id) in all_pairs
+    assert (b_id2, c_id) in all_pairs
+
+    # Scope to {A} returns the (A,B) pair, NOT the (B,C) pair (B's outgoing
+    # edge to C is not in scope from A's perspective).
+    a_scoped = await find_cross_anime_relation_pairs(db_session, scope_anime_ids=[a.id])
+    assert (a_id, b_id) in a_scoped
+    assert (b_id2, c_id) not in a_scoped
+
+    # Scope to {B} returns both pairs (B is on both sides).
+    b_scoped = await find_cross_anime_relation_pairs(db_session, scope_anime_ids=[b.id])
+    assert (a_id, b_id) in b_scoped
+    assert (b_id2, c_id) in b_scoped
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("relation", [
+    "spin-off", "side_story", "parent_story", "summary", "full_story", "other",
+    # Defensive coverage — these are filtered at parse time today but the
+    # SQL filter must survive a future parse-time relaxation.
+    "alternative_setting", "character", "adaptation",
+])
+async def test_sidecar_weak_signal_relations_do_not_propose_pair(db_session, relation):
+    """Allowlist contract: only sequel/prequel/alternative_version count.
+    If someone later adds a weak type to the allowlist without thinking
+    through the false-positive blast radius, this test breaks loudly.
+    Dump testing showed these types generate 50+ noise pairs on the
+    prod catalog."""
+    a = await _make_anime_with_studio(
+        db_session, mal_id=80071, title="Show A", studio_name="Studio One",
+    )
+    b = await _make_anime_with_studio(
+        db_session, mal_id=80072, title="Show B", studio_name="Studio Two",
+    )
+    a_media = await _media_for_anime(db_session, a.id)
+    b_media = await _media_for_anime(db_session, b.id)
+    await _attach_relation_edges(
+        db_session, a_media.id, [[b_media.mal_id, relation]],
+    )
+
+    pairs = await find_cross_anime_relation_pairs(
+        db_session, scope_anime_ids=[a.id, b.id],
+    )
+    a_id, b_id = sorted((a.id, b.id))
+    assert (a_id, b_id) not in pairs, (
+        f"relation={relation!r} unexpectedly produced our test pair"
+    )
+
+
+@pytest.mark.asyncio
+async def test_backfill_surfaces_relation_link_from_sidecar(db_session):
+    """End-to-end: backfill_merge_candidates feeds find_cross_anime_relation_pairs
+    into detect_merge_candidates. A catalog-only pair (no live BFS, no
+    matching titles, no shared studio) must surface — pre-sidecar
+    backfill skipped relation_link entirely."""
+    a = await _make_anime_with_studio(
+        db_session, mal_id=80081, title="Catalog-Only A", studio_name="Studio Aa",
+    )
+    b = await _make_anime_with_studio(
+        db_session, mal_id=80082, title="Catalog-Only B", studio_name="Studio Bb",
+    )
+    a_media = await _media_for_anime(db_session, a.id)
+    b_media = await _media_for_anime(db_session, b.id)
+    await _attach_relation_edges(
+        db_session, a_media.id, [[b_media.mal_id, "alternative_version"]],
+    )
+
+    await backfill_merge_candidates(db_session)
+    row = await _our_pair_exists(db_session, a.id, b.id)
+    assert row is not None
+    assert row.detected_by == DETECTOR_RELATION_LINK

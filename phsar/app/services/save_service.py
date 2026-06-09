@@ -15,7 +15,7 @@ from app.services.media_service import (
 )
 from app.services.merge_detection_service import (
     detect_merge_candidates,
-    resolve_cross_link_pairs,
+    find_cross_anime_relation_pairs,
 )
 from app.services.progress_reporter import ProgressReporter
 from app.services.relation_classifier import outgoing_edges
@@ -34,7 +34,6 @@ async def save_search_results(
     saved_anything = False
     saved_media_count = 0
     new_anime_ids: list[int] = []
-    cross_link_pairs: list[tuple[int, int]] = []
     for result in search_results:
         if not result.unconnected_media_list:
             continue  # Nothing to save if no media in result
@@ -49,13 +48,6 @@ async def save_search_results(
         anime.freshness = AnimeFreshness(last_checked_at=None, stable_check_count=0)
         saved_anything = True
         new_anime_ids.append(anime.id)
-        # Resolve graph cross-links to (this new anime, owning anime) pairs
-        # for the relation_link detector. Resolution happens here, while we
-        # have the just-created anime.id in scope.
-        if result.cross_link_mal_ids:
-            cross_link_pairs.extend(
-                await resolve_cross_link_pairs(db, anime.id, result.cross_link_mal_ids)
-            )
         logger.info(f"Created Anime: {anime.title} (ID: {anime.id})")
 
         # Create anime-level vector embeddings
@@ -98,8 +90,12 @@ async def save_search_results(
 
     # Detect potential duplicate anime against the existing catalog before
     # the final commit. Same-tx so detection rolls back with the save if
-    # something goes wrong; either both land or neither.
-    if new_anime_ids or cross_link_pairs:
+    # something goes wrong; either both land or neither. relation_link pairs
+    # come from the sidecars written above in this transaction.
+    if new_anime_ids:
+        cross_link_pairs = await find_cross_anime_relation_pairs(
+            db, scope_anime_ids=new_anime_ids,
+        )
         await detect_merge_candidates(db, new_anime_ids, cross_link_pairs)
 
     await db.commit()
