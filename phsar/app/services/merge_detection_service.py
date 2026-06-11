@@ -33,6 +33,14 @@ import numpy as np
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.merge_candidate_dao import MergeCandidateDAO
+
+# Strong-link MAL relations that count as "these belong together" signals
+# for the relation_link detector. Reuses the classifier's same-chain edge
+# set: a relation that builds the main+alt chain inside an umbrella also
+# unifies separately-scraped umbrellas. Weaker relations (spin-off,
+# side_story, parent_story, summary, full_story, other) are MAL asserting
+# "related but distinct" — adding them produces false positives (validated
+# against the prod catalog).
 from app.services.relation_classifier import ALT_CHAIN_EDGES
 
 logger = logging.getLogger(__name__)
@@ -67,13 +75,6 @@ MIN_FULL_MATCH_CHARS = 3
 DETECTOR_TITLE_STUDIO = "title_studio"
 DETECTOR_TITLE_DESC = "title_desc"
 DETECTOR_RELATION_LINK = "relation_link"
-
-# Strong-link MAL relations that count as "these belong together" signals.
-# Reuses the classifier's same-chain edge set: a relation that builds the
-# main+alt chain inside an umbrella also unifies separately-scraped
-# umbrellas. Weaker relations (spin-off, side_story, parent_story, summary,
-# full_story, other) are MAL asserting "related but distinct" — adding
-# them produces false positives (validated against the prod catalog).
 
 # Conservative season-marker stripper. Keeps distinct franchises distinct;
 # only collapses noise that doesn't disambiguate ("Season 2", "Part III").
