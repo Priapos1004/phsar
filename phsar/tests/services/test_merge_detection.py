@@ -1,6 +1,7 @@
 """Tests for the title+studio merge candidate detector."""
 
 import logging
+from typing import NamedTuple
 
 import pytest
 from sqlalchemy import select
@@ -426,13 +427,19 @@ async def _attach_relation_edges(db_session, media_id: int, edges: list[list]) -
     await db_session.flush()
 
 
-async def _media_for_anime(db_session, anime_id: int) -> tuple[int, int]:
+class _MediaIdPair(NamedTuple):
+    id: int
+    mal_id: int
+
+
+async def _media_for_anime(db_session, anime_id: int) -> _MediaIdPair:
     """Return `(media.id, media.mal_id)` for the single Media row under
     `anime_id`. `_make_anime_with_studio` creates exactly one, so the
-    `scalar_one` is unambiguous."""
-    return (await db_session.execute(
+    `.one()` is unambiguous."""
+    row = (await db_session.execute(
         select(Media.id, Media.mal_id).where(Media.anime_id == anime_id)
     )).one()
+    return _MediaIdPair(id=row.id, mal_id=row.mal_id)
 
 
 async def _our_pair_exists(db_session, a_id: int, b_id: int) -> MergeCandidate | None:
