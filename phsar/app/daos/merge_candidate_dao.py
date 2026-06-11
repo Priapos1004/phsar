@@ -1,16 +1,19 @@
+from collections.abc import Collection
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import Integer, cast, func, or_, select, true
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
 
 from app.daos.base_dao import BaseDAO
 from app.models.anime import Anime
 from app.models.anime_search import AnimeSearch
 from app.models.media import Media
+from app.models.media_relation_edges import MediaRelationEdges
 from app.models.media_studio import MediaStudio
+from app.models.media_unwanted import MediaUnwanted
 from app.models.merge_candidate import MergeCandidate, MergeCandidateStatus
 from app.models.ratings import Ratings
 
@@ -157,3 +160,60 @@ class MergeCandidateDAO(BaseDAO[MergeCandidate]):
             )
             for aid, e in per_anime.items()
         ]
+
+    async def get_cross_anime_relation_pairs(
+        self,
+        db: AsyncSession,
+        *,
+        scope_anime_ids: list[int] | None = None,
+        allowed_relations: Collection[str],
+    ) -> list[tuple[int, int]]:
+        """For each `media_relation_edges` row in scope, find target mal_ids
+        that resolve to media owned by a different anime via one of
+        `allowed_relations`. Returns ordered `(a, b)` pairs with `a < b`,
+        deduplicated.
+
+        `scope_anime_ids=None` means catalog-wide; otherwise returns pairs
+        where EITHER side is in scope. The caller passes the allowlist so
+        the DAO stays decoupled from service policy.
+
+        Implementation: `jsonb_array_elements(edges)` as a LATERAL TVF, then
+        JOIN `media` by `(e->>0)::int` to find the target's owning anime.
+        OUTER JOIN + IS NULL on `media_unwanted` excludes filtered-franchise
+        evidence (Music/PV mal_ids stripped at save time).
+        """
+        m_src = aliased(Media, name="m_src")
+        m_tgt = aliased(Media, name="m_tgt")
+        edges_tv = (
+            func.jsonb_array_elements(MediaRelationEdges.edges)
+            .table_valued("value")
+            .lateral("e")
+        )
+        target_mal_id = cast(edges_tv.c.value.op("->>")(0), Integer)
+        relation = edges_tv.c.value.op("->>")(1)
+        stmt = (
+            select(
+                func.least(m_src.anime_id, m_tgt.anime_id).label("a_id"),
+                func.greatest(m_src.anime_id, m_tgt.anime_id).label("b_id"),
+            )
+            .distinct()
+            .select_from(m_src)
+            .join(MediaRelationEdges, MediaRelationEdges.media_id == m_src.id)
+            .join(edges_tv, true())
+            .join(m_tgt, m_tgt.mal_id == target_mal_id)
+            .outerjoin(MediaUnwanted, MediaUnwanted.mal_id == target_mal_id)
+            .where(
+                m_src.anime_id != m_tgt.anime_id,
+                MediaUnwanted.mal_id.is_(None),
+                relation.in_(allowed_relations),
+            )
+        )
+        if scope_anime_ids is not None:
+            stmt = stmt.where(
+                or_(
+                    m_src.anime_id.in_(scope_anime_ids),
+                    m_tgt.anime_id.in_(scope_anime_ids),
+                )
+            )
+        result = await db.execute(stmt)
+        return [(row.a_id, row.b_id) for row in result.all()]

@@ -47,7 +47,10 @@ from app.services.jikan_scraper import (
     parse_mal_datetime,
     parse_relation_edges,
 )
-from app.services.merge_detection_service import detect_merge_candidates
+from app.services.merge_detection_service import (
+    detect_merge_candidates,
+    find_cross_anime_relation_pairs,
+)
 from app.services.progress_reporter import ProgressReporter
 from app.services.relation_classifier import classify_and_stamp
 from app.services.save_service import attach_search_result_to_anime, save_search_results
@@ -239,6 +242,10 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     # detector never sees it because the attach path bypasses
     # save_search_results.
     probe_attached_anime_ids: list[int] = []
+    # Step 1 rewrites MediaRelationEdges from the /full payload, so a
+    # refresh alone (no new media) can surface a fresh relation_link
+    # signal. Broader scope than probe-attached.
+    sidecar_touched_anime_ids: list[int] = []
     genre_drift_aggregate: list[dict] = []
     studio_drift_aggregate: list[dict] = []
     async with JikanScraper() as scraper:
@@ -247,6 +254,7 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
             if step1 is None:
                 await progress.update(items_done=refreshed)
                 continue
+            sidecar_touched_anime_ids.append(anime.id)
 
             if _qualifies_for_relations_probe(anime, step1.is_currently_airing):
                 await progress.update(stage="Probing relations")
@@ -276,18 +284,29 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
             studio_drift_aggregate.extend(step1.studio_drifts)
             await progress.update(items_done=refreshed)
 
-    # Re-run merge detection against anime that had new media attached —
-    # mirrors the save-time detection in save_search_results, which the
-    # probe path bypasses (attach_search_result_to_anime never recomputes
-    # detection). Coalesced into one call so the spoiler refresh + merge
-    # detection share the maintenance window. Per-anime catalog work has
-    # already committed, so a detection failure shouldn't fail the whole
-    # sweep — soft-warn into result_summary.
+    # Re-run merge detection at sweep end: title_studio/title_desc against
+    # probe-attached anime (mirrors save-time detection that the attach
+    # path bypasses), plus relation_link from sidecars across the broader
+    # sidecar-touched scope. Coalesced into one call so the spoiler refresh
+    # + merge detection share the maintenance window. Per-anime catalog
+    # work has already committed, so a detection failure shouldn't fail
+    # the whole sweep — soft-warn into result_summary.
     merge_detect_failed = False
-    if probe_attached_anime_ids:
+    cross_link_pairs: list[tuple[int, int]] = []
+    if sidecar_touched_anime_ids:
+        try:
+            cross_link_pairs = await find_cross_anime_relation_pairs(
+                session, scope_anime_ids=sidecar_touched_anime_ids,
+            )
+        except Exception:
+            logger.exception("Post-sweep cross-link query failed")
+            merge_detect_failed = True
+    if probe_attached_anime_ids or cross_link_pairs:
         try:
             await detect_merge_candidates(
-                session, new_anime_ids=probe_attached_anime_ids,
+                session,
+                new_anime_ids=probe_attached_anime_ids,
+                cross_link_pairs=cross_link_pairs,
             )
             await session.commit()
         except Exception:

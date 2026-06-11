@@ -8,13 +8,19 @@ Three detectors feed the merge_candidates table:
 - title_desc: weaker title match (>= 0.5) plus description-embedding cosine
   >= 0.85, also gated by studio overlap. Catches "Dr. Stone" / "Dr. Stone:
   New World" where the subtitle pushes the title score below the alone-rule.
-- relation_link: BFS during a save discovered a non-crossover related media
-  that already lives under a different anime in the catalog. Strongest
-  signal — MAL itself is asserting the connection. No score gate, no studio
-  gate; admin still reviews.
+- relation_link: a `media_relation_edges` sidecar entry points to media
+  under a different anime via a strong-link relation (sequel, prequel,
+  alternative_version). Strongest signal — MAL itself is asserting the
+  connection. No score gate, no studio gate; admin still reviews.
 
-Detection is run from save_search_results (new × existing) and from a
-startup backfiller (existing × existing). Tunables are deliberately
+`relation_link` reads the persisted sidecar table (single source of truth)
+via `find_cross_anime_relation_pairs`. All three trigger sites — save,
+update_sweep, backfill — converge through that helper so the signal fires
+identically regardless of which job created the anime rows or when.
+
+Detection is run from save_search_results (new × existing), from the
+update_sweep finalization (changed × catalog), and from a startup +
+admin-triggered backfill (catalog-wide). Tunables are deliberately
 module-level — there's no use case for varying them per call.
 """
 
@@ -24,12 +30,18 @@ from difflib import SequenceMatcher
 from typing import NamedTuple
 
 import numpy as np
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.merge_candidate_dao import MergeCandidateDAO
-from app.models.anime import Anime
-from app.models.media import Media
+
+# Strong-link MAL relations that count as "these belong together" signals
+# for the relation_link detector. Reuses the classifier's same-chain edge
+# set: a relation that builds the main+alt chain inside an umbrella also
+# unifies separately-scraped umbrellas. Weaker relations (spin-off,
+# side_story, parent_story, summary, full_story, other) are MAL asserting
+# "related but distinct" — adding them produces false positives (validated
+# against the prod catalog).
+from app.services.relation_classifier import ALT_CHAIN_EDGES
 
 logger = logging.getLogger(__name__)
 
@@ -224,11 +236,10 @@ async def detect_merge_candidates(
     when those do flag, admin dismisses once and the seen-pairs set keeps
     them dismissed.
 
-    `cross_link_pairs` carries the relation-graph signal from the BFS:
-    pairs (new_anime_id, existing_anime_id) where MAL says the new anime is
-    related to the existing one through a non-crossover relation. Those
-    flag with detected_by="relation_link" regardless of title or studio
-    similarity — MAL is asserting the connection.
+    `cross_link_pairs` carries the relation_link signal — pairs flag with
+    detected_by="relation_link" regardless of title or studio similarity,
+    MAL is asserting the connection. Callers derive these from sidecars
+    via `find_cross_anime_relation_pairs`.
 
     Returns the number of *new* rows inserted across all detectors. Pairs
     that already have a row (pending, dismissed, merged) are skipped before
@@ -298,8 +309,10 @@ async def detect_merge_candidates(
 
 
 async def backfill_merge_candidates(db: AsyncSession) -> int:
-    """One-shot detection over the existing catalog at startup. Flags pairs
-    the detector wasn't around for when they were first saved.
+    """One-shot detection over the existing catalog at startup AND on demand
+    via the admin endpoint. Flags pairs the detector wasn't around for when
+    they were first saved, plus any catalog-wide relation_link pairs the
+    save/sweep paths missed.
 
     Idempotent across restarts: pre-fetches the existing pair set and skips
     those pairs entirely, so the per-startup cost is O(catalog²) of the
@@ -307,8 +320,9 @@ async def backfill_merge_candidates(db: AsyncSession) -> int:
     pairs. Once admin has reviewed the first wave, subsequent restarts do
     almost no work.
 
-    The relation_link signal is not produced here — it requires live BFS
-    state from a scrape. Backfill uses title_studio + title_desc only.
+    Runs all three signals here, including a full-catalog relation_link
+    sidecar sweep — surfaces strong-link pairs whose constituent anime
+    were never co-located in any live scrape.
 
     Caller-commits at the end so the seeder loop in lifespan stays consistent
     with the other backfillers.
@@ -329,34 +343,28 @@ async def backfill_merge_candidates(db: AsyncSession) -> int:
             if await _flag_if_similar(db, a, b, seen_pairs, norm_cache):
                 inserted += 1
 
+    cross_link_pairs = await find_cross_anime_relation_pairs(db)
+    if cross_link_pairs:
+        inserted += await detect_merge_candidates(
+            db, new_anime_ids=[], cross_link_pairs=cross_link_pairs,
+        )
+
     if inserted:
         await db.commit()
         logger.info("Merge-candidate backfill flagged %d new pair(s)", inserted)
     return inserted
 
 
-async def resolve_cross_link_pairs(
+async def find_cross_anime_relation_pairs(
     db: AsyncSession,
-    new_anime_id: int,
-    cross_link_mal_ids: set[int],
+    *,
+    scope_anime_ids: list[int] | None = None,
 ) -> list[tuple[int, int]]:
-    """Map (new_anime_id, mal_id) → (new_anime_id, owning_anime_id) by
-    looking up which existing anime owns each cross-linked media mal_id.
-
-    Pairs with the new anime itself (the BFS may have surfaced a media that
-    we're about to attach to the new anime) are filtered — only return
-    pairs where the cross-linked media currently lives under a *different*
-    anime."""
-    if not cross_link_mal_ids:
-        return []
-    stmt = (
-        select(Media.mal_id, Anime.id)
-        .join(Anime, Anime.id == Media.anime_id)
-        .where(Media.mal_id.in_(cross_link_mal_ids))
+    """Pins the `ALT_CHAIN_EDGES` allowlist for the relation_link signal so
+    save, sweep, and backfill paths don't thread the policy through every
+    site. See DAO method for query implementation."""
+    return await merge_candidate_dao.get_cross_anime_relation_pairs(
+        db,
+        scope_anime_ids=scope_anime_ids,
+        allowed_relations=ALT_CHAIN_EDGES,
     )
-    result = await db.execute(stmt)
-    pairs: list[tuple[int, int]] = []
-    for _mal_id, anime_id in result.all():
-        if anime_id != new_anime_id:
-            pairs.append((new_anime_id, anime_id))
-    return pairs

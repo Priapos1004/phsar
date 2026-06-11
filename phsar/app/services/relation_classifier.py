@@ -65,7 +65,7 @@ _ANCHOR_TIER = {
 _ANCHOR_TIER_FALLBACK = 4
 
 _MAIN_CHAIN_EDGES = frozenset({"sequel", "prequel"})
-_ALT_CHAIN_EDGES = frozenset({"sequel", "prequel", "alternative_version"})
+ALT_CHAIN_EDGES = frozenset({"sequel", "prequel", "alternative_version"})
 
 
 def _normalize_media_type(media_type: str | None) -> str:
@@ -263,7 +263,7 @@ def classify_anime_relations(
         for neighbor, rel in adj.get(main_node, [])
         if rel == "alternative_version" and neighbor not in main_chain
     }
-    alt_chain = _closure(alt_seeds, adj, _ALT_CHAIN_EDGES, main_chain)
+    alt_chain = _closure(alt_seeds, adj, ALT_CHAIN_EDGES, main_chain)
 
     anchored = main_chain | alt_chain
     classifications: dict[int, str] = {}
@@ -384,7 +384,7 @@ def find_disjoint_franchises(
         for neighbor, rel in adj.get(main_node, [])
         if rel == "alternative_version" and neighbor not in main_chain
     }
-    alt_chain = _closure(alt_seeds, adj, _ALT_CHAIN_EDGES, main_chain)
+    alt_chain = _closure(alt_seeds, adj, ALT_CHAIN_EDGES, main_chain)
     anchored = main_chain | alt_chain
 
     substance_passing = {
