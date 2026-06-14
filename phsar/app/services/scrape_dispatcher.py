@@ -669,6 +669,17 @@ _EMBEDDING_TEXT_FIELDS = ("title", "name_eng", "name_jap", "other_names", "descr
 _METADATA_NONTEXT_FIELDS = ("cover_image", "age_rating", "original_source")
 
 
+def _jsonable(value: object) -> object:
+    """Coerce values into a JSONB-safe shape for the diff sink. Datetime
+    is the one type the volatile-field bucket emits that Python's default
+    json encoder rejects (the JSONB column's serializer goes through
+    `json.dumps`). All other field types in result_summary are already
+    primitive/list/dict."""
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
+
+
 async def _apply_metadata_diff(
     session: AsyncSession, media: Media, payload: dict,
     *, diff_sink: list[dict] | None = None,
@@ -695,7 +706,7 @@ async def _apply_metadata_diff(
 
     def _capture(field: str, old: object, new: object) -> None:
         if diff_sink is not None:
-            diff_sink.append({"field": field, "old": old, "new": new})
+            diff_sink.append({"field": field, "old": _jsonable(old), "new": _jsonable(new)})
 
     for field in _EMBEDDING_TEXT_FIELDS:
         new_val = payload.get(field)
@@ -866,7 +877,7 @@ def _apply_media_diff(
 
     def _capture(field: str, old: object, new: object) -> None:
         if diff_sink is not None:
-            diff_sink.append({"field": field, "old": old, "new": new})
+            diff_sink.append({"field": field, "old": _jsonable(old), "new": _jsonable(new)})
 
     # +1 vote on a 5M-vote anime is meaningless drift — use the weighted
     # formula and only reset stability when the delta crosses

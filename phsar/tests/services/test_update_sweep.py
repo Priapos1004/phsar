@@ -12,6 +12,7 @@ the identity (returns the preshaped payload as-is) so each test cooks
 the exact payload it wants without rebuilding a full MAL response.
 """
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -147,6 +148,28 @@ def test_diff_sink_captures_dynamic_field_changes():
     assert captured["score"] == (7.5, 8.0)
     assert captured["scored_by"] == (1000, 1200)
     assert captured["episodes"] == (12, 13)
+
+
+def test_diff_sink_serializes_datetime_to_iso_string():
+    """aired_to is a datetime — JSONB serialization via json.dumps would
+    crash if we stuffed the raw object into result_summary. Regression
+    guard for the datetime-in-diff-sink serialization blocker."""
+    media = Media(**media_kwargs(
+        anime_id=1, mal_id=1, score=7.5, scored_by=1000, episodes=12,
+        airing_status="Finished Airing",
+        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+    ))
+    sink: list[dict] = []
+    _apply_media_diff(
+        media,
+        _payload(aired_to="2021-06-30T00:00:00+00:00"),
+        diff_sink=sink,
+    )
+    captured = {e["field"]: (e["old"], e["new"]) for e in sink}
+    assert captured["aired_to"] == ("2020-06-30T00:00:00+00:00", "2021-06-30T00:00:00+00:00")
+    # The whole sink must json-serialize cleanly — same call json.dumps
+    # makes inside SQLAlchemy's JSONB serializer.
+    json.dumps(sink)
 
 
 def test_diff_sink_skipped_when_none():
