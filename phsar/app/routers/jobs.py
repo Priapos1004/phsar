@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.dependencies import get_current_user, get_db, require_user_or_admin
+from app.core.job_versions import make_job
 from app.daos.job_dao import JobDAO
 from app.exceptions import (
     DailyJobLimitExceededError,
@@ -15,7 +16,7 @@ from app.exceptions import (
     JobNotFoundError,
     JobQueueLimitExceededError,
 )
-from app.models.job import Job, JobKind, JobStatus
+from app.models.job import JobKind, JobStatus
 from app.models.users import RoleType, Users
 from app.schemas.job_schema import JobResponse, ScrapeJobRequest
 from app.services.job_worker import job_worker
@@ -56,8 +57,8 @@ async def enqueue_scrape(
     payload: dict = {"query": request.query}
     if request.mal_id is not None:
         payload["mal_id"] = request.mal_id
-    job = Job(
-        kind=JobKind.user_scrape,
+    job = make_job(
+        JobKind.user_scrape,
         status=JobStatus.queued,
         requested_by_user_id=current_user.id,
         payload=payload,

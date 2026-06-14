@@ -47,6 +47,12 @@ class Job(BaseModel):
     kind = Column(Enum(JobKind), nullable=False)
     status = Column(Enum(JobStatus), nullable=False, default=JobStatus.queued)
 
+    # Per-kind schema version for `result_summary`. Runtime source of
+    # truth is the JOB_KIND_VERSIONS registry in `core/job_versions.py`;
+    # server_default guards against a forgotten registry write during
+    # refactors.
+    version = Column(Integer, nullable=False, server_default="1")
+
     # Nullable because system-triggered jobs (sweeps) have no requester.
     requested_by_user_id = Column(
         Integer,

@@ -12,6 +12,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.job_versions import make_job
 from app.daos.anime_dao import AnimeDAO
 from app.daos.media_dao import MediaDAO
 from app.daos.media_unwanted_dao import MediaUnwantedDAO
@@ -82,8 +83,8 @@ async def seasonal_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     # preserve — a crash here loses nothing the next scheduled run
     # can't reproduce by re-querying /seasons/now.
     children = [
-        Job(
-            kind=JobKind.user_scrape,
+        make_job(
+            JobKind.user_scrape,
             status=JobStatus.queued,
             requested_by_user_id=None,
             # Stamp the parent so the admin Jobs Log can collapse this flock

@@ -13,6 +13,7 @@ from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.db import async_session_maker, engine
+from app.core.job_versions import make_job
 from app.core.maintenance import set_maintenance
 from app.exceptions import (
     BackupConfirmationMismatchError,
@@ -23,7 +24,7 @@ from app.exceptions import (
     BackupUploadTooLargeError,
     DuplicateBackupError,
 )
-from app.models.job import Job, JobKind, JobStatus
+from app.models.job import JobKind, JobStatus
 from app.schemas.backup_schema import BackupIntegrity, BackupMetadata, BackupSource
 from app.services._pg_subprocess import run_capture
 
@@ -585,8 +586,8 @@ async def _merge_jobs_audit_and_record_restore(
 
         now = datetime.now(timezone.utc)
         status = JobStatus.failed if error else JobStatus.succeeded
-        restore_job = Job(
-            kind=JobKind.restore,
+        restore_job = make_job(
+            JobKind.restore,
             status=status,
             requested_by_user_id=caller_user_id,
             payload={
