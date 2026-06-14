@@ -39,7 +39,6 @@ from app.services.scrape_dispatcher import (
     _apply_studio_diff,
     _qualifies_for_relations_probe,
     _refresh_one_anime,
-    _summarize_drift,
     update_sweep_dispatcher,
 )
 from tests._helpers import media_kwargs
@@ -127,6 +126,37 @@ def test_diff_no_change_returns_false():
         aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
     ))
     assert _apply_media_diff(media, _payload()) is False
+
+
+def test_diff_sink_captures_dynamic_field_changes():
+    """The v2 result_summary capture: when diff_sink is supplied, every
+    written field lands as a {field, old, new} entry so admins can read
+    "what did MAL move?" off the detail page."""
+    media = Media(**media_kwargs(
+        anime_id=1, mal_id=1, score=7.5, scored_by=1000, episodes=12,
+        airing_status="Finished Airing",
+        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+    ))
+    sink: list[dict] = []
+    _apply_media_diff(
+        media,
+        _payload(score=8.0, scored_by=1200, episodes=13),
+        diff_sink=sink,
+    )
+    captured = {e["field"]: (e["old"], e["new"]) for e in sink}
+    assert captured["score"] == (7.5, 8.0)
+    assert captured["scored_by"] == (1000, 1200)
+    assert captured["episodes"] == (12, 13)
+
+
+def test_diff_sink_skipped_when_none():
+    """Absent diff_sink is the production default — must not raise or
+    do extra work."""
+    media = Media(**media_kwargs(
+        anime_id=1, mal_id=1, score=7.5, scored_by=1000, episodes=12,
+        airing_status="Finished Airing", aired_to=None,
+    ))
+    _apply_media_diff(media, _payload(score=8.0))
 
 
 def test_diff_score_change_returns_true():
@@ -579,38 +609,6 @@ async def test_studio_diff_removal_logs_without_apply(db_session):
     report = await _apply_studio_diff(media, {"studio": []})
     assert report is not None
     assert report["kind"] == "any_change"
-
-
-def test_summarize_drift_empty():
-    assert _summarize_drift([]) == {
-        "applied_count": 0, "logged_count": 0, "unknown_tags": [], "samples": [],
-    }
-
-
-def test_summarize_drift_counts_and_unions_unknowns():
-    """Cross-media unknown tags fold into one sorted list so the bell
-    can render "seeder is missing: X, Y" without dedup logic of its own."""
-    reports = [
-        {"kind": "additions_applied", "unknown_tags": []},
-        {"kind": "additions_applied", "unknown_tags": []},
-        {"kind": "additions_unknown", "unknown_tags": ["Survival"]},
-        {"kind": "additions_unknown", "unknown_tags": ["Survival", "Mecha-Sci-Fi"]},
-        {"kind": "removal_or_replacement", "unknown_tags": []},
-    ]
-    out = _summarize_drift(reports)
-    assert out["applied_count"] == 2
-    assert out["logged_count"] == 3
-    assert out["unknown_tags"] == ["Mecha-Sci-Fi", "Survival"]
-    assert out["samples"] == reports  # under 5 → full list
-
-
-def test_summarize_drift_caps_samples_at_5():
-    """`result_summary` is JSONB; bounded samples keep a malformed MAL
-    response (drift for every refreshed media) from bloating the column."""
-    reports = [{"kind": "any_change", "unknown_tags": []} for _ in range(20)]
-    out = _summarize_drift(reports)
-    assert out["logged_count"] == 20
-    assert len(out["samples"]) == 5
 
 
 # ---------------------------------------------------------------------------
@@ -1110,9 +1108,35 @@ async def test_dispatcher_returns_summary(tracked_anime, monkeypatch):
         monkeypatch, fake, [a1_id, a2_id],
     )
 
-    assert summary["anime_refreshed"] == 2
-    assert summary["anime_changed"] == 1
+    assert summary["counters"]["anime_refreshed"] == 2
+    assert summary["counters"]["anime_with_dynamic_changes"] == 1
     assert sorted(fake.refresh_calls) == sorted([-8001 * 100, -8002 * 100])
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_records_v2_media_diff(tracked_anime, monkeypatch):
+    """v2 result_summary surfaces per-media old → new for every changed
+    field so the admin detail page can render concrete deltas — the
+    point of the whole observability rework."""
+    a_id = await _real_seed(
+        mal_id=-8050, last_checked_at=datetime.now(timezone.utc) - timedelta(days=10),
+    )
+    tracked_anime.append(a_id)
+    payloads = {-8050 * 100: _payload(score=9.9, scored_by=1500, episodes=24)}
+    fake = _FakeScraper(payloads)
+    summary, _, _ = await _run_dispatcher_harness(
+        monkeypatch, fake, [a_id], job_id=8050,
+    )
+
+    assert summary["counters"]["media_with_dynamic_changes"] == 1
+    entries = summary["media_changes"]
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["anime_id"] == a_id
+    fields = {d["field"]: (d["old"], d["new"]) for d in entry["dynamic"]}
+    assert fields["score"][1] == 9.9
+    assert fields["scored_by"][1] == 1500
+    assert fields["episodes"][1] == 24
 
 
 @pytest.mark.asyncio
@@ -1136,7 +1160,7 @@ async def test_dispatcher_isolates_failures_per_anime(tracked_anime, monkeypatch
         monkeypatch, fake, [a1_id, a2_id, a3_id], job_id=998,
     )
 
-    assert summary["anime_refreshed"] == 2
+    assert summary["counters"]["anime_refreshed"] == 2
 
     # Verify a2's last_checked_at didn't advance (still at the seeded
     # value, modulo asyncpg precision); a1/a3's did.
@@ -1285,9 +1309,9 @@ async def test_probe_only_runs_on_tier_3_or_4(tracked_anime, monkeypatch):
 
     # search_title called only with the tier-3 anime's main media mal_id.
     assert fake_scraper.search_title_calls == [-8303 * 100]
-    assert summary["probe_succeeded"] == 1
-    assert summary["probe_failed"] == 0
-    assert summary["anime_refreshed"] == 3
+    assert summary["counters"]["probe_succeeded"] == 1
+    assert summary["counters"]["probe_failed"] == 0
+    assert summary["counters"]["anime_refreshed"] == 3
 
 
 @pytest.mark.asyncio
@@ -1390,7 +1414,7 @@ async def test_probe_attach_routes_to_parent_anime(tracked_anime, monkeypatch):
     assert len(attach_calls) == 1
     assert attach_calls[0]["parent_anime_id"] == a_id
     assert sorted(attach_calls[0]["graph_mal_ids"]) == sorted([seed_mal_id, new_mal_id])
-    assert summary["probe_succeeded"] == 1
+    assert summary["counters"]["probe_succeeded"] == 1
 
 
 @pytest.mark.asyncio
@@ -1423,7 +1447,7 @@ async def test_spoiler_cache_recomputes_once_per_sweep(tracked_anime, monkeypatc
 
     assert len(attach_calls) == 2
     assert len(recompute_calls) == 1
-    assert summary["probe_succeeded"] == 2
+    assert summary["counters"]["probe_succeeded"] == 2
 
 
 @pytest.mark.asyncio
@@ -1494,8 +1518,8 @@ async def test_spoiler_recompute_failure_does_not_fail_the_sweep(
     )
 
     assert summary["cache_recompute_failed"] is True
-    assert summary["anime_refreshed"] == 1
-    assert summary["probe_succeeded"] == 1
+    assert summary["counters"]["anime_refreshed"] == 1
+    assert summary["counters"]["probe_succeeded"] == 1
 
 
 @pytest.mark.asyncio
@@ -1577,9 +1601,9 @@ async def test_relations_probe_failure_preserves_field_diff_but_not_anime_freshn
         job = type("FakeJob", (), {"id": 7801})()
         summary = await update_sweep_dispatcher(session, job)
 
-    assert summary["probe_failed"] == 1
-    assert summary["probe_succeeded"] == 0
-    assert summary["anime_refreshed"] == 0
+    assert summary["counters"]["probe_failed"] == 1
+    assert summary["counters"]["probe_succeeded"] == 0
+    assert summary["counters"]["anime_refreshed"] == 0
     assert recompute_calls == []
 
     async with async_session_maker() as s:

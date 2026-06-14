@@ -50,6 +50,12 @@ def build_classifier_graph(
     return nodes, edges
 
 
+class UmbrellaFieldChange(TypedDict):
+    field: str
+    old: object
+    new: object
+
+
 class ReclassifyDiff(TypedDict):
     reclassified: list[tuple[int, str, str]]  # (mal_id, old_rt, new_rt)
     anchor_changed: bool
@@ -58,6 +64,15 @@ class ReclassifyDiff(TypedDict):
     umbrella_drifted: bool
     old_anchor_mal_id: int
     new_anchor_mal_id: int
+    # Per-field old → new for the umbrella fields that drifted. The
+    # update_sweep dispatcher surfaces these on its detail page so the
+    # admin can see exactly which umbrella field MAL moved without
+    # re-deriving from the row.
+    umbrella_field_changes: list[UmbrellaFieldChange]
+    # True iff drift triggered an AnimeSearch embedding regen — distinct
+    # from `umbrella_drifted` because a cover_image-only change rewrites
+    # the row without re-encoding.
+    embedding_regenerated: bool
 
 
 async def reclassify_anime(
@@ -121,12 +136,21 @@ async def reclassify_anime(
     if not reclassified and not umbrella_drifted:
         return None
 
+    # Capture old → new BEFORE the row mutation so the dispatcher's
+    # detail-page payload reflects what MAL actually shifted.
+    umbrella_field_changes: list[UmbrellaFieldChange] = [
+        {"field": f, "old": _current(f), "new": new_umbrella[f]}
+        for f in drifted_fields
+    ]
+
     diff: ReclassifyDiff = {
         "reclassified": reclassified,
         "anchor_changed": anchor_changed,
         "umbrella_drifted": umbrella_drifted,
         "old_anchor_mal_id": anime.mal_id,
         "new_anchor_mal_id": new_anchor_mal_id,
+        "umbrella_field_changes": umbrella_field_changes,
+        "embedding_regenerated": embedding_drifted and not dry_run,
     }
 
     if dry_run:
@@ -154,6 +178,30 @@ async def reclassify_anime(
             setattr(anime, field, value)
 
     return diff
+
+
+def umbrella_diff_to_log_entry(
+    anime: Anime, diff: ReclassifyDiff,
+) -> dict:
+    """Serialize a ReclassifyDiff into the JSONB-bound shape the
+    update_sweep result_summary's `anime_umbrella_changes` list expects.
+    Owns the projection here so the dispatcher doesn't reach into
+    ReclassifyDiff's TypedDict keys and so a future schema shift lands
+    in one place."""
+    return {
+        "anime_id": anime.id,
+        "anime_uuid": str(anime.uuid),
+        "anime_title": anime.title,
+        "fields": diff["umbrella_field_changes"],
+        "anchor_changed": diff["anchor_changed"],
+        "old_anchor_mal_id": diff["old_anchor_mal_id"],
+        "new_anchor_mal_id": diff["new_anchor_mal_id"],
+        "embedding_regenerated": diff["embedding_regenerated"],
+        "reclassified": [
+            {"mal_id": mal_id, "old": old, "new": new}
+            for mal_id, old, new in diff["reclassified"]
+        ],
+    }
 
 
 def preview_reclassifications(

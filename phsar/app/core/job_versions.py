@@ -22,7 +22,10 @@ from app.models.job import Job, JobKind
 
 JOB_KIND_VERSIONS: dict[JobKind, int] = {
     JobKind.user_scrape: 1,
-    JobKind.update_sweep: 1,
+    # v2 bumps result_summary to a `{counters, media_changes,
+    # anime_umbrella_changes}` shape — flat aggregate counters and the
+    # bell-shaped genre/studio drift aggregates were dropped.
+    JobKind.update_sweep: 2,
     JobKind.seasonal_sweep: 1,
     JobKind.backup: 1,
     JobKind.restore: 1,

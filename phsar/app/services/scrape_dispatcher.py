@@ -40,7 +40,10 @@ from app.models.media_freshness import MediaFreshness
 from app.models.media_genre import MediaGenre
 from app.models.media_relation_edges import MediaRelationEdges
 from app.schemas.search_schema import AttachToExistingAction
-from app.services.anime_relation_service import reclassify_anime
+from app.services.anime_relation_service import (
+    reclassify_anime,
+    umbrella_diff_to_log_entry,
+)
 from app.services.jikan_scraper import (
     AIRING_STATUS_CURRENTLY_AIRING,
     JikanScraper,
@@ -72,9 +75,14 @@ class RefreshResult(NamedTuple):
     raw_payloads: dict[int, dict]
     is_currently_airing: bool
     metadata_changed_count: int  # media rows with non-volatile field drift
-    umbrella_drifted: bool  # whether reclassify_anime rewrote any umbrella field
+    # Full ReclassifyDiff (or None if nothing drifted) — bool umbrella-
+    # drift is derivable from this, so the NamedTuple doesn't carry both.
+    umbrella_diff: dict | None
     genre_drifts: list[dict]  # per-media DriftReports (genre); empty if no drift
     studio_drifts: list[dict]  # per-media DriftReports (studio); empty if no drift
+    # Per-media diff entries already annotated with anime context so the
+    # dispatcher just extends its log — no post-hoc mutation needed.
+    media_changes: list[dict]
 
 
 # Diff classification for the genre/studio drift detector. Pure-addition
@@ -229,8 +237,10 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     exclusions: set[int] = set(media_ids) | set(anime_ids) | set(unwanted_ids)
 
     refreshed = 0
-    changed_anime = 0
-    metadata_changed_media = 0
+    anime_with_dynamic_changes = 0
+    anime_with_static_changes = 0
+    media_with_dynamic_changes = 0
+    media_with_static_changes = 0
     umbrella_reclassed = 0
     probe_succeeded = 0
     probe_failed = 0
@@ -246,8 +256,11 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     # refresh alone (no new media) can surface a fresh relation_link
     # signal. Broader scope than probe-attached.
     sidecar_touched_anime_ids: list[int] = []
-    genre_drift_aggregate: list[dict] = []
-    studio_drift_aggregate: list[dict] = []
+    # v2 result_summary: every changed media row + every umbrella drift,
+    # carrying old → new for each touched field. The detail page renders
+    # off this; the Jobs Log row counts off `counters` below.
+    media_changes_log: list[dict] = []
+    anime_umbrella_changes_log: list[dict] = []
     async with JikanScraper() as scraper:
         for anime in anime_list:
             step1 = await _try_step1_refresh(session, anime, scraper)
@@ -275,13 +288,25 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
             )
             await session.commit()
             refreshed += 1
-            if step1.volatile_changed:
-                changed_anime += 1
-            metadata_changed_media += step1.metadata_changed_count
-            if step1.umbrella_drifted:
+            anime_had_dynamic = False
+            anime_had_static = False
+            for entry in step1.media_changes:
+                media_changes_log.append(entry)
+                if entry["dynamic"]:
+                    media_with_dynamic_changes += 1
+                    anime_had_dynamic = True
+                if entry["static"]:
+                    media_with_static_changes += 1
+                    anime_had_static = True
+            if anime_had_dynamic:
+                anime_with_dynamic_changes += 1
+            if anime_had_static:
+                anime_with_static_changes += 1
+            if step1.umbrella_diff and step1.umbrella_diff["umbrella_drifted"]:
                 umbrella_reclassed += 1
-            genre_drift_aggregate.extend(step1.genre_drifts)
-            studio_drift_aggregate.extend(step1.studio_drifts)
+                anime_umbrella_changes_log.append(
+                    umbrella_diff_to_log_entry(anime, step1.umbrella_diff),
+                )
             await progress.update(items_done=refreshed)
 
     # Re-run merge detection at sweep end: title_studio/title_desc against
@@ -329,43 +354,21 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
 
     await progress.update(stage="Done", items_done=refreshed, force=True)
     return {
-        "anime_refreshed": refreshed,
-        "anime_changed": changed_anime,
-        "metadata_changed_media": metadata_changed_media,
-        "umbrella_reclassed": umbrella_reclassed,
-        "probe_succeeded": probe_succeeded,
-        "probe_failed": probe_failed,
-        "probe_attached_anime_count": len(probe_attached_anime_ids),
+        "counters": {
+            "anime_refreshed": refreshed,
+            "anime_with_dynamic_changes": anime_with_dynamic_changes,
+            "anime_with_static_changes": anime_with_static_changes,
+            "media_with_dynamic_changes": media_with_dynamic_changes,
+            "media_with_static_changes": media_with_static_changes,
+            "umbrella_reclassed": umbrella_reclassed,
+            "probe_succeeded": probe_succeeded,
+            "probe_failed": probe_failed,
+            "probe_attached_anime_count": len(probe_attached_anime_ids),
+        },
+        "media_changes": media_changes_log,
+        "anime_umbrella_changes": anime_umbrella_changes_log,
         "merge_detect_failed": merge_detect_failed,
         "cache_recompute_failed": cache_recompute_failed,
-        "genre_drift": _summarize_drift(genre_drift_aggregate),
-        "studio_drift": _summarize_drift(studio_drift_aggregate),
-    }
-
-
-# Bound on per-bucket drift samples in result_summary so a malformed
-# MAL response that produces drift for every refreshed media doesn't
-# bloat the JSONB column past what's useful for review.
-_DRIFT_SAMPLE_LIMIT = 5
-
-
-def _summarize_drift(reports: list[dict]) -> dict:
-    """Collapse a list of per-media drift reports into the
-    bell-renderable summary shape. `applied_count` and `logged_count`
-    are read from the `kind` field so the bell can render
-    "auto-applied N, flagged M for review" without re-classifying.
-    `unknown_tags` is the union across all reports — useful for the
-    seeder-update workflow on genre drift."""
-    if not reports:
-        return {"applied_count": 0, "logged_count": 0, "unknown_tags": [], "samples": []}
-    applied = sum(1 for r in reports if r["kind"] == _DRIFT_ADDITIONS_APPLIED)
-    logged = len(reports) - applied
-    unknown_tags = sorted({t for r in reports for t in r["unknown_tags"]})
-    return {
-        "applied_count": applied,
-        "logged_count": logged,
-        "unknown_tags": unknown_tags,
-        "samples": reports[:_DRIFT_SAMPLE_LIMIT],
     }
 
 
@@ -452,15 +455,20 @@ async def _refresh_one_anime(
     raw_payloads: dict[int, dict] = {}
     genre_drifts: list[dict] = []
     studio_drifts: list[dict] = []
+    media_changes: list[dict] = []
 
     for media in anime.media:
         raw = await scraper.refresh_anime(media.mal_id)
         raw_payloads[media.mal_id] = raw
         payload = scraper.extract_information(raw)
-        if _apply_media_diff(media, payload):
+        dynamic: list[dict] = []
+        static: list[dict] = []
+        if _apply_media_diff(media, payload, diff_sink=dynamic):
             volatile_changed = True
 
-        metadata_drift = await _apply_metadata_diff(session, media, payload)
+        metadata_drift = await _apply_metadata_diff(
+            session, media, payload, diff_sink=static,
+        )
         if metadata_drift:
             metadata_changed_count += 1
 
@@ -471,6 +479,22 @@ async def _refresh_one_anime(
         studio_drift = await _apply_studio_diff(media, payload)
         if studio_drift:
             studio_drifts.append(studio_drift)
+
+        if dynamic or static or genre_drift or studio_drift:
+            media_changes.append({
+                "anime_id": anime.id,
+                "anime_uuid": str(anime.uuid),
+                "anime_title": anime.title,
+                "media_id": media.id,
+                "media_uuid": str(media.uuid),
+                "media_mal_id": media.mal_id,
+                "media_title": media.title,
+                "media_relation_type": media.relation_type.value,
+                "dynamic": dynamic,
+                "static": static,
+                "genre_drift": genre_drift,
+                "studio_drift": studio_drift,
+            })
 
         if media.freshness is None:
             # Defensive: save_service from 7b creates the sidecar on
@@ -522,9 +546,10 @@ async def _refresh_one_anime(
         raw_payloads=raw_payloads,
         is_currently_airing=is_currently_airing,
         metadata_changed_count=metadata_changed_count,
-        umbrella_drifted=bool(umbrella_diff and umbrella_diff["umbrella_drifted"]),
+        umbrella_diff=umbrella_diff,
         genre_drifts=genre_drifts,
         studio_drifts=studio_drifts,
+        media_changes=media_changes,
     )
 
 
@@ -646,6 +671,7 @@ _METADATA_NONTEXT_FIELDS = ("cover_image", "age_rating", "original_source")
 
 async def _apply_metadata_diff(
     session: AsyncSession, media: Media, payload: dict,
+    *, diff_sink: list[dict] | None = None,
 ) -> bool:
     """Refresh non-volatile fields (description, titles, cover, age rating,
     source) from MAL. Regenerates the media's MediaSearch embedding pair
@@ -659,9 +685,17 @@ async def _apply_metadata_diff(
 
     Genre / studio drift is handled separately (next commit) so the M2M
     plumbing stays out of this simple-column path.
+
+    `diff_sink` is the v2 result_summary capture: dispatcher passes a
+    list to collect per-field {field, old, new} entries; production
+    callers that don't care leave it None.
     """
     text_changed = False
     other_changed = False
+
+    def _capture(field: str, old: object, new: object) -> None:
+        if diff_sink is not None:
+            diff_sink.append({"field": field, "old": old, "new": new})
 
     for field in _EMBEDDING_TEXT_FIELDS:
         new_val = payload.get(field)
@@ -673,6 +707,7 @@ async def _apply_metadata_diff(
             current = list(getattr(media, field) or [])
             new_val = list(new_val or [])
             if set(current) != set(new_val):
+                _capture(field, current, new_val)
                 setattr(media, field, new_val)
                 text_changed = True
             continue
@@ -680,7 +715,9 @@ async def _apply_metadata_diff(
         # bucket's "MAL response omitted the field" guard.
         if new_val is None:
             continue
-        if getattr(media, field) != new_val:
+        current = getattr(media, field)
+        if current != new_val:
+            _capture(field, current, new_val)
             setattr(media, field, new_val)
             text_changed = True
 
@@ -688,7 +725,9 @@ async def _apply_metadata_diff(
         new_val = payload.get(field)
         if new_val is None:
             continue
-        if getattr(media, field) != new_val:
+        current = getattr(media, field)
+        if current != new_val:
+            _capture(field, current, new_val)
             setattr(media, field, new_val)
             other_changed = True
 
@@ -722,8 +761,8 @@ def _emit_drift_report(
     report shape.
 
     `additions_applied` is intentionally not logged — it represents the
-    auto-apply path that runs silently; the count surfaces via
-    `_summarize_drift` for the bell.
+    auto-apply path that runs silently; the count surfaces via the
+    per-media `media_changes` entry in result_summary v2.
     """
     report = {
         "field": field,
@@ -810,11 +849,24 @@ async def _apply_studio_diff(media: Media, payload: dict) -> dict | None:
     return _emit_drift_report(media, "studios", _DRIFT_ANY_CHANGE, current, new)
 
 
-def _apply_media_diff(media: Media, payload: dict) -> bool:
+def _apply_media_diff(
+    media: Media, payload: dict, *, diff_sink: list[dict] | None = None,
+) -> bool:
     """Compare payload against media for the volatile fields and mutate
     in place. Returns True if anything *meaningfully* changed (i.e.
-    enough that the per-anime stability counter should reset)."""
+    enough that the per-anime stability counter should reset).
+
+    `diff_sink` is the v2 result_summary capture: dispatcher passes a
+    list to collect {field, old, new} entries for every WRITE (not just
+    stability-resetting ones — admins inspecting the detail page want
+    to see microscopic score deltas too). The bool return still gates
+    the stability counter.
+    """
     changed = False
+
+    def _capture(field: str, old: object, new: object) -> None:
+        if diff_sink is not None:
+            diff_sink.append({"field": field, "old": old, "new": new})
 
     # +1 vote on a 5M-vote anime is meaningless drift — use the weighted
     # formula and only reset stability when the delta crosses
@@ -825,8 +877,14 @@ def _apply_media_diff(media: Media, payload: dict) -> bool:
     new_score = payload.get("score")
     new_scored_by = payload.get("scored_by")
     if new_scored_by:
-        old_weighted = _weighted_score(media.score, media.scored_by)
+        old_score = media.score
+        old_scored_by = media.scored_by
+        old_weighted = _weighted_score(old_score, old_scored_by)
         new_weighted = _weighted_score(new_score, new_scored_by)
+        if old_score != new_score:
+            _capture("score", old_score, new_score)
+        if old_scored_by != new_scored_by:
+            _capture("scored_by", old_scored_by, new_scored_by)
         media.score = new_score
         media.scored_by = new_scored_by
         if (old_weighted is None) != (new_weighted is None):
@@ -854,17 +912,20 @@ def _apply_media_diff(media: Media, payload: dict) -> bool:
                 "Episode count revealed for media %s ('%s'): %d",
                 media.id, media.title, new_episodes,
             )
+        _capture("episodes", media.episodes, new_episodes)
         media.episodes = new_episodes
         changed = True
 
     new_airing_status = payload.get("airing_status")
     # airing_status is NOT NULL — refuse to clobber with a missing value.
     if new_airing_status is not None and media.airing_status != new_airing_status:
+        _capture("airing_status", media.airing_status, new_airing_status)
         media.airing_status = new_airing_status
         changed = True
 
     new_aired_to = parse_mal_datetime(payload.get("aired_to"))
     if media.aired_to != new_aired_to:
+        _capture("aired_to", media.aired_to, new_aired_to)
         media.aired_to = new_aired_to
         changed = True
 
