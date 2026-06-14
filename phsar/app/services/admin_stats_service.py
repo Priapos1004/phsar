@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.daos.anime_dao import AnimeDAO
 from app.daos.merge_candidate_dao import MergeCandidateDAO
 from app.daos.split_candidate_dao import SplitCandidateDAO
 from app.models.anime import Anime
@@ -26,8 +27,10 @@ from app.schemas.admin_schema import (
     CurationPendingCounts,
     JobKindStats,
     JobsStats,
+    SweepTierBreakdown,
 )
 
+anime_dao = AnimeDAO()
 merge_candidate_dao = MergeCandidateDAO()
 split_candidate_dao = SplitCandidateDAO()
 
@@ -128,12 +131,19 @@ async def _activity_stats(db: AsyncSession, cutoff: datetime) -> ActivityStats:
     )
 
 
+async def _sweep_tier_breakdown(db: AsyncSession) -> SweepTierBreakdown:
+    counts = await anime_dao.count_by_sweep_tier_priority(db)
+    return SweepTierBreakdown(**counts)
+
+
 async def get_overview_stats(db: AsyncSession) -> AdminOverviewStats:
     cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    # Sequential awaits — AsyncSession can't multiplex.
     return AdminOverviewStats(
         catalog=await _catalog_stats(db, cutoff),
         jobs_7d=await _jobs_stats(db, cutoff),
         activity_7d=await _activity_stats(db, cutoff),
+        sweep_tiers=await _sweep_tier_breakdown(db),
     )
 
 

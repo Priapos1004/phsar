@@ -16,7 +16,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import selectinload
 
 from app.core.db import async_session_maker
@@ -903,6 +903,50 @@ async def test_tier_long_tail_selected(db_session):
         last_checked_at=datetime.now(timezone.utc) - timedelta(days=200),
     )
     assert a.id in await _select_due_ids(db_session)
+
+
+@pytest.mark.asyncio
+async def test_count_by_sweep_tier_priority_buckets_each_anime_once(db_session):
+    """5 mutually-exclusive buckets in priority cascade: an airing anime
+    that is also stabilizing counts under `airing_now`, not
+    `stabilizing`. Sum equals total anime count."""
+    from app.models.media import RelationType
+    now = datetime.now(timezone.utc)
+    await _seed_anime(  # airing wins over stable<3
+        db_session, mal_id=-7101, stable_check_count=1,
+        airing_status="Currently Airing", last_checked_at=now,
+    )
+    await _seed_anime(  # stable<3, not airing
+        db_session, mal_id=-7102, stable_check_count=2, last_checked_at=now,
+    )
+    await _seed_anime(  # weekly_recent_main
+        db_session, mal_id=-7103, stable_check_count=10,
+        last_checked_at=now - timedelta(days=8),
+        relation_type=RelationType.Main,
+        aired_from=now - timedelta(days=365),
+    )
+    await _seed_anime(  # long_tail
+        db_session, mal_id=-7104, stable_check_count=10,
+        last_checked_at=now - timedelta(days=200),
+    )
+    await _seed_anime(  # not_currently_due
+        db_session, mal_id=-7105, stable_check_count=10,
+        last_checked_at=now - timedelta(hours=1),
+    )
+    await db_session.flush()
+
+    counts = await AnimeDAO().count_by_sweep_tier_priority(db_session)
+    # Floor-only asserts because the test DB may carry other rows;
+    # invariant sum check ensures no anime is double-counted.
+    assert counts["airing_now"] >= 1
+    assert counts["stabilizing"] >= 1
+    assert counts["weekly_recent_main"] >= 1
+    assert counts["long_tail"] >= 1
+    assert counts["not_currently_due"] >= 1
+    total_anime = (await db_session.execute(
+        select(func.count(Anime.id))
+    )).scalar_one()
+    assert sum(counts.values()) == total_anime
 
 
 @pytest.mark.asyncio

@@ -1,8 +1,9 @@
 import logging
+from typing import Any, NamedTuple
 from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import and_, cast, exists, func, or_, select, text
+from sqlalchemy import and_, case, cast, exists, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
@@ -29,6 +30,46 @@ logger = logging.getLogger(__name__)
 # main media aired within this window. Older main-only franchises fall
 # back to tier 4 (180-day long tail).
 SWEEP_RECENT_MAIN_YEARS = 5
+
+
+class _SweepTierPredicates(NamedTuple):
+    airing_now: Any
+    still_stabilizing: Any
+    weekly_recent_main: Any
+    long_tail: Any
+
+
+def _sweep_tier_predicates(freshness_alias) -> _SweepTierPredicates:
+    """Build the four sweep-tier predicates against the given freshness
+    alias. Shared between `select_due_for_sweep` (OR'd to pick what's
+    due) and `count_by_sweep_tier_priority` (priority-cascaded into
+    mutually-exclusive buckets)."""
+    last_checked = func.coalesce(freshness_alias.last_checked_at, Anime.created_at)
+    stable = func.coalesce(freshness_alias.stable_check_count, 0)
+    now = func.now()
+    week_ago = now - text("interval '7 days'")
+    six_mo_ago = now - text("interval '180 days'")
+    recent_main_cutoff = now - text(f"interval '{SWEEP_RECENT_MAIN_YEARS} years'")
+
+    airing_now = exists().where(
+        and_(
+            Media.anime_id == Anime.id,
+            Media.airing_status == AIRING_STATUS_CURRENTLY_AIRING,
+        )
+    )
+    recent_main = exists().where(
+        and_(
+            Media.anime_id == Anime.id,
+            Media.relation_type == RelationType.Main,
+            Media.aired_from >= recent_main_cutoff,
+        )
+    )
+    return _SweepTierPredicates(
+        airing_now=airing_now,
+        still_stabilizing=stable < 3,
+        weekly_recent_main=and_(last_checked < week_ago, recent_main),
+        long_tail=last_checked < six_mo_ago,
+    )
 
 
 class AnimeDAO(MalIdDAO[Anime]):
@@ -95,34 +136,17 @@ class AnimeDAO(MalIdDAO[Anime]):
         their created_at position.
         """
         af = aliased(AnimeFreshness)
-        last_checked = func.coalesce(af.last_checked_at, Anime.created_at)
-        stable = func.coalesce(af.stable_check_count, 0)
-        now = func.now()
-        week_ago = now - text("interval '7 days'")
-        six_mo_ago = now - text("interval '180 days'")
-        recent_main_cutoff = now - text(f"interval '{SWEEP_RECENT_MAIN_YEARS} years'")
-
-        airing_now = exists().where(
-            and_(
-                Media.anime_id == Anime.id,
-                Media.airing_status == AIRING_STATUS_CURRENTLY_AIRING,
-            )
-        )
-        recent_main = exists().where(
-            and_(
-                Media.anime_id == Anime.id,
-                Media.relation_type == RelationType.Main,
-                Media.aired_from >= recent_main_cutoff,
-            )
-        )
-        still_stabilizing = stable < 3
-        long_tail = last_checked < six_mo_ago
-        weekly_recent_main = and_(last_checked < week_ago, recent_main)
+        preds = _sweep_tier_predicates(af)
 
         stmt = (
             select(Anime)
             .outerjoin(af, af.anime_id == Anime.id)
-            .where(or_(airing_now, still_stabilizing, weekly_recent_main, long_tail))
+            .where(or_(
+                preds.airing_now,
+                preds.still_stabilizing,
+                preds.weekly_recent_main,
+                preds.long_tail,
+            ))
             # Primary order: `nullsfirst()` puts never-checked rows at the
             # front. A NULL last_checked_at is "maximum staleness from MAL's
             # perspective" — new anime (always due via tier 2) must survive
@@ -153,6 +177,45 @@ class AnimeDAO(MalIdDAO[Anime]):
         )
         result = await db.execute(stmt)
         return list(result.scalars().all())
+
+    _TIER_BUCKETS: tuple[str, ...] = (
+        "airing_now",
+        "stabilizing",
+        "weekly_recent_main",
+        "long_tail",
+        "not_currently_due",
+    )
+
+    async def count_by_sweep_tier_priority(
+        self, db: AsyncSession,
+    ) -> dict[str, int]:
+        """5 mutually-exclusive bucket counts in priority cascade:
+        airing_now > stabilizing > weekly_recent_main > long_tail >
+        not_currently_due. Sum equals total anime count.
+
+        Powers the admin Overview tier-breakdown card. Single GROUP BY
+        on a CASE expression — the same predicates as select_due_for_sweep
+        so the buckets match the selection logic exactly.
+        """
+        af = aliased(AnimeFreshness)
+        preds = _sweep_tier_predicates(af)
+        bucket = case(
+            (preds.airing_now, "airing_now"),
+            (preds.still_stabilizing, "stabilizing"),
+            (preds.weekly_recent_main, "weekly_recent_main"),
+            (preds.long_tail, "long_tail"),
+            else_="not_currently_due",
+        ).label("bucket")
+        stmt = (
+            select(bucket, func.count(Anime.id))
+            .outerjoin(af, af.anime_id == Anime.id)
+            .group_by(bucket)
+        )
+        rows = (await db.execute(stmt)).all()
+        counts = {b: 0 for b in self._TIER_BUCKETS}
+        for bucket_name, count in rows:
+            counts[bucket_name] = count
+        return counts
 
     async def list_recent(self, db: AsyncSession, limit: int = 10) -> list[Anime]:
         """Most-recently scraped anime, newest first. Powers the

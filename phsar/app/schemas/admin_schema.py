@@ -183,10 +183,23 @@ class ActivityStats(BaseModel):
     scrapes_submitted: int
 
 
+class SweepTierBreakdown(BaseModel):
+    """Mutually-exclusive bucket counts in priority cascade (an airing
+    anime that is also stabilizing counts under `airing_now`, not
+    `stabilizing`). Sum equals total anime count, so the card can render
+    each bucket as a share of the catalog."""
+    airing_now: int
+    stabilizing: int
+    weekly_recent_main: int
+    long_tail: int
+    not_currently_due: int
+
+
 class AdminOverviewStats(BaseModel):
     catalog: CatalogStats
     jobs_7d: JobsStats
     activity_7d: ActivityStats
+    sweep_tiers: SweepTierBreakdown
 
 
 class CurationPendingCounts(BaseModel):
