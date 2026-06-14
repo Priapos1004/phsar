@@ -363,6 +363,10 @@ export interface BackupResultSummary extends JobResultSummary {
 export interface Job {
 	uuid: string;
 	kind: JobKind;
+	// Per-kind result_summary schema version (registered in
+	// `app/core/job_versions.py`). Renderers switch on `(kind, version)`
+	// so historical rows keep parsing while we evolve newer payloads.
+	version: number;
 	status: JobStatus;
 	payload: Record<string, unknown>;
 	stage: string | null;
@@ -414,10 +418,21 @@ export interface AdminActivityStats {
 	scrapes_submitted: number;
 }
 
+// Mutually-exclusive bucket counts in priority cascade — sum equals
+// total anime count, so the card can render each bucket as a share.
+export interface AdminSweepTierBreakdown {
+	airing_now: number;
+	stabilizing: number;
+	weekly_recent_main: number;
+	long_tail: number;
+	not_currently_due: number;
+}
+
 export interface AdminOverviewStats {
 	catalog: AdminCatalogStats;
 	jobs_7d: AdminJobsStats;
 	activity_7d: AdminActivityStats;
+	sweep_tiers: AdminSweepTierBreakdown;
 }
 
 // Admin Jobs Log — paginated all-jobs view with flattened requested_by.

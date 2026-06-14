@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { api, ApiError } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -7,7 +8,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Label } from '$lib/components/ui/label';
 	import { ChevronRight } from 'lucide-svelte';
-	import { JOB_KIND_LABELS, PARENTING_KINDS, formatJobKind, formatShortDateTime } from '$lib/utils/formatString';
+	import { JOB_KIND_LABELS, PARENTING_KINDS, formatDuration, formatJobKind, formatShortDateTime } from '$lib/utils/formatString';
 	import type { AdminJobResponse, AdminJobsPage, JobKind, JobStatus } from '$lib/types/api';
 
 	const PAGE_SIZE = 50;
@@ -128,6 +129,50 @@
 		failed: 'bg-destructive/15 text-destructive',
 	};
 
+	// `now` ticks while any row is running so the Duration column updates
+	// in place without a re-fetch. Quiet when nothing is running so we
+	// don't burn render cycles on a stable Jobs Log view.
+	let now = $state(Date.now());
+	// Short-circuit: page items first (always ≤ PAGE_SIZE rows). Only
+	// walk every loaded child set when no top-level row is running —
+	// otherwise we'd re-scan hundreds of children per second tick.
+	let hasRunning = $derived.by(() => {
+		if ((page?.items ?? []).some((r) => r.status === 'running')) return true;
+		return Object.values(childrenByParent).some(
+			(s) => isLoaded(s) && s.items.some((r) => r.status === 'running'),
+		);
+	});
+	$effect(() => {
+		if (!hasRunning) return;
+		const id = setInterval(() => (now = Date.now()), 1000);
+		return () => clearInterval(id);
+	});
+
+	function rowDuration(row: AdminJobResponse): string {
+		if (!row.started_at) return '—';
+		const start = new Date(row.started_at).getTime();
+		const end = row.finished_at ? new Date(row.finished_at).getTime() : now;
+		return formatDuration(Math.max(0, Math.floor((end - start) / 1000)));
+	}
+
+	// A row is clickable when its detail page actually has more to show
+	// than the row itself — today only update_sweep ≥ v2 (per-media diff
+	// inspector). v1 sweep rows would land on a "predates the rework"
+	// notice, so the click affordance stays off for them.
+	function isClickableJob(row: AdminJobResponse): boolean {
+		return row.kind === 'update_sweep' && row.version >= 2;
+	}
+
+	function clickableNavProps(uuid: string) {
+		const go = () => void goto(`/admin/jobs/${uuid}`);
+		return {
+			role: 'link',
+			tabindex: 0,
+			onclick: go,
+			onkeydown: (e: KeyboardEvent) => { if (e.key === 'Enter') go(); },
+		};
+	}
+
 	// JSONB lookups land as `unknown` per the JobResultSummary index signature;
 	// this narrows safely so the formatter doesn't crash on legacy/malformed rows.
 	const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
@@ -147,6 +192,23 @@
 			return typeof filename === 'string' ? filename : '';
 		}
 		if (row.kind === 'update_sweep' && row.status === 'succeeded' && row.result_summary) {
+			// v2 (post-v0.14.5) nests aggregate counts under `counters` and
+			// carries per-media diffs the detail page renders. v1 rows pre-
+			// date the rework — fall back to the flat shape.
+			if (row.version >= 2) {
+				const c = (row.result_summary.counters ?? {}) as Record<string, unknown>;
+				const refreshed = num(c.anime_refreshed);
+				const dynAnime = num(c.anime_with_dynamic_changes);
+				const staticMedia = num(c.media_with_static_changes);
+				const umbrella = num(c.umbrella_reclassed);
+				const probeAttached = num(c.probe_attached_anime_count);
+				const parts = [`${refreshed} touched`];
+				if (dynAnime > 0) parts.push(`${dynAnime} anime w/ dynamic`);
+				if (staticMedia > 0) parts.push(`${staticMedia} media w/ static`);
+				if (umbrella > 0) parts.push(`${umbrella} umbrella`);
+				if (probeAttached > 0) parts.push(`${probeAttached} new attached`);
+				return parts.join(' · ');
+			}
 			const refreshed = num(row.result_summary.anime_refreshed);
 			const changed = num(row.result_summary.anime_changed);
 			const metadataChanged = num(row.result_summary.metadata_changed_media);
@@ -216,6 +278,7 @@
 								<th class="py-2 pr-3 font-medium">Created</th>
 								<th class="py-2 pr-3 font-medium">Kind</th>
 								<th class="py-2 pr-3 font-medium">Status</th>
+								<th class="py-2 pr-3 font-medium">Duration</th>
 								<th class="py-2 pr-3 font-medium">User</th>
 								<th class="py-2 pr-3 font-medium">Detail</th>
 							</tr>
@@ -224,14 +287,18 @@
 							{#each page.items as row (row.uuid)}
 								{@const expanded = expandedUuids.has(row.uuid)}
 								{@const expandable = PARENTING_KINDS.has(row.kind)}
-								<tr class="border-b border-border/50 align-top">
+								{@const clickable = isClickableJob(row)}
+								<tr
+									class="border-b border-border/50 align-top {clickable ? 'cursor-pointer hover:bg-muted/20 transition-colors' : ''}"
+									{...(clickable ? clickableNavProps(row.uuid) : {})}
+								>
 									<td class="py-2 pr-2 w-6">
 										{#if expandable}
 											<button
 												type="button"
 												class="text-muted-foreground hover:text-card-foreground transition"
 												aria-label={expanded ? 'Collapse children' : 'Expand children'}
-												onclick={() => void toggleExpand(row.uuid)}
+												onclick={(e) => { e.stopPropagation(); void toggleExpand(row.uuid); }}
 											>
 												<ChevronRight class="size-4 transition-transform {expanded ? 'rotate-90' : ''}" />
 											</button>
@@ -243,6 +310,9 @@
 									</td>
 									<td class="py-2 pr-3">
 										<Badge class="text-[11px] {STATUS_BADGE[row.status]}">{row.status}</Badge>
+									</td>
+									<td class="py-2 pr-3 text-card-foreground/80 whitespace-nowrap tabular-nums">
+										{rowDuration(row)}
 									</td>
 									<td class="py-2 pr-3 text-card-foreground">
 										{row.requested_by_username ?? 'system'}
@@ -260,21 +330,25 @@
 									{#if childState === 'loading'}
 										<tr class="border-b border-border/30 bg-muted/10">
 											<td></td>
-											<td class="py-2 pr-3 text-xs text-muted-foreground italic" colspan="5">Loading children…</td>
+											<td class="py-2 pr-3 text-xs text-muted-foreground italic" colspan="6">Loading children…</td>
 										</tr>
 									{:else if childState && !isLoaded(childState)}
 										<tr class="border-b border-border/30 bg-muted/10">
 											<td></td>
-											<td class="py-2 pr-3 text-xs text-destructive" colspan="5">{childState.error}</td>
+											<td class="py-2 pr-3 text-xs text-destructive" colspan="6">{childState.error}</td>
 										</tr>
 									{:else if isLoaded(childState) && childState.items.length === 0}
 										<tr class="border-b border-border/30 bg-muted/10">
 											<td></td>
-											<td class="py-2 pr-3 text-xs text-muted-foreground italic" colspan="5">No child jobs were enqueued.</td>
+											<td class="py-2 pr-3 text-xs text-muted-foreground italic" colspan="6">No child jobs were enqueued.</td>
 										</tr>
 									{:else if isLoaded(childState)}
 										{#each childState.items as child (child.uuid)}
-											<tr class="border-b border-border/30 bg-muted/10 align-top">
+											{@const childClickable = isClickableJob(child)}
+											<tr
+												class="border-b border-border/30 bg-muted/10 align-top {childClickable ? 'cursor-pointer hover:bg-muted/30 transition-colors' : ''}"
+												{...(childClickable ? clickableNavProps(child.uuid) : {})}
+											>
 												<td class="py-1.5 pr-2 border-l-2 border-primary/40"></td>
 												<td class="py-1.5 pr-3 text-card-foreground whitespace-nowrap text-xs">{formatShortDateTime(child.created_at)}</td>
 												<td class="py-1.5 pr-3">
@@ -282,6 +356,9 @@
 												</td>
 												<td class="py-1.5 pr-3">
 													<Badge class="text-[10px] {STATUS_BADGE[child.status]}">{child.status}</Badge>
+												</td>
+												<td class="py-1.5 pr-3 text-card-foreground/80 whitespace-nowrap tabular-nums text-xs">
+													{rowDuration(child)}
 												</td>
 												<td class="py-1.5 pr-3 text-card-foreground text-xs">
 													{child.requested_by_username ?? 'system'}
@@ -298,7 +375,7 @@
 										{#if childState.total > childState.items.length}
 											<tr class="border-b border-border/30 bg-muted/10">
 												<td class="py-1.5 pr-2 border-l-2 border-primary/40"></td>
-												<td class="py-1.5 pr-3 text-xs text-amber-400 italic" colspan="5">
+												<td class="py-1.5 pr-3 text-xs text-amber-400 italic" colspan="6">
 													Showing {childState.items.length} of {childState.total} children — the rest are older than the {CHILDREN_LIMIT}-row cap.
 												</td>
 											</tr>

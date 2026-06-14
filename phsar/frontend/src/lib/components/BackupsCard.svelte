@@ -153,6 +153,9 @@
             addOptimisticJob({
                 uuid: job_uuid,
                 kind: 'backup',
+                // Optimistic stub — reconciled against the server row on
+                // the next /jobs/mine fetch, so any version is fine here.
+                version: 1,
                 status: 'queued',
                 payload: { source: 'manual' },
                 stage: null,

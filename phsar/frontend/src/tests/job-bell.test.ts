@@ -17,6 +17,7 @@ function makeJob(overrides: Partial<Job> = {}): Job {
 	return {
 		uuid: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
 		kind: 'user_scrape',
+		version: 1,
 		status: 'queued',
 		payload: { query: 'naruto' },
 		stage: null,
