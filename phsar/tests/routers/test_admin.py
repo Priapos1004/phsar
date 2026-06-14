@@ -701,6 +701,49 @@ async def test_admin_jobs_log_requires_admin(client, user_auth_headers):
 
 
 @pytest.mark.asyncio
+async def test_admin_get_job_returns_admin_shape(client, admin_auth_headers, db_session):
+    """Single-job detail endpoint mirrors the list-row shape so the
+    detail page can route from a click with no schema gymnastics."""
+    parent = Job(kind=JobKind.seasonal_sweep, status=JobStatus.succeeded)
+    db_session.add(parent)
+    await db_session.flush()
+    child = Job(
+        kind=JobKind.user_scrape, status=JobStatus.succeeded,
+        payload={"query": "detail-page-child"},
+        parent_job_id=parent.id,
+    )
+    db_session.add(child)
+    await db_session.flush()
+
+    resp = await client.get(f"{JOBS_LOG_URL}/{child.uuid}", headers=admin_auth_headers)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["uuid"] == str(child.uuid)
+    assert data["kind"] == JobKind.user_scrape.value
+    assert data["parent_job_uuid"] == str(parent.uuid)
+    assert "requested_by_username" in data
+    assert "version" in data
+
+
+@pytest.mark.asyncio
+async def test_admin_get_job_404_for_unknown_uuid(client, admin_auth_headers):
+    resp = await client.get(
+        f"{JOBS_LOG_URL}/00000000-0000-0000-0000-000000000000",
+        headers=admin_auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_admin_get_job_requires_admin(client, user_auth_headers, db_session):
+    job = Job(kind=JobKind.user_scrape, status=JobStatus.succeeded, payload={"query": "detail-auth"})
+    db_session.add(job)
+    await db_session.flush()
+    resp = await client.get(f"{JOBS_LOG_URL}/{job.uuid}", headers=user_auth_headers)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_admin_jobs_log_hides_children_by_default(client, admin_auth_headers, db_session):
     """The default unfiltered view excludes rows with a non-null
     parent_job_id, so seasonal-sweep children don't flood the list.

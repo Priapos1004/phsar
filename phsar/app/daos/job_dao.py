@@ -10,11 +10,31 @@ from app.models.job import Job, JobKind, JobStatus
 
 
 class JobDAO(BaseDAO[Job]):
+    # Eager-load options the admin Jobs-Log surfaces need so the response
+    # builder can read `requested_by_username` and `parent_job_uuid`
+    # without a lazy-raise fault. Shared between the list endpoint and
+    # the single-row detail fetch.
+    _ADMIN_LOAD_OPTIONS = (selectinload(Job.requested_by), selectinload(Job.parent))
+
     def __init__(self):
         super().__init__(Job)
 
     async def get_by_uuid(self, db: AsyncSession, uuid: UUID) -> Job | None:
         return await self.get_by_field(db, uuid=uuid)
+
+    async def get_by_uuid_with_relations(
+        self, db: AsyncSession, uuid: UUID,
+    ) -> Job | None:
+        """Same as get_by_uuid but eager-loads requested_by + parent so
+        the admin detail builder can read both without a lazy-raise
+        fault. Worth its own method because the bell's /jobs/{uuid} path
+        deliberately stays lighter."""
+        stmt = (
+            select(Job)
+            .where(Job.uuid == uuid)
+            .options(*self._ADMIN_LOAD_OPTIONS)
+        )
+        return (await db.execute(stmt)).scalars().first()
 
     async def claim_next_queued(self, db: AsyncSession) -> Job | None:
         """Atomically grab the oldest runnable queued job and mark it running.
@@ -123,7 +143,7 @@ class JobDAO(BaseDAO[Job]):
             page_stmt.order_by(Job.created_at.desc())
             .limit(limit)
             .offset(offset)
-            .options(selectinload(Job.requested_by), selectinload(Job.parent))
+            .options(*self._ADMIN_LOAD_OPTIONS)
         )
         items = list((await db.execute(page_stmt)).scalars().all())
         return items, total

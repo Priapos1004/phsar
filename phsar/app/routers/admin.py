@@ -124,6 +124,19 @@ async def list_jobs(
     )
 
 
+@router.get("/jobs/{job_uuid}", response_model=job_schema.AdminJobResponse)
+async def get_job_for_admin(
+    job_uuid: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """Admin-only single-job fetch backing the Jobs Log detail page.
+    Returns the same AdminJobResponse shape the list endpoint emits so
+    the frontend can route from a row directly into a detail view with
+    no schema gymnastics."""
+    return await admin_service.get_job_for_admin(db, job_uuid)
+
+
 # Router-level admin dep — only `restore` actually reads the caller's username,
 # so everything else drops the per-endpoint Depends(require_admin).
 backups_router = APIRouter(prefix="/backups", dependencies=[Depends(require_admin)])
