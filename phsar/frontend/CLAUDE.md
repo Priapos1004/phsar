@@ -34,7 +34,7 @@ App components using Svelte 5 `$props()`, `$state()`, `$derived()`, `$effect()`.
 - **MaintenanceBanner** — wraps a `Notice`, lives in a sticky container in `+layout.svelte` alongside the navbar
   - Polls `GET /maintenance/status` every 30s via raw `fetch` (bypasses `api.ts` so a 503 mid-window can't trigger maintenance redirect and defeat the pre-warning point — 30s instead of 60s because seasonal sweep's maintenance window can be only seconds long)
   - Subscribes to `token` store + `maintenanceRefresh` bump signal so relogin or any 503-with-maintenance response refreshes in milliseconds
-  - Countdown wording: `"Scheduled maintenance starts in ~N minute(s) — pause your current episode."` within 30 min; `"Maintenance in progress. Some pages may be unavailable."` when active; otherwise hidden
+  - Countdown wording: `"Scheduled maintenance starts in ~N minute(s) — pause your current episode."` within 30 min; `"Maintenance in progress. Please try again later."` when active; otherwise hidden
 - **JobBell** — polls `/jobs/mine`
   - Caps dropdown at 5 entries (older spill to `/library/add`)
   - Hides retry button when `result_summary.retryable === false`

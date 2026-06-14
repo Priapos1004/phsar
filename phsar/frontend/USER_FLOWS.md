@@ -33,7 +33,7 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
   - Polls `GET /maintenance/status` every 30s via raw `fetch` (deliberately bypasses the API client so a 503 mid-window can't trigger the redirect below and defeat the warning). 30s instead of 60s so the seasonal-sweep dispatcher's short maintenance window (which can be only a few seconds long since the per-id MAL work runs in child jobs) is still observable for idle sessions.
   - Also subscribes to the auth `token` store and to a shared `maintenanceRefresh` bump signal — any login/logout transition AND any 503-with-maintenance response triggers an immediate refetch, so the banner reacts in milliseconds rather than waiting for the next 30s poll.
   - When `scheduled_at` is within 30 min: "Scheduled maintenance starts in ~N minutes — pause your current episode." (singular "minute" at exactly 1).
-  - When `active` is true: "Maintenance in progress. Some pages may be unavailable."
+  - When `active` is true: "Maintenance in progress. Please try again later."
   - When neither: banner is hidden.
 - **Mid-window redirect.** When the backend returns 503 with `{maintenance: true}` on *any other* request, the API client clears the token, bumps `maintenanceRefresh` so the global banner refetches state immediately, and hard-navigates to `/login` (when the user wasn't already there).
 - **/login during a maintenance window.** The form has no inline maintenance message — the global sticky banner above the navbar conveys the state. A 503 from `/auth/login` is silently swallowed by the form's catch (no error text, no submit-disable); the user can retry once the global banner clears.
