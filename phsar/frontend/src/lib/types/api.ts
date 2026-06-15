@@ -360,6 +360,92 @@ export interface BackupResultSummary extends JobResultSummary {
 	deduped_against?: string | null;
 }
 
+// One field's before/after on the update_sweep detail page. `old`/`new`
+// are typed `unknown` because the JSONB store erases types — the
+// renderer narrows per field.
+export interface UpdateSweepFieldChange {
+	field: string;
+	old: unknown;
+	new: unknown;
+}
+
+export interface UpdateSweepMediaChange {
+	anime_id: number;
+	anime_uuid: string;
+	anime_title: string;
+	// name_eng / name_jap are optional so the detail page can fall back
+	// to the romaji title for v2 rows scraped before the name-language
+	// addition (or media rows MAL never emitted alt-titles for).
+	anime_name_eng?: string | null;
+	anime_name_jap?: string | null;
+	media_id: number;
+	media_uuid: string;
+	media_mal_id: number;
+	media_title: string;
+	media_name_eng?: string | null;
+	media_name_jap?: string | null;
+	media_relation_type: string;
+	dynamic: UpdateSweepFieldChange[];
+	static: UpdateSweepFieldChange[];
+	genre_drift: UpdateSweepM2MDrift | null;
+	studio_drift: UpdateSweepM2MDrift | null;
+}
+
+// Shape the genre/studio drift detector emits per-media. Mirrors the
+// backend's `_emit_drift_report` plain dict.
+export interface UpdateSweepM2MDrift {
+	field: 'genres' | 'studios';
+	media_mal_id: number;
+	media_title: string;
+	kind: 'additions_applied' | 'additions_unknown' | 'removal_or_replacement' | 'any_change';
+	old: string[];
+	new: string[];
+	unknown_tags: string[];
+}
+
+export interface UpdateSweepUmbrellaReclassified {
+	mal_id: number;
+	old: string;
+	new: string;
+}
+
+export interface UpdateSweepUmbrellaChange {
+	anime_id: number;
+	anime_uuid: string;
+	anime_title: string;
+	anime_name_eng?: string | null;
+	anime_name_jap?: string | null;
+	fields: UpdateSweepFieldChange[];
+	anchor_changed: boolean;
+	old_anchor_mal_id: number;
+	new_anchor_mal_id: number;
+	embedding_regenerated: boolean;
+	reclassified: UpdateSweepUmbrellaReclassified[];
+}
+
+export interface UpdateSweepCounters {
+	anime_refreshed: number;
+	anime_with_dynamic_changes: number;
+	anime_with_static_changes: number;
+	media_with_dynamic_changes: number;
+	media_with_static_changes: number;
+	umbrella_reclassed: number;
+	probe_succeeded: number;
+	probe_failed: number;
+	probe_attached_anime_count: number;
+}
+
+// update_sweep result_summary v2 shape (post-v0.14.5). v1 rows omit
+// these fields entirely — renderers must check `row.version >= 2`
+// before reading.
+export interface UpdateSweepResultSummary extends JobResultSummary {
+	counters?: UpdateSweepCounters;
+	media_changes?: UpdateSweepMediaChange[];
+	anime_umbrella_changes?: UpdateSweepUmbrellaChange[];
+	merge_detect_failed?: boolean;
+	cache_recompute_failed?: boolean;
+}
+
 export interface Job {
 	uuid: string;
 	kind: JobKind;

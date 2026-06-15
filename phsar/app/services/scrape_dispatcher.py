@@ -481,14 +481,22 @@ async def _refresh_one_anime(
             studio_drifts.append(studio_drift)
 
         if dynamic or static or genre_drift or studio_drift:
+            # Carry name_eng / name_jap alongside the romaji title so the
+            # admin detail page can respect the viewer's name_language
+            # setting (same convention as the rest of the UI) without a
+            # round-trip back to /anime or /media.
             media_changes.append({
                 "anime_id": anime.id,
                 "anime_uuid": str(anime.uuid),
                 "anime_title": anime.title,
+                "anime_name_eng": anime.name_eng,
+                "anime_name_jap": anime.name_jap,
                 "media_id": media.id,
                 "media_uuid": str(media.uuid),
                 "media_mal_id": media.mal_id,
                 "media_title": media.title,
+                "media_name_eng": media.name_eng,
+                "media_name_jap": media.name_jap,
                 "media_relation_type": media.relation_type.value,
                 "dynamic": dynamic,
                 "static": static,

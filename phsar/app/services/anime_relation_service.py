@@ -192,6 +192,8 @@ def umbrella_diff_to_log_entry(
         "anime_id": anime.id,
         "anime_uuid": str(anime.uuid),
         "anime_title": anime.title,
+        "anime_name_eng": anime.name_eng,
+        "anime_name_jap": anime.name_jap,
         "fields": diff["umbrella_field_changes"],
         "anchor_changed": diff["anchor_changed"],
         "old_anchor_mal_id": diff["old_anchor_mal_id"],

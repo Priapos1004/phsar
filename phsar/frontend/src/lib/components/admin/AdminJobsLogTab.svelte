@@ -8,7 +8,8 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Label } from '$lib/components/ui/label';
 	import { ChevronRight } from 'lucide-svelte';
-	import { JOB_KIND_LABELS, PARENTING_KINDS, formatDuration, formatJobKind, formatShortDateTime } from '$lib/utils/formatString';
+	import { JOB_KIND_LABELS, PARENTING_KINDS, formatJobDuration, formatJobKind, formatShortDateTime } from '$lib/utils/formatString';
+	import { STATUS_BADGE } from '$lib/utils/jobBadges';
 	import type { AdminJobResponse, AdminJobsPage, JobKind, JobStatus } from '$lib/types/api';
 
 	const PAGE_SIZE = 50;
@@ -122,13 +123,6 @@
 		}
 	}
 
-	const STATUS_BADGE: Record<JobStatus, string> = {
-		queued: 'bg-muted text-muted-foreground',
-		running: 'bg-primary/15 text-primary',
-		succeeded: 'bg-emerald-500/15 text-emerald-400',
-		failed: 'bg-destructive/15 text-destructive',
-	};
-
 	// `now` ticks while any row is running so the Duration column updates
 	// in place without a re-fetch. Quiet when nothing is running so we
 	// don't burn render cycles on a stable Jobs Log view.
@@ -149,10 +143,7 @@
 	});
 
 	function rowDuration(row: AdminJobResponse): string {
-		if (!row.started_at) return '—';
-		const start = new Date(row.started_at).getTime();
-		const end = row.finished_at ? new Date(row.finished_at).getTime() : now;
-		return formatDuration(Math.max(0, Math.floor((end - start) / 1000)));
+		return formatJobDuration(row.started_at, row.finished_at, now);
 	}
 
 	// A row is clickable when its detail page actually has more to show
