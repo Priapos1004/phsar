@@ -83,8 +83,6 @@ class RefreshResult(NamedTuple):
     # Full ReclassifyDiff (or None if nothing drifted) — bool umbrella-
     # drift is derivable from this, so the NamedTuple doesn't carry both.
     umbrella_diff: dict | None
-    genre_drifts: list[dict]  # per-media DriftReports (genre); empty if no drift
-    studio_drifts: list[dict]  # per-media DriftReports (studio); empty if no drift
     # Per-media diff entries already annotated with anime context so the
     # dispatcher just extends its log — no post-hoc mutation needed.
     media_changes: list[dict]
@@ -465,8 +463,6 @@ async def _refresh_one_anime(
     volatile_changed = False
     metadata_changed_count = 0
     raw_payloads: dict[int, dict] = {}
-    genre_drifts: list[dict] = []
-    studio_drifts: list[dict] = []
     media_changes: list[dict] = []
 
     for media in anime.media:
@@ -485,12 +481,7 @@ async def _refresh_one_anime(
             metadata_changed_count += 1
 
         genre_drift = await _apply_genre_diff(session, media, payload)
-        if genre_drift:
-            genre_drifts.append(genre_drift)
-
         studio_drift = await _apply_studio_diff(session, media, payload)
-        if studio_drift:
-            studio_drifts.append(studio_drift)
 
         if dynamic or static or genre_drift or studio_drift:
             # Carry name_eng / name_jap alongside the romaji title so the
@@ -567,8 +558,6 @@ async def _refresh_one_anime(
         is_currently_airing=is_currently_airing,
         metadata_changed_count=metadata_changed_count,
         umbrella_diff=umbrella_diff,
-        genre_drifts=genre_drifts,
-        studio_drifts=studio_drifts,
         media_changes=media_changes,
     )
 
