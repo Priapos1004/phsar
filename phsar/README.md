@@ -162,7 +162,12 @@ phsar/
 │   │   │   │   │   ├── AdminJobsLogTab.svelte
 │   │   │   │   │   ├── AdminOverviewTab.svelte
 │   │   │   │   │   ├── AdminTabNav.svelte
+│   │   │   │   │   ├── AnimeUmbrellaCard.svelte
+│   │   │   │   │   ├── JobDetailCounters.svelte
+│   │   │   │   │   ├── JobDetailHeader.svelte
+│   │   │   │   │   ├── MediaChangeCard.svelte
 │   │   │   │   │   ├── RegistrationTokensCard.svelte
+│   │   │   │   │   ├── SweepTiersCard.svelte
 │   │   │   │   │   └── types.ts
 │   │   │   │   ├── BulkRateDialog.svelte
 │   │   │   │   ├── DangerZone.svelte
@@ -226,6 +231,7 @@ phsar/
 │   │   │       ├── formatString.ts
 │   │   │       ├── getSeason.ts
 │   │   │       ├── index.ts
+│   │   │       ├── jobBadges.ts
 │   │   │       ├── navigation.ts
 │   │   │       ├── search.ts
 │   │   │       └── spoilerFrontier.ts
@@ -234,7 +240,10 @@ phsar/
 │   │   │   ├── +layout.ts
 │   │   │   ├── +page.svelte
 │   │   │   ├── admin/
-│   │   │   │   └── +page.svelte
+│   │   │   │   ├── +page.svelte
+│   │   │   │   └── jobs/
+│   │   │   │       └── [uuid]/
+│   │   │   │           └── +page.svelte
 │   │   │   ├── anime/
 │   │   │   │   └── +page.svelte
 │   │   │   ├── health/
