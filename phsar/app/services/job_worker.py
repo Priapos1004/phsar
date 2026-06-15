@@ -189,6 +189,14 @@ class JobWorker:
             await claim_session.commit()
             job_id = job.id
             kind = job.kind
+            # Pre-capture so the failure logger / fail_session block never
+            # touches an ORM `job` attribute after a poisoned flush. A
+            # mark_succeeded flush crash (e.g. the v0.14.5 datetime-in-
+            # JSONB bug) leaves the work session in PendingRollback, and a
+            # subsequent `job.uuid` read would trip the expired-attr
+            # refresh and re-raise — losing the job to a stuck-`running`
+            # row until next reap_orphans.
+            job_uuid_str = str(job.uuid)
 
         # Run the dispatcher in its own session and capture any failure for
         # a separate fail-record session. Two sequential sessions instead of
@@ -202,32 +210,54 @@ class JobWorker:
         if in_maintenance:
             set_maintenance(True)
         try:
-            async with async_session_maker() as work_session:
-                job = await self._dao.get_by_id(work_session, job_id)
-                if job is None:
-                    logger.warning("Job %s vanished after claim", job_id)
-                    return True
-                dispatcher = self._dispatchers.get(kind)
-                if dispatcher is None:
-                    # Missing dispatcher is a broken config — retry produces the
-                    # same outcome until a redeploy, so don't tempt the bell.
-                    await self._dao.mark_failed(
-                        work_session,
-                        job,
-                        f"No dispatcher registered for kind {kind.value!r}",
-                        retryable=False,
-                    )
-                    await work_session.commit()
-                    return True
-                try:
-                    result_summary = await dispatcher(work_session, job)
-                    await self._dao.mark_succeeded(work_session, job, result_summary)
-                    await work_session.commit()
-                    return True
-                except Exception as exc:
-                    logger.exception("Job %s (%s) failed", job.uuid, kind.value)
-                    await work_session.rollback()
+            # Outer catch-all so any failure between claim and the
+            # fail_session block — including bugs in our own session
+            # plumbing — routes through the explicit `failed` write
+            # below. Without it, an exception leaking out of dispatch_one
+            # would only get cleaned up by reap_orphans on next startup.
+            try:
+                async with async_session_maker() as work_session:
+                    job = await self._dao.get_by_id(work_session, job_id)
+                    if job is None:
+                        logger.warning("Job %s vanished after claim", job_id)
+                        return True
+                    dispatcher = self._dispatchers.get(kind)
+                    if dispatcher is None:
+                        # Missing dispatcher is a broken config — retry produces the
+                        # same outcome until a redeploy, so don't tempt the bell.
+                        await self._dao.mark_failed(
+                            work_session,
+                            job,
+                            f"No dispatcher registered for kind {kind.value!r}",
+                            retryable=False,
+                        )
+                        await work_session.commit()
+                        return True
+                    try:
+                        result_summary = await dispatcher(work_session, job)
+                        await self._dao.mark_succeeded(work_session, job, result_summary)
+                        await work_session.commit()
+                        return True
+                    except Exception as exc:
+                        failure = exc
+                        logger.exception("Job %s (%s) failed", job_uuid_str, kind.value)
+                        # Rollback can itself raise (PendingRollback after
+                        # a flush error sometimes deadlocks the cleanup);
+                        # swallow so the fail_session block still runs.
+                        try:
+                            await work_session.rollback()
+                        except Exception:
+                            logger.exception(
+                                "Rollback of work session for job %s failed",
+                                job_uuid_str,
+                            )
+            except Exception as exc:
+                if failure is None:
                     failure = exc
+                logger.exception(
+                    "Unexpected worker error processing job %s (%s)",
+                    job_uuid_str, kind.value,
+                )
         finally:
             if in_maintenance:
                 # Wrap the flag-clear in try/except so a hypothetical raise can
@@ -246,19 +276,29 @@ class JobWorker:
                 except Exception:
                     logger.exception("Failed to clear maintenance flag in worker finally")
 
+        if failure is None:
+            return True
+
         retryable = not isinstance(failure, PermanentPhsarError)
-        error_category = _classify_error(failure) if failure is not None else None
-        async with async_session_maker() as fail_session:
-            failing = await self._dao.get_by_id(fail_session, job_id)
-            if failing is not None:
-                await self._dao.mark_failed(
-                    fail_session,
-                    failing,
-                    str(failure) or type(failure).__name__,
-                    retryable=retryable,
-                    error_category=error_category,
-                )
-                await fail_session.commit()
+        error_category = _classify_error(failure)
+        try:
+            async with async_session_maker() as fail_session:
+                failing = await self._dao.get_by_id(fail_session, job_id)
+                if failing is not None:
+                    await self._dao.mark_failed(
+                        fail_session,
+                        failing,
+                        str(failure) or type(failure).__name__,
+                        retryable=retryable,
+                        error_category=error_category,
+                    )
+                    await fail_session.commit()
+        except Exception:
+            logger.exception(
+                "Failed to write failure record for job %s; row will be "
+                "reaped by reap_orphans on next startup",
+                job_uuid_str,
+            )
         return True
 
 
