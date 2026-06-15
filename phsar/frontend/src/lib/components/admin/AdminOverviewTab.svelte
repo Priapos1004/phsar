@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { api, ApiError } from '$lib/api';
 	import * as Card from '$lib/components/ui/card';
+	import SweepTiersCard from '$lib/components/admin/SweepTiersCard.svelte';
 	import { formatJobKind, formatNumber } from '$lib/utils/formatString';
 	import { librarySaved, onBump } from '$lib/stores/jobs';
 	import type { AdminOverviewStats } from '$lib/types/api';
@@ -90,6 +91,8 @@
 				</div>
 			</Card.Content>
 		</Card.Root>
+
+		<SweepTiersCard tiers={stats.sweep_tiers} />
 
 		<Card.Root>
 			<Card.Header>
