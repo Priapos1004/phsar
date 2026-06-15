@@ -437,6 +437,8 @@ async def test_notify_wakes_idle_worker(tracked_jobs):
         tracked_jobs.append(job_id)
 
         worker.notify()
-        await asyncio.wait_for(captured.wait(), timeout=2.0)
+        # Generous timeout: this only needs to outlast scheduler jitter on a
+        # loaded CI runner, not measure latency. 2.0s flaked under contention.
+        await asyncio.wait_for(captured.wait(), timeout=5.0)
     finally:
         await worker.stop()
