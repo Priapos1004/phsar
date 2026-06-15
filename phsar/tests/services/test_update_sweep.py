@@ -944,46 +944,66 @@ async def test_tier_long_tail_selected(db_session):
 
 @pytest.mark.asyncio
 async def test_count_by_sweep_tier_priority_buckets_each_anime_once(db_session):
-    """5 mutually-exclusive buckets in priority cascade: an airing anime
-    that is also stabilizing counts under `airing_now`, not
-    `stabilizing`. Sum equals total anime count."""
+    """4 mutually-exclusive cycle-MEMBERSHIP buckets in priority cascade:
+    airing_now > stabilizing > weekly_cycle > long_cycle. An airing anime
+    that is also stabilizing counts under `airing_now`. Sum equals total
+    anime count.
+
+    Delta-based assertions (baseline → after) isolate the seeded rows
+    from any pre-existing anime in the test DB so the bucket attribution
+    can be exact, not floor-only.
+
+    Regression guard: a recent-main anime checked just an hour ago
+    (recently swept, NOT overdue) must still count under `weekly_cycle`.
+    Under the old membership+due-ness conflation it fell to
+    `not_currently_due`, which hid most of the weekly catalog under the
+    long-tail bucket right after every sweep.
+    """
     from app.models.media import RelationType
     now = datetime.now(timezone.utc)
-    await _seed_anime(  # airing wins over stable<3
+    baseline = await AnimeDAO().count_by_sweep_tier_priority(db_session)
+
+    await _seed_anime(  # airing wins over stable<3 -> airing_now
         db_session, mal_id=-7101, stable_check_count=1,
         airing_status="Currently Airing", last_checked_at=now,
     )
-    await _seed_anime(  # stable<3, not airing
+    await _seed_anime(  # stable<3, not airing -> stabilizing
         db_session, mal_id=-7102, stable_check_count=2, last_checked_at=now,
     )
-    await _seed_anime(  # weekly_recent_main
+    await _seed_anime(  # recent main, OVERDUE (8d) -> weekly_cycle
         db_session, mal_id=-7103, stable_check_count=10,
         last_checked_at=now - timedelta(days=8),
         relation_type=RelationType.Main,
         aired_from=now - timedelta(days=365),
     )
-    await _seed_anime(  # long_tail
+    await _seed_anime(  # recent main, RECENTLY SWEPT (1h) -> weekly_cycle
         db_session, mal_id=-7104, stable_check_count=10,
-        last_checked_at=now - timedelta(days=200),
+        last_checked_at=now - timedelta(hours=1),
+        relation_type=RelationType.Main,
+        aired_from=now - timedelta(days=365),
     )
-    await _seed_anime(  # not_currently_due
+    await _seed_anime(  # no recent main, recently checked -> long_cycle
         db_session, mal_id=-7105, stable_check_count=10,
         last_checked_at=now - timedelta(hours=1),
     )
+    await _seed_anime(  # no recent main, 200d stale -> long_cycle
+        db_session, mal_id=-7106, stable_check_count=10,
+        last_checked_at=now - timedelta(days=200),
+    )
     await db_session.flush()
 
-    counts = await AnimeDAO().count_by_sweep_tier_priority(db_session)
-    # Floor-only asserts because the test DB may carry other rows;
-    # invariant sum check ensures no anime is double-counted.
-    assert counts["airing_now"] >= 1
-    assert counts["stabilizing"] >= 1
-    assert counts["weekly_recent_main"] >= 1
-    assert counts["long_tail"] >= 1
-    assert counts["not_currently_due"] >= 1
+    after = await AnimeDAO().count_by_sweep_tier_priority(db_session)
+    delta = {k: after[k] - baseline.get(k, 0) for k in after}
+    assert delta == {
+        "airing_now": 1,
+        "stabilizing": 1,
+        "weekly_cycle": 2,   # both recent-main rows, incl. the recently-swept one
+        "long_cycle": 2,
+    }
     total_anime = (await db_session.execute(
         select(func.count(Anime.id))
     )).scalar_one()
-    assert sum(counts.values()) == total_anime
+    assert sum(after.values()) == total_anime
 
 
 @pytest.mark.asyncio

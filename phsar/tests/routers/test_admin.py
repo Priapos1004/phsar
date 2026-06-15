@@ -519,8 +519,7 @@ async def test_stats_overview_returns_shape(client, admin_auth_headers):
         "active_users", "new_ratings", "scrapes_submitted",
     }
     assert set(data["sweep_tiers"].keys()) == {
-        "airing_now", "stabilizing", "weekly_recent_main",
-        "long_tail", "not_currently_due",
+        "airing_now", "stabilizing", "weekly_cycle", "long_cycle",
     }
     assert sum(data["sweep_tiers"].values()) == data["catalog"]["anime_count"]
     kinds_returned = {row["kind"] for row in data["jobs_7d"]["by_kind"]}

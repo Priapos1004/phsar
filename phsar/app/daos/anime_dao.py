@@ -32,18 +32,31 @@ logger = logging.getLogger(__name__)
 SWEEP_RECENT_MAIN_YEARS = 5
 
 
-class _SweepTierPredicates(NamedTuple):
+class _SweepAtoms(NamedTuple):
+    """The orthogonal building blocks of sweep-tier logic, deliberately
+    kept un-composed so the two consumers can combine them differently:
+
+      - `select_due_for_sweep` wants DUE rows — membership AND staleness
+        (e.g. "in the weekly cycle AND last checked > 7 days ago").
+      - `count_by_sweep_tier_priority` wants the POPULATION breakdown —
+        membership ONLY, so a bucket's count is a stable cycle-membership
+        trait that doesn't empty itself the moment a sweep refreshes its
+        members (the failure mode that hid most of the weekly catalog
+        under "180-day cycle" right after every sweep).
+
+    Membership atoms (population traits): `airing_now`, `still_stabilizing`,
+    `recent_main`. Staleness atoms (transient due-ness): `due_weekly`,
+    `due_long_tail`.
+    """
     airing_now: Any
     still_stabilizing: Any
-    weekly_recent_main: Any
-    long_tail: Any
+    recent_main: Any
+    due_weekly: Any
+    due_long_tail: Any
 
 
-def _sweep_tier_predicates(freshness_alias) -> _SweepTierPredicates:
-    """Build the four sweep-tier predicates against the given freshness
-    alias. Shared between `select_due_for_sweep` (OR'd to pick what's
-    due) and `count_by_sweep_tier_priority` (priority-cascaded into
-    mutually-exclusive buckets)."""
+def _sweep_atoms(freshness_alias) -> _SweepAtoms:
+    """Build the sweep-tier atoms against the given freshness alias."""
     last_checked = func.coalesce(freshness_alias.last_checked_at, Anime.created_at)
     stable = func.coalesce(freshness_alias.stable_check_count, 0)
     now = func.now()
@@ -64,11 +77,12 @@ def _sweep_tier_predicates(freshness_alias) -> _SweepTierPredicates:
             Media.aired_from >= recent_main_cutoff,
         )
     )
-    return _SweepTierPredicates(
+    return _SweepAtoms(
         airing_now=airing_now,
         still_stabilizing=stable < 3,
-        weekly_recent_main=and_(last_checked < week_ago, recent_main),
-        long_tail=last_checked < six_mo_ago,
+        recent_main=recent_main,
+        due_weekly=last_checked < week_ago,
+        due_long_tail=last_checked < six_mo_ago,
     )
 
 
@@ -130,22 +144,26 @@ class AnimeDAO(MalIdDAO[Anime]):
         LEFT JOIN against anime_freshness because the migration backfilled
         every existing row but a future code path could insert without one;
         the COALESCE expression powers the WHERE-clause staleness checks
-        (long_tail / weekly_recent_main). ORDER BY uses raw
+        (the `due_weekly` / `due_long_tail` atoms). ORDER BY uses raw
         `last_checked_at NULLS FIRST` instead — see the ordering comment
         below for why never-checked rows belong at the front, not at
         their created_at position.
         """
         af = aliased(AnimeFreshness)
-        preds = _sweep_tier_predicates(af)
+        atoms = _sweep_atoms(af)
 
         stmt = (
             select(Anime)
             .outerjoin(af, af.anime_id == Anime.id)
+            # DUE semantics: membership AND staleness. Tier 3 is the weekly
+            # cycle (recent main) gated by the 7-day staleness; tier 4 the
+            # 180-day long-tail net. Composed here (not in the atoms) so the
+            # population card can ask for membership-only buckets instead.
             .where(or_(
-                preds.airing_now,
-                preds.still_stabilizing,
-                preds.weekly_recent_main,
-                preds.long_tail,
+                atoms.airing_now,
+                atoms.still_stabilizing,
+                and_(atoms.due_weekly, atoms.recent_main),
+                atoms.due_long_tail,
             ))
             # Primary order: `nullsfirst()` puts never-checked rows at the
             # front. A NULL last_checked_at is "maximum staleness from MAL's
@@ -181,30 +199,31 @@ class AnimeDAO(MalIdDAO[Anime]):
     _TIER_BUCKETS: tuple[str, ...] = (
         "airing_now",
         "stabilizing",
-        "weekly_recent_main",
-        "long_tail",
-        "not_currently_due",
+        "weekly_cycle",
+        "long_cycle",
     )
 
     async def count_by_sweep_tier_priority(
         self, db: AsyncSession,
     ) -> dict[str, int]:
-        """5 mutually-exclusive bucket counts in priority cascade:
-        airing_now > stabilizing > weekly_recent_main > long_tail >
-        not_currently_due. Sum equals total anime count.
+        """4 mutually-exclusive cycle-MEMBERSHIP bucket counts in priority
+        cascade: airing_now > stabilizing > weekly_cycle > long_cycle.
+        Sum equals total anime count. Powers the admin Overview
+        tier-breakdown card.
 
-        Powers the admin Overview tier-breakdown card. Single GROUP BY
-        on a CASE expression — the same predicates as select_due_for_sweep
-        so the buckets match the selection logic exactly.
+        Membership-only by design — the staleness atoms are intentionally
+        excluded so counts don't collapse when a sweep refreshes a bucket's
+        members; see `_SweepAtoms` for the full membership-vs-due rationale.
+        `weekly_cycle` = has a recent main; `long_cycle` = the else (stable
+        + not airing + no recent main, reached only by the 180-day net).
         """
         af = aliased(AnimeFreshness)
-        preds = _sweep_tier_predicates(af)
+        atoms = _sweep_atoms(af)
         bucket = case(
-            (preds.airing_now, "airing_now"),
-            (preds.still_stabilizing, "stabilizing"),
-            (preds.weekly_recent_main, "weekly_recent_main"),
-            (preds.long_tail, "long_tail"),
-            else_="not_currently_due",
+            (atoms.airing_now, "airing_now"),
+            (atoms.still_stabilizing, "stabilizing"),
+            (atoms.recent_main, "weekly_cycle"),
+            else_="long_cycle",
         ).label("bucket")
         stmt = (
             select(bucket, func.count(Anime.id))
