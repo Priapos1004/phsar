@@ -8,55 +8,45 @@
 	}
 	let { tiers }: Props = $props();
 
-	// Display buckets. The backend exposes 5 mutually-exclusive tiers but
-	// we fold long_tail + not_currently_due into a single row: long_tail
-	// is a transient state that empties as soon as the next sweep
-	// refreshes those anime back into not_currently_due, so showing them
-	// separately misleads the admin into thinking they're chronically
-	// distinct. Tooltips paraphrase each predicate.
+	// Display buckets map 1:1 to the backend's 4 mutually-exclusive
+	// cycle-membership tiers (priority cascade). Membership, not due-ness:
+	// each count is where an anime *sits* in the cycle, a stable trait, so
+	// rows don't empty themselves the moment a nightly sweep refreshes
+	// their members. Tooltips paraphrase each predicate.
 	const ROWS: {
-		key: string;
-		sources: (keyof AdminSweepTierBreakdown)[];
+		key: keyof AdminSweepTierBreakdown;
 		label: string;
 		color: string;
 		tooltip: string;
 	}[] = [
 		{
 			key: 'airing_now',
-			sources: ['airing_now'],
 			label: 'Airing now',
 			color: 'bg-emerald-500',
 			tooltip: 'Has at least one currently-airing media. Refreshed every nightly sweep.',
 		},
 		{
 			key: 'stabilizing',
-			sources: ['stabilizing'],
 			label: 'Stabilizing',
 			color: 'bg-amber-500',
 			tooltip: 'In the first 3 sweeps of its lifecycle (stable_check_count < 3).',
 		},
 		{
-			key: 'weekly_recent_main',
-			sources: ['weekly_recent_main'],
-			label: 'Weekly recent main',
+			key: 'weekly_cycle',
+			label: 'Weekly cycle',
 			color: 'bg-sky-500',
-			tooltip: 'Last checked > 7 days ago AND has main media aired within the recent-main window. Weekly cycle.',
+			tooltip: 'Has a main media aired within the recent-main window — on the weekly refresh cadence.',
 		},
 		{
 			key: 'long_cycle',
-			sources: ['long_tail', 'not_currently_due'],
 			label: '180-day cycle',
 			color: 'bg-indigo-500',
-			tooltip: 'Stable + not airing + no recent main. Refreshed on the long-tail safety net (≥180 days since last check).',
+			tooltip: 'Stable + not airing + no recent main — refreshed only on the 180-day safety net.',
 		},
 	];
 
-	function countFor(sources: (keyof AdminSweepTierBreakdown)[]): number {
-		return sources.reduce((acc, key) => acc + (tiers[key] ?? 0), 0);
-	}
-
 	let total = $derived(
-		ROWS.reduce((acc, row) => acc + countFor(row.sources), 0),
+		ROWS.reduce((acc, row) => acc + (tiers[row.key] ?? 0), 0),
 	);
 </script>
 
@@ -71,7 +61,7 @@
 	<Card.Content>
 		<div class="space-y-2">
 			{#each ROWS as row (row.key)}
-				{@const count = countFor(row.sources)}
+				{@const count = tiers[row.key] ?? 0}
 				{@const share = percentOf(count, total)}
 				<div class="flex items-center gap-3 text-sm" title={row.tooltip}>
 					<div class="w-40 shrink-0 text-card-foreground/90">{row.label}</div>

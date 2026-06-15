@@ -521,14 +521,14 @@ export interface AdminActivityStats {
 	scrapes_submitted: number;
 }
 
-// Mutually-exclusive bucket counts in priority cascade — sum equals
-// total anime count, so the card can render each bucket as a share.
+// Mutually-exclusive cycle-membership bucket counts in priority cascade
+// — sum equals total anime count, so the card can render each bucket as a
+// share. Membership (not due-ness): counts stay stable across sweeps.
 export interface AdminSweepTierBreakdown {
 	airing_now: number;
 	stabilizing: number;
-	weekly_recent_main: number;
-	long_tail: number;
-	not_currently_due: number;
+	weekly_cycle: number;
+	long_cycle: number;
 }
 
 export interface AdminOverviewStats {
