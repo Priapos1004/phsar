@@ -25,7 +25,13 @@ JOB_KIND_VERSIONS: dict[JobKind, int] = {
     # v2 bumps result_summary to a `{counters, media_changes,
     # anime_umbrella_changes}` shape — flat aggregate counters and the
     # bell-shaped genre/studio drift aggregates were dropped.
-    JobKind.update_sweep: 2,
+    # v3 relaxes the genre/studio apply policy (additions + removals
+    # now auto-apply; unknown genre tags are still skipped but
+    # surfaced via top-level `unknown_genre_tags`). M2M drift `kind`
+    # values changed from {additions_applied, additions_unknown,
+    # removal_or_replacement, any_change} to {applied,
+    # applied_with_unknowns}.
+    JobKind.update_sweep: 3,
     JobKind.seasonal_sweep: 1,
     JobKind.backup: 1,
     JobKind.restore: 1,

@@ -511,7 +511,7 @@ async def test_genre_diff_known_addition_applied(db_session):
         db_session, media, {"genres": ["GD_Action_1", "GD_Drama_1"]},
     )
     assert report is not None
-    assert report["kind"] == "additions_applied"
+    assert report["kind"] == "applied"
     assert report["unknown_tags"] == []
 
     # Verify the M2M row landed.
@@ -523,11 +523,12 @@ async def test_genre_diff_known_addition_applied(db_session):
 
 
 @pytest.mark.asyncio
-async def test_genre_diff_unknown_addition_logs_without_apply(db_session):
-    """If MAL adds a tag we've never seen, log it as `unknown_tags` and
-    skip the WHOLE batch of additions — half-applying would mean the
-    next "what got auto-added since the seeder update?" question can't
-    be answered from result_summary alone."""
+async def test_genre_diff_unknown_addition_applies_known_skips_unknown(db_session):
+    """v0.14.5 policy change: known additions land even when an unknown
+    tag is also in the diff. The unknown one stays out of the M2M
+    (don't silently seed new genres — the seed table is the deliberate
+    source of truth) but is surfaced in unknown_tags so the admin can
+    add it to the seeder and pick it up next sweep."""
     media = await _build_media_with_taxonomy(
         db_session, mal_id=-95002, genre_names=["GD_Action_2"],
     )
@@ -538,33 +539,11 @@ async def test_genre_diff_unknown_addition_logs_without_apply(db_session):
         {"genres": ["GD_Action_2", "GD_KnownAdded_2", "GD_NewTag_2"]},
     )
     assert report is not None
-    assert report["kind"] == "additions_unknown"
+    assert report["kind"] == "applied_with_unknowns"
     assert report["unknown_tags"] == ["GD_NewTag_2"]
 
-    # All-or-nothing: even the known addition is skipped until seeder
-    # catches up.
-    result = await db_session.execute(
-        select(MediaGenre).where(MediaGenre.media_id == media.id)
-    )
-    rows = result.scalars().all()
-    assert len(rows) == 1
-
-
-@pytest.mark.asyncio
-async def test_genre_diff_removal_logs_without_apply(db_session):
-    """MAL removing a genre is rare and worth admin review — never
-    auto-applied (don't auto-drop the row, just flag)."""
-    media = await _build_media_with_taxonomy(
-        db_session, mal_id=-95003, genre_names=["GD_Action_3", "GD_Drama_3"],
-    )
-
-    report = await _apply_genre_diff(
-        db_session, media, {"genres": ["GD_Action_3"]},
-    )
-    assert report is not None
-    assert report["kind"] == "removal_or_replacement"
-
-    # The dropped MediaGenre row is left intact.
+    # Known addition (GD_KnownAdded_2) landed; unknown one (GD_NewTag_2)
+    # stayed out. Original genre is untouched.
     result = await db_session.execute(
         select(MediaGenre).where(MediaGenre.media_id == media.id)
     )
@@ -573,10 +552,32 @@ async def test_genre_diff_removal_logs_without_apply(db_session):
 
 
 @pytest.mark.asyncio
-async def test_genre_diff_replacement_logs_without_apply(db_session):
-    """Add + remove in the same diff classifies as
-    removal_or_replacement (the removal branch wins). Same reasoning as
-    pure removal — don't trust the swap, just surface it."""
+async def test_genre_diff_removal_applied(db_session):
+    """v0.14.5 policy: removals now apply. The audit log captures the
+    before/after so rollback is a matter of re-reading the relevant
+    job's per-media diff."""
+    media = await _build_media_with_taxonomy(
+        db_session, mal_id=-95003, genre_names=["GD_Action_3", "GD_Drama_3"],
+    )
+
+    report = await _apply_genre_diff(
+        db_session, media, {"genres": ["GD_Action_3"]},
+    )
+    assert report is not None
+    assert report["kind"] == "applied"
+
+    # The dropped MediaGenre row is gone.
+    result = await db_session.execute(
+        select(MediaGenre).where(MediaGenre.media_id == media.id)
+    )
+    rows = result.scalars().all()
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_genre_diff_replacement_applied(db_session):
+    """v0.14.5 policy: add + remove in the same diff both land in one
+    pass. The old genre is removed, the new one inserted."""
     media = await _build_media_with_taxonomy(
         db_session, mal_id=-95004, genre_names=["GD_Action_4"],
     )
@@ -586,14 +587,15 @@ async def test_genre_diff_replacement_logs_without_apply(db_session):
         db_session, media, {"genres": ["GD_Drama_4"]},
     )
     assert report is not None
-    assert report["kind"] == "removal_or_replacement"
+    assert report["kind"] == "applied"
 
-    # Nothing applied — the original genre stays, the new one doesn't land.
+    # Both changes landed: GD_Action_4 removed, GD_Drama_4 inserted.
     result = await db_session.execute(
         select(MediaGenre).where(MediaGenre.media_id == media.id)
+        .options(selectinload(MediaGenre.genre))
     )
     rows = result.scalars().all()
-    assert len(rows) == 1
+    assert {r.genre.name for r in rows} == {"GD_Drama_4"}
 
 
 @pytest.mark.asyncio
@@ -602,36 +604,50 @@ async def test_studio_diff_no_change_returns_none(db_session):
         db_session, mal_id=-96000, studio_names=["SD_Madhouse_0"],
     )
     assert await _apply_studio_diff(
-        media, {"studio": ["SD_Madhouse_0"]},
+        db_session, media, {"studio": ["SD_Madhouse_0"]},
     ) is None
 
 
 @pytest.mark.asyncio
-async def test_studio_diff_addition_logs_without_apply(db_session):
-    """Studio additions DO happen legitimately (co-production credits
-    surface after airing) but rare enough that surfacing every change
-    is preferable to silently rewriting on a possible MAL bug."""
+async def test_studio_diff_addition_applied_auto_creates_new_studio(db_session):
+    """v0.14.5 policy: studio additions apply, including for studio
+    names we've never seen. Studios are a discovered taxonomy (unlike
+    genres which we explicitly seed), so a brand-new co-production
+    studio gets its own Studio row on first reference."""
     media = await _build_media_with_taxonomy(
         db_session, mal_id=-96001, studio_names=["SD_Madhouse_1"],
     )
 
     report = await _apply_studio_diff(
-        media, {"studio": ["SD_Madhouse_1", "SD_MAPPA_1"]},
+        db_session, media, {"studio": ["SD_Madhouse_1", "SD_MAPPA_1"]},
     )
     assert report is not None
-    assert report["kind"] == "any_change"
-    assert report["new"] == ["SD_MAPPA_1", "SD_Madhouse_1"]
+    assert report["kind"] == "applied"
+
+    result = await db_session.execute(
+        select(MediaStudio).where(MediaStudio.media_id == media.id)
+        .options(selectinload(MediaStudio.studio))
+    )
+    rows = result.scalars().all()
+    assert {r.studio.name for r in rows} == {"SD_Madhouse_1", "SD_MAPPA_1"}
 
 
 @pytest.mark.asyncio
-async def test_studio_diff_removal_logs_without_apply(db_session):
+async def test_studio_diff_removal_applied(db_session):
+    """Removals delete the MediaStudio row."""
     media = await _build_media_with_taxonomy(
         db_session, mal_id=-96002, studio_names=["SD_Madhouse_2"],
     )
 
-    report = await _apply_studio_diff(media, {"studio": []})
+    report = await _apply_studio_diff(db_session, media, {"studio": []})
     assert report is not None
-    assert report["kind"] == "any_change"
+    assert report["kind"] == "applied"
+
+    result = await db_session.execute(
+        select(MediaStudio).where(MediaStudio.media_id == media.id)
+    )
+    rows = result.scalars().all()
+    assert len(rows) == 0
 
 
 # ---------------------------------------------------------------------------

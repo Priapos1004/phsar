@@ -12,16 +12,17 @@
 	let { change }: Props = $props();
 
 	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
-	// Cascade: media's preferred-language name → anime's preferred name →
-	// media's romaji. Media-level alt-titles are often null on MAL even
-	// when the parent anime has them (sub-episode rows inherit context
-	// from the franchise), so falling back to the anime title keeps the
-	// detail page in the viewer's language wherever possible.
+	// Media's own name fields only — falling back to the parent anime's
+	// alt-title (e.g. for sub-episode rows MAL didn't give a name_eng)
+	// loses season-specific suffix information ("Dr. Stone: New World"
+	// would render as just "Dr. Stone"). When media.name_eng is null,
+	// resolveTitle falls back to media's romaji `title`, which always
+	// carries the season suffix.
 	let mediaTitleDisplay = $derived(
 		resolveTitle(
 			change.media_title,
-			change.media_name_eng ?? change.anime_name_eng,
-			change.media_name_jap ?? change.anime_name_jap,
+			change.media_name_eng,
+			change.media_name_jap,
 			nameLanguage,
 		),
 	);
@@ -113,13 +114,18 @@
 		};
 	}
 
-	// Backend's _apply_genre_diff / _apply_studio_diff only AUTO-APPLY
-	// the M2M change when kind === 'additions_applied' (pure addition of
-	// known tags). Anything else — unknown additions, removals, studio
-	// drift of any flavor — is logged for human review only, so the
-	// media page still shows the pre-sweep tags. Surface that explicitly
-	// so the admin doesn't expect the media row to reflect this diff.
+	// Drift kinds annotate what the dispatcher did with the change. The
+	// table is keyed on every value the backend has ever emitted so
+	// historical rows render with the right semantics:
+	// - v3+ (post-v0.14.5): `applied` (clean) or `applied_with_unknowns`
+	//   (known parts landed; unknown genre tags reported pending seeder).
+	// - v2 (pre-v0.14.5): the previous conservative kinds meant the
+	//   change was logged but NOT applied — the media page would still
+	//   show the pre-sweep tags. Kept here so old job rows render
+	//   accurate "Not auto-applied" context.
 	const NOT_APPLIED_REASON: Record<UpdateSweepM2MDrift['kind'], string | null> = {
+		applied: null,
+		applied_with_unknowns: 'Known additions applied. Unknown tags skipped pending seeder update.',
 		additions_applied: null,
 		additions_unknown: 'Not auto-applied — unknown tag, seeder review needed.',
 		removal_or_replacement: 'Not auto-applied — removals require human review.',

@@ -154,6 +154,14 @@
 		return row.kind === 'update_sweep' && row.version >= 2;
 	}
 
+	// v3+ sweeps expose a deduplicated list of MAL genre tags the seeder
+	// doesn't know yet. Surface them at the row level so the admin can
+	// spot which sweeps need a seeder update without drilling in.
+	function unknownGenreTags(row: AdminJobResponse): string[] {
+		const tags = row.result_summary?.unknown_genre_tags;
+		return Array.isArray(tags) ? (tags as string[]) : [];
+	}
+
 	function clickableNavProps(uuid: string) {
 		const go = () => void goto(`/admin/jobs/${uuid}`);
 		return {
@@ -279,8 +287,9 @@
 								{@const expanded = expandedUuids.has(row.uuid)}
 								{@const expandable = PARENTING_KINDS.has(row.kind)}
 								{@const clickable = isClickableJob(row)}
+								{@const unknownTags = unknownGenreTags(row)}
 								<tr
-									class="border-b border-border/50 align-top {clickable ? 'cursor-pointer hover:bg-muted/20 transition-colors' : ''}"
+									class="border-b border-border/50 align-top {clickable ? 'cursor-pointer hover:bg-muted/20 transition-colors' : ''} {unknownTags.length > 0 ? 'bg-amber-500/15 border-l-2 border-l-amber-400' : ''}"
 									{...(clickable ? clickableNavProps(row.uuid) : {})}
 								>
 									<td class="py-2 pr-2 w-6">
@@ -308,11 +317,17 @@
 									<td class="py-2 pr-3 text-card-foreground">
 										{row.requested_by_username ?? 'system'}
 									</td>
-									<td class="py-2 pr-3 text-card-foreground/80 max-w-md truncate">
+									<td class="py-2 pr-3 text-card-foreground/80 max-w-md">
 										{#if row.status === 'failed' && row.error_message}
 											<span class="text-destructive">{row.error_message}</span>
 										{:else}
-											{payloadSummary(row)}
+											<div class="truncate">{payloadSummary(row)}</div>
+											{#if unknownTags.length > 0}
+												<div class="mt-1 text-xs font-medium text-amber-300">
+													⚠ New genre {unknownTags.length === 1 ? 'tag needs' : 'tags need'} seeding:
+													<span class="font-mono">{unknownTags.join(', ')}</span>
+												</div>
+											{/if}
 										{/if}
 									</td>
 								</tr>

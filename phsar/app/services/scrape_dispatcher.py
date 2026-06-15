@@ -20,6 +20,7 @@ import math
 from datetime import datetime, timezone
 from typing import NamedTuple
 
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -27,6 +28,7 @@ from app.daos.anime_dao import AnimeDAO
 from app.daos.genre_dao import GenreDAO
 from app.daos.media_dao import MediaDAO
 from app.daos.media_unwanted_dao import MediaUnwantedDAO
+from app.daos.studio_dao import StudioDAO
 from app.exceptions import (
     AnimeFilteredOutError,
     AnimeNotFoundError,
@@ -34,11 +36,14 @@ from app.exceptions import (
 )
 from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
+from app.models.genre import Genre
 from app.models.job import Job
 from app.models.media import Media, RelationType
 from app.models.media_freshness import MediaFreshness
 from app.models.media_genre import MediaGenre
 from app.models.media_relation_edges import MediaRelationEdges
+from app.models.media_studio import MediaStudio
+from app.models.studio import Studio
 from app.schemas.search_schema import AttachToExistingAction
 from app.services.anime_relation_service import (
     reclassify_anime,
@@ -85,14 +90,13 @@ class RefreshResult(NamedTuple):
     media_changes: list[dict]
 
 
-# Diff classification for the genre/studio drift detector. Pure-addition
-# of *known* tags is the only branch that auto-applies — every other
-# kind surfaces to result_summary so admins can review without the
-# sweep silently rewriting M2M tables on noise (or worse, on a MAL bug).
-_DRIFT_ADDITIONS_APPLIED = "additions_applied"
-_DRIFT_ADDITIONS_UNKNOWN = "additions_unknown"  # genre only — unknown tag in our table
-_DRIFT_REMOVAL_OR_REPLACEMENT = "removal_or_replacement"
-_DRIFT_ANY_CHANGE = "any_change"  # studio bucket — every change just logs
+# Diff classification for the genre/studio drift detector. Both kinds
+# of drift now auto-apply (removals + known additions; unknown genre
+# additions are skipped and reported for seeder review, unknown studio
+# names auto-create new Studio rows). The result_summary tracks the
+# outcome so admins can audit + roll back from the per-job log.
+_DRIFT_APPLIED = "applied"
+_DRIFT_APPLIED_WITH_UNKNOWNS = "applied_with_unknowns"  # genre only
 
 # Stability threshold for the (score, scored_by) pair, expressed as the
 # absolute change in the weighted score `score * log10(scored_by + 1)`.
@@ -367,6 +371,14 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
         },
         "media_changes": media_changes_log,
         "anime_umbrella_changes": anime_umbrella_changes_log,
+        # Deduplicated across every media in this sweep. The Jobs Log
+        # tints rows when this is non-empty so the admin can spot which
+        # sweeps need a seeder update without drilling into details.
+        "unknown_genre_tags": sorted({
+            tag
+            for entry in media_changes_log
+            for tag in (entry.get("genre_drift") or {}).get("unknown_tags") or []
+        }),
         "merge_detect_failed": merge_detect_failed,
         "cache_recompute_failed": cache_recompute_failed,
     }
@@ -476,7 +488,7 @@ async def _refresh_one_anime(
         if genre_drift:
             genre_drifts.append(genre_drift)
 
-        studio_drift = await _apply_studio_diff(media, payload)
+        studio_drift = await _apply_studio_diff(session, media, payload)
         if studio_drift:
             studio_drifts.append(studio_drift)
 
@@ -773,15 +785,11 @@ def _emit_drift_report(
     media: Media, field: str, kind: str, old: set[str], new: set[str],
     *, unknown_tags: list[str] | None = None,
 ) -> dict:
-    """Build the plain-dict report (the sweep stashes it directly in
-    `result_summary`'s JSONB — no Pydantic round-trip needed) and emit
-    the matching WARNING log in one go. Centralized so the per-branch
-    callers stay one line each and the log copy stays in sync with the
-    report shape.
-
-    `additions_applied` is intentionally not logged — it represents the
-    auto-apply path that runs silently; the count surfaces via the
-    per-media `media_changes` entry in result_summary v2.
+    """Build the plain-dict report the sweep stashes directly in
+    `result_summary`'s JSONB. The audit log lets the admin roll back
+    after the fact, so clean applied drifts don't get a per-row warning
+    — only unknown genre tags do (those need seeder updates before the
+    NEXT sweep can finish the job).
     """
     report = {
         "field": field,
@@ -792,16 +800,11 @@ def _emit_drift_report(
         "new": sorted(new),
         "unknown_tags": unknown_tags or [],
     }
-    if kind == _DRIFT_ADDITIONS_UNKNOWN:
+    if unknown_tags:
         logger.warning(
-            "%s drift (unknown additions) on media %s (mal_id=%s): unknown=%s; "
-            "skipping all additions until seeder is updated",
-            field, media.title, media.mal_id, report["unknown_tags"],
-        )
-    elif kind in (_DRIFT_REMOVAL_OR_REPLACEMENT, _DRIFT_ANY_CHANGE):
-        logger.warning(
-            "%s drift on media %s (mal_id=%s): %s → %s",
-            field, media.title, media.mal_id, report["old"], report["new"],
+            "%s drift on media %s (mal_id=%s): known additions applied, "
+            "unknown tags skipped pending seeder update: %s",
+            field, media.title, media.mal_id, unknown_tags,
         )
     return report
 
@@ -809,19 +812,20 @@ def _emit_drift_report(
 async def _apply_genre_diff(
     session: AsyncSession, media: Media, payload: dict,
 ) -> dict | None:
-    """Detect genre drift between the catalog row and MAL's latest tags.
+    """Detect + apply genre drift against MAL's latest tags.
 
-    Genre rule (matches user agreement):
-    - Pure-addition of tags already in our `genre` table → silently
-      append the M2M rows. The seeded set is what we believe the genre
-      universe is; new known tags are routine MAL backfills (themes
-      retroactively applied to old shows are common).
-    - Pure-addition that includes an unknown tag → log, do NOT apply
-      ANY of them. All-or-nothing: half-applying would mean the next
-      admin "what genres did we silently add?" question can't be
-      answered from logs alone.
-    - Removal or replacement → log, do NOT apply. Genre/theme removals
-      from MAL are rare enough to warrant human review.
+    Removals are applied (delete the MediaGenre rows). Additions of
+    tags in our `genre` seed table are applied. Unknown additions are
+    SKIPPED — we don't silently seed new genres because the seeder is
+    the deliberate source of truth for the user-facing taxonomy. The
+    report surfaces them so the admin can decide to add them to the
+    seeder; the next sweep will pick them up.
+
+    Trade-off (v0.14.5): we previously only auto-applied pure-addition
+    of all-known tags, leaving removals + mixed cases as log-only. That
+    surfaced the same drift on every sweep with no resolution path. The
+    v2 audit log makes silent rewrites safer because rollback is now a
+    matter of reading the relevant job's per-media diff.
     """
     current = {mg.genre.name for mg in media.media_genre}
     new = set(payload.get("genres") or [])
@@ -832,40 +836,69 @@ async def _apply_genre_diff(
     added = new - current
 
     if removed:
-        return _emit_drift_report(
-            media, "genres", _DRIFT_REMOVAL_OR_REPLACEMENT, current, new,
+        await session.execute(
+            delete(MediaGenre)
+            .where(MediaGenre.media_id == media.id)
+            .where(MediaGenre.genre.has(Genre.name.in_(removed)))
         )
 
-    known = {
-        g.name: g for g in await GenreDAO().get_all_by_field(session, "name", list(added))
-    }
-    unknown = sorted(added - set(known))
-    if unknown:
-        return _emit_drift_report(
-            media, "genres", _DRIFT_ADDITIONS_UNKNOWN, current, new,
-            unknown_tags=unknown,
-        )
+    unknown: list[str] = []
+    if added:
+        known = {
+            g.name: g
+            for g in await GenreDAO().get_all_by_field(session, "name", list(added))
+        }
+        for name in added:
+            existing = known.get(name)
+            if existing is None:
+                unknown.append(name)
+            else:
+                session.add(MediaGenre(media_id=media.id, genre_id=existing.id))
+        unknown.sort()
 
-    for name in added:
-        session.add(MediaGenre(media_id=media.id, genre_id=known[name].id))
     await session.flush()
-    return _emit_drift_report(
-        media, "genres", _DRIFT_ADDITIONS_APPLIED, current, new,
-    )
+    kind = _DRIFT_APPLIED_WITH_UNKNOWNS if unknown else _DRIFT_APPLIED
+    return _emit_drift_report(media, "genres", kind, current, new, unknown_tags=unknown)
 
 
-async def _apply_studio_diff(media: Media, payload: dict) -> dict | None:
-    """Studio drift always logs and never auto-applies — legitimate
-    studio additions exist (co-production credits surface after airing,
-    outsourced animation studios appear in end credits) but are rare
-    enough that surfacing every change for admin review is preferable
-    to silently rewriting the M2M on a possible MAL data bug.
-    """
+async def _apply_studio_diff(
+    session: AsyncSession, media: Media, payload: dict,
+) -> dict | None:
+    """Detect + apply studio drift. Removals delete the MediaStudio
+    rows. Additions auto-CREATE a Studio row when MAL emits a name we
+    haven't seen before — studios are a discovered taxonomy (co-pro
+    credits, outsourced animation studios surface after airing), not a
+    curated seed list like genres."""
     current = {ms.studio.name for ms in media.media_studio}
     new = set(payload.get("studio") or [])
     if current == new:
         return None
-    return _emit_drift_report(media, "studios", _DRIFT_ANY_CHANGE, current, new)
+
+    removed = current - new
+    added = new - current
+
+    if removed:
+        await session.execute(
+            delete(MediaStudio)
+            .where(MediaStudio.media_id == media.id)
+            .where(MediaStudio.studio.has(Studio.name.in_(removed)))
+        )
+
+    if added:
+        existing = {
+            s.name: s
+            for s in await StudioDAO().get_all_by_field(session, "name", list(added))
+        }
+        for name in added:
+            studio = existing.get(name)
+            if studio is None:
+                studio = Studio(name=name)
+                session.add(studio)
+                await session.flush()
+            session.add(MediaStudio(media_id=media.id, studio_id=studio.id))
+
+    await session.flush()
+    return _emit_drift_report(media, "studios", _DRIFT_APPLIED, current, new)
 
 
 def _apply_media_diff(

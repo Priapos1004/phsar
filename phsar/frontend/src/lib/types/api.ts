@@ -393,11 +393,26 @@ export interface UpdateSweepMediaChange {
 
 // Shape the genre/studio drift detector emits per-media. Mirrors the
 // backend's `_emit_drift_report` plain dict.
+//
+// `kind` literal union covers both v2 (pre-v0.14.5) and v3+ vocabularies
+// so the frontend renders historical rows correctly:
+//   v2 (sweep job version 2): additions_applied, additions_unknown,
+//     removal_or_replacement, any_change — most kinds meant "logged but
+//     not applied".
+//   v3 (sweep job version ≥ 3, post-v0.14.5): applied,
+//     applied_with_unknowns — all drift now applies; the only "not
+//     applied" subset is unknown genre tags awaiting seeder updates.
 export interface UpdateSweepM2MDrift {
 	field: 'genres' | 'studios';
 	media_mal_id: number;
 	media_title: string;
-	kind: 'additions_applied' | 'additions_unknown' | 'removal_or_replacement' | 'any_change';
+	kind:
+		| 'applied'
+		| 'applied_with_unknowns'
+		| 'additions_applied'
+		| 'additions_unknown'
+		| 'removal_or_replacement'
+		| 'any_change';
 	old: string[];
 	new: string[];
 	unknown_tags: string[];
@@ -435,13 +450,15 @@ export interface UpdateSweepCounters {
 	probe_attached_anime_count: number;
 }
 
-// update_sweep result_summary v2 shape (post-v0.14.5). v1 rows omit
-// these fields entirely — renderers must check `row.version >= 2`
-// before reading.
+// update_sweep result_summary v2+ shape. v1 rows omit these fields
+// entirely — renderers must check `row.version >= 2` before reading.
+// `unknown_genre_tags` is v3+; v2 rows don't carry it (the Jobs Log
+// tint just won't fire for those historical sweeps).
 export interface UpdateSweepResultSummary extends JobResultSummary {
 	counters?: UpdateSweepCounters;
 	media_changes?: UpdateSweepMediaChange[];
 	anime_umbrella_changes?: UpdateSweepUmbrellaChange[];
+	unknown_genre_tags?: string[];
 	merge_detect_failed?: boolean;
 	cache_recompute_failed?: boolean;
 }
