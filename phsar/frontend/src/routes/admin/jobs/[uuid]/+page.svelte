@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api, ApiError } from '$lib/api';
+	import { isRatingField } from '$lib/utils/formatString';
 	import { Input } from '$lib/components/ui/input';
 	import * as Card from '$lib/components/ui/card';
 	import JobDetailHeader from '$lib/components/admin/JobDetailHeader.svelte';
@@ -49,7 +50,7 @@
 		if (uuid && job && job.uuid !== uuid) void load();
 	});
 
-	type Filter = 'all' | 'dynamic' | 'static' | 'drift';
+	type Filter = 'all' | 'dynamic' | 'rating' | 'static' | 'drift';
 	let filter = $state<Filter>('all');
 	let search = $state('');
 
@@ -62,7 +63,8 @@
 		const all = v2Summary?.media_changes ?? [];
 		const q = search.trim().toLowerCase();
 		return all.filter((m: UpdateSweepMediaChange) => {
-			if (filter === 'dynamic' && m.dynamic.length === 0) return false;
+			if (filter === 'dynamic' && !m.dynamic.some((d) => !isRatingField(d.field))) return false;
+			if (filter === 'rating' && !m.dynamic.some((d) => isRatingField(d.field))) return false;
 			if (filter === 'static' && m.static.length === 0) return false;
 			if (filter === 'drift' && !m.genre_drift && !m.studio_drift) return false;
 			if (!q) return true;
@@ -82,8 +84,13 @@
 		{ key: 'all', label: 'All', tooltip: 'Show every media row that changed.' },
 		{
 			key: 'dynamic',
-			label: 'Dynamic only',
-			tooltip: 'Volatile fields MAL moves frequently: score, scored_by, episodes, airing_status, aired_to.',
+			label: 'Dynamic (no rating)',
+			tooltip: 'Volatile fields excluding score / scored_by: episodes, airing_status, aired_to.',
+		},
+		{
+			key: 'rating',
+			label: 'Rating only',
+			tooltip: 'score and scored_by — usually noisy nightly drift on popular anime.',
 		},
 		{
 			key: 'static',
@@ -119,7 +126,10 @@
 					merge_detect_failed={v2Summary.merge_detect_failed}
 					cache_recompute_failed={v2Summary.cache_recompute_failed}
 				/>
-			{:else}
+			{:else if job.status !== 'failed' && job.version < 2}
+				<!-- Suppressed on failed jobs because the header already
+				     renders error_message and the missing counters reflect
+				     a crashed run, not an old schema. -->
 				<Notice>
 					<p>This sweep predates v0.14.5's per-media diff capture (job version {job.version}). Per-media diffs and the granular counters are not available; the row's payload summary on the Jobs Log is the full record.</p>
 				</Notice>

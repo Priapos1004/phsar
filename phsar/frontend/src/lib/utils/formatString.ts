@@ -83,6 +83,20 @@ export function formatJobDuration(
 }
 
 /**
+ * Subset of update_sweep `dynamic` fields that churn nightly on
+ * popular anime — split out from the rest of the dynamic bucket on
+ * the admin detail page so vote-count noise doesn't drown the
+ * genuinely-interesting volatile fields (episodes, airing_status,
+ * aired_to). Single source of truth so MediaChangeCard's tone
+ * classifier and the page's filter chip stay in sync.
+ */
+const RATING_FIELD_NAMES = new Set(['score', 'scored_by']);
+
+export function isRatingField(field: string): boolean {
+	return RATING_FIELD_NAMES.has(field);
+}
+
+/**
  * Format anime season name and year into a display string.
  * Returns null if either part is missing.
  */
