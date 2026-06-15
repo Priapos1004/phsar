@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import { formatNumber } from '$lib/utils/formatString';
+	import { formatNumber, percentOf } from '$lib/utils/formatString';
 	import type { AdminSweepTierBreakdown } from '$lib/types/api';
 
 	interface Props {
@@ -58,10 +58,6 @@
 	let total = $derived(
 		ROWS.reduce((acc, row) => acc + countFor(row.sources), 0),
 	);
-
-	function pct(value: number): number {
-		return total > 0 ? (value / total) * 100 : 0;
-	}
 </script>
 
 <Card.Root>
@@ -76,7 +72,7 @@
 		<div class="space-y-2">
 			{#each ROWS as row (row.key)}
 				{@const count = countFor(row.sources)}
-				{@const share = pct(count)}
+				{@const share = percentOf(count, total)}
 				<div class="flex items-center gap-3 text-sm" title={row.tooltip}>
 					<div class="w-40 shrink-0 text-card-foreground/90">{row.label}</div>
 					<div class="flex-1 h-2 rounded-full bg-muted/40 overflow-hidden">

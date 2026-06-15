@@ -97,6 +97,16 @@ export function isRatingField(field: string): boolean {
 }
 
 /**
+ * Share of `value` over `total` as a percentage (0–100). Returns 0
+ * when `total` is 0. Callers that need to distinguish "no data" from
+ * "0%" should gate on `total > 0` themselves before calling — the
+ * helper deliberately doesn't conflate the two via a nullable return.
+ */
+export function percentOf(value: number, total: number): number {
+	return total > 0 ? (value / total) * 100 : 0;
+}
+
+/**
  * Format anime season name and year into a display string.
  * Returns null if either part is missing.
  */

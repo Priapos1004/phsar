@@ -13,7 +13,7 @@
 		reconcileOptimisticJobs,
 	} from '$lib/stores/jobs';
 	import { BELL_CURATION_SEEN_KEY, BELL_LOGIN_KEY, BELL_SEEN_KEY } from '$lib/stores/bell-session';
-	import { formatBytes } from '$lib/utils/formatString';
+	import { formatBytes, percentOf } from '$lib/utils/formatString';
 	import type { BackupResultSummary, CurationPendingCounts, Job } from '$lib/types/api';
 
 	const getUserRole = getContext<() => string | null>('userRole');
@@ -269,7 +269,10 @@
 
 	function progressPercent(job: Job): number | null {
 		if (job.items_total === null || job.items_total === 0) return null;
-		return Math.min(100, Math.round((job.items_done / job.items_total) * 100));
+		// Cap at 100 because backends can over-report items_done (a child
+		// batch occasionally finishes more items than the initial total
+		// estimate); the bell shouldn't render a 137% progress bar.
+		return Math.min(100, Math.round(percentOf(job.items_done, job.items_total)));
 	}
 
 	function describeJob(job: Job): string {

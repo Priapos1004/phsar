@@ -2,7 +2,7 @@
 	import EChart from '$lib/components/EChart.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { scoreColor } from '$lib/utils/chartColors';
-	import { formatDecimalDigits } from '$lib/utils/formatString';
+	import { formatDecimalDigits, percentOf } from '$lib/utils/formatString';
 
 	interface Props {
 		avgScore: number;
@@ -22,11 +22,9 @@
 		totalEpisodesAvailable,
 	}: Props = $props();
 
-	let ratedPercent = $derived(totalCount > 0 ? Math.round((ratedCount / totalCount) * 100) : 0);
+	let ratedPercent = $derived(Math.round(percentOf(ratedCount, totalCount)));
 	let episodePercent = $derived(
-		totalEpisodesAvailable > 0
-			? Math.round((totalEpisodesWatched / totalEpisodesAvailable) * 100)
-			: 0,
+		Math.round(percentOf(totalEpisodesWatched, totalEpisodesAvailable)),
 	);
 
 	let gaugeOption = $derived({
