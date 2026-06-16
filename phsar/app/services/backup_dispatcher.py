@@ -7,6 +7,12 @@ Notable design choices:
   maintenance gate is reserved for destructive operations (restore +
   sweeps) that would corrupt mid-flight requests.
 
+- **Re-verify integrity before retention.** Every backup job re-runs the
+  cheap `pg_restore --list` check on all dumps (`reverify_backups`) so a
+  dump that corrupted on disk since creation stops listing as `ok`. Done
+  before retention so the `most recent known-good` pin reflects current
+  disk state, not a stale create-time flag.
+
 - **Retention runs after every backup job.** Both manual and cron end
   with `apply_retention()` so the 14-recent + 8-Sunday + 1-known-good
   contract bounds disk usage on installs where cron is disabled or
@@ -54,6 +60,9 @@ async def backup_dispatcher(session: AsyncSession, job: Job) -> dict[str, Any]:
         # surface the dedupe in the result_summary.
         metadata = exc.existing_metadata
         deduped_against = metadata.filename
+
+    await progress.update(stage="Verifying backups", force=True)
+    await backup_service.reverify_backups()
 
     await progress.update(stage="Applying retention", force=True)
     await backup_service.apply_retention()

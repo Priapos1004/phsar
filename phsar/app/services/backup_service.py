@@ -456,6 +456,36 @@ async def create_backup(
         return metadata
 
 
+async def reverify_backups() -> dict[str, int]:
+    """Re-run the cheap `pg_restore --list` integrity check on every dump and
+    refresh the sidecar `integrity` when it changed.
+
+    The create-time `integrity` flag is a point-in-time snapshot — without
+    this, a dump that corrupts on disk after creation (truncation, bad
+    sector, partial copy) keeps listing as `ok` forever, and retention trusts
+    that flag for its `most recent known-good` pin. Cheap to run nightly:
+    `--list` reads only the archive TOC, not the data, so it's sub-second per
+    dump regardless of dump size (the full-decompress check, `pg_restore
+    -f -`, stays reserved for create-time content hashing). Run BEFORE
+    retention so the known-good pin reflects current disk state.
+    """
+    backup_dir = _backup_dir()
+    checked = 0
+    newly_corrupt = 0
+    for meta in await list_backups():
+        integrity = await _check_integrity(backup_dir / meta.filename)
+        checked += 1
+        if integrity != meta.integrity:
+            await _set_meta_field(meta.filename, integrity=integrity)
+            if integrity == BackupIntegrity.corrupt:
+                newly_corrupt += 1
+                logger.warning(
+                    "Backup %s failed re-verification — integrity %s -> corrupt",
+                    meta.filename, meta.integrity.value,
+                )
+    return {"checked": checked, "newly_corrupt": newly_corrupt}
+
+
 async def list_backups() -> list[BackupMetadata]:
     backup_dir = _backup_dir()
     current_filename = _read_current_db_filename()
@@ -813,6 +843,10 @@ async def apply_retention() -> list[str]:
         {b.filename for b in auto_archival[:14]}
         | {b.filename for b in _latest_per_sunday(auto_archival, weeks=8)}
     )
+    # Trusts the sidecar integrity flag. The backup dispatcher runs
+    # reverify_backups() immediately before retention so this reflects
+    # current disk state; a future retention-only caller must reverify first
+    # or this pin can crown a since-corrupted dump as "known good".
     most_recent_ok = next(
         (b for b in archival if b.integrity == BackupIntegrity.ok), None,
     )

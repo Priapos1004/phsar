@@ -356,7 +356,7 @@ Tag any commit with `v*` (stable `v0.13.0` or preview `v0.13.0-rc1`) and push. `
   - Host directory must be owned by UID 1000 (`chown 1000:1000 /opt/phsar/backups`)
 - Manual backups: admin panel → Backups card → "Create backup"
   - Both manual and cron POSTs are async — endpoint enqueues a `backup` job (202 with `job_uuid`), worker runs `pg_dump` in background
-  - Bell tracks progress (`Dumping` → `Applying retention` → `Done`); on success BackupsCard auto-refreshes
+  - Bell tracks progress (`Dumping` → `Verifying backups` → `Applying retention` → `Done`); on success BackupsCard auto-refreshes. The verify stage re-runs `pg_restore --list` across all dumps (cheap, TOC-only) so on-disk corruption stops listing as `ok` before retention picks its known-good pin
   - "Create backup" button debounces for 5s to absorb double-clicks
   - Download/delete/rename/restore/upload from the same UI; restore stays synchronous (meant to be blocking)
   - Rename (pencil): names a dump and **pins** it against auto-retention; an inline "Remove name" button (or saving a blank name) unpins. Named rows show a "Pinned" badge

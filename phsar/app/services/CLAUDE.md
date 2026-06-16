@@ -90,9 +90,10 @@ Handlers for `user_scrape` and `update_sweep` jobs (the catalog-mutation pair th
 Handler for the `backup` JobKind.
 
 - Wraps `backup_service.create_backup(source, label)`
-- Progress stages: `Dumping` → `Applying retention` → `Done`
+- Progress stages: `Dumping` → `Verifying backups` → `Applying retention` → `Done`
 - Stamps `result_summary = {filename, size_bytes, integrity, source, deduped_against}` for the bell to render
 - Catches `DuplicateBackupError` → success outcome with `deduped_against` populated (softer "no new data" line)
+- `reverify_backups()` runs before retention — re-runs the cheap `pg_restore --list` check on every dump and refreshes the sidecar `integrity`, so a dump that corrupted on disk since creation stops listing as `ok` (the create-time flag is a snapshot). Cheap: `--list` reads only the archive TOC, sub-second per dump regardless of size. Ordered before retention so the `most recent known-good` pin reflects current disk state
 - `apply_retention()` runs after every job — three pools (archival manual+cron: 14-recent + latest-per-Sunday×8 + 1-known-good; pre-restore: relevance buffer; uploads: 5-recent), with named/pinned dumps kept on top of each
 - **No maintenance bracket**: `pg_dump` runs on an MVCC snapshot, user writes are safe
 - `BackupDiskSpaceError` / `BackupIntegrityError` surface via `_classify_error` as `backup_disk_full` / `backup_corrupt` with friendly bell copy; both stay `retryable=True`
@@ -213,6 +214,7 @@ Orchestrates BFS output into save/attach/merge decisions.
     - **Why naming IS the pin (no separate pin toggle):** every pinned dump is forced to carry a human-readable reason, so the admin can never accumulate anonymous pins and later forget why a dump is protected. The name is the justification; an un-named dump is never pinned
   - **Restore link**: on a successful restore, `restore_backup` stamps `restored_to=<restored filename>` on the pre-restore snapshot's sidecar. `list_backups` derives `previous_state` on the current row (the pre-restore whose `restored_to` matches the pointer) — the "state before the current restore", surfaced in the card. Persisted `restored_to` survives pointer moves; derived `previous_state` mirrors `is_current`
     - **Dedup edge case (intentional):** `create_backup(pre_restore)` dedupes silently, so when the live DB already matched an existing dump, `pre_snapshot.filename` is that (often manual/cron) dump and `restored_to` lands on its sidecar. Correct — the matched dump genuinely IS the pre-restore state and is already retained — but (1) a manual/cron sidecar can then carry `restored_to` (only `previous_state` derivation reads it; harmless) and (2) it's protected by its own archival rules, not the pre-restore pool's `restored_to` pin, so the "Previous state" link can dangle if it ages out of the archival window. Left as-is because the link is truthful; suppressing it would lose a correct link. See the comment at the `_set_meta_field` call in `restore_backup`
+  - **Integrity re-verification** (`reverify_backups`): the sidecar `integrity` is set once at create time (via `pg_restore --list`); the nightly backup job re-runs that same cheap check across all dumps and refreshes the flag, so on-disk corruption (truncation, bad sector, partial copy) doesn't keep listing as `ok`. `--list` is TOC-only (sub-second/dump, size-independent) — the full-decompress check stays at create time. Closes the v0.13.0-flagged "stale integrity" gap
   - `.current_db.json` pointer tracks which dump matches the live DB:
     - Set by `restore_backup` (→ restored dump) and by every successful `create_backup` regardless of source — manual / cron / pre_restore, whether unique or dedupe hit
     - Uploads NEVER move the pointer (`save_uploaded_backup` only stamps `is_current` when the new filename equals the unchanged pointer) — uploaded bytes are external, can't verify they match live

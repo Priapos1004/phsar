@@ -729,6 +729,30 @@ async def test_set_backup_name_sets_trims_and_clears(backup_dir):
     assert (await backup_service.list_backups())[0].name is None
 
 
+async def test_reverify_flips_integrity_on_disk_corruption(backup_dir):
+    """The create-time integrity flag is a snapshot; a dump that corrupts on
+    disk afterward must stop listing as `ok`. reverify_backups re-runs the
+    cheap `pg_restore --list` check and refreshes the sidecar."""
+    good = await backup_service.create_backup(source=BackupSource.cron)
+    assert (await backup_service.list_backups())[0].integrity == BackupIntegrity.ok
+
+    # Corrupt the archive on disk — garbage bytes fail `pg_restore --list`.
+    (backup_dir / good.filename).write_bytes(b"this is not a valid pg_dump archive")
+
+    stats = await backup_service.reverify_backups()
+    assert stats["checked"] == 1
+    assert stats["newly_corrupt"] == 1
+    assert (await backup_service.list_backups())[0].integrity == BackupIntegrity.corrupt
+
+
+async def test_reverify_leaves_healthy_dump_untouched(backup_dir):
+    """A still-valid dump stays `ok` and isn't counted as newly corrupt."""
+    await backup_service.create_backup(source=BackupSource.cron)
+    stats = await backup_service.reverify_backups()
+    assert stats == {"checked": 1, "newly_corrupt": 0}
+    assert (await backup_service.list_backups())[0].integrity == BackupIntegrity.ok
+
+
 async def test_list_backups_stamps_previous_state_on_current(backup_dir):
     """When the current state came from a restore, list_backups stamps the
     current row with the pre-restore snapshot it superseded."""
