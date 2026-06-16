@@ -117,6 +117,10 @@ export const api = {
 		return jsonRequest<T>('PUT', path, body);
 	},
 
+	async patch<T = unknown>(path: string, body?: unknown): Promise<T> {
+		return jsonRequest<T>('PATCH', path, body);
+	},
+
 	async del<T = void>(path: string, body?: unknown): Promise<T> {
 		return jsonRequest<T>('DELETE', path, body);
 	},

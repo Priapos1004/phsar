@@ -93,7 +93,7 @@ Handler for the `backup` JobKind.
 - Progress stages: `Dumping` → `Applying retention` → `Done`
 - Stamps `result_summary = {filename, size_bytes, integrity, source, deduped_against}` for the bell to render
 - Catches `DuplicateBackupError` → success outcome with `deduped_against` populated (softer "no new data" line)
-- `apply_retention()` runs after every job — manual and cron share the same 14-recent + 8-Sunday + 1-known-good pool
+- `apply_retention()` runs after every job — three pools (archival manual+cron: 14-recent + latest-per-Sunday×8 + 1-known-good; pre-restore: relevance buffer; uploads: 5-recent), with named/pinned dumps kept on top of each
 - **No maintenance bracket**: `pg_dump` runs on an MVCC snapshot, user writes are safe
 - `BackupDiskSpaceError` / `BackupIntegrityError` surface via `_classify_error` as `backup_disk_full` / `backup_corrupt` with friendly bell copy; both stay `retryable=True`
 
@@ -204,17 +204,20 @@ Orchestrates BFS output into save/attach/merge decisions.
 
 - **`backup_service.py`** — pg_dump/pg_restore orchestration
   - Atomic `.partial` writes, sidecar `.meta.json`, content-hash dedupe
-  - Retention — two independent pools:
-    - Manual + cron: 14 daily + 8 Sunday + most-recent-known-good
-      - Pins the `is_current` dump regardless of age — prevents a stack of dedupe-hit re-confirms from pushing the pointed-at older dump out of the 14-recent window
-    - Uploads: separate `_UPLOAD_RETENTION_COUNT=5` most-recent pool
-      - Also pins `is_current` — ensures a restore-from-upload workflow can't evict the bytes the DB was just restored from
-    - Pre-restore snapshots stay retention-exempt entirely — safety net for synchronous restore, admin cleans by hand
+  - Retention (`apply_retention`) — three independent pools, slots counted over the *un-named* (auto-managed) subset of each so pins are kept ON TOP of a full rolling window:
+    - **Archival (manual + cron)**: 14 most-recent + latest-per-Sunday for the last 8 distinct Sundays (`_latest_per_sunday` — keeps one dump per Sunday, fixing the old `[:8]` slice that let several same-Sunday dumps eat every weekly slot) + most-recent-known-good
+    - **Pre-restore**: relevance-based, NOT archival. Pre-restores are rollback points, not weekly history — a pre-restore's `created_at` is the restore moment and could fall on a Sunday, so it must never occupy an archival Sunday/recent slot. Keeps the snapshot tied to the current state (`restored_to == current_filename`) + the `_PRE_RESTORE_RETENTION_COUNT=3` most-recent buffer; older ones age out
+    - **Uploads**: separate `_UPLOAD_RETENTION_COUNT=5` most-recent pool (2 GiB each, kept off the archival window)
+    - Every pool pins via shared `_evict`: `is_current` (prevents a stack of dedupe-hit re-confirms from evicting the pointed-at dump) and any **named** dump (the admin actively chose to keep it)
+  - **Naming / pinning** (`set_backup_name` → `_set_meta_field`): a non-empty `name` on the sidecar pins the dump against auto-retention; clearing it (blank/None) unpins. `name` is the admin display name — distinct from the creation-time `label` that becomes a filename suffix; it never touches the filename. Exposed via `PATCH /admin/backups/{filename}`
+    - **Why naming IS the pin (no separate pin toggle):** every pinned dump is forced to carry a human-readable reason, so the admin can never accumulate anonymous pins and later forget why a dump is protected. The name is the justification; an un-named dump is never pinned
+  - **Restore link**: on a successful restore, `restore_backup` stamps `restored_to=<restored filename>` on the pre-restore snapshot's sidecar. `list_backups` derives `previous_state` on the current row (the pre-restore whose `restored_to` matches the pointer) — the "state before the current restore", surfaced in the card. Persisted `restored_to` survives pointer moves; derived `previous_state` mirrors `is_current`
+    - **Dedup edge case (intentional):** `create_backup(pre_restore)` dedupes silently, so when the live DB already matched an existing dump, `pre_snapshot.filename` is that (often manual/cron) dump and `restored_to` lands on its sidecar. Correct — the matched dump genuinely IS the pre-restore state and is already retained — but (1) a manual/cron sidecar can then carry `restored_to` (only `previous_state` derivation reads it; harmless) and (2) it's protected by its own archival rules, not the pre-restore pool's `restored_to` pin, so the "Previous state" link can dangle if it ages out of the archival window. Left as-is because the link is truthful; suppressing it would lose a correct link. See the comment at the `_set_meta_field` call in `restore_backup`
   - `.current_db.json` pointer tracks which dump matches the live DB:
     - Set by `restore_backup` (→ restored dump) and by every successful `create_backup` regardless of source — manual / cron / pre_restore, whether unique or dedupe hit
     - Uploads NEVER move the pointer (`save_uploaded_backup` only stamps `is_current` when the new filename equals the unchanged pointer) — uploaded bytes are external, can't verify they match live
     - Deleting the pointed dump clears the pointer
-  - All write paths serialized via module-level `asyncio.Lock` (single-worker assumption)
+  - All write paths serialized via module-level `asyncio.Lock` (single-worker assumption) — including `_set_meta_field`'s read-modify-write
   - Restore flips maintenance flag → other requests 503; backup creation does NOT (MVCC-snapshot read-only)
   - Subprocess password via `PGPASSWORD`, never on the CLI
   - Deeper design notes: [compound-docs/2026-04-19-v0.13.0-deployment.md](../../../compound-docs/2026-04-19-v0.13.0-deployment.md)

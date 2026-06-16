@@ -73,6 +73,15 @@ _UPLOAD_CHUNK_BYTES = 1024 * 1024
 # bound. The pointed-at (is_current) upload is always pinned regardless of age.
 _UPLOAD_RETENTION_COUNT = 5
 
+# Most-recent pre-restore snapshots to keep as a rollback buffer. Pre-restores
+# are NOT archival backups — they're rollback points for the synchronous
+# restore path. They get their own relevance-based pool (this buffer + the
+# snapshot tied to the current state + named ones) instead of competing for
+# the manual/cron Sunday/recent archival slots: a pre-restore's created_at is
+# the restore moment, which could fall on a Sunday and pollute the long-term
+# weekly history with throwaway pre-restore state.
+_PRE_RESTORE_RETENTION_COUNT = 3
+
 # Serializes every write path (create + upload) so concurrent manual + cron +
 # re-upload requests can't race on disk-space checks, `.partial` filenames, or
 # the dedupe lookup. Single-process assumption — scale horizontally and this
@@ -291,6 +300,25 @@ def _read_meta(dump_path: Path) -> BackupMetadata | None:
         return None
 
 
+async def _set_meta_field(filename: str, **updates: object) -> BackupMetadata:
+    """Read a dump's sidecar (rebuilding it if absent), apply field updates,
+    and rewrite it. Shared by rename (`name`) and the restore-link stamp
+    (`restored_to`). Returns the updated metadata with is_current re-stamped
+    against the live pointer."""
+    dump_path = get_backup_path(filename)
+    # Honor the module's all-writes-serialized invariant so a rename can't
+    # interleave its read-modify-write with another sidecar write.
+    async with _BACKUP_WRITE_LOCK:
+        meta = _read_meta(dump_path)
+        if meta is None:
+            meta = await _rebuild_meta(dump_path)
+        meta = meta.model_copy(update=updates)
+        _write_meta(dump_path, meta)
+    if _read_current_db_filename() == filename:
+        meta = meta.model_copy(update={"is_current": True})
+    return meta
+
+
 async def _rebuild_meta(dump_path: Path) -> BackupMetadata:
     integrity = await _check_integrity(dump_path)
     meta = BackupMetadata(
@@ -446,6 +474,20 @@ async def list_backups() -> list[BackupMetadata]:
             meta = meta.model_copy(update={"is_current": True})
         items.append(meta)
     items.sort(key=lambda m: m.created_at, reverse=True)
+
+    # Stamp the current row with the pre-restore snapshot it superseded (the
+    # "state before the current restore"), if the current state came from a
+    # restore. Derived here like is_current rather than persisted.
+    if current_filename:
+        prior = next(
+            (m for m in items if m.restored_to == current_filename), None,
+        )
+        if prior is not None:
+            items = [
+                m.model_copy(update={"previous_state": prior.filename})
+                if m.filename == current_filename else m
+                for m in items
+            ]
     return items
 
 
@@ -455,6 +497,13 @@ async def delete_backup(filename: str) -> None:
     _meta_path(path).unlink(missing_ok=True)
     if _read_current_db_filename() == filename:
         _current_db_path().unlink(missing_ok=True)
+
+
+async def set_backup_name(filename: str, name: str | None) -> BackupMetadata:
+    """Set (or clear) a dump's admin display name. A non-empty name pins the
+    dump against auto-retention; a blank/None name clears the pin. The name is
+    trimmed and never touches the filename (unlike the creation-time label)."""
+    return await _set_meta_field(filename, name=(name or "").strip() or None)
 
 
 async def restore_backup(
@@ -492,6 +541,28 @@ async def restore_backup(
         try:
             await _run_pg_restore(target_path, filename)
             _mark_current_db_restored(filename)
+            # Link the pre-restore snapshot to the dump it preceded so the UI
+            # can show "state before the current restore" and retention can
+            # pin the snapshot tied to the now-current state.
+            #
+            # Dedup edge case: create_backup(pre_restore) dedupes silently, so
+            # when the live DB already matched an existing dump (often a
+            # manual/cron one) `pre_snapshot.filename` is THAT dump, and we
+            # stamp restored_to onto its sidecar. That's intentional and
+            # correct — the matched dump genuinely is the pre-restore state and
+            # is already retained — but two consequences follow: (1) a
+            # manual/cron sidecar can carry restored_to (only previous_state
+            # derivation reads it; harmless), and (2) it's pinned by its own
+            # archival rules, NOT the pre-restore pool's restored_to pin, so if
+            # it ages out of the archival window the "Previous state" link
+            # dangles. Acceptable; see services/CLAUDE.md.
+            try:
+                await _set_meta_field(pre_snapshot.filename, restored_to=filename)
+            except Exception:
+                logger.warning(
+                    "Failed to stamp restored_to on pre-restore snapshot %s",
+                    pre_snapshot.filename, exc_info=True,
+                )
         except Exception as exc:
             # Captured for the audit row in `finally`; re-raised so HTTP still 5xx's.
             restore_error = str(exc)
@@ -673,64 +744,106 @@ def _is_sunday_utc(dt: datetime) -> bool:
     return dt.weekday() == 6
 
 
+def _latest_per_sunday(candidates: list[BackupMetadata], weeks: int) -> list[BackupMetadata]:
+    """Return the latest dump on each of the most recent `weeks` distinct
+    Sundays. `candidates` is newest-first (as `list_backups` returns), so the
+    first dump seen for a given Sunday date IS that Sunday's latest — that's
+    what we keep. Fixes the prior `[... ][:8]` slice, which kept the 8 most
+    recent Sunday-*created* dumps and let several dumps from one busy Sunday
+    consume every slot."""
+    latest_by_date: dict[object, BackupMetadata] = {}
+    for b in candidates:
+        if not _is_sunday_utc(b.created_at):
+            continue
+        day = b.created_at.date()
+        if day not in latest_by_date:  # first seen == latest (newest-first)
+            latest_by_date[day] = b
+    by_recency = sorted(
+        latest_by_date.values(), key=lambda b: b.created_at, reverse=True,
+    )
+    return by_recency[:weeks]
+
+
 async def apply_retention() -> list[str]:
-    """Evict old backups. Two independent pools:
+    """Evict old backups. Three independent pools:
 
-    - manual + cron: 14 most recent + last 8 Sunday dumps + the most recent
-      known-good dump, regardless of age.
-    - uploads: the `_UPLOAD_RETENTION_COUNT` most recent.
+    - Archival (manual + cron): 14 most recent + the latest dump on each of
+      the last 8 distinct Sundays + the most recent known-good dump,
+      regardless of age.
+    - Pre-restore: relevance-based, NOT archival. Pre-restores are rollback
+      points, not weekly history, so they never compete for the Sunday/recent
+      slots above. Keep the one tied to the current state, plus the
+      `_PRE_RESTORE_RETENTION_COUNT` most recent as an "undo the undo" buffer;
+      discard older ones once they're no longer relevant.
+    - Uploads: the `_UPLOAD_RETENTION_COUNT` most recent.
 
-    Both pools pin the `is_current` dump (the one the live DB was restored
-    from) regardless of age. Pre-restore snapshots remain retention-exempt;
-    they're the safety net for the synchronous restore path and admin
-    cleans them up by hand once the new state is confirmed stable.
+    Every pool pins the `is_current` dump (matches the live DB) and any
+    named dump (the admin actively chose to keep it) regardless of age. Named
+    dumps are kept ON TOP of a full rolling window — they're filtered out
+    before the recent/Sunday/cap slots are counted, so pinning a backup never
+    starves the auto-managed window (else 14 pinned dumps would evict every
+    fresh nightly backup).
     """
     backups = await list_backups()
+    current_filename = _read_current_db_filename()
     deleted: list[str] = []
 
-    # --- manual + cron pool ----------------------------------------------
-    candidates = [
+    def _auto(pool: list[BackupMetadata]) -> list[BackupMetadata]:
+        # Slots are counted over auto-managed (un-pinned) dumps only; named
+        # dumps are always kept via the pin below and must not consume slots.
+        return [b for b in pool if not b.name]
+
+    def _evict(pool: list[BackupMetadata], keep: set[str]) -> None:
+        for b in pool:
+            # Age-independent pins: is_current (matches live DB — a stack of
+            # dedupe-hit re-confirms could otherwise push an older-but-pointed
+            # -at dump out of the recent window) and any named dump (the admin
+            # actively chose to keep it).
+            if b.is_current or b.name or b.filename in keep:
+                continue
+            deleted.append(b.filename)
+
+    # --- archival pool (manual + cron) -----------------------------------
+    archival = [
         b for b in backups
         if b.source in (BackupSource.cron, BackupSource.manual)
     ]
-
-    sunday_keeps = [b for b in candidates if _is_sunday_utc(b.created_at)][:8]
+    auto_archival = _auto(archival)
     keep: set[str] = (
-        {b.filename for b in candidates[:14]}
-        | {b.filename for b in sunday_keeps}
+        {b.filename for b in auto_archival[:14]}
+        | {b.filename for b in _latest_per_sunday(auto_archival, weeks=8)}
     )
-
     most_recent_ok = next(
-        (b for b in candidates if b.integrity == BackupIntegrity.ok),
-        None,
+        (b for b in archival if b.integrity == BackupIntegrity.ok), None,
     )
     if most_recent_ok is not None:
         keep.add(most_recent_ok.filename)
+    _evict(archival, keep)
 
-    # Pin the is_current dump regardless of age. A stack of dedupe-hit
-    # re-confirms could otherwise push an older-but-pointed-at dump out of
-    # the 14-recent window and retention would delete the file the bell
-    # labels as "matches live DB". `list_backups()` already stamped
-    # is_current on each row, so no extra pointer-file read here.
-    keep.update(b.filename for b in candidates if b.is_current)
-
-    for b in candidates:
-        if b.filename not in keep:
-            await delete_backup(b.filename)
-            deleted.append(b.filename)
+    # --- pre-restore pool ------------------------------------------------
+    # Relevance-based: the snapshot tied to the current state is the active
+    # rollback point and is always kept; a small recency buffer covers a
+    # chain of recent restores. Everything older ages out.
+    pre_restores = [b for b in backups if b.source == BackupSource.pre_restore]
+    pre_keep = {b.filename for b in _auto(pre_restores)[:_PRE_RESTORE_RETENTION_COUNT]}
+    if current_filename is not None:
+        # Guard against None == None pinning every unlinked pre-restore on a
+        # fresh install (no pointer yet, restored_to also None).
+        pre_keep.update(
+            b.filename for b in pre_restores if b.restored_to == current_filename
+        )
+    _evict(pre_restores, pre_keep)
 
     # --- upload pool -----------------------------------------------------
-    # Cap uploaded dumps to avoid unbounded disk growth — a 2 GiB upload
-    # cap with no eviction would let an admin (or a runaway script) fill
-    # the volume. is_current is still pinned so a restore-from-upload
-    # workflow doesn't evict the bytes the DB was just restored from.
+    # Cap uploaded dumps to avoid unbounded disk growth — a 2 GiB upload cap
+    # with no eviction would let an admin (or a runaway script) fill the
+    # volume.
     uploads = [b for b in backups if b.source == BackupSource.upload]
-    upload_keep = {b.filename for b in uploads[:_UPLOAD_RETENTION_COUNT]}
-    upload_keep.update(b.filename for b in uploads if b.is_current)
-    for b in uploads:
-        if b.filename not in upload_keep:
-            await delete_backup(b.filename)
-            deleted.append(b.filename)
+    upload_keep = {b.filename for b in _auto(uploads)[:_UPLOAD_RETENTION_COUNT]}
+    _evict(uploads, upload_keep)
+
+    for filename in deleted:
+        await delete_backup(filename)
 
     return deleted
 

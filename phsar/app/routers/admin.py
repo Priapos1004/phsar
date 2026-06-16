@@ -185,6 +185,16 @@ async def delete_backup(filename: str):
     await backup_service.delete_backup(filename)
 
 
+@backups_router.patch("/{filename}", response_model=backup_schema.BackupMetadata)
+async def rename_backup(
+    filename: str,
+    data: backup_schema.BackupRenameRequest,
+):
+    """Set or clear a dump's display name. A non-empty name pins the dump
+    against auto-retention; a blank name clears the pin."""
+    return await backup_service.set_backup_name(filename, data.name)
+
+
 @backups_router.post("/{filename}/restore", response_model=backup_schema.BackupMetadata)
 async def restore_backup(
     filename: str,
