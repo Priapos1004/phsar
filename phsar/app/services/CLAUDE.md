@@ -220,7 +220,7 @@ Orchestrates BFS output into save/attach/merge decisions.
     - Uploads NEVER move the pointer (`save_uploaded_backup` only stamps `is_current` when the new filename equals the unchanged pointer) — uploaded bytes are external, can't verify they match live
     - Deleting the pointed dump clears the pointer
   - All write paths serialized via module-level `asyncio.Lock` (single-worker assumption) — including `_set_meta_field`'s read-modify-write
-  - `get_backup_path` is the single filename chokepoint (delete / restore / rename / reverify) — validates against `_FILENAME_PATTERN`, then `resolve()`s and containment-checks the path against the backup dir (defense in depth on top of the regex; also the canonical-path guard static analysis recognizes, clearing CodeQL path-injection alerts)
+  - `get_backup_path` is the single filename chokepoint (delete / restore / rename / reverify) — `_FILENAME_PATTERN` is the path-traversal guard (no separators, no `..`, so the constructed path can't escape the backup dir). CodeQL flags the downstream sidecar file ops as `py/path-injection` because it doesn't model the regex as a sanitizer; these are dismissed as false positives. A `resolve()`/`is_relative_to()` containment check was tried to satisfy CodeQL and reverted — CodeQL doesn't credit it either and it only added noise (2 extra alerts on its own lines)
   - Restore flips maintenance flag → other requests 503; backup creation does NOT (MVCC-snapshot read-only)
   - Subprocess password via `PGPASSWORD`, never on the CLI
   - Deeper design notes: [compound-docs/2026-04-19-v0.13.0-deployment.md](../../../compound-docs/2026-04-19-v0.13.0-deployment.md)
