@@ -509,15 +509,26 @@ async def list_backups() -> list[BackupMetadata]:
     # "state before the current restore"), if the current state came from a
     # restore. Derived here like is_current rather than persisted.
     if current_filename:
+        # `m.filename != current_filename` guards the self-reference case:
+        # restoring a dump whose content already equals the live DB dedupes the
+        # pre-restore snapshot to the restore target itself, so its sidecar
+        # carries `restored_to == own filename`. Without this guard the current
+        # row would advertise itself as its own "previous state".
         prior = next(
-            (m for m in items if m.restored_to == current_filename), None,
+            (
+                m for m in items
+                if m.restored_to == current_filename
+                and m.filename != current_filename
+            ),
+            None,
         )
         if prior is not None:
-            items = [
-                m.model_copy(update={"previous_state": prior.filename})
-                if m.filename == current_filename else m
-                for m in items
-            ]
+            for i, m in enumerate(items):
+                if m.filename == current_filename:
+                    items[i] = m.model_copy(
+                        update={"previous_state": prior.filename}
+                    )
+                    break
     return items
 
 

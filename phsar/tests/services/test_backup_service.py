@@ -774,6 +774,33 @@ async def test_list_backups_stamps_previous_state_on_current(backup_dir):
     assert current_row.previous_state == pre
 
 
+async def test_list_backups_does_not_self_reference_previous_state(backup_dir):
+    """Restoring a dump whose content already equals the live DB dedupes the
+    pre-restore snapshot to the restore target itself, so its sidecar carries
+    restored_to == own filename. The current row must NOT advertise itself as
+    its own previous state."""
+    now = datetime.now(timezone.utc)
+    current = _fabricate_dump(
+        backup_dir, source=BackupSource.manual,
+        created_at=now, label="current",
+        restored_to=None,
+    )
+    # Simulate the dedupe-to-self outcome: the snapshot tied to the restore is
+    # the restore target itself.
+    backup_service._write_meta(
+        backup_dir / current,
+        backup_service._read_meta(backup_dir / current).model_copy(
+            update={"restored_to": current}
+        ),
+    )
+    backup_service._mark_current_db_restored(current)
+
+    items = await backup_service.list_backups()
+    current_row = next(m for m in items if m.filename == current)
+    assert current_row.is_current is True
+    assert current_row.previous_state is None  # no self-reference
+
+
 # ---------------------------------------------------------------------------
 # Jobs-table staging + restore audit row (v0.14.2)
 # ---------------------------------------------------------------------------
