@@ -12,11 +12,12 @@ the identity (returns the preshaped payload as-is) so each test cooks
 the exact payload it wants without rebuilding a full MAL response.
 """
 
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import selectinload
 
 from app.core.db import async_session_maker
@@ -39,7 +40,6 @@ from app.services.scrape_dispatcher import (
     _apply_studio_diff,
     _qualifies_for_relations_probe,
     _refresh_one_anime,
-    _summarize_drift,
     update_sweep_dispatcher,
 )
 from tests._helpers import media_kwargs
@@ -127,6 +127,59 @@ def test_diff_no_change_returns_false():
         aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
     ))
     assert _apply_media_diff(media, _payload()) is False
+
+
+def test_diff_sink_captures_dynamic_field_changes():
+    """The v2 result_summary capture: when diff_sink is supplied, every
+    written field lands as a {field, old, new} entry so admins can read
+    "what did MAL move?" off the detail page."""
+    media = Media(**media_kwargs(
+        anime_id=1, mal_id=1, score=7.5, scored_by=1000, episodes=12,
+        airing_status="Finished Airing",
+        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+    ))
+    sink: list[dict] = []
+    _apply_media_diff(
+        media,
+        _payload(score=8.0, scored_by=1200, episodes=13),
+        diff_sink=sink,
+    )
+    captured = {e["field"]: (e["old"], e["new"]) for e in sink}
+    assert captured["score"] == (7.5, 8.0)
+    assert captured["scored_by"] == (1000, 1200)
+    assert captured["episodes"] == (12, 13)
+
+
+def test_diff_sink_serializes_datetime_to_iso_string():
+    """aired_to is a datetime — JSONB serialization via json.dumps would
+    crash if we stuffed the raw object into result_summary. Regression
+    guard for the datetime-in-diff-sink serialization blocker."""
+    media = Media(**media_kwargs(
+        anime_id=1, mal_id=1, score=7.5, scored_by=1000, episodes=12,
+        airing_status="Finished Airing",
+        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+    ))
+    sink: list[dict] = []
+    _apply_media_diff(
+        media,
+        _payload(aired_to="2021-06-30T00:00:00+00:00"),
+        diff_sink=sink,
+    )
+    captured = {e["field"]: (e["old"], e["new"]) for e in sink}
+    assert captured["aired_to"] == ("2020-06-30T00:00:00+00:00", "2021-06-30T00:00:00+00:00")
+    # The whole sink must json-serialize cleanly — same call json.dumps
+    # makes inside SQLAlchemy's JSONB serializer.
+    json.dumps(sink)
+
+
+def test_diff_sink_skipped_when_none():
+    """Absent diff_sink is the production default — must not raise or
+    do extra work."""
+    media = Media(**media_kwargs(
+        anime_id=1, mal_id=1, score=7.5, scored_by=1000, episodes=12,
+        airing_status="Finished Airing", aired_to=None,
+    ))
+    _apply_media_diff(media, _payload(score=8.0))
 
 
 def test_diff_score_change_returns_true():
@@ -458,7 +511,7 @@ async def test_genre_diff_known_addition_applied(db_session):
         db_session, media, {"genres": ["GD_Action_1", "GD_Drama_1"]},
     )
     assert report is not None
-    assert report["kind"] == "additions_applied"
+    assert report["kind"] == "applied"
     assert report["unknown_tags"] == []
 
     # Verify the M2M row landed.
@@ -470,11 +523,12 @@ async def test_genre_diff_known_addition_applied(db_session):
 
 
 @pytest.mark.asyncio
-async def test_genre_diff_unknown_addition_logs_without_apply(db_session):
-    """If MAL adds a tag we've never seen, log it as `unknown_tags` and
-    skip the WHOLE batch of additions — half-applying would mean the
-    next "what got auto-added since the seeder update?" question can't
-    be answered from result_summary alone."""
+async def test_genre_diff_unknown_addition_applies_known_skips_unknown(db_session):
+    """v0.14.5 policy change: known additions land even when an unknown
+    tag is also in the diff. The unknown one stays out of the M2M
+    (don't silently seed new genres — the seed table is the deliberate
+    source of truth) but is surfaced in unknown_tags so the admin can
+    add it to the seeder and pick it up next sweep."""
     media = await _build_media_with_taxonomy(
         db_session, mal_id=-95002, genre_names=["GD_Action_2"],
     )
@@ -485,33 +539,11 @@ async def test_genre_diff_unknown_addition_logs_without_apply(db_session):
         {"genres": ["GD_Action_2", "GD_KnownAdded_2", "GD_NewTag_2"]},
     )
     assert report is not None
-    assert report["kind"] == "additions_unknown"
+    assert report["kind"] == "applied_with_unknowns"
     assert report["unknown_tags"] == ["GD_NewTag_2"]
 
-    # All-or-nothing: even the known addition is skipped until seeder
-    # catches up.
-    result = await db_session.execute(
-        select(MediaGenre).where(MediaGenre.media_id == media.id)
-    )
-    rows = result.scalars().all()
-    assert len(rows) == 1
-
-
-@pytest.mark.asyncio
-async def test_genre_diff_removal_logs_without_apply(db_session):
-    """MAL removing a genre is rare and worth admin review — never
-    auto-applied (don't auto-drop the row, just flag)."""
-    media = await _build_media_with_taxonomy(
-        db_session, mal_id=-95003, genre_names=["GD_Action_3", "GD_Drama_3"],
-    )
-
-    report = await _apply_genre_diff(
-        db_session, media, {"genres": ["GD_Action_3"]},
-    )
-    assert report is not None
-    assert report["kind"] == "removal_or_replacement"
-
-    # The dropped MediaGenre row is left intact.
+    # Known addition (GD_KnownAdded_2) landed; unknown one (GD_NewTag_2)
+    # stayed out. Original genre is untouched.
     result = await db_session.execute(
         select(MediaGenre).where(MediaGenre.media_id == media.id)
     )
@@ -520,10 +552,32 @@ async def test_genre_diff_removal_logs_without_apply(db_session):
 
 
 @pytest.mark.asyncio
-async def test_genre_diff_replacement_logs_without_apply(db_session):
-    """Add + remove in the same diff classifies as
-    removal_or_replacement (the removal branch wins). Same reasoning as
-    pure removal — don't trust the swap, just surface it."""
+async def test_genre_diff_removal_applied(db_session):
+    """v0.14.5 policy: removals now apply. The audit log captures the
+    before/after so rollback is a matter of re-reading the relevant
+    job's per-media diff."""
+    media = await _build_media_with_taxonomy(
+        db_session, mal_id=-95003, genre_names=["GD_Action_3", "GD_Drama_3"],
+    )
+
+    report = await _apply_genre_diff(
+        db_session, media, {"genres": ["GD_Action_3"]},
+    )
+    assert report is not None
+    assert report["kind"] == "applied"
+
+    # The dropped MediaGenre row is gone.
+    result = await db_session.execute(
+        select(MediaGenre).where(MediaGenre.media_id == media.id)
+    )
+    rows = result.scalars().all()
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_genre_diff_replacement_applied(db_session):
+    """v0.14.5 policy: add + remove in the same diff both land in one
+    pass. The old genre is removed, the new one inserted."""
     media = await _build_media_with_taxonomy(
         db_session, mal_id=-95004, genre_names=["GD_Action_4"],
     )
@@ -533,14 +587,15 @@ async def test_genre_diff_replacement_logs_without_apply(db_session):
         db_session, media, {"genres": ["GD_Drama_4"]},
     )
     assert report is not None
-    assert report["kind"] == "removal_or_replacement"
+    assert report["kind"] == "applied"
 
-    # Nothing applied — the original genre stays, the new one doesn't land.
+    # Both changes landed: GD_Action_4 removed, GD_Drama_4 inserted.
     result = await db_session.execute(
         select(MediaGenre).where(MediaGenre.media_id == media.id)
+        .options(selectinload(MediaGenre.genre))
     )
     rows = result.scalars().all()
-    assert len(rows) == 1
+    assert {r.genre.name for r in rows} == {"GD_Drama_4"}
 
 
 @pytest.mark.asyncio
@@ -549,68 +604,79 @@ async def test_studio_diff_no_change_returns_none(db_session):
         db_session, mal_id=-96000, studio_names=["SD_Madhouse_0"],
     )
     assert await _apply_studio_diff(
-        media, {"studio": ["SD_Madhouse_0"]},
+        db_session, media, {"studio": ["SD_Madhouse_0"]},
     ) is None
 
 
 @pytest.mark.asyncio
-async def test_studio_diff_addition_logs_without_apply(db_session):
-    """Studio additions DO happen legitimately (co-production credits
-    surface after airing) but rare enough that surfacing every change
-    is preferable to silently rewriting on a possible MAL bug."""
+async def test_studio_diff_addition_applied_auto_creates_new_studio(db_session):
+    """v0.14.5 policy: studio additions apply, including for studio
+    names we've never seen. Studios are a discovered taxonomy (unlike
+    genres which we explicitly seed), so a brand-new co-production
+    studio gets its own Studio row on first reference."""
     media = await _build_media_with_taxonomy(
         db_session, mal_id=-96001, studio_names=["SD_Madhouse_1"],
     )
 
     report = await _apply_studio_diff(
-        media, {"studio": ["SD_Madhouse_1", "SD_MAPPA_1"]},
+        db_session, media, {"studio": ["SD_Madhouse_1", "SD_MAPPA_1"]},
     )
     assert report is not None
-    assert report["kind"] == "any_change"
-    assert report["new"] == ["SD_MAPPA_1", "SD_Madhouse_1"]
+    assert report["kind"] == "applied"
+
+    result = await db_session.execute(
+        select(MediaStudio).where(MediaStudio.media_id == media.id)
+        .options(selectinload(MediaStudio.studio))
+    )
+    rows = result.scalars().all()
+    assert {r.studio.name for r in rows} == {"SD_Madhouse_1", "SD_MAPPA_1"}
 
 
 @pytest.mark.asyncio
-async def test_studio_diff_removal_logs_without_apply(db_session):
+async def test_studio_diff_removal_applied(db_session):
+    """Removals delete the MediaStudio row."""
     media = await _build_media_with_taxonomy(
         db_session, mal_id=-96002, studio_names=["SD_Madhouse_2"],
     )
 
-    report = await _apply_studio_diff(media, {"studio": []})
+    report = await _apply_studio_diff(db_session, media, {"studio": []})
     assert report is not None
-    assert report["kind"] == "any_change"
+    assert report["kind"] == "applied"
+
+    result = await db_session.execute(
+        select(MediaStudio).where(MediaStudio.media_id == media.id)
+    )
+    rows = result.scalars().all()
+    assert len(rows) == 0
 
 
-def test_summarize_drift_empty():
-    assert _summarize_drift([]) == {
-        "applied_count": 0, "logged_count": 0, "unknown_tags": [], "samples": [],
+async def test_delete_orphaned_removes_only_unlinked_studios(db_session):
+    """A studio whose last media link was dropped (the drift-removal
+    case) gets cleaned up; a still-linked studio survives."""
+    from app.daos.studio_dao import StudioDAO
+
+    # Linked studio — must survive.
+    media = await _build_media_with_taxonomy(
+        db_session, mal_id=-96010, studio_names=["SD_Linked_10"],
+    )
+    # Orphan — added with no MediaStudio row.
+    orphan = Studio(name="SD_Orphan_10")
+    db_session.add(orphan)
+    await db_session.flush()
+
+    removed = await StudioDAO().delete_orphaned(db_session)
+    assert removed >= 1
+
+    names = {
+        s.name for s in (await db_session.execute(select(Studio))).scalars().all()
     }
-
-
-def test_summarize_drift_counts_and_unions_unknowns():
-    """Cross-media unknown tags fold into one sorted list so the bell
-    can render "seeder is missing: X, Y" without dedup logic of its own."""
-    reports = [
-        {"kind": "additions_applied", "unknown_tags": []},
-        {"kind": "additions_applied", "unknown_tags": []},
-        {"kind": "additions_unknown", "unknown_tags": ["Survival"]},
-        {"kind": "additions_unknown", "unknown_tags": ["Survival", "Mecha-Sci-Fi"]},
-        {"kind": "removal_or_replacement", "unknown_tags": []},
-    ]
-    out = _summarize_drift(reports)
-    assert out["applied_count"] == 2
-    assert out["logged_count"] == 3
-    assert out["unknown_tags"] == ["Mecha-Sci-Fi", "Survival"]
-    assert out["samples"] == reports  # under 5 → full list
-
-
-def test_summarize_drift_caps_samples_at_5():
-    """`result_summary` is JSONB; bounded samples keep a malformed MAL
-    response (drift for every refreshed media) from bloating the column."""
-    reports = [{"kind": "any_change", "unknown_tags": []} for _ in range(20)]
-    out = _summarize_drift(reports)
-    assert out["logged_count"] == 20
-    assert len(out["samples"]) == 5
+    assert "SD_Orphan_10" not in names
+    assert "SD_Linked_10" in names
+    # The surviving studio's link is untouched.
+    rows = (await db_session.execute(
+        select(MediaStudio).where(MediaStudio.media_id == media.id)
+    )).scalars().all()
+    assert len(rows) == 1
 
 
 # ---------------------------------------------------------------------------
@@ -906,6 +972,70 @@ async def test_tier_long_tail_selected(db_session):
 
 
 @pytest.mark.asyncio
+async def test_count_by_sweep_tier_priority_buckets_each_anime_once(db_session):
+    """4 mutually-exclusive cycle-MEMBERSHIP buckets in priority cascade:
+    airing_now > stabilizing > weekly_cycle > long_cycle. An airing anime
+    that is also stabilizing counts under `airing_now`. Sum equals total
+    anime count.
+
+    Delta-based assertions (baseline → after) isolate the seeded rows
+    from any pre-existing anime in the test DB so the bucket attribution
+    can be exact, not floor-only.
+
+    Regression guard: a recent-main anime checked just an hour ago
+    (recently swept, NOT overdue) must still count under `weekly_cycle`.
+    Under the old membership+due-ness conflation it fell to
+    `not_currently_due`, which hid most of the weekly catalog under the
+    long-tail bucket right after every sweep.
+    """
+    from app.models.media import RelationType
+    now = datetime.now(timezone.utc)
+    baseline = await AnimeDAO().count_by_sweep_tier_priority(db_session)
+
+    await _seed_anime(  # airing wins over stable<3 -> airing_now
+        db_session, mal_id=-7101, stable_check_count=1,
+        airing_status="Currently Airing", last_checked_at=now,
+    )
+    await _seed_anime(  # stable<3, not airing -> stabilizing
+        db_session, mal_id=-7102, stable_check_count=2, last_checked_at=now,
+    )
+    await _seed_anime(  # recent main, OVERDUE (8d) -> weekly_cycle
+        db_session, mal_id=-7103, stable_check_count=10,
+        last_checked_at=now - timedelta(days=8),
+        relation_type=RelationType.Main,
+        aired_from=now - timedelta(days=365),
+    )
+    await _seed_anime(  # recent main, RECENTLY SWEPT (1h) -> weekly_cycle
+        db_session, mal_id=-7104, stable_check_count=10,
+        last_checked_at=now - timedelta(hours=1),
+        relation_type=RelationType.Main,
+        aired_from=now - timedelta(days=365),
+    )
+    await _seed_anime(  # no recent main, recently checked -> long_cycle
+        db_session, mal_id=-7105, stable_check_count=10,
+        last_checked_at=now - timedelta(hours=1),
+    )
+    await _seed_anime(  # no recent main, 200d stale -> long_cycle
+        db_session, mal_id=-7106, stable_check_count=10,
+        last_checked_at=now - timedelta(days=200),
+    )
+    await db_session.flush()
+
+    after = await AnimeDAO().count_by_sweep_tier_priority(db_session)
+    delta = {k: after[k] - baseline.get(k, 0) for k in after}
+    assert delta == {
+        "airing_now": 1,
+        "stabilizing": 1,
+        "weekly_cycle": 2,   # both recent-main rows, incl. the recently-swept one
+        "long_cycle": 2,
+    }
+    total_anime = (await db_session.execute(
+        select(func.count(Anime.id))
+    )).scalar_one()
+    assert sum(after.values()) == total_anime
+
+
+@pytest.mark.asyncio
 async def test_tier_handles_missing_sidecar(db_session):
     """Anime without an anime_freshness row falls back to created_at via
     COALESCE. _seed_anime always creates a sidecar, so build one without."""
@@ -1066,9 +1196,35 @@ async def test_dispatcher_returns_summary(tracked_anime, monkeypatch):
         monkeypatch, fake, [a1_id, a2_id],
     )
 
-    assert summary["anime_refreshed"] == 2
-    assert summary["anime_changed"] == 1
+    assert summary["counters"]["anime_refreshed"] == 2
+    assert summary["counters"]["anime_with_dynamic_changes"] == 1
     assert sorted(fake.refresh_calls) == sorted([-8001 * 100, -8002 * 100])
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_records_v2_media_diff(tracked_anime, monkeypatch):
+    """v2 result_summary surfaces per-media old → new for every changed
+    field so the admin detail page can render concrete deltas — the
+    point of the whole observability rework."""
+    a_id = await _real_seed(
+        mal_id=-8050, last_checked_at=datetime.now(timezone.utc) - timedelta(days=10),
+    )
+    tracked_anime.append(a_id)
+    payloads = {-8050 * 100: _payload(score=9.9, scored_by=1500, episodes=24)}
+    fake = _FakeScraper(payloads)
+    summary, _, _ = await _run_dispatcher_harness(
+        monkeypatch, fake, [a_id], job_id=8050,
+    )
+
+    assert summary["counters"]["media_with_dynamic_changes"] == 1
+    entries = summary["media_changes"]
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["anime_id"] == a_id
+    fields = {d["field"]: (d["old"], d["new"]) for d in entry["dynamic"]}
+    assert fields["score"][1] == 9.9
+    assert fields["scored_by"][1] == 1500
+    assert fields["episodes"][1] == 24
 
 
 @pytest.mark.asyncio
@@ -1092,7 +1248,7 @@ async def test_dispatcher_isolates_failures_per_anime(tracked_anime, monkeypatch
         monkeypatch, fake, [a1_id, a2_id, a3_id], job_id=998,
     )
 
-    assert summary["anime_refreshed"] == 2
+    assert summary["counters"]["anime_refreshed"] == 2
 
     # Verify a2's last_checked_at didn't advance (still at the seeded
     # value, modulo asyncpg precision); a1/a3's did.
@@ -1241,9 +1397,9 @@ async def test_probe_only_runs_on_tier_3_or_4(tracked_anime, monkeypatch):
 
     # search_title called only with the tier-3 anime's main media mal_id.
     assert fake_scraper.search_title_calls == [-8303 * 100]
-    assert summary["probe_succeeded"] == 1
-    assert summary["probe_failed"] == 0
-    assert summary["anime_refreshed"] == 3
+    assert summary["counters"]["probe_succeeded"] == 1
+    assert summary["counters"]["probe_failed"] == 0
+    assert summary["counters"]["anime_refreshed"] == 3
 
 
 @pytest.mark.asyncio
@@ -1346,7 +1502,7 @@ async def test_probe_attach_routes_to_parent_anime(tracked_anime, monkeypatch):
     assert len(attach_calls) == 1
     assert attach_calls[0]["parent_anime_id"] == a_id
     assert sorted(attach_calls[0]["graph_mal_ids"]) == sorted([seed_mal_id, new_mal_id])
-    assert summary["probe_succeeded"] == 1
+    assert summary["counters"]["probe_succeeded"] == 1
 
 
 @pytest.mark.asyncio
@@ -1379,7 +1535,7 @@ async def test_spoiler_cache_recomputes_once_per_sweep(tracked_anime, monkeypatc
 
     assert len(attach_calls) == 2
     assert len(recompute_calls) == 1
-    assert summary["probe_succeeded"] == 2
+    assert summary["counters"]["probe_succeeded"] == 2
 
 
 @pytest.mark.asyncio
@@ -1450,8 +1606,8 @@ async def test_spoiler_recompute_failure_does_not_fail_the_sweep(
     )
 
     assert summary["cache_recompute_failed"] is True
-    assert summary["anime_refreshed"] == 1
-    assert summary["probe_succeeded"] == 1
+    assert summary["counters"]["anime_refreshed"] == 1
+    assert summary["counters"]["probe_succeeded"] == 1
 
 
 @pytest.mark.asyncio
@@ -1533,9 +1689,9 @@ async def test_relations_probe_failure_preserves_field_diff_but_not_anime_freshn
         job = type("FakeJob", (), {"id": 7801})()
         summary = await update_sweep_dispatcher(session, job)
 
-    assert summary["probe_failed"] == 1
-    assert summary["probe_succeeded"] == 0
-    assert summary["anime_refreshed"] == 0
+    assert summary["counters"]["probe_failed"] == 1
+    assert summary["counters"]["probe_succeeded"] == 0
+    assert summary["counters"]["anime_refreshed"] == 0
     assert recompute_calls == []
 
     async with async_session_maker() as s:

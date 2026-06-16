@@ -28,6 +28,10 @@ class JobResponse(BaseModel):
     """Frontend-facing view of a Job row. Excludes columns the bell doesn't
     need (modified_at, requested_by relationship).
 
+    `version` is the per-kind schema version of `result_summary`; the
+    frontend switches on `(kind, version)` to pick a parser. See
+    `app/core/job_versions.py` for the registry.
+
     Well-known result_summary keys (set by JobWorker / dispatchers; not all
     are present on every row):
     - "retryable": bool — set on failed rows. False when the failure is a
@@ -39,6 +43,7 @@ class JobResponse(BaseModel):
 
     uuid: UUID
     kind: JobKind
+    version: int
     status: JobStatus
     payload: dict[str, Any]
     stage: str | None

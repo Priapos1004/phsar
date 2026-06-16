@@ -2,7 +2,8 @@
 	import { onMount } from 'svelte';
 	import { api, ApiError } from '$lib/api';
 	import * as Card from '$lib/components/ui/card';
-	import { formatJobKind, formatNumber } from '$lib/utils/formatString';
+	import SweepTiersCard from '$lib/components/admin/SweepTiersCard.svelte';
+	import { formatJobKind, formatNumber, percentOf } from '$lib/utils/formatString';
 	import { librarySaved, onBump } from '$lib/stores/jobs';
 	import type { AdminOverviewStats } from '$lib/types/api';
 
@@ -70,7 +71,6 @@
 				<div class="space-y-3">
 					{#each stats.jobs_7d.by_kind as row}
 						{@const total = row.succeeded + row.failed}
-						{@const successRate = total > 0 ? Math.round((row.succeeded / total) * 100) : null}
 						<div class="flex items-center justify-between gap-4 text-sm">
 							<div class="flex-1 min-w-0">
 								<div class="text-card-foreground font-medium">{formatJobKind(row.kind)}</div>
@@ -78,7 +78,8 @@
 									{row.succeeded} ok · {row.failed} failed{#if row.retryable_failed > 0} ({row.retryable_failed} retryable){/if}
 								</div>
 							</div>
-							{#if successRate !== null}
+							{#if total > 0}
+								{@const successRate = Math.round(percentOf(row.succeeded, total))}
 								<div class="shrink-0 w-14 text-right text-sm font-semibold tabular-nums {successRate >= 90 ? 'text-emerald-400' : successRate >= 75 ? 'text-amber-400' : 'text-destructive'}">
 									{successRate}%
 								</div>
@@ -90,6 +91,8 @@
 				</div>
 			</Card.Content>
 		</Card.Root>
+
+		<SweepTiersCard tiers={stats.sweep_tiers} />
 
 		<Card.Root>
 			<Card.Header>

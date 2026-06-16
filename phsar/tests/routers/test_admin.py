@@ -511,13 +511,17 @@ async def test_stats_overview_returns_shape(client, admin_auth_headers):
     assert resp.status_code == 200, resp.text
     data = resp.json()
 
-    assert set(data.keys()) == {"catalog", "jobs_7d", "activity_7d"}
+    assert set(data.keys()) == {"catalog", "jobs_7d", "activity_7d", "sweep_tiers"}
     assert set(data["catalog"].keys()) == {
         "anime_count", "media_count", "anime_added_7d", "media_added_7d",
     }
     assert set(data["activity_7d"].keys()) == {
         "active_users", "new_ratings", "scrapes_submitted",
     }
+    assert set(data["sweep_tiers"].keys()) == {
+        "airing_now", "stabilizing", "weekly_cycle", "long_cycle",
+    }
+    assert sum(data["sweep_tiers"].values()) == data["catalog"]["anime_count"]
     kinds_returned = {row["kind"] for row in data["jobs_7d"]["by_kind"]}
     assert kinds_returned == {k.value for k in JobKind}
 
@@ -692,6 +696,49 @@ async def test_admin_jobs_log_respects_limit_and_offset(client, admin_auth_heade
 @pytest.mark.asyncio
 async def test_admin_jobs_log_requires_admin(client, user_auth_headers):
     resp = await client.get(JOBS_LOG_URL, headers=user_auth_headers)
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_get_job_returns_admin_shape(client, admin_auth_headers, db_session):
+    """Single-job detail endpoint mirrors the list-row shape so the
+    detail page can route from a click with no schema gymnastics."""
+    parent = Job(kind=JobKind.seasonal_sweep, status=JobStatus.succeeded)
+    db_session.add(parent)
+    await db_session.flush()
+    child = Job(
+        kind=JobKind.user_scrape, status=JobStatus.succeeded,
+        payload={"query": "detail-page-child"},
+        parent_job_id=parent.id,
+    )
+    db_session.add(child)
+    await db_session.flush()
+
+    resp = await client.get(f"{JOBS_LOG_URL}/{child.uuid}", headers=admin_auth_headers)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["uuid"] == str(child.uuid)
+    assert data["kind"] == JobKind.user_scrape.value
+    assert data["parent_job_uuid"] == str(parent.uuid)
+    assert "requested_by_username" in data
+    assert "version" in data
+
+
+@pytest.mark.asyncio
+async def test_admin_get_job_404_for_unknown_uuid(client, admin_auth_headers):
+    resp = await client.get(
+        f"{JOBS_LOG_URL}/00000000-0000-0000-0000-000000000000",
+        headers=admin_auth_headers,
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_admin_get_job_requires_admin(client, user_auth_headers, db_session):
+    job = Job(kind=JobKind.user_scrape, status=JobStatus.succeeded, payload={"query": "detail-auth"})
+    db_session.add(job)
+    await db_session.flush()
+    resp = await client.get(f"{JOBS_LOG_URL}/{job.uuid}", headers=user_auth_headers)
     assert resp.status_code == 403
 
 

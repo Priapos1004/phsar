@@ -109,6 +109,38 @@ async def test_dispatcher_exception_marks_job_failed(tracked_jobs):
 
 
 @pytest.mark.asyncio
+async def test_post_dispatch_failure_marks_job_failed(tracked_jobs):
+    """Invariant: when mark_succeeded's flush raises (e.g. result_summary
+    contains a type that JSON can't serialize), the work session is left
+    in PendingRollback. The worker must still write a `failed` status
+    record instead of letting the exception escape — otherwise a touch
+    of `job.uuid` on the poisoned session re-raises and the row sits in
+    `running` until reap_orphans fires at next startup."""
+
+    class _NotSerializable:
+        pass
+
+    async def returns_bad_summary(session, job):
+        return {"junk": _NotSerializable()}
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.user_scrape, returns_bad_summary)
+
+    job_id = await _enqueue()
+    tracked_jobs.append(job_id)
+
+    ran = await worker.dispatch_one()
+    assert ran is True
+
+    refreshed = await _get(job_id)
+    assert refreshed.status is JobStatus.failed
+    # Content check guards against a regression where some other error
+    # masks the intended crash signature — the bell shouldn't render an
+    # empty / wrong message.
+    assert "not JSON serializable" in refreshed.error_message
+
+
+@pytest.mark.asyncio
 async def test_permanent_phsar_error_marks_job_not_retryable(tracked_jobs):
     """Errors that subclass PermanentPhsarError stamp retryable=False on
     the job so the bell hides its retry button — same input + same MAL =
@@ -405,6 +437,8 @@ async def test_notify_wakes_idle_worker(tracked_jobs):
         tracked_jobs.append(job_id)
 
         worker.notify()
-        await asyncio.wait_for(captured.wait(), timeout=2.0)
+        # Generous timeout: this only needs to outlast scheduler jitter on a
+        # loaded CI runner, not measure latency. 2.0s flaked under contention.
+        await asyncio.wait_for(captured.wait(), timeout=5.0)
     finally:
         await worker.stop()

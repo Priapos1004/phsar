@@ -183,10 +183,25 @@ class ActivityStats(BaseModel):
     scrapes_submitted: int
 
 
+class SweepTierBreakdown(BaseModel):
+    """Mutually-exclusive cycle-MEMBERSHIP bucket counts in priority
+    cascade (an airing anime that is also stabilizing counts under
+    `airing_now`, not `stabilizing`). Membership, not due-ness — counts
+    reflect where each anime sits in the cycle and stay stable across
+    sweeps. `weekly_cycle` = has a recent main; `long_cycle` = the rest
+    (only the 180-day net touches these). Sum equals total anime count,
+    so the card can render each bucket as a share of the catalog."""
+    airing_now: int
+    stabilizing: int
+    weekly_cycle: int
+    long_cycle: int
+
+
 class AdminOverviewStats(BaseModel):
     catalog: CatalogStats
     jobs_7d: JobsStats
     activity_7d: ActivityStats
+    sweep_tiers: SweepTierBreakdown
 
 
 class CurationPendingCounts(BaseModel):

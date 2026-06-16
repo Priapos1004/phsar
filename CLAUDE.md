@@ -78,6 +78,7 @@ FastAPI endpoint definitions. Each router maps to an API prefix.
 - **`/admin`** — admin-only operations
   - `GET /admin/stats/overview` — aggregate stats for the admin Overview tab (catalog totals, 7d job health by kind with retryable-failed subset, 7d activity counters). Aggregate only — no per-user breakdowns; the Jobs Log surfaces those where they're needed for debugging
   - `GET /admin/jobs` — paginated all-jobs listing for the Jobs Log tab. Filters by status/kind/user_id/created_after/created_before; returns `AdminJobResponse` rows with `requested_by_username` flattened from the eager-loaded relationship and `parent_job_uuid` for clustered children. Backed by `ix_jobs_created_at_desc` (newest-first scan + matching COUNT). Default hides children (filters `parent_job_id IS NULL`); `?parent_uuid=<UUID>` expands a single seasonal_sweep's flock via the partial `ix_jobs_parent_job_id` index. `limit` capped at 500 so a sweep with hundreds of children can be expanded without paging
+  - `GET /admin/jobs/{uuid}` — admin-only single-job detail fetch backing the `/admin/jobs/[uuid]` page. Returns the same `AdminJobResponse` shape the list emits (eager-loads `requested_by` + `parent` via the shared `_ADMIN_LOAD_OPTIONS` tuple in `JobDAO` so the list + detail paths can't drift)
   - `GET /admin/curation/pending-counts` — `{merge: int, split: int}` for the navbar bell's pinned admin reminder. Bell polls this on every tick when admin is logged in; cheap COUNTs on the status-filtered candidate tables. Sequential awaits per the AsyncSession-no-gather rule
   - Registration token management (list, create, delete)
   - Database backups (list, download, delete, restore, upload)
@@ -113,7 +114,7 @@ Business logic as module-level async functions. **Per-service design rationale l
 Modules:
 - `jikan_scraper.py` — MAL API client with retry, 1 req/s rate limiter, BFS in `search_title` (supports `seed_mal_id` for sweep probes)
 - `job_worker.py` — single asyncio FIFO worker; `with_for_update(skip_locked=True)`; maintenance-aware
-- `scrape_dispatcher.py` — handlers for `user_scrape` + `update_sweep`
+- `scrape_dispatcher.py` — handlers for `user_scrape` + `update_sweep`. `update_sweep` writes a v3 `result_summary` (per-media field diffs + per-anime umbrella diffs + aggregated `unknown_genre_tags`); v0.14.5 relaxed the drift apply policy so genre + studio additions AND removals apply, with unknown genre tags surfaced for seeder review rather than silently dropped
 - `seasonal_sweep_dispatcher.py` — `seasonal_sweep` handler (separate; pure discovery pass)
 - `backup_dispatcher.py` — `backup` JobKind handler (no maintenance bracket — pg_dump is MVCC-snapshot)
 - `progress_reporter.py` — throttled autocommit-tx progress writer
@@ -172,10 +173,11 @@ SQLAlchemy ORM models mapped to PostgreSQL tables.
   - FK cascade on `anime_id` — deleting or merging the source anime cleans up the row
   - One-pending-per-anime convention enforced by DAO: `upsert_pending` supersedes the existing pending row when the cluster signature changes (cheaper than partial-unique-constraint migration on enum-status predicates)
 - **`job.py`** — background job queue
-  - `JobKind` enum: `user_scrape`, `update_sweep`, `seasonal_sweep`, `backup`
+  - `JobKind` enum: `user_scrape`, `update_sweep`, `seasonal_sweep`, `backup`, `restore`
   - `JobStatus` enum: `queued`/`running`/`succeeded`/`failed`
   - JSONB `payload`, progress fields (`stage`, `items_done`, `items_total`), `not_before_at` for scheduled-delay jobs
   - `result_summary` JSONB carries `retryable: bool` for the bell
+  - `version: int NOT NULL DEFAULT 1` — per-kind schema version for `result_summary`. Runtime source of truth is the `JOB_KIND_VERSIONS` registry in `app/core/job_versions.py`; every Job-construction site goes through the `make_job(kind, **kw)` helper which stamps the current registry value. Frontend dispatches on `(kind, version)` so historical rows render with the correct schema. Bump the integer per kind when its result_summary shape changes (current: `update_sweep` at v3 after v0.14.5; all others at v1)
   - Partial composite index on `(created_at) WHERE status='queued'` keeps the worker's FIFO claim cheap regardless of finished-row volume
 - **`anime_freshness.py`** / **`media_freshness.py`** — 1:1 sidecars (`unique=True` on FK) for the nightly update sweep
   - Hold `last_checked_at` (and `stable_check_count` on anime side) outside canonical rows so sweep cadence can't leak into Pydantic schemas via `model_dump()`
@@ -270,6 +272,8 @@ Quick map:
   - Anime covers/descriptions are never spoiler-protected
 - **Background jobs**: single asyncio FIFO worker (`job_worker.py`) drains the `jobs` table
   - JobKinds: `user_scrape`, `update_sweep` + `seasonal_sweep` (bracket maintenance), `backup` (does NOT bracket)
+  - **Per-kind result_summary versioning**: `JOB_KIND_VERSIONS` registry in `app/core/job_versions.py` + `make_job()` helper at every Job-construction site. Frontend reads `job.version` to dispatch the parser. Bump the integer per kind when the shape changes — see `models/job.py` for the column rationale
+  - **Hardened failure path** (v0.14.5): three guards keep `dispatch_one` from stranding a job in `running` after a downstream crash — (1) `str(job.uuid)` pre-captured immediately after claim so the failure logger never reads ORM attrs on a poisoned session, (2) the `work_session.rollback()` is wrapped in try/except so a PendingRollback cleanup failure doesn't escape, (3) an outer catch-all around the work-session block routes unexpected plumbing bugs through `mark_failed` instead of letting them propagate to the `_run` loop. The fail-session write is also wrapped — worst case it logs the failure and leaves the row for `reap_orphans` on next startup
   - Per-user concurrent cap: `JOBS_PER_USER_LIMIT=4` enforced at submission time (bounds queue depth, not concurrency — worker stays sequential because MAL's rate limit means parallel jobs just fragment bandwidth)
   - Per-user daily cap: `JOBS_DAILY_LIMIT=50` rolling 24h on top of the concurrent cap. Counts every status (succeeded/failed too) so a fast-failing client can't cycle through the limit; 51st submission returns 429 marked `PermanentPhsarError` so the bell hides retry. Backed by partial composite `ix_jobs_user_scrape_recent (requested_by_user_id, created_at DESC) WHERE kind='user_scrape'` so per-POST cost stays O(in-window-rows)
   - System jobs submit with `requested_by_user_id=null` to skip cap

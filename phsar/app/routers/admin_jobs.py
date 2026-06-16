@@ -19,8 +19,9 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_db, require_jobs_cron_token
+from app.core.job_versions import make_job
 from app.core.maintenance import set_scheduled_at
-from app.models.job import Job, JobKind, JobStatus
+from app.models.job import JobKind, JobStatus
 from app.schemas import admin_schema, backup_schema
 from app.services.job_worker import job_worker
 
@@ -38,8 +39,8 @@ async def _enqueue_scheduled_sweep(
     re-checks not_before_at on wake and sleeps if the job isn't due
     yet (the 60s wakeup fallback would catch it anyway)."""
     not_before = datetime.now(timezone.utc) + timedelta(minutes=delay_minutes)
-    job = Job(
-        kind=kind,
+    job = make_job(
+        kind,
         status=JobStatus.queued,
         payload={},
         not_before_at=not_before,
@@ -78,8 +79,8 @@ async def enqueue_backup_job(
     payload: dict[str, Any] = {"source": source.value}
     if label:
         payload["label"] = label
-    job = Job(
-        kind=JobKind.backup,
+    job = make_job(
+        JobKind.backup,
         status=JobStatus.queued,
         requested_by_user_id=requested_by_user_id,
         payload=payload,

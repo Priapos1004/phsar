@@ -14,6 +14,7 @@ import uuid
 from uuid import UUID
 
 from app.core.config import settings
+from app.core.job_versions import JOB_KIND_VERSIONS
 from app.daos.job_dao import JobDAO
 from app.models.job import JobKind, JobStatus
 from app.models.users import RoleType
@@ -40,6 +41,9 @@ async def test_enqueue_scrape_creates_queued_job(client, user_auth_headers, db_s
     assert data["kind"] == JobKind.user_scrape.value
     assert data["payload"] == {"query": query}
     assert data["items_done"] == 0
+    # Bumping the registry without updating this assertion is the loud
+    # signal that the API is now exposing a new result_summary shape.
+    assert data["version"] == JOB_KIND_VERSIONS[JobKind.user_scrape]
 
 
 async def test_enqueue_scrape_blocks_restricted_user(client, restricted_user_auth_headers):

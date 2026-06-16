@@ -69,6 +69,44 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
+ * Wall-clock duration between started_at and finished_at, or
+ * started_at → `now` if the job is still running. Returns '—' for
+ * never-started rows so callers don't need their own null guard.
+ */
+export function formatJobDuration(
+	started_at: string | null, finished_at: string | null, now: number,
+): string {
+	if (!started_at) return '—';
+	const start = new Date(started_at).getTime();
+	const end = finished_at ? new Date(finished_at).getTime() : now;
+	return formatDuration(Math.max(0, Math.floor((end - start) / 1000)));
+}
+
+/**
+ * Subset of update_sweep `dynamic` fields that churn nightly on
+ * popular anime — split out from the rest of the dynamic bucket on
+ * the admin detail page so vote-count noise doesn't drown the
+ * genuinely-interesting volatile fields (episodes, airing_status,
+ * aired_to). Single source of truth so MediaChangeCard's tone
+ * classifier and the page's filter chip stay in sync.
+ */
+const RATING_FIELD_NAMES = new Set(['score', 'scored_by']);
+
+export function isRatingField(field: string): boolean {
+	return RATING_FIELD_NAMES.has(field);
+}
+
+/**
+ * Share of `value` over `total` as a percentage (0–100). Returns 0
+ * when `total` is 0. Callers that need to distinguish "no data" from
+ * "0%" should gate on `total > 0` themselves before calling — the
+ * helper deliberately doesn't conflate the two via a nullable return.
+ */
+export function percentOf(value: number, total: number): number {
+	return total > 0 ? (value / total) * 100 : 0;
+}
+
+/**
  * Format anime season name and year into a display string.
  * Returns null if either part is missing.
  */

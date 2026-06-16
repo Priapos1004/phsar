@@ -360,9 +360,119 @@ export interface BackupResultSummary extends JobResultSummary {
 	deduped_against?: string | null;
 }
 
+// One field's before/after on the update_sweep detail page. `old`/`new`
+// are typed `unknown` because the JSONB store erases types — the
+// renderer narrows per field.
+export interface UpdateSweepFieldChange {
+	field: string;
+	old: unknown;
+	new: unknown;
+}
+
+export interface UpdateSweepMediaChange {
+	anime_id: number;
+	anime_uuid: string;
+	anime_title: string;
+	// name_eng / name_jap are optional so the detail page can fall back
+	// to the romaji title for v2 rows scraped before the name-language
+	// addition (or media rows MAL never emitted alt-titles for).
+	anime_name_eng?: string | null;
+	anime_name_jap?: string | null;
+	media_id: number;
+	media_uuid: string;
+	media_mal_id: number;
+	media_title: string;
+	media_name_eng?: string | null;
+	media_name_jap?: string | null;
+	media_relation_type: string;
+	dynamic: UpdateSweepFieldChange[];
+	static: UpdateSweepFieldChange[];
+	genre_drift: UpdateSweepM2MDrift | null;
+	studio_drift: UpdateSweepM2MDrift | null;
+}
+
+// Shape the genre/studio drift detector emits per-media. Mirrors the
+// backend's `_emit_drift_report` plain dict.
+//
+// `kind` literal union covers both v2 (pre-v0.14.5) and v3+ vocabularies
+// so the frontend renders historical rows correctly:
+//   v2 (sweep job version 2): additions_applied, additions_unknown,
+//     removal_or_replacement, any_change — most kinds meant "logged but
+//     not applied".
+//   v3 (sweep job version ≥ 3, post-v0.14.5): applied,
+//     applied_with_unknowns — all drift now applies; the only "not
+//     applied" subset is unknown genre tags awaiting seeder updates.
+export interface UpdateSweepM2MDrift {
+	field: 'genres' | 'studios';
+	media_mal_id: number;
+	media_title: string;
+	kind:
+		| 'applied'
+		| 'applied_with_unknowns'
+		| 'additions_applied'
+		| 'additions_unknown'
+		| 'removal_or_replacement'
+		| 'any_change';
+	old: string[];
+	new: string[];
+	unknown_tags: string[];
+}
+
+export interface UpdateSweepUmbrellaReclassified {
+	mal_id: number;
+	old: string;
+	new: string;
+}
+
+export interface UpdateSweepUmbrellaChange {
+	anime_id: number;
+	anime_uuid: string;
+	anime_title: string;
+	anime_name_eng?: string | null;
+	anime_name_jap?: string | null;
+	fields: UpdateSweepFieldChange[];
+	anchor_changed: boolean;
+	old_anchor_mal_id: number;
+	new_anchor_mal_id: number;
+	embedding_regenerated: boolean;
+	reclassified: UpdateSweepUmbrellaReclassified[];
+}
+
+export interface UpdateSweepCounters {
+	anime_refreshed: number;
+	anime_with_dynamic_changes: number;
+	anime_with_static_changes: number;
+	media_with_dynamic_changes: number;
+	media_with_static_changes: number;
+	umbrella_reclassed: number;
+	probe_succeeded: number;
+	probe_failed: number;
+	probe_attached_anime_count: number;
+	// v3+: Studio rows deleted at sweep end because drift removals left
+	// them with no media links. v2 rows omit it (renders as 0).
+	orphaned_studios_removed?: number;
+}
+
+// update_sweep result_summary v2+ shape. v1 rows omit these fields
+// entirely — renderers must check `row.version >= 2` before reading.
+// `unknown_genre_tags` is v3+; v2 rows don't carry it (the Jobs Log
+// tint just won't fire for those historical sweeps).
+export interface UpdateSweepResultSummary extends JobResultSummary {
+	counters?: UpdateSweepCounters;
+	media_changes?: UpdateSweepMediaChange[];
+	anime_umbrella_changes?: UpdateSweepUmbrellaChange[];
+	unknown_genre_tags?: string[];
+	merge_detect_failed?: boolean;
+	cache_recompute_failed?: boolean;
+}
+
 export interface Job {
 	uuid: string;
 	kind: JobKind;
+	// Per-kind result_summary schema version (registered in
+	// `app/core/job_versions.py`). Renderers switch on `(kind, version)`
+	// so historical rows keep parsing while we evolve newer payloads.
+	version: number;
 	status: JobStatus;
 	payload: Record<string, unknown>;
 	stage: string | null;
@@ -414,10 +524,21 @@ export interface AdminActivityStats {
 	scrapes_submitted: number;
 }
 
+// Mutually-exclusive cycle-membership bucket counts in priority cascade
+// — sum equals total anime count, so the card can render each bucket as a
+// share. Membership (not due-ness): counts stay stable across sweeps.
+export interface AdminSweepTierBreakdown {
+	airing_now: number;
+	stabilizing: number;
+	weekly_cycle: number;
+	long_cycle: number;
+}
+
 export interface AdminOverviewStats {
 	catalog: AdminCatalogStats;
 	jobs_7d: AdminJobsStats;
 	activity_7d: AdminActivityStats;
+	sweep_tiers: AdminSweepTierBreakdown;
 }
 
 // Admin Jobs Log — paginated all-jobs view with flattened requested_by.

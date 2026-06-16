@@ -94,7 +94,7 @@
 			{#if showCountdown}
 				{`Scheduled maintenance starts in ~${minutesUntil} ${minutesUntil === 1 ? 'minute' : 'minutes'} — pause your current episode.`}
 			{:else}
-				Maintenance in progress. Some pages may be unavailable.
+				Maintenance in progress. Please try again later.
 			{/if}
 		</Notice>
 	</div>

@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.daos.anime_dao import AnimeDAO
 from app.daos.merge_candidate_dao import MergeCandidateDAO
 from app.daos.split_candidate_dao import SplitCandidateDAO
 from app.models.anime import Anime
@@ -26,8 +27,10 @@ from app.schemas.admin_schema import (
     CurationPendingCounts,
     JobKindStats,
     JobsStats,
+    SweepTierBreakdown,
 )
 
+anime_dao = AnimeDAO()
 merge_candidate_dao = MergeCandidateDAO()
 split_candidate_dao = SplitCandidateDAO()
 
@@ -63,27 +66,38 @@ async def _jobs_stats(db: AsyncSession, cutoff: datetime) -> JobsStats:
     drag the success rate down with shows MAL filters as Music/PV. Their
     health is visible per-row in the Jobs Log expander."""
     retryable = func.coalesce(Job.result_summary["retryable"].as_boolean(), True)
+    user_attributed = Job.requested_by_user_id.is_not(None)
     stmt = (
-        select(Job.kind, Job.status, retryable.label("retryable"), func.count(Job.id))
+        select(
+            Job.kind, Job.status,
+            retryable.label("retryable"),
+            user_attributed.label("user_attributed"),
+            func.count(Job.id),
+        )
         .where(Job.created_at >= cutoff)
         .where(or_(
             Job.kind != JobKind.user_scrape,
             Job.requested_by_user_id.is_not(None),
         ))
-        .group_by(Job.kind, Job.status, retryable)
+        .group_by(Job.kind, Job.status, retryable, user_attributed)
     )
     rows = (await db.execute(stmt)).all()
     by_kind: dict[JobKind, dict[str, int]] = {
         k: {"succeeded": 0, "failed": 0, "retryable_failed": 0}
         for k in JobKind
     }
-    for kind, status, is_retryable, count in rows:
+    for kind, status, is_retryable, is_user_attributed, count in rows:
         bucket = by_kind[kind]
         if status == JobStatus.succeeded:
             bucket["succeeded"] += count
         elif status == JobStatus.failed:
             bucket["failed"] += count
-            if is_retryable:
+            # `retryable_failed` only counts USER jobs — the bell's retry
+            # button only fires on rows the user owns. System jobs
+            # (sweeps, cron backups) retry on their own schedule; counting
+            # them here would suggest there's something the admin can
+            # poke to recover, when there isn't.
+            if is_retryable and is_user_attributed:
                 bucket["retryable_failed"] += count
     return JobsStats(
         by_kind=[
@@ -128,12 +142,19 @@ async def _activity_stats(db: AsyncSession, cutoff: datetime) -> ActivityStats:
     )
 
 
+async def _sweep_tier_breakdown(db: AsyncSession) -> SweepTierBreakdown:
+    counts = await anime_dao.count_by_sweep_tier_priority(db)
+    return SweepTierBreakdown(**counts)
+
+
 async def get_overview_stats(db: AsyncSession) -> AdminOverviewStats:
     cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    # Sequential awaits — AsyncSession can't multiplex.
     return AdminOverviewStats(
         catalog=await _catalog_stats(db, cutoff),
         jobs_7d=await _jobs_stats(db, cutoff),
         activity_7d=await _activity_stats(db, cutoff),
+        sweep_tiers=await _sweep_tier_breakdown(db),
     )
 
 

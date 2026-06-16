@@ -5,7 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.job_dao import JobDAO
 from app.daos.registration_token_dao import RegistrationTokenDAO
-from app.exceptions import CannotDeleteUsedTokenError, RegistrationTokenNotFoundError
+from app.exceptions import (
+    CannotDeleteUsedTokenError,
+    JobNotFoundError,
+    RegistrationTokenNotFoundError,
+)
 from app.models.job import Job, JobKind, JobStatus
 from app.models.registration_token import RegistrationToken
 from app.schemas.admin_schema import RegistrationTokenListItem
@@ -107,3 +111,13 @@ async def list_jobs_paginated(
         limit=limit,
         offset=offset,
     )
+
+
+async def get_job_for_admin(db: AsyncSession, job_uuid: UUID) -> AdminJobResponse:
+    """Fetch a single job for the admin detail page. Eager-loads
+    `requested_by` + `parent` via the DAO so the response builder can
+    fill `requested_by_username` and `parent_job_uuid`."""
+    job = await job_dao.get_by_uuid_with_relations(db, job_uuid)
+    if job is None:
+        raise JobNotFoundError(str(job_uuid))
+    return _job_to_admin_response(job)
