@@ -132,7 +132,12 @@
     });
 
     export async function refresh() {
-        loading = true;
+        // Don't flip `loading` here: it gates the whole list behind a one-line
+        // "Loading…" placeholder, so a refetch collapses the list, the page
+        // height drops, and the browser scroll snaps to the top. `loading`
+        // starts true for the initial mount and stays false afterward — the
+        // keyed {#each} diffs the new rows in place (silent refresh, matching
+        // MergeCandidatesCard), so unpin/rename/delete don't jump the page.
         error = '';
         try {
             backups = await api.get<BackupMetadata[]>('/admin/backups');
@@ -249,7 +254,8 @@
 
     // Empty input clears the name (unpins from auto-retention).
     const handleRename = (filename: string) => saveName(filename, editNameInput.trim() || null);
-    // One-click unpin straight from the row, no need to open the editor.
+    // One-click unpin from the row action (pinned rows only) — unpinning never
+    // requires entering edit mode. Saving a blank name in the editor also clears it.
     const handleUnpin = (filename: string) => saveName(filename, null);
 
     async function handleDownload(filename: string) {
@@ -363,11 +369,6 @@
                                     <Button variant="secondary" size="sm" onclick={() => handleRename(b.filename)} disabled={savingName} title="Save name">
                                         <Check class="size-4" />
                                     </Button>
-                                    {#if b.name}
-                                        <Button variant="ghost" size="sm" onclick={() => handleUnpin(b.filename)} disabled={savingName} title="Remove name (unpin)">
-                                            <PinOff class="size-4 text-destructive" />
-                                        </Button>
-                                    {/if}
                                     <Button variant="ghost" size="sm" onclick={() => (editingFilename = null)} disabled={savingName} title="Cancel">
                                         <X class="size-4" />
                                     </Button>
@@ -418,10 +419,21 @@
                                 variant="ghost"
                                 size="sm"
                                 onclick={() => openRename(b)}
-                                title={b.name ? 'Rename / unpin' : 'Name backup to keep it'}
+                                title={b.name ? 'Rename' : 'Name backup to keep it'}
                             >
                                 <Pencil class="size-4" />
                             </Button>
+                            {#if b.name}
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onclick={() => handleUnpin(b.filename)}
+                                    disabled={savingName}
+                                    title="Remove name (unpin)"
+                                >
+                                    <PinOff class="size-4 text-destructive" />
+                                </Button>
+                            {/if}
                             <Button variant="ghost" size="sm" onclick={() => handleDownload(b.filename)} title="Download">
                                 <Download class="size-4" />
                             </Button>

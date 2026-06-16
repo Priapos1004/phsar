@@ -753,6 +753,35 @@ async def test_reverify_leaves_healthy_dump_untouched(backup_dir):
     assert (await backup_service.list_backups())[0].integrity == BackupIntegrity.ok
 
 
+async def test_reverify_skips_dump_deleted_mid_loop(backup_dir, monkeypatch):
+    """Backup jobs don't bracket maintenance, so an admin delete can race the
+    reverify loop. A dump that vanishes after list_backups must be skipped, not
+    crash the whole backup job with BackupNotFoundError."""
+    present = await backup_service.create_backup(source=BackupSource.cron)
+    present_meta = (await backup_service.list_backups())[0]
+    # Fabricate a stale listing that includes a dump whose file no longer exists
+    # (simulating a delete between the listing and the per-dump check).
+    ghost = present_meta.model_copy(update={"filename": "phsar-20200101-000000.dump"})
+
+    async def _stale_listing():
+        return [ghost, present_meta]
+
+    monkeypatch.setattr(backup_service, "list_backups", _stale_listing)
+
+    stats = await backup_service.reverify_backups()
+    assert stats == {"checked": 1, "newly_corrupt": 0}  # ghost skipped, present ok
+    assert backup_service.get_backup_path(present.filename).is_file()
+
+
+async def test_get_backup_path_rejects_traversal(backup_dir):
+    """The single filename chokepoint rejects names that don't match the safe
+    pattern (no separators / .. can pass), independent of any sanitizer the
+    caller forgot."""
+    for bad in ("../etc/passwd", "phsar-20240101-000000.dump/../x", "/etc/passwd"):
+        with pytest.raises(backup_service.BackupNotFoundError):
+            backup_service.get_backup_path(bad)
+
+
 async def test_list_backups_stamps_previous_state_on_current(backup_dir):
     """When the current state came from a restore, list_backups stamps the
     current row with the pre-restore snapshot it superseded."""

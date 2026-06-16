@@ -165,11 +165,17 @@ def _guess_source_from_name(filename: str) -> BackupSource:
 
 def get_backup_path(filename: str) -> Path:
     """Resolve a dump filename to its absolute path, raising BackupNotFoundError
-    if the name doesn't match the safe pattern or the file doesn't exist."""
+    if the name doesn't match the safe pattern, escapes the backup dir, or the
+    file doesn't exist. The single chokepoint every user-supplied filename
+    (delete / restore / rename / reverify) flows through."""
     if not _FILENAME_PATTERN.match(filename):
         raise BackupNotFoundError(filename)
-    path = _backup_dir() / filename
-    if not path.is_file():
+    backup_dir = _backup_dir().resolve()
+    # Resolve then containment-check so a name that somehow slipped the pattern
+    # (or a symlinked dump) can't escape the backup dir — defense in depth on
+    # top of the regex, and the canonical-path guard static analysis recognizes.
+    path = (backup_dir / filename).resolve()
+    if not path.is_relative_to(backup_dir) or not path.is_file():
         raise BackupNotFoundError(filename)
     return path
 
@@ -473,10 +479,20 @@ async def reverify_backups() -> dict[str, int]:
     checked = 0
     newly_corrupt = 0
     for meta in await list_backups():
-        integrity = await _check_integrity(backup_dir / meta.filename)
+        dump_path = backup_dir / meta.filename
+        # Backup jobs don't bracket maintenance, so an admin delete can race
+        # this loop. A vanished dump would otherwise read as `corrupt` and then
+        # raise BackupNotFoundError on the sidecar rewrite, failing the whole
+        # job — skip it instead of treating a deletion as corruption.
+        if not dump_path.is_file():
+            continue
+        integrity = await _check_integrity(dump_path)
         checked += 1
         if integrity != meta.integrity:
-            await _set_meta_field(meta.filename, integrity=integrity)
+            try:
+                await _set_meta_field(meta.filename, integrity=integrity)
+            except BackupNotFoundError:
+                continue  # deleted between the is_file check and the rewrite
             if integrity == BackupIntegrity.corrupt:
                 newly_corrupt += 1
                 logger.warning(
@@ -598,7 +614,12 @@ async def restore_backup(
             # it ages out of the archival window the "Previous state" link
             # dangles. Acceptable; see services/CLAUDE.md.
             try:
-                await _set_meta_field(pre_snapshot.filename, restored_to=filename)
+                # Reassign so the returned metadata reflects the post-restore
+                # pointer (is_current re-stamped) and the restored_to link,
+                # instead of the stale snapshot captured at pre-restore create.
+                pre_snapshot = await _set_meta_field(
+                    pre_snapshot.filename, restored_to=filename
+                )
             except Exception:
                 logger.warning(
                     "Failed to stamp restored_to on pre-restore snapshot %s",
@@ -792,11 +813,11 @@ def _latest_per_sunday(candidates: list[BackupMetadata], weeks: int) -> list[Bac
     what we keep. Fixes the prior `[... ][:8]` slice, which kept the 8 most
     recent Sunday-*created* dumps and let several dumps from one busy Sunday
     consume every slot."""
-    latest_by_date: dict[object, BackupMetadata] = {}
+    latest_by_date: dict[str, BackupMetadata] = {}
     for b in candidates:
         if not _is_sunday_utc(b.created_at):
             continue
-        day = b.created_at.date()
+        day = b.created_at.date().isoformat()  # serializable key, one per Sunday
         if day not in latest_by_date:  # first seen == latest (newest-first)
             latest_by_date[day] = b
     by_recency = sorted(
