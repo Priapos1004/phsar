@@ -81,8 +81,9 @@ FastAPI endpoint definitions. Each router maps to an API prefix.
   - `GET /admin/jobs/{uuid}` — admin-only single-job detail fetch backing the `/admin/jobs/[uuid]` page. Returns the same `AdminJobResponse` shape the list emits (eager-loads `requested_by` + `parent` via the shared `_ADMIN_LOAD_OPTIONS` tuple in `JobDAO` so the list + detail paths can't drift)
   - `GET /admin/curation/pending-counts` — `{merge: int, split: int}` for the navbar bell's pinned admin reminder. Bell polls this on every tick when admin is logged in; cheap COUNTs on the status-filtered candidate tables. Sequential awaits per the AsyncSession-no-gather rule
   - Registration token management (list, create, delete)
-  - Database backups (list, download, delete, restore, upload)
+  - Database backups (list, download, delete, rename, restore, upload)
     - `POST /admin/backups` and `POST /admin/backups/auto` (cron-token authed) both enqueue a `backup` job and return 202 with the job uuid so the request thread doesn't block on `pg_dump`
+    - `PATCH /admin/backups/{filename}` sets/clears a dump's display `name`; a non-empty name pins it against auto-retention (admin actively chose to keep it), blank clears the pin
     - Manual backups attribute to the admin user (visible only in their bell); cron is a system job (`requested_by_user_id=null`), invisible to every bell — the dump list is the audit log
   - Merge-candidate review (list pending, merge, dismiss; powered by the duplicate detector)
     - `POST /admin/merge-candidates/backfill` re-runs existing × existing detection without a container restart — primarily for the post-restore workflow (restore is synchronous, so the lifespan-startup backfill never sees the restored catalog)
@@ -355,14 +356,15 @@ Tag any commit with `v*` (stable `v0.13.0` or preview `v0.13.0-rc1`) and push. `
   - Host directory must be owned by UID 1000 (`chown 1000:1000 /opt/phsar/backups`)
 - Manual backups: admin panel → Backups card → "Create backup"
   - Both manual and cron POSTs are async — endpoint enqueues a `backup` job (202 with `job_uuid`), worker runs `pg_dump` in background
-  - Bell tracks progress (`Dumping` → `Applying retention` → `Done`); on success BackupsCard auto-refreshes
+  - Bell tracks progress (`Dumping` → `Verifying backups` → `Applying retention` → `Done`); on success BackupsCard auto-refreshes. The verify stage re-runs `pg_restore --list` across all dumps (cheap, TOC-only) so on-disk corruption stops listing as `ok` before retention picks its known-good pin
   - "Create backup" button debounces for 5s to absorb double-clicks
-  - Download/delete/upload/restore from the same UI; restore stays synchronous (meant to be blocking)
+  - Download/delete/rename/restore/upload from the same UI; restore stays synchronous (meant to be blocking)
+  - Rename (pencil): names a dump and **pins** it against auto-retention; an inline "Remove name" button (or saving a blank name) unpins. Named rows show a "Pinned" badge
 - Scheduled backups: driven by `/admin/jobs/schedule-nightly` (see Scheduled Jobs below)
   - Standalone `POST /admin/backups/auto` stays available for backup-only ad-hoc cron
-  - Retention runs after **every** backup job (manual and cron share the pool), so manual-only installs don't accumulate indefinitely
+  - Retention runs after **every** backup job — three pools (archival manual+cron: 14-recent + latest-per-Sunday×8 + most-recent-known-good; pre-restore relevance buffer; uploads 5-recent). Named/pinned dumps are kept on top of each pool's rolling window (they don't consume slots), so manual-only installs don't accumulate indefinitely while admin-chosen keeps survive
 - Off-host safety net: `scripts/pull-backups.sh user@vm` rsyncs `/opt/phsar/backups/` to local machine; run every ~2 months and before any restore
-- Restore workflow: UI prompts for admin's username as confirmation string; automatic pre-restore snapshot first, then `pg_restore --clean --if-exists --no-owner --no-privileges`
+- Restore workflow: UI prompts for admin's username as confirmation string; automatic pre-restore snapshot first, then `pg_restore --clean --if-exists --no-owner --no-privileges`. The restored dump's row shows "Previous state saved as …" linking to its pre-restore snapshot (the pre-restore tied to the current state is retention-pinned)
 
 ### Scheduled jobs
 

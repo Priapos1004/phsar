@@ -27,6 +27,9 @@ App components using Svelte 5 `$props()`, `$state()`, `$derived()`, `$effect()`.
 - **RelatedMediaCarousel** — sibling-media row on the media detail page. Backend (`media_search_service.get_media_detail`) returns `sibling_media` chronologically via the shared `chronological_media_key()` helper in `filter_service.py` — same key the spoiler frontier and anime-detail media table use — and a `current_position` insertion index. The carousel renders a "You are here" divider at that slot; frontend doesn't compare dates, the backend owns the ordering
 - **BackupsCard** — admin-only dump list
   - Create/upload/download/restore/delete with a "Current" badge on the row the DB was last restored from
+  - **Rename / pin** (pencil → inline `Input` + Save/Cancel; `PATCH /admin/backups/{filename}`): a non-empty name pins the dump against auto-retention and renders a "Pinned" badge. Pinned rows show a one-click `PinOff` action directly in the row (no need to enter edit mode); saving a blank name in the editor also unpins. `saveName(filename, name)` is the shared call behind `handleRename` (Save) and `handleUnpin` (one-click remove)
+  - Refreshes are silent — `refresh()` flips `loading` only on the initial mount, so a refetch after rename/unpin/delete/restore diffs the keyed `{#each}` in place instead of collapsing to a spinner and snapping scroll to the top (same pattern as MergeCandidatesCard)
+  - **Restore link**: the `is_current` row shows "Previous state saved as `{previous_state}`"; a `pre_restore` row shows "Snapshot of the state before restoring `{restored_to}`" — both derived from sidecar metadata, no client computation
 - **MergeCandidatesCard** — admin-only review surface for pending merge candidates
   - Side-by-side anime info (with rating count + earliest aired date as visible justification for recommended A)
   - Similarity score, merge/dismiss with confirm-step, per-row "Swap A/B" button

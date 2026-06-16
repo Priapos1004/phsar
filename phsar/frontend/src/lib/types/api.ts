@@ -497,6 +497,12 @@ export interface BackupMetadata {
 	source: BackupSource;
 	content_hash?: string | null;
 	is_current?: boolean;
+	// Admin display name; non-empty pins the dump against auto-retention.
+	name?: string | null;
+	// Pre-restore snapshot: filename of the backup restored right after it.
+	restored_to?: string | null;
+	// Stamped on the current row: the pre-restore snapshot it superseded.
+	previous_state?: string | null;
 }
 
 // Admin Overview stats — aggregate counts shown on the Overview tab

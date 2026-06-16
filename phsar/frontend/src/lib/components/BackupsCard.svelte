@@ -10,12 +10,17 @@
     import { Badge } from '$lib/components/ui/badge';
     import {
         ArrowUpDown,
+        Check,
         Download,
         GitBranch,
+        Pencil,
+        Pin,
+        PinOff,
         Plus,
         RotateCcw,
         Trash2,
         Upload,
+        X,
     } from 'lucide-svelte';
     import Toast from '$lib/components/Toast.svelte';
     import { formatBytes, formatShortDateTime } from '$lib/utils/formatString';
@@ -58,6 +63,10 @@
     let uploading = $state(false);
     let confirmDeleteFilename = $state<string | null>(null);
     let deleting = $state(false);
+
+    let editingFilename = $state<string | null>(null);
+    let editNameInput = $state('');
+    let savingName = $state(false);
 
     let toastShown = $state(false);
     let toastMsg = $state('');
@@ -123,7 +132,12 @@
     });
 
     export async function refresh() {
-        loading = true;
+        // Don't flip `loading` here: it gates the whole list behind a one-line
+        // "Loading…" placeholder, so a refetch collapses the list, the page
+        // height drops, and the browser scroll snaps to the top. `loading`
+        // starts true for the initial mount and stays false afterward — the
+        // keyed {#each} diffs the new rows in place (silent refresh, matching
+        // MergeCandidatesCard), so unpin/rename/delete don't jump the page.
         error = '';
         try {
             backups = await api.get<BackupMetadata[]>('/admin/backups');
@@ -217,6 +231,32 @@
             deleting = false;
         }
     }
+
+    function openRename(b: BackupMetadata) {
+        editingFilename = b.filename;
+        editNameInput = b.name ?? '';
+    }
+
+    async function saveName(filename: string, name: string | null) {
+        if (savingName) return;
+        savingName = true;
+        error = '';
+        try {
+            await api.patch<BackupMetadata>(`/admin/backups/${encodeURIComponent(filename)}`, { name });
+            editingFilename = null;
+            await refresh();
+        } catch (err) {
+            error = err instanceof ApiError ? err.detail : 'Failed to rename backup';
+        } finally {
+            savingName = false;
+        }
+    }
+
+    // Empty input clears the name (unpins from auto-retention).
+    const handleRename = (filename: string) => saveName(filename, editNameInput.trim() || null);
+    // One-click unpin from the row action (pinned rows only) — unpinning never
+    // requires entering edit mode. Saving a blank name in the editor also clears it.
+    const handleUnpin = (filename: string) => saveName(filename, null);
 
     async function handleDownload(filename: string) {
         error = '';
@@ -314,6 +354,34 @@
                 {#each sortedBackups as b (b.filename)}
                     <div class="flex items-center gap-3 rounded-lg border px-4 py-3 {b.is_current ? 'border-blue-500/50 bg-blue-500/5' : 'bg-muted/30'}">
                         <div class="flex-1 min-w-0 space-y-1">
+                            {#if editingFilename === b.filename}
+                                <div class="flex items-center gap-1.5">
+                                    <Input
+                                        class="h-8 text-sm"
+                                        bind:value={editNameInput}
+                                        placeholder="Name this backup to keep it"
+                                        disabled={savingName}
+                                        onkeydown={(e: KeyboardEvent) => {
+                                            if (e.key === 'Enter' && !savingName) handleRename(b.filename);
+                                            if (e.key === 'Escape') editingFilename = null;
+                                        }}
+                                    />
+                                    <Button variant="secondary" size="sm" onclick={() => handleRename(b.filename)} disabled={savingName} title="Save name">
+                                        <Check class="size-4" />
+                                    </Button>
+                                    <Button variant="ghost" size="sm" onclick={() => (editingFilename = null)} disabled={savingName} title="Cancel">
+                                        <X class="size-4" />
+                                    </Button>
+                                </div>
+                            {:else if b.name}
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="text-sm font-semibold text-card-foreground break-all">{b.name}</span>
+                                    <Badge class="bg-amber-500/15 text-amber-500">
+                                        <Pin class="size-3 mr-1" />
+                                        Pinned
+                                    </Badge>
+                                </div>
+                            {/if}
                             <div class="flex items-center gap-2 flex-wrap">
                                 <code class="text-sm text-card-foreground break-all">{b.filename}</code>
                                 {#if b.is_current}
@@ -335,8 +403,37 @@
                                 <span>Created {formatShortDateTime(b.created_at)}</span>
                                 <span>{formatBytes(b.size_bytes)}</span>
                             </div>
+                            {#if b.is_current && b.previous_state}
+                                <p class="text-xs text-muted-foreground">
+                                    Previous state saved as <code class="break-all">{b.previous_state}</code>
+                                </p>
+                            {/if}
+                            {#if b.source === 'pre_restore' && b.restored_to}
+                                <p class="text-xs text-muted-foreground">
+                                    Snapshot of the state before restoring <code class="break-all">{b.restored_to}</code>
+                                </p>
+                            {/if}
                         </div>
                         <div class="shrink-0 flex gap-1">
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onclick={() => openRename(b)}
+                                title={b.name ? 'Rename' : 'Name backup to keep it'}
+                            >
+                                <Pencil class="size-4" />
+                            </Button>
+                            {#if b.name}
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onclick={() => handleUnpin(b.filename)}
+                                    disabled={savingName}
+                                    title="Remove name (unpin)"
+                                >
+                                    <PinOff class="size-4 text-destructive" />
+                                </Button>
+                            {/if}
                             <Button variant="ghost" size="sm" onclick={() => handleDownload(b.filename)} title="Download">
                                 <Download class="size-4" />
                             </Button>

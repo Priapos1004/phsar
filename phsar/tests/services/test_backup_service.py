@@ -17,7 +17,7 @@ from app.core.config import settings
 from app.core.db import async_session_maker
 from app.exceptions import DuplicateBackupError
 from app.models.job import Job, JobKind, JobStatus
-from app.schemas.backup_schema import BackupSource
+from app.schemas.backup_schema import BackupIntegrity, BackupMetadata, BackupSource
 from app.services import backup_service
 from app.services._pg_subprocess import run_capture
 
@@ -64,8 +64,8 @@ async def test_cron_backup_dedupes_silently(backup_dir):
 
 
 async def test_pre_restore_backup_dedupes_silently(backup_dir):
-    """pre_restore snapshots are retention-exempt; silent dedupe prevents
-    them from piling up on repeat restores of the same-state dump."""
+    """pre_restore snapshots dedupe silently (like cron) so repeat restores of
+    the same-state dump don't pile up no-op snapshots."""
     first = await backup_service.create_backup(source=BackupSource.manual)
     second = await backup_service.create_backup(source=BackupSource.pre_restore)
     assert second.filename == first.filename
@@ -491,6 +491,343 @@ async def test_retention_pins_is_current_upload_against_eviction(backup_dir):
     deleted = await backup_service.apply_retention()
     assert pinned_filename not in deleted
     assert pinned_path.is_file()
+
+
+# ---------------------------------------------------------------------------
+# Retention pools, naming/pin, restore linking (v0.14.6)
+# ---------------------------------------------------------------------------
+
+
+def _fabricate_dump(
+    backup_dir,
+    *,
+    source: BackupSource,
+    created_at: datetime,
+    label: str,
+    name: str | None = None,
+    restored_to: str | None = None,
+    integrity: BackupIntegrity = BackupIntegrity.ok,
+):
+    """Write a dump file + sidecar directly to disk, bypassing pg_dump. The
+    sidecar's created_at drives list_backups ordering + Sunday detection, so
+    tests can craft any timeline without minute-of-wall-clock collisions.
+    Distinct labels keep filenames unique within the same second."""
+    filename = backup_service._build_filename(source, label)
+    path = backup_dir / filename
+    path.write_bytes(f"payload-{label}".encode())
+    meta = BackupMetadata(
+        filename=filename,
+        size_bytes=path.stat().st_size,
+        created_at=created_at,
+        integrity=integrity,
+        source=source,
+        content_hash=f"hash-{label}",
+        name=name,
+        restored_to=restored_to,
+    )
+    backup_service._write_meta(path, meta)
+    return filename
+
+
+def _recent_sunday(reference: datetime) -> datetime:
+    """An old Sunday well outside the 14-recent window (~100 days back)."""
+    day = reference - timedelta(days=100)
+    while day.weekday() != 6:
+        day += timedelta(days=1)
+    return day
+
+
+def test_latest_per_sunday_keeps_one_per_distinct_sunday():
+    """The bug fix: several dumps on one Sunday must collapse to that Sunday's
+    latest, not each consume a weekly slot. Result is the latest dump per
+    distinct Sunday, capped at `weeks` most-recent Sundays."""
+    now = datetime.now(timezone.utc)
+    sun_a = _recent_sunday(now)
+    sun_b = sun_a - timedelta(days=7)
+
+    def fake(created_at, fname):
+        return BackupMetadata(
+            filename=fname, size_bytes=1, created_at=created_at,
+            integrity=BackupIntegrity.ok, source=BackupSource.cron,
+        )
+
+    a_early = fake(sun_a.replace(hour=2), "a-early")
+    a_late = fake(sun_a.replace(hour=20), "a-late")
+    b_only = fake(sun_b.replace(hour=12), "b-only")
+    weekday = fake((sun_a + timedelta(days=1)).replace(hour=12), "weekday")
+
+    # Newest-first, as list_backups returns.
+    candidates = sorted(
+        [a_early, a_late, b_only, weekday],
+        key=lambda m: m.created_at, reverse=True,
+    )
+    kept = backup_service._latest_per_sunday(candidates, weeks=8)
+    kept_names = {m.filename for m in kept}
+
+    assert kept_names == {"a-late", "b-only"}  # one per Sunday, weekday ignored
+    assert "a-early" not in kept_names
+
+
+async def test_retention_keeps_latest_dump_per_sunday(backup_dir):
+    """End-to-end: multiple manual dumps on one old Sunday keep only the
+    latest as that week's archival representative; the rest age out."""
+    now = datetime.now(timezone.utc)
+    sunday = _recent_sunday(now)
+
+    early = _fabricate_dump(
+        backup_dir, source=BackupSource.manual,
+        created_at=sunday.replace(hour=1), label="sun-early",
+    )
+    mid = _fabricate_dump(
+        backup_dir, source=BackupSource.manual,
+        created_at=sunday.replace(hour=12), label="sun-mid",
+    )
+    late = _fabricate_dump(
+        backup_dir, source=BackupSource.manual,
+        created_at=sunday.replace(hour=23), label="sun-late",
+    )
+    # Fill the 14-recent window with newer non-Sunday dumps so the Sunday
+    # dumps are kept (or not) purely by the per-Sunday rule.
+    for i in range(14):
+        _fabricate_dump(
+            backup_dir, source=BackupSource.manual,
+            created_at=now - timedelta(minutes=i), label=f"recent{i}",
+        )
+    deleted = await backup_service.apply_retention()
+
+    assert late not in deleted  # latest on the Sunday survives
+    assert early in deleted and mid in deleted  # earlier same-Sunday dumps go
+
+
+async def test_retention_pre_restore_not_treated_as_archival_sunday(backup_dir):
+    """A pre-restore created on a Sunday must NOT win the archival weekly slot
+    — pre-restores are rollback points, governed by their own relevance pool,
+    not the manual/cron Sunday history. Asserts the manual weekly archive
+    survives while a same-Sunday pre-restore ages out via the buffer."""
+    now = datetime.now(timezone.utc)
+    sunday = _recent_sunday(now)
+
+    weekly = _fabricate_dump(
+        backup_dir, source=BackupSource.manual,
+        created_at=sunday.replace(hour=2), label="weekly",
+    )
+    # A pre-restore taken LATER the same Sunday — under a naive unified
+    # latest-per-Sunday rule it would shadow `weekly`. It must not.
+    pr_old = _fabricate_dump(
+        backup_dir, source=BackupSource.pre_restore,
+        created_at=sunday.replace(hour=23), label="pr-old",
+    )
+    # Three newer pre-restores fill the relevance buffer so pr_old is the one
+    # that ages out — proving eviction is by recency, not a Sunday slot.
+    pr_recent = [
+        _fabricate_dump(
+            backup_dir, source=BackupSource.pre_restore,
+            created_at=now - timedelta(days=d), label=f"pr{d}",
+        )
+        for d in (1, 2, 3)
+    ]
+    for i in range(14):
+        _fabricate_dump(
+            backup_dir, source=BackupSource.manual,
+            created_at=now - timedelta(minutes=i), label=f"recent{i}",
+        )
+
+    deleted = await backup_service.apply_retention()
+
+    assert weekly not in deleted  # archival Sunday rep survives
+    assert pr_old in deleted  # same-Sunday pre-restore evicted by relevance pool
+    for pr in pr_recent:
+        assert pr not in deleted  # buffer keeps the most-recent pre-restores
+
+
+async def test_retention_keeps_pre_restore_tied_to_current(backup_dir):
+    """The pre-restore snapshot whose restored_to matches the current pointer
+    is the active rollback point and must survive even when old and beyond the
+    recency buffer."""
+    now = datetime.now(timezone.utc)
+    current = _fabricate_dump(
+        backup_dir, source=BackupSource.manual,
+        created_at=now, label="current",
+    )
+    backup_service._mark_current_db_restored(current)
+
+    linked = _fabricate_dump(
+        backup_dir, source=BackupSource.pre_restore,
+        created_at=now - timedelta(days=200), label="linked",
+        restored_to=current,
+    )
+    # Push it out of the recency buffer with newer pre-restores.
+    for d in (1, 2, 3):
+        _fabricate_dump(
+            backup_dir, source=BackupSource.pre_restore,
+            created_at=now - timedelta(days=d), label=f"pr{d}",
+        )
+
+    deleted = await backup_service.apply_retention()
+    assert linked not in deleted
+
+
+async def test_retention_pins_named_backup(backup_dir):
+    """A non-empty name pins a dump against auto-retention; clearing it
+    re-exposes the dump to eviction."""
+    now = datetime.now(timezone.utc)
+    named = _fabricate_dump(
+        backup_dir, source=BackupSource.manual,
+        created_at=now - timedelta(days=300), label="keepme",
+        name="keep this forever",
+    )
+    # Bury it under 14 newer dumps so only the name pin can save it.
+    for i in range(14):
+        _fabricate_dump(
+            backup_dir, source=BackupSource.manual,
+            created_at=now - timedelta(minutes=i), label=f"recent{i}",
+        )
+
+    deleted = await backup_service.apply_retention()
+    assert named not in deleted
+
+    # Clear the name → next retention pass evicts it.
+    await backup_service.set_backup_name(named, None)
+    deleted_again = await backup_service.apply_retention()
+    assert named in deleted_again
+
+
+async def test_retention_named_backups_do_not_consume_recent_slots(backup_dir):
+    """Named (pinned) dumps are kept ON TOP of a full rolling window — they
+    must not occupy the 14 recent slots. Otherwise pinning ~14 dumps would
+    fill the window and evict every fresh auto-managed nightly backup."""
+    now = datetime.now(timezone.utc)
+    # 14 named dumps, all newer than the auto dump below.
+    for i in range(14):
+        _fabricate_dump(
+            backup_dir, source=BackupSource.manual,
+            created_at=now - timedelta(minutes=i), label=f"named{i}",
+            name=f"keep {i}",
+        )
+    # A single un-named, auto-managed dump, older than every named one. With
+    # the old slot-counting (named included) it would fall outside the top 14
+    # and be evicted; the fix keeps it as the sole auto-managed recent dump.
+    auto = _fabricate_dump(
+        backup_dir, source=BackupSource.manual,
+        created_at=now - timedelta(days=1), label="auto",
+    )
+
+    deleted = await backup_service.apply_retention()
+    assert auto not in deleted
+
+
+async def test_set_backup_name_sets_trims_and_clears(backup_dir):
+    """Rename persists a trimmed name; blank/whitespace clears it (None)."""
+    dump = await backup_service.create_backup(source=BackupSource.cron)
+
+    named = await backup_service.set_backup_name(dump.filename, "  My Snapshot  ")
+    assert named.name == "My Snapshot"
+    assert (await backup_service.list_backups())[0].name == "My Snapshot"
+
+    cleared = await backup_service.set_backup_name(dump.filename, "   ")
+    assert cleared.name is None
+    assert (await backup_service.list_backups())[0].name is None
+
+
+async def test_reverify_flips_integrity_on_disk_corruption(backup_dir):
+    """The create-time integrity flag is a snapshot; a dump that corrupts on
+    disk afterward must stop listing as `ok`. reverify_backups re-runs the
+    cheap `pg_restore --list` check and refreshes the sidecar."""
+    good = await backup_service.create_backup(source=BackupSource.cron)
+    assert (await backup_service.list_backups())[0].integrity == BackupIntegrity.ok
+
+    # Corrupt the archive on disk — garbage bytes fail `pg_restore --list`.
+    (backup_dir / good.filename).write_bytes(b"this is not a valid pg_dump archive")
+
+    stats = await backup_service.reverify_backups()
+    assert stats["checked"] == 1
+    assert stats["newly_corrupt"] == 1
+    assert (await backup_service.list_backups())[0].integrity == BackupIntegrity.corrupt
+
+
+async def test_reverify_leaves_healthy_dump_untouched(backup_dir):
+    """A still-valid dump stays `ok` and isn't counted as newly corrupt."""
+    await backup_service.create_backup(source=BackupSource.cron)
+    stats = await backup_service.reverify_backups()
+    assert stats == {"checked": 1, "newly_corrupt": 0}
+    assert (await backup_service.list_backups())[0].integrity == BackupIntegrity.ok
+
+
+async def test_reverify_skips_dump_deleted_mid_loop(backup_dir, monkeypatch):
+    """Backup jobs don't bracket maintenance, so an admin delete can race the
+    reverify loop. A dump that vanishes after list_backups must be skipped, not
+    crash the whole backup job with BackupNotFoundError."""
+    present = await backup_service.create_backup(source=BackupSource.cron)
+    present_meta = (await backup_service.list_backups())[0]
+    # Fabricate a stale listing that includes a dump whose file no longer exists
+    # (simulating a delete between the listing and the per-dump check).
+    ghost = present_meta.model_copy(update={"filename": "phsar-20200101-000000.dump"})
+
+    async def _stale_listing():
+        return [ghost, present_meta]
+
+    monkeypatch.setattr(backup_service, "list_backups", _stale_listing)
+
+    stats = await backup_service.reverify_backups()
+    assert stats == {"checked": 1, "newly_corrupt": 0}  # ghost skipped, present ok
+    assert backup_service.get_backup_path(present.filename).is_file()
+
+
+async def test_get_backup_path_rejects_traversal(backup_dir):
+    """The single filename chokepoint rejects names that don't match the safe
+    pattern (no separators / .. can pass), independent of any sanitizer the
+    caller forgot."""
+    for bad in ("../etc/passwd", "phsar-20240101-000000.dump/../x", "/etc/passwd"):
+        with pytest.raises(backup_service.BackupNotFoundError):
+            backup_service.get_backup_path(bad)
+
+
+async def test_list_backups_stamps_previous_state_on_current(backup_dir):
+    """When the current state came from a restore, list_backups stamps the
+    current row with the pre-restore snapshot it superseded."""
+    now = datetime.now(timezone.utc)
+    restored = _fabricate_dump(
+        backup_dir, source=BackupSource.manual,
+        created_at=now, label="restored",
+    )
+    pre = _fabricate_dump(
+        backup_dir, source=BackupSource.pre_restore,
+        created_at=now - timedelta(minutes=1), label="pre",
+        restored_to=restored,
+    )
+    backup_service._mark_current_db_restored(restored)
+
+    items = await backup_service.list_backups()
+    current_row = next(m for m in items if m.filename == restored)
+    assert current_row.is_current is True
+    assert current_row.previous_state == pre
+
+
+async def test_list_backups_does_not_self_reference_previous_state(backup_dir):
+    """Restoring a dump whose content already equals the live DB dedupes the
+    pre-restore snapshot to the restore target itself, so its sidecar carries
+    restored_to == own filename. The current row must NOT advertise itself as
+    its own previous state."""
+    now = datetime.now(timezone.utc)
+    current = _fabricate_dump(
+        backup_dir, source=BackupSource.manual,
+        created_at=now, label="current",
+        restored_to=None,
+    )
+    # Simulate the dedupe-to-self outcome: the snapshot tied to the restore is
+    # the restore target itself.
+    backup_service._write_meta(
+        backup_dir / current,
+        backup_service._read_meta(backup_dir / current).model_copy(
+            update={"restored_to": current}
+        ),
+    )
+    backup_service._mark_current_db_restored(current)
+
+    items = await backup_service.list_backups()
+    current_row = next(m for m in items if m.filename == current)
+    assert current_row.is_current is True
+    assert current_row.previous_state is None  # no self-reference
 
 
 # ---------------------------------------------------------------------------
