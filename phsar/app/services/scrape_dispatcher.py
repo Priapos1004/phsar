@@ -354,6 +354,20 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
             logger.exception("Spoiler cache recompute failed after sweep")
             cache_recompute_failed = True
 
+    # Coalesced at sweep end: the relaxed drift policy applies studio
+    # removals per-anime above, any of which can strand a Studio row with
+    # no media links. One DELETE here keeps the taxonomy self-cleaning each
+    # night instead of letting corrected-typo studios accumulate forever.
+    # Soft-warn like the blocks above — the per-anime catalog work has
+    # already committed, so an orphan-cleanup failure shouldn't fail the sweep.
+    orphaned_studios_removed = 0
+    try:
+        orphaned_studios_removed = await StudioDAO().delete_orphaned(session)
+        await session.commit()
+    except Exception:
+        logger.exception("Post-sweep orphaned-studio cleanup failed")
+        await session.rollback()
+
     await progress.update(stage="Done", items_done=refreshed, force=True)
     return {
         "counters": {
@@ -366,6 +380,7 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
             "probe_succeeded": probe_succeeded,
             "probe_failed": probe_failed,
             "probe_attached_anime_count": len(probe_attached_anime_ids),
+            "orphaned_studios_removed": orphaned_studios_removed,
         },
         "media_changes": media_changes_log,
         "anime_umbrella_changes": anime_umbrella_changes_log,

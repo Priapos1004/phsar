@@ -138,9 +138,14 @@ async def reclassify_anime(
 
     # Capture old → new BEFORE the row mutation so the dispatcher's
     # detail-page payload reflects what MAL actually shifted.
+    # Iterate new_umbrella key order (stable, insertion-ordered) rather
+    # than the drifted_fields set — set iteration order is
+    # non-deterministic across runs, which would give result_summary
+    # diffs and the admin UI an unstable field order and noisy JSONB.
     umbrella_field_changes: list[UmbrellaFieldChange] = [
         {"field": f, "old": _current(f), "new": new_umbrella[f]}
-        for f in drifted_fields
+        for f in new_umbrella
+        if f in drifted_fields
     ]
 
     diff: ReclassifyDiff = {

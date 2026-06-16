@@ -19,6 +19,7 @@
 		{ key: 'probe_succeeded', label: 'Probes succeeded' },
 		{ key: 'probe_failed', label: 'Probes failed' },
 		{ key: 'probe_attached_anime_count', label: 'Anime w/ new attach' },
+		{ key: 'orphaned_studios_removed', label: 'Orphaned studios removed' },
 	];
 </script>
 

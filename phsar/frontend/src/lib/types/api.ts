@@ -448,6 +448,9 @@ export interface UpdateSweepCounters {
 	probe_succeeded: number;
 	probe_failed: number;
 	probe_attached_anime_count: number;
+	// v3+: Studio rows deleted at sweep end because drift removals left
+	// them with no media links. v2 rows omit it (renders as 0).
+	orphaned_studios_removed?: number;
 }
 
 // update_sweep result_summary v2+ shape. v1 rows omit these fields

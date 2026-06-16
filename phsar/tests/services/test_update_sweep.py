@@ -650,6 +650,35 @@ async def test_studio_diff_removal_applied(db_session):
     assert len(rows) == 0
 
 
+async def test_delete_orphaned_removes_only_unlinked_studios(db_session):
+    """A studio whose last media link was dropped (the drift-removal
+    case) gets cleaned up; a still-linked studio survives."""
+    from app.daos.studio_dao import StudioDAO
+
+    # Linked studio — must survive.
+    media = await _build_media_with_taxonomy(
+        db_session, mal_id=-96010, studio_names=["SD_Linked_10"],
+    )
+    # Orphan — added with no MediaStudio row.
+    orphan = Studio(name="SD_Orphan_10")
+    db_session.add(orphan)
+    await db_session.flush()
+
+    removed = await StudioDAO().delete_orphaned(db_session)
+    assert removed >= 1
+
+    names = {
+        s.name for s in (await db_session.execute(select(Studio))).scalars().all()
+    }
+    assert "SD_Orphan_10" not in names
+    assert "SD_Linked_10" in names
+    # The surviving studio's link is untouched.
+    rows = (await db_session.execute(
+        select(MediaStudio).where(MediaStudio.media_id == media.id)
+    )).scalars().all()
+    assert len(rows) == 1
+
+
 # ---------------------------------------------------------------------------
 # _refresh_one_anime (uses db_session)
 # ---------------------------------------------------------------------------
