@@ -37,7 +37,16 @@ JOB_KIND_VERSIONS: dict[JobKind, int] = {
     # require a bump — but we bump anyway so the frontend can tell a v4
     # `step1_failed: 0` (genuinely zero) from a v3 row that never tracked
     # it (rendered "—", not a misleading 0).
-    JobKind.update_sweep: 4,
+    # v5 (v0.14.8) converts the sweep from anime-level to media-level
+    # refresh. Counters go media-grained: `anime_refreshed` -> media_refreshed,
+    # plus new `anime_touched` (distinct anime with >=1 media refreshed) and
+    # `media_skipped_fresh` (present-but-not-due media); the
+    # anime_with_dynamic/static_changes pair is dropped (an anime is no
+    # longer the work unit — media_with_* carries the signal). Also adds
+    # top-level `probe_failures[]` (symmetric to step1_failures[]). The
+    # rename + removals force the bump (net-new keys alone wouldn't); the
+    # frontend keeps v2/v3/v4 parsers so historical rows still render.
+    JobKind.update_sweep: 5,
     JobKind.seasonal_sweep: 1,
     JobKind.backup: 1,
     JobKind.restore: 1,

@@ -92,7 +92,7 @@
 			</Card.Content>
 		</Card.Root>
 
-		<SweepTiersCard tiers={stats.sweep_tiers} />
+		<SweepTiersCard animeTiers={stats.sweep_tiers} mediaTiers={stats.media_sweep_tiers} />
 
 		<Card.Root>
 			<Card.Header>

@@ -8,8 +8,10 @@ schemas via accidental `model_dump()` use.
 touches the row — production rows are backfilled to `anime.created_at` by
 the 7a migration so they enter the rotation at their honest age, not
 "brand new". `stable_check_count` resets to 0 whenever a refresh observes
-any field delta on the anime's media; tier 2 of the sweep (count<3) burns
-through the initial stability sampling for fresh rows.
+any field delta on the anime's media; tier 2 of the sweep
+(count < SWEEP_STABILIZE_THRESHOLD) burns through the initial stability
+sampling for fresh rows. As of v0.14.8 this counter is the per-anime *probe*
+clock — MediaFreshness drives per-media refresh selection.
 
 `unique=True` on `anime_id` enforces the 1:1 invariant — the synthetic
 `id` from BaseModel keeps the row addressable and gives us audit

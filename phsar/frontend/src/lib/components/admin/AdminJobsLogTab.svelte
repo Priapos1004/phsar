@@ -196,13 +196,20 @@
 			// date the rework — fall back to the flat shape.
 			if (row.version >= 2) {
 				const c = (row.result_summary.counters ?? {}) as Record<string, unknown>;
-				const refreshed = num(c.anime_refreshed);
-				const dynAnime = num(c.anime_with_dynamic_changes);
+				// v5 (v0.14.8) went media-grained: anime_refreshed → media_refreshed
+				// and the anime_with_dynamic rollup → media_with_dynamic. Earlier
+				// versions keep their anime-grained keys so historical rows stay
+				// accurate.
+				const refreshed = row.version >= 5 ? num(c.media_refreshed) : num(c.anime_refreshed);
+				const refreshedLabel = row.version >= 5 ? 'media refreshed' : 'touched';
+				const dyn =
+					row.version >= 5 ? num(c.media_with_dynamic_changes) : num(c.anime_with_dynamic_changes);
+				const dynLabel = row.version >= 5 ? 'media w/ dynamic' : 'anime w/ dynamic';
 				const staticMedia = num(c.media_with_static_changes);
 				const umbrella = num(c.umbrella_reclassed);
 				const probeAttached = num(c.probe_attached_anime_count);
-				const parts = [`${refreshed} touched`];
-				if (dynAnime > 0) parts.push(`${dynAnime} anime w/ dynamic`);
+				const parts = [`${refreshed} ${refreshedLabel}`];
+				if (dyn > 0) parts.push(`${dyn} ${dynLabel}`);
 				if (staticMedia > 0) parts.push(`${staticMedia} media w/ static`);
 				if (umbrella > 0) parts.push(`${umbrella} umbrella`);
 				if (probeAttached > 0) parts.push(`${probeAttached} new attached`);

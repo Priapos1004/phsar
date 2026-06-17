@@ -5,9 +5,10 @@ and persists them. Progress updates come from a ProgressReporter that opens
 its own short-lived session per write, so the navbar bell can poll progress
 without waiting for the dispatcher's main transaction to commit.
 
-The update_sweep dispatcher refreshes existing catalog rows: tier-select due
-anime, re-fetch each child media via /anime/{id}/full, diff the volatile
-fields, and advance the per-anime stability counter. Per-anime commit
+The update_sweep dispatcher refreshes existing catalog rows: tier-select the
+due *media* (v0.14.8 — media-level, not whole anime), group them by parent
+anime, re-fetch each due media via /anime/{id}/full, diff the volatile
+fields, and advance the per-media stability counter. Per-anime commit
 boundary so a crash mid-sweep preserves the already-refreshed rows.
 
 The seasonal_sweep dispatcher lives in its own module
@@ -17,14 +18,14 @@ helpers and is purely a discovery pass that hands off to user_scrape.
 
 import logging
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import NamedTuple
 
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.daos.anime_dao import AnimeDAO
+from app.daos.anime_dao import SWEEP_STABILIZE_THRESHOLD, AnimeDAO
 from app.daos.genre_dao import GenreDAO
 from app.daos.media_dao import MediaDAO
 from app.daos.media_unwanted_dao import MediaUnwantedDAO
@@ -72,9 +73,10 @@ from app.services.vector_embedding_service import regenerate_media_embedding
 
 logger = logging.getLogger(__name__)
 
-# Counter ceiling — tiered selection only checks `stable < 3`, but capping
-# the value keeps the integer bounded and avoids accumulating noise across
-# years of sweeps.
+# Counter ceiling for both the anime probe counter and the per-media
+# refresh counter — tiered selection only checks the small stabilize
+# threshold (< 5), but capping the value keeps the integer bounded and
+# avoids accumulating noise across years of sweeps.
 _STABLE_COUNT_CAP = 99
 
 
@@ -82,7 +84,6 @@ class RefreshResult(NamedTuple):
     volatile_changed: bool  # gates stability-counter reset
     raw_payloads: dict[int, dict]
     is_currently_airing: bool
-    metadata_changed_count: int  # media rows with non-volatile field drift
     # Full ReclassifyDiff (or None if nothing drifted) — bool umbrella-
     # drift is derivable from this, so the NamedTuple doesn't carry both.
     umbrella_diff: dict | None
@@ -97,6 +98,20 @@ class Step1Failure(NamedTuple):
     `result_summary.step1_failures` — without this the failures were
     swallowed and a sweep could silently drop half its workload while still
     reporting `succeeded`."""
+    anime_uuid: str
+    title: str
+    error_category: str | None
+    error_message: str
+
+
+class ProbeFailure(NamedTuple):
+    """A step-2 relations probe that raised and was skipped (v0.14.8).
+    Symmetric to `Step1Failure`: surfaced instead of a bare None so the
+    sweep records which anime failed the probe + why in
+    `result_summary.probe_failures` — previously `probe_failed` was only a
+    bare counter with no per-anime drill-down. The field-diff work from
+    step 1 is preserved and AnimeFreshness is left unchanged, so the next
+    sweep re-selects this anime and retries the probe."""
     anime_uuid: str
     title: str
     error_category: str | None
@@ -119,6 +134,13 @@ _DRIFT_APPLIED_WITH_UNKNOWNS = "applied_with_unknowns"  # genre only
 # real change, while pure vote-count drift on popular anime is treated as
 # noise. See compound-doc / commit message for the magnitude analysis.
 _SCORE_STABILITY_THRESHOLD = 0.05
+
+# Probe-cadence floor (v0.14.8): re-probe an anime's relations at most once
+# per this window even though media-level selection can re-touch the anime
+# on consecutive nights as its members drain. Sibling of the selection
+# thresholds (SWEEP_STABILIZE_THRESHOLD / SWEEP_LONG_TAIL_DAYS) but lives
+# here because the floor is a dispatcher probe-gate concern, not selection.
+PROBE_CADENCE_DAYS = 7
 
 
 async def user_scrape_dispatcher(session: AsyncSession, job: Job) -> dict:
@@ -230,19 +252,35 @@ async def _route_attach_actions(
 
 
 async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
-    """Two commits per anime: step 1 (field-diff + MediaFreshness) is
-    always durable; step 2 (probe + AnimeFreshness) only commits on
-    success. A probe failure leaves AnimeFreshness untouched so the
-    tier query re-selects on the next sweep — without that split, a
-    transient MAL outage during BFS would silently lose the
-    announcement window for 7+ days."""
+    """Media-level sweep (v0.14.8): select the individual media that are
+    due (not whole anime), group them by parent anime, and refresh only
+    the due members. A still-airing umbrella's stable old media are left
+    alone instead of re-fetched every night.
+
+    Two commits per anime: step 1 (field-diff + MediaFreshness) is always
+    durable; step 2 (probe + AnimeFreshness) only commits on success. A
+    probe failure leaves AnimeFreshness untouched so the tier query
+    re-selects on the next sweep — without that split, a transient MAL
+    outage during BFS would silently lose the announcement window."""
     progress = ProgressReporter(job.id)
     await progress.update(stage="Selecting", force=True)
 
-    anime_list = await AnimeDAO().select_due_for_sweep(
+    due_media = await AnimeDAO().select_due_media_for_sweep(
         session, limit=settings.JOBS_SWEEP_MAX_PER_RUN,
     )
-    total = len(anime_list)
+    # Group due media under their parent anime, preserving the global
+    # oldest-first ordering for each anime's first appearance so commit +
+    # progress order stays stable. The identity map shares one Anime
+    # instance across its due-media rows, so `anime.media` is the full set.
+    by_anime: dict[int, tuple[Anime, list[Media]]] = {}
+    for media in due_media:
+        by_anime.setdefault(media.anime.id, (media.anime, []))[1].append(media)
+    # Progress is media-grained: items_total is the due-media workload (the
+    # real MAL-call/time unit), items_done tracks refreshed media. Commits
+    # happen per anime, so the bar advances in per-anime chunks. The
+    # items_done < items_total gap at the end is exactly the media belonging
+    # to anime whose step-1 refresh failed (surfaced on the detail page).
+    total = len(due_media)
     await progress.update(
         stage="Refreshing", items_total=total, items_done=0, force=True,
     )
@@ -253,9 +291,14 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     unwanted_ids = await MediaUnwantedDAO().get_all_mal_ids(session)
     exclusions: set[int] = set(media_ids) | set(anime_ids) | set(unwanted_ids)
 
-    refreshed = 0
-    anime_with_dynamic_changes = 0
-    anime_with_static_changes = 0
+    anime_touched = 0  # distinct anime with >=1 media refreshed + committed
+    media_refreshed = 0  # individual media successfully refreshed
+    # Media belonging to a touched anime NOT refreshed this run — almost
+    # always already-fresh siblings (the work the media-level conversion
+    # avoids vs the old whole-anime refresh); at the cap boundary a few may
+    # be due-but-deferred to the next sweep. Free to compute (both lengths
+    # are already in memory). Observability only.
+    media_skipped_fresh = 0
     media_with_dynamic_changes = 0
     media_with_static_changes = 0
     umbrella_reclassed = 0
@@ -266,6 +309,8 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     # chunk of its workload is visible instead of reading as fully clean.
     step1_failed = 0
     step1_failures: list[dict] = []
+    # Symmetric to step1_failures: anime whose step-2 probe raised.
+    probe_failures: list[dict] = []
     # Track which existing anime had new media attached so we can re-run
     # merge detection on them at sweep end — a tier-3 anime whose probe
     # pulled in a new sibling franchise (Vigilante-shape) may now bridge
@@ -277,29 +322,57 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     # refresh alone (no new media) can surface a fresh relation_link
     # signal. Broader scope than probe-attached.
     sidecar_touched_anime_ids: list[int] = []
-    # v2 result_summary: every changed media row + every umbrella drift,
+    # v2+ result_summary: every changed media row + every umbrella drift,
     # carrying old → new for each touched field. The detail page renders
     # off this; the Jobs Log row counts off `counters` below.
     media_changes_log: list[dict] = []
     anime_umbrella_changes_log: list[dict] = []
     async with JikanScraper() as scraper:
-        for anime in anime_list:
-            step1 = await _try_step1_refresh(session, anime, scraper)
+        for anime, media_to_refresh in by_anime.values():
+            step1 = await _try_step1_refresh(
+                session, anime, media_to_refresh, scraper,
+            )
             if isinstance(step1, Step1Failure):
+                # Step 1 rolled back — these media weren't refreshed, so they
+                # don't advance items_done (progress = refreshed media). The
+                # gap surfaces the dropped workload on the detail page.
                 step1_failed += 1
                 step1_failures.append(step1._asdict())
-                await progress.update(items_done=refreshed)
+                await progress.update(items_done=media_refreshed)
                 continue
+
+            # Step 1 committed durably inside _try_step1_refresh, so account
+            # for its refresh work NOW — independent of the probe outcome. A
+            # later probe failure leaves these media refreshed (MediaFreshness
+            # already advanced); they won't re-refresh next sweep, so dropping
+            # them from the counters would undercount real work.
             sidecar_touched_anime_ids.append(anime.id)
+            anime_touched += 1
+            media_refreshed += len(media_to_refresh)
+            media_skipped_fresh += len(anime.media) - len(media_to_refresh)
+            for entry in step1.media_changes:
+                media_changes_log.append(entry)
+                if entry["dynamic"]:
+                    media_with_dynamic_changes += 1
+                if entry["static"]:
+                    media_with_static_changes += 1
+            if step1.umbrella_diff and step1.umbrella_diff["umbrella_drifted"]:
+                umbrella_reclassed += 1
+                anime_umbrella_changes_log.append(
+                    umbrella_diff_to_log_entry(anime, step1.umbrella_diff),
+                )
 
             if _qualifies_for_relations_probe(anime, step1.is_currently_airing):
                 await progress.update(stage="Probing relations")
                 probe_added = await _try_step2_probe(
                     session, anime, step1.raw_payloads, exclusions, scraper,
                 )
-                if probe_added is None:
+                if isinstance(probe_added, ProbeFailure):
+                    # Step-1 refresh stays committed; only AnimeFreshness is
+                    # left unadvanced so the next sweep re-probes this anime.
                     probe_failed += 1
-                    await progress.update(items_done=refreshed)
+                    probe_failures.append(probe_added._asdict())
+                    await progress.update(items_done=media_refreshed)
                     continue
                 if probe_added:
                     probe_attached_anime_ids.append(anime.id)
@@ -309,27 +382,7 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
                 anime, step1.volatile_changed, step1.is_currently_airing,
             )
             await session.commit()
-            refreshed += 1
-            anime_had_dynamic = False
-            anime_had_static = False
-            for entry in step1.media_changes:
-                media_changes_log.append(entry)
-                if entry["dynamic"]:
-                    media_with_dynamic_changes += 1
-                    anime_had_dynamic = True
-                if entry["static"]:
-                    media_with_static_changes += 1
-                    anime_had_static = True
-            if anime_had_dynamic:
-                anime_with_dynamic_changes += 1
-            if anime_had_static:
-                anime_with_static_changes += 1
-            if step1.umbrella_diff and step1.umbrella_diff["umbrella_drifted"]:
-                umbrella_reclassed += 1
-                anime_umbrella_changes_log.append(
-                    umbrella_diff_to_log_entry(anime, step1.umbrella_diff),
-                )
-            await progress.update(items_done=refreshed)
+            await progress.update(items_done=media_refreshed)
 
     # Re-run merge detection at sweep end: title_studio/title_desc against
     # probe-attached anime (mirrors save-time detection that the attach
@@ -348,6 +401,10 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
         except Exception:
             logger.exception("Post-sweep cross-link query failed")
             merge_detect_failed = True
+            # Symmetry with the merge-detection + orphan-cleanup soft-warn
+            # blocks below: a failed SELECT marks the session pending-rollback,
+            # so clear it here instead of relying on a downstream block to.
+            await session.rollback()
     if probe_attached_anime_ids or cross_link_pairs:
         try:
             await detect_merge_candidates(
@@ -390,12 +447,18 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
         logger.exception("Post-sweep orphaned-studio cleanup failed")
         await session.rollback()
 
-    await progress.update(stage="Done", items_done=refreshed, force=True)
+    await progress.update(stage="Done", items_done=media_refreshed, force=True)
     return {
+        # v5 (v0.14.8): counters go media-grained. `media_refreshed` is the
+        # headline workload (individual media touched); `anime_touched` is
+        # the umbrella count that `anime_refreshed` used to give;
+        # `media_skipped_fresh` quantifies the work the media-level
+        # selection avoided. The anime_with_dynamic/static pair was dropped
+        # (an anime is no longer the work unit).
         "counters": {
-            "anime_refreshed": refreshed,
-            "anime_with_dynamic_changes": anime_with_dynamic_changes,
-            "anime_with_static_changes": anime_with_static_changes,
+            "media_refreshed": media_refreshed,
+            "anime_touched": anime_touched,
+            "media_skipped_fresh": media_skipped_fresh,
             "media_with_dynamic_changes": media_with_dynamic_changes,
             "media_with_static_changes": media_with_static_changes,
             "umbrella_reclassed": umbrella_reclassed,
@@ -411,6 +474,8 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
         # error_category, error_message}. Lets the detail page show exactly
         # which shows were skipped and whether it was an MAL outage.
         "step1_failures": step1_failures,
+        # Per-anime step-2 probe failures, same shape as step1_failures.
+        "probe_failures": probe_failures,
         # Deduplicated across every media in this sweep. The Jobs Log
         # tints rows when this is non-empty so the admin can spot which
         # sweeps need a seeder update without drilling into details.
@@ -425,29 +490,38 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
 
 
 async def _try_step1_refresh(
-    session: AsyncSession, anime: Anime, scraper: JikanScraper,
+    session: AsyncSession,
+    anime: Anime,
+    media_to_refresh: list[Media],
+    scraper: JikanScraper,
 ) -> RefreshResult | Step1Failure:
-    """Step 1 wrapper: refresh + commit, or rollback + Step1Failure.
-    Always commits durably so a worker crash later in the sweep can't
-    take the field-diff work down with it, and a single bad MAL response
-    fails *that* anime only without aborting the loop. Returns a
-    `Step1Failure` (not None) so the dispatcher can record which anime
-    was skipped and why in `result_summary.step1_failures`.
+    """Step 1 wrapper: refresh the due media + commit, or rollback +
+    Step1Failure. Always commits durably so a worker crash later in the
+    sweep can't take the field-diff work down with it, and a single bad
+    MAL response fails *that* anime only without aborting the loop.
+    Returns a `Step1Failure` (not None) so the dispatcher can record which
+    anime was skipped and why in `result_summary.step1_failures`. The
+    failure unit stays per-anime (one savepoint over its due media) — the
+    counter is media-grained but a raising media still rolls back its
+    siblings' refresh in this savepoint.
 
     Uses SAVEPOINT (`begin_nested`) instead of session-level rollback —
     `session.rollback()` would expire every eager-loaded instance the
-    outer `select_due_for_sweep` query preloaded, and the next anime's
-    `media` / `relation_edges` access would then trip `lazy="raise"`
-    and abort the whole sweep. Identifiers captured pre-savepoint so
-    the logger never touches an attribute the rollback path might have
-    expired (same MissingGreenlet trap that hit relation_backfiller).
+    outer `select_due_media_for_sweep` query preloaded, and the next
+    anime's `media` / `relation_edges` access would then trip
+    `lazy="raise"` and abort the whole sweep. Identifiers captured
+    pre-savepoint so the logger never touches an attribute the rollback
+    path might have expired (same MissingGreenlet trap that hit
+    relation_backfiller).
     """
     anime_id_for_log = anime.id
     anime_uuid_for_log = str(anime.uuid)
     anime_title_for_log = anime.title
     try:
         async with session.begin_nested():
-            result = await _refresh_one_anime(session, anime, scraper)
+            result = await _refresh_one_anime(
+                session, anime, media_to_refresh, scraper,
+            )
         await session.commit()
         return result
     except Exception as exc:
@@ -474,66 +548,80 @@ async def _try_step2_probe(
     raw_payloads: dict[int, dict],
     exclusions: set[int],
     scraper: JikanScraper,
-) -> bool | None:
+) -> bool | ProbeFailure:
     """Step 2 wrapper: relations probe + return whether new media landed,
-    or None on failure (savepoint-rolls-back, leaves AnimeFreshness
+    or a `ProbeFailure` (savepoint-rolls-back, leaves AnimeFreshness
     untouched so the next sweep retries this anime cleanly). Outer
     transaction stays alive — caller commits step2 writes alongside
-    `_advance_anime_freshness` once both succeed.
+    `_advance_anime_freshness` once both succeed. Surfaces a typed failure
+    (not a bare None) so the dispatcher records which anime + why in
+    `result_summary.probe_failures`, symmetric to step 1.
 
     See `_try_step1_refresh` for the savepoint + pre-capture rationale.
     """
     anime_id_for_log = anime.id
+    anime_uuid_for_log = str(anime.uuid)
     anime_title_for_log = anime.title
     try:
         async with session.begin_nested():
             return await _probe_relations_for_anime(
                 session, anime, raw_payloads, exclusions, scraper,
             )
-    except Exception:
+    except Exception as exc:
         logger.exception(
             "Relations probe failed for anime %s (%s); field-diff "
             "preserved, AnimeFreshness left unchanged so next sweep retries",
             anime_id_for_log, anime_title_for_log,
         )
-        return None
+        return ProbeFailure(
+            anime_uuid=anime_uuid_for_log,
+            title=anime_title_for_log,
+            error_category=classify_error(exc),
+            error_message=(str(exc) or exc.__class__.__name__)[:500],
+        )
 
 
 async def _refresh_one_anime(
-    session: AsyncSession, anime: Anime, scraper: JikanScraper,
+    session: AsyncSession,
+    anime: Anime,
+    media_to_refresh: list[Media],
+    scraper: JikanScraper,
 ) -> RefreshResult:
-    """AnimeFreshness is intentionally NOT touched here — the dispatcher
+    """Refresh only the individually-due media (`media_to_refresh`), not
+    the whole umbrella — the v0.14.8 media-level conversion. Stable
+    siblings keep their MediaFreshness untouched and pay no MAL call.
+
+    AnimeFreshness is intentionally NOT touched here — the dispatcher
     advances it after a successful probe so a failed probe can leave
     last_checked_at unchanged and force re-selection next sweep.
 
     Two diff buckets:
     - volatile (score/scored_by/episodes/airing_status/aired_to) gates the
-      per-anime stability counter (`volatile_changed`)
+      per-media stability counter (advanced here) and the per-anime one
+      (`volatile_changed`, OR'd across the refreshed media)
     - metadata (description/title/name_*/cover_image/age_rating/...) does
       NOT reset stability — a late-arriving English title shouldn't kick
-      a settled tier-4 anime back to weekly polling — but does fire
+      a settled tier-4 media back to weekly polling — but does fire
       embedding regen + umbrella reclassification so search stays current.
     """
     now = datetime.now(timezone.utc)
     volatile_changed = False
-    metadata_changed_count = 0
     raw_payloads: dict[int, dict] = {}
     media_changes: list[dict] = []
 
-    for media in anime.media:
+    for media in media_to_refresh:
         raw = await scraper.refresh_anime(media.mal_id)
         raw_payloads[media.mal_id] = raw
         payload = scraper.extract_information(raw)
         dynamic: list[dict] = []
         static: list[dict] = []
-        if _apply_media_diff(media, payload, diff_sink=dynamic):
+        media_volatile_changed = _apply_media_diff(media, payload, diff_sink=dynamic)
+        if media_volatile_changed:
             volatile_changed = True
 
-        metadata_drift = await _apply_metadata_diff(
+        await _apply_metadata_diff(
             session, media, payload, diff_sink=static,
         )
-        if metadata_drift:
-            metadata_changed_count += 1
 
         genre_drift = await _apply_genre_diff(session, media, payload)
         studio_drift = await _apply_studio_diff(session, media, payload)
@@ -562,13 +650,14 @@ async def _refresh_one_anime(
                 "studio_drift": studio_drift,
             })
 
-        if media.freshness is None:
-            # Defensive: save_service from 7b creates the sidecar on
-            # insert and the migration backfilled existing rows, but a
-            # legacy/test row could still be missing one.
-            media.freshness = MediaFreshness(last_checked_at=now)
-        else:
-            media.freshness.last_checked_at = now
+        _advance_media_freshness(
+            media,
+            media_changed=media_volatile_changed,
+            is_media_airing=(
+                media.airing_status == AIRING_STATUS_CURRENTLY_AIRING
+            ),
+            now=now,
+        )
 
         # `/anime/{id}/full` bundles the relations block; refresh the
         # sidecar so bridge edges land for pre-v0.14.1 rows scraped
@@ -611,42 +700,81 @@ async def _refresh_one_anime(
         volatile_changed=volatile_changed,
         raw_payloads=raw_payloads,
         is_currently_airing=is_currently_airing,
-        metadata_changed_count=metadata_changed_count,
         umbrella_diff=umbrella_diff,
         media_changes=media_changes,
     )
 
 
+def _bump_stability(freshness, *, reset: bool, now: datetime) -> None:
+    """Advance an existing freshness sidecar (anime or media — both carry
+    `last_checked_at` + `stable_check_count`): stamp the check time and
+    either reset the stability counter to 0 or climb it toward the cap.
+    The None-creation case stays at each caller since the row type differs."""
+    freshness.last_checked_at = now
+    if reset:
+        freshness.stable_check_count = 0
+    else:
+        freshness.stable_check_count = min(
+            (freshness.stable_check_count or 0) + 1, _STABLE_COUNT_CAP,
+        )
+
+
 def _advance_anime_freshness(
     anime: Anime, anime_changed: bool, is_currently_airing: bool,
 ) -> None:
-    """Skipping this call after a probe failure keeps the anime in tier
-    3/4 for the next sweep — the tier query reads last_checked_at."""
+    """Per-anime probe clock. Skipping this call after a probe failure keeps
+    the anime in tier 3/4 for the next sweep — the tier query reads
+    last_checked_at."""
     now = datetime.now(timezone.utc)
     if anime.freshness is None:
-        anime.freshness = AnimeFreshness(
-            last_checked_at=now,
-            stable_check_count=0,
-        )
-    else:
-        anime.freshness.last_checked_at = now
-        if is_currently_airing or anime_changed:
-            anime.freshness.stable_check_count = 0
-        else:
-            anime.freshness.stable_check_count = min(
-                (anime.freshness.stable_check_count or 0) + 1, _STABLE_COUNT_CAP,
-            )
+        anime.freshness = AnimeFreshness(last_checked_at=now, stable_check_count=0)
+        return
+    _bump_stability(
+        anime.freshness, reset=is_currently_airing or anime_changed, now=now,
+    )
+
+
+def _advance_media_freshness(
+    media: Media, media_changed: bool, is_media_airing: bool, now: datetime,
+) -> None:
+    """Per-media refresh clock (v0.14.8). `MediaFreshness.last_checked_at` +
+    `stable_check_count` drive `select_due_media_for_sweep`: the counter
+    resets when this media is airing or its volatile fields changed,
+    otherwise climbs. Called for every refreshed media; stable siblings that
+    weren't refreshed keep their existing freshness untouched."""
+    if media.freshness is None:
+        # Defensive: save_service creates the sidecar on insert and the
+        # migration backfilled existing rows, but a legacy/test row could
+        # still be missing one.
+        media.freshness = MediaFreshness(last_checked_at=now, stable_check_count=0)
+        return
+    _bump_stability(media.freshness, reset=is_media_airing or media_changed, now=now)
 
 
 def _qualifies_for_relations_probe(anime: Anime, is_currently_airing: bool) -> bool:
     """Probe relations only on tier 3 + tier 4 anime. Tier 1 (currently
     airing) is re-checked daily so a sequel surfaces within a day
-    anyway; tier 2 (stable_check_count < 3) is the brand-new-anime
-    cohort where there's no announcement to discover."""
+    anyway; tier 2 (stable_check_count < SWEEP_STABILIZE_THRESHOLD) is the
+    brand-new-anime cohort where there's no announcement to discover.
+
+    Under media-level selection (v0.14.8) an anime is "touched" whenever
+    any of its media is due, which for a recent-main franchise is weekly
+    — the same cadence its whole-anime selection used before. The added
+    7-day AnimeFreshness floor keeps the probe (the expensive /relations
+    BFS) at that cadence even when an anime's media happen to drain across
+    consecutive nights: probe at most once per week per anime, retrying
+    failures (which leave last_checked_at stale). AnimeFreshness is now
+    purely the probe clock; MediaFreshness drives refresh."""
     if is_currently_airing:
         return False
-    stable = anime.freshness.stable_check_count if anime.freshness else 0
-    return (stable or 0) >= 3
+    if not anime.freshness:
+        return False
+    if (anime.freshness.stable_check_count or 0) < SWEEP_STABILIZE_THRESHOLD:
+        return False
+    last_probe = anime.freshness.last_checked_at
+    if last_probe is None:
+        return True
+    return last_probe < datetime.now(timezone.utc) - timedelta(days=PROBE_CADENCE_DAYS)
 
 
 async def _probe_relations_for_anime(
