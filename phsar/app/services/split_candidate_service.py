@@ -346,11 +346,15 @@ async def execute_split(db: AsyncSession, uuid: UUID) -> tuple[str, list[str]]:
     # covers every moved row. The split itself is already durably committed
     # above — a cache-recompute failure shouldn't 5xx the request and
     # trick the admin into retrying an already-resolved candidate. Same
-    # pattern as scrape_dispatcher's post-sweep recompute.
+    # pattern as scrape_dispatcher's post-sweep recompute. Build the set
+    # defensively — `source_anime` is treated as nullable just above, so a
+    # None re-fetch must not turn a successful split into an AttributeError
+    # mis-logged as a recompute failure.
+    recompute_anime_ids = set(new_anime_ids)
+    if source_anime is not None:
+        recompute_anime_ids.add(source_anime.id)
     try:
-        await refresh_spoiler_cache_for_anime_ids(
-            db, {source_anime.id, *new_anime_ids},
-        )
+        await refresh_spoiler_cache_for_anime_ids(db, recompute_anime_ids)
     except Exception:
         logger.exception("Spoiler cache recompute failed after split execute")
 

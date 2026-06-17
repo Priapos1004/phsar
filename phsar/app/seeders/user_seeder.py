@@ -1,12 +1,12 @@
 import logging
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import get_password_hash
 from app.daos.user_dao import UserDAO
-from app.models.user_settings import UserSettings
+from app.models.user_settings import SpoilerLevel, UserSettings
 from app.models.user_visible_media import UserVisibleMedia
 from app.models.users import RoleType, Users
 from app.services import user_settings_service
@@ -93,19 +93,32 @@ async def backfill_spoiler_visibility(db: AsyncSession):
 
 
 async def purge_restricted_user_spoiler_cache(db: AsyncSession):
-    """Delete any `user_visible_media` rows belonging to restricted (guest)
-    users. They're pinned to spoiler=off and excluded from the cache as of
-    v0.14.7, but rows created before that change linger (harmless — the cache
-    is never read when spoiler is off — but dead/misleading). Idempotent:
-    touches zero rows once clean."""
-    result = await db.execute(
-        delete(UserVisibleMedia).where(
-            UserVisibleMedia.user_id.in_(
-                select(Users.id).where(Users.role == RoleType.RestrictedUser)
-            )
+    """Pin restricted (guest) users to spoiler=off at startup: reset any
+    legacy non-off `spoiler_level` AND delete any `user_visible_media` rows
+    belonging to them. They're pinned to off and excluded from the cache as
+    of v0.14.7, but a user demoted to `restricted_user` while holding
+    `hide`/`blur` would otherwise keep that value (the settings-update path
+    only blocks *new* changes) — and since they're purged from the cache, a
+    lingering `hide` would read an empty cache and blank the catalogue.
+    Resetting the setting here repairs legacy rows without the user having to
+    touch settings. Idempotent: touches zero rows once clean."""
+    restricted_ids = select(Users.id).where(Users.role == RoleType.RestrictedUser)
+    reset = await db.execute(
+        update(UserSettings)
+        .where(
+            UserSettings.user_id.in_(restricted_ids),
+            UserSettings.spoiler_level != SpoilerLevel.off,
         )
+        .values(spoiler_level=SpoilerLevel.off)
+    )
+    result = await db.execute(
+        delete(UserVisibleMedia).where(UserVisibleMedia.user_id.in_(restricted_ids))
     )
     await db.commit()
+    if reset.rowcount:
+        logger.info(
+            "Reset %d restricted-user spoiler_level value(s) to off.", reset.rowcount,
+        )
     if result.rowcount:
         logger.info(
             "Purged %d restricted-user spoiler-cache row(s).", result.rowcount,

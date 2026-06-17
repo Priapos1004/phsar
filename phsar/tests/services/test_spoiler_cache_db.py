@@ -107,6 +107,30 @@ async def test_purge_restricted_user_cache_removes_only_guest_rows(db_session, t
     assert await get_visible_media_ids(db_session, normal.id) == set(media_ids)
 
 
+async def test_purge_resets_legacy_restricted_spoiler_level_to_off(db_session, two_users):
+    """A user demoted to restricted while holding `hide` keeps that value
+    (the update path only blocks new changes); the startup purge resets it to
+    off so the empty-cache hide-read can't blank their catalogue. A normal
+    user's non-off value is left untouched."""
+    from app.models.user_settings import SpoilerLevel, UserSettings
+    from app.seeders.user_seeder import purge_restricted_user_spoiler_cache
+
+    normal, restricted = two_users
+    db_session.add(UserSettings(user_id=restricted.id, spoiler_level=SpoilerLevel.hide))
+    db_session.add(UserSettings(user_id=normal.id, spoiler_level=SpoilerLevel.hide))
+    await db_session.flush()
+
+    await purge_restricted_user_spoiler_cache(db_session)
+
+    from sqlalchemy import select
+    rows = {
+        r.user_id: r.spoiler_level
+        for r in (await db_session.execute(select(UserSettings))).scalars().all()
+    }
+    assert rows[restricted.id] == SpoilerLevel.off
+    assert rows[normal.id] == SpoilerLevel.hide
+
+
 # --- helpers -------------------------------------------------------------
 
 async def _media_of(db, anime_id: int):
