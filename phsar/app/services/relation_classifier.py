@@ -26,6 +26,7 @@ class ClassifierNode(TypedDict):
     episodes: int | None
     duration_seconds: int | None
     scored_by: int
+    airing_status: str | None
 
 
 class DisjointFranchise(TypedDict):
@@ -39,6 +40,27 @@ class DisjointFranchise(TypedDict):
     # and by the Conan-exclusion heuristic in find_disjoint_franchises.
     bridge_edges: list[tuple[int, int, str]]
 
+
+# Sentinel media.airing_status values MAL returns. Defined here (the
+# pure, DB-less module) so they live with the substance gate that
+# interprets them (see _METADATA_PENDING_STATUSES). Consumers import them
+# directly from here. They can't live in jikan_scraper: relation_classifier
+# would have to import them back, and jikan_scraper already imports from
+# this module (that reverse import would cycle).
+AIRING_STATUS_CURRENTLY_AIRING = "Currently Airing"
+AIRING_STATUS_FINISHED_AIRING = "Finished Airing"
+AIRING_STATUS_NOT_YET_AIRED = "Not yet aired"
+
+# Statuses where NULL episode/duration is "MAL hasn't published it yet",
+# not "this entry is too thin to be canonical". A not-yet-aired sequel
+# legitimately has no runtime/episode count for months before it airs;
+# demoting it to side_story on that absence is the bug this guards
+# (Hell Mode S2 — see compound-docs/2026-06-17-v0.14.7). Deliberately
+# NOT including Currently Airing: an airing show normally HAS a published
+# duration, so a NULL there is either a transient gap (self-corrects next
+# sweep) or a genuinely short-form entry — and including it would let a
+# mid-franchise airing part steal the anchor (the Fei Ren Zai case).
+_METADATA_PENDING_STATUSES = frozenset({AIRING_STATUS_NOT_YET_AIRED})
 
 SUBSTANCE_MIN_EPISODES = 8
 # 10 min — includes short-form TV (Isekai Quartet, Aggretsuko, Tonari no
@@ -78,19 +100,28 @@ def passes_substance(node: ClassifierNode) -> bool:
     media_type = _normalize_media_type(node.get("media_type"))
     duration = node.get("duration_seconds")
     episodes = node.get("episodes")
+    # A not-yet-aired entry has no published runtime/episode count yet;
+    # treat those NULLs as "pending", not "too thin". A *populated* short
+    # duration still fails regardless of status (an announced 60s PV-as-TV
+    # must not slip in). See `_METADATA_PENDING_STATUSES`.
+    metadata_pending = node.get("airing_status") in _METADATA_PENDING_STATUSES
     if media_type in _TV_LIKE_TYPES:
-        if duration is None or duration < SUBSTANCE_MIN_TV_DURATION_S:
+        if duration is not None and duration < SUBSTANCE_MIN_TV_DURATION_S:
+            return False
+        if duration is None and not metadata_pending:
             return False
         # TV and ONA: NULL episodes is normal for currently-airing /
         # long-running shows that have no terminal count (Conan,
         # Anpanman, mid-arc donghua). For TVSpecial — bounded by
-        # definition — require an explicit count.
+        # definition — require an explicit count unless still pending.
         if media_type == "tvspecial":
-            return episodes is not None and episodes >= SUBSTANCE_MIN_EPISODES
+            if episodes is None:
+                return metadata_pending
+            return episodes >= SUBSTANCE_MIN_EPISODES
         return episodes is None or episodes >= SUBSTANCE_MIN_EPISODES
     if media_type in _MOVIE_TYPES:
         if duration is None:
-            return False
+            return metadata_pending
         return duration >= SUBSTANCE_MIN_MOVIE_DURATION_S
     return False
 
@@ -194,6 +225,7 @@ def media_to_classifier_node(media) -> ClassifierNode:
         "episodes": media.episodes,
         "duration_seconds": media.duration_seconds,
         "scored_by": media.scored_by or 0,
+        "airing_status": media.airing_status,
     }
 
 
@@ -210,6 +242,7 @@ def build_classifier_nodes(
             "episodes": all_info[mal_id].get("episodes"),
             "duration_seconds": all_info[mal_id].get("duration_seconds"),
             "scored_by": all_info[mal_id].get("scored_by") or 0,
+            "airing_status": all_info[mal_id].get("airing_status"),
         }
         for mal_id in graph
         if mal_id in all_info

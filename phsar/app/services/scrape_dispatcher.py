@@ -50,7 +50,6 @@ from app.services.anime_relation_service import (
     umbrella_diff_to_log_entry,
 )
 from app.services.jikan_scraper import (
-    AIRING_STATUS_CURRENTLY_AIRING,
     JikanScraper,
     parse_mal_datetime,
     parse_relation_edges,
@@ -60,7 +59,10 @@ from app.services.merge_detection_service import (
     find_cross_anime_relation_pairs,
 )
 from app.services.progress_reporter import ProgressReporter
-from app.services.relation_classifier import classify_and_stamp
+from app.services.relation_classifier import (
+    AIRING_STATUS_CURRENTLY_AIRING,
+    classify_and_stamp,
+)
 from app.services.save_service import attach_search_result_to_anime, save_search_results
 from app.services.search_service import handle_search_mal_api_results
 from app.services.spoiler_service import refresh_spoiler_cache_for_all_users

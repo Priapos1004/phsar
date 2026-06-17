@@ -21,7 +21,7 @@ from app.models.media_genre import MediaGenre
 from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
-from app.services.jikan_scraper import AIRING_STATUS_CURRENTLY_AIRING
+from app.services.relation_classifier import AIRING_STATUS_CURRENTLY_AIRING
 from app.services.vector_embedding_service import generate_embedding
 
 logger = logging.getLogger(__name__)
