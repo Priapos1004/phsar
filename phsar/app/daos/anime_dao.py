@@ -14,9 +14,9 @@ from app.daos.search_filters import (
     apply_vector_ordering,
 )
 from app.models.anime import Anime
-from app.models.anime_freshness import AnimeFreshness
 from app.models.anime_search import AnimeSearch
 from app.models.media import Media, RelationType
+from app.models.media_freshness import MediaFreshness
 from app.models.media_genre import MediaGenre
 from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
@@ -28,25 +28,51 @@ logger = logging.getLogger(__name__)
 
 # Tier 3 of the nightly sweep: only weekly-probe franchises whose latest
 # main media aired within this window. Older main-only franchises fall
-# back to tier 4 (180-day long tail).
+# back to tier 4 (the long-tail safety net).
 SWEEP_RECENT_MAIN_YEARS = 5
+
+# Single long-tail border (v0.14.8). Media not airing / stabilizing /
+# recent-main are refreshed only on this safety net. Shared by the
+# media-level selection atoms AND the (now count-only) anime atoms so
+# there is exactly one source of truth — no 180-vs-90 drift.
+SWEEP_LONG_TAIL_DAYS = 90
+
+# Tier 2: burn the initial stability sampling for the first N sweeps of a
+# row's life. One threshold shared by the media selection atoms, the anime
+# count-card atoms, and the probe gate so media and anime stay consistent.
+SWEEP_STABILIZE_THRESHOLD = 5
 
 
 class _SweepAtoms(NamedTuple):
-    """The orthogonal building blocks of sweep-tier logic, deliberately
-    kept un-composed so the two consumers can combine them differently:
+    """Anime-level cycle-membership atoms for the admin Overview count card
+    (`count_by_sweep_tier_priority`). As of v0.14.8 these are pure roll-ups
+    of the anime's MEDIA tiers — every atom is an EXISTS over the anime's
+    media — so the anime breakdown stays consistent with the media breakdown
+    (an anime inherits its most-urgent media's tier under the priority
+    cascade). Crucially `still_stabilizing` reads the per-media
+    `MediaFreshness.stable_check_count`, NOT the anime probe counter on
+    `AnimeFreshness`: refresh selection is media-level, so the card must
+    reflect media state, not the probe clock. Refresh selection itself lives
+    in `_media_sweep_atoms`; this is just a coarser lens on the same cycle.
+    """
+    airing_now: Any
+    still_stabilizing: Any
+    recent_main: Any
 
-      - `select_due_for_sweep` wants DUE rows — membership AND staleness
-        (e.g. "in the weekly cycle AND last checked > 7 days ago").
-      - `count_by_sweep_tier_priority` wants the POPULATION breakdown —
-        membership ONLY, so a bucket's count is a stable cycle-membership
-        trait that doesn't empty itself the moment a sweep refreshes its
-        members (the failure mode that hid most of the weekly catalog
-        under "180-day cycle" right after every sweep).
 
-    Membership atoms (population traits): `airing_now`, `still_stabilizing`,
-    `recent_main`. Staleness atoms (transient due-ness): `due_weekly`,
-    `due_long_tail`.
+class _MediaSweepAtoms(NamedTuple):
+    """Media-level analogue of `_SweepAtoms` (v0.14.8). The same four-tier
+    cascade, but every atom is a DIRECT predicate on the media row + its
+    `MediaFreshness` sidecar rather than a correlated EXISTS against an
+    anime's children. This is the whole point of the media-level
+    conversion: a still-airing umbrella's stable side-stories each evaluate
+    `airing_now=False`, `recent_main=False`, `still_stabilizing=False`
+    individually, so only the genuinely-due media surface — One Piece no
+    longer drags its 68 finished members through a refresh every night.
+
+    Consumers mirror the anime split: `select_due_media_for_sweep` wants
+    DUE (membership AND staleness); `count_media_by_sweep_tier_priority`
+    wants membership ONLY.
     """
     airing_now: Any
     still_stabilizing: Any
@@ -55,20 +81,54 @@ class _SweepAtoms(NamedTuple):
     due_long_tail: Any
 
 
-def _sweep_atoms(freshness_alias) -> _SweepAtoms:
-    """Build the sweep-tier atoms against the given freshness alias."""
-    last_checked = func.coalesce(freshness_alias.last_checked_at, Anime.created_at)
-    stable = func.coalesce(freshness_alias.stable_check_count, 0)
+def _media_sweep_atoms(mf_alias) -> _MediaSweepAtoms:
+    """Build the media-level sweep-tier atoms against the given
+    MediaFreshness alias."""
+    last_checked = func.coalesce(mf_alias.last_checked_at, Media.created_at)
+    stable = func.coalesce(mf_alias.stable_check_count, 0)
     now = func.now()
     week_ago = now - text("interval '7 days'")
-    six_mo_ago = now - text("interval '180 days'")
+    long_tail_ago = now - text(f"interval '{SWEEP_LONG_TAIL_DAYS} days'")
     recent_main_cutoff = now - text(f"interval '{SWEEP_RECENT_MAIN_YEARS} years'")
+
+    return _MediaSweepAtoms(
+        airing_now=Media.airing_status == AIRING_STATUS_CURRENTLY_AIRING,
+        still_stabilizing=stable < SWEEP_STABILIZE_THRESHOLD,
+        recent_main=and_(
+            Media.relation_type == RelationType.Main,
+            Media.aired_from >= recent_main_cutoff,
+        ),
+        due_weekly=last_checked < week_ago,
+        due_long_tail=last_checked < long_tail_ago,
+    )
+
+
+def _sweep_atoms() -> _SweepAtoms:
+    """Build the anime membership atoms as roll-ups of the anime's MEDIA
+    tiers (EXISTS over media). `still_stabilizing` reads the per-media
+    `MediaFreshness.stable_check_count` so it matches the media card — using
+    the anime probe counter here let an anime show as weekly/stable while all
+    its media were still media-stabilizing (the v0.14.8 inconsistency)."""
+    recent_main_cutoff = func.now() - text(f"interval '{SWEEP_RECENT_MAIN_YEARS} years'")
+    mf = aliased(MediaFreshness)
 
     airing_now = exists().where(
         and_(
             Media.anime_id == Anime.id,
             Media.airing_status == AIRING_STATUS_CURRENTLY_AIRING,
         )
+    )
+    still_stabilizing = (
+        select(1)
+        .select_from(Media)
+        .outerjoin(mf, mf.media_id == Media.id)
+        .where(
+            and_(
+                Media.anime_id == Anime.id,
+                func.coalesce(mf.stable_check_count, 0) < SWEEP_STABILIZE_THRESHOLD,
+            )
+        )
+        .exists()
     )
     recent_main = exists().where(
         and_(
@@ -79,10 +139,8 @@ def _sweep_atoms(freshness_alias) -> _SweepAtoms:
     )
     return _SweepAtoms(
         airing_now=airing_now,
-        still_stabilizing=stable < 3,
+        still_stabilizing=still_stabilizing,
         recent_main=recent_main,
-        due_weekly=last_checked < week_ago,
-        due_long_tail=last_checked < six_mo_ago,
     )
 
 
@@ -127,69 +185,68 @@ class AnimeDAO(MalIdDAO[Anime]):
         )
         return (await db.execute(stmt)).scalars().first()
 
-    async def select_due_for_sweep(
+    async def select_due_media_for_sweep(
         self, db: AsyncSession, limit: int,
-    ) -> list[Anime]:
-        """Anime due for the nightly update sweep, oldest-first.
+    ) -> list[Media]:
+        """Media due for the nightly update sweep, oldest-first (v0.14.8).
 
-        Four tiers OR'd together:
-          1. Has a "Currently Airing" media — always due.
-          2. stable_check_count < 3 — burn the initial stability sampling.
-          3. Last checked > 7 days ago AND has a recent main media
-             (aired_from within SWEEP_RECENT_MAIN_YEARS). Sequels
-             announce off the main story; old main-only franchises don't
-             warrant weekly cycles.
-          4. Last checked > 180 days ago — long-tail safety net.
+        Selection is media-grained: the LIMIT bounds the number of
+        /anime/{id}/full calls (the true 1-req/s MAL cost unit), and a
+        still-airing umbrella's stable members are skipped instead of
+        re-refreshed every night. Four tiers OR'd together, every atom a
+        direct predicate on the media row + its MediaFreshness sidecar:
+          1. This media is "Currently Airing" — always due.
+          2. stable_check_count < 5 — burn the initial stability sampling.
+          3. Last checked > 7 days ago AND this media is a recent main
+             (relation_type=main, aired_from within SWEEP_RECENT_MAIN_YEARS).
+          4. Last checked > SWEEP_LONG_TAIL_DAYS (90) ago — long-tail net.
 
-        LEFT JOIN against anime_freshness because the migration backfilled
-        every existing row but a future code path could insert without one;
-        the COALESCE expression powers the WHERE-clause staleness checks
-        (the `due_weekly` / `due_long_tail` atoms). ORDER BY uses raw
-        `last_checked_at NULLS FIRST` instead — see the ordering comment
-        below for why never-checked rows belong at the front, not at
-        their created_at position.
+        Eager-loads the parent Anime AND its FULL media set (+ anime
+        freshness) because `reclassify_anime(anime)` and the relations
+        probe read `anime.media`, and `lazy="raise"` is global. SQLAlchemy's
+        identity map collapses the shared Anime instance across all of an
+        anime's due-media rows, so the dispatcher can group by `anime.id`
+        and get one Anime with one complete `.media` collection.
         """
-        af = aliased(AnimeFreshness)
-        atoms = _sweep_atoms(af)
+        mf = aliased(MediaFreshness)
+        atoms = _media_sweep_atoms(mf)
+
+        # Nested loads reused for both the parent's full media set and the
+        # due media rows themselves — everything the refresh loop, the
+        # reclassifier, and the probe touch, so nothing trips lazy="raise".
+        media_child_loads = (
+            selectinload(Media.freshness),
+            selectinload(Media.relation_edges),
+            selectinload(Media.media_genre).selectinload(MediaGenre.genre),
+            selectinload(Media.media_studio).selectinload(MediaStudio.studio),
+        )
 
         stmt = (
-            select(Anime)
-            .outerjoin(af, af.anime_id == Anime.id)
-            # DUE semantics: membership AND staleness. Tier 3 is the weekly
-            # cycle (recent main) gated by the 7-day staleness; tier 4 the
-            # 180-day long-tail net. Composed here (not in the atoms) so the
-            # population card can ask for membership-only buckets instead.
+            select(Media)
+            .outerjoin(mf, mf.media_id == Media.id)
+            # DUE semantics: membership AND staleness, mirroring the old
+            # anime-level cascade but per media. Tier 3 is the weekly cycle
+            # gated by 7-day staleness; tier 4 the 90-day long-tail net.
             .where(or_(
                 atoms.airing_now,
                 atoms.still_stabilizing,
                 and_(atoms.due_weekly, atoms.recent_main),
                 atoms.due_long_tail,
             ))
-            # Primary order: `nullsfirst()` puts never-checked rows at the
-            # front. A NULL last_checked_at is "maximum staleness from MAL's
-            # perspective" — new anime (always due via tier 2) must survive
-            # the LIMIT cap even when there's a 180-day stale backlog so the
-            # 3-check stabilization sampling completes promptly.
-            # Secondary: tiebreak by created_at so older catalog entries
-            # win, not whichever anime.id happens to be lower (the
-            # tiebreaker is only deterministic by accident under a
-            # sequential PK).
+            # `nullsfirst()` puts never-checked media at the front (a NULL
+            # last_checked_at is maximum staleness). created_at / id
+            # tiebreaks keep ordering deterministic, not accidental on PK.
             .order_by(
-                af.last_checked_at.asc().nullsfirst(),
-                Anime.created_at.asc(),
-                Anime.id.asc(),
+                mf.last_checked_at.asc().nullsfirst(),
+                Media.created_at.asc(),
+                Media.id.asc(),
             )
             .options(
-                selectinload(Anime.media).options(
-                    selectinload(Media.freshness),
-                    selectinload(Media.relation_edges),
-                    # Genre + studio M2M needed by the metadata drift
-                    # detectors in scrape_dispatcher — without these the
-                    # drift compare trips `lazy="raise"`.
-                    selectinload(Media.media_genre).selectinload(MediaGenre.genre),
-                    selectinload(Media.media_studio).selectinload(MediaStudio.studio),
+                *media_child_loads,
+                selectinload(Media.anime).options(
+                    selectinload(Anime.freshness),
+                    selectinload(Anime.media).options(*media_child_loads),
                 ),
-                selectinload(Anime.freshness),
             )
             .limit(limit)
         )
@@ -203,6 +260,26 @@ class AnimeDAO(MalIdDAO[Anime]):
         "long_cycle",
     )
 
+    @classmethod
+    def _tier_bucket(cls, atoms) -> Any:
+        """The shared priority-cascade label (airing_now > stabilizing >
+        weekly_cycle > long_cycle) for either grain's atoms — single source
+        of truth so the anime + media count cards can't drift."""
+        return case(
+            (atoms.airing_now, "airing_now"),
+            (atoms.still_stabilizing, "stabilizing"),
+            (atoms.recent_main, "weekly_cycle"),
+            else_="long_cycle",
+        ).label("bucket")
+
+    async def _count_by_tier(self, db: AsyncSession, stmt) -> dict[str, int]:
+        """Run a `(bucket, count)` GROUP BY statement and fold it into a
+        zero-filled bucket dict (so absent buckets read 0, not missing)."""
+        counts = {b: 0 for b in self._TIER_BUCKETS}
+        for bucket_name, count in (await db.execute(stmt)).all():
+            counts[bucket_name] = count
+        return counts
+
     async def count_by_sweep_tier_priority(
         self, db: AsyncSession,
     ) -> dict[str, int]:
@@ -211,30 +288,38 @@ class AnimeDAO(MalIdDAO[Anime]):
         Sum equals total anime count. Powers the admin Overview
         tier-breakdown card.
 
-        Membership-only by design — the staleness atoms are intentionally
-        excluded so counts don't collapse when a sweep refreshes a bucket's
-        members; see `_SweepAtoms` for the full membership-vs-due rationale.
-        `weekly_cycle` = has a recent main; `long_cycle` = the else (stable
-        + not airing + no recent main, reached only by the 180-day net).
+        Membership atoms are roll-ups of the anime's MEDIA tiers (see
+        `_SweepAtoms`), so this stays consistent with
+        `count_media_by_sweep_tier_priority` — an anime inherits its
+        most-urgent media's tier. `weekly_cycle` = has a recent main (no
+        airing/stabilizing media); `long_cycle` = the else.
         """
-        af = aliased(AnimeFreshness)
-        atoms = _sweep_atoms(af)
-        bucket = case(
-            (atoms.airing_now, "airing_now"),
-            (atoms.still_stabilizing, "stabilizing"),
-            (atoms.recent_main, "weekly_cycle"),
-            else_="long_cycle",
-        ).label("bucket")
+        bucket = self._tier_bucket(_sweep_atoms())
+        stmt = select(bucket, func.count(Anime.id)).select_from(Anime).group_by(bucket)
+        return await self._count_by_tier(db, stmt)
+
+    async def count_media_by_sweep_tier_priority(
+        self, db: AsyncSession,
+    ) -> dict[str, int]:
+        """Media-level analogue of `count_by_sweep_tier_priority` (v0.14.8):
+        4 mutually-exclusive cycle-MEMBERSHIP bucket counts in the same
+        priority cascade, but per media. Sum equals total media count.
+        Powers the media side of the admin Overview tier-breakdown toggle.
+
+        Membership-only, same rationale as the anime version — the staleness
+        atoms are excluded so a bucket doesn't empty itself when a sweep
+        refreshes its members. `stabilizing` here is the media 5-check
+        threshold; `long_cycle` is the else (stable + not airing + not a
+        recent main), refreshed only on the 90-day net.
+        """
+        mf = aliased(MediaFreshness)
+        bucket = self._tier_bucket(_media_sweep_atoms(mf))
         stmt = (
-            select(bucket, func.count(Anime.id))
-            .outerjoin(af, af.anime_id == Anime.id)
+            select(bucket, func.count(Media.id))
+            .outerjoin(mf, mf.media_id == Media.id)
             .group_by(bucket)
         )
-        rows = (await db.execute(stmt)).all()
-        counts = {b: 0 for b in self._TIER_BUCKETS}
-        for bucket_name, count in rows:
-            counts[bucket_name] = count
-        return counts
+        return await self._count_by_tier(db, stmt)
 
     async def list_recent(self, db: AsyncSession, limit: int = 10) -> list[Anime]:
         """Most-recently scraped anime, newest first. Powers the

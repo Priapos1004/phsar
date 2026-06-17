@@ -17,6 +17,7 @@
 		AdminJobResponse,
 		UpdateSweepResultSummary,
 		UpdateSweepMediaChange,
+		UpdateSweepStep1Failure,
 	} from '$lib/types/api';
 
 	const getUserRole = getContext<() => string | null>('userRole');
@@ -61,9 +62,10 @@
 		return (job.result_summary ?? null) as UpdateSweepResultSummary | null;
 	});
 
-	// The progress-divergence gap (items_total - items_done) is exactly
-	// step1_failed + probe_failed — refreshed increments only on a fully
-	// advanced anime, and both failure paths `continue` without it.
+	// v5 progress is media-grained: items_done = refreshed media, so the
+	// items gap (items_total - items_done) is the media belonging to anime
+	// whose step-1 refresh failed. Probe failures don't create a gap (their
+	// media committed in step 1) — they surface via the Failed-probe card.
 	let step1Failed = $derived(v2Summary?.counters?.step1_failed ?? 0);
 	let probeFailed = $derived(v2Summary?.counters?.probe_failed ?? 0);
 
@@ -140,15 +142,27 @@
 				/>
 				{#if job.items_total != null && job.items_done < job.items_total}
 					<Notice>
-						<p>
-							Processed <strong>{job.items_done}</strong> of
-							<strong>{job.items_total}</strong> selected anime —
-							{job.items_total - job.items_done} not fully advanced
-							{#if step1Failed > 0 || probeFailed > 0}
-								({step1Failed} failed refresh{#if probeFailed > 0}, {probeFailed} failed relations probe{/if}).
-								{#if step1Failed > 0}See “Failed refresh” below; {/if}all retry next sweep.
-							{:else}.{/if}
-						</p>
+						{#if job.version >= 5}
+							<!-- v5: media-grained progress. The gap is media skipped because
+							     their anime failed step-1 refresh; probe failures don't widen
+							     it (their media committed) — see the Failed-probe card. -->
+							<p>
+								Refreshed <strong>{job.items_done}</strong> of
+								<strong>{job.items_total}</strong> due media —
+								{job.items_total - job.items_done} skipped because their anime failed step-1 refresh.
+								See “Failed refresh” below; they retry next sweep.
+							</p>
+						{:else}
+							<p>
+								Processed <strong>{job.items_done}</strong> of
+								<strong>{job.items_total}</strong> selected anime —
+								{job.items_total - job.items_done} not fully advanced
+								{#if step1Failed > 0 || probeFailed > 0}
+									({step1Failed} failed refresh{#if probeFailed > 0}, {probeFailed} failed relations probe{/if}).
+									{#if step1Failed > 0}See “Failed refresh” below; {/if}all retry next sweep.
+								{:else}.{/if}
+							</p>
+						{/if}
 					</Notice>
 				{/if}
 			{:else if job.status !== 'failed' && job.version < 2}
@@ -159,6 +173,24 @@
 					<p>This sweep predates v0.14.5's per-media diff capture (job version {job.version}). Per-media diffs and the granular counters are not available; the row's payload summary on the Jobs Log is the full record.</p>
 				</Notice>
 			{/if}
+
+			<!-- Shared row markup for the step-1 + step-2 failure lists; only the
+			     card heading/description differ between the two. -->
+			{#snippet failureRow(failure: UpdateSweepStep1Failure)}
+				<div class="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+					<div class="flex items-center justify-between gap-3 flex-wrap">
+						<a href={buildDetailHref('anime', failure.anime_uuid)} class="font-medium text-card-foreground hover:underline">
+							{failure.title}
+						</a>
+						{#if failure.error_category}
+							<span class="text-[10px] uppercase tracking-wider text-amber-400">
+								{failure.error_category}
+							</span>
+						{/if}
+					</div>
+					<p class="text-xs text-muted-foreground mt-1 break-words">{failure.error_message}</p>
+				</div>
+			{/snippet}
 
 			{#if v2Summary && (v2Summary.step1_failures?.length ?? 0) > 0}
 				<Card.Root>
@@ -173,19 +205,26 @@
 					</Card.Header>
 					<Card.Content class="space-y-2">
 						{#each v2Summary.step1_failures ?? [] as failure (failure.anime_uuid)}
-							<div class="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
-								<div class="flex items-center justify-between gap-3 flex-wrap">
-									<a href={buildDetailHref('anime', failure.anime_uuid)} class="font-medium text-card-foreground hover:underline">
-										{failure.title}
-									</a>
-									{#if failure.error_category}
-										<span class="text-[10px] uppercase tracking-wider text-amber-400">
-											{failure.error_category}
-										</span>
-									{/if}
-								</div>
-								<p class="text-xs text-muted-foreground mt-1 break-words">{failure.error_message}</p>
-							</div>
+							{@render failureRow(failure)}
+						{/each}
+					</Card.Content>
+				</Card.Root>
+			{/if}
+
+			{#if v2Summary && (v2Summary.probe_failures?.length ?? 0) > 0}
+				<Card.Root>
+					<Card.Header>
+						<h2 class="text-lg font-semibold text-card-foreground">
+							Failed probe ({v2Summary.probe_failures?.length})
+						</h2>
+						<p class="text-sm text-muted-foreground">
+							Anime whose step-2 relations probe raised. The step-1 field-diff work was
+							preserved and <code>AnimeFreshness</code> left unchanged, so the next sweep retries them.
+						</p>
+					</Card.Header>
+					<Card.Content class="space-y-2">
+						{#each v2Summary.probe_failures ?? [] as failure (failure.anime_uuid)}
+							{@render failureRow(failure)}
 						{/each}
 					</Card.Content>
 				</Card.Root>
@@ -235,7 +274,7 @@
 			{#if v2Summary && (v2Summary.anime_umbrella_changes?.length ?? 0) > 0}
 				<Card.Root>
 					<Card.Header>
-						<h2 class="text-lg font-semibold text-card-foreground">Anime umbrella changes</h2>
+						<h2 class="text-lg font-semibold text-card-foreground">Anime field changes</h2>
 					</Card.Header>
 					<Card.Content class="space-y-3">
 						{#each v2Summary.anime_umbrella_changes ?? [] as change (change.anime_uuid)}

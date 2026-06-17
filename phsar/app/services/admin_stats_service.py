@@ -147,6 +147,11 @@ async def _sweep_tier_breakdown(db: AsyncSession) -> SweepTierBreakdown:
     return SweepTierBreakdown(**counts)
 
 
+async def _media_sweep_tier_breakdown(db: AsyncSession) -> SweepTierBreakdown:
+    counts = await anime_dao.count_media_by_sweep_tier_priority(db)
+    return SweepTierBreakdown(**counts)
+
+
 async def get_overview_stats(db: AsyncSession) -> AdminOverviewStats:
     cutoff = datetime.now(timezone.utc) - timedelta(days=7)
     # Sequential awaits — AsyncSession can't multiplex.
@@ -155,6 +160,7 @@ async def get_overview_stats(db: AsyncSession) -> AdminOverviewStats:
         jobs_7d=await _jobs_stats(db, cutoff),
         activity_7d=await _activity_stats(db, cutoff),
         sweep_tiers=await _sweep_tier_breakdown(db),
+        media_sweep_tiers=await _media_sweep_tier_breakdown(db),
     )
 
 

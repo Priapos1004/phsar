@@ -439,9 +439,19 @@ export interface UpdateSweepUmbrellaChange {
 }
 
 export interface UpdateSweepCounters {
-	anime_refreshed: number;
-	anime_with_dynamic_changes: number;
-	anime_with_static_changes: number;
+	// v2–v4: anime-grained refresh count. Dropped in v5 (renamed →
+	// media_refreshed) since the work unit is now the media row.
+	anime_refreshed?: number;
+	// v5+: individual media refreshed (the headline workload), distinct
+	// anime touched, and media that were present in a touched umbrella but
+	// not individually due (the work the media-level selection avoided).
+	media_refreshed?: number;
+	anime_touched?: number;
+	media_skipped_fresh?: number;
+	// v2–v4 only: per-anime rollups. Dropped in v5 — media_with_* below
+	// carries the signal now.
+	anime_with_dynamic_changes?: number;
+	anime_with_static_changes?: number;
 	media_with_dynamic_changes: number;
 	media_with_static_changes: number;
 	umbrella_reclassed: number;
@@ -465,17 +475,22 @@ export interface UpdateSweepStep1Failure {
 	error_message: string;
 }
 
+// One step-2 relations probe that raised and was skipped (v5+ update_sweep).
+// Identical shape to UpdateSweepStep1Failure.
+export type UpdateSweepProbeFailure = UpdateSweepStep1Failure;
+
 // update_sweep result_summary v2+ shape. v1 rows omit these fields
 // entirely — renderers must check `row.version >= 2` before reading.
 // `unknown_genre_tags` is v3+; v2 rows don't carry it (the Jobs Log
 // tint just won't fire for those historical sweeps). `step1_failures`
-// is v4+.
+// is v4+; `probe_failures` is v5+.
 export interface UpdateSweepResultSummary extends JobResultSummary {
 	counters?: UpdateSweepCounters;
 	media_changes?: UpdateSweepMediaChange[];
 	anime_umbrella_changes?: UpdateSweepUmbrellaChange[];
 	unknown_genre_tags?: string[];
 	step1_failures?: UpdateSweepStep1Failure[];
+	probe_failures?: UpdateSweepProbeFailure[];
 	merge_detect_failed?: boolean;
 	cache_recompute_failed?: boolean;
 }
@@ -558,7 +573,11 @@ export interface AdminOverviewStats {
 	catalog: AdminCatalogStats;
 	jobs_7d: AdminJobsStats;
 	activity_7d: AdminActivityStats;
+	// `sweep_tiers` = anime cycle-membership; `media_sweep_tiers` = the same
+	// cascade at media grain (v0.14.8, refresh selection is media-level).
+	// The Overview SweepTiersCard toggles between them.
 	sweep_tiers: AdminSweepTierBreakdown;
+	media_sweep_tiers: AdminSweepTierBreakdown;
 }
 
 // Admin Jobs Log — paginated all-jobs view with flattened requested_by.

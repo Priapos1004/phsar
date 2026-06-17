@@ -76,7 +76,7 @@ Layered architecture with strict dependency flow: **routers → services → DAO
 FastAPI endpoint definitions. Each router maps to an API prefix.
 
 - **`/admin`** — admin-only operations
-  - `GET /admin/stats/overview` — aggregate stats for the admin Overview tab (catalog totals, 7d job health by kind with retryable-failed subset, 7d activity counters). Aggregate only — no per-user breakdowns; the Jobs Log surfaces those where they're needed for debugging
+  - `GET /admin/stats/overview` — aggregate stats for the admin Overview tab (catalog totals, 7d job health by kind with retryable-failed subset, 7d activity counters, plus `sweep_tiers` + `media_sweep_tiers` cycle-membership breakdowns powering the SweepTiersCard anime/media toggle). Aggregate only — no per-user breakdowns; the Jobs Log surfaces those where they're needed for debugging
   - `GET /admin/jobs` — paginated all-jobs listing for the Jobs Log tab. Filters by status/kind/user_id/created_after/created_before; returns `AdminJobResponse` rows with `requested_by_username` flattened from the eager-loaded relationship and `parent_job_uuid` for clustered children. Backed by `ix_jobs_created_at_desc` (newest-first scan + matching COUNT). Default hides children (filters `parent_job_id IS NULL`); `?parent_uuid=<UUID>` expands a single seasonal_sweep's flock via the partial `ix_jobs_parent_job_id` index. `limit` capped at 500 so a sweep with hundreds of children can be expanded without paging
   - `GET /admin/jobs/{uuid}` — admin-only single-job detail fetch backing the `/admin/jobs/[uuid]` page. Returns the same `AdminJobResponse` shape the list emits (eager-loads `requested_by` + `parent` via the shared `_ADMIN_LOAD_OPTIONS` tuple in `JobDAO` so the list + detail paths can't drift)
   - `GET /admin/curation/pending-counts` — `{merge: int, split: int}` for the navbar bell's pinned admin reminder. Bell polls this on every tick when admin is logged in; cheap COUNTs on the status-filtered candidate tables. Sequential awaits per the AsyncSession-no-gather rule
@@ -115,7 +115,7 @@ Business logic as module-level async functions. **Per-service design rationale l
 Modules:
 - `jikan_scraper.py` — MAL API client with retry, 1 req/s rate limiter, BFS in `search_title` (supports `seed_mal_id` for sweep probes)
 - `job_worker.py` — single asyncio FIFO worker; `with_for_update(skip_locked=True)`; maintenance-aware
-- `scrape_dispatcher.py` — handlers for `user_scrape` + `update_sweep`. `update_sweep` writes a v4 `result_summary` (per-media field diffs + per-anime umbrella diffs + aggregated `unknown_genre_tags` + per-anime `step1_failures`); v0.14.5 relaxed the drift apply policy so genre + studio additions AND removals apply, with unknown genre tags surfaced for seeder review rather than silently dropped; v0.14.7 added `step1_failed` + `step1_failures[]` so anime skipped by a failed step-1 refresh are visible instead of silently dropped
+- `scrape_dispatcher.py` — handlers for `user_scrape` + `update_sweep`. v0.14.8 made `update_sweep` **media-level**: it selects the due *media* via `AnimeDAO.select_due_media_for_sweep`, groups them by parent anime, and refreshes only those media (`_refresh_one_anime(media_to_refresh)`) — `MediaFreshness` is the per-media refresh clock, `AnimeFreshness` the per-anime probe clock (probe gated by a 7-day floor). Writes a v5 `result_summary` (media-grained counters `media_refreshed`/`anime_touched`/`media_skipped_fresh`, the `anime_with_*` pair dropped; per-media field diffs + per-anime umbrella diffs + aggregated `unknown_genre_tags` + per-anime `step1_failures` + symmetric `probe_failures[]`). v0.14.5 relaxed the drift apply policy so genre + studio additions AND removals apply, with unknown genre tags surfaced for seeder review; v0.14.7 added `step1_failed`/`step1_failures[]`
 - `seasonal_sweep_dispatcher.py` — `seasonal_sweep` handler (separate; pure discovery pass)
 - `backup_dispatcher.py` — `backup` JobKind handler (no maintenance bracket — pg_dump is MVCC-snapshot)
 - `progress_reporter.py` — throttled autocommit-tx progress writer
@@ -143,10 +143,11 @@ Data access layer.
 - **Specialized DAOs** (media, anime, genre, studio, user, user_settings, registration_token, rating, job, merge_candidate, split_candidate) — domain-specific queries with vector similarity, filtering, aggregation
 - **`AnimeDAO`**:
   - `search_anime_aggregated` — two-phase query: SQL GROUP BY with HAVING for filtering/ordering, then detail fetch
-  - `select_due_for_sweep` — four-tier sweep selection (airing now / still stabilizing / weekly recent main / 180-day long tail), backed by three indexes:
-    - `ix_anime_freshness_last_checked_at` (the ORDER BY)
+  - `select_due_media_for_sweep` — **media-level** four-tier sweep selection (v0.14.8): each atom is a direct predicate on the media row + its `MediaFreshness` sidecar (airing now / still stabilizing `stable_check_count < SWEEP_STABILIZE_THRESHOLD` / weekly recent main / `SWEEP_LONG_TAIL_DAYS` long tail), so a still-airing umbrella's stable members are no longer dragged through a refresh every night. Returns `Media` rows with the parent `Anime` + its full media set eager-loaded (the dispatcher groups by `anime.id`). `LIMIT` bounds MAL calls = media (the real 1 req/s cost unit). Replaced the anime-grained `select_due_for_sweep`. Backed by:
+    - `ix_media_freshness_last_checked_at` (the ORDER BY + the `due_weekly`/`due_long_tail` staleness predicates)
     - `ix_media_airing_now` — partial index on `media(anime_id) WHERE airing_status = 'Currently Airing'`
-    - `ix_media_main_aired_from` — composite `(anime_id, relation_type, aired_from)` for the recent-main EXISTS
+    - `ix_media_main_aired_from` — composite `(anime_id, relation_type, aired_from)`
+  - `count_by_sweep_tier_priority` / `count_media_by_sweep_tier_priority` — anime- and media-grained membership-bucket counts for the admin Overview SweepTiersCard toggle; both use the shared atoms (`_sweep_atoms` / `_media_sweep_atoms`). `SWEEP_STABILIZE_THRESHOLD` (5) and `SWEEP_LONG_TAIL_DAYS` (90) are single constants shared by media + anime so the two grains can't drift
 - **`search_filters.py`** — shared filter/ordering helpers for media, anime pre-aggregation (WHERE), and anime post-aggregation (HAVING)
   - **Title-search ranking**: `apply_vector_ordering` subtracts a two-tier bonus from `cosine_distance` so titles that literally match the query rank ahead of merely thematically-similar shows. Substring (`ilike`) bonus is flat; pg_trgm `similarity()` bonus is scaled linearly above a threshold so typos still surface the intended show. Description and rating-notes search skip both bonuses (semantic queries, not literal). pg_trgm extension enabled via migration `4b8f1e3c7d0a`
 - **`JobDAO`**:
@@ -178,10 +179,10 @@ SQLAlchemy ORM models mapped to PostgreSQL tables.
   - `JobStatus` enum: `queued`/`running`/`succeeded`/`failed`
   - JSONB `payload`, progress fields (`stage`, `items_done`, `items_total`), `not_before_at` for scheduled-delay jobs
   - `result_summary` JSONB carries `retryable: bool` for the bell
-  - `version: int NOT NULL DEFAULT 1` — per-kind schema version for `result_summary`. Runtime source of truth is the `JOB_KIND_VERSIONS` registry in `app/core/job_versions.py`; every Job-construction site goes through the `make_job(kind, **kw)` helper which stamps the current registry value. Frontend dispatches on `(kind, version)` so historical rows render with the correct schema. Bump the integer per kind when its result_summary shape changes (current: `update_sweep` at v4 after v0.14.7; all others at v1)
+  - `version: int NOT NULL DEFAULT 1` — per-kind schema version for `result_summary`. Runtime source of truth is the `JOB_KIND_VERSIONS` registry in `app/core/job_versions.py`; every Job-construction site goes through the `make_job(kind, **kw)` helper which stamps the current registry value. Frontend dispatches on `(kind, version)` so historical rows render with the correct schema. Bump the integer per kind when its result_summary shape changes (current: `update_sweep` at v5 after v0.14.8's media-level rename + `probe_failures[]`; all others at v1)
   - Partial composite index on `(created_at) WHERE status='queued'` keeps the worker's FIFO claim cheap regardless of finished-row volume
 - **`anime_freshness.py`** / **`media_freshness.py`** — 1:1 sidecars (`unique=True` on FK) for the nightly update sweep
-  - Hold `last_checked_at` (and `stable_check_count` on anime side) outside canonical rows so sweep cadence can't leak into Pydantic schemas via `model_dump()`
+  - Both hold `last_checked_at` + `stable_check_count` outside canonical rows so sweep cadence can't leak into Pydantic schemas via `model_dump()`. v0.14.8 added `stable_check_count` to `media_freshness` (server_default 0): `MediaFreshness` is the per-media **refresh** clock that drives `select_due_media_for_sweep`; `AnimeFreshness` is the per-anime **probe** clock
   - Existing rows backfilled to parent's `created_at` so sweep enters them at honest age, not "never checked"
 
 #### Other backend modules
@@ -323,7 +324,7 @@ Quick map:
 - `JOBS_PER_USER_LIMIT` — default 4; max queued+running user_scrape jobs per non-system user; 5th submission returns 409
 - `JOBS_DAILY_LIMIT` — default 50; max user_scrape submissions per non-system user in any trailing 24h window (counts all statuses); 51st returns 429
 - `JOBS_DEDUPE_HOURS` — default 24; same scrape query within this window returns 409 unless prior job failed
-- `JOBS_SWEEP_MAX_PER_RUN` — default 200; bounds nightly `update_sweep` batch size
+- `JOBS_SWEEP_MAX_PER_RUN` — default 500; bounds the nightly `update_sweep` batch (a **media** count since v0.14.8, was anime). Only binds during the post-migration herd + stabilizing bursts; steady-state sweeps finish in seconds
 - `RELATION_BACKFILL_ON_STARTUP` — default `True`; runs `relation_backfiller` at lifespan startup. First cold start fetches missing `MediaRelationEdges` sidecars from MAL at 1 req/s (~14min for an 800-media catalog); subsequent restarts skip already-populated rows and finish in seconds. Disable for tight maintenance windows on fresh deployments
 
 ### Frontend (runtime)

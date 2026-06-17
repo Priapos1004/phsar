@@ -55,7 +55,11 @@ class Settings(BaseSettings):
     # runaway scripts. Counts all statuses — failed jobs still cost MAL
     # API quota and admin attention.
     JOBS_DAILY_LIMIT: int = 50
-    JOBS_SWEEP_MAX_PER_RUN: int = 200  # bounds nightly update_sweep batch size
+    # Bounds the nightly update_sweep batch. v0.14.8 made this a MEDIA count
+    # (was anime): ~500 media ≈ a 6–7 min maintenance window at MAL's rate.
+    # Only binds during the post-migration herd + stabilizing bursts; steady
+    # state finishes in seconds.
+    JOBS_SWEEP_MAX_PER_RUN: int = 500
     # Dedupe window for user_scrape: re-running the same query within this
     # window would just produce empty BFS results (everything is in
     # excluded_mal_ids already) and fail with AnimeNotFoundError. Shortened

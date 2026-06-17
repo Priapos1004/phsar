@@ -34,6 +34,7 @@ from app.models.media_unwanted import MediaUnwanted
 from app.models.studio import Studio
 from app.services.scrape_dispatcher import (
     _advance_anime_freshness,
+    _advance_media_freshness,
     _apply_genre_diff,
     _apply_media_diff,
     _apply_metadata_diff,
@@ -729,7 +730,7 @@ async def test_refresh_increments_counter_when_unchanged(db_session):
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper({media_mal_id: _payload()})
 
-    result = await _refresh_one_anime(db_session, anime, scraper)
+    result = await _refresh_one_anime(db_session, anime, anime.media, scraper)
     _advance_anime_freshness(anime, result.volatile_changed, result.is_currently_airing)
 
     assert result.volatile_changed is False
@@ -750,7 +751,7 @@ async def test_refresh_resets_counter_on_score_change(db_session):
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper({media_mal_id: _payload(score=8.0)})
 
-    result = await _refresh_one_anime(db_session, anime, scraper)
+    result = await _refresh_one_anime(db_session, anime, anime.media, scraper)
     _advance_anime_freshness(anime, result.volatile_changed, result.is_currently_airing)
 
     assert result.volatile_changed is True
@@ -773,7 +774,7 @@ async def test_refresh_currently_airing_resets_counter_without_diff(db_session):
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper({media_mal_id: _payload(airing_status="Currently Airing", aired_to=None)})
 
-    result = await _refresh_one_anime(db_session, anime, scraper)
+    result = await _refresh_one_anime(db_session, anime, anime.media, scraper)
     _advance_anime_freshness(anime, result.volatile_changed, result.is_currently_airing)
 
     assert result.volatile_changed is False
@@ -795,7 +796,7 @@ async def test_refresh_bumps_last_checked_even_when_unchanged(db_session):
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper({media_mal_id: _payload()})
 
-    result = await _refresh_one_anime(db_session, anime, scraper)
+    result = await _refresh_one_anime(db_session, anime, anime.media, scraper)
     _advance_anime_freshness(anime, result.volatile_changed, result.is_currently_airing)
 
     assert anime.freshness.last_checked_at > old_anime_ts
@@ -834,7 +835,7 @@ async def test_refresh_rewrites_relation_edges_from_full_payload(db_session):
     }
     scraper = _FakeScraper({media_mal_id: raw_with_relations})
 
-    await _refresh_one_anime(db_session, anime, scraper)
+    await _refresh_one_anime(db_session, anime, anime.media, scraper)
 
     # Adaptation filtered (cross-franchise), manga entry filtered (non-anime).
     assert anime.media[0].relation_edges.edges == [
@@ -860,7 +861,7 @@ async def test_refresh_creates_missing_sidecars_defensively(db_session):
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper({media_mal_id: _payload()})
 
-    result = await _refresh_one_anime(db_session, anime, scraper)
+    result = await _refresh_one_anime(db_session, anime, anime.media, scraper)
     assert anime.media[0].freshness is not None
     _advance_anime_freshness(anime, result.volatile_changed, result.is_currently_airing)
 
@@ -868,8 +869,97 @@ async def test_refresh_creates_missing_sidecars_defensively(db_session):
     assert anime.freshness.stable_check_count == 0
 
 
+@pytest.mark.asyncio
+async def test_refresh_advances_per_media_stability_counter(db_session):
+    """_refresh_one_anime advances each refreshed media's own
+    stable_check_count (v0.14.8): +1 on an unchanged refresh, reset to 0
+    on a volatile change."""
+    anime = await _build_anime_with_one_media(
+        db_session, mal_id_a=-9020, mal_id_m=-9120,
+        media_freshness=MediaFreshness(
+            last_checked_at=datetime.now(timezone.utc) - timedelta(days=1),
+            stable_check_count=4,
+        ),
+        score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
+        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+    )
+    media_mal_id = anime.media[0].mal_id
+
+    # Unchanged refresh → counter climbs.
+    await _refresh_one_anime(
+        db_session, anime, anime.media, _FakeScraper({media_mal_id: _payload()}),
+    )
+    assert anime.media[0].freshness.stable_check_count == 5
+
+    # Score change → counter resets.
+    await _refresh_one_anime(
+        db_session, anime, anime.media,
+        _FakeScraper({media_mal_id: _payload(score=8.5)}),
+    )
+    assert anime.media[0].freshness.stable_check_count == 0
+
+
+def test_advance_media_freshness_resets_when_airing():
+    """A live media resets to 0 even with no field change so the next sweep
+    still picks it via the airing tier (not the stabilizing one)."""
+    media = Media(**media_kwargs(anime_id=1, mal_id=-1))
+    media.freshness = MediaFreshness(
+        last_checked_at=datetime.now(timezone.utc) - timedelta(days=1),
+        stable_check_count=9,
+    )
+    _advance_media_freshness(
+        media, media_changed=False, is_media_airing=True,
+        now=datetime.now(timezone.utc),
+    )
+    assert media.freshness.stable_check_count == 0
+
+
+@pytest.mark.asyncio
+async def test_refresh_only_touches_due_media(db_session):
+    """Media-level core win: only the media passed in `media_to_refresh`
+    get a MAL call + freshness advance; stable siblings are left alone."""
+    anime = await _build_anime_with_one_media(
+        db_session, mal_id_a=-9030, mal_id_m=-9130,
+        media_freshness=MediaFreshness(
+            last_checked_at=datetime.now(timezone.utc) - timedelta(days=1),
+            stable_check_count=8,
+        ),
+        score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
+        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+    )
+    # Add a stable sibling NOT in the due set. It stays out of the
+    # eager-loaded anime.media collection (added after the build query), so
+    # neither the refresh loop nor reclassify touches it.
+    stale_ts = datetime.now(timezone.utc) - timedelta(days=200)
+    sibling = Media(**media_kwargs(anime_id=anime.id, mal_id=-9131))
+    db_session.add(sibling)
+    await db_session.flush()
+    db_session.add(MediaFreshness(
+        media_id=sibling.id, last_checked_at=stale_ts, stable_check_count=8,
+    ))
+    await db_session.flush()
+    sibling_id = sibling.id
+
+    scraper = _FakeScraper({-9130: _payload()})
+    result = await _refresh_one_anime(db_session, anime, list(anime.media), scraper)
+
+    # Only the due media was fetched; the sibling never hit the scraper.
+    assert scraper.refresh_calls == [-9130]
+    assert result.raw_payloads == {-9130: _payload()}
+    # The sibling's freshness is untouched.
+    sibling_fr = (await db_session.execute(
+        select(MediaFreshness).where(MediaFreshness.media_id == sibling_id)
+    )).scalars().first()
+    assert sibling_fr.last_checked_at == stale_ts
+    assert sibling_fr.stable_check_count == 8
+
+
 # ---------------------------------------------------------------------------
-# AnimeDAO.select_due_for_sweep (uses db_session)
+# AnimeDAO.select_due_media_for_sweep (uses db_session)
+#
+# Media-level selection (v0.14.8): the tier atoms are direct predicates on
+# the media row + its MediaFreshness sidecar. Stabilize threshold is 5 (was
+# anime 3); long-tail is 90 days (was 180).
 # ---------------------------------------------------------------------------
 
 
@@ -878,10 +968,12 @@ async def _seed_anime(
     stable_check_count: int = 5, airing_status: str = "Finished Airing",
     aired_from: datetime | None = None, relation_type=None,
 ):
-    """Insert anime + one media + an anime_freshness row. Defaults
-    avoid every tier (stable=5, last_checked=recent, finished, no airing,
-    no main, no recent main); each test overrides the field that
-    triggers its tier."""
+    """Insert anime + one media + a media_freshness row. Defaults avoid
+    every tier (stable=5 so not stabilizing, last_checked=recent, finished,
+    no recent main); each test overrides the field that triggers its tier.
+    The media-level query reads MediaFreshness, so last_checked_at +
+    stable_check_count land there (an AnimeFreshness row is added too for
+    realism but the selection ignores it)."""
     from app.models.media import RelationType
     if relation_type is None:
         relation_type = RelationType.SideStory
@@ -895,19 +987,28 @@ async def _seed_anime(
         aired_from=aired_from,
     ))
     db_session.add(media)
-    af = AnimeFreshness(
+    await db_session.flush()
+    db_session.add(MediaFreshness(
+        media_id=media.id,
+        last_checked_at=last_checked_at,
+        stable_check_count=stable_check_count,
+    ))
+    db_session.add(AnimeFreshness(
         anime_id=anime.id,
         last_checked_at=last_checked_at,
         stable_check_count=stable_check_count,
-    )
-    db_session.add(af)
+    ))
     await db_session.flush()
     return anime
 
 
 async def _select_due_ids(db_session) -> set[int]:
-    rows = await AnimeDAO().select_due_for_sweep(db_session, limit=1000)
-    return {a.id for a in rows}
+    # Large limit: after the v0.14.8 migration every pre-existing media
+    # defaults to stable_check_count=0 (so all are "stabilizing"/due), and
+    # the seeded recent rows sort last under the NULLS-FIRST ordering — a
+    # small limit would cut them. The test catalog is well under this cap.
+    rows = await AnimeDAO().select_due_media_for_sweep(db_session, limit=1_000_000)
+    return {m.anime_id for m in rows}
 
 
 @pytest.mark.asyncio
@@ -922,17 +1023,19 @@ async def test_tier_currently_airing_always_selected(db_session):
 
 @pytest.mark.asyncio
 async def test_tier_stable_under_threshold_selected(db_session):
-    a_stable_2 = await _seed_anime(
-        db_session, mal_id=-7002, stable_check_count=2,
+    """Media-level stabilize threshold is 5: stable_check_count < 5 is
+    selected, == 5 is not."""
+    a_stable_4 = await _seed_anime(
+        db_session, mal_id=-7002, stable_check_count=4,
         last_checked_at=datetime.now(timezone.utc),
     )
-    a_stable_3 = await _seed_anime(
-        db_session, mal_id=-7003, stable_check_count=3,
+    a_stable_5 = await _seed_anime(
+        db_session, mal_id=-7003, stable_check_count=5,
         last_checked_at=datetime.now(timezone.utc),
     )
     ids = await _select_due_ids(db_session)
-    assert a_stable_2.id in ids
-    assert a_stable_3.id not in ids
+    assert a_stable_4.id in ids
+    assert a_stable_5.id not in ids
 
 
 @pytest.mark.asyncio
@@ -951,7 +1054,7 @@ async def test_tier_recent_main_weekly_selected(db_session):
 async def test_tier_old_main_excluded_from_weekly(db_session):
     """Main media aired 7y ago + last_checked 8d ago + stable=10 + no
     airing → falls outside tiers 1, 2, 3, AND 4 (4 fires only when
-    last_checked > 180 days). Should NOT be selected this run."""
+    last_checked > 90 days). Should NOT be selected this run."""
     from app.models.media import RelationType
     old_main = await _seed_anime(
         db_session, mal_id=-7005, stable_check_count=10,
@@ -964,11 +1067,19 @@ async def test_tier_old_main_excluded_from_weekly(db_session):
 
 @pytest.mark.asyncio
 async def test_tier_long_tail_selected(db_session):
-    a = await _seed_anime(
+    """Long-tail net is now 90 days: a media 100d stale (just over) is due,
+    while one 80d stale (just under, no other tier) is not."""
+    due = await _seed_anime(
         db_session, mal_id=-7006, stable_check_count=10,
-        last_checked_at=datetime.now(timezone.utc) - timedelta(days=200),
+        last_checked_at=datetime.now(timezone.utc) - timedelta(days=100),
     )
-    assert a.id in await _select_due_ids(db_session)
+    not_yet = await _seed_anime(
+        db_session, mal_id=-7016, stable_check_count=10,
+        last_checked_at=datetime.now(timezone.utc) - timedelta(days=80),
+    )
+    ids = await _select_due_ids(db_session)
+    assert due.id in ids
+    assert not_yet.id not in ids
 
 
 @pytest.mark.asyncio
@@ -1036,23 +1147,87 @@ async def test_count_by_sweep_tier_priority_buckets_each_anime_once(db_session):
 
 
 @pytest.mark.asyncio
+async def test_anime_tier_is_media_rollup_not_anime_probe_counter(db_session):
+    """Regression for the v0.14.8 inconsistency: the anime count card must
+    roll up MEDIA tiers, not read the anime probe counter. An anime with a
+    high AnimeFreshness.stable_check_count (probe-stable) + a recent main but
+    whose media is still media-stabilizing (stable < 5) must count under
+    `stabilizing`, NOT `weekly_cycle` — otherwise the anime card disagrees
+    with the media card (anime weekly_cycle while all media stabilizing)."""
+    from app.models.media import RelationType
+    now = datetime.now(timezone.utc)
+    baseline = await AnimeDAO().count_by_sweep_tier_priority(db_session)
+
+    anime = Anime(mal_id=-7301, title="A-7301")
+    db_session.add(anime)
+    await db_session.flush()
+    media = Media(**media_kwargs(
+        anime_id=anime.id, mal_id=-730100,
+        relation_type=RelationType.Main, aired_from=now - timedelta(days=365),
+    ))
+    db_session.add(media)
+    await db_session.flush()
+    # Media still stabilizing (stable=0), but the anime probe counter is high.
+    db_session.add(MediaFreshness(media_id=media.id, last_checked_at=now, stable_check_count=0))
+    db_session.add(AnimeFreshness(anime_id=anime.id, last_checked_at=now, stable_check_count=10))
+    await db_session.flush()
+
+    after = await AnimeDAO().count_by_sweep_tier_priority(db_session)
+    delta = {k: after[k] - baseline.get(k, 0) for k in after}
+    assert delta == {"airing_now": 0, "stabilizing": 1, "weekly_cycle": 0, "long_cycle": 0}
+
+
+@pytest.mark.asyncio
 async def test_tier_handles_missing_sidecar(db_session):
-    """Anime without an anime_freshness row falls back to created_at via
-    COALESCE. _seed_anime always creates a sidecar, so build one without."""
+    """A media without a media_freshness row reads COALESCE(stable, 0) = 0,
+    which is < 5 → the stabilizing tier selects it. _seed_anime always
+    creates a sidecar, so build a bare media here."""
     anime = Anime(mal_id=-7007, title="A-7007")
     db_session.add(anime)
     await db_session.flush()
-    # Create the anime more than 180 days ago by direct UPDATE so it
-    # falls into tier 4 via COALESCE on created_at.
-    from sqlalchemy import update
-    await db_session.execute(
-        update(Anime)
-        .where(Anime.id == anime.id)
-        .values(created_at=datetime.now(timezone.utc) - timedelta(days=200))
-    )
     db_session.add(Media(**media_kwargs(anime_id=anime.id, mal_id=-7007 * 100)))
     await db_session.flush()
     assert anime.id in await _select_due_ids(db_session)
+
+
+@pytest.mark.asyncio
+async def test_count_media_by_sweep_tier_priority_buckets_each_media_once(db_session):
+    """Media-level membership cascade: airing_now > stabilizing (stable<5) >
+    weekly_cycle (recent main) > long_cycle. Sum equals total media count.
+    Delta-based so pre-existing rows don't skew bucket attribution."""
+    from app.models.media import RelationType
+    now = datetime.now(timezone.utc)
+    baseline = await AnimeDAO().count_media_by_sweep_tier_priority(db_session)
+
+    await _seed_anime(  # airing wins over stable<5 -> airing_now
+        db_session, mal_id=-7201, stable_check_count=1,
+        airing_status="Currently Airing", last_checked_at=now,
+    )
+    await _seed_anime(  # stable<5, not airing -> stabilizing
+        db_session, mal_id=-7202, stable_check_count=2, last_checked_at=now,
+    )
+    await _seed_anime(  # recent main, stable -> weekly_cycle
+        db_session, mal_id=-7203, stable_check_count=10,
+        last_checked_at=now - timedelta(hours=1),
+        relation_type=RelationType.Main, aired_from=now - timedelta(days=365),
+    )
+    await _seed_anime(  # no recent main, stable -> long_cycle
+        db_session, mal_id=-7204, stable_check_count=10, last_checked_at=now,
+    )
+    await db_session.flush()
+
+    after = await AnimeDAO().count_media_by_sweep_tier_priority(db_session)
+    delta = {k: after[k] - baseline.get(k, 0) for k in after}
+    assert delta == {
+        "airing_now": 1,
+        "stabilizing": 1,
+        "weekly_cycle": 1,
+        "long_cycle": 1,
+    }
+    total_media = (await db_session.execute(
+        select(func.count(Media.id))
+    )).scalar_one()
+    assert sum(after.values()) == total_media
 
 
 # ---------------------------------------------------------------------------
@@ -1069,6 +1244,23 @@ class _NoopProgressReporter:
 
     async def update(self, *_args, **_kwargs):
         return None
+
+
+class _RecordingProgressReporter:
+    """Captures the latest items_total / items_done so a test can assert the
+    progress contract (media-grained in v0.14.8)."""
+
+    last_items_total: int | None = None
+    last_items_done: int | None = None
+
+    def __init__(self, *_args, **_kwargs):
+        pass
+
+    async def update(self, *, items_total=None, items_done=None, **_kwargs):
+        if items_total is not None:
+            type(self).last_items_total = items_total
+        if items_done is not None:
+            type(self).last_items_done = items_done
 
 
 @pytest.fixture
@@ -1116,30 +1308,38 @@ async def _real_seed(
 
 
 def _patch_select_due(monkeypatch, anime_ids: list[int]) -> None:
-    """Replace AnimeDAO.select_due_for_sweep with a function that returns
-    only the test's anime ids (in order). Without this, the dispatcher
-    would pick up unrelated rows left in the test DB by other tests and
-    try to refresh them through our fake scraper, KeyError'ing on
-    unrecognized mal_ids and side-effect-mutating real rows."""
+    """Replace AnimeDAO.select_due_media_for_sweep with a function that
+    returns all media under the test's anime ids (in anime-id order).
+    Without this, the dispatcher would pick up unrelated rows left in the
+    test DB by other tests and try to refresh them through our fake
+    scraper, KeyError'ing on unrecognized mal_ids and side-effect-mutating
+    real rows. The eager-load shape mirrors the real media query
+    (Media + parent Anime + the parent's full media set) so the dispatcher's
+    group-by-anime + reclassify + probe paths don't trip lazy="raise"."""
+    media_child_loads = (
+        selectinload(Media.freshness),
+        selectinload(Media.relation_edges),
+        selectinload(Media.media_genre).selectinload(MediaGenre.genre),
+        selectinload(Media.media_studio).selectinload(MediaStudio.studio),
+    )
+
     async def fake_select(self, db, limit):
         result = await db.execute(
-            select(Anime)
+            select(Media)
+            .join(Anime, Media.anime_id == Anime.id)
             .where(Anime.id.in_(anime_ids))
-            .order_by(Anime.id.asc())
+            .order_by(Anime.id.asc(), Media.id.asc())
             .options(
-                selectinload(Anime.media).options(
-                    selectinload(Media.freshness),
-                    selectinload(Media.relation_edges),
-                    selectinload(Media.media_genre).selectinload(MediaGenre.genre),
-                    selectinload(Media.media_studio).selectinload(MediaStudio.studio),
+                *media_child_loads,
+                selectinload(Media.anime).options(
+                    selectinload(Anime.freshness),
+                    selectinload(Anime.media).options(*media_child_loads),
                 ),
-                selectinload(Anime.freshness),
             )
         )
-        rows = {a.id: a for a in result.scalars().all()}
-        return [rows[i] for i in anime_ids if i in rows]
+        return list(result.scalars().all())
 
-    monkeypatch.setattr(AnimeDAO, "select_due_for_sweep", fake_select)
+    monkeypatch.setattr(AnimeDAO, "select_due_media_for_sweep", fake_select)
 
 
 async def _run_dispatcher_harness(
@@ -1196,9 +1396,50 @@ async def test_dispatcher_returns_summary(tracked_anime, monkeypatch):
         monkeypatch, fake, [a1_id, a2_id],
     )
 
-    assert summary["counters"]["anime_refreshed"] == 2
-    assert summary["counters"]["anime_with_dynamic_changes"] == 1
+    assert summary["counters"]["media_refreshed"] == 2
+    assert summary["counters"]["anime_touched"] == 2
+    assert summary["counters"]["media_with_dynamic_changes"] == 1
     assert sorted(fake.refresh_calls) == sorted([-8001 * 100, -8002 * 100])
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_progress_is_media_grained(tracked_anime, monkeypatch):
+    """items_total is the due-media count, NOT the anime count (v0.14.8). One
+    anime with two due media must report items_total=2 (media) and
+    media_refreshed=2 with anime_touched=1."""
+    m1, m2 = -8201 * 100, -8201 * 100 + 1
+    async with async_session_maker() as s:
+        anime = Anime(mal_id=-8201, title="A-8201")
+        s.add(anime)
+        await s.flush()
+        old = datetime.now(timezone.utc) - timedelta(days=10)
+        for mid in (m1, m2):
+            media = Media(**media_kwargs(anime_id=anime.id, mal_id=mid))
+            s.add(media)
+            await s.flush()
+            s.add(MediaFreshness(media_id=media.id, last_checked_at=old))
+        s.add(AnimeFreshness(anime_id=anime.id, last_checked_at=old, stable_check_count=0))
+        await s.commit()
+        a_id = anime.id
+    tracked_anime.append(a_id)
+
+    _RecordingProgressReporter.last_items_total = None
+    _RecordingProgressReporter.last_items_done = None
+    fake = _FakeScraper({m1: _payload(), m2: _payload()})
+    monkeypatch.setattr("app.services.scrape_dispatcher.JikanScraper", lambda: fake)
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.ProgressReporter", _RecordingProgressReporter,
+    )
+    _patch_select_due(monkeypatch, [a_id])
+
+    async with async_session_maker() as session:
+        summary = await update_sweep_dispatcher(session, type("J", (), {"id": 8201})())
+
+    assert _RecordingProgressReporter.last_items_total == 2  # media, not 1 anime
+    assert _RecordingProgressReporter.last_items_done == 2
+    assert summary["counters"]["media_refreshed"] == 2
+    assert summary["counters"]["anime_touched"] == 1
+    assert sorted(fake.refresh_calls) == sorted([m1, m2])
 
 
 @pytest.mark.asyncio
@@ -1248,7 +1489,8 @@ async def test_dispatcher_isolates_failures_per_anime(tracked_anime, monkeypatch
         monkeypatch, fake, [a1_id, a2_id, a3_id], job_id=998,
     )
 
-    assert summary["counters"]["anime_refreshed"] == 2
+    assert summary["counters"]["media_refreshed"] == 2
+    assert summary["counters"]["anime_touched"] == 2
 
     # The skipped anime is counted + recorded (v4) so the sweep doesn't
     # read as fully clean when it silently dropped a third of its work.
@@ -1281,11 +1523,16 @@ async def test_dispatcher_isolates_failures_per_anime(tracked_anime, monkeypatch
 # ---------------------------------------------------------------------------
 
 
-def _anime_with_freshness(stable_check_count: int) -> Anime:
+def _anime_with_freshness(
+    stable_check_count: int, last_checked_at: datetime | None = None,
+) -> Anime:
     """Synthetic in-memory Anime + AnimeFreshness for gate unit tests.
-    No DB round trip needed — the gate reads the loaded ORM objects."""
+    No DB round trip needed — the gate reads the loaded ORM objects.
+    last_checked_at defaults to None (never probed → past the 7-day floor)."""
     a = Anime(mal_id=-1, title="A")
-    a.freshness = AnimeFreshness(stable_check_count=stable_check_count)
+    a.freshness = AnimeFreshness(
+        stable_check_count=stable_check_count, last_checked_at=last_checked_at,
+    )
     return a
 
 
@@ -1294,13 +1541,13 @@ def test_gate_rejects_currently_airing():
     assert _qualifies_for_relations_probe(a, is_currently_airing=True) is False
 
 
-def test_gate_rejects_stable_below_3():
-    a = _anime_with_freshness(stable_check_count=2)
+def test_gate_rejects_stable_below_threshold():
+    a = _anime_with_freshness(stable_check_count=4)
     assert _qualifies_for_relations_probe(a, is_currently_airing=False) is False
 
 
-def test_gate_accepts_stable_at_or_above_3_and_not_airing():
-    a = _anime_with_freshness(stable_check_count=3)
+def test_gate_accepts_stable_at_or_above_threshold_and_not_airing():
+    a = _anime_with_freshness(stable_check_count=5)
     assert _qualifies_for_relations_probe(a, is_currently_airing=False) is True
 
 
@@ -1310,6 +1557,25 @@ def test_gate_handles_missing_freshness_as_zero():
     a = Anime(mal_id=-1, title="A")
     a.freshness = None
     assert _qualifies_for_relations_probe(a, is_currently_airing=False) is False
+
+
+def test_gate_rejects_recently_probed_within_floor():
+    """v0.14.8: even a stable non-airing anime is skipped if it was probed
+    within the last 7 days — keeps the /relations BFS at ~weekly cadence
+    when an anime's media drain across consecutive nights."""
+    a = _anime_with_freshness(
+        stable_check_count=10,
+        last_checked_at=datetime.now(timezone.utc) - timedelta(days=2),
+    )
+    assert _qualifies_for_relations_probe(a, is_currently_airing=False) is False
+
+
+def test_gate_accepts_when_last_probe_stale():
+    a = _anime_with_freshness(
+        stable_check_count=10,
+        last_checked_at=datetime.now(timezone.utc) - timedelta(days=8),
+    )
+    assert _qualifies_for_relations_probe(a, is_currently_airing=False) is True
 
 
 # ---------------------------------------------------------------------------
@@ -1411,7 +1677,8 @@ async def test_probe_only_runs_on_tier_3_or_4(tracked_anime, monkeypatch):
     assert fake_scraper.search_title_calls == [-8303 * 100]
     assert summary["counters"]["probe_succeeded"] == 1
     assert summary["counters"]["probe_failed"] == 0
-    assert summary["counters"]["anime_refreshed"] == 3
+    assert summary["counters"]["media_refreshed"] == 3
+    assert summary["counters"]["anime_touched"] == 3
 
 
 @pytest.mark.asyncio
@@ -1618,7 +1885,7 @@ async def test_spoiler_recompute_failure_does_not_fail_the_sweep(
     )
 
     assert summary["cache_recompute_failed"] is True
-    assert summary["counters"]["anime_refreshed"] == 1
+    assert summary["counters"]["media_refreshed"] == 1
     assert summary["counters"]["probe_succeeded"] == 1
 
 
@@ -1703,7 +1970,16 @@ async def test_relations_probe_failure_preserves_field_diff_but_not_anime_freshn
 
     assert summary["counters"]["probe_failed"] == 1
     assert summary["counters"]["probe_succeeded"] == 0
-    assert summary["counters"]["anime_refreshed"] == 0
+    # Step-1 refresh committed before the probe ran, so its media count even
+    # though the probe failed (they won't re-refresh next sweep — only the
+    # probe re-runs, since AnimeFreshness is left stale).
+    assert summary["counters"]["media_refreshed"] == 1
+    assert summary["counters"]["anime_touched"] == 1
+    # v5 captures which anime failed the probe, symmetric to step1_failures.
+    assert len(summary["probe_failures"]) == 1
+    pf = summary["probe_failures"][0]
+    assert pf["title"]
+    assert pf["anime_uuid"]
     assert recompute_calls == []
 
     async with async_session_maker() as s:

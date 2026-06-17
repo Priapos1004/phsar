@@ -12,19 +12,41 @@
 	}
 	let { counters, version, merge_detect_failed, cache_recompute_failed }: Props = $props();
 
-	const STATS: { key: keyof UpdateSweepCounters; label: string }[] = [
-		{ key: 'anime_refreshed', label: 'Anime touched' },
-		{ key: 'anime_with_dynamic_changes', label: 'Anime w/ dynamic' },
-		{ key: 'anime_with_static_changes', label: 'Anime w/ static' },
+	type Stat = { key: keyof UpdateSweepCounters; label: string; tooltip?: string };
+
+	// Only the leading refresh/rollup rows differ by version. v5 (v0.14.8)
+	// went media-grained: anime_refreshed → media_refreshed, and the
+	// anime_with_* rollups were replaced by anime_touched + media_skipped.
+	// The trailing rows are identical across v2–v5, so they live once below.
+	const HEAD: Stat[] = $derived(
+		version >= 5
+			? [
+					{ key: 'media_refreshed', label: 'Media refreshed' },
+					{ key: 'anime_touched', label: 'Anime touched' },
+					{
+						key: 'media_skipped_fresh',
+						label: 'Media skipped',
+						tooltip:
+							'Media belonging to the touched anime that were not refreshed this run — already fresh (or, at the cap boundary, due but deferred to the next sweep).',
+					},
+				]
+			: [
+					{ key: 'anime_refreshed', label: 'Anime touched' },
+					{ key: 'anime_with_dynamic_changes', label: 'Anime w/ dynamic' },
+					{ key: 'anime_with_static_changes', label: 'Anime w/ static' },
+				],
+	);
+	const TAIL: Stat[] = [
 		{ key: 'media_with_dynamic_changes', label: 'Media w/ dynamic' },
 		{ key: 'media_with_static_changes', label: 'Media w/ static' },
-		{ key: 'umbrella_reclassed', label: 'Umbrellas reclassed' },
+		{ key: 'umbrella_reclassed', label: 'Anime reclassed' },
 		{ key: 'probe_succeeded', label: 'Probes succeeded' },
 		{ key: 'probe_failed', label: 'Probes failed' },
 		{ key: 'probe_attached_anime_count', label: 'Anime w/ new attach' },
 		{ key: 'orphaned_studios_removed', label: 'Orphaned studios removed' },
 		{ key: 'step1_failed', label: 'Failed refresh' },
 	];
+	const STATS: Stat[] = $derived([...HEAD, ...TAIL]);
 </script>
 
 <Card.Root>
@@ -39,7 +61,8 @@
 				{@const value = counters[stat.key] ?? 0}
 				{@const warn = isStep1 && !notTracked && value > 0}
 				<div
-					class="rounded-md border p-3 {warn
+					title={stat.tooltip}
+					class="rounded-md border p-3 {stat.tooltip ? 'cursor-help' : ''} {warn
 						? 'border-amber-500/50 bg-amber-500/10'
 						: 'border-border/60 bg-muted/10'}"
 				>

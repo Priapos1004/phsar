@@ -201,7 +201,12 @@ class AdminOverviewStats(BaseModel):
     catalog: CatalogStats
     jobs_7d: JobsStats
     activity_7d: ActivityStats
+    # `sweep_tiers` is the anime-membership breakdown (every anime's cycle
+    # position); `media_sweep_tiers` is the same cascade at media grain
+    # (v0.14.8 — refresh selection is now media-level). The Overview card
+    # toggles between them. Both reuse the SweepTierBreakdown shape.
     sweep_tiers: SweepTierBreakdown
+    media_sweep_tiers: SweepTierBreakdown
 
 
 class CurationPendingCounts(BaseModel):

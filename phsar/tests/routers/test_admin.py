@@ -511,17 +511,21 @@ async def test_stats_overview_returns_shape(client, admin_auth_headers):
     assert resp.status_code == 200, resp.text
     data = resp.json()
 
-    assert set(data.keys()) == {"catalog", "jobs_7d", "activity_7d", "sweep_tiers"}
+    assert set(data.keys()) == {
+        "catalog", "jobs_7d", "activity_7d", "sweep_tiers", "media_sweep_tiers",
+    }
     assert set(data["catalog"].keys()) == {
         "anime_count", "media_count", "anime_added_7d", "media_added_7d",
     }
     assert set(data["activity_7d"].keys()) == {
         "active_users", "new_ratings", "scrapes_submitted",
     }
-    assert set(data["sweep_tiers"].keys()) == {
-        "airing_now", "stabilizing", "weekly_cycle", "long_cycle",
-    }
+    bucket_keys = {"airing_now", "stabilizing", "weekly_cycle", "long_cycle"}
+    assert set(data["sweep_tiers"].keys()) == bucket_keys
     assert sum(data["sweep_tiers"].values()) == data["catalog"]["anime_count"]
+    # v0.14.8: media-grained breakdown, sums to total media count.
+    assert set(data["media_sweep_tiers"].keys()) == bucket_keys
+    assert sum(data["media_sweep_tiers"].values()) == data["catalog"]["media_count"]
     kinds_returned = {row["kind"] for row in data["jobs_7d"]["by_kind"]}
     assert kinds_returned == {k.value for k in JobKind}
 
