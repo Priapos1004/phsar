@@ -61,6 +61,12 @@
 		return (job.result_summary ?? null) as UpdateSweepResultSummary | null;
 	});
 
+	// The progress-divergence gap (items_total - items_done) is exactly
+	// step1_failed + probe_failed — refreshed increments only on a fully
+	// advanced anime, and both failure paths `continue` without it.
+	let step1Failed = $derived(v2Summary?.counters?.step1_failed ?? 0);
+	let probeFailed = $derived(v2Summary?.counters?.probe_failed ?? 0);
+
 	let visibleMediaChanges = $derived.by(() => {
 		const all = v2Summary?.media_changes ?? [];
 		const q = search.trim().toLowerCase();
@@ -137,7 +143,11 @@
 						<p>
 							Processed <strong>{job.items_done}</strong> of
 							<strong>{job.items_total}</strong> selected anime —
-							{job.items_total - job.items_done} skipped (see “Failed refresh” below).
+							{job.items_total - job.items_done} not fully advanced
+							{#if step1Failed > 0 || probeFailed > 0}
+								({step1Failed} failed refresh{#if probeFailed > 0}, {probeFailed} failed relations probe{/if}).
+								{#if step1Failed > 0}See “Failed refresh” below; {/if}all retry next sweep.
+							{:else}.{/if}
 						</p>
 					</Notice>
 				{/if}

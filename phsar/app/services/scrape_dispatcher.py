@@ -460,8 +460,11 @@ async def _try_step1_refresh(
             title=anime_title_for_log,
             error_category=classify_error(exc),
             # str(exc) is empty for some httpx errors — fall back to the
-            # class name so the log row is never blank.
-            error_message=str(exc) or exc.__class__.__name__,
+            # class name so the log row is never blank. Truncate: a sustained
+            # MAL outage fails every selected anime, and some httpx/SQLAlchemy
+            # reprs are multi-KB — capped so up to JOBS_SWEEP_MAX_PER_RUN of
+            # them can't bloat the single result_summary JSONB row.
+            error_message=(str(exc) or exc.__class__.__name__)[:500],
         )
 
 

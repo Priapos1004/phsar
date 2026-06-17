@@ -333,6 +333,13 @@ async def execute_split(db: AsyncSession, uuid: UUID) -> tuple[str, list[str]]:
 
     await db.commit()
 
+    # Capture the source uuid BEFORE the recompute: that helper does a
+    # per-user db.rollback() on failure, which expires every ORM instance in
+    # the session (regardless of expire_on_commit=False), so reading
+    # source_anime.uuid afterwards would trigger an async lazy reload →
+    # MissingGreenlet. Same pre-rollback identifier-capture trap as
+    # _try_step1_refresh.
+    source_uuid = str(source_anime.uuid) if source_anime else ""
     # Spoiler cache stores media ids, not anime ids, but the frontier
     # algorithm runs per-anime. Media were re-parented from the source
     # onto the new anime, so recomputing the source + each new anime
@@ -347,4 +354,4 @@ async def execute_split(db: AsyncSession, uuid: UUID) -> tuple[str, list[str]]:
     except Exception:
         logger.exception("Spoiler cache recompute failed after split execute")
 
-    return str(source_anime.uuid) if source_anime else "", new_anime_uuids
+    return source_uuid, new_anime_uuids

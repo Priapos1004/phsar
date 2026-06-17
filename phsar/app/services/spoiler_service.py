@@ -254,6 +254,12 @@ async def refresh_spoiler_cache_for_anime_ids(
     Per-user try/commit so one poisoned user doesn't abort the rest;
     `backfill_spoiler_visibility` mops up any skipped non-restricted user
     on next startup.
+
+    CONTRACT: the per-user commit/rollback loop expires every ORM instance
+    in `db` (rollback expires unconditionally, even with
+    expire_on_commit=False). Callers MUST capture any ORM scalars they still
+    need (e.g. `str(anime.uuid)` for the return value) BEFORE calling this —
+    reading them afterwards triggers an async lazy reload → MissingGreenlet.
     """
     anime_ids = list(set(anime_ids))
     if not anime_ids:
