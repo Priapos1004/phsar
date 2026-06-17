@@ -23,6 +23,7 @@ from app.seeders.split_candidate_backfiller import backfill_split_candidates
 from app.seeders.user_seeder import (
     backfill_spoiler_visibility,
     backfill_user_settings,
+    purge_restricted_user_spoiler_cache,
     seed_admin_user,
     seed_guest_user,
 )
@@ -102,6 +103,7 @@ async def lifespan(app: FastAPI):
         await seed_guest_user(session)
         await backfill_user_settings(session)
         await backfill_spoiler_visibility(session)
+        await purge_restricted_user_spoiler_cache(session)
         # Title-suffix stripper runs BEFORE the embedding backfiller so a
         # row whose suffix is stripped here gets its regenerated embedding
         # immediately. The embedding backfiller below covers the

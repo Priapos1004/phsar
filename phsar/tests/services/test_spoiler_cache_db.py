@@ -87,6 +87,26 @@ async def test_scoped_recompute_empty_ids_is_noop(db_session, two_users):
     assert await get_visible_media_ids(db_session, normal.id) == set()
 
 
+async def test_purge_restricted_user_cache_removes_only_guest_rows(db_session, two_users):
+    """Startup purge deletes a restricted user's stale cache rows (created
+    before they were excluded) but leaves normal users' rows intact."""
+    from app.seeders.user_seeder import purge_restricted_user_spoiler_cache
+
+    normal, restricted = two_users
+    a = await _anime_with_two_mains(db_session, -50301, -50311, -50312)
+    media_ids = [m.id async for m in _media_of(db_session, a.id)]
+    # Seed cache rows for both users directly (simulating pre-v0.14.7 state).
+    for mid in media_ids:
+        db_session.add(UserVisibleMedia(user_id=normal.id, media_id=mid))
+        db_session.add(UserVisibleMedia(user_id=restricted.id, media_id=mid))
+    await db_session.flush()
+
+    await purge_restricted_user_spoiler_cache(db_session)
+
+    assert await get_visible_media_ids(db_session, restricted.id) == set()
+    assert await get_visible_media_ids(db_session, normal.id) == set(media_ids)
+
+
 # --- helpers -------------------------------------------------------------
 
 async def _media_of(db, anime_id: int):

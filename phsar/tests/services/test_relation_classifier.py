@@ -448,6 +448,63 @@ def test_not_yet_aired_does_not_anchor_short_form_franchise():
     assert out[1] == "main"
 
 
+def test_single_not_yet_aired_media_is_main():
+    """A brand-new franchise whose only entry hasn't aired yet (NULL
+    duration/episodes) must still classify as main — the pending node is
+    anchor-ineligible, but `_pick_anchor` falls back to all nodes when
+    nothing is eligible, so the lone node anchors and stays main."""
+    nodes = {1: _tv(episodes=None, duration_s=None, aired=None,
+                    airing_status="Not yet aired")}
+    out, anchor = classify_anime_relations(nodes, [])
+    assert anchor == 1
+    assert out[1] == "main"
+
+
+def test_short_duration_franchise_keeps_seasons_main():
+    """Opantsu shape: every aired entry is short-form (240s, 6 eps), so
+    NEITHER substance floor discriminates — both relax, and the sequel
+    chain stays main instead of all-but-anchor collapsing to side_story."""
+    nodes = {
+        1: _tv(episodes=6, duration_s=240, aired="2020-01-01"),
+        2: _tv(episodes=6, duration_s=240, aired="2021-01-01"),
+        3: _tv(episodes=6, duration_s=240, aired="2022-01-01"),
+    }
+    edges = [(1, 2, "sequel"), (2, 3, "sequel"), (3, 2, "prequel"), (2, 1, "prequel")]
+    out, anchor = classify_anime_relations(nodes, edges)
+    assert anchor == 1
+    assert out[1] == "main" and out[2] == "main" and out[3] == "main"
+
+
+def test_short_duration_franchise_episode_floor_still_demotes():
+    """The key per-constraint case: short-DURATION franchise (nothing ≥600s →
+    duration floor relaxed) but the 12-ep seasons satisfy the EPISODE floor,
+    so it stays active — a 5-ep sequel in the chain still demotes to side_story
+    instead of riding along as main."""
+    nodes = {
+        1: _tv(episodes=12, duration_s=240, aired="2020-01-01"),
+        2: _tv(episodes=12, duration_s=240, aired="2021-01-01"),
+        3: _tv(episodes=5, duration_s=240, aired="2022-01-01"),
+    }
+    edges = [(1, 2, "sequel"), (2, 3, "sequel"), (3, 2, "prequel"), (2, 1, "prequel")]
+    out, _ = classify_anime_relations(nodes, edges)
+    assert out[1] == "main" and out[2] == "main"
+    assert out[3] == "side_story"
+
+
+def test_mixed_duration_franchise_still_demotes_short_sequel():
+    """When a real full-length season exists, both floors are satisfied →
+    nothing relaxes → a short-form sequel demotes exactly as before (no
+    regression to the demotion's load-bearing behavior)."""
+    nodes = {
+        1: _tv(episodes=12, duration_s=1440, aired="2020-01-01"),
+        2: _tv(episodes=6, duration_s=240, aired="2021-01-01"),
+    }
+    edges = [(1, 2, "sequel"), (2, 1, "prequel")]
+    out, _ = classify_anime_relations(nodes, edges)
+    assert out[1] == "main"
+    assert out[2] == "side_story"
+
+
 def test_not_yet_aired_sequel_movie_with_null_duration_stays_main():
     """Movie symmetry: an announced sequel movie with no runtime yet
     stays in the main chain instead of being demoted."""

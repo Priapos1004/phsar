@@ -105,7 +105,15 @@ def _is_metadata_pending(node: ClassifierNode) -> bool:
     return node.get("airing_status") in _METADATA_PENDING_STATUSES
 
 
-def passes_substance(node: ClassifierNode) -> bool:
+def passes_substance(
+    node: ClassifierNode, *, relax_duration: bool = False, relax_episodes: bool = False,
+) -> bool:
+    """Whether a node is substantial enough to be a `main`. The **type gate**
+    (Music/PV/OVA/Special → never main) is always enforced; the numeric
+    `relax_*` flags skip a duration/episode floor that has no discriminating
+    power for the franchise (see the per-floor relaxation in
+    `classify_anime_relations`). Default flags reproduce the strict gate.
+    """
     media_type = _normalize_media_type(node.get("media_type"))
     duration = node.get("duration_seconds")
     episodes = node.get("episodes")
@@ -115,10 +123,13 @@ def passes_substance(node: ClassifierNode) -> bool:
     # must not slip in). See `_METADATA_PENDING_STATUSES`.
     metadata_pending = _is_metadata_pending(node)
     if media_type in _TV_LIKE_TYPES:
-        if duration is not None and duration < SUBSTANCE_MIN_TV_DURATION_S:
-            return False
-        if duration is None and not metadata_pending:
-            return False
+        if not relax_duration:
+            if duration is not None and duration < SUBSTANCE_MIN_TV_DURATION_S:
+                return False
+            if duration is None and not metadata_pending:
+                return False
+        if relax_episodes:
+            return True
         # TV and ONA: NULL episodes is normal for currently-airing /
         # long-running shows that have no terminal count (Conan,
         # Anpanman, mid-arc donghua). For TVSpecial — bounded by
@@ -129,6 +140,8 @@ def passes_substance(node: ClassifierNode) -> bool:
             return episodes >= SUBSTANCE_MIN_EPISODES
         return episodes is None or episodes >= SUBSTANCE_MIN_EPISODES
     if media_type in _MOVIE_TYPES:
+        if relax_duration:
+            return True
         if duration is None:
             return metadata_pending
         return duration >= SUBSTANCE_MIN_MOVIE_DURATION_S
@@ -337,10 +350,25 @@ def classify_anime_relations(
     # anchor) drops to side_story. Load-bearing at merge time when a
     # standalone weak-anime (e.g. the Overlord 2024 standalone Manner Movie)
     # gets absorbed and would otherwise inherit `main`.
+    #
+    # Per-floor relaxation: a substance floor that NO aired media clears can't
+    # distinguish main from filler for this franchise, so relax it here.
+    # Episode-count discrimination survives even when every entry is short-
+    # duration (a 5-ep side-season still demotes next to 12-ep mains — the
+    # Hyakushou Kizoku shape). Computed over aired nodes only — a lone
+    # announced sequel doesn't prove the franchise clears a floor. The type
+    # gate is never relaxed. `relax_episodes=True` isolates the duration floor
+    # (and vice-versa), so this reuses `passes_substance` without duplicating
+    # the thresholds.
+    aired = [n for n in nodes.values() if not _is_metadata_pending(n)]
+    relax_duration = not any(passes_substance(n, relax_episodes=True) for n in aired)
+    relax_episodes = not any(passes_substance(n, relax_duration=True) for n in aired)
     for mal_id in main_chain:
         if mal_id == anchor:
             continue
-        if not passes_substance(nodes[mal_id]):
+        if not passes_substance(
+            nodes[mal_id], relax_duration=relax_duration, relax_episodes=relax_episodes,
+        ):
             classifications[mal_id] = "side_story"
 
     return classifications, anchor

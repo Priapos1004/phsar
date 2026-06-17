@@ -1,6 +1,6 @@
 import logging
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -90,6 +90,26 @@ async def backfill_spoiler_visibility(db: AsyncSession):
             await db.rollback()
             logger.exception("Spoiler-visibility backfill failed for user %s", user_id)
     logger.info(f"Backfilled spoiler visibility for {succeeded}/{len(user_ids)} user(s).")
+
+
+async def purge_restricted_user_spoiler_cache(db: AsyncSession):
+    """Delete any `user_visible_media` rows belonging to restricted (guest)
+    users. They're pinned to spoiler=off and excluded from the cache as of
+    v0.14.7, but rows created before that change linger (harmless — the cache
+    is never read when spoiler is off — but dead/misleading). Idempotent:
+    touches zero rows once clean."""
+    result = await db.execute(
+        delete(UserVisibleMedia).where(
+            UserVisibleMedia.user_id.in_(
+                select(Users.id).where(Users.role == RoleType.RestrictedUser)
+            )
+        )
+    )
+    await db.commit()
+    if result.rowcount:
+        logger.info(
+            "Purged %d restricted-user spoiler-cache row(s).", result.rowcount,
+        )
 
 
 async def backfill_user_settings(db: AsyncSession):
