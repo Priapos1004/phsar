@@ -55,7 +55,10 @@ async def register(user_data: UserCreateWithToken, db: AsyncSession):
     await user_dao.create(db, new_user)
     await user_settings_service.create_default_settings(db, new_user.id)
 
-    await recompute_visibility_for_user(db, new_user.id)
+    # Restricted users are pinned to spoiler=off and never read the cache,
+    # so skip building one (see spoiler_service / user_seeder).
+    if token_obj.role != RoleType.RestrictedUser:
+        await recompute_visibility_for_user(db, new_user.id)
 
     token_obj.was_used_for_user_id = new_user.id
     token_obj.used_at = datetime.now(timezone.utc)

@@ -26,6 +26,7 @@ class ClassifierNode(TypedDict):
     episodes: int | None
     duration_seconds: int | None
     scored_by: int
+    airing_status: str | None
 
 
 class DisjointFranchise(TypedDict):
@@ -39,6 +40,27 @@ class DisjointFranchise(TypedDict):
     # and by the Conan-exclusion heuristic in find_disjoint_franchises.
     bridge_edges: list[tuple[int, int, str]]
 
+
+# Sentinel media.airing_status values MAL returns. Defined here (the
+# pure, DB-less module) so they live with the substance gate that
+# interprets them (see _METADATA_PENDING_STATUSES). Consumers import them
+# directly from here. They can't live in jikan_scraper: relation_classifier
+# would have to import them back, and jikan_scraper already imports from
+# this module (that reverse import would cycle).
+AIRING_STATUS_CURRENTLY_AIRING = "Currently Airing"
+AIRING_STATUS_FINISHED_AIRING = "Finished Airing"
+AIRING_STATUS_NOT_YET_AIRED = "Not yet aired"
+
+# Statuses where NULL episode/duration is "MAL hasn't published it yet",
+# not "this entry is too thin to be canonical". A not-yet-aired sequel
+# legitimately has no runtime/episode count for months before it airs;
+# demoting it to side_story on that absence is the bug this guards
+# (Hell Mode S2 — see compound-docs/2026-06-17-v0.14.7). Deliberately
+# NOT including Currently Airing: an airing show normally HAS a published
+# duration, so a NULL there is either a transient gap (self-corrects next
+# sweep) or a genuinely short-form entry — and including it would let a
+# mid-franchise airing part steal the anchor (the Fei Ren Zai case).
+_METADATA_PENDING_STATUSES = frozenset({AIRING_STATUS_NOT_YET_AIRED})
 
 SUBSTANCE_MIN_EPISODES = 8
 # 10 min — includes short-form TV (Isekai Quartet, Aggretsuko, Tonari no
@@ -74,23 +96,54 @@ def _normalize_media_type(media_type: str | None) -> str:
     return media_type.replace(" ", "").lower()
 
 
-def passes_substance(node: ClassifierNode) -> bool:
+def _is_metadata_pending(node: ClassifierNode) -> bool:
+    """True when MAL hasn't published this entry's runtime/episode count
+    yet (not-yet-aired). Such nodes get a provisional substance pass so a
+    sequel isn't demoted out of the main chain — but they are NOT
+    anchor-eligible (see `_pick_anchor`): a franchise can't anchor on
+    something that hasn't aired."""
+    return node.get("airing_status") in _METADATA_PENDING_STATUSES
+
+
+def passes_substance(
+    node: ClassifierNode, *, relax_duration: bool = False, relax_episodes: bool = False,
+) -> bool:
+    """Whether a node is substantial enough to be a `main`. The **type gate**
+    (Music/PV/OVA/Special → never main) is always enforced; the numeric
+    `relax_*` flags skip a duration/episode floor that has no discriminating
+    power for the franchise (see the per-floor relaxation in
+    `classify_anime_relations`). Default flags reproduce the strict gate.
+    """
     media_type = _normalize_media_type(node.get("media_type"))
     duration = node.get("duration_seconds")
     episodes = node.get("episodes")
+    # A not-yet-aired entry has no published runtime/episode count yet;
+    # treat those NULLs as "pending", not "too thin". A *populated* short
+    # duration still fails regardless of status (an announced 60s PV-as-TV
+    # must not slip in). See `_METADATA_PENDING_STATUSES`.
+    metadata_pending = _is_metadata_pending(node)
     if media_type in _TV_LIKE_TYPES:
-        if duration is None or duration < SUBSTANCE_MIN_TV_DURATION_S:
-            return False
+        if not relax_duration:
+            if duration is not None and duration < SUBSTANCE_MIN_TV_DURATION_S:
+                return False
+            if duration is None and not metadata_pending:
+                return False
+        if relax_episodes:
+            return True
         # TV and ONA: NULL episodes is normal for currently-airing /
         # long-running shows that have no terminal count (Conan,
         # Anpanman, mid-arc donghua). For TVSpecial — bounded by
-        # definition — require an explicit count.
+        # definition — require an explicit count unless still pending.
         if media_type == "tvspecial":
-            return episodes is not None and episodes >= SUBSTANCE_MIN_EPISODES
+            if episodes is None:
+                return metadata_pending
+            return episodes >= SUBSTANCE_MIN_EPISODES
         return episodes is None or episodes >= SUBSTANCE_MIN_EPISODES
     if media_type in _MOVIE_TYPES:
+        if relax_duration:
+            return True
         if duration is None:
-            return False
+            return metadata_pending
         return duration >= SUBSTANCE_MIN_MOVIE_DURATION_S
     return False
 
@@ -123,11 +176,20 @@ def _pick_anchor(nodes: dict[int, ClassifierNode]) -> int:
     """Internal: return the mal_id the classifier would anchor on for
     this graph. `classify_anime_relations` returns this in its tuple, so
     external callers don't need it standalone."""
-    substance_passing = {m: n for m, n in nodes.items() if passes_substance(n)}
+    # Not-yet-aired entries get a provisional substance pass (so a sequel
+    # stays in the main chain) but are NOT anchor-eligible — a franchise
+    # can't anchor on something that hasn't aired. Without this exclusion a
+    # short-form franchise whose aired seasons all fail the duration gate
+    # (Hyakushou Kizoku, 4-min episodes) flips its umbrella onto an
+    # announced future season the moment that season is the lone passer.
+    anchor_eligible = {
+        m: n for m, n in nodes.items()
+        if passes_substance(n) and not _is_metadata_pending(n)
+    }
     # Fallback covers donghua / orphan-side-story / standalone-weak-anime
-    # cases where nothing passes substance — pick the most main-like
+    # cases where nothing is anchor-eligible — pick the most main-like
     # node anyway so the anime row has a `main`.
-    candidates = substance_passing or nodes
+    candidates = anchor_eligible or nodes
     return min(candidates.items(), key=lambda kv: _anchor_sort_key(kv[0], kv[1]))[0]
 
 
@@ -194,6 +256,7 @@ def media_to_classifier_node(media) -> ClassifierNode:
         "episodes": media.episodes,
         "duration_seconds": media.duration_seconds,
         "scored_by": media.scored_by or 0,
+        "airing_status": media.airing_status,
     }
 
 
@@ -210,6 +273,7 @@ def build_classifier_nodes(
             "episodes": all_info[mal_id].get("episodes"),
             "duration_seconds": all_info[mal_id].get("duration_seconds"),
             "scored_by": all_info[mal_id].get("scored_by") or 0,
+            "airing_status": all_info[mal_id].get("airing_status"),
         }
         for mal_id in graph
         if mal_id in all_info
@@ -286,10 +350,25 @@ def classify_anime_relations(
     # anchor) drops to side_story. Load-bearing at merge time when a
     # standalone weak-anime (e.g. the Overlord 2024 standalone Manner Movie)
     # gets absorbed and would otherwise inherit `main`.
+    #
+    # Per-floor relaxation: a substance floor that NO aired media clears can't
+    # distinguish main from filler for this franchise, so relax it here.
+    # Episode-count discrimination survives even when every entry is short-
+    # duration (a 5-ep side-season still demotes next to 12-ep mains — the
+    # Hyakushou Kizoku shape). Computed over aired nodes only — a lone
+    # announced sequel doesn't prove the franchise clears a floor. The type
+    # gate is never relaxed. `relax_episodes=True` isolates the duration floor
+    # (and vice-versa), so this reuses `passes_substance` without duplicating
+    # the thresholds.
+    aired = [n for n in nodes.values() if not _is_metadata_pending(n)]
+    relax_duration = not any(passes_substance(n, relax_episodes=True) for n in aired)
+    relax_episodes = not any(passes_substance(n, relax_duration=True) for n in aired)
     for mal_id in main_chain:
         if mal_id == anchor:
             continue
-        if not passes_substance(nodes[mal_id]):
+        if not passes_substance(
+            nodes[mal_id], relax_duration=relax_duration, relax_episodes=relax_episodes,
+        ):
             classifications[mal_id] = "side_story"
 
     return classifications, anchor

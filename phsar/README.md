@@ -232,6 +232,7 @@ phsar/
 │   │   │       ├── getSeason.ts
 │   │   │       ├── index.ts
 │   │   │       ├── jobBadges.ts
+│   │   │       ├── mediaChangeSort.ts
 │   │   │       ├── navigation.ts
 │   │   │       ├── search.ts
 │   │   │       └── spoilerFrontier.ts
@@ -269,10 +270,13 @@ phsar/
 │   │       ├── backups-card.test.ts
 │   │       ├── format-string.test.ts
 │   │       ├── job-bell.test.ts
+│   │       ├── job-detail-counters.test.ts
 │   │       ├── library-add.test.ts
 │   │       ├── login.test.ts
 │   │       ├── maintenance-banner.test.ts
+│   │       ├── media-change-sort.test.ts
 │   │       ├── media-detail.test.ts
+│   │       ├── merge-candidates-card.test.ts
 │   │       ├── navbar.test.ts
 │   │       ├── navigation.test.ts
 │   │       ├── rating-modal.test.ts
@@ -348,6 +352,7 @@ phsar/
         ├── test_save_service.py
         ├── test_search_service.py
         ├── test_seasonal_sweep.py
+        ├── test_spoiler_cache_db.py
         ├── test_spoiler_service.py
         ├── test_split_candidate_service.py
         ├── test_update_sweep.py

@@ -54,7 +54,7 @@ from app.services.relation_classifier import (
     media_to_classifier_node,
     passes_substance,
 )
-from app.services.spoiler_service import refresh_spoiler_cache_for_all_users
+from app.services.spoiler_service import refresh_spoiler_cache_for_anime_ids
 from app.services.vector_embedding_service import create_anime_embedding
 
 # Bound on a single cluster's embedding regen so a stuck encoder thread
@@ -333,15 +333,29 @@ async def execute_split(db: AsyncSession, uuid: UUID) -> tuple[str, list[str]]:
 
     await db.commit()
 
+    # Capture the source uuid BEFORE the recompute: that helper does a
+    # per-user db.rollback() on failure, which expires every ORM instance in
+    # the session (regardless of expire_on_commit=False), so reading
+    # source_anime.uuid afterwards would trigger an async lazy reload →
+    # MissingGreenlet. Same pre-rollback identifier-capture trap as
+    # _try_step1_refresh.
+    source_uuid = str(source_anime.uuid) if source_anime else ""
     # Spoiler cache stores media ids, not anime ids, but the frontier
-    # algorithm runs per-anime. Recompute globally because anime
-    # boundaries shifted. The split itself is already durably committed
+    # algorithm runs per-anime. Media were re-parented from the source
+    # onto the new anime, so recomputing the source + each new anime
+    # covers every moved row. The split itself is already durably committed
     # above — a cache-recompute failure shouldn't 5xx the request and
     # trick the admin into retrying an already-resolved candidate. Same
-    # pattern as scrape_dispatcher's post-sweep recompute.
+    # pattern as scrape_dispatcher's post-sweep recompute. Build the set
+    # defensively — `source_anime` is treated as nullable just above, so a
+    # None re-fetch must not turn a successful split into an AttributeError
+    # mis-logged as a recompute failure.
+    recompute_anime_ids = set(new_anime_ids)
+    if source_anime is not None:
+        recompute_anime_ids.add(source_anime.id)
     try:
-        await refresh_spoiler_cache_for_all_users(db)
+        await refresh_spoiler_cache_for_anime_ids(db, recompute_anime_ids)
     except Exception:
         logger.exception("Spoiler cache recompute failed after split execute")
 
-    return str(source_anime.uuid) if source_anime else "", new_anime_uuids
+    return source_uuid, new_anime_uuids

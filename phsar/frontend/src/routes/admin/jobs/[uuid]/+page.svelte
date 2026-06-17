@@ -3,7 +3,9 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api, ApiError } from '$lib/api';
+	import { buildDetailHref } from '$lib/utils/navigation';
 	import { isRatingField } from '$lib/utils/formatString';
+	import { sortMediaChanges } from '$lib/utils/mediaChangeSort';
 	import { Input } from '$lib/components/ui/input';
 	import * as Card from '$lib/components/ui/card';
 	import JobDetailHeader from '$lib/components/admin/JobDetailHeader.svelte';
@@ -59,10 +61,18 @@
 		return (job.result_summary ?? null) as UpdateSweepResultSummary | null;
 	});
 
+	// The progress-divergence gap (items_total - items_done) is exactly
+	// step1_failed + probe_failed — refreshed increments only on a fully
+	// advanced anime, and both failure paths `continue` without it.
+	let step1Failed = $derived(v2Summary?.counters?.step1_failed ?? 0);
+	let probeFailed = $derived(v2Summary?.counters?.probe_failed ?? 0);
+
 	let visibleMediaChanges = $derived.by(() => {
 		const all = v2Summary?.media_changes ?? [];
 		const q = search.trim().toLowerCase();
-		return all.filter((m: UpdateSweepMediaChange) => {
+		// Most-substantial-first via `sortMediaChanges` (see util) instead of
+		// raw sweep-due order.
+		const filtered = all.filter((m: UpdateSweepMediaChange) => {
 			if (filter === 'dynamic' && !m.dynamic.some((d) => !isRatingField(d.field))) return false;
 			if (filter === 'rating' && !m.dynamic.some((d) => isRatingField(d.field))) return false;
 			if (filter === 'static' && m.static.length === 0) return false;
@@ -78,6 +88,7 @@
 			];
 			return haystacks.some((h) => h?.toLowerCase().includes(q));
 		});
+		return sortMediaChanges(filtered);
 	});
 
 	const FILTER_CHIPS: { key: Filter; label: string; tooltip: string }[] = [
@@ -123,9 +134,23 @@
 			{#if v2Summary?.counters}
 				<JobDetailCounters
 					counters={v2Summary.counters}
+					version={job.version}
 					merge_detect_failed={v2Summary.merge_detect_failed}
 					cache_recompute_failed={v2Summary.cache_recompute_failed}
 				/>
+				{#if job.items_total != null && job.items_done < job.items_total}
+					<Notice>
+						<p>
+							Processed <strong>{job.items_done}</strong> of
+							<strong>{job.items_total}</strong> selected anime —
+							{job.items_total - job.items_done} not fully advanced
+							{#if step1Failed > 0 || probeFailed > 0}
+								({step1Failed} failed refresh{#if probeFailed > 0}, {probeFailed} failed relations probe{/if}).
+								{#if step1Failed > 0}See “Failed refresh” below; {/if}all retry next sweep.
+							{:else}.{/if}
+						</p>
+					</Notice>
+				{/if}
 			{:else if job.status !== 'failed' && job.version < 2}
 				<!-- Suppressed on failed jobs because the header already
 				     renders error_message and the missing counters reflect
@@ -133,6 +158,37 @@
 				<Notice>
 					<p>This sweep predates v0.14.5's per-media diff capture (job version {job.version}). Per-media diffs and the granular counters are not available; the row's payload summary on the Jobs Log is the full record.</p>
 				</Notice>
+			{/if}
+
+			{#if v2Summary && (v2Summary.step1_failures?.length ?? 0) > 0}
+				<Card.Root>
+					<Card.Header>
+						<h2 class="text-lg font-semibold text-card-foreground">
+							Failed refresh ({v2Summary.step1_failures?.length})
+						</h2>
+						<p class="text-sm text-muted-foreground">
+							Anime selected by the sweep but skipped because the MAL refresh raised.
+							They keep their old <code>last_checked_at</code> so the next sweep retries them.
+						</p>
+					</Card.Header>
+					<Card.Content class="space-y-2">
+						{#each v2Summary.step1_failures ?? [] as failure (failure.anime_uuid)}
+							<div class="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+								<div class="flex items-center justify-between gap-3 flex-wrap">
+									<a href={buildDetailHref('anime', failure.anime_uuid)} class="font-medium text-card-foreground hover:underline">
+										{failure.title}
+									</a>
+									{#if failure.error_category}
+										<span class="text-[10px] uppercase tracking-wider text-amber-400">
+											{failure.error_category}
+										</span>
+									{/if}
+								</div>
+								<p class="text-xs text-muted-foreground mt-1 break-words">{failure.error_message}</p>
+							</div>
+						{/each}
+					</Card.Content>
+				</Card.Root>
 			{/if}
 
 			{#if v2Summary && (v2Summary.media_changes?.length ?? 0) > 0}

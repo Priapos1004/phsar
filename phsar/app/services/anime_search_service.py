@@ -17,7 +17,7 @@ from app.schemas.anime_schema import (
 )
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
 from app.services.filter_service import SEASON_ORDER, chronological_media_key
-from app.services.jikan_scraper import (
+from app.services.relation_classifier import (
     AIRING_STATUS_CURRENTLY_AIRING,
     AIRING_STATUS_FINISHED_AIRING,
     AIRING_STATUS_NOT_YET_AIRED,

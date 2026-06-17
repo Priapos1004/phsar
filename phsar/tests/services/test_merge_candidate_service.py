@@ -410,19 +410,19 @@ async def test_merge_demotes_weak_main_from_loser(db_session):
 
 @pytest.mark.asyncio
 async def test_merge_survives_spoiler_refresh_failure(db_session, monkeypatch):
-    """Post-commit `refresh_spoiler_cache_for_all_users` failure must NOT
+    """Post-commit `refresh_spoiler_cache_for_anime_ids` failure must NOT
     raise out of merge — the merge itself is already durably committed,
     so a 5xx would trick admin into retrying an already-resolved
     candidate and hitting AlreadyResolvedError. Mirrors the sweep
     dispatcher's soft-warn pattern."""
     from app.services import merge_candidate_service
 
-    async def _boom(_db):
+    async def _boom(_db, _anime_ids):
         raise RuntimeError("spoiler cache unavailable")
 
     monkeypatch.setattr(
         merge_candidate_service,
-        "refresh_spoiler_cache_for_all_users",
+        "refresh_spoiler_cache_for_anime_ids",
         _boom,
     )
 

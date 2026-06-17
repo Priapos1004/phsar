@@ -37,7 +37,7 @@ from app.services.anime_relation_service import (
 )
 from app.services.anime_summary import summarize_anime
 from app.services.merge_detection_service import detect_merge_candidates
-from app.services.spoiler_service import refresh_spoiler_cache_for_all_users
+from app.services.spoiler_service import refresh_spoiler_cache_for_anime_ids
 
 logger = logging.getLogger(__name__)
 
@@ -150,8 +150,8 @@ async def merge(
     similarity against some third anime that wasn't flagged before, it
     gets pushed into the queue for admin review (e.g. A-B and B-C were
     pending; merging A-B should re-evaluate A-C). Spoiler cache is
-    recomputed globally because frontiers run per-anime over the now-merged
-    media list.
+    recomputed scoped to the survivor (frontiers run per-anime, and B's
+    media are now under A so that one anime covers every moved row).
 
     Fail-loud on shared mal_ids: per-design assumption is that Media.mal_id
     is globally unique, so the same mal_id appearing under both anime is a
@@ -235,15 +235,24 @@ async def merge(
             await db.commit()
         except Exception:
             logger.exception("Post-merge re-detection failed; merge itself succeeded")
+        # Capture the survivor uuid BEFORE the recompute: that helper does a
+        # per-user db.rollback() on failure, which expires every ORM instance
+        # in the session (regardless of expire_on_commit=False), and reading
+        # anime_a.uuid afterwards would trigger an async lazy reload →
+        # MissingGreenlet. Same pre-rollback identifier-capture trap as
+        # _try_step1_refresh.
+        survivor_uuid = str(anime_a.uuid)
         # Spoiler cache stores media ids, not anime ids, but the frontier
-        # algorithm runs per-anime. Recompute globally so frontiers reflect
-        # the merged media list. The merge itself committed above — a
+        # algorithm runs per-anime. B's media were re-parented onto the
+        # survivor A, so recomputing A (its media set now includes B's)
+        # covers every moved row. The merge itself committed above — a
         # cache-recompute failure shouldn't 5xx the request and trick the
         # admin into retrying an already-resolved candidate. Same pattern
         # as scrape_dispatcher's post-sweep recompute.
         try:
-            await refresh_spoiler_cache_for_all_users(db)
+            await refresh_spoiler_cache_for_anime_ids(db, {anime_a.id})
         except Exception:
             logger.exception("Spoiler cache recompute failed after merge")
+        return survivor_uuid
 
-    return str(anime_a.uuid) if anime_a else ""
+    return ""

@@ -215,19 +215,19 @@ async def test_execute_split_on_unknown_uuid_raises(db_session):
 async def test_execute_split_survives_spoiler_refresh_failure(
     db_session, monkeypatch,
 ):
-    """Post-commit `refresh_spoiler_cache_for_all_users` failure must NOT
+    """Post-commit `refresh_spoiler_cache_for_anime_ids` failure must NOT
     raise out of execute_split — the split itself is already durably
     committed, so a 5xx would trick admin into retrying an
     already-resolved candidate and hitting AlreadyResolvedError.
     Mirrors the sweep dispatcher's soft-warn pattern."""
     from app.services import split_candidate_service
 
-    async def _boom(_db):
+    async def _boom(_db, _anime_ids):
         raise RuntimeError("spoiler cache unavailable")
 
     monkeypatch.setattr(
         split_candidate_service,
-        "refresh_spoiler_cache_for_all_users",
+        "refresh_spoiler_cache_for_anime_ids",
         _boom,
     )
 

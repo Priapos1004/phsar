@@ -33,7 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.media import Media, RelationType
 from app.models.ratings import Ratings
 from app.models.user_visible_media import UserVisibleMedia
-from app.models.users import Users
+from app.models.users import RoleType, Users
 from app.schemas.rating_schema import SpoilerVisibility
 from app.services.filter_service import chronological_media_key
 
@@ -126,24 +126,34 @@ def compute_visible_media(
 # DB helpers
 # ---------------------------------------------------------------------------
 
-async def _fetch_media_for_anime(db: AsyncSession, anime_id: int) -> list[_MediaEntry]:
-    """Fetch minimal media fields for one anime."""
-    stmt = select(
-        Media.id, Media.uuid, Media.anime_id, Media.relation_type,
-        Media.anime_season_year, Media.anime_season_name, Media.mal_id,
-    ).where(Media.anime_id == anime_id)
-    result = await db.execute(stmt)
-    return [_make_entry(row) for row in result.all()]
-
-
-async def _fetch_all_media_lightweight(db: AsyncSession) -> list[_MediaEntry]:
-    """Fetch minimal media fields for all media (used for full recompute)."""
+async def _fetch_media_lightweight(
+    db: AsyncSession, anime_ids: list[int] | None = None,
+) -> list[_MediaEntry]:
+    """Fetch the minimal media fields the frontier needs. All media when
+    `anime_ids` is None (full recompute); else just those anime."""
     stmt = select(
         Media.id, Media.uuid, Media.anime_id, Media.relation_type,
         Media.anime_season_year, Media.anime_season_name, Media.mal_id,
     )
+    if anime_ids is not None:
+        stmt = stmt.where(Media.anime_id.in_(anime_ids))
     result = await db.execute(stmt)
     return [_make_entry(row) for row in result.all()]
+
+
+async def _fetch_media_for_anime(db: AsyncSession, anime_id: int) -> list[_MediaEntry]:
+    return await _fetch_media_lightweight(db, [anime_id])
+
+
+async def _fetch_media_grouped_for_anime_ids(
+    db: AsyncSession, anime_ids: list[int],
+) -> dict[int, list[_MediaEntry]]:
+    """Media for the given anime, grouped by anime_id (one read for the
+    scoped post-mutation recompute)."""
+    grouped: dict[int, list[_MediaEntry]] = defaultdict(list)
+    for entry in await _fetch_media_lightweight(db, anime_ids):
+        grouped[entry.anime_id].append(entry)
+    return grouped
 
 
 def _make_entry(row) -> _MediaEntry:
@@ -180,6 +190,30 @@ async def _fetch_all_rated_media_ids(db: AsyncSession, user_id: int) -> set[int]
 # Write: update the precomputed cache
 # ---------------------------------------------------------------------------
 
+async def _replace_user_visible_media(
+    db: AsyncSession,
+    user_id: int,
+    visible_ids: set[int],
+    *,
+    scope_media_ids: list[int] | None,
+) -> None:
+    """Delete the user's existing visibility rows, then insert `visible_ids`.
+    `scope_media_ids=None` clears all of the user's rows (whole-catalog
+    recompute); a list clears only rows for those media (scoped recompute,
+    leaving untouched anime intact). Does NOT commit."""
+    delete_stmt = delete(UserVisibleMedia).where(UserVisibleMedia.user_id == user_id)
+    if scope_media_ids is not None:
+        delete_stmt = delete_stmt.where(UserVisibleMedia.media_id.in_(scope_media_ids))
+    await db.execute(delete_stmt)
+    if visible_ids:
+        await db.execute(
+            pg_insert(UserVisibleMedia).values(
+                [{"user_id": user_id, "media_id": mid} for mid in visible_ids]
+            ).on_conflict_do_nothing()
+        )
+    await db.flush()
+
+
 async def recompute_visibility_for_anime(db: AsyncSession, user_id: int, anime_id: int) -> None:
     """Recompute and update visible media for one anime after a rating change.
     Does NOT commit — caller manages the transaction."""
@@ -188,68 +222,91 @@ async def recompute_visibility_for_anime(db: AsyncSession, user_id: int, anime_i
         return
 
     rated_ids = await _fetch_rated_media_ids_for_anime(db, user_id, anime_id)
-    media_by_anime = {anime_id: media_list}
-    visible_ids = compute_visible_media(media_by_anime, rated_ids)
-
-    # Delete existing rows for this user+anime's media
-    anime_media_ids = [m.id for m in media_list]
-    await db.execute(
-        delete(UserVisibleMedia).where(
-            UserVisibleMedia.user_id == user_id,
-            UserVisibleMedia.media_id.in_(anime_media_ids),
-        )
+    visible_ids = compute_visible_media({anime_id: media_list}, rated_ids)
+    await _replace_user_visible_media(
+        db, user_id, visible_ids, scope_media_ids=[m.id for m in media_list],
     )
-
-    # Insert new visible rows
-    if visible_ids:
-        await db.execute(
-            pg_insert(UserVisibleMedia).values(
-                [{"user_id": user_id, "media_id": mid} for mid in visible_ids]
-            ).on_conflict_do_nothing()
-        )
-    await db.flush()
 
 
 async def recompute_visibility_for_user(db: AsyncSession, user_id: int) -> None:
     """Full recompute of visible media for a user. Used for new user seeding.
     Does NOT commit — caller manages the transaction."""
-    all_media = await _fetch_all_media_lightweight(db)
+    all_media = await _fetch_media_lightweight(db)
     media_by_anime: dict[int, list[_MediaEntry]] = defaultdict(list)
     for m in all_media:
         media_by_anime[m.anime_id].append(m)
     await _recompute_user_against_catalog(db, user_id, media_by_anime)
 
 
-async def refresh_spoiler_cache_for_all_users(db: AsyncSession) -> None:
-    """Recompute every user's visibility cache after a catalog mutation
-    (new save, anime merge). Per-user try/commit so one poisoned user
-    (e.g. FK pointing at a stale rating row) doesn't abort the rest and
-    doesn't unwind already-committed catalog rows. backfill_spoiler_visibility
-    will mop up anyone we skip on next startup.
+async def refresh_spoiler_cache_for_anime_ids(
+    db: AsyncSession, anime_ids: set[int] | list[int],
+) -> None:
+    """Recompute visibility for the given anime only, for every
+    non-restricted user, after a catalog mutation touched those anime
+    (new save, sweep attach, merge survivor, split source+targets).
 
-    The catalog-wide media read is hoisted out of the per-user loop:
-    `_fetch_all_media_lightweight` returns the same rows regardless of
-    user, so calling `recompute_visibility_for_user` per user would ship
-    O(users × media) rows for nothing. Hoisting cuts the post-sweep
-    recompute (the longest single phase of the maintenance window)
-    proportionally to user count.
+    Scoped instead of whole-catalog because the frontier is independent
+    per anime and `user_visible_media` keys on media_id: media ids only
+    move *between the named anime* on merge/split, so recomputing exactly
+    the affected anime is sufficient — O(users × changed) instead of
+    O(users × all). Restricted users are skipped (they can't rate, pinned
+    to spoiler=off, never in the cache — see _seed_user / auth_service).
+    Per-user try/commit so one poisoned user doesn't abort the rest;
+    `backfill_spoiler_visibility` mops up any skipped non-restricted user
+    on next startup.
+
+    CONTRACT: the per-user commit/rollback loop expires every ORM instance
+    in `db` (rollback expires unconditionally, even with
+    expire_on_commit=False). Callers MUST capture any ORM scalars they still
+    need (e.g. `str(anime.uuid)` for the return value) BEFORE calling this —
+    reading them afterwards triggers an async lazy reload → MissingGreenlet.
     """
-    all_media = await _fetch_all_media_lightweight(db)
-    media_by_anime: dict[int, list[_MediaEntry]] = defaultdict(list)
-    for m in all_media:
-        media_by_anime[m.anime_id].append(m)
+    anime_ids = list(set(anime_ids))
+    if not anime_ids:
+        return
+    media_by_anime = await _fetch_media_grouped_for_anime_ids(db, anime_ids)
+    if not media_by_anime:
+        return
+    affected_media_ids = [m.id for entries in media_by_anime.values() for m in entries]
 
-    user_ids = (await db.execute(select(Users.id))).scalars().all()
+    user_ids = (
+        await db.execute(
+            select(Users.id).where(Users.role != RoleType.RestrictedUser)
+        )
+    ).scalars().all()
     for user_id in user_ids:
         try:
-            await _recompute_user_against_catalog(db, user_id, media_by_anime)
+            await _recompute_user_for_anime_subset(
+                db, user_id, media_by_anime, affected_media_ids,
+            )
             await db.commit()
         except Exception:
             await db.rollback()
             logger.exception(
-                "Spoiler-cache recompute failed for user %s — skipping",
+                "Scoped spoiler-cache recompute failed for user %s — skipping",
                 user_id,
             )
+
+
+async def _recompute_user_for_anime_subset(
+    db: AsyncSession,
+    user_id: int,
+    media_by_anime: dict[int, list[_MediaEntry]],
+    affected_media_ids: list[int],
+) -> None:
+    """Recompute one user's visibility for just the affected anime. Rated
+    ids are restricted to `affected_media_ids` (the frontier of each anime
+    consults only ratings on that anime's media), and the delete+reinsert
+    is keyed on the same set so untouched anime's cache rows are left
+    intact."""
+    rated_stmt = select(Ratings.media_id).where(
+        Ratings.user_id == user_id, Ratings.media_id.in_(affected_media_ids),
+    )
+    rated_ids = {row[0] for row in (await db.execute(rated_stmt)).all()}
+    visible_ids = compute_visible_media(media_by_anime, rated_ids)
+    await _replace_user_visible_media(
+        db, user_id, visible_ids, scope_media_ids=affected_media_ids,
+    )
 
 
 async def _recompute_user_against_catalog(
@@ -257,23 +314,12 @@ async def _recompute_user_against_catalog(
     user_id: int,
     media_by_anime: dict[int, list[_MediaEntry]],
 ) -> None:
-    """Single full-recompute worker. The all-users refresh shares one
-    catalog snapshot across users; the single-user refresh
-    (`recompute_visibility_for_user`) builds the snapshot itself and
-    delegates here."""
+    """Single full-recompute worker for one user against a whole-catalog
+    snapshot. Used by `recompute_visibility_for_user` (new-user seeding /
+    startup backfill), which builds the snapshot itself."""
     rated_ids = await _fetch_all_rated_media_ids(db, user_id)
     visible_ids = compute_visible_media(media_by_anime, rated_ids)
-
-    await db.execute(
-        delete(UserVisibleMedia).where(UserVisibleMedia.user_id == user_id)
-    )
-    if visible_ids:
-        await db.execute(
-            pg_insert(UserVisibleMedia).values(
-                [{"user_id": user_id, "media_id": mid} for mid in visible_ids]
-            ).on_conflict_do_nothing()
-        )
-    await db.flush()
+    await _replace_user_visible_media(db, user_id, visible_ids, scope_media_ids=None)
 
 
 # ---------------------------------------------------------------------------

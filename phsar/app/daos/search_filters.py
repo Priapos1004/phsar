@@ -10,7 +10,7 @@ from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
-from app.services.jikan_scraper import (
+from app.services.relation_classifier import (
     AIRING_STATUS_CURRENTLY_AIRING,
     AIRING_STATUS_FINISHED_AIRING,
     AIRING_STATUS_NOT_YET_AIRED,

@@ -50,7 +50,7 @@ class TransientUpstreamError(PhsarBaseError):
     or malformed data — distinct from a real 404 (which would surface as
     HTTPStatusError from `_get`). Not a PermanentPhsarError, so the job
     worker stamps retryable=True and the bell shows its retry button;
-    job_worker's _classify_error also tags it as `upstream_outage` so
+    job_worker's classify_error also tags it as `upstream_outage` so
     the bell renders the friendly 'MAL temporarily unavailable' copy
     instead of leaking this internal message to users."""
     status_code = 502

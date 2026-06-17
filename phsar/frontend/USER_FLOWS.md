@@ -299,6 +299,7 @@ Each anime search result card shows:
 - Anime covers and anime-level descriptions are never spoiler-protected
 - On detail pages, "hide" mode falls back to blur behavior (user explicitly navigated there)
 - Visibility data loaded on auth and refreshed after rating changes
+- **Restricted (guest) users**: the spoiler control is disabled and pinned to **Off** — guests can't rate, so a frontier would freeze at episode 1 of every anime and hide the catalogue (they're also excluded from the spoiler-visibility cache). The Rating Step and Data Export controls are likewise shown disabled rather than hidden. Enforced server-side (`PUT /users/settings` drops `spoiler_level` for restricted users)
 
 ### 8.3 Account Deletion (Danger Zone)
 - Red-bordered "Danger Zone" card at the bottom of the settings page

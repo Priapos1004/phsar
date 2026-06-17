@@ -36,7 +36,9 @@ async def update_settings(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    return await user_settings_service.update_settings(db, current_user.id, data)
+    return await user_settings_service.update_settings(
+        db, current_user.id, data, role=current_user.role,
+    )
 
 
 # --- Account Deletion ---

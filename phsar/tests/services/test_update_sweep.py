@@ -1250,6 +1250,18 @@ async def test_dispatcher_isolates_failures_per_anime(tracked_anime, monkeypatch
 
     assert summary["counters"]["anime_refreshed"] == 2
 
+    # The skipped anime is counted + recorded (v4) so the sweep doesn't
+    # read as fully clean when it silently dropped a third of its work.
+    assert summary["counters"]["step1_failed"] == 1
+    failures = summary["step1_failures"]
+    assert len(failures) == 1
+    failure = failures[0]
+    assert failure["title"]
+    assert failure["anime_uuid"]
+    assert "simulated MAL failure" in failure["error_message"]
+    # RuntimeError isn't an httpx/transient type, so it's uncategorized.
+    assert failure["error_category"] is None
+
     # Verify a2's last_checked_at didn't advance (still at the seeded
     # value, modulo asyncpg precision); a1/a3's did.
     async with async_session_maker() as s:
@@ -1328,14 +1340,14 @@ def _patch_probe_pipeline(monkeypatch):
         existing = {m.mal_id for m in parent_anime.media}
         return sum(1 for mal_id in graph if mal_id not in existing)
 
-    async def fake_recompute(db):
-        recompute_calls.append(1)
+    async def fake_recompute(db, anime_ids):
+        recompute_calls.append(list(anime_ids))
 
     monkeypatch.setattr(
         "app.services.scrape_dispatcher.attach_search_result_to_anime", fake_attach,
     )
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.refresh_spoiler_cache_for_all_users",
+        "app.services.scrape_dispatcher.refresh_spoiler_cache_for_anime_ids",
         fake_recompute,
     )
     return attach_calls, recompute_calls
@@ -1590,14 +1602,14 @@ async def test_spoiler_recompute_failure_does_not_fail_the_sweep(
         existing = {m.mal_id for m in parent_anime.media}
         return sum(1 for mal_id in graph if mal_id not in existing)
 
-    async def boom_recompute(db):
+    async def boom_recompute(db, anime_ids):
         raise RuntimeError("simulated recompute failure")
 
     monkeypatch.setattr(
         "app.services.scrape_dispatcher.attach_search_result_to_anime", fake_attach,
     )
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.refresh_spoiler_cache_for_all_users",
+        "app.services.scrape_dispatcher.refresh_spoiler_cache_for_anime_ids",
         boom_recompute,
     )
 
