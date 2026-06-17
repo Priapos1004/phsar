@@ -19,7 +19,8 @@ One-time herd note: every existing media's last_checked_at == its old
 created_at (backfilled by the 7a migration), so the FIRST media-level sweep
 after deploy finds the whole long-tail catalog due at once. It drains over
 ~catalog_size / JOBS_SWEEP_MAX_PER_RUN nights — the same one-time dynamic the
-anime-level sweep had at its own launch, bounded by the 200-per-run cap.
+anime-level sweep had at its own launch, bounded by the JOBS_SWEEP_MAX_PER_RUN
+cap (default 500 as of v0.14.8).
 """
 from typing import Sequence, Union
 

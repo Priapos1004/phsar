@@ -211,9 +211,13 @@ class AnimeDAO(MalIdDAO[Anime]):
         mf = aliased(MediaFreshness)
         atoms = _media_sweep_atoms(mf)
 
-        # Nested loads reused for both the parent's full media set and the
-        # due media rows themselves — everything the refresh loop, the
-        # reclassifier, and the probe touch, so nothing trips lazy="raise".
+        # Nested loads for the parent's full media set — everything the
+        # refresh loop, the reclassifier, and the probe touch, so nothing
+        # trips lazy="raise". The due-media rows are a subset of that set and
+        # resolve to the SAME identity-map instances, so loading these under
+        # selectinload(Anime.media) populates them too — no separate top-level
+        # child load needed (would double the M2M/edge hydration for the due
+        # subset during the post-migration herd).
         media_child_loads = (
             selectinload(Media.freshness),
             selectinload(Media.relation_edges),
@@ -242,7 +246,6 @@ class AnimeDAO(MalIdDAO[Anime]):
                 Media.id.asc(),
             )
             .options(
-                *media_child_loads,
                 selectinload(Media.anime).options(
                     selectinload(Anime.freshness),
                     selectinload(Anime.media).options(*media_child_loads),

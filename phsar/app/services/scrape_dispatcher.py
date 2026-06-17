@@ -84,7 +84,6 @@ class RefreshResult(NamedTuple):
     volatile_changed: bool  # gates stability-counter reset
     raw_payloads: dict[int, dict]
     is_currently_airing: bool
-    metadata_changed_count: int  # media rows with non-volatile field drift
     # Full ReclassifyDiff (or None if nothing drifted) — bool umbrella-
     # drift is derivable from this, so the NamedTuple doesn't carry both.
     umbrella_diff: dict | None
@@ -402,6 +401,10 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
         except Exception:
             logger.exception("Post-sweep cross-link query failed")
             merge_detect_failed = True
+            # Symmetry with the merge-detection + orphan-cleanup soft-warn
+            # blocks below: a failed SELECT marks the session pending-rollback,
+            # so clear it here instead of relying on a downstream block to.
+            await session.rollback()
     if probe_attached_anime_ids or cross_link_pairs:
         try:
             await detect_merge_candidates(
@@ -603,7 +606,6 @@ async def _refresh_one_anime(
     """
     now = datetime.now(timezone.utc)
     volatile_changed = False
-    metadata_changed_count = 0
     raw_payloads: dict[int, dict] = {}
     media_changes: list[dict] = []
 
@@ -617,11 +619,9 @@ async def _refresh_one_anime(
         if media_volatile_changed:
             volatile_changed = True
 
-        metadata_drift = await _apply_metadata_diff(
+        await _apply_metadata_diff(
             session, media, payload, diff_sink=static,
         )
-        if metadata_drift:
-            metadata_changed_count += 1
 
         genre_drift = await _apply_genre_diff(session, media, payload)
         studio_drift = await _apply_studio_diff(session, media, payload)
@@ -700,7 +700,6 @@ async def _refresh_one_anime(
         volatile_changed=volatile_changed,
         raw_payloads=raw_payloads,
         is_currently_airing=is_currently_airing,
-        metadata_changed_count=metadata_changed_count,
         umbrella_diff=umbrella_diff,
         media_changes=media_changes,
     )
