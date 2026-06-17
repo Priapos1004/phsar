@@ -15,7 +15,8 @@ from app.services.relation_classifier import (
 )
 
 
-def _tv(episodes: int = 12, duration_s: int = 1440, aired: str = "2000-01-01",
+def _tv(episodes: int | None = 12, duration_s: int | None = 1440,
+        aired: str | None = "2000-01-01",
         scored_by: int = 10_000, airing_status: str = "Finished Airing"):
     return {
         "media_type": "TV",
@@ -426,6 +427,25 @@ def test_currently_airing_null_duration_does_not_steal_anchor():
     assert anchor == 62260
     assert out[62260] == "main"
     assert out[63788] == "side_story"
+
+
+def test_not_yet_aired_does_not_anchor_short_form_franchise():
+    """Hyakushou Kizoku shape: every aired season is short-form (240s),
+    failing the duration gate, so none pass substance. A not-yet-aired
+    next season (NULL duration) gets a provisional pass — but it must NOT
+    become the umbrella anchor (you can't anchor on an unaired entry).
+    Anchor stays the oldest aired TV; the not-yet-aired season is still
+    promoted to main (in the chain), just not the anchor."""
+    nodes = {
+        1: _tv(episodes=12, duration_s=240, aired="2023-07-07"),
+        2: _tv(episodes=12, duration_s=240, aired="2024-10-04"),
+        3: _tv(episodes=None, duration_s=None, aired=None,
+               airing_status="Not yet aired"),
+    }
+    edges = [(1, 2, "sequel"), (2, 3, "sequel"), (3, 2, "prequel"), (2, 1, "prequel")]
+    out, anchor = classify_anime_relations(nodes, edges)
+    assert anchor == 1  # the oldest aired TV, NOT the unaired season 3
+    assert out[1] == "main"
 
 
 def test_not_yet_aired_sequel_movie_with_null_duration_stays_main():

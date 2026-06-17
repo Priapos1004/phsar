@@ -96,6 +96,15 @@ def _normalize_media_type(media_type: str | None) -> str:
     return media_type.replace(" ", "").lower()
 
 
+def _is_metadata_pending(node: ClassifierNode) -> bool:
+    """True when MAL hasn't published this entry's runtime/episode count
+    yet (not-yet-aired). Such nodes get a provisional substance pass so a
+    sequel isn't demoted out of the main chain — but they are NOT
+    anchor-eligible (see `_pick_anchor`): a franchise can't anchor on
+    something that hasn't aired."""
+    return node.get("airing_status") in _METADATA_PENDING_STATUSES
+
+
 def passes_substance(node: ClassifierNode) -> bool:
     media_type = _normalize_media_type(node.get("media_type"))
     duration = node.get("duration_seconds")
@@ -104,7 +113,7 @@ def passes_substance(node: ClassifierNode) -> bool:
     # treat those NULLs as "pending", not "too thin". A *populated* short
     # duration still fails regardless of status (an announced 60s PV-as-TV
     # must not slip in). See `_METADATA_PENDING_STATUSES`.
-    metadata_pending = node.get("airing_status") in _METADATA_PENDING_STATUSES
+    metadata_pending = _is_metadata_pending(node)
     if media_type in _TV_LIKE_TYPES:
         if duration is not None and duration < SUBSTANCE_MIN_TV_DURATION_S:
             return False
@@ -154,11 +163,20 @@ def _pick_anchor(nodes: dict[int, ClassifierNode]) -> int:
     """Internal: return the mal_id the classifier would anchor on for
     this graph. `classify_anime_relations` returns this in its tuple, so
     external callers don't need it standalone."""
-    substance_passing = {m: n for m, n in nodes.items() if passes_substance(n)}
+    # Not-yet-aired entries get a provisional substance pass (so a sequel
+    # stays in the main chain) but are NOT anchor-eligible — a franchise
+    # can't anchor on something that hasn't aired. Without this exclusion a
+    # short-form franchise whose aired seasons all fail the duration gate
+    # (Hyakushou Kizoku, 4-min episodes) flips its umbrella onto an
+    # announced future season the moment that season is the lone passer.
+    anchor_eligible = {
+        m: n for m, n in nodes.items()
+        if passes_substance(n) and not _is_metadata_pending(n)
+    }
     # Fallback covers donghua / orphan-side-story / standalone-weak-anime
-    # cases where nothing passes substance — pick the most main-like
+    # cases where nothing is anchor-eligible — pick the most main-like
     # node anyway so the anime row has a `main`.
-    candidates = substance_passing or nodes
+    candidates = anchor_eligible or nodes
     return min(candidates.items(), key=lambda kv: _anchor_sort_key(kv[0], kv[1]))[0]
 
 
