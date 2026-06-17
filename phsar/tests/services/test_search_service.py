@@ -3,9 +3,28 @@ import logging
 import pytest
 
 from app.exceptions import MainMediaNotFoundError
+from app.services import search_service
 from app.services.search_service import get_first_main_relation
 
 logger = logging.getLogger(__name__)
+
+
+def _patch_scraper(monkeypatch, relations, all_info, unwanted_media=None):
+    """Patch `search_service.JikanScraper` with a stub whose async-context
+    `search_title` returns the given `(relations, all_info, unwanted_media)`
+    tuple — the one thing the integration tests below vary."""
+
+    class _FakeScraper:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return False
+
+        async def search_title(self, **kwargs):
+            return (relations, all_info, unwanted_media or set())
+
+    monkeypatch.setattr(search_service, "JikanScraper", lambda: _FakeScraper())
 
 
 def test_get_first_main_relation():
@@ -69,7 +88,6 @@ async def test_search_mal_api_seeded_weak_anchor_saves_as_new_anime(monkeypatch)
     anchor by tier+age (oldest ONA) and search_mal_api saves it as a
     new anime because seed_mal_id is set — the seasonal sweep flagged
     this mal_id deliberately."""
-    from app.services import search_service
     from app.services.search_service import search_mal_api
 
     seed_mal_id = 51289  # Zhe Tian (the canonical earliest ONA)
@@ -94,17 +112,7 @@ async def test_search_mal_api_seeded_weak_anchor_saves_as_new_anime(monkeypatch)
         movie_mal_id: _info(movie_mal_id, "Zhe Tian Movie", media_type="ONA", aired_from="2026-04-01T00:00:00+00:00", episodes=1),
     }
 
-    class _FakeScraper:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_):
-            return False
-
-        async def search_title(self, **kwargs):
-            return ([(fake_graph, [], set())], fake_all_info, set())
-
-    monkeypatch.setattr(search_service, "JikanScraper", lambda: _FakeScraper())
+    _patch_scraper(monkeypatch, [(fake_graph, [], set())], fake_all_info)
 
     result = await search_mal_api(
         query="Zhe Tian",
@@ -129,7 +137,6 @@ async def test_search_mal_api_filters_unwanted_from_cross_links(monkeypatch):
     attach-action fallback would try to attach to a parent Anime that
     doesn't exist. unwanted_mal_ids strips those from cross_link_mal_ids
     before the attach-vs-save decision."""
-    from app.services import search_service
     from app.services.search_service import search_mal_api
 
     seed_mal_id = 63991
@@ -147,17 +154,7 @@ async def test_search_mal_api_filters_unwanted_from_cross_links(monkeypatch):
         seed_mal_id: _info(seed_mal_id, "Benghuai Show", media_type="ONA", aired_from="2025-01-01T00:00:00+00:00", episodes=1),
     }
 
-    class _FakeScraper:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_):
-            return False
-
-        async def search_title(self, **kwargs):
-            return ([(fake_graph, [], {unwanted_pv})], fake_all_info, set())
-
-    monkeypatch.setattr(search_service, "JikanScraper", lambda: _FakeScraper())
+    _patch_scraper(monkeypatch, [(fake_graph, [], {unwanted_pv})], fake_all_info)
 
     result = await search_mal_api(
         query="Benghuai Show",
@@ -177,7 +174,6 @@ async def test_search_mal_api_title_mode_skips_weak_anchor_graphs(monkeypatch):
     picks a substance-failing anchor and there's no cross-link gets
     skipped. Top-3 fuzzy matches from MAL are often genuine garbage and
     shouldn't auto-promote to catalog rows."""
-    from app.services import search_service
     from app.services.search_service import search_mal_api
 
     fake_graph = {
@@ -192,17 +188,7 @@ async def test_search_mal_api_title_mode_skips_weak_anchor_graphs(monkeypatch):
         5000: _info(5000, "Random Garbage", media_type="ONA", aired_from="2024-01-01T00:00:00+00:00", episodes=1),
     }
 
-    class _FakeScraper:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_):
-            return False
-
-        async def search_title(self, **kwargs):
-            return ([(fake_graph, [], set())], fake_all_info, set())
-
-    monkeypatch.setattr(search_service, "JikanScraper", lambda: _FakeScraper())
+    _patch_scraper(monkeypatch, [(fake_graph, [], set())], fake_all_info)
 
     result = await search_mal_api(
         query="some fuzzy query",
@@ -228,7 +214,6 @@ async def test_search_mal_api_single_not_yet_aired_classified_and_saved_as_main(
 
     from app.models.anime import Anime
     from app.models.media import RelationType
-    from app.services import search_service
     from app.services.save_service import save_search_results
     from app.services.search_service import search_mal_api
 
@@ -249,17 +234,7 @@ async def test_search_mal_api_single_not_yet_aired_classified_and_saved_as_main(
         ),
     }
 
-    class _FakeScraper:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *_):
-            return False
-
-        async def search_title(self, **kwargs):
-            return ([(fake_graph, [], set())], fake_all_info, set())
-
-    monkeypatch.setattr(search_service, "JikanScraper", lambda: _FakeScraper())
+    _patch_scraper(monkeypatch, [(fake_graph, [], set())], fake_all_info)
 
     result = await search_mal_api(
         query="Unaired Show", excluded_mal_ids=set(), seed_mal_id=mal_id,
