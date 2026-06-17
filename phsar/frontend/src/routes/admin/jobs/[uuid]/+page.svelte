@@ -5,6 +5,7 @@
 	import { api, ApiError } from '$lib/api';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import { isRatingField } from '$lib/utils/formatString';
+	import { sortMediaChanges } from '$lib/utils/mediaChangeSort';
 	import { Input } from '$lib/components/ui/input';
 	import * as Card from '$lib/components/ui/card';
 	import JobDetailHeader from '$lib/components/admin/JobDetailHeader.svelte';
@@ -63,7 +64,9 @@
 	let visibleMediaChanges = $derived.by(() => {
 		const all = v2Summary?.media_changes ?? [];
 		const q = search.trim().toLowerCase();
-		return all.filter((m: UpdateSweepMediaChange) => {
+		// Most-substantial-first via `sortMediaChanges` (see util) instead of
+		// raw sweep-due order.
+		const filtered = all.filter((m: UpdateSweepMediaChange) => {
 			if (filter === 'dynamic' && !m.dynamic.some((d) => !isRatingField(d.field))) return false;
 			if (filter === 'rating' && !m.dynamic.some((d) => isRatingField(d.field))) return false;
 			if (filter === 'static' && m.static.length === 0) return false;
@@ -79,6 +82,7 @@
 			];
 			return haystacks.some((h) => h?.toLowerCase().includes(q));
 		});
+		return sortMediaChanges(filtered);
 	});
 
 	const FILTER_CHIPS: { key: Filter; label: string; tooltip: string }[] = [
