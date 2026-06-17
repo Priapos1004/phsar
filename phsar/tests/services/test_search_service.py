@@ -34,7 +34,7 @@ def test_get_first_main_relation():
 # ---------------------------------------------------------------------------
 
 
-def _info(mal_id: int, title: str, *, media_type: str = "ONA", aired_from: str = "2024-01-01T00:00:00+00:00", episodes: int | None = None, duration_seconds: int | None = None, scored_by: int = 0) -> dict:
+def _info(mal_id: int, title: str, *, media_type: str = "ONA", aired_from: str = "2024-01-01T00:00:00+00:00", episodes: int | None = None, duration_seconds: int | None = None, scored_by: int = 0, airing_status: str = "Finished Airing") -> dict:
     return {
         "mal_id": mal_id,
         "mal_url": f"https://example/{mal_id}",
@@ -56,7 +56,7 @@ def _info(mal_id: int, title: str, *, media_type: str = "ONA", aired_from: str =
         "anime_season_year": None,
         "aired_from": aired_from,
         "aired_to": None,
-        "airing_status": "Finished Airing",
+        "airing_status": airing_status,
         "duration": None,
         "duration_seconds": duration_seconds,
     }
@@ -212,3 +212,76 @@ async def test_search_mal_api_title_mode_skips_weak_anchor_graphs(monkeypatch):
 
     assert result.search_result_db_list == []
     assert result.attach_actions == []
+
+
+@pytest.mark.asyncio
+async def test_search_mal_api_single_not_yet_aired_classified_and_saved_as_main(
+    db_session, monkeypatch,
+):
+    """End-to-end: MAL returns one anime whose only entry hasn't aired yet
+    (NULL episodes/duration, 'Not yet aired'). The substance gate's pending
+    exemption keeps it anchor-eligible, so it classifies as `main`, isn't
+    dropped as a weak anchor, and persists cleanly through save_search_results
+    despite the NULL volatile fields."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.models.anime import Anime
+    from app.models.media import RelationType
+    from app.services import search_service
+    from app.services.save_service import save_search_results
+    from app.services.search_service import search_mal_api
+
+    mal_id = 999_321
+    fake_graph = {
+        mal_id: {
+            "mal_id": mal_id,
+            "title": "Unaired Show",
+            "aired_from": "2027-01-01T00:00:00+00:00",
+            "media_type": "TV",
+        },
+    }
+    fake_all_info = {
+        mal_id: _info(
+            mal_id, "Unaired Show", media_type="TV",
+            aired_from="2027-01-01T00:00:00+00:00",
+            episodes=None, duration_seconds=None, airing_status="Not yet aired",
+        ),
+    }
+
+    class _FakeScraper:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            return False
+
+        async def search_title(self, **kwargs):
+            return ([(fake_graph, [], set())], fake_all_info, set())
+
+    monkeypatch.setattr(search_service, "JikanScraper", lambda: _FakeScraper())
+
+    result = await search_mal_api(
+        query="Unaired Show", excluded_mal_ids=set(), seed_mal_id=mal_id,
+    )
+
+    # Classified main, not dropped, not attached.
+    assert result.attach_actions == []
+    assert len(result.search_result_db_list) == 1
+    sr = result.search_result_db_list[0]
+    assert sr.anime_mal_id == mal_id
+    assert sr.unconnected_media_list[0].relation_type == RelationType.Main
+
+    # Handled end-to-end: persists with NULL episodes/duration intact.
+    await save_search_results(db_session, result.search_result_db_list)
+    anime = (
+        await db_session.execute(
+            select(Anime).where(Anime.mal_id == mal_id).options(selectinload(Anime.media))
+        )
+    ).scalar_one()
+    assert len(anime.media) == 1
+    m = anime.media[0]
+    assert m.relation_type == RelationType.Main
+    assert m.airing_status == "Not yet aired"
+    assert m.episodes is None
+    assert m.duration_seconds is None
