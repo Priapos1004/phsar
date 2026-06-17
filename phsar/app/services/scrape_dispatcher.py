@@ -66,7 +66,7 @@ from app.services.relation_classifier import (
 )
 from app.services.save_service import attach_search_result_to_anime, save_search_results
 from app.services.search_service import handle_search_mal_api_results
-from app.services.spoiler_service import refresh_spoiler_cache_for_all_users
+from app.services.spoiler_service import refresh_spoiler_cache_for_anime_ids
 from app.services.unwanted_media_service import create_unwanted_media
 from app.services.vector_embedding_service import regenerate_media_embedding
 
@@ -266,7 +266,6 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     # chunk of its workload is visible instead of reading as fully clean.
     step1_failed = 0
     step1_failures: list[dict] = []
-    sweep_added_media = False
     # Track which existing anime had new media attached so we can re-run
     # merge detection on them at sweep end — a tier-3 anime whose probe
     # pulled in a new sibling franchise (Vigilante-shape) may now bridge
@@ -303,7 +302,6 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
                     await progress.update(items_done=refreshed)
                     continue
                 if probe_added:
-                    sweep_added_media = True
                     probe_attached_anime_ids.append(anime.id)
                 probe_succeeded += 1
 
@@ -364,14 +362,16 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
             await session.rollback()
 
     cache_recompute_failed = False
-    if sweep_added_media:
+    if probe_attached_anime_ids:
+        # Only the probe-attach path adds media in a sweep (step 1 never
+        # creates rows), so the recompute is scoped to exactly those anime.
         # Per-batch recomputes inside the probe loop would multiply the
         # per-user spoiler-cache cost by anime-count.
         # The per-anime catalog work already committed by this point, so a
         # cache failure here shouldn't mark the whole sweep failed in the bell
         # — surface it as a soft warning on the success summary instead.
         try:
-            await refresh_spoiler_cache_for_all_users(session)
+            await refresh_spoiler_cache_for_anime_ids(session, probe_attached_anime_ids)
         except Exception:
             logger.exception("Spoiler cache recompute failed after sweep")
             cache_recompute_failed = True

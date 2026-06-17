@@ -54,7 +54,7 @@ from app.services.relation_classifier import (
     media_to_classifier_node,
     passes_substance,
 )
-from app.services.spoiler_service import refresh_spoiler_cache_for_all_users
+from app.services.spoiler_service import refresh_spoiler_cache_for_anime_ids
 from app.services.vector_embedding_service import create_anime_embedding
 
 # Bound on a single cluster's embedding regen so a stuck encoder thread
@@ -334,13 +334,16 @@ async def execute_split(db: AsyncSession, uuid: UUID) -> tuple[str, list[str]]:
     await db.commit()
 
     # Spoiler cache stores media ids, not anime ids, but the frontier
-    # algorithm runs per-anime. Recompute globally because anime
-    # boundaries shifted. The split itself is already durably committed
+    # algorithm runs per-anime. Media were re-parented from the source
+    # onto the new anime, so recomputing the source + each new anime
+    # covers every moved row. The split itself is already durably committed
     # above — a cache-recompute failure shouldn't 5xx the request and
     # trick the admin into retrying an already-resolved candidate. Same
     # pattern as scrape_dispatcher's post-sweep recompute.
     try:
-        await refresh_spoiler_cache_for_all_users(db)
+        await refresh_spoiler_cache_for_anime_ids(
+            db, {source_anime.id, *new_anime_ids},
+        )
     except Exception:
         logger.exception("Spoiler cache recompute failed after split execute")
 

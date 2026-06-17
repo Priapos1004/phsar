@@ -34,7 +34,11 @@ async def _seed_user(
     )
     await user_dao.create(db, new_user)
     await user_settings_service.create_default_settings(db, new_user.id)
-    await recompute_visibility_for_user(db, new_user.id)
+    # Restricted users are pinned to spoiler=off and never read the cache,
+    # so don't build one (it would also be re-seeded every startup by
+    # backfill_spoiler_visibility, which skips them too).
+    if role != RoleType.RestrictedUser:
+        await recompute_visibility_for_user(db, new_user.id)
     await db.commit()
     logger.info(f"User '{username}' created with role '{role.value}'.")
 
@@ -54,13 +58,21 @@ async def backfill_spoiler_visibility(db: AsyncSession):
     """Recompute spoiler visibility for users who have no rows in user_visible_media.
     Covers new deployments and users created before the feature existed.
 
-    Per-user try/commit so a poisoned user (stale rating FKs, etc.) doesn't abort
-    startup — this seeder is the mop-up path for `save_service`'s recompute, and
-    it can't itself be fragile."""
+    This is the ONLY whole-catalog recompute path — post-mutation recomputes
+    are scoped via `spoiler_service.refresh_spoiler_cache_for_anime_ids`. It's
+    also the mop-up for any non-restricted user a scoped recompute skipped on
+    failure. Per-user try/commit so a poisoned user (stale rating FKs, etc.)
+    doesn't abort startup — it can't itself be fragile."""
+    # Exclude restricted users: they're pinned to spoiler=off and never
+    # read the cache, so they'd otherwise show up here every startup
+    # (always zero rows) and get re-seeded for nothing.
     stmt = (
         select(Users.id)
         .outerjoin(UserVisibleMedia, Users.id == UserVisibleMedia.user_id)
-        .where(UserVisibleMedia.id.is_(None))
+        .where(
+            UserVisibleMedia.id.is_(None),
+            Users.role != RoleType.RestrictedUser,
+        )
     )
     result = await db.execute(stmt)
     user_ids = result.scalars().all()

@@ -89,11 +89,40 @@ async def test_restricted_user_can_read_and_update_settings(client, restricted_u
     resp = await client.get("/users/settings", headers=restricted_user_auth_headers)
     assert resp.status_code == 200
 
-    # Restricted users can update their settings
+    # Restricted users can update non-spoiler settings (theme, search view…)
     resp = await client.put(
         "/users/settings",
-        json={"spoiler_level": "hide"},
+        json={"default_search_view": "media"},
         headers=restricted_user_auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["default_search_view"] == "media"
+
+
+async def test_restricted_user_spoiler_level_pinned_off(client, restricted_user_auth_headers):
+    """Restricted users are pinned to spoiler=off — they can't rate, so a
+    frontier would freeze at episode 1 of every anime and they're excluded
+    from the spoiler cache. The PUT succeeds (other fields apply) but
+    spoiler_level is dropped server-side, staying off."""
+    resp = await client.put(
+        "/users/settings",
+        json={"spoiler_level": "hide", "theme": "blue"},
+        headers=restricted_user_auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["spoiler_level"] == "off"  # dropped, not applied
+    assert body["theme"] == "blue"  # other settings still editable
+
+
+async def test_normal_user_spoiler_level_persists(client, create_user_with_role):
+    """The pin is role-gated — a normal user's spoiler_level still applies."""
+    token = await create_user_with_role(
+        username="spoileruser", password="pass1234", role=RoleType.User,
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    resp = await client.put(
+        "/users/settings", json={"spoiler_level": "hide"}, headers=headers,
     )
     assert resp.status_code == 200
     assert resp.json()["spoiler_level"] == "hide"

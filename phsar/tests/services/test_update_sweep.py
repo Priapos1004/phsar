@@ -1340,14 +1340,14 @@ def _patch_probe_pipeline(monkeypatch):
         existing = {m.mal_id for m in parent_anime.media}
         return sum(1 for mal_id in graph if mal_id not in existing)
 
-    async def fake_recompute(db):
-        recompute_calls.append(1)
+    async def fake_recompute(db, anime_ids):
+        recompute_calls.append(list(anime_ids))
 
     monkeypatch.setattr(
         "app.services.scrape_dispatcher.attach_search_result_to_anime", fake_attach,
     )
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.refresh_spoiler_cache_for_all_users",
+        "app.services.scrape_dispatcher.refresh_spoiler_cache_for_anime_ids",
         fake_recompute,
     )
     return attach_calls, recompute_calls
@@ -1602,14 +1602,14 @@ async def test_spoiler_recompute_failure_does_not_fail_the_sweep(
         existing = {m.mal_id for m in parent_anime.media}
         return sum(1 for mal_id in graph if mal_id not in existing)
 
-    async def boom_recompute(db):
+    async def boom_recompute(db, anime_ids):
         raise RuntimeError("simulated recompute failure")
 
     monkeypatch.setattr(
         "app.services.scrape_dispatcher.attach_search_result_to_anime", fake_attach,
     )
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.refresh_spoiler_cache_for_all_users",
+        "app.services.scrape_dispatcher.refresh_spoiler_cache_for_anime_ids",
         boom_recompute,
     )
 

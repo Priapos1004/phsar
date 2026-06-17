@@ -19,7 +19,7 @@ from app.services.merge_detection_service import (
 )
 from app.services.progress_reporter import ProgressReporter
 from app.services.relation_classifier import outgoing_edges
-from app.services.spoiler_service import refresh_spoiler_cache_for_all_users
+from app.services.spoiler_service import refresh_spoiler_cache_for_anime_ids
 from app.services.vector_embedding_service import create_anime_embedding
 
 logger = logging.getLogger(__name__)
@@ -31,7 +31,6 @@ async def save_search_results(
     progress: ProgressReporter | None = None,
 ):
     logger.debug(f"DB session: {id(db)}")
-    saved_anything = False
     saved_media_count = 0
     new_anime_ids: list[int] = []
     for result in search_results:
@@ -46,7 +45,6 @@ async def save_search_results(
         # last_checked_at=None is honest: nothing has *checked* this row
         # from MAL yet — the row IS the check.
         anime.freshness = AnimeFreshness(last_checked_at=None, stable_check_count=0)
-        saved_anything = True
         new_anime_ids.append(anime.id)
         logger.info(f"Created Anime: {anime.title} (ID: {anime.id})")
 
@@ -100,11 +98,13 @@ async def save_search_results(
 
     await db.commit()
 
-    if saved_anything:
+    if new_anime_ids:
         # Existing users' spoiler caches need a recompute against the new
         # media set; otherwise spoiler_level=hide filters the new animes out
         # until the next backend restart triggers backfill_spoiler_visibility.
-        await refresh_spoiler_cache_for_all_users(db)
+        # Scoped to the anime created this call (this path only creates new
+        # anime; attach-to-existing is a separate function).
+        await refresh_spoiler_cache_for_anime_ids(db, new_anime_ids)
 
 
 async def attach_search_result_to_anime(

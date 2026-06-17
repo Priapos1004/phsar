@@ -37,7 +37,7 @@ from app.services.anime_relation_service import (
 )
 from app.services.anime_summary import summarize_anime
 from app.services.merge_detection_service import detect_merge_candidates
-from app.services.spoiler_service import refresh_spoiler_cache_for_all_users
+from app.services.spoiler_service import refresh_spoiler_cache_for_anime_ids
 
 logger = logging.getLogger(__name__)
 
@@ -236,13 +236,14 @@ async def merge(
         except Exception:
             logger.exception("Post-merge re-detection failed; merge itself succeeded")
         # Spoiler cache stores media ids, not anime ids, but the frontier
-        # algorithm runs per-anime. Recompute globally so frontiers reflect
-        # the merged media list. The merge itself committed above — a
+        # algorithm runs per-anime. B's media were re-parented onto the
+        # survivor A, so recomputing A (its media set now includes B's)
+        # covers every moved row. The merge itself committed above — a
         # cache-recompute failure shouldn't 5xx the request and trick the
         # admin into retrying an already-resolved candidate. Same pattern
         # as scrape_dispatcher's post-sweep recompute.
         try:
-            await refresh_spoiler_cache_for_all_users(db)
+            await refresh_spoiler_cache_for_anime_ids(db, {anime_a.id})
         except Exception:
             logger.exception("Spoiler cache recompute failed after merge")
 

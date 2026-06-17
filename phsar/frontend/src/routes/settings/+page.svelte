@@ -149,38 +149,48 @@
                     </Select.Root>
                 </div>
 
-                {#if !isRestricted}
-                    <Separator />
+                <Separator />
 
-                    <!-- Rating Step -->
-                    <div class="flex items-center justify-between">
+                <!-- Rating Step — disabled for guests (they can't rate) -->
+                <div class="flex items-center justify-between">
+                    <div>
                         <Label>Rating Step</Label>
-                        <Select.Root
-                            type="single"
-                            value={settings.rating_step}
-                            onValueChange={(v) => { if (v) saveSetting({ rating_step: v as UserSettings['rating_step'] }); }}
-                        >
-                            <Select.Trigger class="w-40">
-                                {settings.rating_step}
-                            </Select.Trigger>
-                            <Select.Content>
-                                <Select.Item value="0.5">0.5</Select.Item>
-                                <Select.Item value="0.25">0.25</Select.Item>
-                                <Select.Item value="0.1">0.1</Select.Item>
-                                <Select.Item value="0.01">0.01</Select.Item>
-                            </Select.Content>
-                        </Select.Root>
+                        <p class="text-xs text-muted-foreground mt-0.5">
+                            {#if isRestricted}
+                                Off for guest accounts
+                            {/if}
+                        </p>
                     </div>
-                {/if}
+                    <Select.Root
+                        type="single"
+                        value={settings.rating_step}
+                        disabled={isRestricted}
+                        onValueChange={(v) => { if (v) saveSetting({ rating_step: v as UserSettings['rating_step'] }); }}
+                    >
+                        <Select.Trigger class="w-40">
+                            {settings.rating_step}
+                        </Select.Trigger>
+                        <Select.Content>
+                            <Select.Item value="0.5">0.5</Select.Item>
+                            <Select.Item value="0.25">0.25</Select.Item>
+                            <Select.Item value="0.1">0.1</Select.Item>
+                            <Select.Item value="0.01">0.01</Select.Item>
+                        </Select.Content>
+                    </Select.Root>
+                </div>
 
                 <Separator />
 
-                <!-- Spoiler Level -->
+                <!-- Spoiler Level — pinned off + disabled for guests: they
+                     can't rate, so a frontier would freeze at episode 1 of
+                     every anime and "hide" would blank the catalogue. -->
                 <div class="flex items-center justify-between">
                     <div>
                         <Label>Spoiler Protection</Label>
                         <p class="text-xs text-muted-foreground mt-0.5">
-                            {#if settings.spoiler_level === 'off'}
+                            {#if isRestricted}
+                                Off for guest accounts
+                            {:else if settings.spoiler_level === 'off'}
                                 No spoiler protection
                             {:else if settings.spoiler_level === 'blur'}
                                 Blur covers and descriptions to avoid spoilers
@@ -191,11 +201,13 @@
                     </div>
                     <Select.Root
                         type="single"
-                        value={settings.spoiler_level}
+                        value={isRestricted ? 'off' : settings.spoiler_level}
+                        disabled={isRestricted}
                         onValueChange={(v) => { if (v) saveSetting({ spoiler_level: v as UserSettings['spoiler_level'] }); }}
                     >
                         <Select.Trigger class="w-40">
-                            {settings.spoiler_level === 'off' ? 'Off' : settings.spoiler_level === 'blur' ? 'Blur' : 'Hide'}
+                            {@const level = isRestricted ? 'off' : settings.spoiler_level}
+                            {level === 'off' ? 'Off' : level === 'blur' ? 'Blur' : 'Hide'}
                         </Select.Trigger>
                         <Select.Content>
                             <Select.Item value="off">Off</Select.Item>
@@ -207,27 +219,29 @@
             </Card.Content>
         </Card.Root>
 
-        <!-- Data Export -->
-        {#if !isRestricted}
-            <Card.Root>
-                <Card.Header>
-                    <h2 class="text-lg font-semibold text-card-foreground">Data Export</h2>
-                    <p class="text-sm text-muted-foreground">Download your ratings and watchlist</p>
-                </Card.Header>
-                <Card.Content>
-                    <div class="flex gap-3">
-                        <Button variant="secondary" onclick={() => downloadExport('json')}>
-                            <Download class="w-4 h-4 mr-2" />
-                            JSON
-                        </Button>
-                        <Button variant="secondary" onclick={() => downloadExport('csv')}>
-                            <Download class="w-4 h-4 mr-2" />
-                            CSV
-                        </Button>
-                    </div>
-                </Card.Content>
-            </Card.Root>
-        {/if}
+        <!-- Data Export — disabled for guests (no ratings/watchlist to export) -->
+        <Card.Root>
+            <Card.Header>
+                <h2 class="text-lg font-semibold text-card-foreground">Data Export</h2>
+                <p class="text-sm text-muted-foreground">
+                    {isRestricted
+                        ? 'Guest accounts have no ratings or watchlist to export'
+                        : 'Download your ratings and watchlist'}
+                </p>
+            </Card.Header>
+            <Card.Content>
+                <div class="flex gap-3">
+                    <Button variant="secondary" disabled={isRestricted} onclick={() => downloadExport('json')}>
+                        <Download class="w-4 h-4 mr-2" />
+                        JSON
+                    </Button>
+                    <Button variant="secondary" disabled={isRestricted} onclick={() => downloadExport('csv')}>
+                        <Download class="w-4 h-4 mr-2" />
+                        CSV
+                    </Button>
+                </div>
+            </Card.Content>
+        </Card.Root>
 
         <!-- Danger Zone -->
         <DangerZone {isRestricted} />
