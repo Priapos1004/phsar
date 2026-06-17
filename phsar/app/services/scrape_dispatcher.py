@@ -54,6 +54,7 @@ from app.services.jikan_scraper import (
     parse_mal_datetime,
     parse_relation_edges,
 )
+from app.services.job_worker import classify_error
 from app.services.merge_detection_service import (
     detect_merge_candidates,
     find_cross_anime_relation_pairs,
@@ -88,6 +89,18 @@ class RefreshResult(NamedTuple):
     # Per-media diff entries already annotated with anime context so the
     # dispatcher just extends its log — no post-hoc mutation needed.
     media_changes: list[dict]
+
+
+class Step1Failure(NamedTuple):
+    """A step-1 refresh that raised and was skipped. Surfaced (instead of
+    a bare None) so the sweep can count it and record which anime + why in
+    `result_summary.step1_failures` — without this the failures were
+    swallowed and a sweep could silently drop half its workload while still
+    reporting `succeeded`."""
+    anime_uuid: str
+    title: str
+    error_category: str | None
+    error_message: str
 
 
 # Diff classification for the genre/studio drift detector. Both kinds
@@ -248,6 +261,11 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     umbrella_reclassed = 0
     probe_succeeded = 0
     probe_failed = 0
+    # Anime selected but skipped because step 1 raised (MAL outage, 404,
+    # etc.). Counted + listed in result_summary so a sweep that drops a
+    # chunk of its workload is visible instead of reading as fully clean.
+    step1_failed = 0
+    step1_failures: list[dict] = []
     sweep_added_media = False
     # Track which existing anime had new media attached so we can re-run
     # merge detection on them at sweep end — a tier-3 anime whose probe
@@ -268,7 +286,9 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     async with JikanScraper() as scraper:
         for anime in anime_list:
             step1 = await _try_step1_refresh(session, anime, scraper)
-            if step1 is None:
+            if isinstance(step1, Step1Failure):
+                step1_failed += 1
+                step1_failures.append(step1._asdict())
                 await progress.update(items_done=refreshed)
                 continue
             sidecar_touched_anime_ids.append(anime.id)
@@ -383,9 +403,14 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
             "probe_failed": probe_failed,
             "probe_attached_anime_count": len(probe_attached_anime_ids),
             "orphaned_studios_removed": orphaned_studios_removed,
+            "step1_failed": step1_failed,
         },
         "media_changes": media_changes_log,
         "anime_umbrella_changes": anime_umbrella_changes_log,
+        # Per-anime step-1 refresh failures: {anime_uuid, title,
+        # error_category, error_message}. Lets the detail page show exactly
+        # which shows were skipped and whether it was an MAL outage.
+        "step1_failures": step1_failures,
         # Deduplicated across every media in this sweep. The Jobs Log
         # tints rows when this is non-empty so the admin can spot which
         # sweeps need a seeder update without drilling into details.
@@ -401,11 +426,13 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
 
 async def _try_step1_refresh(
     session: AsyncSession, anime: Anime, scraper: JikanScraper,
-) -> RefreshResult | None:
-    """Step 1 wrapper: refresh + commit, or rollback + None on failure.
+) -> RefreshResult | Step1Failure:
+    """Step 1 wrapper: refresh + commit, or rollback + Step1Failure.
     Always commits durably so a worker crash later in the sweep can't
     take the field-diff work down with it, and a single bad MAL response
-    fails *that* anime only without aborting the loop.
+    fails *that* anime only without aborting the loop. Returns a
+    `Step1Failure` (not None) so the dispatcher can record which anime
+    was skipped and why in `result_summary.step1_failures`.
 
     Uses SAVEPOINT (`begin_nested`) instead of session-level rollback —
     `session.rollback()` would expire every eager-loaded instance the
@@ -416,18 +443,26 @@ async def _try_step1_refresh(
     expired (same MissingGreenlet trap that hit relation_backfiller).
     """
     anime_id_for_log = anime.id
+    anime_uuid_for_log = str(anime.uuid)
     anime_title_for_log = anime.title
     try:
         async with session.begin_nested():
             result = await _refresh_one_anime(session, anime, scraper)
         await session.commit()
         return result
-    except Exception:
+    except Exception as exc:
         logger.exception(
             "Sweep failed to refresh anime %s (%s); skipping",
             anime_id_for_log, anime_title_for_log,
         )
-        return None
+        return Step1Failure(
+            anime_uuid=anime_uuid_for_log,
+            title=anime_title_for_log,
+            error_category=classify_error(exc),
+            # str(exc) is empty for some httpx errors — fall back to the
+            # class name so the log row is never blank.
+            error_message=str(exc) or exc.__class__.__name__,
+        )
 
 
 async def _try_step2_probe(

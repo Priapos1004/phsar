@@ -4,10 +4,13 @@
 
 	interface Props {
 		counters: UpdateSweepCounters;
+		// Sweep schema version — gates the step1_failed cell, which only
+		// exists from v4 (older rows render "—", not a misleading 0).
+		version: number;
 		merge_detect_failed?: boolean;
 		cache_recompute_failed?: boolean;
 	}
-	let { counters, merge_detect_failed, cache_recompute_failed }: Props = $props();
+	let { counters, version, merge_detect_failed, cache_recompute_failed }: Props = $props();
 
 	const STATS: { key: keyof UpdateSweepCounters; label: string }[] = [
 		{ key: 'anime_refreshed', label: 'Anime touched' },
@@ -20,6 +23,7 @@
 		{ key: 'probe_failed', label: 'Probes failed' },
 		{ key: 'probe_attached_anime_count', label: 'Anime w/ new attach' },
 		{ key: 'orphaned_studios_removed', label: 'Orphaned studios removed' },
+		{ key: 'step1_failed', label: 'Failed refresh' },
 	];
 </script>
 
@@ -30,10 +34,22 @@
 	<Card.Content>
 		<dl class="grid grid-cols-3 md:grid-cols-5 gap-4">
 			{#each STATS as stat (stat.key)}
-				<div class="rounded-md border border-border/60 bg-muted/10 p-3">
+				{@const isStep1 = stat.key === 'step1_failed'}
+				{@const notTracked = isStep1 && version < 4}
+				{@const value = counters[stat.key] ?? 0}
+				{@const warn = isStep1 && !notTracked && value > 0}
+				<div
+					class="rounded-md border p-3 {warn
+						? 'border-amber-500/50 bg-amber-500/10'
+						: 'border-border/60 bg-muted/10'}"
+				>
 					<dt class="text-[10px] uppercase tracking-wider text-muted-foreground">{stat.label}</dt>
-					<dd class="text-xl font-semibold text-card-foreground tabular-nums mt-1">
-						{counters[stat.key] ?? 0}
+					<dd
+						class="text-xl font-semibold tabular-nums mt-1 {warn
+							? 'text-amber-400'
+							: 'text-card-foreground'}"
+					>
+						{notTracked ? '—' : value}
 					</dd>
 				</div>
 			{/each}

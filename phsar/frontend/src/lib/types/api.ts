@@ -451,17 +451,31 @@ export interface UpdateSweepCounters {
 	// v3+: Studio rows deleted at sweep end because drift removals left
 	// them with no media links. v2 rows omit it (renders as 0).
 	orphaned_studios_removed?: number;
+	// v4+: anime selected but skipped because step-1 refresh raised. Pre-v4
+	// rows omit it — render "—" (not tracked), NOT 0 (which would falsely
+	// claim zero failures on sweeps that never recorded them).
+	step1_failed?: number;
+}
+
+// One step-1 refresh that raised and was skipped (v4+ update_sweep).
+export interface UpdateSweepStep1Failure {
+	anime_uuid: string;
+	title: string;
+	error_category: string | null;
+	error_message: string;
 }
 
 // update_sweep result_summary v2+ shape. v1 rows omit these fields
 // entirely — renderers must check `row.version >= 2` before reading.
 // `unknown_genre_tags` is v3+; v2 rows don't carry it (the Jobs Log
-// tint just won't fire for those historical sweeps).
+// tint just won't fire for those historical sweeps). `step1_failures`
+// is v4+.
 export interface UpdateSweepResultSummary extends JobResultSummary {
 	counters?: UpdateSweepCounters;
 	media_changes?: UpdateSweepMediaChange[];
 	anime_umbrella_changes?: UpdateSweepUmbrellaChange[];
 	unknown_genre_tags?: string[];
+	step1_failures?: UpdateSweepStep1Failure[];
 	merge_detect_failed?: boolean;
 	cache_recompute_failed?: boolean;
 }

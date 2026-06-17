@@ -1250,6 +1250,18 @@ async def test_dispatcher_isolates_failures_per_anime(tracked_anime, monkeypatch
 
     assert summary["counters"]["anime_refreshed"] == 2
 
+    # The skipped anime is counted + recorded (v4) so the sweep doesn't
+    # read as fully clean when it silently dropped a third of its work.
+    assert summary["counters"]["step1_failed"] == 1
+    failures = summary["step1_failures"]
+    assert len(failures) == 1
+    failure = failures[0]
+    assert failure["title"]
+    assert failure["anime_uuid"]
+    assert "simulated MAL failure" in failure["error_message"]
+    # RuntimeError isn't an httpx/transient type, so it's uncategorized.
+    assert failure["error_category"] is None
+
     # Verify a2's last_checked_at didn't advance (still at the seeded
     # value, modulo asyncpg precision); a1/a3's did.
     async with async_session_maker() as s:

@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { api, ApiError } from '$lib/api';
+	import { buildDetailHref } from '$lib/utils/navigation';
 	import { isRatingField } from '$lib/utils/formatString';
 	import { Input } from '$lib/components/ui/input';
 	import * as Card from '$lib/components/ui/card';
@@ -123,9 +124,19 @@
 			{#if v2Summary?.counters}
 				<JobDetailCounters
 					counters={v2Summary.counters}
+					version={job.version}
 					merge_detect_failed={v2Summary.merge_detect_failed}
 					cache_recompute_failed={v2Summary.cache_recompute_failed}
 				/>
+				{#if job.items_total != null && job.items_done < job.items_total}
+					<Notice>
+						<p>
+							Processed <strong>{job.items_done}</strong> of
+							<strong>{job.items_total}</strong> selected anime —
+							{job.items_total - job.items_done} skipped (see “Failed refresh” below).
+						</p>
+					</Notice>
+				{/if}
 			{:else if job.status !== 'failed' && job.version < 2}
 				<!-- Suppressed on failed jobs because the header already
 				     renders error_message and the missing counters reflect
@@ -133,6 +144,37 @@
 				<Notice>
 					<p>This sweep predates v0.14.5's per-media diff capture (job version {job.version}). Per-media diffs and the granular counters are not available; the row's payload summary on the Jobs Log is the full record.</p>
 				</Notice>
+			{/if}
+
+			{#if v2Summary && (v2Summary.step1_failures?.length ?? 0) > 0}
+				<Card.Root>
+					<Card.Header>
+						<h2 class="text-lg font-semibold text-card-foreground">
+							Failed refresh ({v2Summary.step1_failures?.length})
+						</h2>
+						<p class="text-sm text-muted-foreground">
+							Anime selected by the sweep but skipped because the MAL refresh raised.
+							They keep their old <code>last_checked_at</code> so the next sweep retries them.
+						</p>
+					</Card.Header>
+					<Card.Content class="space-y-2">
+						{#each v2Summary.step1_failures ?? [] as failure (failure.anime_uuid)}
+							<div class="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
+								<div class="flex items-center justify-between gap-3 flex-wrap">
+									<a href={buildDetailHref('anime', failure.anime_uuid)} class="font-medium text-card-foreground hover:underline">
+										{failure.title}
+									</a>
+									{#if failure.error_category}
+										<span class="text-[10px] uppercase tracking-wider text-amber-400">
+											{failure.error_category}
+										</span>
+									{/if}
+								</div>
+								<p class="text-xs text-muted-foreground mt-1 break-words">{failure.error_message}</p>
+							</div>
+						{/each}
+					</Card.Content>
+				</Card.Root>
 			{/if}
 
 			{#if v2Summary && (v2Summary.media_changes?.length ?? 0) > 0}

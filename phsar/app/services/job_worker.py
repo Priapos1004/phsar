@@ -65,7 +65,7 @@ ERROR_CATEGORY_BACKUP_DISK_FULL = "backup_disk_full"
 ERROR_CATEGORY_BACKUP_CORRUPT = "backup_corrupt"
 
 
-def _classify_error(exc: BaseException) -> str | None:
+def classify_error(exc: BaseException) -> str | None:
     """Translate a dispatcher exception into a coarse error category for
     the bell. Returns None when the raw exception message is already
     user-friendly (custom domain errors carry their own copy)."""
@@ -280,7 +280,7 @@ class JobWorker:
             return True
 
         retryable = not isinstance(failure, PermanentPhsarError)
-        error_category = _classify_error(failure)
+        error_category = classify_error(failure)
         try:
             async with async_session_maker() as fail_session:
                 failing = await self._dao.get_by_id(fail_session, job_id)

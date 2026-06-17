@@ -7,7 +7,7 @@ applies retention after every successful job (manual + cron alike).
 Happy-path and dedupe tests call the dispatcher directly with a FakeJob
 because they only assert on the returned summary. The failure-mode tests
 run through the full JobWorker loop so we also pin the worker's
-_classify_error → error_category contract — that's the surface the bell
+classify_error → error_category contract — that's the surface the bell
 actually reads.
 
 Subprocess failures use the same _pg_subprocess._default_runner seam that

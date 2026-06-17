@@ -31,7 +31,13 @@ JOB_KIND_VERSIONS: dict[JobKind, int] = {
     # values changed from {additions_applied, additions_unknown,
     # removal_or_replacement, any_change} to {applied,
     # applied_with_unknowns}.
-    JobKind.update_sweep: 3,
+    # v4 adds `counters.step1_failed` + top-level `step1_failures[]`
+    # (anime skipped because step-1 refresh raised). These are net-new
+    # keys with safe defaults, so by the bump rules above they wouldn't
+    # require a bump — but we bump anyway so the frontend can tell a v4
+    # `step1_failed: 0` (genuinely zero) from a v3 row that never tracked
+    # it (rendered "—", not a misleading 0).
+    JobKind.update_sweep: 4,
     JobKind.seasonal_sweep: 1,
     JobKind.backup: 1,
     JobKind.restore: 1,
