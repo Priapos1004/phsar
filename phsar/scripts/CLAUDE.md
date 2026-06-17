@@ -51,6 +51,38 @@ python -m scripts.delete_anime_by_title "Boku no Hero" --apply    # actually del
 python -m scripts.audit_relation_backfill
 ```
 
+## Restoring a prod dump locally (for investigations)
+
+To inspect production state, restore a downloaded backup dump into a throwaway
+DB and point the scripts / `psql` at it. Gotchas worth remembering so you don't
+re-derive them:
+
+- **Use PostgreSQL 17 client tools.** Dumps are PostgreSQL 16 custom format
+  (`pg_dump -Fc`, header `v1.16`); Homebrew's `postgresql@15` `pg_restore`
+  fails with `unsupported version (1.16)`. Use
+  `/opt/homebrew/opt/postgresql@17/bin/{psql,pg_restore}` (v17 reads v16).
+- **Connect over TCP**, not `docker exec` (the latter is blocked by the agent
+  sandbox here): `-h localhost -p 5432 -U <DB_USER>`, password from `phsar/.env`.
+  The running `anime-postgres` container already has pgvector (required).
+- Restore into a scratch DB:
+
+  ```bash
+  PGB=/opt/homebrew/opt/postgresql@17/bin
+  export PGPASSWORD=$(grep '^DB_PASSWORD=' phsar/.env | cut -d= -f2-)
+  $PGB/psql  -h localhost -p 5432 -U <DB_USER> -d postgres \
+      -c "DROP DATABASE IF EXISTS prod_investigate;" -c "CREATE DATABASE prod_investigate;"
+  $PGB/pg_restore -h localhost -p 5432 -U <DB_USER> -d prod_investigate \
+      --no-owner --no-privileges phsar-YYYYMMDD-HHMMSS-manual.dump
+  ```
+
+  The lone `SET transaction_timeout` error is harmless (a v17 client param the
+  older server ignores).
+- **The live `jobs` table restores empty** — `backup_service` dumps with
+  `--exclude-table-data=jobs` and stages terminal (`succeeded`/`failed`) rows
+  into the **`_jobs_dump_staging`** table instead. Query that table for sweep
+  history / `result_summary` (the live `jobs` table only repopulates on a real
+  restore via `_merge_jobs_audit_and_record_restore`).
+
 ## Conventions
 
 - **Read-only by default.** Any script that mutates state requires `--apply` (mirrors the existing convention in `delete_anime_by_title`).
