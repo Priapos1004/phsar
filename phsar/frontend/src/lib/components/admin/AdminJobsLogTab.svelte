@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { api, ApiError } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
@@ -10,6 +9,7 @@
 	import { ChevronRight } from 'lucide-svelte';
 	import { JOB_KIND_LABELS, PARENTING_KINDS, formatJobDuration, formatJobKind, formatShortDateTime } from '$lib/utils/formatString';
 	import { STATUS_BADGE } from '$lib/utils/jobBadges';
+	import { jobsFilter, sanitizeKind, sanitizeStatus } from '$lib/stores/adminJobsFilter';
 	import type { AdminJobResponse, AdminJobsPage, JobKind, JobStatus } from '$lib/types/api';
 
 	const PAGE_SIZE = 50;
@@ -27,8 +27,11 @@
 		{ value: 'failed', label: 'Failed' },
 	];
 
-	let kindFilter = $state<'' | JobKind>('');
-	let statusFilter = $state<'' | JobStatus>('');
+	// The active filter lives in the `jobsFilter` module store (in-SPA memory)
+	// so it survives admin tab switches and the job-detail round-trip without
+	// touching the URL. These derived reads feed the Select UI + the fetch.
+	let kindFilter = $derived($jobsFilter.kind);
+	let statusFilter = $derived($jobsFilter.status);
 	let offset = $state(0);
 
 	let page = $state<AdminJobsPage | null>(null);
@@ -63,23 +66,26 @@
 		}
 	}
 
-	onMount(load);
+	// Re-fetch whenever the active filter or the page offset changes (covers
+	// the initial load too — effects run once on mount).
+	$effect(() => {
+		void $jobsFilter;
+		void offset;
+		void load();
+	});
 
 	// Filter changes always reset to page 1 — keeping a stale offset on a
 	// narrower filter would strand the admin past the result tail.
 	function setKindFilter(v: string) {
-		kindFilter = v as '' | JobKind;
+		jobsFilter.set({ kind: sanitizeKind(v), status: statusFilter });
 		offset = 0;
-		void load();
 	}
 	function setStatusFilter(v: string) {
-		statusFilter = v as '' | JobStatus;
+		jobsFilter.set({ kind: kindFilter, status: sanitizeStatus(v) });
 		offset = 0;
-		void load();
 	}
 	function gotoPage(newOffset: number) {
 		offset = newOffset;
-		void load();
 	}
 
 	// Backend accepts ?parent_uuid= for any kind, so PARENTING_KINDS is
