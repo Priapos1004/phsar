@@ -5,6 +5,7 @@
     import * as Card from '$lib/components/ui/card';
     import { Badge } from '$lib/components/ui/badge';
     import Tooltip from '$lib/components/Tooltip.svelte';
+    import DismissedDecisionsSection from '$lib/components/admin/DismissedDecisionsSection.svelte';
     import { GitMerge, X, RefreshCw, ArrowLeftRight, Search, ChevronRight, ChevronDown } from 'lucide-svelte';
     import { bumpCurationRefresh } from '$lib/stores/jobs';
     import { formatRelationType } from '$lib/utils/formatString';
@@ -13,6 +14,8 @@
         MergeCandidateAnimeSummary,
         MergeCandidateListItem,
     } from '$lib/types/api';
+
+    let { currentUsername = '' }: { currentUsername?: string } = $props();
 
     let candidates = $state<MergeCandidateListItem[]>([]);
     // `loading` flips off after the first fetch and stays off; subsequent
@@ -285,5 +288,24 @@
                 {/each}
             </div>
         {/if}
+
+        <DismissedDecisionsSection
+            kind="merge"
+            listUrl="/admin/merge-candidates/dismissed"
+            basePath="/admin/merge-candidates"
+            {currentUsername}
+            onResurfaced={handleRedetect}
+        >
+            {#snippet row(item: MergeCandidateListItem)}
+                <div class="text-sm text-card-foreground flex items-center gap-1.5 flex-wrap">
+                    <span class="font-medium">{item.anime_a.title}</span>
+                    <ArrowLeftRight class="size-3 text-muted-foreground shrink-0" />
+                    <span class="font-medium">{item.anime_b.title}</span>
+                </div>
+                <p class="text-[11px] text-muted-foreground">
+                    {item.detected_by} · {(item.similarity_score * 100).toFixed(0)}% match
+                </p>
+            {/snippet}
+        </DismissedDecisionsSection>
     </Card.Content>
 </Card.Root>

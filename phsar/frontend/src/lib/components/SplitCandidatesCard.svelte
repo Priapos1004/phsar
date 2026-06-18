@@ -5,6 +5,7 @@
     import * as Card from '$lib/components/ui/card';
     import { Badge } from '$lib/components/ui/badge';
     import Tooltip from '$lib/components/Tooltip.svelte';
+    import DismissedDecisionsSection from '$lib/components/admin/DismissedDecisionsSection.svelte';
     import { Split, X, RefreshCw, Search, ChevronRight, ChevronDown } from 'lucide-svelte';
     import { bumpCurationRefresh } from '$lib/stores/jobs';
     import { formatRelationType } from '$lib/utils/formatString';
@@ -13,6 +14,8 @@
         SplitCandidateListItem,
         SplitResult,
     } from '$lib/types/api';
+
+    let { currentUsername = '' }: { currentUsername?: string } = $props();
 
     let candidates = $state<SplitCandidateListItem[]>([]);
     // `loading` flips off after the first fetch and stays off; subsequent
@@ -277,5 +280,24 @@
                 {/each}
             </div>
         {/if}
+
+        <DismissedDecisionsSection
+            kind="split"
+            listUrl="/admin/split-candidates/dismissed"
+            basePath="/admin/split-candidates"
+            {currentUsername}
+            onResurfaced={handleRedetect}
+        >
+            {#snippet row(item: SplitCandidateListItem)}
+                <div class="text-sm font-medium text-card-foreground">{item.source_anime.title}</div>
+                {#each item.clusters as cluster, i (i)}
+                    <p class="text-[11px] text-muted-foreground">
+                        <span class="text-card-foreground/70">would split off:</span>
+                        {cluster.members.map((m) => m.title).join(', ') || '—'}
+                    </p>
+                {/each}
+                <p class="text-[11px] text-muted-foreground/70">{item.detected_by}</p>
+            {/snippet}
+        </DismissedDecisionsSection>
     </Card.Content>
 </Card.Root>

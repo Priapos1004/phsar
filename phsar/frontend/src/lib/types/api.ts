@@ -279,6 +279,8 @@ export interface MergeCandidateListItem {
 	similarity_score: number;
 	detected_by: string;
 	created_at: string;
+	/** Set only in the dismissed-decisions list; null for pending rows. */
+	dismissed_at: string | null;
 	anime_a: MergeCandidateAnimeSummary;
 	anime_b: MergeCandidateAnimeSummary;
 	pending_reclassifications: PendingReclassification[];
@@ -309,6 +311,8 @@ export interface SplitCandidateListItem {
 	uuid: string;
 	detected_by: string;
 	created_at: string;
+	/** Set only in the dismissed-decisions list; null for pending rows. */
+	dismissed_at: string | null;
 	source_anime: MergeCandidateAnimeSummary;
 	clusters: SplitClusterPreview[];
 }
