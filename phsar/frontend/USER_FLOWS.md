@@ -442,6 +442,12 @@ Each anime search result card shows:
 - Split / dismiss / re-detect-with-new-rows all bump `curationRefresh` so the navbar bell's pinned reminder updates without waiting for the next poll tick.
 - Already-resolved candidates (split or dismissed) return 409 if the action is retried.
 - **Stale-candidate fail-loud**: if the classifier on the cluster subset picks a different anchor than the candidate's `suggested_anchor_mal_id` at execute time (e.g., MAL added a sequel between detection and execution), the backend returns 409 SplitCandidateStaleError. Admin re-runs detection to refresh the payload.
+
+### 10.7 Dismissed decisions (both Curation cards)
+- Each card has a collapsible **"Dismissed decisions (N)"** section at the bottom (shared `DismissedDecisionsSection` component). Collapsed by default; the list is lazy-fetched (`GET /admin/{merge,split}-candidates/dismissed`) the first time it's expanded, so the common pending view never pays for the history.
+- Newest dismissal first. Merge rows show `A ↔ B` + detector + match %; split rows show the source anime + "would split off: <member titles>" per cluster. Each row shows when it was dismissed.
+- The counter and list stay fresh: dismissing a new candidate in the card above bumps `curationRefresh`, which the section subscribes to and re-fetches (if already expanded) — no stale `(N)`.
+- **Resurface**: each row has a "Resurface" button → a username-gated confirm dialog (type the admin username, mirroring backup restore). On confirm it `POST`s `/{uuid}/delete`, removes the row, then re-runs the card's detection so the freed candidate re-flags as pending immediately (rather than waiting for the nightly sweep). Only `dismissed` rows are deletable; merged rows no longer exist and deleting a split-status row wouldn't undo the split.
 - The detector itself is invisible to non-admin users; nothing about it surfaces outside this card.
 
 ---

@@ -163,6 +163,7 @@ phsar/
 │   │   │   │   │   ├── AdminOverviewTab.svelte
 │   │   │   │   │   ├── AdminTabNav.svelte
 │   │   │   │   │   ├── AnimeUmbrellaCard.svelte
+│   │   │   │   │   ├── DismissedDecisionsSection.svelte
 │   │   │   │   │   ├── JobDetailCounters.svelte
 │   │   │   │   │   ├── JobDetailHeader.svelte
 │   │   │   │   │   ├── MediaChangeCard.svelte

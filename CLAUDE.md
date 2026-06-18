@@ -87,9 +87,11 @@ FastAPI endpoint definitions. Each router maps to an API prefix.
     - Manual backups attribute to the admin user (visible only in their bell); cron is a system job (`requested_by_user_id=null`), invisible to every bell — the dump list is the audit log
   - Merge-candidate review (list pending, merge, dismiss; powered by the duplicate detector)
     - `POST /admin/merge-candidates/backfill` re-runs existing × existing detection without a container restart — primarily for the post-restore workflow (restore is synchronous, so the lifespan-startup backfill never sees the restored catalog)
+    - `GET /admin/merge-candidates/dismissed` + `POST /admin/merge-candidates/{uuid}/delete` (username-gated like restore) back the "Dismissed decisions" history: deleting a dismissed row drops the pair from `get_existing_pairs`' skip-set, so re-detection (sweep or Re-detect) resurfaces it as pending — the escape hatch for a wrong dismissal. Only `dismissed` rows are deletable (merged rows are already cascade-gone with anime B)
   - Split-candidate review (list pending, split, dismiss; powered by `find_disjoint_franchises` finding disjoint substance-passing chains under one anime row — the BNHA↔Vigilante, Toaru Index↔Railgun shapes)
     - `POST /admin/split-candidates/backfill` re-runs detection across the catalog on demand; idempotent via cluster-signature supersede in the DAO
     - Execute creates one new Anime row per detected cluster, re-parents the cluster's media (UUIDs stable so existing ratings stay attached), reclassifies both sides, and re-runs merge detection on the new rows
+    - `GET /admin/split-candidates/dismissed` + `POST /admin/split-candidates/{uuid}/delete` mirror the merge pair: deleting a dismissed row clears its cluster-signature from the sticky-dismissal history so re-detection resurfaces it
   - Three cron-token-authed sweep schedulers:
     - `POST /admin/jobs/schedule-sweep?delay_minutes=N` — enqueues an `update_sweep` job (nightly catalog refresh + relations probe)
     - `POST /admin/jobs/schedule-seasonal?delay_minutes=N` — enqueues a `seasonal_sweep` job (weekly `/seasons/now` scrape)

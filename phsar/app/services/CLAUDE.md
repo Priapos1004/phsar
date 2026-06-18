@@ -163,6 +163,7 @@ Orchestrates BFS output into save/attach/merge decisions.
     - Uses `MergeCandidateDAO.get_rating_counts_for_anime` for tiebreak
   - Each list-pending item carries `pending_reclassifications: list[{media_uuid, title, old_relation_type, new_relation_type}]` — admin sees the per-media changes that would land before clicking merge (substance-gate demotions, alt-version labels, anchor flips)
   - Dismiss: status flip
+  - `list_dismissed` + `delete_decision(db, uuid, confirm, username)` (v0.14.9): the "Dismissed decisions" history + its username-gated delete. `list_dismissed` reuses the same `summarize_anime` shape (no preview/rank-swap — it's a read-back), stamping `dismissed_at=modified_at`. `delete_decision` mirrors backup restore's confirm gate (`CurationConfirmationMismatchError` on mismatch), then hard-deletes — but only a `dismissed` row (pending belongs to the live queue, merged rows are cascade-gone). Deleting drops the pair from `get_existing_pairs`' skip-set so re-detection resurfaces it
   - Merge: re-parents B's media onto A, deletes B via cascade, calls `anime_relation_service.reclassify_anime` over the consolidated set (rewrites umbrella + regenerates embedding only when drift), runs `detect_merge_candidates` against survivor, recomputes spoiler cache
     - Accepts optional `keep_uuid` to swap which side survives — DB invariant `anime_a_id < anime_b_id` unchanged, A/B is presentation only
     - Fail-loud on shared `Media.mal_id` between A and B — global-unique-violation needs human review
@@ -186,8 +187,9 @@ Orchestrates BFS output into save/attach/merge decisions.
   - Called from `relation_backfiller` (per catalog row) and `merge_candidate_service.merge` (survivor reclassification)
 
 - **`split_candidate_service.py`** — admin operations on split candidates (parallel to `merge_candidate_service`)
-  - List pending: uses `SplitCandidateDAO.list_pending_with_anime` which selectinloads source anime + media + relation_edges + media_studio.studio in one roundtrip; rating counts piggybacked from `MergeCandidateDAO.get_rating_counts_for_anime` (shared helper)
+  - List pending: uses `SplitCandidateDAO.list_pending_with_anime` which selectinloads source anime + media + relation_edges + media_studio.studio in one roundtrip; rating counts piggybacked from `MergeCandidateDAO.get_rating_counts_for_anime` (shared helper). The cluster-preview build is extracted to `_build_list_item` so `list_pending` + `list_dismissed` share it
   - Dismiss: status flip
+  - `list_dismissed` + `delete_decision` (v0.14.9): symmetric to the merge pair — dismissed history with `dismissed_at` + username-gated delete of a `dismissed` row. Deleting clears the cluster signature from `upsert_pending`'s sticky-dismissal history so re-detection resurfaces it (deleting a `split`-status row would NOT undo the executed split, so only `dismissed` is deletable)
   - Execute: builds (nodes, edges) from the cluster's media subset, verifies the classifier still picks `suggested_anchor_mal_id` (raises `SplitCandidateStaleError(409)` if MAL data shifted between detection and execution), creates a new Anime per cluster, re-parents Media per-row via FK assignment (`m.anime_id = new_anime.id`), expires the source anime's `.media` collection (per-row child assignment doesn't refresh the parent's cached relationship collection), reclassifies both sides, runs post-split detection on source + each new anime, runs merge detection on the new anime IDs (a freshly-split franchise may match an existing parallel row)
   - **Rating safety property**: Media UUIDs are stable across re-parenting — any `Ratings.media_id` row stays attached to the same media; only the anime aggregation shifts
 
