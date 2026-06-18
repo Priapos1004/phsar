@@ -40,7 +40,7 @@ SWEEP_LONG_TAIL_DAYS = 90
 # Tier 2: burn the initial stability sampling for the first N sweeps of a
 # row's life. One threshold shared by the media selection atoms, the anime
 # count-card atoms, and the probe gate so media and anime stay consistent.
-SWEEP_STABILIZE_THRESHOLD = 5
+SWEEP_STABILIZE_THRESHOLD = 3
 
 
 class _SweepAtoms(NamedTuple):
@@ -196,7 +196,7 @@ class AnimeDAO(MalIdDAO[Anime]):
         re-refreshed every night. Four tiers OR'd together, every atom a
         direct predicate on the media row + its MediaFreshness sidecar:
           1. This media is "Currently Airing" — always due.
-          2. stable_check_count < 5 — burn the initial stability sampling.
+          2. stable_check_count < 3 — burn the initial stability sampling.
           3. Last checked > 7 days ago AND this media is a recent main
              (relation_type=main, aired_from within SWEEP_RECENT_MAIN_YEARS).
           4. Last checked > SWEEP_LONG_TAIL_DAYS (90) ago — long-tail net.
@@ -311,8 +311,9 @@ class AnimeDAO(MalIdDAO[Anime]):
 
         Membership-only, same rationale as the anime version — the staleness
         atoms are excluded so a bucket doesn't empty itself when a sweep
-        refreshes its members. `stabilizing` here is the media 5-check
-        threshold; `long_cycle` is the else (stable + not airing + not a
+        refreshes its members. `stabilizing` here is the media
+        stable_check_count < SWEEP_STABILIZE_THRESHOLD bucket; `long_cycle`
+        is the else (stable + not airing + not a
         recent main), refreshed only on the 90-day net.
         """
         mf = aliased(MediaFreshness)

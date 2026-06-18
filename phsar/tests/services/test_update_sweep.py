@@ -958,8 +958,8 @@ async def test_refresh_only_touches_due_media(db_session):
 # AnimeDAO.select_due_media_for_sweep (uses db_session)
 #
 # Media-level selection (v0.14.8): the tier atoms are direct predicates on
-# the media row + its MediaFreshness sidecar. Stabilize threshold is 5 (was
-# anime 3); long-tail is 90 days (was 180).
+# the media row + its MediaFreshness sidecar. Stabilize threshold is 3
+# (lowered from media-level 5 in v0.14.9); long-tail is 90 days (was 180).
 # ---------------------------------------------------------------------------
 
 
@@ -1023,19 +1023,19 @@ async def test_tier_currently_airing_always_selected(db_session):
 
 @pytest.mark.asyncio
 async def test_tier_stable_under_threshold_selected(db_session):
-    """Media-level stabilize threshold is 5: stable_check_count < 5 is
-    selected, == 5 is not."""
-    a_stable_4 = await _seed_anime(
-        db_session, mal_id=-7002, stable_check_count=4,
+    """Media-level stabilize threshold is 3: stable_check_count < 3 is
+    selected, == 3 is not."""
+    a_stable_2 = await _seed_anime(
+        db_session, mal_id=-7002, stable_check_count=2,
         last_checked_at=datetime.now(timezone.utc),
     )
-    a_stable_5 = await _seed_anime(
-        db_session, mal_id=-7003, stable_check_count=5,
+    a_stable_3 = await _seed_anime(
+        db_session, mal_id=-7003, stable_check_count=3,
         last_checked_at=datetime.now(timezone.utc),
     )
     ids = await _select_due_ids(db_session)
-    assert a_stable_4.id in ids
-    assert a_stable_5.id not in ids
+    assert a_stable_2.id in ids
+    assert a_stable_3.id not in ids
 
 
 @pytest.mark.asyncio
@@ -1151,7 +1151,7 @@ async def test_anime_tier_is_media_rollup_not_anime_probe_counter(db_session):
     """Regression for the v0.14.8 inconsistency: the anime count card must
     roll up MEDIA tiers, not read the anime probe counter. An anime with a
     high AnimeFreshness.stable_check_count (probe-stable) + a recent main but
-    whose media is still media-stabilizing (stable < 5) must count under
+    whose media is still media-stabilizing (stable < 3) must count under
     `stabilizing`, NOT `weekly_cycle` — otherwise the anime card disagrees
     with the media card (anime weekly_cycle while all media stabilizing)."""
     from app.models.media import RelationType
@@ -1180,7 +1180,7 @@ async def test_anime_tier_is_media_rollup_not_anime_probe_counter(db_session):
 @pytest.mark.asyncio
 async def test_tier_handles_missing_sidecar(db_session):
     """A media without a media_freshness row reads COALESCE(stable, 0) = 0,
-    which is < 5 → the stabilizing tier selects it. _seed_anime always
+    which is < 3 → the stabilizing tier selects it. _seed_anime always
     creates a sidecar, so build a bare media here."""
     anime = Anime(mal_id=-7007, title="A-7007")
     db_session.add(anime)
@@ -1192,18 +1192,18 @@ async def test_tier_handles_missing_sidecar(db_session):
 
 @pytest.mark.asyncio
 async def test_count_media_by_sweep_tier_priority_buckets_each_media_once(db_session):
-    """Media-level membership cascade: airing_now > stabilizing (stable<5) >
+    """Media-level membership cascade: airing_now > stabilizing (stable<3) >
     weekly_cycle (recent main) > long_cycle. Sum equals total media count.
     Delta-based so pre-existing rows don't skew bucket attribution."""
     from app.models.media import RelationType
     now = datetime.now(timezone.utc)
     baseline = await AnimeDAO().count_media_by_sweep_tier_priority(db_session)
 
-    await _seed_anime(  # airing wins over stable<5 -> airing_now
+    await _seed_anime(  # airing wins over stable<3 -> airing_now
         db_session, mal_id=-7201, stable_check_count=1,
         airing_status="Currently Airing", last_checked_at=now,
     )
-    await _seed_anime(  # stable<5, not airing -> stabilizing
+    await _seed_anime(  # stable<3, not airing -> stabilizing
         db_session, mal_id=-7202, stable_check_count=2, last_checked_at=now,
     )
     await _seed_anime(  # recent main, stable -> weekly_cycle
@@ -1542,12 +1542,12 @@ def test_gate_rejects_currently_airing():
 
 
 def test_gate_rejects_stable_below_threshold():
-    a = _anime_with_freshness(stable_check_count=4)
+    a = _anime_with_freshness(stable_check_count=2)
     assert _qualifies_for_relations_probe(a, is_currently_airing=False) is False
 
 
 def test_gate_accepts_stable_at_or_above_threshold_and_not_airing():
-    a = _anime_with_freshness(stable_check_count=5)
+    a = _anime_with_freshness(stable_check_count=3)
     assert _qualifies_for_relations_probe(a, is_currently_airing=False) is True
 
 

@@ -75,7 +75,7 @@ logger = logging.getLogger(__name__)
 
 # Counter ceiling for both the anime probe counter and the per-media
 # refresh counter — tiered selection only checks the small stabilize
-# threshold (< 5), but capping the value keeps the integer bounded and
+# threshold (< SWEEP_STABILIZE_THRESHOLD), but capping the value keeps the integer bounded and
 # avoids accumulating noise across years of sweeps.
 _STABLE_COUNT_CAP = 99
 

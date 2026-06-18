@@ -20,7 +20,7 @@
 
 	// Display buckets map 1:1 to the backend's 4 mutually-exclusive
 	// cycle-membership tiers (priority cascade). Tooltips paraphrase each
-	// predicate; the stabilize (< 5 sweeps) and long-cycle (90-day) borders
+	// predicate; the stabilize (< 3 sweeps) and long-cycle (90-day) borders
 	// are shared by both grains (v0.14.8 unified both thresholds).
 	const ROWS: {
 		key: keyof AdminSweepTierBreakdown;
@@ -41,7 +41,7 @@
 			key: 'stabilizing',
 			label: 'Stabilizing',
 			color: 'bg-amber-500',
-			tooltip: () => 'In the first 5 sweeps of its lifecycle (stable_check_count < 5).',
+			tooltip: () => 'In the first 3 sweeps of its lifecycle (stable_check_count < 3).',
 		},
 		{
 			key: 'weekly_cycle',
