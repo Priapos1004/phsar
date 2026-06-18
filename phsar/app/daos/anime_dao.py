@@ -49,14 +49,12 @@ class _SweepAtoms(NamedTuple):
     of the anime's MEDIA tiers — every atom is an EXISTS over the anime's
     media — so the anime breakdown stays consistent with the media breakdown
     (an anime inherits its most-urgent media's tier under the priority
-    cascade). Crucially `still_stabilizing` reads the per-media
-    `MediaFreshness.stable_check_count`, NOT the anime probe counter on
-    `AnimeFreshness`: refresh selection is media-level, so the card must
-    reflect media state, not the probe clock. Refresh selection itself lives
-    in `_media_sweep_atoms`; this is just a coarser lens on the same cycle.
+    cascade). The stabilizing tier is derived from a separate MIN
+    stable_check_count subquery (`count_by_sweep_tier_priority` builds it and
+    feeds it to `_tier_bucket`), so it's not an atom here — only the
+    airing/recent-main membership EXISTS gates are.
     """
     airing_now: Any
-    still_stabilizing: Any
     recent_main: Any
 
 
@@ -105,30 +103,17 @@ def _media_sweep_atoms(mf_alias) -> _MediaSweepAtoms:
 
 def _sweep_atoms() -> _SweepAtoms:
     """Build the anime membership atoms as roll-ups of the anime's MEDIA
-    tiers (EXISTS over media). `still_stabilizing` reads the per-media
-    `MediaFreshness.stable_check_count` so it matches the media card — using
-    the anime probe counter here let an anime show as weekly/stable while all
-    its media were still media-stabilizing (the v0.14.8 inconsistency)."""
+    tiers (EXISTS over media). Stabilizing membership isn't an atom — it's
+    derived in `_tier_bucket` from the MIN stable_check_count subquery
+    `count_by_sweep_tier_priority` supplies (matching the media card, not the
+    anime probe counter)."""
     recent_main_cutoff = func.now() - text(f"interval '{SWEEP_RECENT_MAIN_YEARS} years'")
-    mf = aliased(MediaFreshness)
 
     airing_now = exists().where(
         and_(
             Media.anime_id == Anime.id,
             Media.airing_status == AIRING_STATUS_CURRENTLY_AIRING,
         )
-    )
-    still_stabilizing = (
-        select(1)
-        .select_from(Media)
-        .outerjoin(mf, mf.media_id == Media.id)
-        .where(
-            and_(
-                Media.anime_id == Anime.id,
-                func.coalesce(mf.stable_check_count, 0) < SWEEP_STABILIZE_THRESHOLD,
-            )
-        )
-        .exists()
     )
     recent_main = exists().where(
         and_(
@@ -139,7 +124,6 @@ def _sweep_atoms() -> _SweepAtoms:
     )
     return _SweepAtoms(
         airing_now=airing_now,
-        still_stabilizing=still_stabilizing,
         recent_main=recent_main,
     )
 
@@ -277,9 +261,15 @@ class AnimeDAO(MalIdDAO[Anime]):
         member) for the anime grain. `_count_by_tier` folds the sub-labels
         back into the `stabilizing` total + a per-check breakdown. Dynamic in
         the threshold — retuning SWEEP_STABILIZE_THRESHOLD reshapes the
-        buckets with no other change."""
+        buckets with no other change.
+
+        `stable_expr == n` for n < threshold IS the stabilizing condition (a
+        graduated row sits at stable >= threshold and matches no sub-label),
+        so no separate `still_stabilizing` guard is needed — and airing_now
+        comes first in the cascade, so an airing-but-unstable row still lands
+        under airing_now."""
         stabilizing_cases = [
-            (and_(atoms.still_stabilizing, stable_expr == n), f"stabilizing_{n}")
+            (stable_expr == n, f"stabilizing_{n}")
             for n in range(SWEEP_STABILIZE_THRESHOLD)
         ]
         return case(
