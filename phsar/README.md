@@ -196,6 +196,7 @@ phsar/
 │   │   │   │   ├── TagSelect.svelte
 │   │   │   │   ├── Toast.svelte
 │   │   │   │   ├── TokenExpiryDialog.svelte
+│   │   │   │   ├── Tooltip.svelte
 │   │   │   │   ├── VersionFooter.svelte
 │   │   │   │   └── ui/           # shadcn-svelte components
 │   │   │   │       ├── badge/
@@ -212,7 +213,8 @@ phsar/
 │   │   │   │       ├── select/
 │   │   │   │       ├── separator/
 │   │   │   │       ├── slider/
-│   │   │   │       └── textarea/
+│   │   │   │       ├── textarea/
+│   │   │   │       └── tooltip/
 │   │   │   ├── stores/
 │   │   │   │   ├── _bumpStore.ts
 │   │   │   │   ├── adminJobsFilter.ts

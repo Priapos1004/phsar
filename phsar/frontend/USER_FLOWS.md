@@ -87,7 +87,7 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 
 ## 3. Home Page
 
-- **Hero banner** (InfoDiashow): Full-width rounded card showing the active theme's character pic as background (`object-cover`, per-theme focal point). Diagonal gradient overlay fades from the theme's primary color (opaque left) to transparent (right). "Current Season" label and season name (e.g., "Spring 2026") sit on the opaque side with text shadow. Pic and gradient update reactively when user changes theme.
+- **Hero banner** (InfoDiashow): Full-width rounded card showing the active theme's character pic as background (`object-cover`, per-theme focal point). A subtle bottom-up dark scrim (for legibility only, no color cast over the art) anchors the "Current Season" label and season name (e.g., "Spring 2026") bottom-left with a soft drop shadow. Pic updates reactively when the user changes theme.
 - SearchBar component for entering queries and applying filters
 - Three placeholder cards: "Recommended", "Lucky Find", "Upcoming"
 
