@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
-	import { formatSeason, resolveTitle, formatRelationType, formatMediaType } from '$lib/utils/formatString';
+	import { formatSeason, resolveTitle, formatRelationType, formatMediaType, formatAiringStatus } from '$lib/utils/formatString';
 	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
 	import { userSettings } from '$lib/stores/userSettings';
 	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
@@ -79,8 +79,10 @@
 					<p class="text-[11px] text-muted-foreground">
 						{#if season}
 							{season}
+						{:else if sibling.episodes != null}
+							{sibling.episodes} eps
 						{:else}
-							{sibling.episodes ?? '?'} eps
+							{formatAiringStatus(sibling.airing_status, false)}
 						{/if}
 					</p>
 				</Card.Content>
