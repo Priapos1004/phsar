@@ -24,6 +24,9 @@
 :root {
   --primary: oklch(0.558 0.288 302.321);
   --ring: oklch(0.627 0.265 303.9);
+  /* Tooltip surface: the popover white tinted toward the active theme accent.
+     The inner var(--primary) resolves at use-site, so it follows .theme-* overrides. */
+  --tooltip-surface: color-mix(in oklch, var(--color-popover) 88%, var(--primary));
 }
 
 @theme inline {

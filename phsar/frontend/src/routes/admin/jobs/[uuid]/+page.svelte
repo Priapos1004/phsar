@@ -9,6 +9,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import * as Card from '$lib/components/ui/card';
 	import JobDetailHeader from '$lib/components/admin/JobDetailHeader.svelte';
+	import Tooltip from '$lib/components/Tooltip.svelte';
 	import JobDetailCounters from '$lib/components/admin/JobDetailCounters.svelte';
 	import MediaChangeCard from '$lib/components/admin/MediaChangeCard.svelte';
 	import AnimeUmbrellaCard from '$lib/components/admin/AnimeUmbrellaCard.svelte';
@@ -247,14 +248,18 @@
 							/>
 							<div class="flex gap-1 flex-wrap">
 								{#each FILTER_CHIPS as chip (chip.key)}
-									<button
-										type="button"
-										title={chip.tooltip}
-										class="px-2 py-1 rounded-full text-xs border transition-colors {filter === chip.key ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted/30'}"
-										onclick={() => (filter = chip.key)}
-									>
-										{chip.label}
-									</button>
+									<Tooltip text={chip.tooltip}>
+										{#snippet trigger(props)}
+											<button
+												{...props}
+												type="button"
+												class="px-2 py-1 rounded-full text-xs border transition-colors {filter === chip.key ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted/30'}"
+												onclick={() => (filter = chip.key)}
+											>
+												{chip.label}
+											</button>
+										{/snippet}
+									</Tooltip>
 								{/each}
 							</div>
 						</div>

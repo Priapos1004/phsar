@@ -56,10 +56,11 @@
 			<div class="flex h-2.5 rounded-full overflow-hidden bg-muted">
 				{#each dist.visibleEntries as entry, i}
 					{@const widthPercent = (entry.count / dist.totalSet) * 100}
+					<!-- No tooltip: the legend below already shows each entry's label,
+					     count, and color, so a per-segment hint would be redundant. -->
 					<div
 						class="h-full"
 						style="width: {widthPercent}%; background: {palette[i % palette.length]}"
-						title="{entry.label}: {entry.count}"
 					></div>
 				{/each}
 			</div>

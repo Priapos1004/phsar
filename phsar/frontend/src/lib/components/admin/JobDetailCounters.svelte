@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
+	import Tooltip from '$lib/components/Tooltip.svelte';
 	import type { UpdateSweepCounters } from '$lib/types/api';
 
 	interface Props {
@@ -60,21 +61,30 @@
 				{@const notTracked = isStep1 && version < 4}
 				{@const value = counters[stat.key] ?? 0}
 				{@const warn = isStep1 && !notTracked && value > 0}
-				<div
-					title={stat.tooltip}
-					class="rounded-md border p-3 {stat.tooltip ? 'cursor-help' : ''} {warn
-						? 'border-amber-500/50 bg-amber-500/10'
-						: 'border-border/60 bg-muted/10'}"
-				>
-					<dt class="text-[10px] uppercase tracking-wider text-muted-foreground">{stat.label}</dt>
-					<dd
-						class="text-xl font-semibold tabular-nums mt-1 {warn
-							? 'text-amber-400'
-							: 'text-card-foreground'}"
+				{#snippet card(props: Record<string, unknown>)}
+					<div
+						{...props}
+						class="rounded-md border p-3 {stat.tooltip ? 'cursor-help' : ''} {warn
+							? 'border-amber-500/50 bg-amber-500/10'
+							: 'border-border/60 bg-muted/10'}"
 					>
-						{notTracked ? '—' : value}
-					</dd>
-				</div>
+						<dt class="text-[10px] uppercase tracking-wider text-muted-foreground">{stat.label}</dt>
+						<dd
+							class="text-xl font-semibold tabular-nums mt-1 {warn
+								? 'text-amber-400'
+								: 'text-card-foreground'}"
+						>
+							{notTracked ? '—' : value}
+						</dd>
+					</div>
+				{/snippet}
+				{#if stat.tooltip}
+					<Tooltip text={stat.tooltip}>
+						{#snippet trigger(props)}{@render card(props)}{/snippet}
+					</Tooltip>
+				{:else}
+					{@render card({})}
+				{/if}
 			{/each}
 		</dl>
 		{#if merge_detect_failed || cache_recompute_failed}

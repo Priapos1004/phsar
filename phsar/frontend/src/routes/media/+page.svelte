@@ -10,6 +10,7 @@
 	import RelatedMediaCarousel from '$lib/components/RelatedMediaCarousel.svelte';
 	import RatingCard from '$lib/components/RatingCard.svelte';
 	import BackLink from '$lib/components/BackLink.svelte';
+	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { Bookmark, Star, Tv, Clock, Calendar, Film } from 'lucide-svelte';
 	import * as cls from '$lib/styles/classes';
 	import { userSettings } from '$lib/stores/userSettings';
@@ -193,14 +194,17 @@
 							{/each}
 						</div>
 
-						<!-- Watchlist bookmark placeholder -->
-						<button
-							class="shrink-0 p-2 rounded-lg opacity-50 cursor-not-allowed"
-							disabled
-							title="Coming soon"
-						>
-							<Bookmark class="size-6 text-muted-foreground" />
-						</button>
+						<!-- Watchlist bookmark placeholder (disabled → span trigger so the
+						     tooltip still shows; disabled buttons swallow hover events) -->
+						<Tooltip text="Coming soon" class="shrink-0">
+							<button
+								class="p-2 rounded-lg opacity-50 cursor-not-allowed"
+								disabled
+								aria-label="Watchlist — coming soon"
+							>
+								<Bookmark class="size-6 text-muted-foreground" />
+							</button>
+						</Tooltip>
 					</div>
 
 					{#if media.score !== null}

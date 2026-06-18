@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
+	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { formatNumber, percentOf } from '$lib/utils/formatString';
 	import type { AdminSweepTierBreakdown } from '$lib/types/api';
 
@@ -109,18 +110,22 @@
 			{#each ROWS as row (row.key)}
 				{@const count = tiers[row.key] ?? 0}
 				{@const share = percentOf(count, total)}
-				<div class="flex items-center gap-3 text-sm" title={row.tooltip(mode)}>
-					<div class="w-40 shrink-0 text-card-foreground/90">{row.label}</div>
-					<div class="flex-1 h-2 rounded-full bg-muted/40 overflow-hidden">
-						<div class="h-full {row.color}" style="width: {share}%"></div>
-					</div>
-					<div class="w-14 shrink-0 text-right tabular-nums text-card-foreground font-medium">
-						{formatNumber(count)}
-					</div>
-					<div class="w-12 shrink-0 text-right tabular-nums text-xs text-muted-foreground">
-						{share.toFixed(1)}%
-					</div>
-				</div>
+				<Tooltip text={row.tooltip(mode)}>
+					{#snippet trigger(props)}
+						<div {...props} class="flex items-center gap-3 text-sm cursor-help">
+							<div class="w-40 shrink-0 text-card-foreground/90">{row.label}</div>
+							<div class="flex-1 h-2 rounded-full bg-muted/40 overflow-hidden">
+								<div class="h-full {row.color}" style="width: {share}%"></div>
+							</div>
+							<div class="w-14 shrink-0 text-right tabular-nums text-card-foreground font-medium">
+								{formatNumber(count)}
+							</div>
+							<div class="w-12 shrink-0 text-right tabular-nums text-xs text-muted-foreground">
+								{share.toFixed(1)}%
+							</div>
+						</div>
+					{/snippet}
+				</Tooltip>
 				{#if row.key === 'stabilizing'}
 					<!-- Per-check pipeline: how far each stabilizing row has progressed
 					     toward graduating. Bars share the parent's share-of-total scale
@@ -134,24 +139,28 @@
 							mode === 'anime'
 								? `Anime whose least-stabilized media has had ${sub.n} of ${stabilizeThreshold} stabilizing sweeps.`
 								: `Media that has had ${sub.n} of ${stabilizeThreshold} stabilizing sweeps (stable_check_count = ${sub.n}).`}
-						<div class="flex items-center gap-3 text-sm" title={subTip}>
-							<div class="w-40 shrink-0 pl-5 text-xs text-card-foreground/60">
-								└ {sub.n} {sub.n === 1 ? 'check' : 'checks'}
-							</div>
-							<div class="flex-1 h-2 rounded-full bg-muted/40 overflow-hidden">
-								<div
-									class="h-full bg-amber-400"
-									style="width: {subShare}%; opacity: {stabilizeThreshold > 1
-										? 0.5 + (0.5 * sub.n) / (stabilizeThreshold - 1)
-										: 1}"
-								></div>
-							</div>
-							<div class="w-14 shrink-0 text-right tabular-nums text-card-foreground/80 text-xs">
-								{formatNumber(sub.count)}
-							</div>
-							<!-- spacer keeps the count column aligned with the tier rows' % column -->
-							<div class="w-12 shrink-0"></div>
-						</div>
+						<Tooltip text={subTip}>
+							{#snippet trigger(props)}
+								<div {...props} class="flex items-center gap-3 text-sm cursor-help">
+									<div class="w-40 shrink-0 pl-5 text-xs text-card-foreground/60">
+										└ {sub.n} {sub.n === 1 ? 'check' : 'checks'}
+									</div>
+									<div class="flex-1 h-2 rounded-full bg-muted/40 overflow-hidden">
+										<div
+											class="h-full bg-amber-400"
+											style="width: {subShare}%; opacity: {stabilizeThreshold > 1
+												? 0.5 + (0.5 * sub.n) / (stabilizeThreshold - 1)
+												: 1}"
+										></div>
+									</div>
+									<div class="w-14 shrink-0 text-right tabular-nums text-card-foreground/80 text-xs">
+										{formatNumber(sub.count)}
+									</div>
+									<!-- spacer keeps the count column aligned with the tier rows' % column -->
+									<div class="w-12 shrink-0"></div>
+								</div>
+							{/snippet}
+						</Tooltip>
 					{/each}
 				{/if}
 			{/each}
