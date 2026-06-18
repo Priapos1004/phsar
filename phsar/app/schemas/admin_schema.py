@@ -42,6 +42,10 @@ class MergeCandidateListItem(BaseModel):
     similarity_score: float
     detected_by: str
     created_at: datetime
+    # Set only in the dismissed-decisions list (when the candidate was
+    # dismissed); None for pending rows. Lets the admin sort/recognise past
+    # decisions without a separate DTO.
+    dismissed_at: datetime | None = None
     anime_a: MergeCandidateAnimeSummary
     anime_b: MergeCandidateAnimeSummary
     pending_reclassifications: list[PendingReclassification] = Field(default_factory=list)
@@ -99,8 +103,16 @@ class SplitCandidateListItem(BaseModel):
     uuid: str
     detected_by: str
     created_at: datetime
+    # Set only in the dismissed-decisions list; None for pending rows.
+    dismissed_at: datetime | None = None
     source_anime: MergeCandidateAnimeSummary
     clusters: list[SplitClusterPreview]
+
+
+class DeleteDecisionRequest(BaseModel):
+    """Body for deleting a dismissed merge/split decision so it can resurface.
+    `confirm` must equal the caller's username (mirrors backup restore)."""
+    confirm: str
 
 
 class SplitResult(BaseModel):

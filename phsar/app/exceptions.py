@@ -496,6 +496,16 @@ class SplitCandidateStaleError(PhsarBaseError):
         super().__init__(f"Split candidate is stale: {reason}. Re-run detection.")
 
 
+class CurationConfirmationMismatchError(PhsarBaseError):
+    """Raised when the delete-decision confirmation string does not match the
+    caller's username (the username gate on deleting a dismissed merge/split
+    decision so it can resurface)."""
+    status_code = 400
+
+    def __init__(self):
+        super().__init__("Confirmation did not match your username.")
+
+
 class BackupUploadTooLargeError(PhsarBaseError):
     status_code = 413
 

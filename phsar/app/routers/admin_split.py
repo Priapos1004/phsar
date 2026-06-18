@@ -68,3 +68,29 @@ async def split_anime_candidate(uuid: UUID, db: AsyncSession = Depends(get_db)):
 )
 async def dismiss_split_candidate(uuid: UUID, db: AsyncSession = Depends(get_db)):
     await split_candidate_service.dismiss(db, uuid)
+
+
+@router.get(
+    "/split-candidates/dismissed",
+    response_model=list[admin_schema.SplitCandidateListItem],
+)
+async def list_dismissed_split_candidates(db: AsyncSession = Depends(get_db)):
+    """Past dismissals, newest first. Deleting one (below) lets it resurface
+    on the next detection."""
+    return await split_candidate_service.list_dismissed(db)
+
+
+@router.post(
+    "/split-candidates/{uuid}/delete",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_split_decision(
+    uuid: UUID,
+    data: admin_schema.DeleteDecisionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """Delete a dismissed decision (username-gated) so it can resurface."""
+    await split_candidate_service.delete_decision(
+        db, uuid, confirm=data.confirm, username=current_user.username,
+    )

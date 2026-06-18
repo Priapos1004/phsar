@@ -15,6 +15,7 @@ from sqlalchemy.orm import selectinload
 
 from app.daos.merge_candidate_dao import MergeCandidateDAO
 from app.exceptions import (
+    CurationConfirmationMismatchError,
     InvalidMergeKeepError,
     MergeCandidateAlreadyResolvedError,
     MergeCandidateNotFoundError,
@@ -115,6 +116,53 @@ async def dismiss(db: AsyncSession, uuid: UUID) -> None:
     """Mark a candidate as reviewed-but-not-merged. No DB mutation otherwise."""
     candidate = await _ensure_pending(db, uuid)
     candidate.status = MergeCandidateStatus.dismissed
+    await db.commit()
+
+
+async def list_dismissed(db: AsyncSession) -> list[MergeCandidateListItem]:
+    """Dismissed pairs for the admin 'Dismissed decisions' history. Same
+    summary shape as `list_pending` (so the card reuses one renderer) but
+    skips the reclassification preview and the recommended-keep swap — this
+    is a read-back of a past decision, not a live merge surface — and stamps
+    `dismissed_at` for display/sort."""
+    rows = await merge_candidate_dao.list_dismissed_with_anime(db)
+    if not rows:
+        return []
+
+    anime_ids: set[int] = set()
+    for row in rows:
+        anime_ids.add(row.anime_a_id)
+        anime_ids.add(row.anime_b_id)
+    rating_counts = await merge_candidate_dao.get_rating_counts_for_anime(db, anime_ids)
+
+    return [
+        MergeCandidateListItem(
+            uuid=str(row.uuid),
+            similarity_score=row.similarity_score,
+            detected_by=row.detected_by,
+            created_at=row.created_at,
+            dismissed_at=row.modified_at,
+            anime_a=summarize_anime(row.anime_a, rating_counts.get(row.anime_a_id, 0)),
+            anime_b=summarize_anime(row.anime_b, rating_counts.get(row.anime_b_id, 0)),
+        )
+        for row in rows
+    ]
+
+
+async def delete_decision(
+    db: AsyncSession, uuid: UUID, confirm: str, username: str
+) -> None:
+    """Delete a DISMISSED merge candidate so the pair leaves the detector's
+    skip-set and resurfaces as pending on the next detection (sweep or the
+    Re-detect button). Username-gated like backup restore. Only dismissed
+    rows are deletable here — pending rows belong to the live queue, and
+    merged rows no longer exist (cascade-deleted with anime B)."""
+    if confirm != username:
+        raise CurationConfirmationMismatchError()
+    candidate = await merge_candidate_dao.get_by_uuid(db, uuid)
+    if candidate is None or candidate.status != MergeCandidateStatus.dismissed:
+        raise MergeCandidateNotFoundError(str(uuid))
+    await merge_candidate_dao.delete(db, candidate)
     await db.commit()
 
 

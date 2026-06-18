@@ -28,6 +28,7 @@ from sqlalchemy.orm import selectinload
 from app.daos.merge_candidate_dao import MergeCandidateDAO
 from app.daos.split_candidate_dao import SplitCandidateDAO
 from app.exceptions import (
+    CurationConfirmationMismatchError,
     SplitCandidateAlreadyResolvedError,
     SplitCandidateNotFoundError,
     SplitCandidateStaleError,
@@ -75,6 +76,48 @@ split_candidate_dao = SplitCandidateDAO()
 merge_candidate_dao = MergeCandidateDAO()
 
 
+def _build_list_item(
+    row: SplitCandidate, rating_count: int, dismissed_at=None,
+) -> SplitCandidateListItem:
+    """Shape one SplitCandidate row into its list-item DTO, resolving each
+    cluster's member mal_ids back to the source anime's live media for the
+    preview. Shared by the pending queue and the dismissed-decisions history
+    (`dismissed_at` set only for the latter)."""
+    source_anime = row.anime
+    media_by_mal = {m.mal_id: m for m in source_anime.media}
+    clusters = []
+    for cluster in row.clusters:
+        members = []
+        for mid in cluster["member_mal_ids"]:
+            m = media_by_mal.get(mid)
+            if m is None:
+                # Classifier saw a member that's no longer under this anime —
+                # likely a merge or manual re-parent happened post-detection.
+                # Skip; admin re-runs detection to refresh the payload.
+                continue
+            members.append(SplitClusterMember(
+                media_uuid=str(m.uuid),
+                mal_id=m.mal_id,
+                title=m.title,
+                media_type=m.media_type.value,
+                relation_type=m.relation_type.value,
+            ))
+        clusters.append(SplitClusterPreview(
+            suggested_anchor_mal_id=cluster["suggested_anchor_mal_id"],
+            members=members,
+            substance_member_mal_ids=cluster["substance_member_mal_ids"],
+            bridge_edges=[tuple(e) for e in cluster.get("bridge_edges", [])],
+        ))
+    return SplitCandidateListItem(
+        uuid=str(row.uuid),
+        detected_by=row.detected_by,
+        created_at=row.created_at,
+        dismissed_at=dismissed_at,
+        source_anime=summarize_anime(source_anime, rating_count),
+        clusters=clusters,
+    )
+
+
 async def list_pending(db: AsyncSession) -> list[SplitCandidateListItem]:
     rows = await split_candidate_dao.list_pending_with_anime(db)
     if not rows:
@@ -85,44 +128,7 @@ async def list_pending(db: AsyncSession) -> list[SplitCandidateListItem]:
     # column. No need for a duplicate.
     rating_counts = await merge_candidate_dao.get_rating_counts_for_anime(db, anime_ids)
 
-    items: list[SplitCandidateListItem] = []
-    for row in rows:
-        source_anime = row.anime
-        media_by_mal = {m.mal_id: m for m in source_anime.media}
-        clusters = []
-        for cluster in row.clusters:
-            members = []
-            for mid in cluster["member_mal_ids"]:
-                m = media_by_mal.get(mid)
-                if m is None:
-                    # Classifier saw a member that's no longer under
-                    # this anime — likely a merge or manual re-parent
-                    # happened post-detection. Skip; admin re-runs
-                    # detection to refresh the candidate payload.
-                    continue
-                members.append(SplitClusterMember(
-                    media_uuid=str(m.uuid),
-                    mal_id=m.mal_id,
-                    title=m.title,
-                    media_type=m.media_type.value,
-                    relation_type=m.relation_type.value,
-                ))
-            clusters.append(SplitClusterPreview(
-                suggested_anchor_mal_id=cluster["suggested_anchor_mal_id"],
-                members=members,
-                substance_member_mal_ids=cluster["substance_member_mal_ids"],
-                bridge_edges=[tuple(e) for e in cluster.get("bridge_edges", [])],
-            ))
-        items.append(SplitCandidateListItem(
-            uuid=str(row.uuid),
-            detected_by=row.detected_by,
-            created_at=row.created_at,
-            source_anime=summarize_anime(
-                source_anime, rating_counts.get(row.anime_id, 0),
-            ),
-            clusters=clusters,
-        ))
-    return items
+    return [_build_list_item(row, rating_counts.get(row.anime_id, 0)) for row in rows]
 
 
 async def _ensure_pending(db: AsyncSession, uuid: UUID) -> SplitCandidate:
@@ -138,6 +144,38 @@ async def dismiss(db: AsyncSession, uuid: UUID) -> None:
     """Mark as reviewed-but-not-split. No DB mutation otherwise."""
     candidate = await _ensure_pending(db, uuid)
     candidate.status = SplitCandidateStatus.dismissed
+    await db.commit()
+
+
+async def list_dismissed(db: AsyncSession) -> list[SplitCandidateListItem]:
+    """Dismissed candidates for the admin 'Dismissed decisions' history,
+    newest dismissal first, with `dismissed_at` stamped. Reuses the same
+    cluster-preview builder as the pending queue."""
+    rows = await split_candidate_dao.list_dismissed_with_anime(db)
+    if not rows:
+        return []
+    anime_ids = {row.anime_id for row in rows}
+    rating_counts = await merge_candidate_dao.get_rating_counts_for_anime(db, anime_ids)
+    return [
+        _build_list_item(row, rating_counts.get(row.anime_id, 0), dismissed_at=row.modified_at)
+        for row in rows
+    ]
+
+
+async def delete_decision(
+    db: AsyncSession, uuid: UUID, confirm: str, username: str
+) -> None:
+    """Delete a DISMISSED split candidate so its cluster signature leaves the
+    sticky-dismissal history and re-detection resurfaces it as pending (sweep
+    or the Re-detect button). Username-gated like backup restore. Only
+    dismissed rows are deletable — pending rows belong to the live queue, and
+    deleting a split-status row wouldn't undo an executed split."""
+    if confirm != username:
+        raise CurationConfirmationMismatchError()
+    candidate = await split_candidate_dao.get_by_uuid(db, uuid)
+    if candidate is None or candidate.status != SplitCandidateStatus.dismissed:
+        raise SplitCandidateNotFoundError(str(uuid))
+    await split_candidate_dao.delete(db, candidate)
     await db.commit()
 
 

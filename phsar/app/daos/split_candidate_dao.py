@@ -55,20 +55,39 @@ class SplitCandidateDAO(BaseDAO[SplitCandidate]):
     async def list_pending_with_anime(
         self, db: AsyncSession
     ) -> list[SplitCandidate]:
-        """List pending candidates with the source anime + media +
-        relation-edge sidecars + media studios eagerly loaded. Admin UI
-        needs media titles, types, sidecars (for cluster previews) AND
-        studios (for the source-anime card summary), so all of this
-        rides one roundtrip."""
+        """Pending candidates with the source anime + media + relation-edge
+        sidecars + media studios eager-loaded (one roundtrip): admin needs media
+        titles/types/sidecars (cluster previews) AND studios (source summary).
+        FIFO by created_at."""
+        return await self._list_with_anime(
+            db, SplitCandidateStatus.pending, SplitCandidate.created_at.asc()
+        )
+
+    async def list_dismissed_with_anime(
+        self, db: AsyncSession
+    ) -> list[SplitCandidate]:
+        """DISMISSED candidates for the admin 'Dismissed decisions' history,
+        newest dismissal first (`modified_at` desc). Deleting one (via
+        `BaseDAO.delete`) clears the sticky-dismissal history in
+        `upsert_pending`, so re-detection resurfaces it."""
+        return await self._list_with_anime(
+            db, SplitCandidateStatus.dismissed, SplitCandidate.modified_at.desc()
+        )
+
+    async def _list_with_anime(
+        self, db: AsyncSession, status, order_by
+    ) -> list[SplitCandidate]:
+        """Shared query for the pending + dismissed lists — same eager-load,
+        differ only in status filter + ordering."""
         media_loader = selectinload(Anime.media).options(
             selectinload(Media.relation_edges),
             selectinload(Media.media_studio).selectinload(MediaStudio.studio),
         )
         stmt = (
             select(SplitCandidate)
-            .where(SplitCandidate.status == SplitCandidateStatus.pending)
+            .where(SplitCandidate.status == status)
             .options(selectinload(SplitCandidate.anime).options(media_loader))
-            .order_by(SplitCandidate.created_at.asc())
+            .order_by(order_by)
         )
         return list((await db.execute(stmt)).scalars().all())
 

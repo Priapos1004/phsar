@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.exceptions import (
+    CurationConfirmationMismatchError,
     SplitCandidateAlreadyResolvedError,
     SplitCandidateNotFoundError,
     SplitCandidateStaleError,
@@ -19,7 +20,12 @@ from app.models.anime import Anime
 from app.models.media import Media, RelationType
 from app.models.media_relation_edges import MediaRelationEdges
 from app.models.split_candidate import SplitCandidate, SplitCandidateStatus
-from app.services.split_candidate_service import dismiss, execute_split
+from app.services.split_candidate_service import (
+    delete_decision,
+    dismiss,
+    execute_split,
+    list_dismissed,
+)
 from tests._helpers import media_kwargs
 
 
@@ -269,3 +275,42 @@ async def test_execute_split_raises_on_substance_collapse(db_session):
         select(SplitCandidate).where(SplitCandidate.uuid == candidate_uuid)
     )).scalar_one()
     assert cand.status == SplitCandidateStatus.pending
+
+
+@pytest.mark.asyncio
+async def test_list_dismissed_rebuilds_cluster_preview_with_timestamp(db_session):
+    """A dismissed split candidate appears in the history with its cluster
+    preview rebuilt and `dismissed_at` stamped."""
+    _, _, candidate_uuid = await _make_bnha_with_vigilante_candidate(db_session)
+    await dismiss(db_session, candidate_uuid)
+
+    item = next(it for it in await list_dismissed(db_session) if it.uuid == str(candidate_uuid))
+    assert item.dismissed_at is not None
+    assert len(item.clusters) == 1
+    assert {m.mal_id for m in item.clusters[0].members} == {960593, 961942}
+
+
+@pytest.mark.asyncio
+async def test_split_delete_decision_username_gate(db_session):
+    """delete_decision refuses a mismatched confirmation, then deletes the
+    dismissed row on a match so its signature can resurface."""
+    _, _, candidate_uuid = await _make_bnha_with_vigilante_candidate(db_session)
+    await dismiss(db_session, candidate_uuid)
+
+    with pytest.raises(CurationConfirmationMismatchError):
+        await delete_decision(db_session, candidate_uuid, confirm="nope", username="admin")
+    assert any(it.uuid == str(candidate_uuid) for it in await list_dismissed(db_session))
+
+    await delete_decision(db_session, candidate_uuid, confirm="admin", username="admin")
+    row = (await db_session.execute(
+        select(SplitCandidate).where(SplitCandidate.uuid == candidate_uuid)
+    )).scalars().first()
+    assert row is None
+
+
+@pytest.mark.asyncio
+async def test_split_delete_decision_rejects_non_dismissed(db_session):
+    """A pending split candidate isn't deletable via delete_decision."""
+    _, _, candidate_uuid = await _make_bnha_with_vigilante_candidate(db_session)
+    with pytest.raises(SplitCandidateNotFoundError):
+        await delete_decision(db_session, candidate_uuid, confirm="admin", username="admin")
