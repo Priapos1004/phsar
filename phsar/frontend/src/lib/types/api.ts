@@ -565,6 +565,9 @@ export interface AdminActivityStats {
 export interface AdminSweepTierBreakdown {
 	airing_now: number;
 	stabilizing: number;
+	// Per-check breakdown of the stabilizing total (JSON object keys are
+	// strings: "0", "1", … up to SWEEP_STABILIZE_THRESHOLD-1).
+	stabilizing_by_check: Record<string, number>;
 	weekly_cycle: number;
 	long_cycle: number;
 }

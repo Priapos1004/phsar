@@ -1082,6 +1082,22 @@ async def test_tier_long_tail_selected(db_session):
     assert not_yet.id not in ids
 
 
+# Tier-count cards now return the 4 int totals + a nested `stabilizing_by_check`
+# breakdown, so the old `{k: after[k] - baseline[k] for k in after}` /
+# `sum(after.values())` shortcuts no longer work. These helpers isolate the
+# int buckets and diff the breakdown separately.
+_TIER_BUCKETS = ("airing_now", "stabilizing", "weekly_cycle", "long_cycle")
+
+
+def _tier_total(counts: dict) -> int:
+    return sum(counts[k] for k in _TIER_BUCKETS)
+
+
+def _breakdown_delta(after: dict, baseline: dict) -> dict[int, int]:
+    base = baseline["stabilizing_by_check"]
+    return {n: c - base.get(n, 0) for n, c in after["stabilizing_by_check"].items()}
+
+
 @pytest.mark.asyncio
 async def test_count_by_sweep_tier_priority_buckets_each_anime_once(db_session):
     """4 mutually-exclusive cycle-MEMBERSHIP buckets in priority cascade:
@@ -1133,17 +1149,20 @@ async def test_count_by_sweep_tier_priority_buckets_each_anime_once(db_session):
     await db_session.flush()
 
     after = await AnimeDAO().count_by_sweep_tier_priority(db_session)
-    delta = {k: after[k] - baseline.get(k, 0) for k in after}
+    delta = {k: after[k] - baseline.get(k, 0) for k in _TIER_BUCKETS}
     assert delta == {
         "airing_now": 1,
         "stabilizing": 1,
         "weekly_cycle": 2,   # both recent-main rows, incl. the recently-swept one
         "long_cycle": 2,
     }
+    # -7102 (stable=2, not airing) is the only new stabilizing anime, so the
+    # per-check breakdown attributes it to check-count 2 (its lone member).
+    assert _breakdown_delta(after, baseline) == {0: 0, 1: 0, 2: 1}
     total_anime = (await db_session.execute(
         select(func.count(Anime.id))
     )).scalar_one()
-    assert sum(after.values()) == total_anime
+    assert _tier_total(after) == total_anime
 
 
 @pytest.mark.asyncio
@@ -1173,8 +1192,11 @@ async def test_anime_tier_is_media_rollup_not_anime_probe_counter(db_session):
     await db_session.flush()
 
     after = await AnimeDAO().count_by_sweep_tier_priority(db_session)
-    delta = {k: after[k] - baseline.get(k, 0) for k in after}
+    delta = {k: after[k] - baseline.get(k, 0) for k in _TIER_BUCKETS}
     assert delta == {"airing_now": 0, "stabilizing": 1, "weekly_cycle": 0, "long_cycle": 0}
+    # The lone media sits at stable_check_count=0 → breakdown attributes the
+    # anime to check-count 0 (its least-settled — and only — member).
+    assert _breakdown_delta(after, baseline) == {0: 1, 1: 0, 2: 0}
 
 
 @pytest.mark.asyncio
@@ -1217,17 +1239,52 @@ async def test_count_media_by_sweep_tier_priority_buckets_each_media_once(db_ses
     await db_session.flush()
 
     after = await AnimeDAO().count_media_by_sweep_tier_priority(db_session)
-    delta = {k: after[k] - baseline.get(k, 0) for k in after}
+    delta = {k: after[k] - baseline.get(k, 0) for k in _TIER_BUCKETS}
     assert delta == {
         "airing_now": 1,
         "stabilizing": 1,
         "weekly_cycle": 1,
         "long_cycle": 1,
     }
+    # The lone stabilizing media (-7202) sits at stable_check_count=2.
+    assert _breakdown_delta(after, baseline) == {0: 0, 1: 0, 2: 1}
     total_media = (await db_session.execute(
         select(func.count(Media.id))
     )).scalar_one()
-    assert sum(after.values()) == total_media
+    assert _tier_total(after) == total_media
+
+
+@pytest.mark.asyncio
+async def test_stabilizing_breakdown_anime_uses_least_settled_member(db_session):
+    """The stabilizing total splits per check count. At the media grain each
+    media counts at its own stable_check_count; at the anime grain the anime
+    is attributed to its LEAST-settled member (the MIN), so an anime with
+    media at counts 1 and 2 lands in the anime breakdown's check-1 bucket."""
+    now = datetime.now(timezone.utc)
+    anime_base = await AnimeDAO().count_by_sweep_tier_priority(db_session)
+    media_base = await AnimeDAO().count_media_by_sweep_tier_priority(db_session)
+
+    anime = Anime(mal_id=-7401, title="A-7401")
+    db_session.add(anime)
+    await db_session.flush()
+    for mal, stable in ((-740101, 1), (-740102, 2)):
+        m = Media(**media_kwargs(anime_id=anime.id, mal_id=mal))
+        db_session.add(m)
+        await db_session.flush()
+        db_session.add(
+            MediaFreshness(media_id=m.id, last_checked_at=now, stable_check_count=stable)
+        )
+    await db_session.flush()
+
+    anime_after = await AnimeDAO().count_by_sweep_tier_priority(db_session)
+    media_after = await AnimeDAO().count_media_by_sweep_tier_priority(db_session)
+
+    # One new stabilizing anime, attributed to its MIN member (check 1).
+    assert anime_after["stabilizing"] - anime_base["stabilizing"] == 1
+    assert _breakdown_delta(anime_after, anime_base) == {0: 0, 1: 1, 2: 0}
+    # Both members count individually at the media grain (check 1 and check 2).
+    assert media_after["stabilizing"] - media_base["stabilizing"] == 2
+    assert _breakdown_delta(media_after, media_base) == {0: 0, 1: 1, 2: 1}
 
 
 # ---------------------------------------------------------------------------

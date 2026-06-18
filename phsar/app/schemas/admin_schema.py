@@ -190,9 +190,16 @@ class SweepTierBreakdown(BaseModel):
     reflect where each anime sits in the cycle and stay stable across
     sweeps. `weekly_cycle` = has a recent main; `long_cycle` = the rest
     (only the 180-day net touches these). Sum equals total anime count,
-    so the card can render each bucket as a share of the catalog."""
+    so the card can render each bucket as a share of the catalog.
+
+    `stabilizing_by_check` breaks the `stabilizing` total down by
+    `stable_check_count` (keys 0..SWEEP_STABILIZE_THRESHOLD-1, zero-filled)
+    so the card can show the stabilization pipeline. Media grain: the
+    media's own count; anime grain: the anime's least-settled member (MIN
+    across its media). Sum of the breakdown equals `stabilizing`."""
     airing_now: int
     stabilizing: int
+    stabilizing_by_check: dict[int, int]
     weekly_cycle: int
     long_cycle: int
 
