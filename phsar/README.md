@@ -215,6 +215,7 @@ phsar/
 │   │   │   │       └── textarea/
 │   │   │   ├── stores/
 │   │   │   │   ├── _bumpStore.ts
+│   │   │   │   ├── adminJobsFilter.ts
 │   │   │   │   ├── auth.ts
 │   │   │   │   ├── bell-session.ts
 │   │   │   │   ├── jobs.ts
@@ -241,6 +242,7 @@ phsar/
 │   │   │   ├── +layout.ts
 │   │   │   ├── +page.svelte
 │   │   │   ├── admin/
+│   │   │   │   ├── +layout.svelte
 │   │   │   │   ├── +page.svelte
 │   │   │   │   └── jobs/
 │   │   │   │       └── [uuid]/
@@ -265,6 +267,7 @@ phsar/
 │   │   └── tests/
 │   │       ├── setup.ts
 │   │       ├── SpoilerGuardTest.svelte
+│   │       ├── admin-jobs-filter.test.ts
 │   │       ├── api-download.test.ts
 │   │       ├── auth-store.test.ts
 │   │       ├── backups-card.test.ts

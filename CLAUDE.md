@@ -147,7 +147,7 @@ Data access layer.
     - `ix_media_freshness_last_checked_at` (the ORDER BY + the `due_weekly`/`due_long_tail` staleness predicates)
     - `ix_media_airing_now` — partial index on `media(anime_id) WHERE airing_status = 'Currently Airing'`
     - `ix_media_main_aired_from` — composite `(anime_id, relation_type, aired_from)`
-  - `count_by_sweep_tier_priority` / `count_media_by_sweep_tier_priority` — anime- and media-grained membership-bucket counts for the admin Overview SweepTiersCard toggle; both use the shared atoms (`_sweep_atoms` / `_media_sweep_atoms`). `SWEEP_STABILIZE_THRESHOLD` (5) and `SWEEP_LONG_TAIL_DAYS` (90) are single constants shared by media + anime so the two grains can't drift
+  - `count_by_sweep_tier_priority` / `count_media_by_sweep_tier_priority` — anime- and media-grained membership-bucket counts for the admin Overview SweepTiersCard toggle; both use the shared atoms (`_sweep_atoms` / `_media_sweep_atoms`). `SWEEP_STABILIZE_THRESHOLD` (3) and `SWEEP_LONG_TAIL_DAYS` (90) are single constants shared by media + anime so the two grains can't drift
 - **`search_filters.py`** — shared filter/ordering helpers for media, anime pre-aggregation (WHERE), and anime post-aggregation (HAVING)
   - **Title-search ranking**: `apply_vector_ordering` subtracts a two-tier bonus from `cosine_distance` so titles that literally match the query rank ahead of merely thematically-similar shows. Substring (`ilike`) bonus is flat; pg_trgm `similarity()` bonus is scaled linearly above a threshold so typos still surface the intended show. Description and rating-notes search skip both bonuses (semantic queries, not literal). pg_trgm extension enabled via migration `4b8f1e3c7d0a`
 - **`JobDAO`**:
