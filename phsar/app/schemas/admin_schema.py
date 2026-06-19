@@ -201,7 +201,7 @@ class SweepTierBreakdown(BaseModel):
     `airing_now`, not `stabilizing`). Membership, not due-ness — counts
     reflect where each anime sits in the cycle and stay stable across
     sweeps. `weekly_cycle` = has a recent main; `long_cycle` = the rest
-    (only the 180-day net touches these). Sum equals total anime count,
+    (only the 90-day net touches these). Sum equals total anime count,
     so the card can render each bucket as a share of the catalog.
 
     `stabilizing_by_check` breaks the `stabilizing` total down by

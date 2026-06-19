@@ -19,6 +19,7 @@ row; the media has just moved to a different anime parent.
 
 import asyncio
 import logging
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import select
@@ -77,7 +78,7 @@ merge_candidate_dao = MergeCandidateDAO()
 
 
 def _build_list_item(
-    row: SplitCandidate, rating_count: int, dismissed_at=None,
+    row: SplitCandidate, rating_count: int, dismissed_at: datetime | None = None,
 ) -> SplitCandidateListItem:
     """Shape one SplitCandidate row into its list-item DTO, resolving each
     cluster's member mal_ids back to the source anime's live media for the

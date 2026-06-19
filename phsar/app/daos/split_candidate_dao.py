@@ -9,7 +9,7 @@ so the queries don't share a base.
 
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnExpressionArgument, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -75,7 +75,10 @@ class SplitCandidateDAO(BaseDAO[SplitCandidate]):
         )
 
     async def _list_with_anime(
-        self, db: AsyncSession, status, order_by
+        self,
+        db: AsyncSession,
+        status: SplitCandidateStatus,
+        order_by: ColumnExpressionArgument,
     ) -> list[SplitCandidate]:
         """Shared query for the pending + dismissed lists — same eager-load,
         differ only in status filter + ordering."""

@@ -2,7 +2,7 @@ from collections.abc import Collection
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import Integer, cast, func, or_, select, true
+from sqlalchemy import ColumnExpressionArgument, Integer, cast, func, or_, select, true
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
@@ -62,7 +62,12 @@ class MergeCandidateDAO(BaseDAO[MergeCandidate]):
             db, MergeCandidateStatus.dismissed, MergeCandidate.modified_at.desc()
         )
 
-    async def _list_with_anime(self, db: AsyncSession, status, order_by) -> list[MergeCandidate]:
+    async def _list_with_anime(
+        self,
+        db: AsyncSession,
+        status: MergeCandidateStatus,
+        order_by: ColumnExpressionArgument,
+    ) -> list[MergeCandidate]:
         """Shared query for the pending + dismissed lists — both eager-load
         both anime + media + studios + relation-edge sidecars in one roundtrip
         (admin shows side-by-side summaries and, for pending, a reclassification

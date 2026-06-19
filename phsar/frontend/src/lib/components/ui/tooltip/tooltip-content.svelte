@@ -21,6 +21,13 @@
 </script>
 
 <TooltipPortal {...portalProps}>
+	<!--
+		The shadow's color-mix uses `in oklch` safely here: the second operand is
+		`transparent`, not white/grey, so there is no hue-0 neutral to drag the
+		primary toward red (the bug the `--tooltip-surface` token fixed by moving to
+		oklab in app.css). If this ever mixes toward a light tint instead of
+		transparent, switch it to `in oklab` too.
+	-->
 	<TooltipPrimitive.Content
 		bind:ref
 		data-slot="tooltip-content"

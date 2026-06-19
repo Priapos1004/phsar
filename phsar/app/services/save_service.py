@@ -121,8 +121,9 @@ async def attach_search_result_to_anime(
     anime BFS edge list; outgoing slices are persisted to each new
     media's MediaRelationEdges sidecar.
 
-    `saved_sink`, when provided, gets one `{"media_uuid", "title"}` dict
-    appended per newly-saved media — captured here (inside the caller's
+    `saved_sink`, when provided, gets one
+    `{"media_uuid", "title", "name_eng", "name_jap"}` dict appended per
+    newly-saved media — captured here (inside the caller's
     savepoint, before commit) so the sweep can report exactly which media
     the relations probe attached. Same out-param pattern as the
     dispatcher's `diff_sink`; the `int` return stays for count-only callers.
