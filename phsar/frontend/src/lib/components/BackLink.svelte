@@ -5,11 +5,15 @@
 	interface Props {
 		searchToken: string | null;
 		fromParam: DetailOrigin | null;
+		/** Job uuid carried with `fromParam === 'job'` (admin came from a sweep
+		 * audit) so the back button links to that specific job row. */
+		jobUuid?: string | null;
 	}
 
-	let { searchToken, fromParam }: Props = $props();
+	let { searchToken, fromParam, jobUuid = null }: Props = $props();
 
 	let target = $derived.by(() => {
+		if (fromParam === 'job' && jobUuid) return { href: `/admin/jobs/${jobUuid}`, label: 'Back to job' };
 		if (fromParam === 'library') return { href: '/library/add', label: 'Back to library' };
 		if (searchToken) return { href: `/search?q=${encodeURIComponent(searchToken)}`, label: 'Back to search' };
 		return null;

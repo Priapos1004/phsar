@@ -25,8 +25,11 @@
   --primary: oklch(0.558 0.288 302.321);
   --ring: oklch(0.627 0.265 303.9);
   /* Tooltip surface: the popover white tinted toward the active theme accent.
-     The inner var(--primary) resolves at use-site, so it follows .theme-* overrides. */
-  --tooltip-surface: color-mix(in oklch, var(--color-popover) 88%, var(--primary));
+     The inner var(--primary) resolves at use-site, so it follows .theme-* overrides.
+     Mixed in oklab (not oklch): white is oklch(1 0 0) whose hue is 0 (red), and at
+     88% weight oklch hue-interpolation dragged the result toward red on the green/blue
+     themes. oklab has no hue channel, so white's neutral a/b let the primary's hue win. */
+  --tooltip-surface: color-mix(in oklab, var(--color-popover) 88%, var(--primary));
 }
 
 @theme inline {

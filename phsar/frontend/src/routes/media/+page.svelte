@@ -49,6 +49,7 @@
 	let isRestricted = $derived(getUserRole() === 'restricted_user');
 	let searchToken = $derived(page.url.searchParams.get('q'));
 	let fromParam = $derived(page.url.searchParams.get('from') as DetailOrigin | null);
+	let jobUuid = $derived(page.url.searchParams.get('job'));
 
 	let cleanedDescription = $derived(media?.description ? cleanDescription(media.description) : null);
 	// OR with userRating prevents a brief blur flash after rating: the local
@@ -134,7 +135,7 @@
 	{:else if error}
 		<div class="text-center text-destructive py-20">{error}</div>
 	{:else if media}
-		<BackLink {searchToken} {fromParam} />
+		<BackLink {searchToken} {fromParam} {jobUuid} />
 
 		<div class="relative rounded-xl overflow-hidden">
 			{#if media.cover_image && !coverFailed}
@@ -209,13 +210,15 @@
 
 					{#if media.score !== null}
 						<div class="flex items-center gap-3">
-							<div class="flex items-center gap-1.5 bg-primary/10 rounded-full px-3 py-1.5">
-								<Star class="size-4 text-yellow-500" fill="currentColor" />
-								<span class="text-lg font-bold text-card-foreground">
-									{formatDecimalDigits(media.score, 2)}
+							<Tooltip text="Community score from MyAnimeList — not from Phsar users.">
+								<span class="flex items-center gap-1.5 bg-primary/10 rounded-full px-3 py-1.5">
+									<Star class="size-4 text-yellow-500" fill="currentColor" />
+									<span class="text-lg font-bold text-card-foreground">
+										{formatDecimalDigits(media.score, 2)}
+									</span>
+									<span class="text-muted-foreground">/ 10</span>
 								</span>
-								<span class="text-muted-foreground">/ 10</span>
-							</div>
+							</Tooltip>
 							<span class="text-muted-foreground">
 								{formatNumber(media.scored_by)} ratings
 							</span>
@@ -329,12 +332,12 @@
 				<p class="text-muted-foreground {media.sibling_media.length ? 'mb-3' : ''}">
 					Part of anime:
 					<a
-						href={buildDetailHref('anime', media.anime_uuid, { q: searchToken, from: fromParam })}
+						href={buildDetailHref('anime', media.anime_uuid, { q: searchToken, from: fromParam, job: jobUuid })}
 						class="text-primary font-medium hover:underline"
 					>{resolveTitle(media.anime_title, media.anime_name_eng, media.anime_name_jap, nameLanguage)}</a>
 				</p>
 				{#if media.sibling_media.length}
-					<RelatedMediaCarousel siblings={media.sibling_media} currentPosition={media.current_position} {searchToken} {fromParam} />
+					<RelatedMediaCarousel siblings={media.sibling_media} currentPosition={media.current_position} {searchToken} {fromParam} {jobUuid} />
 				{:else}
 					<p class="text-muted-foreground/70 text-sm mt-2">No other media in this anime</p>
 				{/if}
