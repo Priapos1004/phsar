@@ -462,6 +462,9 @@ export interface UpdateSweepCounters {
 	probe_succeeded: number;
 	probe_failed: number;
 	probe_attached_anime_count: number;
+	// v6+: media-grained total of media the relations probe attached this run
+	// (probe_attached_anime_count is anime-grained). Pre-v6 rows omit it.
+	probe_attached_media_count?: number;
 	// v3+: Studio rows deleted at sweep end because drift removals left
 	// them with no media links. v2 rows omit it (renders as 0).
 	orphaned_studios_removed?: number;
@@ -475,6 +478,11 @@ export interface UpdateSweepCounters {
 export interface UpdateSweepStep1Failure {
 	anime_uuid: string;
 	title: string;
+	// name_eng / name_jap (v6+) so the detail page can render the title in the
+	// admin's name language via resolveTitle; pre-v6 rows omit them (falls back
+	// to the romaji title).
+	name_eng?: string | null;
+	name_jap?: string | null;
 	error_category: string | null;
 	error_message: string;
 }
@@ -482,6 +490,17 @@ export interface UpdateSweepStep1Failure {
 // One step-2 relations probe that raised and was skipped (v5+ update_sweep).
 // Identical shape to UpdateSweepStep1Failure.
 export type UpdateSweepProbeFailure = UpdateSweepStep1Failure;
+
+// One anime the step-2 relations probe attached media to (v6+ update_sweep),
+// with the new media listed so the detail page can link each back to its
+// source anime.
+export interface UpdateSweepProbeAttached {
+	anime_uuid: string;
+	title: string;
+	name_eng?: string | null;
+	name_jap?: string | null;
+	media: { media_uuid: string; title: string; name_eng?: string | null; name_jap?: string | null }[];
+}
 
 // update_sweep result_summary v2+ shape. v1 rows omit these fields
 // entirely — renderers must check `row.version >= 2` before reading.
@@ -495,6 +514,8 @@ export interface UpdateSweepResultSummary extends JobResultSummary {
 	unknown_genre_tags?: string[];
 	step1_failures?: UpdateSweepStep1Failure[];
 	probe_failures?: UpdateSweepProbeFailure[];
+	// v6+: anime the relations probe attached new media to this run.
+	probe_attached_anime?: UpdateSweepProbeAttached[];
 	merge_detect_failed?: boolean;
 	cache_recompute_failed?: boolean;
 }

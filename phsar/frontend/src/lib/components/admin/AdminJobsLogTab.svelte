@@ -168,6 +168,16 @@
 		return Array.isArray(tags) ? (tags as string[]) : [];
 	}
 
+	// v6+ sweeps report how many media the relations probe attached. Surface
+	// it at the row level (blue, informational) so the admin spots which
+	// sweeps grew the catalog without drilling in — sibling to the amber
+	// unknown-genre-tags treatment. Media-grained, so pre-v6 rows (which only
+	// carried an anime-grained count) stay un-tinted.
+	function probeAttachedMedia(row: AdminJobResponse): number {
+		const counters = row.result_summary?.counters as Record<string, unknown> | undefined;
+		return num(counters?.probe_attached_media_count);
+	}
+
 	function clickableNavProps(uuid: string) {
 		const go = () => void goto(`/admin/jobs/${uuid}`);
 		return {
@@ -212,22 +222,20 @@
 					row.version >= 5 ? num(c.media_with_dynamic_changes) : num(c.anime_with_dynamic_changes);
 				const dynLabel = row.version >= 5 ? 'media w/ dynamic' : 'anime w/ dynamic';
 				const staticMedia = num(c.media_with_static_changes);
-				const umbrella = num(c.umbrella_reclassed);
-				const probeAttached = num(c.probe_attached_anime_count);
+				// Anime-changes + probe-attachments deliberately omitted from this
+				// one-line summary — they overflowed the cell, and attachments
+				// already surface via the blue row subline (v6); the full
+				// breakdown lives on the detail page.
 				const parts = [`${refreshed} ${refreshedLabel}`];
 				if (dyn > 0) parts.push(`${dyn} ${dynLabel}`);
 				if (staticMedia > 0) parts.push(`${staticMedia} media w/ static`);
-				if (umbrella > 0) parts.push(`${umbrella} umbrella`);
-				if (probeAttached > 0) parts.push(`${probeAttached} new attached`);
 				return parts.join(' · ');
 			}
 			const refreshed = num(row.result_summary.anime_refreshed);
 			const changed = num(row.result_summary.anime_changed);
 			const metadataChanged = num(row.result_summary.metadata_changed_media);
-			const probeAttached = num(row.result_summary.probe_attached_anime_count);
 			const parts = [`refreshed ${refreshed} anime`, `${changed} changed`];
 			if (metadataChanged > 0) parts.push(`${metadataChanged} media updated`);
-			if (probeAttached > 0) parts.push(`${probeAttached} new attached`);
 			return parts.join(' · ');
 		}
 		if (row.kind === 'seasonal_sweep' && row.status === 'succeeded' && row.result_summary) {
@@ -301,8 +309,13 @@
 								{@const expandable = PARENTING_KINDS.has(row.kind)}
 								{@const clickable = isClickableJob(row)}
 								{@const unknownTags = unknownGenreTags(row)}
+								{@const probeMedia = probeAttachedMedia(row)}
 								<tr
-									class="border-b border-border/50 align-top {clickable ? 'cursor-pointer hover:bg-muted/20 transition-colors' : ''} {unknownTags.length > 0 ? 'bg-amber-500/15 border-l-2 border-l-amber-400' : ''}"
+									class="border-b border-border/50 align-top {clickable ? 'cursor-pointer hover:bg-muted/20 transition-colors' : ''} {unknownTags.length > 0
+										? 'bg-amber-500/15 border-l-2 border-l-amber-400'
+										: probeMedia > 0
+											? 'bg-blue-500/10 border-l-2 border-l-blue-400'
+											: ''}"
 									{...(clickable ? clickableNavProps(row.uuid) : {})}
 								>
 									<td class="py-2 pr-2 w-6">
@@ -339,6 +352,11 @@
 												<div class="mt-1 text-xs font-medium text-amber-300">
 													⚠ New genre {unknownTags.length === 1 ? 'tag needs' : 'tags need'} seeding:
 													<span class="font-mono">{unknownTags.join(', ')}</span>
+												</div>
+											{/if}
+											{#if probeMedia > 0}
+												<div class="mt-1 text-xs font-medium text-blue-300">
+													🔗 {probeMedia} media added via probing
 												</div>
 											{/if}
 										{/if}
