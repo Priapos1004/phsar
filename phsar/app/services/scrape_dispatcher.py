@@ -100,6 +100,11 @@ class Step1Failure(NamedTuple):
     reporting `succeeded`."""
     anime_uuid: str
     title: str
+    # name_eng / name_jap alongside the romaji title so the detail page can
+    # render the failure in the admin's settings name language (resolveTitle
+    # falls back to romaji when these are null).
+    name_eng: str | None
+    name_jap: str | None
     error_category: str | None
     error_message: str
 
@@ -114,6 +119,8 @@ class ProbeFailure(NamedTuple):
     sweep re-selects this anime and retries the probe."""
     anime_uuid: str
     title: str
+    name_eng: str | None
+    name_jap: str | None
     error_category: str | None
     error_message: str
 
@@ -318,6 +325,13 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     # detector never sees it because the attach path bypasses
     # save_search_results.
     probe_attached_anime_ids: list[int] = []
+    # v6 result_summary: the auditable list behind probe_attached_anime_count
+    # — one {anime_uuid, title, media: [{media_uuid, title}, ...]} per anime
+    # the probe attached media to, so the detail page can link each new media
+    # back to its source anime. `probe_attached_media_count` is the media-grained
+    # total (the Jobs Log surfaces it; the count cell stays anime-grained).
+    probe_attached_anime: list[dict] = []
+    probe_attached_media_count = 0
     # Step 1 rewrites MediaRelationEdges from the /full payload, so a
     # refresh alone (no new media) can surface a fresh relation_link
     # signal. Broader scope than probe-attached.
@@ -376,6 +390,18 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
                     continue
                 if probe_added:
                     probe_attached_anime_ids.append(anime.id)
+                    # Capture uuid/title before the per-anime commit below
+                    # expires the ORM attrs (same discipline as the failure
+                    # lists). The media dicts were already captured as plain
+                    # strings inside the probe's savepoint.
+                    probe_attached_anime.append({
+                        "anime_uuid": str(anime.uuid),
+                        "title": anime.title,
+                        "name_eng": anime.name_eng,
+                        "name_jap": anime.name_jap,
+                        "media": probe_added,
+                    })
+                    probe_attached_media_count += len(probe_added)
                 probe_succeeded += 1
 
             _advance_anime_freshness(
@@ -465,11 +491,16 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
             "probe_succeeded": probe_succeeded,
             "probe_failed": probe_failed,
             "probe_attached_anime_count": len(probe_attached_anime_ids),
+            "probe_attached_media_count": probe_attached_media_count,
             "orphaned_studios_removed": orphaned_studios_removed,
             "step1_failed": step1_failed,
         },
         "media_changes": media_changes_log,
         "anime_umbrella_changes": anime_umbrella_changes_log,
+        # v6: per-anime list of media the step-2 relations probe attached this
+        # run — {anime_uuid, title, media: [{media_uuid, title}, ...]}. Backs
+        # the detail page's "Attached via probe" review card.
+        "probe_attached_anime": probe_attached_anime,
         # Per-anime step-1 refresh failures: {anime_uuid, title,
         # error_category, error_message}. Lets the detail page show exactly
         # which shows were skipped and whether it was an MAL outage.
@@ -517,6 +548,8 @@ async def _try_step1_refresh(
     anime_id_for_log = anime.id
     anime_uuid_for_log = str(anime.uuid)
     anime_title_for_log = anime.title
+    anime_name_eng_for_log = anime.name_eng
+    anime_name_jap_for_log = anime.name_jap
     try:
         async with session.begin_nested():
             result = await _refresh_one_anime(
@@ -532,6 +565,8 @@ async def _try_step1_refresh(
         return Step1Failure(
             anime_uuid=anime_uuid_for_log,
             title=anime_title_for_log,
+            name_eng=anime_name_eng_for_log,
+            name_jap=anime_name_jap_for_log,
             error_category=classify_error(exc),
             # str(exc) is empty for some httpx errors — fall back to the
             # class name so the log row is never blank. Truncate: a sustained
@@ -548,8 +583,9 @@ async def _try_step2_probe(
     raw_payloads: dict[int, dict],
     exclusions: set[int],
     scraper: JikanScraper,
-) -> bool | ProbeFailure:
-    """Step 2 wrapper: relations probe + return whether new media landed,
+) -> list[dict] | ProbeFailure:
+    """Step 2 wrapper: relations probe + return the list of attached media
+    ({"media_uuid", "title"} dicts; empty when none landed),
     or a `ProbeFailure` (savepoint-rolls-back, leaves AnimeFreshness
     untouched so the next sweep retries this anime cleanly). Outer
     transaction stays alive — caller commits step2 writes alongside
@@ -562,6 +598,8 @@ async def _try_step2_probe(
     anime_id_for_log = anime.id
     anime_uuid_for_log = str(anime.uuid)
     anime_title_for_log = anime.title
+    anime_name_eng_for_log = anime.name_eng
+    anime_name_jap_for_log = anime.name_jap
     try:
         async with session.begin_nested():
             return await _probe_relations_for_anime(
@@ -576,6 +614,8 @@ async def _try_step2_probe(
         return ProbeFailure(
             anime_uuid=anime_uuid_for_log,
             title=anime_title_for_log,
+            name_eng=anime_name_eng_for_log,
+            name_jap=anime_name_jap_for_log,
             error_category=classify_error(exc),
             error_message=(str(exc) or exc.__class__.__name__)[:500],
         )
@@ -783,7 +823,7 @@ async def _probe_relations_for_anime(
     raw_payloads: dict[int, dict],
     exclusions: set[int],
     scraper: JikanScraper,
-) -> bool:
+) -> list[dict]:
     """For each Main media on the parent anime, walk its MAL relation graph
     via `JikanScraper.search_title` seeded by the media's mal_id (skipping
     the title-fuzzy `q=` step that would otherwise pull in unrelated top-3
@@ -793,10 +833,13 @@ async def _probe_relations_for_anime(
     own BFS pass with fresh `visited_ids` — `is_main_story=False` nodes
     that wouldn't expand under the BNHA seed get to lead their own walk.
 
-    `exclusions` is mutated in place: every newly-saved mal_id is added so
-    later seeds in the same sweep skip re-saving it."""
+    Returns the list of attached media as `{"media_uuid", "title"}` dicts
+    (empty when nothing was attached — stays falsy for the caller's
+    `if probe_added:` check), so the sweep can report which media the probe
+    pulled in. `exclusions` is mutated in place: every newly-saved mal_id is
+    added so later seeds in the same sweep skip re-saving it."""
     main_mal_ids = [m.mal_id for m in anime.media if m.relation_type == RelationType.Main]
-    saved_anything = False
+    attached: list[dict] = []
     for seed_mal_id in main_mal_ids:
         try:
             relations_list, all_info, unwanted_media = await scraper.search_title(
@@ -830,15 +873,13 @@ async def _probe_relations_for_anime(
             # Probe path doesn't pass through search_mal_api, so stamp
             # relation_type here before attach reads it.
             classify_and_stamp(graph, edges, all_info)
-            saved_count = await attach_search_result_to_anime(
-                session, anime, graph, all_info, edges=edges,
+            await attach_search_result_to_anime(
+                session, anime, graph, all_info, edges=edges, saved_sink=attached,
             )
-            if saved_count:
-                saved_anything = True
             for mal_id in graph:
                 exclusions.add(mal_id)
 
-    return saved_anything
+    return attached
 
 
 def _weighted_score(score: float | None, scored_by: int | None) -> float | None:

@@ -46,7 +46,14 @@ JOB_KIND_VERSIONS: dict[JobKind, int] = {
     # top-level `probe_failures[]` (symmetric to step1_failures[]). The
     # rename + removals force the bump (net-new keys alone wouldn't); the
     # frontend keeps v2/v3/v4 parsers so historical rows still render.
-    JobKind.update_sweep: 5,
+    # v6 (v0.14.9) adds `counters.probe_attached_media_count` + top-level
+    # `probe_attached_anime[]` (per-anime list of media the relations probe
+    # attached: {anime_uuid, title, media: [{media_uuid, title}, ...]}).
+    # Net-new keys with safe defaults wouldn't force a bump, but — like the
+    # v4 step1_failed bump — we bump so the frontend can tell a genuinely
+    # empty v6 list from a pre-v6 row that never tracked it (the "Attached
+    # via probe" card + Jobs Log blue tint gate on version >= 6).
+    JobKind.update_sweep: 6,
     JobKind.seasonal_sweep: 1,
     JobKind.backup: 1,
     JobKind.restore: 1,

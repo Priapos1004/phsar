@@ -1654,14 +1654,23 @@ def _patch_probe_pipeline(monkeypatch):
     attach_calls: list[dict] = []
     recompute_calls: list[int] = []
 
-    async def fake_attach(db, parent_anime, graph, all_info, edges=None):
+    async def fake_attach(db, parent_anime, graph, all_info, edges=None, saved_sink=None):
         attach_calls.append({
             "parent_anime_id": parent_anime.id,
             "graph_mal_ids": list(graph.keys()),
             "edges": edges or [],
         })
         existing = {m.mal_id for m in parent_anime.media}
-        return sum(1 for mal_id in graph if mal_id not in existing)
+        new_mal_ids = [mal_id for mal_id in graph if mal_id not in existing]
+        # Mirror the real attach's saved_sink contract so the probe sees which
+        # media landed (drives probe_attached_anime + the recompute scope).
+        if saved_sink is not None:
+            for mal_id in new_mal_ids:
+                saved_sink.append({
+                    "media_uuid": f"uuid-{mal_id}",
+                    "title": all_info.get(mal_id, {}).get("title", str(mal_id)),
+                })
+        return len(new_mal_ids)
 
     async def fake_recompute(db, anime_ids):
         recompute_calls.append(list(anime_ids))
@@ -1917,14 +1926,23 @@ async def test_spoiler_recompute_failure_does_not_fail_the_sweep(
 
     attach_calls: list[dict] = []
 
-    async def fake_attach(db, parent_anime, graph, all_info, edges=None):
+    async def fake_attach(db, parent_anime, graph, all_info, edges=None, saved_sink=None):
         attach_calls.append({
             "parent_anime_id": parent_anime.id,
             "graph_mal_ids": list(graph.keys()),
             "edges": edges or [],
         })
         existing = {m.mal_id for m in parent_anime.media}
-        return sum(1 for mal_id in graph if mal_id not in existing)
+        new_mal_ids = [mal_id for mal_id in graph if mal_id not in existing]
+        # Mirror the real attach's saved_sink contract so the probe sees which
+        # media landed (drives probe_attached_anime + the recompute scope).
+        if saved_sink is not None:
+            for mal_id in new_mal_ids:
+                saved_sink.append({
+                    "media_uuid": f"uuid-{mal_id}",
+                    "title": all_info.get(mal_id, {}).get("title", str(mal_id)),
+                })
+        return len(new_mal_ids)
 
     async def boom_recompute(db, anime_ids):
         raise RuntimeError("simulated recompute failure")

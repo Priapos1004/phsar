@@ -113,12 +113,20 @@ async def attach_search_result_to_anime(
     related_anime_graph: dict[int, dict],
     all_info: dict[int, dict],
     edges: list[tuple[int, int, str]] | None = None,
+    saved_sink: list[dict] | None = None,
 ) -> int:
     """Attach probe-discovered media as Media rows under an existing parent.
     Skips mal_ids already attached to the parent (the BFS seed is one of
     them). Returns count of newly-saved Media rows. `edges` is the per-
     anime BFS edge list; outgoing slices are persisted to each new
-    media's MediaRelationEdges sidecar."""
+    media's MediaRelationEdges sidecar.
+
+    `saved_sink`, when provided, gets one `{"media_uuid", "title"}` dict
+    appended per newly-saved media — captured here (inside the caller's
+    savepoint, before commit) so the sweep can report exactly which media
+    the relations probe attached. Same out-param pattern as the
+    dispatcher's `diff_sink`; the `int` return stays for count-only callers.
+    """
     edges = edges or []
     existing_parent_mal_ids = {m.mal_id for m in parent_anime.media}
     saved_count = 0
@@ -129,9 +137,19 @@ async def attach_search_result_to_anime(
         media_in = media_unconnected_from_info(
             all_info[mal_id], relation_type=relation_info.get("relation_type"),
         )
-        await persist_media_with_links(
+        media_obj = await persist_media_with_links(
             db, media_in, anime_id=parent_anime.id, last_checked_at=now,
             relation_edges=outgoing_edges(edges, mal_id),
         )
+        if saved_sink is not None:
+            # name_eng / name_jap so the detail page can render the attached
+            # media in the admin's settings name language (resolveTitle falls
+            # back to the romaji title when these are null).
+            saved_sink.append({
+                "media_uuid": str(media_obj.uuid),
+                "title": media_obj.title,
+                "name_eng": media_obj.name_eng,
+                "name_jap": media_obj.name_jap,
+            })
         saved_count += 1
     return saved_count
