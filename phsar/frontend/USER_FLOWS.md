@@ -179,7 +179,7 @@ Each anime search result card shows:
 ### 6.2 Hero Card
 - Same blurred cover background pattern as media detail
 - Title (English preferred), alternate titles, airing status badge: green (Currently Airing), yellow (Not yet aired), blue (upcoming content), grey (Finished Airing)
-- Average MAL score with "ratings/media" label
+- Average MAL score with "ratings/media" label; hovering the score pill shows a tooltip clarifying it's the MyAnimeList community score, not Phsar users' ratings
 - Relation type badges with counts (e.g., "main: 5"), media type badges with counts (e.g., "TV: 3")
 - Age rating badge (max across media), genre badges (strict majority rule)
 - Stats grid: total episodes, media count, season range, total watch time
@@ -233,7 +233,7 @@ Each anime search result card shows:
 - Title (English preferred, falls back to default title)
 - Japanese title and romaji subtitle (if different from displayed title)
 - Airing status badge: green pulsing dot for "Currently Airing", yellow for "Not yet aired", muted for finished
-- MAL score with star icon and rating count
+- MAL score with star icon and rating count; hovering the score pill shows a tooltip clarifying it's the MyAnimeList community score, not Phsar users' ratings
 - Badges: media type (green), relation type (blue), age rating (orange)
 - Genre badges (themed primary color)
 - Stats grid: episodes, duration per episode, season, total watch time

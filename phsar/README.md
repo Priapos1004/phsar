@@ -316,7 +316,8 @@ phsar/
 │   ├── delete_anime_by_title.py
 │   ├── find_anime.py
 │   ├── inspect_anime_relations.py
-│   └── inspect_jobs.py
+│   ├── inspect_jobs.py
+│   └── seed_demo_sweep_job.py
 └── tests/
     ├── _helpers.py
     ├── conftest.py
