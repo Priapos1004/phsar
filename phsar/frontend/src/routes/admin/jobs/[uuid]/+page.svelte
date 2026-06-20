@@ -4,11 +4,13 @@
 	import { page } from '$app/state';
 	import { api, ApiError } from '$lib/api';
 	import { buildDetailHref } from '$lib/utils/navigation';
-	import { isRatingField } from '$lib/utils/formatString';
+	import { isRatingField, resolveTitle } from '$lib/utils/formatString';
 	import { sortMediaChanges } from '$lib/utils/mediaChangeSort';
+	import { userSettings } from '$lib/stores/userSettings';
 	import { Input } from '$lib/components/ui/input';
 	import * as Card from '$lib/components/ui/card';
 	import JobDetailHeader from '$lib/components/admin/JobDetailHeader.svelte';
+	import Tooltip from '$lib/components/Tooltip.svelte';
 	import JobDetailCounters from '$lib/components/admin/JobDetailCounters.svelte';
 	import MediaChangeCard from '$lib/components/admin/MediaChangeCard.svelte';
 	import AnimeUmbrellaCard from '$lib/components/admin/AnimeUmbrellaCard.svelte';
@@ -52,6 +54,10 @@
 	$effect(() => {
 		if (uuid && job && job.uuid !== uuid) void load();
 	});
+
+	// Render every title (failures, attachments, changes) in the admin's
+	// settings name language — same resolveTitle pattern as MediaChangeCard.
+	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
 
 	type Filter = 'all' | 'dynamic' | 'rating' | 'static' | 'drift';
 	let filter = $state<Filter>('all');
@@ -175,12 +181,19 @@
 			{/if}
 
 			<!-- Shared row markup for the step-1 + step-2 failure lists; only the
-			     card heading/description differ between the two. -->
+			     card heading/description differ between the two.
+			     Design decision: failure + attached links navigate in the SAME
+			     tab and carry a `from: 'job'` origin so the detail page shows a
+			     "Back to job" button (propagated across anime↔media hops). These
+			     lists are short, so there's no scroll position worth preserving.
+			     The Anime/Media *change* cards do the opposite — new tab, no
+			     origin — because that list is long and an admin verifying one
+			     row shouldn't lose their place. See MediaChangeCard. -->
 			{#snippet failureRow(failure: UpdateSweepStep1Failure)}
 				<div class="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm">
 					<div class="flex items-center justify-between gap-3 flex-wrap">
-						<a href={buildDetailHref('anime', failure.anime_uuid)} class="font-medium text-card-foreground hover:underline">
-							{failure.title}
+						<a href={buildDetailHref('anime', failure.anime_uuid, { from: 'job', job: uuid })} class="font-medium text-card-foreground hover:underline">
+							{resolveTitle(failure.title, failure.name_eng, failure.name_jap, nameLanguage)}
 						</a>
 						{#if failure.error_category}
 							<span class="text-[10px] uppercase tracking-wider text-amber-400">
@@ -203,10 +216,14 @@
 							They keep their old <code>last_checked_at</code> so the next sweep retries them.
 						</p>
 					</Card.Header>
-					<Card.Content class="space-y-2">
-						{#each v2Summary.step1_failures ?? [] as failure (failure.anime_uuid)}
-							{@render failureRow(failure)}
-						{/each}
+					<Card.Content>
+						<!-- Cap at ~4 rows + scroll so a long failure list doesn't bury
+						     the Anime/Media changes below. The heading (N) is the total. -->
+						<div class="max-h-72 space-y-2 overflow-y-auto pr-1">
+							{#each v2Summary.step1_failures ?? [] as failure (failure.anime_uuid)}
+								{@render failureRow(failure)}
+							{/each}
+						</div>
 					</Card.Content>
 				</Card.Root>
 			{/if}
@@ -222,9 +239,63 @@
 							preserved and <code>AnimeFreshness</code> left unchanged, so the next sweep retries them.
 						</p>
 					</Card.Header>
-					<Card.Content class="space-y-2">
-						{#each v2Summary.probe_failures ?? [] as failure (failure.anime_uuid)}
-							{@render failureRow(failure)}
+					<Card.Content>
+						<div class="max-h-72 space-y-2 overflow-y-auto pr-1">
+							{#each v2Summary.probe_failures ?? [] as failure (failure.anime_uuid)}
+								{@render failureRow(failure)}
+							{/each}
+						</div>
+					</Card.Content>
+				</Card.Root>
+			{/if}
+
+			{#if v2Summary && (v2Summary.probe_attached_anime?.length ?? 0) > 0}
+				<Card.Root>
+					<Card.Header>
+						<h2 class="text-lg font-semibold text-card-foreground">
+							Attached via probe ({v2Summary.probe_attached_anime?.length})
+						</h2>
+						<p class="text-sm text-muted-foreground">
+							Anime whose step-2 relations probe pulled in newly-discovered media this run.
+						</p>
+					</Card.Header>
+					<Card.Content>
+						<div class="max-h-72 space-y-2 overflow-y-auto pr-1">
+							{#each v2Summary.probe_attached_anime ?? [] as attached (attached.anime_uuid)}
+								<div class="rounded-md border border-blue-500/40 bg-blue-500/5 p-3 text-sm">
+									<a
+										href={buildDetailHref('anime', attached.anime_uuid, { from: 'job', job: uuid })}
+										class="font-medium text-card-foreground hover:underline"
+									>
+										{resolveTitle(attached.title, attached.name_eng, attached.name_jap, nameLanguage)}
+									</a>
+									<ul class="mt-1 space-y-0.5">
+										{#each attached.media as m (m.media_uuid)}
+											<li>
+												<a
+													href={buildDetailHref('media', m.media_uuid, { from: 'job', job: uuid })}
+													class="text-xs text-muted-foreground hover:text-card-foreground hover:underline"
+												>
+													+ {resolveTitle(m.title, m.name_eng, m.name_jap, nameLanguage)}
+												</a>
+											</li>
+										{/each}
+									</ul>
+								</div>
+							{/each}
+						</div>
+					</Card.Content>
+				</Card.Root>
+			{/if}
+
+			{#if v2Summary && (v2Summary.anime_umbrella_changes?.length ?? 0) > 0}
+				<Card.Root>
+					<Card.Header>
+						<h2 class="text-lg font-semibold text-card-foreground">Anime changes</h2>
+					</Card.Header>
+					<Card.Content class="space-y-3">
+						{#each v2Summary.anime_umbrella_changes ?? [] as change (change.anime_uuid)}
+							<AnimeUmbrellaCard {change} />
 						{/each}
 					</Card.Content>
 				</Card.Root>
@@ -247,14 +318,18 @@
 							/>
 							<div class="flex gap-1 flex-wrap">
 								{#each FILTER_CHIPS as chip (chip.key)}
-									<button
-										type="button"
-										title={chip.tooltip}
-										class="px-2 py-1 rounded-full text-xs border transition-colors {filter === chip.key ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted/30'}"
-										onclick={() => (filter = chip.key)}
-									>
-										{chip.label}
-									</button>
+									<Tooltip text={chip.tooltip}>
+										{#snippet trigger(props)}
+											<button
+												{...props}
+												type="button"
+												class="px-2 py-1 rounded-full text-xs border transition-colors {filter === chip.key ? 'border-primary bg-primary/15 text-primary' : 'border-border text-muted-foreground hover:bg-muted/30'}"
+												onclick={() => (filter = chip.key)}
+											>
+												{chip.label}
+											</button>
+										{/snippet}
+									</Tooltip>
 								{/each}
 							</div>
 						</div>
@@ -271,18 +346,6 @@
 				</Card.Root>
 			{/if}
 
-			{#if v2Summary && (v2Summary.anime_umbrella_changes?.length ?? 0) > 0}
-				<Card.Root>
-					<Card.Header>
-						<h2 class="text-lg font-semibold text-card-foreground">Anime field changes</h2>
-					</Card.Header>
-					<Card.Content class="space-y-3">
-						{#each v2Summary.anime_umbrella_changes ?? [] as change (change.anime_uuid)}
-							<AnimeUmbrellaCard {change} />
-						{/each}
-					</Card.Content>
-				</Card.Root>
-			{/if}
 		{:else}
 			<!-- Non-update_sweep detail view: header is the full story for now;
 				 the Jobs Log entry shouldn't have been clickable anyway. -->

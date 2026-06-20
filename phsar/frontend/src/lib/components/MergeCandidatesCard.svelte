@@ -4,6 +4,8 @@
     import { Button } from '$lib/components/ui/button';
     import * as Card from '$lib/components/ui/card';
     import { Badge } from '$lib/components/ui/badge';
+    import Tooltip from '$lib/components/Tooltip.svelte';
+    import DismissedDecisionsSection from '$lib/components/admin/DismissedDecisionsSection.svelte';
     import { GitMerge, X, RefreshCw, ArrowLeftRight, Search, ChevronRight, ChevronDown } from 'lucide-svelte';
     import { bumpCurationRefresh } from '$lib/stores/jobs';
     import { formatRelationType } from '$lib/utils/formatString';
@@ -12,6 +14,8 @@
         MergeCandidateAnimeSummary,
         MergeCandidateListItem,
     } from '$lib/types/api';
+
+    let { currentUsername = '' }: { currentUsername?: string } = $props();
 
     let candidates = $state<MergeCandidateListItem[]>([]);
     // `loading` flips off after the first fetch and stays off; subsequent
@@ -132,18 +136,27 @@
         <div class="flex items-center justify-between">
             <h2 class="text-lg font-semibold text-card-foreground">Merge Candidates ({candidates.length})</h2>
             <div class="flex items-center gap-1">
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    onclick={handleRedetect}
-                    disabled={busy}
-                    title="Re-run detection across the existing catalog (useful after restoring a backup)"
-                >
-                    <Search class="size-4 {redetecting ? 'animate-pulse' : ''}" />
-                </Button>
-                <Button variant="ghost" size="sm" onclick={refreshCandidates} disabled={busy} title="Refresh">
-                    <RefreshCw class="size-4 {refreshing ? 'animate-spin' : ''}" />
-                </Button>
+                <Tooltip text="Re-run detection across the existing catalog (useful after restoring a backup)">
+                    {#snippet trigger(props)}
+                        <Button
+                            {...props}
+                            variant="ghost"
+                            size="sm"
+                            onclick={handleRedetect}
+                            disabled={busy}
+                            aria-label="Re-run duplicate detection"
+                        >
+                            <Search class="size-4 {redetecting ? 'animate-pulse' : ''}" />
+                        </Button>
+                    {/snippet}
+                </Tooltip>
+                <Tooltip text="Refresh">
+                    {#snippet trigger(props)}
+                        <Button {...props} variant="ghost" size="sm" onclick={refreshCandidates} disabled={busy} aria-label="Refresh">
+                            <RefreshCw class="size-4 {refreshing ? 'animate-spin' : ''}" />
+                        </Button>
+                    {/snippet}
+                </Tooltip>
             </div>
         </div>
         <p class="text-xs text-muted-foreground">
@@ -171,15 +184,19 @@
                                 {(c.similarity_score * 100).toFixed(0)}% match
                             </Badge>
                             <span class="text-muted-foreground">{c.detected_by}</span>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                class="h-6 px-2 text-xs ml-auto"
-                                onclick={() => (swapped[c.uuid] = !swapped[c.uuid])}
-                                title="Swap A/B"
-                            >
-                                <ArrowLeftRight class="size-3 mr-1" /> Swap
-                            </Button>
+                            <Tooltip text="Swap A/B">
+                                {#snippet trigger(props)}
+                                    <Button
+                                        {...props}
+                                        variant="ghost"
+                                        size="sm"
+                                        class="h-6 px-2 text-xs ml-auto"
+                                        onclick={() => (swapped[c.uuid] = !swapped[c.uuid])}
+                                    >
+                                        <ArrowLeftRight class="size-3 mr-1" /> Swap
+                                    </Button>
+                                {/snippet}
+                            </Tooltip>
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -251,17 +268,44 @@
                                     {busyUuid === c.uuid ? 'Dismissing…' : 'Confirm dismiss'}
                                 </Button>
                             {:else}
-                                <Button variant="ghost" size="sm" onclick={() => (confirmDismissUuid = c.uuid)} title="Dismiss — not a duplicate">
-                                    <X class="size-4 mr-1" /> Dismiss
-                                </Button>
-                                <Button size="sm" onclick={() => (confirmMergeUuid = c.uuid)} title="Merge B into A">
-                                    <GitMerge class="size-4 mr-1" /> Merge
-                                </Button>
+                                <Tooltip text="Dismiss — not a duplicate">
+                                    {#snippet trigger(props)}
+                                        <Button {...props} variant="ghost" size="sm" onclick={() => (confirmDismissUuid = c.uuid)}>
+                                            <X class="size-4 mr-1" /> Dismiss
+                                        </Button>
+                                    {/snippet}
+                                </Tooltip>
+                                <Tooltip text="Merge B into A">
+                                    {#snippet trigger(props)}
+                                        <Button {...props} size="sm" onclick={() => (confirmMergeUuid = c.uuid)}>
+                                            <GitMerge class="size-4 mr-1" /> Merge
+                                        </Button>
+                                    {/snippet}
+                                </Tooltip>
                             {/if}
                         </div>
                     </div>
                 {/each}
             </div>
         {/if}
+
+        <DismissedDecisionsSection
+            kind="merge"
+            listUrl="/admin/merge-candidates/dismissed"
+            basePath="/admin/merge-candidates"
+            {currentUsername}
+            onResurfaced={handleRedetect}
+        >
+            {#snippet row(item: MergeCandidateListItem)}
+                <div class="text-sm text-card-foreground flex items-center gap-1.5 flex-wrap">
+                    <span class="font-medium">{item.anime_a.title}</span>
+                    <ArrowLeftRight class="size-3 text-muted-foreground shrink-0" />
+                    <span class="font-medium">{item.anime_b.title}</span>
+                </div>
+                <p class="text-[11px] text-muted-foreground">
+                    {item.detected_by} · {(item.similarity_score * 100).toFixed(0)}% match
+                </p>
+            {/snippet}
+        </DismissedDecisionsSection>
     </Card.Content>
 </Card.Root>

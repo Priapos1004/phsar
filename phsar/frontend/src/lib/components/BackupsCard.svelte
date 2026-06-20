@@ -3,6 +3,7 @@
     import { api, ApiError } from '$lib/api';
     import { Button } from '$lib/components/ui/button';
     import * as Card from '$lib/components/ui/card';
+    import Tooltip from '$lib/components/Tooltip.svelte';
     import * as Select from '$lib/components/ui/select';
     import * as Dialog from '$lib/components/ui/dialog';
     import { Label } from '$lib/components/ui/label';
@@ -366,12 +367,20 @@
                                             if (e.key === 'Escape') editingFilename = null;
                                         }}
                                     />
-                                    <Button variant="secondary" size="sm" onclick={() => handleRename(b.filename)} disabled={savingName} title="Save name">
-                                        <Check class="size-4" />
-                                    </Button>
-                                    <Button variant="ghost" size="sm" onclick={() => (editingFilename = null)} disabled={savingName} title="Cancel">
-                                        <X class="size-4" />
-                                    </Button>
+                                    <Tooltip text="Save name">
+                                        {#snippet trigger(props)}
+                                            <Button {...props} variant="secondary" size="sm" onclick={() => handleRename(b.filename)} disabled={savingName} aria-label="Save name">
+                                                <Check class="size-4" />
+                                            </Button>
+                                        {/snippet}
+                                    </Tooltip>
+                                    <Tooltip text="Cancel">
+                                        {#snippet trigger(props)}
+                                            <Button {...props} variant="ghost" size="sm" onclick={() => (editingFilename = null)} disabled={savingName} aria-label="Cancel">
+                                                <X class="size-4" />
+                                            </Button>
+                                        {/snippet}
+                                    </Tooltip>
                                 </div>
                             {:else if b.name}
                                 <div class="flex items-center gap-2 flex-wrap">
@@ -415,37 +424,56 @@
                             {/if}
                         </div>
                         <div class="shrink-0 flex gap-1">
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onclick={() => openRename(b)}
-                                title={b.name ? 'Rename' : 'Name backup to keep it'}
-                            >
-                                <Pencil class="size-4" />
-                            </Button>
+                            <Tooltip text={b.name ? 'Rename' : 'Name backup to keep it'}>
+                                {#snippet trigger(props)}
+                                    <Button
+                                        {...props}
+                                        variant="ghost"
+                                        size="sm"
+                                        onclick={() => openRename(b)}
+                                        aria-label={b.name ? 'Rename backup' : 'Name backup to keep it'}
+                                    >
+                                        <Pencil class="size-4" />
+                                    </Button>
+                                {/snippet}
+                            </Tooltip>
                             {#if b.name}
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onclick={() => handleUnpin(b.filename)}
-                                    disabled={savingName}
-                                    title="Remove name (unpin)"
-                                >
-                                    <PinOff class="size-4 text-destructive" />
-                                </Button>
+                                <Tooltip text="Remove name (unpin)">
+                                    {#snippet trigger(props)}
+                                        <Button
+                                            {...props}
+                                            variant="ghost"
+                                            size="sm"
+                                            onclick={() => handleUnpin(b.filename)}
+                                            disabled={savingName}
+                                            aria-label="Remove name (unpin)"
+                                        >
+                                            <PinOff class="size-4 text-destructive" />
+                                        </Button>
+                                    {/snippet}
+                                </Tooltip>
                             {/if}
-                            <Button variant="ghost" size="sm" onclick={() => handleDownload(b.filename)} title="Download">
-                                <Download class="size-4" />
-                            </Button>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onclick={() => openRestore(b.filename)}
-                                title="Restore from this backup"
-                                disabled={b.integrity === 'corrupt'}
-                            >
-                                <RotateCcw class="size-4 text-destructive" />
-                            </Button>
+                            <Tooltip text="Download">
+                                {#snippet trigger(props)}
+                                    <Button {...props} variant="ghost" size="sm" onclick={() => handleDownload(b.filename)} aria-label="Download">
+                                        <Download class="size-4" />
+                                    </Button>
+                                {/snippet}
+                            </Tooltip>
+                            <Tooltip text="Restore from this backup">
+                                {#snippet trigger(props)}
+                                    <Button
+                                        {...props}
+                                        variant="ghost"
+                                        size="sm"
+                                        onclick={() => openRestore(b.filename)}
+                                        disabled={b.integrity === 'corrupt'}
+                                        aria-label="Restore from this backup"
+                                    >
+                                        <RotateCcw class="size-4 text-destructive" />
+                                    </Button>
+                                {/snippet}
+                            </Tooltip>
                             {#if confirmDeleteFilename === b.filename}
                                 <div class="flex gap-1.5">
                                     <Button variant="secondary" size="sm" onclick={() => (confirmDeleteFilename = null)} disabled={deleting}>
@@ -456,9 +484,13 @@
                                     </Button>
                                 </div>
                             {:else}
-                                <Button variant="ghost" size="sm" onclick={() => (confirmDeleteFilename = b.filename)} title="Delete backup">
-                                    <Trash2 class="size-4 text-destructive" />
-                                </Button>
+                                <Tooltip text="Delete backup">
+                                    {#snippet trigger(props)}
+                                        <Button {...props} variant="ghost" size="sm" onclick={() => (confirmDeleteFilename = b.filename)} aria-label="Delete backup">
+                                            <Trash2 class="size-4 text-destructive" />
+                                        </Button>
+                                    {/snippet}
+                                </Tooltip>
                             {/if}
                         </div>
                     </div>

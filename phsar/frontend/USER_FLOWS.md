@@ -87,7 +87,7 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 
 ## 3. Home Page
 
-- **Hero banner** (InfoDiashow): Full-width rounded card showing the active theme's character pic as background (`object-cover`, per-theme focal point). Diagonal gradient overlay fades from the theme's primary color (opaque left) to transparent (right). "Current Season" label and season name (e.g., "Spring 2026") sit on the opaque side with text shadow. Pic and gradient update reactively when user changes theme.
+- **Hero banner** (InfoDiashow): Full-width rounded card showing the active theme's character pic as background (`object-cover`, per-theme focal point). A subtle bottom-up dark scrim (for legibility only, no color cast over the art) anchors the "Current Season" label and season name (e.g., "Spring 2026") bottom-left with a soft drop shadow. Pic updates reactively when the user changes theme.
 - SearchBar component for entering queries and applying filters
 - Three placeholder cards: "Recommended", "Lucky Find", "Upcoming"
 
@@ -179,7 +179,7 @@ Each anime search result card shows:
 ### 6.2 Hero Card
 - Same blurred cover background pattern as media detail
 - Title (English preferred), alternate titles, airing status badge: green (Currently Airing), yellow (Not yet aired), blue (upcoming content), grey (Finished Airing)
-- Average MAL score with "ratings/media" label
+- Average MAL score with "ratings/media" label; hovering the score pill shows a tooltip clarifying it's the MyAnimeList community score, not Phsar users' ratings
 - Relation type badges with counts (e.g., "main: 5"), media type badges with counts (e.g., "TV: 3")
 - Age rating badge (max across media), genre badges (strict majority rule)
 - Stats grid: total episodes, media count, season range, total watch time
@@ -233,7 +233,7 @@ Each anime search result card shows:
 - Title (English preferred, falls back to default title)
 - Japanese title and romaji subtitle (if different from displayed title)
 - Airing status badge: green pulsing dot for "Currently Airing", yellow for "Not yet aired", muted for finished
-- MAL score with star icon and rating count
+- MAL score with star icon and rating count; hovering the score pill shows a tooltip clarifying it's the MyAnimeList community score, not Phsar users' ratings
 - Badges: media type (green), relation type (blue), age rating (orange)
 - Genre badges (themed primary color)
 - Stats grid: episodes, duration per episode, season, total watch time
@@ -353,7 +353,7 @@ Each anime search result card shows:
 - Four stat cards sourced from `GET /admin/stats/overview`:
   - **Catalog**: total anime count, total media count, anime added in the last 7 days, media added in the last 7 days
   - **Job health (7d)**: per-kind succeeded/failed counts, parenthesized retryable-failed subset, and a colored success-rate percentage (theme-primary at ≥90%, amber at 75–89%, destructive red below 75%). Percent cell is fixed-width + `tabular-nums` so the column edge stays aligned. The `user_scrape` row counts user-initiated submissions only — seasonal-sweep children (system-attributed user_scrapes) are excluded so a Sunday burst of Music/PV-filtered shows doesn't drag the user-facing signal down. Retryable-failed counts ALSO drop system jobs (sweeps, cron backups) since the bell's retry button only fires on user-owned rows; counting cron retries would imply admin action is available when it isn't
-  - **Sweep tiers**: where every row sits in the update-sweep cycle, with an **Anime / Media toggle** (default Anime). Four rows in priority cascade — Airing now (emerald) > Stabilizing (amber) > Weekly cycle (sky) > 90-day cycle (indigo). Each row has a horizontal share-of-total bar, count, percentage, and tooltip paraphrasing the predicate (stabilize = first 5 sweeps; 90-day long cycle). The backend exposes these as 4 mutually-exclusive **cycle-membership** buckets at each grain (`AnimeDAO.count_by_sweep_tier_priority` / `count_media_by_sweep_tier_priority` → `sweep_tiers` / `media_sweep_tiers`); the card renders the selected grain 1:1. Membership, not due-ness — a tier counts where a row *belongs* (e.g. "Weekly cycle" = has/is a recent main), so a row doesn't empty itself when a sweep refreshes its members. Sum equals the grain's catalog total (anime count / media count)
+  - **Sweep tiers**: where every row sits in the update-sweep cycle, with an **Anime / Media toggle** (default Anime). Four rows in priority cascade — Airing now (emerald) > Stabilizing (amber) > Weekly cycle (sky) > 90-day cycle (indigo). Each row has a horizontal share-of-total bar, count, percentage, and tooltip paraphrasing the predicate (stabilize = first 3 sweeps; 90-day long cycle). The Stabilizing row expands into indented per-check sub-rows ("0 checks / 1 check / …", one per stabilize sweep) showing how the stabilization pipeline is distributed — for media each row is bucketed by its own check count, for anime by its least-settled member. The number of sub-rows tracks the stabilize threshold automatically. The backend exposes these as 4 mutually-exclusive **cycle-membership** buckets at each grain (`AnimeDAO.count_by_sweep_tier_priority` / `count_media_by_sweep_tier_priority` → `sweep_tiers` / `media_sweep_tiers`); the card renders the selected grain 1:1. Membership, not due-ness — a tier counts where a row *belongs* (e.g. "Weekly cycle" = has/is a recent main), so a row doesn't empty itself when a sweep refreshes its members. Sum equals the grain's catalog total (anime count / media count)
   - **User activity (7d)**: active users (distinct user_ids touching ratings or jobs), new ratings, scrapes submitted (user-attributed only)
 - Refresh: subscribes to the `librarySaved` bump in `lib/stores/jobs.ts`, so the panel reloads in milliseconds whenever the bell observes a new succeeded `user_scrape` — admin sees the catalog + activity counters move without a manual refresh. No periodic polling
 - All counts are aggregate. The Overview tab is leaderboard-free — per-user breakdowns are scoped to the Jobs Log tab where they're needed for debugging
@@ -363,6 +363,7 @@ Each anime search result card shows:
 - Paginated all-jobs table sourced from `GET /admin/jobs` (50 rows per page, newest-first by `created_at`). Backed by `ix_jobs_created_at_desc` so the default unfiltered scan + COUNT stays cheap as the jobs table grows
 - **Clustering**: the default view hides rows whose `parent_job_id` is set, so the list isn't dominated by ~50 system user_scrape children that land after every Sunday's seasonal_sweep. Each `seasonal_sweep` row renders an expander chevron — clicking fetches `?parent_uuid=<UUID>&limit=500` and renders the children inline below the parent, indented with a left primary-tinted border. Re-collapse hides them without re-fetching (state cached per parent). If a sweep ever exceeds the 500-row cap, the expanded view surfaces an amber "Showing X of Y children — rest are older than the 500-row cap" notice rather than silently truncating
 - Filters: **Kind** dropdown (All / user_scrape / update_sweep / seasonal_sweep / backup / restore) and **Status** dropdown (All / queued / running / succeeded / failed). Changing either filter resets pagination to page 1 — keeping a stale offset against a narrower filter would strand the admin past the result tail. A monotonic request-id guards against a fast filter-then-page click letting an older response overwrite the newer state
+- **Filter persistence**: the active filter is held in an in-session store (not the URL), so it stays applied — and shown in the dropdowns — when switching to another admin tab and back, and when opening a job's detail page and returning via the "← Jobs Log" link. Leaving the admin section entirely (e.g. to Settings) clears it, so re-entering `/admin` starts unfiltered. The filter is not reflected in the URL and does not survive a hard page refresh
 - Columns:
   - **Created** — short datetime
   - **Kind** — neutral badge (`User scrape` / `Update sweep` / etc., via shared `formatJobKind`)
@@ -441,6 +442,12 @@ Each anime search result card shows:
 - Split / dismiss / re-detect-with-new-rows all bump `curationRefresh` so the navbar bell's pinned reminder updates without waiting for the next poll tick.
 - Already-resolved candidates (split or dismissed) return 409 if the action is retried.
 - **Stale-candidate fail-loud**: if the classifier on the cluster subset picks a different anchor than the candidate's `suggested_anchor_mal_id` at execute time (e.g., MAL added a sequel between detection and execution), the backend returns 409 SplitCandidateStaleError. Admin re-runs detection to refresh the payload.
+
+### 10.7 Dismissed decisions (both Curation cards)
+- Each card has a collapsible **"Dismissed decisions (N)"** section at the bottom (shared `DismissedDecisionsSection` component). Collapsed by default; the list is lazy-fetched (`GET /admin/{merge,split}-candidates/dismissed`) the first time it's expanded, so the common pending view never pays for the history.
+- Newest dismissal first. Merge rows show `A ↔ B` + detector + match %; split rows show the source anime + "would split off: <member titles>" per cluster. Each row shows when it was dismissed.
+- The counter and list stay fresh: dismissing a new candidate in the card above bumps `curationRefresh`, which the section subscribes to and re-fetches (if already expanded) — no stale `(N)`.
+- **Resurface**: each row has a "Resurface" button → a username-gated confirm dialog (type the admin username, mirroring backup restore). On confirm it `POST`s `/{uuid}/delete`, removes the row, then re-runs the card's detection so the freed candidate re-flags as pending immediately (rather than waiting for the nightly sweep). Only `dismissed` rows are deletable; merged rows no longer exist and deleting a split-status row wouldn't undo the split.
 - The detector itself is invisible to non-admin users; nothing about it surfaces outside this card.
 
 ---

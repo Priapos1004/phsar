@@ -958,8 +958,8 @@ async def test_refresh_only_touches_due_media(db_session):
 # AnimeDAO.select_due_media_for_sweep (uses db_session)
 #
 # Media-level selection (v0.14.8): the tier atoms are direct predicates on
-# the media row + its MediaFreshness sidecar. Stabilize threshold is 5 (was
-# anime 3); long-tail is 90 days (was 180).
+# the media row + its MediaFreshness sidecar. Stabilize threshold is 3
+# (lowered from media-level 5 in v0.14.9); long-tail is 90 days (was 180).
 # ---------------------------------------------------------------------------
 
 
@@ -1023,19 +1023,19 @@ async def test_tier_currently_airing_always_selected(db_session):
 
 @pytest.mark.asyncio
 async def test_tier_stable_under_threshold_selected(db_session):
-    """Media-level stabilize threshold is 5: stable_check_count < 5 is
-    selected, == 5 is not."""
-    a_stable_4 = await _seed_anime(
-        db_session, mal_id=-7002, stable_check_count=4,
+    """Media-level stabilize threshold is 3: stable_check_count < 3 is
+    selected, == 3 is not."""
+    a_stable_2 = await _seed_anime(
+        db_session, mal_id=-7002, stable_check_count=2,
         last_checked_at=datetime.now(timezone.utc),
     )
-    a_stable_5 = await _seed_anime(
-        db_session, mal_id=-7003, stable_check_count=5,
+    a_stable_3 = await _seed_anime(
+        db_session, mal_id=-7003, stable_check_count=3,
         last_checked_at=datetime.now(timezone.utc),
     )
     ids = await _select_due_ids(db_session)
-    assert a_stable_4.id in ids
-    assert a_stable_5.id not in ids
+    assert a_stable_2.id in ids
+    assert a_stable_3.id not in ids
 
 
 @pytest.mark.asyncio
@@ -1080,6 +1080,22 @@ async def test_tier_long_tail_selected(db_session):
     ids = await _select_due_ids(db_session)
     assert due.id in ids
     assert not_yet.id not in ids
+
+
+# Tier-count cards now return the 4 int totals + a nested `stabilizing_by_check`
+# breakdown, so the old `{k: after[k] - baseline[k] for k in after}` /
+# `sum(after.values())` shortcuts no longer work. These helpers isolate the
+# int buckets and diff the breakdown separately.
+_TIER_BUCKETS = ("airing_now", "stabilizing", "weekly_cycle", "long_cycle")
+
+
+def _tier_total(counts: dict) -> int:
+    return sum(counts[k] for k in _TIER_BUCKETS)
+
+
+def _breakdown_delta(after: dict, baseline: dict) -> dict[int, int]:
+    base = baseline["stabilizing_by_check"]
+    return {n: c - base.get(n, 0) for n, c in after["stabilizing_by_check"].items()}
 
 
 @pytest.mark.asyncio
@@ -1133,17 +1149,20 @@ async def test_count_by_sweep_tier_priority_buckets_each_anime_once(db_session):
     await db_session.flush()
 
     after = await AnimeDAO().count_by_sweep_tier_priority(db_session)
-    delta = {k: after[k] - baseline.get(k, 0) for k in after}
+    delta = {k: after[k] - baseline.get(k, 0) for k in _TIER_BUCKETS}
     assert delta == {
         "airing_now": 1,
         "stabilizing": 1,
         "weekly_cycle": 2,   # both recent-main rows, incl. the recently-swept one
         "long_cycle": 2,
     }
+    # -7102 (stable=2, not airing) is the only new stabilizing anime, so the
+    # per-check breakdown attributes it to check-count 2 (its lone member).
+    assert _breakdown_delta(after, baseline) == {0: 0, 1: 0, 2: 1}
     total_anime = (await db_session.execute(
         select(func.count(Anime.id))
     )).scalar_one()
-    assert sum(after.values()) == total_anime
+    assert _tier_total(after) == total_anime
 
 
 @pytest.mark.asyncio
@@ -1151,7 +1170,7 @@ async def test_anime_tier_is_media_rollup_not_anime_probe_counter(db_session):
     """Regression for the v0.14.8 inconsistency: the anime count card must
     roll up MEDIA tiers, not read the anime probe counter. An anime with a
     high AnimeFreshness.stable_check_count (probe-stable) + a recent main but
-    whose media is still media-stabilizing (stable < 5) must count under
+    whose media is still media-stabilizing (stable < 3) must count under
     `stabilizing`, NOT `weekly_cycle` — otherwise the anime card disagrees
     with the media card (anime weekly_cycle while all media stabilizing)."""
     from app.models.media import RelationType
@@ -1173,14 +1192,17 @@ async def test_anime_tier_is_media_rollup_not_anime_probe_counter(db_session):
     await db_session.flush()
 
     after = await AnimeDAO().count_by_sweep_tier_priority(db_session)
-    delta = {k: after[k] - baseline.get(k, 0) for k in after}
+    delta = {k: after[k] - baseline.get(k, 0) for k in _TIER_BUCKETS}
     assert delta == {"airing_now": 0, "stabilizing": 1, "weekly_cycle": 0, "long_cycle": 0}
+    # The lone media sits at stable_check_count=0 → breakdown attributes the
+    # anime to check-count 0 (its least-settled — and only — member).
+    assert _breakdown_delta(after, baseline) == {0: 1, 1: 0, 2: 0}
 
 
 @pytest.mark.asyncio
 async def test_tier_handles_missing_sidecar(db_session):
     """A media without a media_freshness row reads COALESCE(stable, 0) = 0,
-    which is < 5 → the stabilizing tier selects it. _seed_anime always
+    which is < 3 → the stabilizing tier selects it. _seed_anime always
     creates a sidecar, so build a bare media here."""
     anime = Anime(mal_id=-7007, title="A-7007")
     db_session.add(anime)
@@ -1192,18 +1214,18 @@ async def test_tier_handles_missing_sidecar(db_session):
 
 @pytest.mark.asyncio
 async def test_count_media_by_sweep_tier_priority_buckets_each_media_once(db_session):
-    """Media-level membership cascade: airing_now > stabilizing (stable<5) >
+    """Media-level membership cascade: airing_now > stabilizing (stable<3) >
     weekly_cycle (recent main) > long_cycle. Sum equals total media count.
     Delta-based so pre-existing rows don't skew bucket attribution."""
     from app.models.media import RelationType
     now = datetime.now(timezone.utc)
     baseline = await AnimeDAO().count_media_by_sweep_tier_priority(db_session)
 
-    await _seed_anime(  # airing wins over stable<5 -> airing_now
+    await _seed_anime(  # airing wins over stable<3 -> airing_now
         db_session, mal_id=-7201, stable_check_count=1,
         airing_status="Currently Airing", last_checked_at=now,
     )
-    await _seed_anime(  # stable<5, not airing -> stabilizing
+    await _seed_anime(  # stable<3, not airing -> stabilizing
         db_session, mal_id=-7202, stable_check_count=2, last_checked_at=now,
     )
     await _seed_anime(  # recent main, stable -> weekly_cycle
@@ -1217,17 +1239,52 @@ async def test_count_media_by_sweep_tier_priority_buckets_each_media_once(db_ses
     await db_session.flush()
 
     after = await AnimeDAO().count_media_by_sweep_tier_priority(db_session)
-    delta = {k: after[k] - baseline.get(k, 0) for k in after}
+    delta = {k: after[k] - baseline.get(k, 0) for k in _TIER_BUCKETS}
     assert delta == {
         "airing_now": 1,
         "stabilizing": 1,
         "weekly_cycle": 1,
         "long_cycle": 1,
     }
+    # The lone stabilizing media (-7202) sits at stable_check_count=2.
+    assert _breakdown_delta(after, baseline) == {0: 0, 1: 0, 2: 1}
     total_media = (await db_session.execute(
         select(func.count(Media.id))
     )).scalar_one()
-    assert sum(after.values()) == total_media
+    assert _tier_total(after) == total_media
+
+
+@pytest.mark.asyncio
+async def test_stabilizing_breakdown_anime_uses_least_settled_member(db_session):
+    """The stabilizing total splits per check count. At the media grain each
+    media counts at its own stable_check_count; at the anime grain the anime
+    is attributed to its LEAST-settled member (the MIN), so an anime with
+    media at counts 1 and 2 lands in the anime breakdown's check-1 bucket."""
+    now = datetime.now(timezone.utc)
+    anime_base = await AnimeDAO().count_by_sweep_tier_priority(db_session)
+    media_base = await AnimeDAO().count_media_by_sweep_tier_priority(db_session)
+
+    anime = Anime(mal_id=-7401, title="A-7401")
+    db_session.add(anime)
+    await db_session.flush()
+    for mal, stable in ((-740101, 1), (-740102, 2)):
+        m = Media(**media_kwargs(anime_id=anime.id, mal_id=mal))
+        db_session.add(m)
+        await db_session.flush()
+        db_session.add(
+            MediaFreshness(media_id=m.id, last_checked_at=now, stable_check_count=stable)
+        )
+    await db_session.flush()
+
+    anime_after = await AnimeDAO().count_by_sweep_tier_priority(db_session)
+    media_after = await AnimeDAO().count_media_by_sweep_tier_priority(db_session)
+
+    # One new stabilizing anime, attributed to its MIN member (check 1).
+    assert anime_after["stabilizing"] - anime_base["stabilizing"] == 1
+    assert _breakdown_delta(anime_after, anime_base) == {0: 0, 1: 1, 2: 0}
+    # Both members count individually at the media grain (check 1 and check 2).
+    assert media_after["stabilizing"] - media_base["stabilizing"] == 2
+    assert _breakdown_delta(media_after, media_base) == {0: 0, 1: 1, 2: 1}
 
 
 # ---------------------------------------------------------------------------
@@ -1542,12 +1599,12 @@ def test_gate_rejects_currently_airing():
 
 
 def test_gate_rejects_stable_below_threshold():
-    a = _anime_with_freshness(stable_check_count=4)
+    a = _anime_with_freshness(stable_check_count=2)
     assert _qualifies_for_relations_probe(a, is_currently_airing=False) is False
 
 
 def test_gate_accepts_stable_at_or_above_threshold_and_not_airing():
-    a = _anime_with_freshness(stable_check_count=5)
+    a = _anime_with_freshness(stable_check_count=3)
     assert _qualifies_for_relations_probe(a, is_currently_airing=False) is True
 
 
@@ -1597,14 +1654,23 @@ def _patch_probe_pipeline(monkeypatch):
     attach_calls: list[dict] = []
     recompute_calls: list[int] = []
 
-    async def fake_attach(db, parent_anime, graph, all_info, edges=None):
+    async def fake_attach(db, parent_anime, graph, all_info, edges=None, saved_sink=None):
         attach_calls.append({
             "parent_anime_id": parent_anime.id,
             "graph_mal_ids": list(graph.keys()),
             "edges": edges or [],
         })
         existing = {m.mal_id for m in parent_anime.media}
-        return sum(1 for mal_id in graph if mal_id not in existing)
+        new_mal_ids = [mal_id for mal_id in graph if mal_id not in existing]
+        # Mirror the real attach's saved_sink contract so the probe sees which
+        # media landed (drives probe_attached_anime + the recompute scope).
+        if saved_sink is not None:
+            for mal_id in new_mal_ids:
+                saved_sink.append({
+                    "media_uuid": f"uuid-{mal_id}",
+                    "title": all_info.get(mal_id, {}).get("title", str(mal_id)),
+                })
+        return len(new_mal_ids)
 
     async def fake_recompute(db, anime_ids):
         recompute_calls.append(list(anime_ids))
@@ -1860,14 +1926,23 @@ async def test_spoiler_recompute_failure_does_not_fail_the_sweep(
 
     attach_calls: list[dict] = []
 
-    async def fake_attach(db, parent_anime, graph, all_info, edges=None):
+    async def fake_attach(db, parent_anime, graph, all_info, edges=None, saved_sink=None):
         attach_calls.append({
             "parent_anime_id": parent_anime.id,
             "graph_mal_ids": list(graph.keys()),
             "edges": edges or [],
         })
         existing = {m.mal_id for m in parent_anime.media}
-        return sum(1 for mal_id in graph if mal_id not in existing)
+        new_mal_ids = [mal_id for mal_id in graph if mal_id not in existing]
+        # Mirror the real attach's saved_sink contract so the probe sees which
+        # media landed (drives probe_attached_anime + the recompute scope).
+        if saved_sink is not None:
+            for mal_id in new_mal_ids:
+                saved_sink.append({
+                    "media_uuid": f"uuid-{mal_id}",
+                    "title": all_info.get(mal_id, {}).get("title", str(mal_id)),
+                })
+        return len(new_mal_ids)
 
     async def boom_recompute(db, anime_ids):
         raise RuntimeError("simulated recompute failure")

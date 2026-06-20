@@ -64,3 +64,29 @@ async def merge_anime_candidate(
 )
 async def dismiss_anime_candidate(uuid: UUID, db: AsyncSession = Depends(get_db)):
     await merge_candidate_service.dismiss(db, uuid)
+
+
+@router.get(
+    "/merge-candidates/dismissed",
+    response_model=list[admin_schema.MergeCandidateListItem],
+)
+async def list_dismissed_merge_candidates(db: AsyncSession = Depends(get_db)):
+    """Past dismissals, newest first, for the 'Dismissed decisions' history.
+    Deleting one (below) lets the pair resurface on the next detection."""
+    return await merge_candidate_service.list_dismissed(db)
+
+
+@router.post(
+    "/merge-candidates/{uuid}/delete",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_merge_decision(
+    uuid: UUID,
+    data: admin_schema.DeleteDecisionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """Delete a dismissed decision (username-gated) so it can resurface."""
+    await merge_candidate_service.delete_decision(
+        db, uuid, confirm=data.confirm, username=current_user.username,
+    )

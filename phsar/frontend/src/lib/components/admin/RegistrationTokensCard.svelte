@@ -6,6 +6,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Label } from '$lib/components/ui/label';
 	import { Badge } from '$lib/components/ui/badge';
+	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { Copy, Trash2, Plus, ArrowUpDown } from 'lucide-svelte';
 	import Toast from '$lib/components/Toast.svelte';
 	import { formatShortDate } from '$lib/utils/formatString';
@@ -219,14 +220,19 @@
 						<div class="flex items-center gap-3 rounded-lg border bg-muted/30 px-4 py-3 {t.status === 'expired' ? 'opacity-60' : ''}">
 							<div class="flex-1 min-w-0 space-y-1">
 								<div class="flex items-center gap-2 flex-wrap">
-									<button
-										class="flex items-center gap-1.5 text-sm text-card-foreground hover:text-primary transition cursor-pointer"
-										title="Copy full token"
-										onclick={() => copyToClipboard(t.token)}
-									>
-										<code>{truncateToken(t.token)}</code>
-										<Copy class="size-3 shrink-0" />
-									</button>
+									<Tooltip text="Copy full token">
+										{#snippet trigger(props)}
+											<button
+												{...props}
+												class="flex items-center gap-1.5 text-sm text-card-foreground hover:text-primary transition cursor-pointer"
+												aria-label="Copy full token"
+												onclick={() => copyToClipboard(t.token)}
+											>
+												<code>{truncateToken(t.token)}</code>
+												<Copy class="size-3 shrink-0" />
+											</button>
+										{/snippet}
+									</Tooltip>
 									{#if t.status === 'active'}
 										<Badge>active</Badge>
 									{:else if t.status === 'used'}
@@ -258,9 +264,13 @@
 											</Button>
 										</div>
 									{:else}
-										<Button variant="ghost" size="sm" onclick={() => (confirmDeleteUuid = t.uuid)} title="Delete token">
-											<Trash2 class="size-4 text-destructive" />
-										</Button>
+										<Tooltip text="Delete token">
+											{#snippet trigger(props)}
+												<Button {...props} variant="ghost" size="sm" onclick={() => (confirmDeleteUuid = t.uuid)} aria-label="Delete token">
+													<Trash2 class="size-4 text-destructive" />
+												</Button>
+											{/snippet}
+										</Tooltip>
 									{/if}
 								</div>
 							{/if}

@@ -59,7 +59,6 @@
 					<div
 						class="h-full"
 						style="width: {widthPercent}%; background: {palette[i % palette.length]}"
-						title="{entry.label}: {entry.count}"
 					></div>
 				{/each}
 			</div>

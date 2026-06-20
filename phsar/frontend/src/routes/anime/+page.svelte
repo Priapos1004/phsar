@@ -17,6 +17,7 @@
 	import BulkRateDialog from '$lib/components/BulkRateDialog.svelte';
 	import BackLink from '$lib/components/BackLink.svelte';
 	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
+	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { refreshSpoilerVisibility } from '$lib/stores/spoilerVisibility';
 	import { computeVisibleMediaUuids } from '$lib/utils/spoilerFrontier';
 
@@ -119,6 +120,7 @@
 	let isRestricted = $derived(getUserRole() === 'restricted_user');
 	let searchToken = $derived(page.url.searchParams.get('q'));
 	let fromParam = $derived(page.url.searchParams.get('from') as DetailOrigin | null);
+	let jobUuid = $derived(page.url.searchParams.get('job'));
 
 	let cleanedDescription = $derived(anime?.description ? cleanDescription(anime.description) : null);
 
@@ -210,7 +212,7 @@
 	}
 
 	function mediaHref(item: AnimeMediaItem): string {
-		return buildDetailHref('media', item.uuid, { q: searchToken, from: fromParam });
+		return buildDetailHref('media', item.uuid, { q: searchToken, from: fromParam, job: jobUuid });
 	}
 
 	function imgFailed(e: Event) {
@@ -237,7 +239,7 @@
 	{:else if error}
 		<div class="text-center text-destructive py-20">{error}</div>
 	{:else if anime}
-		<BackLink {searchToken} {fromParam} />
+		<BackLink {searchToken} {fromParam} {jobUuid} />
 
 		<!-- Hero section -->
 		<div class="relative rounded-xl overflow-hidden">
@@ -300,25 +302,32 @@
 							{/each}
 						</div>
 
-						<!-- Watchlist bookmark placeholder -->
-						<button
-							class="shrink-0 p-2 rounded-lg opacity-50 cursor-not-allowed"
-							disabled
-							title="Coming soon"
-						>
-							<Bookmark class="size-6 text-muted-foreground" />
-						</button>
+						<!-- Watchlist bookmark placeholder (disabled → wrap in a span trigger
+						     so the tooltip still shows; disabled buttons swallow hover events) -->
+						<Tooltip text="Coming soon" class="shrink-0">
+							<button
+								class="p-2 rounded-lg opacity-50 cursor-not-allowed"
+								disabled
+								aria-label="Watchlist — coming soon"
+							>
+								<Bookmark class="size-6 text-muted-foreground" />
+							</button>
+						</Tooltip>
 					</div>
 
 					{#if anime.avg_score !== null}
 						<div class="flex items-center gap-3">
-							<div class="flex items-center gap-1.5 bg-primary/10 rounded-full px-3 py-1.5">
-								<Star class="size-4 text-yellow-500" fill="currentColor" />
-								<span class="text-lg font-bold text-card-foreground">
-									{formatDecimalDigits(anime.avg_score, 2)}
+							<Tooltip
+								text="Average MyAnimeList community score across this anime's media — not from Phsar users."
+							>
+								<span class="flex items-center gap-1.5 bg-primary/10 rounded-full px-3 py-1.5">
+									<Star class="size-4 text-yellow-500" fill="currentColor" />
+									<span class="text-lg font-bold text-card-foreground">
+										{formatDecimalDigits(anime.avg_score, 2)}
+									</span>
+									<span class="text-muted-foreground">/ 10</span>
 								</span>
-								<span class="text-muted-foreground">/ 10</span>
-							</div>
+							</Tooltip>
 							<span class="text-muted-foreground">
 								{formatNumber(anime.avg_scored_by)} ratings/media
 							</span>
@@ -574,9 +583,17 @@
 							<!-- Status indicator -->
 							<div class="shrink-0 w-2">
 								{#if item.airing_status === 'Currently Airing'}
-									<div class="w-2 h-2 rounded-full bg-green-500 animate-pulse" title="Currently Airing"></div>
+									<Tooltip text="Currently Airing">
+										{#snippet trigger(props)}
+											<div {...props} class="w-2 h-2 rounded-full bg-green-500 animate-pulse cursor-help"></div>
+										{/snippet}
+									</Tooltip>
 								{:else if item.airing_status === 'Not yet aired'}
-									<div class="w-2 h-2 rounded-full bg-yellow-500" title="Not yet aired"></div>
+									<Tooltip text="Not yet aired">
+										{#snippet trigger(props)}
+											<div {...props} class="w-2 h-2 rounded-full bg-yellow-500 cursor-help"></div>
+										{/snippet}
+									</Tooltip>
 								{/if}
 							</div>
 						</div>

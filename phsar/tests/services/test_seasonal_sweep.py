@@ -505,7 +505,7 @@ async def test_user_scrape_attaches_orphan_graph_to_existing_parent(
     # + embeddings, and we're testing routing not persistence here.
     attach_calls: list[dict] = []
 
-    async def fake_attach(db, parent_anime, graph, all_info, edges=None):
+    async def fake_attach(db, parent_anime, graph, all_info, edges=None, saved_sink=None):
         attach_calls.append({
             "parent_anime_id": parent_anime.id,
             "graph_mal_ids": list(graph.keys()),

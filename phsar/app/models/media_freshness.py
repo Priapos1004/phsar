@@ -30,7 +30,8 @@ class MediaFreshness(BaseModel):
     last_checked_at = Column(DateTime(timezone=True), nullable=True)
     # Per-media stability counter (v0.14.8). Resets to 0 when a refresh
     # observes a volatile-field delta on this media or it is currently
-    # airing; otherwise climbs. Media-level tier 2 (count < 5) burns the
+    # airing; otherwise climbs. Media-level tier 2 (count <
+    # SWEEP_STABILIZE_THRESHOLD) burns the
     # initial stability sampling. Server-default 0 so existing rows enter
     # the rotation un-stabilized without an explicit backfill UPDATE.
     stable_check_count = Column(

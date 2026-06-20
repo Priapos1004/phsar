@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
-	import { formatSeason, resolveTitle, formatRelationType, formatMediaType } from '$lib/utils/formatString';
+	import { formatSeason, resolveTitle, formatRelationType, formatMediaType, formatAiringStatus } from '$lib/utils/formatString';
 	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
 	import { userSettings } from '$lib/stores/userSettings';
 	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
@@ -18,9 +18,10 @@
 		currentPosition: number;
 		searchToken?: string | null;
 		fromParam?: DetailOrigin | null;
+		jobUuid?: string | null;
 	}
 
-	let { siblings, currentPosition, searchToken = null, fromParam = null }: Props = $props();
+	let { siblings, currentPosition, searchToken = null, fromParam = null, jobUuid = null }: Props = $props();
 
 	let imgFailed = $state<Record<string, boolean>>({});
 </script>
@@ -41,7 +42,7 @@
 	{#each siblings as sibling, i}
 		{#if i === currentPosition}{@render hereMarker()}{/if}
 		<a
-			href={buildDetailHref('media', sibling.uuid, { q: searchToken, from: fromParam })}
+			href={buildDetailHref('media', sibling.uuid, { q: searchToken, from: fromParam, job: jobUuid })}
 			class="snap-start shrink-0 w-40 transition duration-200 transform hover:scale-[1.03]"
 		>
 			<Card.Root class="h-full {cls.cardGlass}">
@@ -80,7 +81,7 @@
 						{#if season}
 							{season}
 						{:else}
-							{sibling.episodes ?? '?'} eps
+							{formatAiringStatus(sibling.airing_status, false)}
 						{/if}
 					</p>
 				</Card.Content>

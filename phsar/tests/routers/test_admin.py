@@ -520,12 +520,20 @@ async def test_stats_overview_returns_shape(client, admin_auth_headers):
     assert set(data["activity_7d"].keys()) == {
         "active_users", "new_ratings", "scrapes_submitted",
     }
-    bucket_keys = {"airing_now", "stabilizing", "weekly_cycle", "long_cycle"}
+    int_buckets = ("airing_now", "stabilizing", "weekly_cycle", "long_cycle")
+    bucket_keys = {*int_buckets, "stabilizing_by_check"}
+
+    def _tier_sum(tiers: dict) -> int:
+        return sum(tiers[k] for k in int_buckets)
+
     assert set(data["sweep_tiers"].keys()) == bucket_keys
-    assert sum(data["sweep_tiers"].values()) == data["catalog"]["anime_count"]
+    assert _tier_sum(data["sweep_tiers"]) == data["catalog"]["anime_count"]
     # v0.14.8: media-grained breakdown, sums to total media count.
     assert set(data["media_sweep_tiers"].keys()) == bucket_keys
-    assert sum(data["media_sweep_tiers"].values()) == data["catalog"]["media_count"]
+    assert _tier_sum(data["media_sweep_tiers"]) == data["catalog"]["media_count"]
+    # v0.14.9: the per-check breakdown sums back to the stabilizing total.
+    for tiers in (data["sweep_tiers"], data["media_sweep_tiers"]):
+        assert sum(tiers["stabilizing_by_check"].values()) == tiers["stabilizing"]
     kinds_returned = {row["kind"] for row in data["jobs_7d"]["by_kind"]}
     assert kinds_returned == {k.value for k in JobKind}
 

@@ -30,6 +30,9 @@
 
 <div class="rounded-md border border-border/60 bg-muted/10 p-4 space-y-3">
 	<div class="flex items-center justify-between gap-3 flex-wrap">
+		<!-- New tab (no back-to-job origin) — verify-and-return without losing
+		     scroll in the long changes list. Opposite of the failure/attached
+		     cards' same-tab "Back to job" flow. See MediaChangeCard / job page. -->
 		<a
 			href={buildDetailHref('anime', change.anime_uuid)}
 			target="_blank"

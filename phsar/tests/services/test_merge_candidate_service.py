@@ -11,7 +11,11 @@ from uuid import UUID
 import pytest
 from sqlalchemy import select
 
-from app.exceptions import InvalidMergeKeepError
+from app.exceptions import (
+    CurationConfirmationMismatchError,
+    InvalidMergeKeepError,
+    MergeCandidateNotFoundError,
+)
 from app.models.anime import Anime
 from app.models.media import Media, MediaType, RelationType
 from app.models.media_relation_edges import MediaRelationEdges
@@ -20,7 +24,13 @@ from app.models.merge_candidate import MergeCandidate, MergeCandidateStatus
 from app.models.ratings import Ratings
 from app.models.studio import Studio
 from app.models.users import RoleType, Users
-from app.services.merge_candidate_service import list_pending, merge
+from app.services.merge_candidate_service import (
+    delete_decision,
+    dismiss,
+    list_dismissed,
+    list_pending,
+    merge,
+)
 from tests._helpers import media_kwargs
 
 
@@ -437,3 +447,51 @@ async def test_merge_survives_spoiler_refresh_failure(db_session, monkeypatch):
     # Merge landed despite the failure.
     assert surviving_uuid == str(table_a.uuid)
     assert await db_session.get(Anime, table_b.id) is None
+
+
+@pytest.mark.asyncio
+async def test_list_dismissed_excludes_pending_and_stamps_dismissed_at(db_session):
+    """A dismissed candidate leaves the pending list and appears in the
+    dismissed history with `dismissed_at` set."""
+    _, _, _, _, candidate_uuid = await _make_pair(db_session, a_mal=90701, b_mal=90702)
+    # Still pending → absent from the dismissed history.
+    assert all(it.uuid != str(candidate_uuid) for it in await list_dismissed(db_session))
+
+    await dismiss(db_session, candidate_uuid)
+
+    item = next(it for it in await list_dismissed(db_session) if it.uuid == str(candidate_uuid))
+    assert item.dismissed_at is not None
+    # And no longer in the pending queue.
+    assert all(it.uuid != str(candidate_uuid) for it in await list_pending(db_session))
+
+
+@pytest.mark.asyncio
+async def test_delete_decision_username_gate_then_resurfaces(db_session):
+    """delete_decision refuses a mismatched confirmation, then hard-deletes
+    the dismissed row on a match (so re-detection can resurface the pair)."""
+    _, _, _, _, candidate_uuid = await _make_pair(db_session, a_mal=90711, b_mal=90712)
+    await dismiss(db_session, candidate_uuid)
+
+    with pytest.raises(CurationConfirmationMismatchError):
+        await delete_decision(db_session, candidate_uuid, confirm="nope", username="admin")
+    # Untouched after the failed gate.
+    assert any(it.uuid == str(candidate_uuid) for it in await list_dismissed(db_session))
+
+    await delete_decision(db_session, candidate_uuid, confirm="admin", username="admin")
+    row = (await db_session.execute(
+        select(MergeCandidate).where(MergeCandidate.uuid == candidate_uuid)
+    )).scalars().first()
+    assert row is None
+
+
+@pytest.mark.asyncio
+async def test_delete_decision_rejects_non_dismissed(db_session):
+    """A pending row isn't deletable via delete_decision — it belongs to the
+    live queue, not the dismissed history."""
+    _, _, _, _, candidate_uuid = await _make_pair(db_session, a_mal=90721, b_mal=90722)
+    with pytest.raises(MergeCandidateNotFoundError):
+        await delete_decision(db_session, candidate_uuid, confirm="admin", username="admin")
+    row = (await db_session.execute(
+        select(MergeCandidate).where(MergeCandidate.uuid == candidate_uuid)
+    )).scalars().first()
+    assert row is not None

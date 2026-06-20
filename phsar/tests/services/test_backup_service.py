@@ -671,9 +671,15 @@ async def test_retention_pins_named_backup(backup_dir):
     """A non-empty name pins a dump against auto-retention; clearing it
     re-exposes the dump to eviction."""
     now = datetime.now(timezone.utc)
+    # 300 days back, nudged off Sunday: a Sunday dump is independently pinned by
+    # the weekly archival policy (`_latest_per_sunday`), which would mask the
+    # name pin this test is isolating and make the assertion date-dependent.
+    old_created = now - timedelta(days=300)
+    if old_created.weekday() == 6:  # Sunday
+        old_created -= timedelta(days=1)
     named = _fabricate_dump(
         backup_dir, source=BackupSource.manual,
-        created_at=now - timedelta(days=300), label="keepme",
+        created_at=old_created, label="keepme",
         name="keep this forever",
     )
     # Bury it under 14 newer dumps so only the name pin can save it.

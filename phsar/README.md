@@ -163,6 +163,7 @@ phsar/
 │   │   │   │   │   ├── AdminOverviewTab.svelte
 │   │   │   │   │   ├── AdminTabNav.svelte
 │   │   │   │   │   ├── AnimeUmbrellaCard.svelte
+│   │   │   │   │   ├── DismissedDecisionsSection.svelte
 │   │   │   │   │   ├── JobDetailCounters.svelte
 │   │   │   │   │   ├── JobDetailHeader.svelte
 │   │   │   │   │   ├── MediaChangeCard.svelte
@@ -196,6 +197,7 @@ phsar/
 │   │   │   │   ├── TagSelect.svelte
 │   │   │   │   ├── Toast.svelte
 │   │   │   │   ├── TokenExpiryDialog.svelte
+│   │   │   │   ├── Tooltip.svelte
 │   │   │   │   ├── VersionFooter.svelte
 │   │   │   │   └── ui/           # shadcn-svelte components
 │   │   │   │       ├── badge/
@@ -212,9 +214,11 @@ phsar/
 │   │   │   │       ├── select/
 │   │   │   │       ├── separator/
 │   │   │   │       ├── slider/
-│   │   │   │       └── textarea/
+│   │   │   │       ├── textarea/
+│   │   │   │       └── tooltip/
 │   │   │   ├── stores/
 │   │   │   │   ├── _bumpStore.ts
+│   │   │   │   ├── adminJobsFilter.ts
 │   │   │   │   ├── auth.ts
 │   │   │   │   ├── bell-session.ts
 │   │   │   │   ├── jobs.ts
@@ -241,6 +245,7 @@ phsar/
 │   │   │   ├── +layout.ts
 │   │   │   ├── +page.svelte
 │   │   │   ├── admin/
+│   │   │   │   ├── +layout.svelte
 │   │   │   │   ├── +page.svelte
 │   │   │   │   └── jobs/
 │   │   │   │       └── [uuid]/
@@ -265,6 +270,7 @@ phsar/
 │   │   └── tests/
 │   │       ├── setup.ts
 │   │       ├── SpoilerGuardTest.svelte
+│   │       ├── admin-jobs-filter.test.ts
 │   │       ├── api-download.test.ts
 │   │       ├── auth-store.test.ts
 │   │       ├── backups-card.test.ts
@@ -310,7 +316,8 @@ phsar/
 │   ├── delete_anime_by_title.py
 │   ├── find_anime.py
 │   ├── inspect_anime_relations.py
-│   └── inspect_jobs.py
+│   ├── inspect_jobs.py
+│   └── seed_demo_sweep_job.py
 └── tests/
     ├── _helpers.py
     ├── conftest.py

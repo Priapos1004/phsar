@@ -4,6 +4,8 @@
     import { Button } from '$lib/components/ui/button';
     import * as Card from '$lib/components/ui/card';
     import { Badge } from '$lib/components/ui/badge';
+    import Tooltip from '$lib/components/Tooltip.svelte';
+    import DismissedDecisionsSection from '$lib/components/admin/DismissedDecisionsSection.svelte';
     import { Split, X, RefreshCw, Search, ChevronRight, ChevronDown } from 'lucide-svelte';
     import { bumpCurationRefresh } from '$lib/stores/jobs';
     import { formatRelationType } from '$lib/utils/formatString';
@@ -12,6 +14,8 @@
         SplitCandidateListItem,
         SplitResult,
     } from '$lib/types/api';
+
+    let { currentUsername = '' }: { currentUsername?: string } = $props();
 
     let candidates = $state<SplitCandidateListItem[]>([]);
     // `loading` flips off after the first fetch and stays off; subsequent
@@ -124,18 +128,27 @@
         <div class="flex items-center justify-between">
             <h2 class="text-lg font-semibold text-card-foreground">Split Candidates ({candidates.length})</h2>
             <div class="flex items-center gap-1">
-                <Button
-                    variant="ghost"
-                    size="sm"
-                    onclick={handleRedetect}
-                    disabled={busy}
-                    title="Re-run disjoint-franchise detection across the catalog"
-                >
-                    <Search class="size-4 {redetecting ? 'animate-pulse' : ''}" />
-                </Button>
-                <Button variant="ghost" size="sm" onclick={refreshCandidates} disabled={busy} title="Refresh">
-                    <RefreshCw class="size-4 {refreshing ? 'animate-spin' : ''}" />
-                </Button>
+                <Tooltip text="Re-run disjoint-franchise detection across the catalog">
+                    {#snippet trigger(props)}
+                        <Button
+                            {...props}
+                            variant="ghost"
+                            size="sm"
+                            onclick={handleRedetect}
+                            disabled={busy}
+                            aria-label="Re-run disjoint-franchise detection"
+                        >
+                            <Search class="size-4 {redetecting ? 'animate-pulse' : ''}" />
+                        </Button>
+                    {/snippet}
+                </Tooltip>
+                <Tooltip text="Refresh">
+                    {#snippet trigger(props)}
+                        <Button {...props} variant="ghost" size="sm" onclick={refreshCandidates} disabled={busy} aria-label="Refresh">
+                            <RefreshCw class="size-4 {refreshing ? 'animate-spin' : ''}" />
+                        </Button>
+                    {/snippet}
+                </Tooltip>
             </div>
         </div>
         <p class="text-xs text-muted-foreground">
@@ -247,17 +260,44 @@
                                     {busyUuid === c.uuid ? 'Dismissing…' : 'Confirm dismiss'}
                                 </Button>
                             {:else}
-                                <Button variant="ghost" size="sm" onclick={() => (confirmDismissUuid = c.uuid)} title="Dismiss — keep bundled">
-                                    <X class="size-4 mr-1" /> Dismiss
-                                </Button>
-                                <Button size="sm" onclick={() => (confirmSplitUuid = c.uuid)} title="Split clusters into separate anime">
-                                    <Split class="size-4 mr-1" /> Split
-                                </Button>
+                                <Tooltip text="Dismiss — keep bundled">
+                                    {#snippet trigger(props)}
+                                        <Button {...props} variant="ghost" size="sm" onclick={() => (confirmDismissUuid = c.uuid)}>
+                                            <X class="size-4 mr-1" /> Dismiss
+                                        </Button>
+                                    {/snippet}
+                                </Tooltip>
+                                <Tooltip text="Split clusters into separate anime">
+                                    {#snippet trigger(props)}
+                                        <Button {...props} size="sm" onclick={() => (confirmSplitUuid = c.uuid)}>
+                                            <Split class="size-4 mr-1" /> Split
+                                        </Button>
+                                    {/snippet}
+                                </Tooltip>
                             {/if}
                         </div>
                     </div>
                 {/each}
             </div>
         {/if}
+
+        <DismissedDecisionsSection
+            kind="split"
+            listUrl="/admin/split-candidates/dismissed"
+            basePath="/admin/split-candidates"
+            {currentUsername}
+            onResurfaced={handleRedetect}
+        >
+            {#snippet row(item: SplitCandidateListItem)}
+                <div class="text-sm font-medium text-card-foreground">{item.source_anime.title}</div>
+                {#each item.clusters as cluster, i (i)}
+                    <p class="text-[11px] text-muted-foreground">
+                        <span class="text-card-foreground/70">would split off:</span>
+                        {cluster.members.map((m) => m.title).join(', ') || '—'}
+                    </p>
+                {/each}
+                <p class="text-[11px] text-muted-foreground/70">{item.detected_by}</p>
+            {/snippet}
+        </DismissedDecisionsSection>
     </Card.Content>
 </Card.Root>

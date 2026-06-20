@@ -155,6 +155,12 @@
 
 <div class="rounded-md border border-border/60 bg-muted/10 p-4 space-y-3">
 	<div class="flex items-center gap-2 flex-wrap">
+		<!-- Design decision: Media/Anime *change* cards open in a NEW TAB (no
+		     back-to-job origin). The media-changes list runs 300+ rows, so an
+		     admin verifying one row wants to peek and return without losing
+		     their scroll position in the original tab. The failure / attached
+		     cards take the opposite tack — same-tab with a "Back to job" button
+		     (short lists, no scroll to preserve). See the job-detail page. -->
 		<a
 			href={buildDetailHref('media', change.media_uuid)}
 			target="_blank"

@@ -18,6 +18,7 @@ function makeCandidate(): MergeCandidateListItem {
 		similarity_score: 0.92,
 		detected_by: 'title_studio',
 		created_at: '2026-05-09T10:00:00Z',
+		dismissed_at: null,
 		anime_a: {
 			uuid: A_UUID,
 			title: 'Anime A',

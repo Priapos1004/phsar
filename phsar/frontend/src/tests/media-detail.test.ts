@@ -3,14 +3,15 @@ import { render, screen, fireEvent } from '@testing-library/svelte';
 import MediaDetailPage from '../routes/media/+page.svelte';
 import type { MediaDetail } from '$lib/types/api';
 
-// Mock setContext/getContext
+// Only override the app's 'userRole' context; delegate every other key
+// (e.g. bits-ui's Tooltip provider context) to the real getContext, and keep
+// the real setContext so the themed Tooltip's Provider still works.
 const mockGetUserRole = vi.fn(() => 'user');
 vi.mock('svelte', async () => {
-	const actual = await vi.importActual('svelte');
+	const actual = await vi.importActual<typeof import('svelte')>('svelte');
 	return {
 		...actual,
-		getContext: () => mockGetUserRole,
-		setContext: vi.fn(),
+		getContext: (key: unknown) => (key === 'userRole' ? mockGetUserRole : actual.getContext(key as never)),
 	};
 });
 

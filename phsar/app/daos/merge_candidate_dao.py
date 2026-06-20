@@ -2,7 +2,7 @@ from collections.abc import Collection
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import Integer, cast, func, or_, select, true
+from sqlalchemy import ColumnExpressionArgument, Integer, cast, func, or_, select, true
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
@@ -42,22 +42,48 @@ class MergeCandidateDAO(BaseDAO[MergeCandidate]):
         return (await db.execute(stmt)).scalar_one()
 
     async def list_pending_with_anime(self, db: AsyncSession) -> list[MergeCandidate]:
-        """List pending candidates with both anime + media + studios +
-        relation-edge sidecars eagerly loaded. Admin UI shows side-by-side
-        summaries AND a reclassification preview per pair, so all of this
-        rides one roundtrip."""
+        """Pending candidates with both anime + media + studios + relation-edge
+        sidecars eager-loaded (one roundtrip): admin shows side-by-side
+        summaries AND a per-pair reclassification preview. FIFO by created_at."""
+        return await self._list_with_anime(
+            db, MergeCandidateStatus.pending, MergeCandidate.created_at.asc()
+        )
+
+    async def list_dismissed_with_anime(self, db: AsyncSession) -> list[MergeCandidate]:
+        """DISMISSED candidates for the admin 'Dismissed decisions' history.
+        Newest dismissal first (`modified_at` desc — dismissing flips status +
+        commits, bumping it). Merged rows aren't here: merging deletes anime B,
+        which FK-cascades the candidate row away, so 'dismissed' is the only
+        resurrectable state. Hard-delete goes through `BaseDAO.delete` (the
+        service already holds the row from its status check) — deleting drops
+        the pair from `get_existing_pairs`' skip-set so re-detection resurfaces
+        it."""
+        return await self._list_with_anime(
+            db, MergeCandidateStatus.dismissed, MergeCandidate.modified_at.desc()
+        )
+
+    async def _list_with_anime(
+        self,
+        db: AsyncSession,
+        status: MergeCandidateStatus,
+        order_by: ColumnExpressionArgument,
+    ) -> list[MergeCandidate]:
+        """Shared query for the pending + dismissed lists — both eager-load
+        both anime + media + studios + relation-edge sidecars in one roundtrip
+        (admin shows side-by-side summaries and, for pending, a reclassification
+        preview). Differ only in the status filter + ordering."""
         media_loader = selectinload(Anime.media).options(
             selectinload(Media.media_studio).selectinload(MediaStudio.studio),
             selectinload(Media.relation_edges),
         )
         stmt = (
             select(MergeCandidate)
-            .where(MergeCandidate.status == MergeCandidateStatus.pending)
+            .where(MergeCandidate.status == status)
             .options(
                 selectinload(MergeCandidate.anime_a).options(media_loader),
                 selectinload(MergeCandidate.anime_b).options(media_loader),
             )
-            .order_by(MergeCandidate.created_at.asc())
+            .order_by(order_by)
         )
         result = await db.execute(stmt)
         return list(result.scalars().all())
