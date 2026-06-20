@@ -80,8 +80,6 @@
 					<p class="text-[11px] text-muted-foreground">
 						{#if season}
 							{season}
-						{:else if sibling.episodes != null}
-							{sibling.episodes} eps
 						{:else}
 							{formatAiringStatus(sibling.airing_status, false)}
 						{/if}

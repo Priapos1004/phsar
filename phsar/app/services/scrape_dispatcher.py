@@ -585,7 +585,7 @@ async def _try_step2_probe(
     scraper: JikanScraper,
 ) -> list[dict] | ProbeFailure:
     """Step 2 wrapper: relations probe + return the list of attached media
-    ({"media_uuid", "title"} dicts; empty when none landed),
+    ({"media_uuid", "title", "name_eng", "name_jap"} dicts; empty when none landed),
     or a `ProbeFailure` (savepoint-rolls-back, leaves AnimeFreshness
     untouched so the next sweep retries this anime cleanly). Outer
     transaction stays alive — caller commits step2 writes alongside
@@ -833,7 +833,8 @@ async def _probe_relations_for_anime(
     own BFS pass with fresh `visited_ids` — `is_main_story=False` nodes
     that wouldn't expand under the BNHA seed get to lead their own walk.
 
-    Returns the list of attached media as `{"media_uuid", "title"}` dicts
+    Returns the list of attached media as
+    `{"media_uuid", "title", "name_eng", "name_jap"}` dicts
     (empty when nothing was attached — stays falsy for the caller's
     `if probe_added:` check), so the sweep can report which media the probe
     pulled in. `exclusions` is mutated in place: every newly-saved mal_id is

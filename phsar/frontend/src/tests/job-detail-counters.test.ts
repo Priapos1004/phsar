@@ -75,7 +75,6 @@ describe('JobDetailCounters', () => {
 		});
 		expect(screen.getByText('Anime changed').parentElement?.textContent).toContain('4');
 		expect(screen.getByText('Anime w/ new media').parentElement?.textContent).toContain('2');
-		// The dramatic old wording is gone.
 		expect(screen.queryByText('Anime reclassed')).toBeNull();
 		expect(screen.queryByText('Anime w/ new attach')).toBeNull();
 	});

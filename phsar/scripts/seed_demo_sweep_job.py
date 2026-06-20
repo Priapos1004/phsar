@@ -214,7 +214,11 @@ def _build_summary(animes: list[Anime], *, include_genre_tags: bool = True) -> d
 
 async def main(apply: bool, do_delete: bool, include_genre_tags: bool) -> None:
     async with async_session_maker() as session:
-        marker_match = Job.payload["marker"].astext == _DEMO_MARKER
+        # Scope --delete to our own demo rows: the unique marker AND the kind
+        # we seed, so a future marker-key collision can't sweep unrelated jobs.
+        marker_match = (Job.kind == JobKind.update_sweep) & (
+            Job.payload["marker"].astext == _DEMO_MARKER
+        )
         if do_delete:
             existing = (await session.execute(
                 select(Job).where(marker_match),
