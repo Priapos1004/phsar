@@ -15,6 +15,7 @@
 	import type { AnimeDetail, AnimeMediaItem, RatingOut } from '$lib/types/api';
 	import RatingsOverview from '$lib/components/RatingsOverview.svelte';
 	import BulkRateDialog from '$lib/components/BulkRateDialog.svelte';
+	import DeleteWatchHistoryToggle from '$lib/components/DeleteWatchHistoryToggle.svelte';
 	import BackLink from '$lib/components/BackLink.svelte';
 	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
 	import Tooltip from '$lib/components/Tooltip.svelte';
@@ -65,9 +66,24 @@
 
 	let bulkDeleting = $state(false);
 	let bulkDeleteError = $state('');
+	let bulkDeleteHistory = $state(false);
 
 	let alreadyRatedCount = $derived(
 		[...selectedUuids].filter(uuid => userRatings.has(uuid)).length
+	);
+
+	// Watch-history footprint of the current selection, surfaced in the bulk-delete dialog
+	// so the user makes an informed keep-vs-erase choice instead of silently keeping.
+	let selectedHistoryCount = $derived(
+		userRatingsList.filter(r => selectedUuids.has(r.media_uuid) && r.watched_count > 0).length
+	);
+	let selectedRewatchedCount = $derived(
+		userRatingsList.filter(r => selectedUuids.has(r.media_uuid) && r.watched_count > 1).length
+	);
+	// Built as an expression (not an inline {#if}) so the leading space survives Svelte's
+	// static-text whitespace trimming.
+	let rewatchedNote = $derived(
+		selectedRewatchedCount > 0 ? ` (${selectedRewatchedCount} watched more than once)` : ''
 	);
 
 	let showNoteDialog = $state(false);
@@ -104,7 +120,8 @@
 		bulkDeleteError = '';
 
 		try {
-			await api.post('/ratings/bulk-delete', { media_uuids: [...selectedUuids] });
+			const qs = bulkDeleteHistory ? '?delete_watch_history=true' : '';
+			await api.post(`/ratings/bulk-delete${qs}`, { media_uuids: [...selectedUuids] });
 			showDeleteDialog = false;
 			selectMode = false;
 			selectedUuids = new Set();
@@ -492,7 +509,7 @@
 								<Button
 									size="sm"
 									variant="destructive"
-									onclick={() => { bulkDeleteError = ''; showDeleteDialog = true; }}
+									onclick={() => { bulkDeleteError = ''; bulkDeleteHistory = false; showDeleteDialog = true; }}
 								>
 									<Trash2 class="size-3.5 mr-1.5" />
 									Delete Ratings
@@ -649,6 +666,12 @@
 						This will permanently delete {alreadyRatedCount} rating{alreadyRatedCount !== 1 ? 's' : ''} from the selected media. This cannot be undone.
 					</Dialog.Description>
 				</Dialog.Header>
+				{#if selectedHistoryCount > 0}
+					<DeleteWatchHistoryToggle
+						bind:checked={bulkDeleteHistory}
+						detail="{selectedHistoryCount} of the selected media {selectedHistoryCount === 1 ? 'has' : 'have'} recorded watches{rewatchedNote}."
+					/>
+				{/if}
 				{#if bulkDeleteError}
 					<p class="text-destructive text-sm">{bulkDeleteError}</p>
 				{/if}

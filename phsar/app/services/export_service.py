@@ -5,11 +5,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.daos.watch_event_dao import WatchEventDAO
 from app.models.media import Media
 from app.models.ratings import RATING_ATTRIBUTE_FIELDS, Ratings
 from app.models.user_settings import NameLanguage
 from app.models.watchlist import Watchlist
 from app.models.watchlist_tag import WatchlistTag
+
+watch_event_dao = WatchEventDAO()
 
 
 def _resolve_name(
@@ -61,10 +64,11 @@ def _media_columns(media: Media, name_language: NameLanguage) -> dict:
     return row
 
 
-def _rating_columns(r: Ratings) -> dict:
+def _rating_columns(r: Ratings, watched_count: int) -> dict:
     d = {
         "rating": r.rating,
         "watch_status": r.watch_status.value if r.watch_status is not None else None,
+        "watched_count": watched_count,
         "episodes_watched": r.episodes_watched,
         "rating_note": r.note,
         "rated_at": r.created_at.isoformat() if r.created_at else None,
@@ -79,6 +83,7 @@ def _rating_columns(r: Ratings) -> dict:
 _RATING_NULL = {
     "rating": None,
     "watch_status": None,
+    "watched_count": None,
     "episodes_watched": None,
     "rating_note": None,
     "rated_at": None,
@@ -110,7 +115,7 @@ _COLUMN_ORDER = [
     "anime_mal_id", "mal_id",
     "type", "relation", "episodes", "episode_duration_seconds",
     "season", "season_year", "age_rating", "mal_score", "mal_scored_by",
-    "rating", "watch_status", "episodes_watched", "rating_note", "rated_at", "rating_updated_at",
+    "rating", "watch_status", "watched_count", "episodes_watched", "rating_note", "rated_at", "rating_updated_at",
     *RATING_ATTRIBUTE_FIELDS,
     "watchlist_priority", "watchlist_note", "watchlist_tags", "watchlist_added_at",
 ]
@@ -127,6 +132,9 @@ async def fetch_export_data(
     )
     ratings_result = await db.execute(ratings_stmt)
     ratings = ratings_result.scalars().all()
+    watched_counts = await watch_event_dao.counts_for_user_media_ids(
+        db, user_id, [r.media_id for r in ratings]
+    )
 
     watchlist_stmt = (
         select(Watchlist)
@@ -156,7 +164,7 @@ async def fetch_export_data(
         row = _media_columns(media, name_language)
 
         r = ratings_by_media.get(media_id)
-        row.update(_rating_columns(r) if r else _RATING_NULL)
+        row.update(_rating_columns(r, watched_counts.get(media_id, 0)) if r else _RATING_NULL)
 
         w = watchlist_by_media.get(media_id)
         row.update(_watchlist_columns(w) if w else _WATCHLIST_NULL)

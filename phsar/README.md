@@ -38,7 +38,8 @@ phsar/
 │   │   ├── split_candidate_dao.py
 │   │   ├── studio_dao.py
 │   │   ├── user_dao.py
-│   │   └── user_settings_dao.py
+│   │   ├── user_settings_dao.py
+│   │   └── watch_event_dao.py
 │   ├── exceptions.py
 │   ├── main.py
 │   ├── models/
@@ -65,6 +66,7 @@ phsar/
 │   │   ├── user_settings.py
 │   │   ├── user_visible_media.py
 │   │   ├── users.py
+│   │   ├── watch_event.py
 │   │   ├── watchlist.py
 │   │   └── watchlist_tag.py
 │   ├── routers/

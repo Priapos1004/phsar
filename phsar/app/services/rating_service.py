@@ -5,12 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.media_dao import MediaDAO
 from app.daos.rating_dao import RatingDAO
+from app.daos.watch_event_dao import WatchEventDAO
 from app.exceptions import (
     MediaNotFoundError,
     RatingNotFoundError,
 )
 from app.models.media import Media
-from app.models.ratings import Ratings
+from app.models.ratings import Ratings, WatchStatus
 from app.schemas.media_filter_schema import SearchType
 from app.schemas.rating_schema import (
     RatedMediaResult,
@@ -31,15 +32,17 @@ logger = logging.getLogger(__name__)
 
 rating_dao = RatingDAO()
 media_dao = MediaDAO()
+watch_event_dao = WatchEventDAO()
 
 _EXCLUDE_BULK = {"media_uuids"}
 
 
-def _rating_to_out(r: Ratings) -> RatingOut:
+def _rating_to_out(r: Ratings, watched_count: int) -> RatingOut:
     data = {
         "uuid": r.uuid,
         "rating": r.rating,
         "watch_status": r.watch_status,
+        "watched_count": watched_count,
         "episodes_watched": r.episodes_watched,
         "note": r.note,
         "media_uuid": r.media.uuid,
@@ -53,6 +56,14 @@ def _rating_to_out(r: Ratings) -> RatingOut:
     for field in RatingAttributes.model_fields:
         data[field] = getattr(r, field)
     return RatingOut(**data)
+
+
+async def _ratings_to_out(db: AsyncSession, user_id: int, ratings: list[Ratings]) -> list[RatingOut]:
+    """Shape ratings into RatingOut, batch-loading watched_count (one grouped query)."""
+    counts = await watch_event_dao.counts_for_user_media_ids(
+        db, user_id, [r.media_id for r in ratings]
+    )
+    return [_rating_to_out(r, counts.get(r.media_id, 0)) for r in ratings]
 
 
 async def _resolve_media_uuids(db: AsyncSession, media_uuids: list[UUID]) -> list[Media]:
@@ -96,7 +107,7 @@ async def _upsert_single_rating(
         if existing.note != old_note:
             await _upsert_note_embedding(db, existing, existing.note)
 
-        return existing.uuid
+        result_uuid = existing.uuid
     else:
         rating = Ratings(user_id=user_id, media_id=media.id, note=note, **fields)
         await rating_dao.create(db, rating)
@@ -104,65 +115,111 @@ async def _upsert_single_rating(
         if note:
             await create_rating_embedding(db, rating_id=rating.id, note=note)
 
-        return rating.uuid
+        result_uuid = rating.uuid
+
+    await _maybe_log_first_watch(db, user_id, media.id, fields.get("watch_status"))
+    return result_uuid
 
 
-async def upsert_rating(db: AsyncSession, user_id: int, media_uuid: UUID, data: RatingCreate) -> RatingOut:
+async def _maybe_log_first_watch(
+    db: AsyncSession, user_id: int, media_id: int, watch_status: WatchStatus | None
+) -> None:
+    """Log the first watch event when a rating write lands as `completed` and the user has
+    no prior history for this media. Covers the first completion and an on_hold/dropped →
+    completed transition, but a re-rate of media that already has events never duplicates —
+    so an accidental delete-then-re-add can't pollute the watch time series. Rewatches go
+    through `log_rewatch` instead."""
+    if watch_status != WatchStatus.completed:
+        return
+    if not await watch_event_dao.exists_for_user_media(db, user_id, media_id):
+        await watch_event_dao.create_event(db, user_id, media_id)
+
+
+async def upsert_rating(
+    db: AsyncSession, user_id: int, media_uuid: UUID, data: RatingCreate,
+    delete_watch_history: bool = False,
+) -> RatingOut:
     """Create or update a rating for a media. If the user already rated this media,
-    the existing rating is updated instead of raising an error."""
+    the existing rating is updated instead of raising an error.
+
+    `delete_watch_history` lets the caller wipe the media's watch events alongside the
+    write — used when downgrading a rating from completed back to on_hold/dropped and the
+    user confirms the prior completions no longer apply."""
     logger.debug(f"DB session: {id(db)}")
 
     media = (await _resolve_media_uuids(db, [media_uuid]))[0]
     existing = await rating_dao.get_by_user_and_media(db, user_id, media.id)
+    # Honor history deletion only on a genuine completed -> on_hold/dropped downgrade,
+    # derived server-side from the actual transition rather than trusting the raw flag —
+    # so the flag can't wipe history on an upgrade or no-op edit.
+    is_downgrade = (
+        existing is not None
+        and existing.watch_status == WatchStatus.completed
+        and data.watch_status != WatchStatus.completed
+    )
     fields = data.model_dump()
     note = fields.pop("note")
 
     uuid = await _upsert_single_rating(db, user_id, media, fields, note, existing)
+    if delete_watch_history and is_downgrade:
+        await watch_event_dao.delete_for_user_media(db, user_id, [media.id])
     await recompute_visibility_for_anime(db, user_id, media.anime_id)
     await db.commit()
 
     # Re-fetch with eager loading for media/anime relationships needed by _rating_to_out
     rating = await rating_dao.get_by_uuid_and_user(db, uuid, user_id)
-    return _rating_to_out(rating)
+    return (await _ratings_to_out(db, user_id, [rating]))[0]
 
 
 async def get_rating_for_media(db: AsyncSession, user_id: int, media_uuid: UUID) -> RatingOut:
     rating = await rating_dao.get_by_media_uuid_and_user(db, media_uuid, user_id)
     if not rating:
         raise RatingNotFoundError(str(media_uuid))
-    return _rating_to_out(rating)
+    return (await _ratings_to_out(db, user_id, [rating]))[0]
 
 
 async def get_user_ratings(
     db: AsyncSession, user_id: int, limit: int = 50, offset: int = 0
 ) -> list[RatingOut]:
     ratings = await rating_dao.get_all_by_user(db, user_id, limit, offset)
-    return [_rating_to_out(r) for r in ratings]
+    return await _ratings_to_out(db, user_id, ratings)
 
 
 async def get_ratings_for_anime(
     db: AsyncSession, user_id: int, anime_uuid: UUID
 ) -> list[RatingOut]:
     ratings = await rating_dao.get_by_user_and_anime_uuid(db, user_id, anime_uuid)
-    return [_rating_to_out(r) for r in ratings]
+    return await _ratings_to_out(db, user_id, ratings)
 
 
-async def delete_rating(db: AsyncSession, user_id: int, rating_uuid: UUID) -> None:
+async def delete_rating(
+    db: AsyncSession, user_id: int, rating_uuid: UUID, delete_watch_history: bool = False
+) -> None:
     rating = await rating_dao.get_by_uuid_and_user(db, rating_uuid, user_id)
     if not rating:
         raise RatingNotFoundError(str(rating_uuid))
     anime_id = rating.media.anime_id
+    media_id = rating.media_id
     await rating_dao.delete(db, rating)
+    # Watch history is kept by default so a delete-and-re-add doesn't pollute the time
+    # series; only an explicit opt-in removes it (the user can't easily undo a wrong delete).
+    if delete_watch_history:
+        await watch_event_dao.delete_for_user_media(db, user_id, [media_id])
     await recompute_visibility_for_anime(db, user_id, anime_id)
     await db.commit()
 
 
-async def bulk_delete_ratings(db: AsyncSession, user_id: int, media_uuids: list[UUID]) -> int:
+async def bulk_delete_ratings(
+    db: AsyncSession, user_id: int, media_uuids: list[UUID], delete_watch_history: bool = False
+) -> int:
     """Delete ratings for multiple media at once. Returns the number of ratings deleted.
-    Silently skips media that have no rating (not an error)."""
+    Silently skips media that have no rating (not an error). Watch history is kept unless
+    `delete_watch_history` is set (same opt-in cascade as the single delete)."""
     media_list = await _resolve_media_uuids(db, media_uuids)
     media_ids = [m.id for m in media_list]
     count = await rating_dao.bulk_delete_by_user_and_media_ids(db, user_id, media_ids)
+    if delete_watch_history:
+        await watch_event_dao.delete_for_user_media(db, user_id, media_ids)
     # Recompute visibility for each affected anime
     affected_anime_ids = {m.anime_id for m in media_list}
     for anime_id in affected_anime_ids:
@@ -171,11 +228,23 @@ async def bulk_delete_ratings(db: AsyncSession, user_id: int, media_uuids: list[
     return count
 
 
-def _rating_to_rated_media_result(r: Ratings) -> RatedMediaResult:
+async def log_rewatch(db: AsyncSession, user_id: int, rating_uuid: UUID) -> RatingOut:
+    """Append a rewatch event for a rating's media, bumping its derived watched_count.
+    Returns the updated rating."""
+    rating = await rating_dao.get_by_uuid_and_user(db, rating_uuid, user_id)
+    if not rating:
+        raise RatingNotFoundError(str(rating_uuid))
+    await watch_event_dao.create_event(db, user_id, rating.media_id)
+    await db.commit()
+    return (await _ratings_to_out(db, user_id, [rating]))[0]
+
+
+def _rating_to_rated_media_result(r: Ratings, watched_count: int) -> RatedMediaResult:
     rating_data = {
         "rating_uuid": r.uuid,
         "user_rating": r.rating,
         "watch_status": r.watch_status,
+        "watched_count": watched_count,
         "episodes_watched": r.episodes_watched,
         "note": r.note,
         "rating_created_at": r.created_at,
@@ -198,7 +267,10 @@ async def search_user_ratings(
     ratings = await rating_dao.search_ratings_with_filters(
         db, user_id, query, filters, search_type, limit
     )
-    return [_rating_to_rated_media_result(r) for r in ratings]
+    counts = await watch_event_dao.counts_for_user_media_ids(
+        db, user_id, [r.media_id for r in ratings]
+    )
+    return [_rating_to_rated_media_result(r, counts.get(r.media_id, 0)) for r in ratings]
 
 
 async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCreate) -> list[RatingOut]:
@@ -239,4 +311,5 @@ async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCr
     # Batch re-fetch with eager loading for _rating_to_out
     ratings = await rating_dao.get_by_uuids_and_user(db, rating_uuids, user_id)
     rating_by_uuid = {r.uuid: r for r in ratings}
-    return [_rating_to_out(rating_by_uuid[uuid]) for uuid in rating_uuids]
+    ordered = [rating_by_uuid[uuid] for uuid in rating_uuids]
+    return await _ratings_to_out(db, user_id, ordered)

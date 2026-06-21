@@ -132,7 +132,7 @@ Modules:
 - `relation_classifier.py` — pure-function two-pass classifier (DB-less) + third-pass `find_disjoint_franchises` for split detection
 - `anime_relation_service.py` — `reclassify_anime` orchestration; umbrella drift detection
 - `anime_summary.py` — shared `summarize_anime(anime, rating_count)` helper for the merge + split admin cards
-- `rating_service.py` — rating CRUD + note search
+- `rating_service.py` — rating CRUD + note search; logs watch events (first completion + rewatches) and derives `watched_count`
 - `spoiler_service.py` — frontier algorithm + `user_visible_media` cache
 - `export_service.py` — flat media-level export
 - `backup_service.py` — pg_dump/pg_restore orchestration; retention pools; `.current_db.json` pointer
@@ -142,7 +142,7 @@ Modules:
 Data access layer.
 
 - **`BaseDAO`** — generic async CRUD
-- **Specialized DAOs** (media, anime, genre, studio, user, user_settings, registration_token, rating, job, merge_candidate, split_candidate) — domain-specific queries with vector similarity, filtering, aggregation
+- **Specialized DAOs** (media, anime, genre, studio, user, user_settings, registration_token, rating, watch_event, job, merge_candidate, split_candidate) — domain-specific queries with vector similarity, filtering, aggregation
 - **`AnimeDAO`**:
   - `search_anime_aggregated` — two-phase query: SQL GROUP BY with HAVING for filtering/ordering, then detail fetch
   - `select_due_media_for_sweep` — **media-level** four-tier sweep selection (v0.14.8): each atom is a direct predicate on the media row + its `MediaFreshness` sidecar (airing now / still stabilizing `stable_check_count < SWEEP_STABILIZE_THRESHOLD` / weekly recent main / `SWEEP_LONG_TAIL_DAYS` long tail), so a still-airing umbrella's stable members are no longer dragged through a refresh every night. Returns `Media` rows with the parent `Anime` + its full media set eager-loaded (the dispatcher groups by `anime.id`). `LIMIT` bounds MAL calls = media (the real 1 req/s cost unit). Replaced the anime-grained `select_due_for_sweep`. Backed by:
@@ -165,6 +165,8 @@ SQLAlchemy ORM models mapped to PostgreSQL tables.
 - **`media_relation_edges.py`** — 1:1 sidecar to `media` holding the raw MAL relation list (`[[target_mal_id, normalized_rel], ...]` JSONB). Off the canonical row so `selectinload(Anime.media)` on detail/search hot paths doesn't drag the JSONB through every load. Read at merge / preview / backfill time via explicit `selectinload(Media.relation_edges)`. Edges persisted unfiltered (including targets outside the local catalog) so bridge edges activate when split franchises later get merged
 - **`anime_search.py`** — anime-level embeddings
 - **`rating_search.py`** — note embeddings for rating note search
+- **`ratings.py`** — `watch_status` enum (`completed`/`on_hold`/`dropped`, replaced the legacy `dropped` boolean in v0.14.10) + 11 optional attribute enums; one row per (user, media)
+- **`watch_event.py`** — append-only watch/rewatch log keyed to (user_id, media_id), NOT to a rating row (so history survives a rating delete + re-add). `watched_count` is derived `COUNT(events)`, never stored. Both FKs `ON DELETE CASCADE`; no ORM back-relationships (read only via grouped count queries in `WatchEventDAO`). `watched_at` (distinct from `created_at`) is the watch moment, for future time-series analysis
 - **`user_settings.py`** — per-user preferences (1:1 with Users) with enums for theme, name language, search view, rating step, spoiler level
 - **`user_visible_media.py`** — precomputed spoiler-visibility cache per user, updated on rating changes
 - **`merge_candidate.py`** — admin-reviewable duplicate pairs

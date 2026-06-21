@@ -199,7 +199,7 @@ Each anime search result card shows:
   - Action bar slides in: "Select all/Deselect all", selected count, "Rate" button, "Watchlist" button
   - "Delete Ratings" button appears when any selected media have existing ratings
   - **Rate** opens BulkRateDialog: score circle + slider, note (applied to last main media), collapsible attributes grid. Overwrite warning shown if any selected media already rated. On save: exits select mode, shows "Note Added" info dialog naming which media received the note.
-  - **Delete Ratings** opens a destructive confirmation dialog, then `POST /ratings/bulk-delete`
+  - **Delete Ratings** opens a destructive confirmation dialog. When any selected media have recorded watches, the dialog offers an "Also delete watch history" checkbox showing how many have watches (and how many were watched more than once); kept by default. Submits `POST /ratings/bulk-delete?delete_watch_history=`
   - **Watchlist** opens a stub dialog (wired in v0.15.0)
   - "Cancel" exits select mode and clears selection
 
@@ -249,16 +249,19 @@ Each anime search result card shows:
 ### 7.4 Rating Card
 - **No rating exists, not editing**: CTA card with star icon and "Rate This" button
 - **Restricted users**: Disabled "Rate This" button with "Upgrade your account" message
-- **Rating exists, not editing**: Display card showing score circle, watch status (Completed = plain text, On Hold = amber badge, Dropped = red badge), episodes watched (with total if known), filled attribute badges (ending quality hidden when "Not Applicable"), and note (if any). Edit and Delete buttons.
+- **Rating exists, not editing**: Display card showing score circle, watch status (Completed = plain text, On Hold = amber badge, Dropped = red badge), episodes watched (with total if known), a "Watched N×" badge when rewatched (count > 1), filled attribute badges (ending quality hidden when "Not Applicable"), and note (if any). Edit, Rewatch (completed only), and Delete buttons.
+- **Rewatch**: opens a confirmation pop-up explaining the action (records another completed watch dated today, raises the count from N to N+1, can't be easily undone) before logging — a two-step guard since there's no easy undo. Calls `POST /ratings/{uuid}/rewatch`.
+- **Delete**: opens a confirmation pop-up. When the media has recorded watches, the dialog offers an explained "Also delete watch history" checkbox (kept by default — re-rating later keeps the watch dates).
 - **Editing mode** (new or existing):
   - Score: editable circle with direct text input + slider (0-10, step 0.5)
   - Watch-status selector (segmented: Completed / On Hold / Dropped) + episodes watched input (auto-filled with total episodes when Completed; revealed/editable when On Hold or Dropped)
   - Note textarea (max 1000 chars with counter)
   - Collapsible "Details" section with 11 attribute selectors (pace, animation quality, 3D animation, watched format, fan service, dialogue quality, character depth, ending type, ending quality, story quality, originality) — shows set/total count badge. Ending quality: when On Hold or Dropped, auto-set to "Not Applicable" and disabled; when Completed, only 3 quality options shown (Unsatisfying, Satisfying, Exceptional)
   - Submit/Update button (disabled when no changes detected on existing rating)
+  - **Downgrade prompt**: saving a change from Completed to On Hold/Dropped while watch history exists opens a "Keep your watch history?" pop-up — Keep history / Remove history / Cancel.
   - Cancel button returns to display mode
   - Error message display on save/delete failure
-- **API calls**: `PUT /ratings/media/{uuid}` to create/update, `DELETE /ratings/{uuid}` to delete
+- **API calls**: `PUT /ratings/media/{uuid}` to create/update (with `?delete_watch_history=` on a confirmed downgrade), `POST /ratings/{uuid}/rewatch` to log a rewatch, `DELETE /ratings/{uuid}?delete_watch_history=` to delete
 
 ### 7.5 Related Media Carousel
 - Always shown — displays parent anime name as a clickable link to the anime detail page
@@ -468,6 +471,7 @@ Each anime search result card shows:
 | `/ratings/media/{uuid}` | GET | Media detail page load (fetch user's rating) |
 | `/ratings/anime/{uuid}` | GET | Anime detail page load (fetch user's ratings for all media) |
 | `/ratings/media/{uuid}` | PUT | Create or update a rating |
+| `/ratings/{uuid}/rewatch` | POST | Log a rewatch (increments watch count) |
 | `/ratings/bulk` | PUT | Bulk rate selected media from anime detail |
 | `/ratings/bulk-delete` | POST | Bulk delete ratings from anime detail |
 | `/ratings/{uuid}` | DELETE | Delete a rating |

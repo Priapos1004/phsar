@@ -74,6 +74,7 @@ class RatingOut(RatingAttributes):
     uuid: UUID
     rating: float
     watch_status: WatchStatus
+    watched_count: int
     episodes_watched: Optional[int]
     note: Optional[str]
     media_uuid: UUID
@@ -139,6 +140,7 @@ class RatedMediaResult(MediaConnected, RatingAttributes):
     rating_uuid: UUID
     user_rating: float
     watch_status: WatchStatus
+    watched_count: int
     episodes_watched: Optional[int] = None
     note: Optional[str] = None
     rating_created_at: datetime

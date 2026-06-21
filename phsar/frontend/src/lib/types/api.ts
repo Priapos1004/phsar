@@ -118,6 +118,7 @@ export interface RatingOut {
 	uuid: string;
 	rating: number;
 	watch_status: WatchStatus;
+	watched_count: number;
 	episodes_watched: number | null;
 	note: string | null;
 	media_uuid: string;
