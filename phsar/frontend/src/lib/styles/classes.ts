@@ -12,6 +12,9 @@ export const badgeMediaTypeColor = 'bg-green-100 text-green-800';
 export const badgeRelationTypeColor = 'bg-blue-100 text-blue-800';
 export const badgeGenreColor = 'bg-primary/10 text-primary';
 export const badgeAgeRatingColor = 'bg-orange-100 text-orange-800';
+// On-hold watch status (amber) — shared so RatingCard + RatingsOverviewStats can't drift.
+// (Dropped uses the built-in `destructive` Badge variant; completed renders as plain text.)
+export const badgeOnHold = 'bg-amber-100 text-amber-800 border-amber-200';
 
 // Badge defaults for normal-sized contexts (hero card, search cards)
 const badgeSize = 'text-sm h-auto px-2.5 py-0.5';

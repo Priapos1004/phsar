@@ -97,14 +97,24 @@ async def test_search_ratings_filter_by_user_rating_range(client, user_auth_head
     assert data[0]["user_rating"] == 7.5
 
 
-async def test_search_ratings_filter_by_dropped(client, user_auth_headers, rated_media):
+async def test_search_ratings_filter_by_watch_status(client, user_auth_headers, rated_media):
+    # All fixture ratings default to completed
     response = await client.get(
         "/search/ratings",
-        params={"dropped": False},
+        params={"watch_status": "completed"},
         headers=user_auth_headers,
     )
     assert response.status_code == 200
     assert len(response.json()) == 3
+
+    # None are on_hold
+    response = await client.get(
+        "/search/ratings",
+        params={"watch_status": "on_hold"},
+        headers=user_auth_headers,
+    )
+    assert response.status_code == 200
+    assert len(response.json()) == 0
 
 
 # --- Media filters on rating search ---

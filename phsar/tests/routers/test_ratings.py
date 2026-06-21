@@ -45,15 +45,27 @@ async def test_media_list(db_session):
 async def test_upsert_rating_creates(client, user_auth_headers, test_media):
     response = await client.put(
         f"/ratings/media/{test_media.uuid}",
-        json={"rating": 8.5, "dropped": False},
+        json={"rating": 8.5, "watch_status": "completed"},
         headers=user_auth_headers,
     )
     assert response.status_code == 200
     data = response.json()
     assert data["rating"] == 8.5
-    assert data["dropped"] is False
+    assert data["watch_status"] == "completed"
     assert data["media_uuid"] == str(test_media.uuid)
     assert data["anime_title"] == "Test Anime"
+
+
+async def test_upsert_rating_on_hold_with_episodes(client, user_auth_headers, test_media):
+    response = await client.put(
+        f"/ratings/media/{test_media.uuid}",
+        json={"rating": 7.0, "watch_status": "on_hold", "episodes_watched": 5},
+        headers=user_auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["watch_status"] == "on_hold"
+    assert data["episodes_watched"] == 5
 
 
 async def test_upsert_rating_with_note(client, user_auth_headers, test_media):

@@ -64,7 +64,7 @@ def _media_columns(media: Media, name_language: NameLanguage) -> dict:
 def _rating_columns(r: Ratings) -> dict:
     d = {
         "rating": r.rating,
-        "dropped": r.dropped,
+        "watch_status": r.watch_status.value if r.watch_status is not None else None,
         "episodes_watched": r.episodes_watched,
         "rating_note": r.note,
         "rated_at": r.created_at.isoformat() if r.created_at else None,
@@ -78,7 +78,7 @@ def _rating_columns(r: Ratings) -> dict:
 
 _RATING_NULL = {
     "rating": None,
-    "dropped": None,
+    "watch_status": None,
     "episodes_watched": None,
     "rating_note": None,
     "rated_at": None,
@@ -110,7 +110,7 @@ _COLUMN_ORDER = [
     "anime_mal_id", "mal_id",
     "type", "relation", "episodes", "episode_duration_seconds",
     "season", "season_year", "age_rating", "mal_score", "mal_scored_by",
-    "rating", "dropped", "episodes_watched", "rating_note", "rated_at", "rating_updated_at",
+    "rating", "watch_status", "episodes_watched", "rating_note", "rated_at", "rating_updated_at",
     *RATING_ATTRIBUTE_FIELDS,
     "watchlist_priority", "watchlist_note", "watchlist_tags", "watchlist_added_at",
 ]

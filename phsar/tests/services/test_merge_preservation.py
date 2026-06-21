@@ -26,7 +26,7 @@ from app.models.media_genre import MediaGenre
 from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
 from app.models.merge_candidate import MergeCandidate, MergeCandidateStatus
-from app.models.ratings import Ratings
+from app.models.ratings import Ratings, WatchStatus
 from app.models.studio import Studio
 from app.models.users import RoleType, Users
 from app.models.watchlist import Watchlist
@@ -124,7 +124,7 @@ async def test_merge_preserves_ratings_on_b_media(db_session):
     target = seed["media_b_list"][0]
     db_session.add(Ratings(
         rating=8.5, media_id=target.id, user_id=user.id,
-        note="liked it", episodes_watched=12, dropped=False,
+        note="liked it", episodes_watched=12, watch_status=WatchStatus.completed,
     ))
     await db_session.flush()
     target_id = target.id

@@ -2,15 +2,14 @@
 	import * as Card from '$lib/components/ui/card';
 	import * as Select from '$lib/components/ui/select';
 	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Slider } from '$lib/components/ui/slider';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Badge } from '$lib/components/ui/badge';
 	import { api, ApiError } from '$lib/api';
-	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr } from '$lib/types/api';
-	import type { RatingOut, RatingCreate } from '$lib/types/api';
+	import { RATING_ATTRIBUTE_OPTIONS, WATCH_STATUS_OPTIONS, getRatingAttr, isAttrRated } from '$lib/types/api';
+	import type { RatingOut, RatingCreate, WatchStatus } from '$lib/types/api';
 	import { formatDecimalDigits, clampAndSnapScore, decimalPlaces } from '$lib/utils/formatString';
 	import { userSettings } from '$lib/stores/userSettings';
 	import * as cls from '$lib/styles/classes';
@@ -35,7 +34,7 @@
 
 	let editing = $state(false);
 	let score = $state<number>(5.0);
-	let dropped = $state(false);
+	let status = $state<WatchStatus>('completed');
 	let episodesWatched = $state<string>('');
 	let note = $state('');
 	let showAttributes = $state(false);
@@ -45,10 +44,14 @@
 	let error = $state('');
 	let attributes = $state<Record<string, string | null>>({});
 
+	// On Hold and Dropped both mean the anime wasn't finished, so the episode
+	// input is revealed and ending-quality is treated as unratable for both.
+	let revealsEpisodes = $derived(status === 'on_hold' || status === 'dropped');
+
 	let hasChanges = $derived.by(() => {
 		if (!existingRating) return true;
 		if (score !== existingRating.rating) return true;
-		if (dropped !== existingRating.dropped) return true;
+		if (status !== existingRating.watch_status) return true;
 		const epVal = episodesWatched ? parseInt(episodesWatched) : null;
 		if (epVal !== existingRating.episodes_watched) return true;
 		if ((note.trim() || null) !== (existingRating.note ?? null)) return true;
@@ -60,10 +63,7 @@
 
 	let filledAttributes = $derived(
 		existingRating ? Object.entries(RATING_ATTRIBUTE_OPTIONS)
-			.filter(([key]) => {
-				const val = getRatingAttr(existingRating!, key);
-				return val && !(key === 'ending_quality' && val === 'not_applicable');
-			})
+			.filter(([key]) => isAttrRated(getRatingAttr(existingRating!, key)))
 			.map(([key, config]) => ({
 				label: config.label,
 				value: config.options.find(o => o.value === getRatingAttr(existingRating!, key))?.label
@@ -91,7 +91,7 @@
 	function resetForm() {
 		if (existingRating) {
 			score = existingRating.rating;
-			dropped = existingRating.dropped;
+			status = existingRating.watch_status;
 			episodesWatched = existingRating.episodes_watched?.toString() ?? '';
 			note = existingRating.note ?? '';
 			for (const key of Object.keys(RATING_ATTRIBUTE_OPTIONS)) {
@@ -99,7 +99,7 @@
 			}
 		} else {
 			score = 5.0;
-			dropped = false;
+			status = 'completed';
 			episodesWatched = totalEpisodes?.toString() ?? '';
 			note = '';
 			for (const key of Object.keys(RATING_ATTRIBUTE_OPTIONS)) {
@@ -117,14 +117,14 @@
 
 	$effect(() => {
 		// Only auto-fill episodes when creating a new rating (not editing existing)
-		if (!existingRating && !dropped && totalEpisodes !== null) {
+		if (!existingRating && !revealsEpisodes && totalEpisodes !== null) {
 			episodesWatched = totalEpisodes.toString();
 		}
 	});
 
 	$effect(() => {
-		// Dropped → ending_quality is not ratable; not dropped → clear auto-set value
-		if (dropped) {
+		// On hold / dropped → ending_quality is not ratable; completed → clear auto-set value
+		if (revealsEpisodes) {
 			attributes['ending_quality'] = 'not_applicable';
 		} else if (attributes['ending_quality'] === 'not_applicable') {
 			attributes['ending_quality'] = null;
@@ -153,7 +153,7 @@
 
 		const payload: RatingCreate = {
 			rating: snappedScore,
-			dropped,
+			watch_status: status,
 			episodes_watched: episodesWatched ? parseInt(episodesWatched) : null,
 			note: note.trim() || null,
 			...attrFields,
@@ -243,8 +243,10 @@
 					</div>
 					<div class="space-y-1">
 						<div class="flex items-center gap-2">
-							{#if existingRating.dropped}
+							{#if existingRating.watch_status === 'dropped'}
 								<Badge variant="destructive">Dropped</Badge>
+							{:else if existingRating.watch_status === 'on_hold'}
+								<Badge variant="secondary" class={cls.badgeOnHold}>On Hold</Badge>
 							{:else}
 								<span class="text-card-foreground font-medium">Completed</span>
 							{/if}
@@ -308,14 +310,23 @@
 				</div>
 
 				<div class="bg-muted/40 rounded-lg p-4 space-y-4">
-					<!-- Dropped + Episodes on one line -->
+					<!-- Watch status (segmented) + Episodes -->
 					<div class="flex items-center gap-4 flex-wrap">
 						<div class="flex items-center gap-2">
-							<Checkbox
-								checked={dropped}
-								onCheckedChange={(val: boolean | 'indeterminate') => { dropped = val === true; }}
-							/>
-							<Label>Dropped</Label>
+							<Label>Status</Label>
+							<div class="inline-flex rounded-md border border-border overflow-hidden">
+								{#each WATCH_STATUS_OPTIONS as opt}
+									<Button
+										type="button"
+										variant={status === opt.value ? 'default' : 'ghost'}
+										size="sm"
+										class="rounded-none border-0"
+										onclick={() => { status = opt.value; }}
+									>
+										{opt.label}
+									</Button>
+								{/each}
+							</div>
 						</div>
 						<span class="text-border hidden sm:inline">·</span>
 						<div class="flex items-center gap-2">
@@ -326,7 +337,7 @@
 								max={totalEpisodes ?? undefined}
 								bind:value={episodesWatched}
 								placeholder="—"
-								disabled={!dropped && totalEpisodes !== null}
+								disabled={!revealsEpisodes && totalEpisodes !== null}
 								class="bg-card w-20 text-center"
 							/>
 							{#if totalEpisodes !== null}
@@ -368,8 +379,8 @@
 							<div class="grid grid-cols-2 gap-3 mt-3">
 								{#each Object.entries(RATING_ATTRIBUTE_OPTIONS) as [key, config]}
 									{@const isEndingQuality = key === 'ending_quality'}
-									{@const isDisabled = isEndingQuality && dropped}
-									{@const visibleOptions = isEndingQuality && !dropped
+									{@const isDisabled = isEndingQuality && revealsEpisodes}
+									{@const visibleOptions = isEndingQuality && !revealsEpisodes
 										? config.options.filter(o => o.value !== 'not_applicable')
 										: config.options}
 									<div class="space-y-1">

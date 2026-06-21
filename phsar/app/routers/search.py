@@ -18,6 +18,7 @@ from app.models.ratings import (
     StoryQuality,
     ThreeDAnimation,
     WatchedFormat,
+    WatchStatus,
 )
 from app.models.user_settings import SpoilerLevel
 from app.schemas.anime_schema import AnimeSearchResult
@@ -79,7 +80,7 @@ def get_rating_filters(
     media_filters: MediaSearchFilters = Depends(get_media_filters),
     user_rating_min: Optional[float] = None,
     user_rating_max: Optional[float] = None,
-    dropped: Optional[bool] = None,
+    watch_status: Optional[list[WatchStatus]] = Query(default=None),
     pace: Optional[list[Pace]] = Query(default=None),
     animation_quality: Optional[list[AnimationQuality]] = Query(default=None),
     has_3d_animation: Optional[list[ThreeDAnimation]] = Query(default=None),
@@ -96,7 +97,7 @@ def get_rating_filters(
         **media_filters.model_dump(),
         user_rating_min=user_rating_min,
         user_rating_max=user_rating_max,
-        dropped=dropped,
+        watch_status=watch_status,
         pace=pace,
         animation_quality=animation_quality,
         has_3d_animation=has_3d_animation,
@@ -179,7 +180,7 @@ async def search_ratings(
     db: AsyncSession = Depends(get_db),
 ):
     """Search within the current user's ratings. Supports all media filters
-    plus rating-specific filters (enums, user rating range, dropped status)."""
+    plus rating-specific filters (enums, user rating range, watch status)."""
     return await search_user_ratings(
         db=db,
         user_id=current_user.id,

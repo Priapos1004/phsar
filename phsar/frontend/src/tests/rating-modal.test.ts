@@ -25,7 +25,7 @@ vi.mock('$lib/api', () => ({
 const mockExistingRating: RatingOut = {
 	uuid: 'rating-uuid-1',
 	rating: 8.5,
-	dropped: false,
+	watch_status: 'completed',
 	episodes_watched: 12,
 	note: 'Great anime',
 	media_uuid: 'media-uuid-1',
@@ -102,7 +102,7 @@ describe('RatingCard', () => {
 		render(RatingCard, {
 			props: {
 				mediaUuid: 'media-uuid-1',
-	
+
 				totalEpisodes: 12,
 				existingRating: mockExistingRating,
 				onSaved: vi.fn(),
@@ -111,5 +111,19 @@ describe('RatingCard', () => {
 		});
 
 		expect(screen.getByText(/"Great anime"/)).toBeInTheDocument();
+	});
+
+	it('shows the On Hold badge for an on_hold rating', () => {
+		render(RatingCard, {
+			props: {
+				mediaUuid: 'media-uuid-1',
+				totalEpisodes: 12,
+				existingRating: { ...mockExistingRating, watch_status: 'on_hold' },
+				onSaved: vi.fn(),
+				onDeleted: vi.fn(),
+			},
+		});
+
+		expect(screen.getByText('On Hold')).toBeInTheDocument();
 	});
 });

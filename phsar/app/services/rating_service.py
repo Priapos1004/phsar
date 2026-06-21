@@ -39,7 +39,7 @@ def _rating_to_out(r: Ratings) -> RatingOut:
     data = {
         "uuid": r.uuid,
         "rating": r.rating,
-        "dropped": r.dropped,
+        "watch_status": r.watch_status,
         "episodes_watched": r.episodes_watched,
         "note": r.note,
         "media_uuid": r.media.uuid,
@@ -175,7 +175,7 @@ def _rating_to_rated_media_result(r: Ratings) -> RatedMediaResult:
     rating_data = {
         "rating_uuid": r.uuid,
         "user_rating": r.rating,
-        "dropped": r.dropped,
+        "watch_status": r.watch_status,
         "episodes_watched": r.episodes_watched,
         "note": r.note,
         "rating_created_at": r.created_at,

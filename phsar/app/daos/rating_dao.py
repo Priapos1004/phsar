@@ -158,8 +158,8 @@ class RatingDAO(BaseDAO[Ratings]):
             conditions.append(self.model.rating >= filters.user_rating_min)
         if filters.user_rating_max is not None:
             conditions.append(self.model.rating <= filters.user_rating_max)
-        if filters.dropped is not None:
-            conditions.append(self.model.dropped == filters.dropped)
+        if filters.watch_status:
+            conditions.append(self.model.watch_status.in_(filters.watch_status))
         for field_name in _RATING_ATTR_FIELDS:
             values = getattr(filters, field_name, None)
             if values:
