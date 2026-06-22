@@ -98,7 +98,11 @@ class RatingScoreItem(RatingAttributes):
     media_uuid: UUID
     anime_uuid: UUID
     media_title: str
+    media_name_eng: Optional[str]
+    media_name_jap: Optional[str]
     anime_title: str
+    anime_name_eng: Optional[str]
+    anime_name_jap: Optional[str]
     media_cover_image: Optional[str]
     rating: float
     watch_status: WatchStatus

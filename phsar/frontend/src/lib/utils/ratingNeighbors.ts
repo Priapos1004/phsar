@@ -86,8 +86,12 @@ export function selectRatingNeighbors(
 	score: number,
 	ctx: NeighborContext,
 ): { below: RatingScoreItem[]; above: RatingScoreItem[] } {
-	// 1. Exclude the current anime — comparing across anime is more meaningful.
-	const pool = ctx.animeUuid ? items.filter((i) => i.anime_uuid !== ctx.animeUuid) : items;
+	// 1. Pool = completed ratings from OTHER anime. Completed only because a
+	//    dropped score is often deflated and an on-hold one provisional — mixing
+	//    them in would bias the very scale this helper is meant to steady.
+	const pool = items.filter(
+		(i) => i.watch_status === 'completed' && i.anime_uuid !== ctx.animeUuid,
+	);
 
 	// 2. One rating per anime (its closest-to-score member), so the rows are
 	//    distinct anime rather than several seasons of the same show.

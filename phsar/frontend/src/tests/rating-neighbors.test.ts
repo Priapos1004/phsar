@@ -7,7 +7,11 @@ function item(
 ): RatingScoreItem {
 	return {
 		media_title: o.media_uuid,
+		media_name_eng: null,
+		media_name_jap: null,
 		anime_title: o.anime_uuid,
+		anime_name_eng: null,
+		anime_name_jap: null,
 		media_cover_image: null,
 		watch_status: 'completed',
 		age_rating_numeric: null,
@@ -86,6 +90,19 @@ describe('selectRatingNeighbors', () => {
 		// only 2 slots, so the plain one drops.
 		expect(uuids(below)).toEqual(['rich', 'genre_match']);
 		expect(above).toEqual([]);
+	});
+
+	it('excludes on-hold / dropped ratings — completed only', () => {
+		const items = [
+			item({ media_uuid: 'dropped', anime_uuid: 'A', rating: 5.0, watch_status: 'dropped' }),
+			item({ media_uuid: 'on_hold', anime_uuid: 'B', rating: 5.0, watch_status: 'on_hold' }),
+			item({ media_uuid: 'completed', anime_uuid: 'C', rating: 3.0 }),
+		];
+
+		const { below } = selectRatingNeighbors(items, 5.0, {});
+
+		// Only the completed rating survives, even though it's further from the score.
+		expect(uuids(below)).toEqual(['completed']);
 	});
 
 	it('reselects as the score changes (pure — no shared state)', () => {

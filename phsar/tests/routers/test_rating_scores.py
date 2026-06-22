@@ -18,13 +18,16 @@ async def rated_media_two_anime(db_session):
     db_session.add_all([genre, studio])
     await db_session.flush()
 
-    anime_a = Anime(mal_id=96001, title="Score Item Anime A")
+    anime_a = Anime(mal_id=96001, title="Score Item Anime A", name_eng="Score Anime A (EN)")
     anime_b = Anime(mal_id=96002, title="Score Item Anime B")
     db_session.add_all([anime_a, anime_b])
     await db_session.flush()
 
     # age_rating_numeric is derived from the age_rating string prefix (PG-13 → 13, R → 17).
-    media_a = Media(**media_kwargs(anime_a.id, 96101, title="Score Media A", age_rating="PG-13 - Teens 13 or older"))
+    media_a = Media(**media_kwargs(
+        anime_a.id, 96101, title="Score Media A", name_eng="Score Media A (EN)",
+        age_rating="PG-13 - Teens 13 or older",
+    ))
     media_b = Media(**media_kwargs(anime_b.id, 96102, title="Score Media B", age_rating="R - 17+ (violence & profanity)"))
     db_session.add_all([media_a, media_b])
     await db_session.flush()
@@ -59,6 +62,10 @@ async def test_rating_scores_returns_compact_items(client, user_auth_headers, ra
 
     item_a = by_uuid[str(media_a.uuid)]
     assert item_a["anime_uuid"] == str(rated_media_two_anime["anime_a"].uuid)
+    # eng/jap names ride along so the frontend can resolve titles per the user's language
+    assert item_a["media_name_eng"] == "Score Media A (EN)"
+    assert item_a["anime_name_eng"] == "Score Anime A (EN)"
+    assert item_a["media_name_jap"] is None
     assert item_a["rating"] == 8.0
     assert item_a["genres"] == ["ScoreItemGenre"]
     assert item_a["studios"] == ["ScoreItemStudio"]

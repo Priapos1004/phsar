@@ -157,7 +157,11 @@ export interface RatingScoreItem {
 	media_uuid: string;
 	anime_uuid: string;
 	media_title: string;
+	media_name_eng: string | null;
+	media_name_jap: string | null;
 	anime_title: string;
+	anime_name_eng: string | null;
+	anime_name_jap: string | null;
 	media_cover_image: string | null;
 	rating: number;
 	watch_status: WatchStatus;

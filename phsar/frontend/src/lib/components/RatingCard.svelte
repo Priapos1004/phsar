@@ -13,7 +13,7 @@
 	import type { RatingOut, RatingCreate, RatingScoreItem, WatchStatus } from '$lib/types/api';
 	import DeleteWatchHistoryToggle from '$lib/components/DeleteWatchHistoryToggle.svelte';
 	import { selectRatingNeighbors } from '$lib/utils/ratingNeighbors';
-	import { formatDecimalDigits, clampAndSnapScore, decimalPlaces } from '$lib/utils/formatString';
+	import { formatDecimalDigits, clampAndSnapScore, decimalPlaces, resolveTitle } from '$lib/utils/formatString';
 	import { userSettings } from '$lib/stores/userSettings';
 	import * as cls from '$lib/styles/classes';
 	import { ChevronDown, ChevronUp, Star, Pencil, Trash2, RotateCcw } from 'lucide-svelte';
@@ -100,6 +100,7 @@
 	let filledAttributes = $derived(existingRating ? attributeBadges(existingRating) : []);
 
 	let SCORE_STEP = $derived(parseFloat($userSettings?.rating_step ?? '0.5'));
+	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
 	// Edit form: precision matches current step (user inputs at this precision)
 	let STEP_DECIMALS = $derived(decimalPlaces(SCORE_STEP));
 	// Display: enough decimals to accurately show the stored value (may exceed current step)
@@ -531,6 +532,8 @@
 							<div class="mt-2 space-y-2">
 								{#each neighborRows as n (n.media_uuid)}
 									{@const attrs = attributeBadges(n)}
+									{@const mediaName = resolveTitle(n.media_title, n.media_name_eng, n.media_name_jap, nameLanguage)}
+									{@const animeName = resolveTitle(n.anime_title, n.anime_name_eng, n.anime_name_jap, nameLanguage)}
 									<div class="rounded-lg border border-border bg-card overflow-hidden">
 										<button
 											type="button"
@@ -541,8 +544,8 @@
 												<img src={n.media_cover_image} alt="" loading="lazy" class="w-8 h-11 rounded object-cover shrink-0" />
 											{/if}
 											<div class="flex-1 min-w-0">
-												<p class="text-sm font-medium text-card-foreground truncate">{n.media_title}</p>
-												<p class="text-xs text-muted-foreground truncate">{n.anime_title}</p>
+												<p class="text-sm font-medium text-card-foreground truncate">{mediaName}</p>
+												<p class="text-xs text-muted-foreground truncate">{animeName}</p>
 											</div>
 											<span class="flex items-center gap-1 text-card-foreground font-bold shrink-0">
 												<Star class="size-3.5 text-primary" fill="currentColor" />
