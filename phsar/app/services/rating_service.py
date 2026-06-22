@@ -9,6 +9,7 @@ from app.daos.watch_event_dao import WatchEventDAO
 from app.exceptions import (
     MediaNotFoundError,
     RatingNotFoundError,
+    RewatchNotAllowedError,
 )
 from app.models.media import Media
 from app.models.ratings import Ratings, WatchStatus
@@ -231,9 +232,14 @@ async def bulk_delete_ratings(
     `delete_watch_history` is set (same opt-in cascade as the single delete)."""
     media_list = await _resolve_media_uuids(db, media_uuids)
     media_ids = [m.id for m in media_list]
+    if delete_watch_history:
+        # Scope the opt-in history wipe to media that actually have a rating here, so a
+        # selected-but-unrated media (silently skipped below) can't lose its preserved
+        # events. Captured before the delete — both run in this one uncommitted tx.
+        rated_media_ids = await rating_dao.get_rated_media_ids(db, user_id, media_ids)
     count = await rating_dao.bulk_delete_by_user_and_media_ids(db, user_id, media_ids)
     if delete_watch_history:
-        await watch_event_dao.delete_for_user_media(db, user_id, media_ids)
+        await watch_event_dao.delete_for_user_media(db, user_id, rated_media_ids)
     # Recompute visibility for each affected anime
     affected_anime_ids = {m.anime_id for m in media_list}
     for anime_id in affected_anime_ids:
@@ -248,6 +254,10 @@ async def log_rewatch(db: AsyncSession, user_id: int, rating_uuid: UUID) -> Rati
     rating = await rating_dao.get_by_uuid_and_user(db, rating_uuid, user_id)
     if not rating:
         raise RatingNotFoundError(str(rating_uuid))
+    # A watch event means a completion, so only a completed rating can accrue rewatches —
+    # enforce the invariant server-side (the UI already hides the button for non-completed).
+    if rating.watch_status != WatchStatus.completed:
+        raise RewatchNotAllowedError()
     await watch_event_dao.create_event(db, user_id, rating.media_id)
     await db.commit()
     return (await _ratings_to_out(db, user_id, [rating]))[0]

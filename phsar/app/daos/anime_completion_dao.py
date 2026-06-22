@@ -6,6 +6,7 @@ so the service can render the Completion-tab list.
 """
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -31,9 +32,17 @@ class AnimeCompletionDAO(BaseDAO[AnimeCompletion]):
         return list((await db.execute(stmt)).scalars().all())
 
     async def mark(self, db: AsyncSession, anime_id: int, user_id: int) -> None:
-        """Idempotent: insert a completion row unless one already exists."""
-        if await self.get_by_field(db, anime_id=anime_id) is None:
-            await self.create(db, AnimeCompletion(anime_id=anime_id, marked_by_user_id=user_id))
+        """Idempotent insert. ON CONFLICT DO NOTHING on the unique anime_id makes it robust
+        under concurrent marks (a check-then-insert could still race to an IntegrityError).
+        Mirrors the merge/split candidate upsert DAOs — SQLAlchemy applies the model's
+        Python-side uuid default for the omitted column."""
+        stmt = (
+            pg_insert(AnimeCompletion)
+            .values(anime_id=anime_id, marked_by_user_id=user_id)
+            .on_conflict_do_nothing(index_elements=["anime_id"])
+        )
+        await db.execute(stmt)
+        await db.flush()
 
     async def unmark(self, db: AsyncSession, anime_id: int) -> None:
         await self.delete_all_by_field(db, "anime_id", [anime_id])

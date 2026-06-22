@@ -239,6 +239,15 @@ class MediaNotFoundError(PhsarBaseError):
         super().__init__(message)
 
 
+class RewatchNotAllowedError(PhsarBaseError):
+    """Raised when logging a rewatch on a rating that isn't `completed` — a watch event
+    means a completion, so on_hold/dropped ratings can't accrue rewatches."""
+    status_code = 409
+
+    def __init__(self):
+        super().__init__("Only completed ratings can log a rewatch.")
+
+
 class AnimeNotFoundByUuidError(PhsarBaseError):
     """Raised when an anime UUID does not resolve to an existing anime."""
     status_code = 404

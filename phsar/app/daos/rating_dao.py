@@ -68,6 +68,19 @@ class RatingDAO(BaseDAO[Ratings]):
         result = await db.execute(stmt)
         return result.scalars().all()
 
+    async def get_rated_media_ids(
+        self, db: AsyncSession, user_id: int, media_ids: list[int]
+    ) -> list[int]:
+        """Which of the given media the user actually has a rating for. Scalar projection
+        (no ORM rows / embeddings) — used to scope an opt-in watch-history wipe to media
+        whose rating is being deleted."""
+        if not media_ids:
+            return []
+        stmt = select(self.model.media_id).where(
+            self.model.user_id == user_id, self.model.media_id.in_(media_ids)
+        )
+        return list((await db.execute(stmt)).scalars().all())
+
     async def bulk_delete_by_user_and_media_ids(
         self, db: AsyncSession, user_id: int, media_ids: list[int]
     ) -> int:
