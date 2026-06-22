@@ -150,6 +150,34 @@ export interface RatingOut {
 	modified_at: string;
 }
 
+// Compact rating projection (GET /ratings/scores) for the rating-consistency
+// helper — ships the comparison inputs (anime_uuid, genres, studios, age) +
+// the 11 attribute fields so selection + tiebreak run client-side.
+export interface RatingScoreItem {
+	media_uuid: string;
+	anime_uuid: string;
+	media_title: string;
+	anime_title: string;
+	media_cover_image: string | null;
+	rating: number;
+	watch_status: WatchStatus;
+	age_rating_numeric: number | null;
+	genres: string[];
+	studios: string[];
+	pace: Pace | null;
+	animation_quality: AnimationQuality | null;
+	has_3d_animation: ThreeDAnimation | null;
+	watched_format: WatchedFormat | null;
+	fan_service: FanService | null;
+	dialogue_quality: DialogueQuality | null;
+	character_depth: CharacterDepth | null;
+	ending_type: EndingType | null;
+	ending_quality: EndingQuality | null;
+	story_quality: StoryQuality | null;
+	originality: Originality | null;
+	modified_at: string;
+}
+
 export interface RatingCreate {
 	rating: number;
 	watch_status?: WatchStatus;
@@ -169,7 +197,7 @@ export interface RatingCreate {
 }
 
 /** Read a dynamic attribute key from a rating object (needed because attribute keys are iterated at runtime). */
-export function getRatingAttr(obj: RatingOut | RatingCreate, key: string): string | null {
+export function getRatingAttr(obj: RatingOut | RatingCreate | RatingScoreItem, key: string): string | null {
 	return (obj as unknown as Record<string, string | null>)[key] ?? null;
 }
 

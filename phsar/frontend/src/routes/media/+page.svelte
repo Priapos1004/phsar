@@ -302,6 +302,10 @@
 				existingRating={userRating}
 				onSaved={handleRatingSaved}
 				onDeleted={handleRatingDeleted}
+				animeUuid={media.anime_uuid}
+				genres={media.genres}
+				studios={media.studio}
+				ageRatingNumeric={media.age_rating_numeric}
 			/>
 		{:else}
 			<Card.Root class={cls.cardGlass}>
