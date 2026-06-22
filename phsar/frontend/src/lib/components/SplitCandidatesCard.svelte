@@ -8,6 +8,7 @@
     import DismissedDecisionsSection from '$lib/components/admin/DismissedDecisionsSection.svelte';
     import { Split, X, RefreshCw, Search, ChevronRight, ChevronDown } from 'lucide-svelte';
     import { bumpCurationRefresh } from '$lib/stores/jobs';
+    import { buildDetailHref } from '$lib/utils/navigation';
     import { formatRelationType } from '$lib/utils/formatString';
     import type {
         SplitBackfillResult,
@@ -183,10 +184,8 @@
                                 Source anime (will lose extracted clusters)
                             </div>
                             <a
-                                href="/anime?uuid={c.source_anime.uuid}"
+                                href={buildDetailHref('anime', c.source_anime.uuid, { from: 'curation' })}
                                 class="text-sm font-medium text-card-foreground hover:text-primary transition block"
-                                target="_blank"
-                                rel="noopener noreferrer"
                             >
                                 {c.source_anime.title}
                             </a>

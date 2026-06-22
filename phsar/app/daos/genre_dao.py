@@ -21,3 +21,11 @@ class GenreDAO(BaseDAO[Genre]):
         result = await db.execute(stmt)
         distinct_genres = [row[0] for row in result.fetchall()]
         return distinct_genres
+
+    async def get_name_descriptions(self, db: AsyncSession) -> list[tuple[str, str | None]]:
+        """Every genre's (name, description) for the frontend tooltip lookup.
+        Returns all seeded genres (a small, static set) so the client can cache
+        one map and look up any badge by name."""
+        stmt = select(Genre.name, Genre.description).order_by(Genre.name)
+        result = await db.execute(stmt)
+        return [(row[0], row[1]) for row in result.all()]

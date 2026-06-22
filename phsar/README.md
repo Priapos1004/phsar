@@ -93,6 +93,7 @@ phsar/
 │   │   ├── anime_schema.py
 │   │   ├── auth_schema.py
 │   │   ├── backup_schema.py
+│   │   ├── genre_schema.py
 │   │   ├── job_schema.py
 │   │   ├── maintenance_schema.py
 │   │   ├── media_filter_schema.py
@@ -182,6 +183,7 @@ phsar/
 │   │   │   │   ├── DeleteWatchHistoryToggle.svelte
 │   │   │   │   ├── DoubleRangeSlider.svelte
 │   │   │   │   ├── EChart.svelte
+│   │   │   │   ├── GenreBadges.svelte
 │   │   │   │   ├── InfoDiashow.svelte
 │   │   │   │   ├── JobBell.svelte
 │   │   │   │   ├── LoadingScreen.svelte
@@ -197,11 +199,13 @@ phsar/
 │   │   │   │   ├── RatingsOverviewStats.svelte
 │   │   │   │   ├── RatingsOverviewTimeline.svelte
 │   │   │   │   ├── RelatedMediaCarousel.svelte
+│   │   │   │   ├── ScorePercentile.svelte
 │   │   │   │   ├── ScrollableCard.svelte
 │   │   │   │   ├── SpoilerGuard.svelte
 │   │   │   │   ├── SearchBar.svelte
 │   │   │   │   ├── SkeletonMediaInfo.svelte
 │   │   │   │   ├── SplitCandidatesCard.svelte
+│   │   │   │   ├── StudioLinks.svelte
 │   │   │   │   ├── TagSelect.svelte
 │   │   │   │   ├── Toast.svelte
 │   │   │   │   ├── TokenExpiryDialog.svelte
@@ -229,6 +233,7 @@ phsar/
 │   │   │   │   ├── adminJobsFilter.ts
 │   │   │   │   ├── auth.ts
 │   │   │   │   ├── bell-session.ts
+│   │   │   │   ├── genres.ts
 │   │   │   │   ├── jobs.ts
 │   │   │   │   ├── maintenance.ts
 │   │   │   │   ├── spoilerVisibility.ts
@@ -246,6 +251,7 @@ phsar/
 │   │   │       ├── jobBadges.ts
 │   │   │       ├── mediaChangeSort.ts
 │   │   │       ├── navigation.ts
+│   │   │       ├── ratingNeighbors.ts
 │   │   │       ├── search.ts
 │   │   │       └── spoilerFrontier.ts
 │   │   ├── routes/
@@ -284,6 +290,7 @@ phsar/
 │   │       ├── backups-card.test.ts
 │   │       ├── completion-status-card.test.ts
 │   │       ├── format-string.test.ts
+│   │       ├── genre-badges.test.ts
 │   │       ├── job-bell.test.ts
 │   │       ├── job-detail-counters.test.ts
 │   │       ├── library-add.test.ts
@@ -295,9 +302,11 @@ phsar/
 │   │       ├── navbar.test.ts
 │   │       ├── navigation.test.ts
 │   │       ├── rating-modal.test.ts
+│   │       ├── rating-neighbors.test.ts
 │   │       ├── searchbar.test.ts
 │   │       ├── spoiler-frontier.test.ts
-│   │       └── spoiler-guard.test.ts
+│   │       ├── spoiler-guard.test.ts
+│   │       └── studio-links.test.ts
 │   ├── static/
 │   │   ├── apple-touch-icon.png
 │   │   ├── favicon-192x192.png
@@ -339,12 +348,14 @@ phsar/
     │   ├── test_admin_sweep.py
     │   ├── test_anime_detail.py
     │   ├── test_auth.py
+    │   ├── test_filters_genres.py
     │   ├── test_filters_options.py
     │   ├── test_filters_token.py
     │   ├── test_health.py
     │   ├── test_jobs.py
     │   ├── test_maintenance.py
     │   ├── test_media_detail.py
+    │   ├── test_rating_scores.py
     │   ├── test_ratings.py
     │   ├── test_save.py
     │   ├── test_search_anime.py
@@ -367,6 +378,7 @@ phsar/
         ├── test_progress_reporter.py
         ├── test_relation_classifier.py
         ├── test_save_service.py
+        ├── test_score_percentile.py
         ├── test_search_service.py
         ├── test_seasonal_sweep.py
         ├── test_spoiler_cache_db.py

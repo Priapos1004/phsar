@@ -127,7 +127,7 @@ Modules:
 - `search_service.py` — BFS output → save/attach/merge decisions
 - `vector_embedding_service.py` — sentence-transformers embeddings
 - `media_search_service.py` / `anime_search_service.py` — filtered DB search (anime variant: two-phase GROUP BY + HAVING)
-- `filter_service.py` — filter option values; view-type-aware
+- `filter_service.py` — filter option values; view-type-aware. Also `fetch_genres` — all genres + descriptions for the frontend genre-badge tooltips (`GET /filters/genres`)
 - `auth_service.py`, `user_settings_service.py`, `token_service.py`, `admin_service.py`
 - `merge_detection_service.py` — duplicate detector (title_studio / title_desc / relation_link signals). `relation_link` reads from `media_relation_edges` sidecars (single source of truth — see services CLAUDE.md for rationale); three call sites (save, sweep, backfill) converge through `find_cross_anime_relation_pairs` so the signal fires identically regardless of how anime rows entered the catalog
 - `merge_candidate_service.py` — admin merge operations
@@ -136,7 +136,7 @@ Modules:
 - `anime_relation_service.py` — `reclassify_anime` orchestration; umbrella drift detection
 - `anime_summary.py` — shared `summarize_anime(anime, rating_count)` helper for the merge + split admin cards
 - `completion_service.py` — admin story-complete mark/unmark + the marked list (with cover + marked-by audit) for the Completion tab
-- `rating_service.py` — rating CRUD + note search; logs watch events (first completion + rewatches) and derives `watched_count`
+- `rating_service.py` — rating CRUD + note search; logs watch events (first completion + rewatches) and derives `watched_count`. `get_rating_score_items` (v0.14.11) backs `GET /ratings/scores` — a compact projection of all a user's ratings (titles, cover, score, genres/studios/age, attributes) for the rating-consistency helper's client-side nearest-score compare
 - `spoiler_service.py` — frontier algorithm + `user_visible_media` cache
 - `export_service.py` — flat media-level export
 - `backup_service.py` — pg_dump/pg_restore orchestration; retention pools; `.current_db.json` pointer
@@ -153,6 +153,7 @@ Data access layer.
     - `ix_media_freshness_last_checked_at` (the ORDER BY + the `due_weekly`/`due_long_tail` staleness predicates)
     - `ix_media_airing_now` — partial index on `media(anime_id) WHERE airing_status = 'Currently Airing'`
     - `ix_media_main_aired_from` — composite `(anime_id, relation_type, aired_from)`
+  - `score_top_percent(anime_id)` (v0.14.11) — rank of this anime among all scored anime by its confidence-weighted MAL score (`weighted_score_expr` = `score * log10(scored_by + 1)`, the shared search-ranking weight) as a rank-based "top N%" (worst = 100); `None` when unscored. `MediaDAO.score_top_percent(media_id)` is the per-media analogue. Both surface as `score_top_percent` on the detail responses (anime ranks among anime, media among media) → the frontend "Top N%" chip. Query-shape rationale (window vs `count FILTER`, why no metric index, SQL/Python parity via the drift test) lives in `compound-docs/2026-06-22-v0.14.11-further-qol.md`
   - `count_by_sweep_tier_priority` / `count_media_by_sweep_tier_priority` — anime- and media-grained membership-bucket counts for the admin Overview SweepTiersCard toggle; both use the shared atoms (`_sweep_atoms` / `_media_sweep_atoms`) and the shared `_tier_bucket` CASE. `SWEEP_STABILIZE_THRESHOLD` (3) and `SWEEP_LONG_TAIL_DAYS` (90) are single constants shared by media + anime so the two grains can't drift. The stabilizing total is further split into `stabilizing_by_check` (counts per `stable_check_count` 0…threshold-1) so the card can show the stabilization pipeline — media grain by the media's own count, anime grain by its least-settled member (a correlated `MIN` over the anime's media); dynamic in the threshold
 - **`search_filters.py`** — shared filter/ordering helpers for media, anime pre-aggregation (WHERE), and anime post-aggregation (HAVING)
   - **Title-search ranking**: `apply_vector_ordering` subtracts a two-tier bonus from `cosine_distance` so titles that literally match the query rank ahead of merely thematically-similar shows. Substring (`ilike`) bonus is flat; pg_trgm `similarity()` bonus is scaled linearly above a threshold so typos still surface the intended show. Description and rating-notes search skip both bonuses (semantic queries, not literal). pg_trgm extension enabled via migration `4b8f1e3c7d0a`
@@ -257,6 +258,7 @@ Quick map:
   - Filter schemas use inheritance: `MediaSearchFilters` (base) → `RatingSearchFilters` (adds rating-specific filters)
   - Anime-level title search uses `AnimeSearch` embeddings directly; description search averages cosine distances across media
   - `/filters/options?view_type=anime` returns anime-appropriate filter ranges (aggregated episodes/watch time, majority genres)
+  - `/filters/genres` returns every genre's `{name, description}` — the frontend caches it once and looks up descriptions for the genre-badge tooltips on the anime/media pages
 - **Domain exceptions**: all custom exceptions extend `PhsarBaseError` with `status_code`. One handler in `main.py`. See exceptions.py above for hierarchy
 - **Theme system**: CSS custom properties with `@property` indirection
   - `@property --primary` / `--ring` hold source values, `@theme inline` references via `var()`, `.theme-*` classes override

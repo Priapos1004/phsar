@@ -10,9 +10,10 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { api, ApiError } from '$lib/api';
 	import { RATING_ATTRIBUTE_OPTIONS, WATCH_STATUS_OPTIONS, getRatingAttr, isAttrRated } from '$lib/types/api';
-	import type { RatingOut, RatingCreate, WatchStatus } from '$lib/types/api';
+	import type { RatingOut, RatingCreate, RatingScoreItem, WatchStatus } from '$lib/types/api';
 	import DeleteWatchHistoryToggle from '$lib/components/DeleteWatchHistoryToggle.svelte';
-	import { formatDecimalDigits, clampAndSnapScore, decimalPlaces } from '$lib/utils/formatString';
+	import { selectRatingNeighbors } from '$lib/utils/ratingNeighbors';
+	import { formatDecimalDigits, clampAndSnapScore, decimalPlaces, resolveTitle } from '$lib/utils/formatString';
 	import { userSettings } from '$lib/stores/userSettings';
 	import * as cls from '$lib/styles/classes';
 	import { ChevronDown, ChevronUp, Star, Pencil, Trash2, RotateCcw } from 'lucide-svelte';
@@ -23,6 +24,11 @@
 		existingRating: RatingOut | null;
 		onSaved: (rating: RatingOut) => void;
 		onDeleted: () => void;
+		// Current media's comparison context for the rating-consistency helper.
+		animeUuid?: string;
+		genres?: string[];
+		studios?: string[];
+		ageRatingNumeric?: number | null;
 	}
 
 	let {
@@ -31,6 +37,10 @@
 		existingRating,
 		onSaved,
 		onDeleted,
+		animeUuid,
+		genres = [],
+		studios = [],
+		ageRatingNumeric = null,
 	}: Props = $props();
 
 
@@ -50,6 +60,15 @@
 	let error = $state('');
 	let attributes = $state<Record<string, string | null>>({});
 
+	// Rating-consistency helper: "how you rated similar titles". Fetched once on
+	// first expand and cached, so moving the score slider recomputes the nearby
+	// ratings client-side with no extra request.
+	let showNeighbors = $state(false);
+	let neighborItems = $state<RatingScoreItem[] | null>(null);
+	let loadingNeighbors = $state(false);
+	let neighborsError = $state(false);
+	let expandedNeighbors = $state<Record<string, boolean>>({});
+
 	// On Hold and Dropped both mean the anime wasn't finished, so the episode
 	// input is revealed and ending-quality is treated as unratable for both.
 	let revealsEpisodes = $derived(status === 'on_hold' || status === 'dropped');
@@ -67,18 +86,22 @@
 		return false;
 	});
 
-	let filledAttributes = $derived(
-		existingRating ? Object.entries(RATING_ATTRIBUTE_OPTIONS)
-			.filter(([key]) => isAttrRated(getRatingAttr(existingRating!, key)))
+	// Shared label/value badge builder for the filled-attribute display and the
+	// rating-consistency rows (same filter+map shape over the 11 attributes).
+	function attributeBadges(item: RatingOut | RatingScoreItem): { label: string; value: string }[] {
+		return Object.entries(RATING_ATTRIBUTE_OPTIONS)
+			.filter(([key]) => isAttrRated(getRatingAttr(item, key)))
 			.map(([key, config]) => ({
 				label: config.label,
-				value: config.options.find(o => o.value === getRatingAttr(existingRating!, key))?.label
-					?? String(getRatingAttr(existingRating!, key)),
-			}))
-		: []
-	);
+				value: config.options.find(o => o.value === getRatingAttr(item, key))?.label
+					?? String(getRatingAttr(item, key)),
+			}));
+	}
+
+	let filledAttributes = $derived(existingRating ? attributeBadges(existingRating) : []);
 
 	let SCORE_STEP = $derived(parseFloat($userSettings?.rating_step ?? '0.5'));
+	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
 	// Edit form: precision matches current step (user inputs at this precision)
 	let STEP_DECIMALS = $derived(decimalPlaces(SCORE_STEP));
 	// Display: enough decimals to accurately show the stored value (may exceed current step)
@@ -93,6 +116,42 @@
 	let snappedScore = $derived(clampAndSnap(score));
 	let setAttrCount = $derived(Object.keys(RATING_ATTRIBUTE_OPTIONS).filter(k => attributes[k]).length);
 	let totalAttrCount = Object.keys(RATING_ATTRIBUTE_OPTIONS).length;
+
+	// Recomputes live as the score slider moves (snappedScore), off the cached
+	// neighborItems — no refetch. above shown high→low, then below high→low, so
+	// the four rows straddle the current score in descending order.
+	let neighbors = $derived(
+		neighborItems
+			? selectRatingNeighbors(neighborItems, snappedScore, { animeUuid, genres, studios, ageRatingNumeric })
+			: { below: [], above: [] },
+	);
+	let neighborRows = $derived([
+		...[...neighbors.above].sort((a, b) => b.rating - a.rating),
+		...[...neighbors.below].sort((a, b) => b.rating - a.rating),
+	]);
+
+	async function loadNeighbors() {
+		if (loadingNeighbors) return;
+		loadingNeighbors = true;
+		neighborsError = false;
+		try {
+			neighborItems = await api.get<RatingScoreItem[]>('/ratings/scores');
+		} catch {
+			// Leave neighborItems null (not []) so a re-expand or the explicit
+			// "Try again" retries instead of latching the misleading empty state.
+			neighborsError = true;
+		} finally {
+			loadingNeighbors = false;
+		}
+	}
+
+	function toggleNeighbors() {
+		showNeighbors = !showNeighbors;
+		// loadNeighbors self-guards against a concurrent in-flight fetch.
+		if (showNeighbors && neighborItems === null) {
+			void loadNeighbors();
+		}
+	}
 
 	function resetForm() {
 		if (existingRating) {
@@ -450,6 +509,86 @@
 							</div>
 						{/if}
 					</div>
+				</div>
+
+				<!-- Rating-consistency helper: how you rated nearby-scored titles from
+				     other anime, so the user can keep their scale consistent. -->
+				<div>
+					<button
+						type="button"
+						class="flex items-center gap-2 text-primary group"
+						onclick={toggleNeighbors}
+					>
+						{#if showNeighbors}
+							<ChevronUp class="size-4" />
+						{:else}
+							<ChevronDown class="size-4" />
+						{/if}
+						<span class="group-hover:underline">How you rated similar titles</span>
+					</button>
+
+					{#if showNeighbors}
+						{#if loadingNeighbors}
+							<p class="text-sm text-muted-foreground mt-2">Loading…</p>
+						{:else if neighborsError}
+							<p class="text-sm text-muted-foreground mt-2">
+								Couldn't load your ratings.
+								<button type="button" class="text-primary hover:underline" onclick={loadNeighbors}>
+									Try again
+								</button>
+							</p>
+						{:else if neighborRows.length === 0}
+							<p class="text-sm text-muted-foreground mt-2">
+								Rate a few titles from other anime to compare your scores here.
+							</p>
+						{:else}
+							<p class="text-xs text-muted-foreground mt-2">
+								Your closest scores from other anime — a nudge toward a consistent scale.
+							</p>
+							<div class="mt-2 space-y-2">
+								{#each neighborRows as n (n.media_uuid)}
+									{@const attrs = attributeBadges(n)}
+									{@const mediaName = resolveTitle(n.media_title, n.media_name_eng, n.media_name_jap, nameLanguage)}
+									{@const animeName = resolveTitle(n.anime_title, n.anime_name_eng, n.anime_name_jap, nameLanguage)}
+									<div class="rounded-lg border border-border bg-card overflow-hidden">
+										<button
+											type="button"
+											class="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-muted/40 transition"
+											onclick={() => (expandedNeighbors[n.media_uuid] = !expandedNeighbors[n.media_uuid])}
+										>
+											{#if n.media_cover_image}
+												<img src={n.media_cover_image} alt="" loading="lazy" class="w-8 h-11 rounded object-cover shrink-0" />
+											{/if}
+											<div class="flex-1 min-w-0">
+												<p class="text-sm font-medium text-card-foreground truncate">{mediaName}</p>
+												<p class="text-xs text-muted-foreground truncate">{animeName}</p>
+											</div>
+											<span class="flex items-center gap-1 text-card-foreground font-bold shrink-0">
+												<Star class="size-3.5 text-primary" fill="currentColor" />
+												{formatDecimalDigits(n.rating, decimalPlaces(n.rating))}
+											</span>
+											{#if expandedNeighbors[n.media_uuid]}
+												<ChevronUp class="size-4 text-muted-foreground shrink-0" />
+											{:else}
+												<ChevronDown class="size-4 text-muted-foreground shrink-0" />
+											{/if}
+										</button>
+										{#if expandedNeighbors[n.media_uuid]}
+											<div class="px-3 pb-2 flex flex-wrap gap-1">
+												{#if attrs.length}
+													{#each attrs as attr}
+														<Badge variant="secondary" class="font-normal">{attr.label}: {attr.value}</Badge>
+													{/each}
+												{:else}
+													<span class="text-xs text-muted-foreground">No attributes rated</span>
+												{/if}
+											</div>
+										{/if}
+									</div>
+								{/each}
+							</div>
+						{/if}
+					{/if}
 				</div>
 
 				{#if error}

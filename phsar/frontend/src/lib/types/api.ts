@@ -49,6 +49,12 @@ export interface MediaConnected {
 	age_rating_numeric: number | null;
 }
 
+// Genre name + description (GET /filters/genres) — powers genre-badge tooltips
+export interface GenreOut {
+	name: string;
+	description: string | null;
+}
+
 // Filter options (GET /filters/options)
 export interface FilterOptions {
 	relation_type: string[];
@@ -86,6 +92,9 @@ export interface MediaSibling {
 }
 
 export interface MediaDetail extends MediaConnected {
+	/** "Top N%" rank of this media's confidence-weighted MAL score among all
+	 * scored media in the catalog (null when unscored). */
+	score_top_percent: number | null;
 	sibling_media: MediaSibling[];
 	/** Insertion index for the "you are here" marker in the chronological
 	 * sibling order. 0 = current media precedes every sibling, sibling_media.length = trails all. */
@@ -141,6 +150,38 @@ export interface RatingOut {
 	modified_at: string;
 }
 
+// Compact rating projection (GET /ratings/scores) for the rating-consistency
+// helper — ships the comparison inputs (anime_uuid, genres, studios, age) +
+// the 11 attribute fields so selection + tiebreak run client-side.
+export interface RatingScoreItem {
+	media_uuid: string;
+	anime_uuid: string;
+	media_title: string;
+	media_name_eng: string | null;
+	media_name_jap: string | null;
+	anime_title: string;
+	anime_name_eng: string | null;
+	anime_name_jap: string | null;
+	media_cover_image: string | null;
+	rating: number;
+	watch_status: WatchStatus;
+	age_rating_numeric: number | null;
+	genres: string[];
+	studios: string[];
+	pace: Pace | null;
+	animation_quality: AnimationQuality | null;
+	has_3d_animation: ThreeDAnimation | null;
+	watched_format: WatchedFormat | null;
+	fan_service: FanService | null;
+	dialogue_quality: DialogueQuality | null;
+	character_depth: CharacterDepth | null;
+	ending_type: EndingType | null;
+	ending_quality: EndingQuality | null;
+	story_quality: StoryQuality | null;
+	originality: Originality | null;
+	modified_at: string;
+}
+
 export interface RatingCreate {
 	rating: number;
 	watch_status?: WatchStatus;
@@ -160,7 +201,7 @@ export interface RatingCreate {
 }
 
 /** Read a dynamic attribute key from a rating object (needed because attribute keys are iterated at runtime). */
-export function getRatingAttr(obj: RatingOut | RatingCreate, key: string): string | null {
+export function getRatingAttr(obj: RatingOut | RatingCreate | RatingScoreItem, key: string): string | null {
 	return (obj as unknown as Record<string, string | null>)[key] ?? null;
 }
 
@@ -251,6 +292,9 @@ export interface AnimeMediaItem {
 export interface AnimeDetail extends AnimeAggregatedBase {
 	other_names: string[];
 	description: string | null;
+	/** "Top N%" rank of this anime's confidence-weighted MAL score among all
+	 * scored anime in the catalog (null when unscored). */
+	score_top_percent: number | null;
 	media: AnimeMediaItem[];
 }
 

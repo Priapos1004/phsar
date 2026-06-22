@@ -48,11 +48,16 @@ describe('CompletionStatusCard', () => {
 		expect(api.get).toHaveBeenCalledWith('/admin/finished-anime');
 	});
 
-	it('unmarks an anime via DELETE', async () => {
+	it('arms on first click without deleting, then unmarks on confirm', async () => {
 		render(CompletionStatusCard);
 		await waitFor(() => expect(screen.getByText('Finished Anime')).toBeInTheDocument());
 
+		// First click only arms the guard — no DELETE yet.
 		await fireEvent.click(screen.getByLabelText('Remove story-complete flag'));
+		expect(api.del).not.toHaveBeenCalled();
+
+		// The armed button now asks for confirmation; the second click removes.
+		await fireEvent.click(screen.getByLabelText('Confirm removal of story-complete flag'));
 		expect(api.del).toHaveBeenCalledWith(`/admin/finished-anime/${ANIME_UUID}`);
 	});
 });

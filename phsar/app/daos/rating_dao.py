@@ -143,6 +143,25 @@ class RatingDAO(BaseDAO[Ratings]):
         result = await db.execute(stmt)
         return result.scalars().all()
 
+    async def get_all_for_score_items(self, db: AsyncSession, user_id: int) -> list[Ratings]:
+        """All of a user's ratings with media → anime + genres + studios eager-loaded
+        (no embeddings), for the rating-consistency helper. No pagination: the helper
+        compares against the whole set to find the nearest scores client-side.
+        Ordered modified_at desc so the client's stable sort breaks full ties by
+        recency without an extra sort key."""
+        stmt = (
+            select(self.model)
+            .filter_by(user_id=user_id)
+            .options(
+                selectinload(Ratings.media).selectinload(Media.anime),
+                selectinload(Ratings.media).selectinload(Media.media_genre).selectinload(MediaGenre.genre),
+                selectinload(Ratings.media).selectinload(Media.media_studio).selectinload(MediaStudio.studio),
+            )
+            .order_by(self.model.modified_at.desc())
+        )
+        result = await db.execute(stmt)
+        return result.scalars().all()
+
     async def search_ratings_with_filters(
         self,
         db: AsyncSession,

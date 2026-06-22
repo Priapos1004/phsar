@@ -182,10 +182,11 @@ Each anime search result card shows:
 - Title (English preferred), alternate titles, airing status badge: green (Currently Airing), yellow (Not yet aired), blue (upcoming content), grey (Finished Airing)
 - "Story Complete" badge (emerald, additive — shown alongside the airing badge when an admin marked the anime story-complete). Hovering shows a tooltip explaining it differs from "Finished Airing" (broadcast ended) — the *story* has concluded
 - Average MAL score with "ratings/media" label; hovering the score pill shows a tooltip clarifying it's the MyAnimeList community score, not Phsar users' ratings
+- A small "Top N%" chip after the rating-count text (always visible, color-ramped) showing where this anime ranks among all scored anime by its vote-weighted MAL score; hovering explains "higher than X% of the catalog" and the vote weighting. Hidden when the anime has no score
 - Relation type badges with counts (e.g., "main: 5"), media type badges with counts (e.g., "TV: 3")
-- Age rating badge (max across media), genre badges (strict majority rule)
+- Age rating badge (max across media), genre badges (strict majority rule) — hovering a genre badge shows its description when one is seeded
 - Stats grid: total episodes, media count, season range, total watch time
-- Studio names
+- Studio names — each is a button linking to an anime-view search filtered to that studio ("other anime from this studio")
 - Watchlist bookmark buttons (add all / remove all — stub dialogs, wired in v0.15.0)
 
 ### 6.3 Synopsis
@@ -236,10 +237,11 @@ Each anime search result card shows:
 - Japanese title and romaji subtitle (if different from displayed title)
 - Airing status badge: green pulsing dot for "Currently Airing", yellow for "Not yet aired", muted for finished
 - MAL score with star icon and rating count; hovering the score pill shows a tooltip clarifying it's the MyAnimeList community score, not Phsar users' ratings
+- A small "Top N%" chip after the rating-count text (always visible, color-ramped) showing where this media ranks among all scored media by its vote-weighted MAL score; hovering explains the rank + vote weighting. Hidden when the media has no score
 - Badges: media type (green), relation type (blue), age rating (orange)
-- Genre badges (themed primary color)
+- Genre badges (themed primary color) — hovering a genre badge shows its description when one is seeded
 - Stats grid: episodes, duration per episode, season, total watch time
-- Studio names
+- Studio names — each is a button linking to an anime-view search filtered to that studio
 - Disabled bookmark button (placeholder for watchlist, wired in v0.15.0)
 
 ### 7.3 Synopsis
@@ -259,6 +261,7 @@ Each anime search result card shows:
   - Watch-status selector (segmented: Completed / On Hold / Dropped) + episodes watched input (auto-filled with total episodes when Completed; revealed/editable when On Hold or Dropped)
   - Note textarea (max 1000 chars with counter)
   - Collapsible "Details" section with 11 attribute selectors (pace, animation quality, 3D animation, watched format, fan service, dialogue quality, character depth, ending type, ending quality, story quality, originality) — shows set/total count badge. Ending quality: when On Hold or Dropped, auto-set to "Not Applicable" and disabled; when Completed, only 3 quality options shown (Unsatisfying, Satisfying, Exceptional)
+  - Collapsible "How you rated similar titles" panel — on first expand fetches the user's ratings once (`GET /ratings/scores`) and shows the 2 closest at-or-below + 2 closest above the current score, each from a different anime (only **completed** ratings, so dropped/on-hold scores don't skew the comparison); the list re-selects live as the score slider moves (no refetch). Titles render in the user's name language; each row shows cover + title + score and expands to reveal that title's attributes. Empty/short state prompts the user to rate more titles
   - Submit/Update button (disabled when no changes detected on existing rating)
   - **Downgrade prompt**: saving a change from Completed to On Hold/Dropped while watch history exists opens a "Keep your watch history?" pop-up — Keep history / Remove history / Cancel.
   - Cancel button returns to display mode
@@ -277,9 +280,12 @@ Each anime search result card shows:
 - Shared `<BackLink>` component (in `lib/components/`) decides which back button to render based on URL params:
   - `?q=<token>` → "Back to search" (search-origin pattern, returns to `/search?q=token`; the token's `view_type` restores the correct anime/media toggle)
   - `?from=library` → "Back to library" (non-search origin used by the recent-additions panel)
+  - `?from=job&job=<uuid>` → "Back to job" (admin job-detail page's failed-refresh / failed-probe / attached links → `/admin/jobs/[uuid]`)
+  - `?from=completion` → "Back to completion" (admin Completion tab's anime links → `/admin?tab=completion`)
+  - `?from=curation` → "Back to curation" (Merge/Split candidate cards' anime links → `/admin?tab=curation`)
   - neither → no back button (direct-URL arrivals stay clean)
-- Both flags propagate across the entire anime↔media jump chain (anime → media tile, media → anime link, related-media carousel) via `buildDetailHref`'s options bag, so a deep dive like library → anime → media → sibling stays linkable back to the origin
-- Origin set is a closed `DetailOrigin` TS union (`'library'` today); extending it requires updating both `lib/utils/navigation.ts` AND `BackLink.svelte`'s switch — surfaces as a type error otherwise
+- These flags propagate across the entire anime↔media jump chain (anime → media tile, media → anime link, related-media carousel) via `buildDetailHref`'s options bag, so a deep dive like curation → anime → media → sibling stays linkable back to the origin
+- Origin set is a closed `DetailOrigin` TS union (`'library' | 'job' | 'completion' | 'curation'`); extending it requires updating both `lib/utils/navigation.ts` AND `BackLink.svelte`'s switch — surfaces as a type error otherwise
 
 ---
 
@@ -458,7 +464,7 @@ Each anime search result card shows:
 ### 10.8 Completion tab (Story Completion)
 - Admin-only manual curation (no detector): mark an anime as story-complete when its narrative has concluded — distinct from "Finished Airing".
 - **Search to mark**: a debounced search box (reuses `/search/anime`, title search) with a clear-✕ button. Results list cover thumbnail + title; each row has a "Mark complete" button, or a "Marked" label if already complete. Marking (`POST /admin/finished-anime/{uuid}`) clears + closes the search so it reads as a committed selection.
-- **Marked list**: cover thumbnail + title (links to the anime page same-tab, "Back to completion") + "marked {date} by {admin}" audit line. Sort control: Newest marked (default) / Oldest marked / Title A–Z. Each row has an unmark (✕) button (`DELETE /admin/finished-anime/{uuid}`).
+- **Marked list**: cover thumbnail + title (links to the anime page same-tab, "Back to completion") + "marked {date} by {admin}" audit line. Sort control: Newest marked (default) / Oldest marked / Title A–Z. Each row has an unmark (✕) button (`DELETE /admin/finished-anime/{uuid}`), guarded by a click-to-arm confirm: the first click arms the row (✕ → red check, "Click again to confirm removal", auto-disarms after ~3s), the second click within the window removes the flag — so a stray click can't silently un-mark.
 - The mark surfaces on the anime detail page (emerald "Story Complete" badge + tooltip) and on anime search cards (small "✓ Complete" badge).
 
 ---
@@ -470,12 +476,14 @@ Each anime search result card shows:
 | `/auth/login` | POST | Login form submission |
 | `/auth/validate` | GET | Every page load (layout) |
 | `/filters/options?view_type=anime\|media` | GET | SearchBar mount and view toggle |
+| `/filters/genres` | GET | Genre-badge tooltips (cached once per session by the `genres` store) |
 | `/filters/create-token` | POST | Search submission |
 | `/filters/verify-token` | POST | Search page load |
 | `/search/anime` | GET | Anime-view search after token verification |
 | `/search/media` | GET | Media-view search after token verification |
 | `/media/anime/{uuid}` | GET | Anime detail page load |
 | `/media/{uuid}` | GET | Media detail page load |
+| `/ratings/scores` | GET | Rating-consistency helper (compact list of the user's ratings; fetched once on panel expand) |
 | `/ratings/media/{uuid}` | GET | Media detail page load (fetch user's rating) |
 | `/ratings/anime/{uuid}` | GET | Anime detail page load (fetch user's ratings for all media) |
 | `/ratings/media/{uuid}` | PUT | Create or update a rating |

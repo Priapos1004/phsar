@@ -66,6 +66,9 @@ class MediaSibling(BaseModel):
 
 class MediaDetail(MediaConnected):
     """Full media detail with sibling media from the same anime."""
+    # "Top N%" rank of this media's confidence-weighted MAL score among all
+    # scored media in the catalog (None when unscored). Detail-only.
+    score_top_percent: Optional[int] = None
     sibling_media: list[MediaSibling] = []
     # Insertion index for the "you are here" marker in the chronological
     # sibling order — 0 means the current media precedes every sibling,

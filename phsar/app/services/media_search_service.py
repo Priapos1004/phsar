@@ -115,8 +115,11 @@ async def get_media_detail(db: AsyncSession, media_uuid: UUID) -> MediaDetail:
     )
     siblings = [_media_to_sibling(m) for m in sorted_anime_media if m.id != media.id]
 
+    score_top_percent = await media_dao.score_top_percent(db, media.id)
+
     return MediaDetail(
         **media_to_dict(media),
+        score_top_percent=score_top_percent,
         sibling_media=siblings,
         current_position=current_position,
     )
