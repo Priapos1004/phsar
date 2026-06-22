@@ -31,8 +31,13 @@ def weighted_score_expr(score, scored_by):
     outrank a higher-scored niche one. Single source of truth for the SQL form,
     shared by media + anime search ranking and the `score_top_percent` percentile
     DAOs (the Python twin is `scrape_dispatcher._weighted_score`). `score` /
-    `scored_by` may be plain columns (per-media) or aggregates (per-anime avg)."""
-    return score * func.log(scored_by + 1)
+    `scored_by` may be plain columns (per-media) or aggregates (per-anime avg).
+
+    The base is passed explicitly (`log(10, x)`) rather than relying on
+    Postgres's single-arg `log()` defaulting to base 10, so the SQL stays
+    numerically locked to the Python twin's `math.log10` even if the dialect
+    changes — `test_weighted_score_matches_python_twin` guards the equivalence."""
+    return score * func.log(10, scored_by + 1)
 
 
 def _apply_studio_filter(stmt, studio_names: list[str]):

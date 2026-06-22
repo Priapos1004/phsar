@@ -56,7 +56,14 @@ class MediaDAO(MalIdDAO[Media]):
         Metric is `score * log10(scored_by + 1)` — the same weighting search
         ranking uses — so a high score from a handful of votes doesn't outrank
         a well-voted title. Returns None when the media is unscored or the
-        catalog has no scored media."""
+        catalog has no scored media.
+
+        Single seq scan over the scored rows, no sort: `better` counts those
+        beating this media's metric, `total` counts all scored. (A `rank()`
+        window form would force a sort the count-FILTER avoids, and an index on
+        the metric can't help a rank-against-all-rows anyway — EXPLAIN confirmed
+        the planner sorts regardless. If this ever matters at 10k+ media, cache
+        the percentile at sweep time rather than reshaping the query.)"""
         metric = weighted_score_expr(Media.score, Media.scored_by)
         this_metric = (
             select(metric).where(Media.id == media_id).scalar_subquery()

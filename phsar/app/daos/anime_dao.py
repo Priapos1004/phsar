@@ -174,20 +174,28 @@ class AnimeDAO(MalIdDAO[Anime]):
             .having(func.avg(Media.score).is_not(None))
             .cte("per_anime_score")
         )
-        this_metric = (
-            select(per_anime.c.metric)
-            .where(per_anime.c.anime_id == anime_id)
-            .scalar_subquery()
+        # Single pass over the per-anime metric set: rank() (ties share the lowest
+        # rank) minus 1 is the count of strictly-better anime, count() over the
+        # whole window is the scored total. Avoids referencing the CTE twice (a
+        # scalar subquery + a filtered count both scanned it before).
+        ranked = (
+            select(
+                per_anime.c.anime_id.label("anime_id"),
+                (func.rank().over(order_by=per_anime.c.metric.desc()) - 1).label("better"),
+                func.count().over().label("total"),
+            )
+            .select_from(per_anime)
+            .subquery()
         )
-        stmt = select(
-            this_metric.label("m_this"),
-            func.count().filter(per_anime.c.metric > this_metric),
-            func.count(),
-        ).select_from(per_anime)
-        m_this, better, total = (await db.execute(stmt)).one()
-        if m_this is None or total == 0:
+        row = (
+            await db.execute(
+                select(ranked.c.better, ranked.c.total).where(ranked.c.anime_id == anime_id)
+            )
+        ).one_or_none()
+        # No row → this anime has no scored media (filtered out by HAVING).
+        if row is None or row.total == 0:
             return None
-        return max(1, round(better / total * 100))
+        return max(1, round(row.better / row.total * 100))
 
     async def get_by_media_mal_id_with_media(
         self, db: AsyncSession, media_mal_id: int,

@@ -6,14 +6,40 @@ values aren't deterministic — but relative ranking is: a higher weighted score
 else is in the catalog. These tests assert that invariant plus the None path.
 """
 
+import pytest
+from sqlalchemy import select
+
 from app.daos.anime_dao import AnimeDAO
 from app.daos.media_dao import MediaDAO
+from app.daos.search_filters import weighted_score_expr
 from app.models.anime import Anime
 from app.models.media import Media
+from app.services.scrape_dispatcher import _weighted_score
 from tests._helpers import media_kwargs
 
 anime_dao = AnimeDAO()
 media_dao = MediaDAO()
+
+
+async def test_weighted_score_matches_python_twin(db_session):
+    """The SQL `weighted_score_expr` (Postgres `log(10, x)`) and the Python
+    `_weighted_score` (`math.log10`) are the two copies of one formula and feed
+    the same percentile ranking — they must stay numerically identical. Guards
+    against a dialect/refactor that silently desyncs the chip from drift detection.
+    """
+    anime = Anime(mal_id=95301, title="WeightedTwinAnime")
+    db_session.add(anime)
+    await db_session.flush()
+    media = Media(**media_kwargs(anime.id, 95311, score=7.3, scored_by=4242))
+    db_session.add(media)
+    await db_session.flush()
+
+    sql_value = (
+        await db_session.execute(
+            select(weighted_score_expr(Media.score, Media.scored_by)).where(Media.id == media.id)
+        )
+    ).scalar_one()
+    assert sql_value == pytest.approx(_weighted_score(7.3, 4242))
 
 
 async def test_media_score_top_percent_rewards_vote_confidence(db_session):
