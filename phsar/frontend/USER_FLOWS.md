@@ -182,10 +182,11 @@ Each anime search result card shows:
 - Title (English preferred), alternate titles, airing status badge: green (Currently Airing), yellow (Not yet aired), blue (upcoming content), grey (Finished Airing)
 - "Story Complete" badge (emerald, additive — shown alongside the airing badge when an admin marked the anime story-complete). Hovering shows a tooltip explaining it differs from "Finished Airing" (broadcast ended) — the *story* has concluded
 - Average MAL score with "ratings/media" label; hovering the score pill shows a tooltip clarifying it's the MyAnimeList community score, not Phsar users' ratings
+- A small "Top N%" chip after the rating-count text (always visible, color-ramped) showing where this anime ranks among all scored anime by its vote-weighted MAL score; hovering explains "higher than X% of the catalog" and the vote weighting. Hidden when the anime has no score
 - Relation type badges with counts (e.g., "main: 5"), media type badges with counts (e.g., "TV: 3")
-- Age rating badge (max across media), genre badges (strict majority rule)
+- Age rating badge (max across media), genre badges (strict majority rule) — hovering a genre badge shows its description when one is seeded
 - Stats grid: total episodes, media count, season range, total watch time
-- Studio names
+- Studio names — each is a button linking to an anime-view search filtered to that studio ("other anime from this studio")
 - Watchlist bookmark buttons (add all / remove all — stub dialogs, wired in v0.15.0)
 
 ### 6.3 Synopsis
@@ -236,10 +237,11 @@ Each anime search result card shows:
 - Japanese title and romaji subtitle (if different from displayed title)
 - Airing status badge: green pulsing dot for "Currently Airing", yellow for "Not yet aired", muted for finished
 - MAL score with star icon and rating count; hovering the score pill shows a tooltip clarifying it's the MyAnimeList community score, not Phsar users' ratings
+- A small "Top N%" chip after the rating-count text (always visible, color-ramped) showing where this media ranks among all scored media by its vote-weighted MAL score; hovering explains the rank + vote weighting. Hidden when the media has no score
 - Badges: media type (green), relation type (blue), age rating (orange)
-- Genre badges (themed primary color)
+- Genre badges (themed primary color) — hovering a genre badge shows its description when one is seeded
 - Stats grid: episodes, duration per episode, season, total watch time
-- Studio names
+- Studio names — each is a button linking to an anime-view search filtered to that studio
 - Disabled bookmark button (placeholder for watchlist, wired in v0.15.0)
 
 ### 7.3 Synopsis
@@ -473,6 +475,7 @@ Each anime search result card shows:
 | `/auth/login` | POST | Login form submission |
 | `/auth/validate` | GET | Every page load (layout) |
 | `/filters/options?view_type=anime\|media` | GET | SearchBar mount and view toggle |
+| `/filters/genres` | GET | Genre-badge tooltips (cached once per session by the `genres` store) |
 | `/filters/create-token` | POST | Search submission |
 | `/filters/verify-token` | POST | Search page load |
 | `/search/anime` | GET | Anime-view search after token verification |
