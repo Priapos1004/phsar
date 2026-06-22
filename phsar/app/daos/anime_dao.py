@@ -158,7 +158,8 @@ class AnimeDAO(MalIdDAO[Anime]):
 
     async def score_top_percent(self, db: AsyncSession, anime_id: int) -> int | None:
         """Where this anime ranks among all scored anime by its
-        confidence-weighted MAL score, as a "top N%" (1 = best).
+        confidence-weighted MAL score, as a rank-based "top N%" (lower = better,
+        worst-scored anime = 100).
 
         Per-anime metric is `avg_score * log10(avg_scored_by + 1)` using the
         same mean aggregates the detail card shows (avg over non-null scores /
@@ -195,7 +196,8 @@ class AnimeDAO(MalIdDAO[Anime]):
         # No row → this anime has no scored media (filtered out by HAVING).
         if row is None or row.total == 0:
             return None
-        return max(1, round(row.better / row.total * 100))
+        # Rank-based top N% (see MediaDAO.score_top_percent): ceil(rank/total*100).
+        return ((row.better + 1) * 100 + row.total - 1) // row.total
 
     async def get_by_media_mal_id_with_media(
         self, db: AsyncSession, media_mal_id: int,

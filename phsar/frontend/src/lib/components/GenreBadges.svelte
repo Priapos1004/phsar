@@ -14,7 +14,7 @@
 
 	onMount(ensureGenresLoaded);
 
-	// Not every genre has a seeded description; those render as plain badges.
+	// All genres carry a seeded description today; falls back to a plain badge if one is ever missing.
 	function describe(genre: string): string | undefined {
 		return $genreDescriptions.get(genre.toLowerCase());
 	}

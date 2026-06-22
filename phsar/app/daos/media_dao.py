@@ -51,7 +51,8 @@ class MediaDAO(MalIdDAO[Media]):
 
     async def score_top_percent(self, db: AsyncSession, media_id: int) -> int | None:
         """Where this media ranks among all scored media by its
-        confidence-weighted MAL score, as a "top N%" (1 = best).
+        confidence-weighted MAL score, as a rank-based "top N%" (lower = better,
+        worst-scored media = 100).
 
         Metric is `score * log10(scored_by + 1)` — the same weighting search
         ranking uses — so a high score from a handful of votes doesn't outrank
@@ -76,7 +77,10 @@ class MediaDAO(MalIdDAO[Media]):
         m_this, better, total = (await db.execute(stmt)).one()
         if m_this is None or total == 0:
             return None
-        return max(1, round(better / total * 100))
+        # Rank-based top N%: rank = better + 1 (1-based), ceil(rank/total*100) via
+        # integer ceil-division. Worst-scored media is exactly 100, best ~1; no
+        # clamp needed since rank >= 1. Matches the "Among the top N%" chip.
+        return ((better + 1) * 100 + total - 1) // total
 
     async def search_media_by_vector_with_filters(
         self,
