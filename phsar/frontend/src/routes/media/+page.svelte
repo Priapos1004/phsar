@@ -10,6 +10,9 @@
 	import RelatedMediaCarousel from '$lib/components/RelatedMediaCarousel.svelte';
 	import RatingCard from '$lib/components/RatingCard.svelte';
 	import BackLink from '$lib/components/BackLink.svelte';
+	import StudioLinks from '$lib/components/StudioLinks.svelte';
+	import GenreBadges from '$lib/components/GenreBadges.svelte';
+	import ScorePercentile from '$lib/components/ScorePercentile.svelte';
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { Bookmark, Star, Tv, Clock, Calendar, Film } from 'lucide-svelte';
 	import * as cls from '$lib/styles/classes';
@@ -222,6 +225,7 @@
 							<span class="text-muted-foreground">
 								{formatNumber(media.scored_by)} ratings
 							</span>
+							<ScorePercentile topPercent={media.score_top_percent} />
 						</div>
 					{/if}
 
@@ -233,13 +237,7 @@
 						{/if}
 					</div>
 
-					{#if media.genres.length}
-						<div class="flex flex-wrap gap-1.5">
-							{#each media.genres as genre}
-								<Badge variant="secondary" class={cls.badgeGenre}>{genre}</Badge>
-							{/each}
-						</div>
-					{/if}
+					<GenreBadges genres={media.genres} />
 
 					<div class="grid grid-cols-2 md:grid-cols-4 gap-3 pt-1">
 						{#if media.episodes !== null}
@@ -268,16 +266,7 @@
 						{/if}
 					</div>
 
-					{#if media.studio.length}
-						<div class="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-							<span class="text-muted-foreground font-medium">Studio</span>
-							{#each media.studio as studio}
-								<span class="px-2.5 py-0.5 rounded-md font-medium bg-card-foreground/8 text-card-foreground border border-border">
-									{studio}
-								</span>
-							{/each}
-						</div>
-					{/if}
+					<StudioLinks studios={media.studio} />
 				</div>
 			</div>
 		</div>

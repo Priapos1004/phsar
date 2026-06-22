@@ -49,6 +49,12 @@ export interface MediaConnected {
 	age_rating_numeric: number | null;
 }
 
+// Genre name + description (GET /filters/genres) — powers genre-badge tooltips
+export interface GenreOut {
+	name: string;
+	description: string | null;
+}
+
 // Filter options (GET /filters/options)
 export interface FilterOptions {
 	relation_type: string[];
@@ -86,6 +92,9 @@ export interface MediaSibling {
 }
 
 export interface MediaDetail extends MediaConnected {
+	/** "Top N%" rank of this media's confidence-weighted MAL score among all
+	 * scored media in the catalog (null when unscored). */
+	score_top_percent: number | null;
 	sibling_media: MediaSibling[];
 	/** Insertion index for the "you are here" marker in the chronological
 	 * sibling order. 0 = current media precedes every sibling, sibling_media.length = trails all. */
@@ -251,6 +260,9 @@ export interface AnimeMediaItem {
 export interface AnimeDetail extends AnimeAggregatedBase {
 	other_names: string[];
 	description: string | null;
+	/** "Top N%" rank of this anime's confidence-weighted MAL score among all
+	 * scored anime in the catalog (null when unscored). */
+	score_top_percent: number | null;
 	media: AnimeMediaItem[];
 }
 

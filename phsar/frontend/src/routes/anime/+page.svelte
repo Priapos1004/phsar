@@ -17,6 +17,9 @@
 	import BulkRateDialog from '$lib/components/BulkRateDialog.svelte';
 	import DeleteWatchHistoryToggle from '$lib/components/DeleteWatchHistoryToggle.svelte';
 	import BackLink from '$lib/components/BackLink.svelte';
+	import StudioLinks from '$lib/components/StudioLinks.svelte';
+	import GenreBadges from '$lib/components/GenreBadges.svelte';
+	import ScorePercentile from '$lib/components/ScorePercentile.svelte';
 	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { refreshSpoilerVisibility } from '$lib/stores/spoilerVisibility';
@@ -357,6 +360,7 @@
 							<span class="text-muted-foreground">
 								{formatNumber(anime.avg_scored_by)} ratings/media
 							</span>
+							<ScorePercentile topPercent={anime.score_top_percent} />
 						</div>
 					{/if}
 
@@ -372,13 +376,7 @@
 						{/if}
 					</div>
 
-					{#if anime.genres.length}
-						<div class="flex flex-wrap gap-1.5">
-							{#each anime.genres as genre}
-								<Badge variant="secondary" class={cls.badgeGenre}>{genre}</Badge>
-							{/each}
-						</div>
-					{/if}
+					<GenreBadges genres={anime.genres} />
 
 					<div class="grid grid-cols-2 md:grid-cols-4 gap-3 pt-1">
 						{#if anime.total_episodes !== null}
@@ -413,16 +411,7 @@
 						{/if}
 					</div>
 
-					{#if anime.studios.length}
-						<div class="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-							<span class="text-muted-foreground font-medium">Studio</span>
-							{#each anime.studios as studio}
-								<span class="px-2.5 py-0.5 rounded-md font-medium bg-card-foreground/8 text-card-foreground border border-border">
-									{studio}
-								</span>
-							{/each}
-						</div>
-					{/if}
+					<StudioLinks studios={anime.studios} />
 				</div>
 			</div>
 		</div>

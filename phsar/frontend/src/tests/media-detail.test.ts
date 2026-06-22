@@ -61,6 +61,7 @@ const mockMediaDetail: MediaDetail = {
 	anime_other_names: [],
 	total_watch_time: 17280,
 	age_rating_numeric: 13,
+	score_top_percent: 12,
 	sibling_media: [
 		{
 			uuid: 'sibling-uuid-1',
