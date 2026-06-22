@@ -277,9 +277,12 @@ Each anime search result card shows:
 - Shared `<BackLink>` component (in `lib/components/`) decides which back button to render based on URL params:
   - `?q=<token>` → "Back to search" (search-origin pattern, returns to `/search?q=token`; the token's `view_type` restores the correct anime/media toggle)
   - `?from=library` → "Back to library" (non-search origin used by the recent-additions panel)
+  - `?from=job&job=<uuid>` → "Back to job" (admin job-detail page's failed-refresh / failed-probe / attached links → `/admin/jobs/[uuid]`)
+  - `?from=completion` → "Back to completion" (admin Completion tab's anime links → `/admin?tab=completion`)
+  - `?from=curation` → "Back to curation" (Merge/Split candidate cards' anime links → `/admin?tab=curation`)
   - neither → no back button (direct-URL arrivals stay clean)
-- Both flags propagate across the entire anime↔media jump chain (anime → media tile, media → anime link, related-media carousel) via `buildDetailHref`'s options bag, so a deep dive like library → anime → media → sibling stays linkable back to the origin
-- Origin set is a closed `DetailOrigin` TS union (`'library'` today); extending it requires updating both `lib/utils/navigation.ts` AND `BackLink.svelte`'s switch — surfaces as a type error otherwise
+- These flags propagate across the entire anime↔media jump chain (anime → media tile, media → anime link, related-media carousel) via `buildDetailHref`'s options bag, so a deep dive like curation → anime → media → sibling stays linkable back to the origin
+- Origin set is a closed `DetailOrigin` TS union (`'library' | 'job' | 'completion' | 'curation'`); extending it requires updating both `lib/utils/navigation.ts` AND `BackLink.svelte`'s switch — surfaces as a type error otherwise
 
 ---
 
@@ -458,7 +461,7 @@ Each anime search result card shows:
 ### 10.8 Completion tab (Story Completion)
 - Admin-only manual curation (no detector): mark an anime as story-complete when its narrative has concluded — distinct from "Finished Airing".
 - **Search to mark**: a debounced search box (reuses `/search/anime`, title search) with a clear-✕ button. Results list cover thumbnail + title; each row has a "Mark complete" button, or a "Marked" label if already complete. Marking (`POST /admin/finished-anime/{uuid}`) clears + closes the search so it reads as a committed selection.
-- **Marked list**: cover thumbnail + title (links to the anime page same-tab, "Back to completion") + "marked {date} by {admin}" audit line. Sort control: Newest marked (default) / Oldest marked / Title A–Z. Each row has an unmark (✕) button (`DELETE /admin/finished-anime/{uuid}`).
+- **Marked list**: cover thumbnail + title (links to the anime page same-tab, "Back to completion") + "marked {date} by {admin}" audit line. Sort control: Newest marked (default) / Oldest marked / Title A–Z. Each row has an unmark (✕) button (`DELETE /admin/finished-anime/{uuid}`), guarded by a click-to-arm confirm: the first click arms the row (✕ → red check, "Click again to confirm removal", auto-disarms after ~3s), the second click within the window removes the flag — so a stray click can't silently un-mark.
 - The mark surfaces on the anime detail page (emerald "Story Complete" badge + tooltip) and on anime search cards (small "✓ Complete" badge).
 
 ---

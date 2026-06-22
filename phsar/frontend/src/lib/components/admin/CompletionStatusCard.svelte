@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 	import { api, ApiError } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import * as Select from '$lib/components/ui/select';
 	import { Input } from '$lib/components/ui/input';
 	import Tooltip from '$lib/components/Tooltip.svelte';
-	import { CheckCircle2, RefreshCw, Search, X } from 'lucide-svelte';
+	import { Check, CheckCircle2, RefreshCw, Search, X } from 'lucide-svelte';
 	import { fetchAnimeSearchResults } from '$lib/utils/search';
 	import { resolveTitle, formatShortDate } from '$lib/utils/formatString';
 	import { buildDetailHref } from '$lib/utils/navigation';
@@ -20,6 +20,12 @@
 	let refreshing = $state(false);
 	let error = $state('');
 	let busyUuid = $state<string | null>(null);
+	// Click-to-arm guard against accidental removal: the first click arms the
+	// row (X → red Check), a second click within the window confirms. Mirrors
+	// the Merge/Split candidate confirm-step. Auto-disarms after ARM_TIMEOUT_MS.
+	const ARM_TIMEOUT_MS = 3000;
+	let armedUuid = $state<string | null>(null);
+	let armTimer: ReturnType<typeof setTimeout> | undefined;
 
 	let query = $state('');
 	let results = $state<AnimeSearchResult[]>([]);
@@ -112,6 +118,23 @@
 		}
 	}
 
+	function disarm() {
+		clearTimeout(armTimer);
+		armedUuid = null;
+	}
+
+	// First click arms; a second click on the same armed row confirms removal.
+	function requestUnmark(uuid: string) {
+		if (armedUuid === uuid) {
+			disarm();
+			void unmark(uuid);
+			return;
+		}
+		clearTimeout(armTimer);
+		armedUuid = uuid;
+		armTimer = setTimeout(() => (armedUuid = null), ARM_TIMEOUT_MS);
+	}
+
 	async function unmark(uuid: string) {
 		busyUuid = uuid;
 		error = '';
@@ -124,6 +147,8 @@
 			busyUuid = null;
 		}
 	}
+
+	onDestroy(() => clearTimeout(armTimer));
 </script>
 
 {#snippet cover(src: string | null, alt: string)}
@@ -249,10 +274,22 @@
 								Marked {formatShortDate(a.marked_at)}{a.marked_by_username ? ` by ${a.marked_by_username}` : ''}
 							</p>
 						</div>
-						<Tooltip text="Remove story-complete flag">
+						<Tooltip text={armedUuid === a.uuid ? 'Click again to confirm removal' : 'Remove story-complete flag'}>
 							{#snippet trigger(props)}
-								<Button {...props} size="icon" variant="ghost" onclick={() => unmark(a.uuid)} disabled={busyUuid === a.uuid} aria-label="Remove story-complete flag">
-									<X class="size-4" />
+								<Button
+									{...props}
+									size="icon"
+									variant="ghost"
+									onclick={() => requestUnmark(a.uuid)}
+									disabled={busyUuid === a.uuid}
+									class={armedUuid === a.uuid ? 'text-destructive hover:text-destructive' : ''}
+									aria-label={armedUuid === a.uuid ? 'Confirm removal of story-complete flag' : 'Remove story-complete flag'}
+								>
+									{#if armedUuid === a.uuid}
+										<Check class="size-4" />
+									{:else}
+										<X class="size-4" />
+									{/if}
 								</Button>
 							{/snippet}
 						</Tooltip>
