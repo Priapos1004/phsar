@@ -78,7 +78,7 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 | `/watchlist` | (placeholder) | Yes |
 | `/settings` | User preferences (theme, language, rating step, spoiler level, data export, account deletion) | Yes |
 | `/library/add` | Add anime via MAL query + recent additions panel | Yes (form disabled for restricted users) |
-| `/admin` | Admin sections behind a `?tab=` switcher (Overview / Jobs Log / Tokens / Curation / Backups) | Yes (admin) |
+| `/admin` | Admin sections behind a `?tab=` switcher (Overview / Jobs Log / Tokens / Curation / Completion / Backups) | Yes (admin) |
 | `/admin/jobs/[uuid]` | Per-job inspection page for update_sweep v2+ rows (per-media field diffs, umbrella reclassifications) | Yes (admin) |
 | `/statistics` | (placeholder) | Yes |
 | `/getting-started` | (placeholder) | Yes |
@@ -157,7 +157,8 @@ Each media search result card shows:
 ### 5.2 Anime Card (anime view)
 Each anime search result card shows:
 - Cover image (from anime, lazy-loaded with fallback)
-- Title, average score + average scored-by ("ratings/media"), season range (e.g., "Spring 2017 - Winter 2024")
+- Title, with a small emerald "✓ Complete" badge when an admin has marked the anime story-complete (no tooltip in search — the full explanation lives on the detail page)
+- Average score + average scored-by ("ratings/media"), season range (e.g., "Spring 2017 - Winter 2024")
 - Airing status for active/upcoming anime ("Currently Airing + upcoming content", "Not yet aired", or "upcoming content" for finished anime with announced sequels)
 - Age rating (max across media)
 - Genre tags (strict majority rule: genre must be on >50% of media)
@@ -179,6 +180,7 @@ Each anime search result card shows:
 ### 6.2 Hero Card
 - Same blurred cover background pattern as media detail
 - Title (English preferred), alternate titles, airing status badge: green (Currently Airing), yellow (Not yet aired), blue (upcoming content), grey (Finished Airing)
+- "Story Complete" badge (emerald, additive — shown alongside the airing badge when an admin marked the anime story-complete). Hovering shows a tooltip explaining it differs from "Finished Airing" (broadcast ended) — the *story* has concluded
 - Average MAL score with "ratings/media" label; hovering the score pill shows a tooltip clarifying it's the MyAnimeList community score, not Phsar users' ratings
 - Relation type badges with counts (e.g., "main: 5"), media type badges with counts (e.g., "TV: 3")
 - Age rating badge (max across media), genre badges (strict majority rule)
@@ -349,7 +351,7 @@ Each anime search result card shows:
 - NavBar dropdown shows "Admin" link only for admin users
 
 ### 10.1a Tab navigation
-- Admin sections live behind a tab bar driven by the `?tab=` query param (`/admin?tab=overview`, `?tab=jobs`, `?tab=tokens`, `?tab=curation`, `?tab=backups`). Default tab is `overview` if `?tab=` is absent or unknown — a stale bookmark to a retired tab key still lands the admin somewhere useful instead of a blank page.
+- Admin sections live behind a tab bar driven by the `?tab=` query param (`/admin?tab=overview`, `?tab=jobs`, `?tab=tokens`, `?tab=curation`, `?tab=completion`, `?tab=backups`). Default tab is `overview` if `?tab=` is absent or unknown — a stale bookmark to a retired tab key still lands the admin somewhere useful instead of a blank page.
 - The active tab is preserved across refresh and is bookmarkable. Tabs eager-render on first admin load and stay mounted across switches — visibility toggles via `class:hidden`, not conditional unmount. Admin sessions usually touch several tabs in a row, so the one-time parallel-fetch cost on first paint buys instant subsequent switches. No card polls, so keeping them mounted doesn't generate ongoing traffic.
 
 ### 10.1b Overview tab (default)
@@ -453,6 +455,12 @@ Each anime search result card shows:
 - **Resurface**: each row has a "Resurface" button → a username-gated confirm dialog (type the admin username, mirroring backup restore). On confirm it `POST`s `/{uuid}/delete`, removes the row, then re-runs the card's detection so the freed candidate re-flags as pending immediately (rather than waiting for the nightly sweep). Only `dismissed` rows are deletable; merged rows no longer exist and deleting a split-status row wouldn't undo the split.
 - The detector itself is invisible to non-admin users; nothing about it surfaces outside this card.
 
+### 10.8 Completion tab (Story Completion)
+- Admin-only manual curation (no detector): mark an anime as story-complete when its narrative has concluded — distinct from "Finished Airing".
+- **Search to mark**: a debounced search box (reuses `/search/anime`, title search) with a clear-✕ button. Results list cover thumbnail + title; each row has a "Mark complete" button, or a "Marked" label if already complete. Marking (`POST /admin/finished-anime/{uuid}`) clears + closes the search so it reads as a committed selection.
+- **Marked list**: cover thumbnail + title (links to the anime page same-tab, "Back to completion") + "marked {date} by {admin}" audit line. Sort control: Newest marked (default) / Oldest marked / Title A–Z. Each row has an unmark (✕) button (`DELETE /admin/finished-anime/{uuid}`).
+- The mark surfaces on the anime detail page (emerald "Story Complete" badge + tooltip) and on anime search cards (small "✓ Complete" badge).
+
 ---
 
 ## 11. API Endpoints Used by Frontend
@@ -501,6 +509,9 @@ Each anime search result card shows:
 | `/admin/split-candidates/{uuid}/split` | POST | Admin page Split Candidates card (split clusters into separate anime, re-parent media) |
 | `/admin/split-candidates/{uuid}/dismiss` | POST | Admin page Split Candidates card (mark as reviewed-keep-bundled) |
 | `/admin/split-candidates/backfill` | POST | Admin page Split Candidates card "Re-run detection" — re-runs disjoint-franchise detection across the catalog |
+| `/admin/finished-anime` | GET | Admin Completion tab (list story-complete anime) |
+| `/admin/finished-anime/{uuid}` | POST | Admin Completion tab (mark anime story-complete) |
+| `/admin/finished-anime/{uuid}` | DELETE | Admin Completion tab (remove story-complete flag) |
 | `/auth/register` | POST | Registration page |
 | `/maintenance/status` | GET | Polled by MaintenanceBanner every 30s on every page (no auth) |
 | `/jobs/scrape` | POST | `/library/add` form submission (enqueues a `user_scrape` job; restricted users rejected by role check) |

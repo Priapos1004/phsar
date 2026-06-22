@@ -9,7 +9,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { Bookmark, Star, Tv, Calendar, Film, Layers, X, ListChecks, BookmarkPlus, Trash2 } from 'lucide-svelte';
+	import { Bookmark, Star, Tv, Calendar, Film, Layers, X, ListChecks, BookmarkPlus, Trash2, CheckCircle2 } from 'lucide-svelte';
 	import * as cls from '$lib/styles/classes';
 	import { userSettings } from '$lib/stores/userSettings';
 	import type { AnimeDetail, AnimeMediaItem, RatingOut } from '$lib/types/api';
@@ -313,6 +313,15 @@
 								<span class="inline-block mt-1.5 px-2.5 py-1 rounded-md font-medium bg-muted text-muted-foreground">
 									{displayStatus}
 								</span>
+							{/if}
+							{#if anime.is_finished}
+								<Tooltip
+									text="The story has concluded. Distinct from 'Finished Airing', which only means episodes stopped broadcasting — an anime can be finished airing but still have its story ongoing (e.g. an announced sequel or an unfinished manga adaptation)."
+									class="inline-flex items-center gap-1.5 mt-1.5 ml-1.5 px-2.5 py-1 rounded-md font-semibold border {cls.badgeComplete}"
+								>
+									<CheckCircle2 class="size-3.5" />
+									Story Complete
+								</Tooltip>
 							{/if}
 							{#each resolveSubtitles(anime.title, anime.name_eng, anime.name_jap, nameLanguage) as subtitle, i}
 								<p class="text-sm {i === 0 ? 'text-muted-foreground mt-1' : 'text-muted-foreground/70'}">{subtitle}</p>

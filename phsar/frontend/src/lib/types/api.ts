@@ -222,6 +222,7 @@ export interface AnimeAggregatedBase {
 	airing_status: string;
 	has_upcoming: boolean;
 	age_rating_numeric: number | null;
+	is_finished: boolean;
 }
 
 export interface AnimeSearchResult extends AnimeAggregatedBase {}
@@ -272,6 +273,17 @@ export type UserSettingsUpdate = Partial<UserSettings>;
 // Spoiler visibility
 export interface SpoilerVisibility {
 	visible_media_uuids: string[];
+}
+
+// Admin — Story completion
+export interface FinishedAnimeItem {
+	uuid: string;
+	title: string;
+	name_eng: string | null;
+	name_jap: string | null;
+	cover_image: string | null;
+	marked_by_username: string | null;
+	marked_at: string;
 }
 
 // Admin — Merge candidates

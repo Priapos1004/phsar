@@ -1,4 +1,5 @@
 from app.models.anime import Anime
+from app.models.anime_completion import AnimeCompletion
 from app.models.anime_freshness import AnimeFreshness
 from app.models.anime_search import AnimeSearch
 from app.models.genre import Genre

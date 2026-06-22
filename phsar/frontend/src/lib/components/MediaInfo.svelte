@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { formatNumber, formatAiringStatus, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
-	import { Bookmark } from 'lucide-svelte';
+	import { Bookmark, CheckCircle2 } from 'lucide-svelte';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as cls from '$lib/styles/classes';
@@ -30,6 +30,8 @@
 		media_uuid: string;
 		searchToken?: string | null;
 		fromParam?: DetailOrigin | null;
+		/** Anime-only: admin-marked story-complete. Renders a small badge by the title. */
+		is_finished?: boolean;
 	}
 
 	let {
@@ -39,7 +41,7 @@
 		genres = null, media_type = null, media_types = null,
 		relation_type = null, relation_types = null, watchtime = null,
 		imageUrl = null, on_watchlist = false, media_uuid,
-		searchToken = null, fromParam = null,
+		searchToken = null, fromParam = null, is_finished = false,
 	}: Props = $props();
 
 	let imgFailed = $state(false);
@@ -77,7 +79,14 @@
 			<div class="flex flex-col justify-between flex-grow space-y-2">
 				<div class="flex items-start justify-between">
 					<div>
-						<h3 class="text-lg font-bold text-card-foreground">{title}</h3>
+						<h3 class="text-lg font-bold text-card-foreground inline-flex items-center gap-1.5">
+							{title}
+							{#if is_finished}
+								<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-semibold border align-middle {cls.badgeComplete}">
+									<CheckCircle2 class="size-3" /> Complete
+								</span>
+							{/if}
+						</h3>
 						{#if displaySeason || airing_status === 'Not yet aired' || airing_status === 'Currently Airing' || has_upcoming}
 							<p class="text-primary">
 								{#if displaySeason}

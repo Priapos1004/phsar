@@ -145,11 +145,12 @@ class AnimeDAO(MalIdDAO[Anime]):
         ]
 
     async def get_by_uuid_with_all_media(self, db: AsyncSession, uuid: UUID) -> Anime | None:
-        """Fetch anime by UUID with all media eagerly loaded (including genres/studios per media)."""
+        """Fetch anime by UUID with all media eagerly loaded (including genres/studios per media)
+        plus the completion sidecar (story-complete flag for the detail page)."""
         stmt = (
             select(Anime)
             .filter(Anime.uuid == uuid)
-            .options(*self._anime_eager_options())
+            .options(*self._anime_eager_options(), selectinload(Anime.completion))
         )
         result = await db.execute(stmt)
         return result.scalars().first()
@@ -461,7 +462,7 @@ class AnimeDAO(MalIdDAO[Anime]):
         detail_stmt = (
             select(Anime)
             .where(Anime.id.in_(anime_ids))
-            .options(*self._anime_eager_options())
+            .options(*self._anime_eager_options(), selectinload(Anime.completion))
         )
         detail_result = await db.execute(detail_stmt)
         anime_map = {a.id: a for a in detail_result.scalars().all()}

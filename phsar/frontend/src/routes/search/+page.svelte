@@ -161,7 +161,7 @@
 						relation_types={result.relation_types}
 						watchtime={result.total_watch_time !== null ? formatDuration(result.total_watch_time) : null}
 						imageUrl={result.cover_image}
-
+						is_finished={result.is_finished}
 						media_uuid={result.uuid}
 						{searchToken}
 					/>

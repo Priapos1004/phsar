@@ -197,6 +197,8 @@ Orchestrates BFS output into save/attach/merge decisions.
 
 - **`anime_summary.py`** — `summarize_anime(anime, rating_count) -> MergeCandidateAnimeSummary` shared helper. Both `merge_candidate_service.list_pending` and `split_candidate_service.list_pending` render the same side-by-side anime card, so a future schema addition (e.g. `airing_status`) lands in one place
 
+- **`completion_service.py`** (v0.14.10) — admin story-complete curation: `mark_finished` (idempotent insert), `unmark_finished` (delete), `list_finished` → `FinishedAnimeItem`s (cover + `marked_by_username` + `marked_at`, newest first; frontend re-sorts). A **manual** flag — no detector, no dismissal history (unlike merge/split). Read-side `is_finished` is set in `anime_search_service` (detail + aggregated search) from an eager-loaded `Anime.completion`. The Completion tab's anime lookup reuses the public `/search/anime` — there is deliberately **no** search method on `AnimeCompletionDAO`
+
 ## Ratings + spoilers
 
 - **`rating_service.py`** — rating CRUD + note search; triggers spoiler-visibility recompute on every change

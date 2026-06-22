@@ -200,6 +200,7 @@ async def search_anime_by_query(
             name_eng=anime.name_eng,
             name_jap=anime.name_jap,
             cover_image=anime.cover_image,
+            is_finished=anime.completion is not None,
             **agg,
         ))
 
@@ -233,6 +234,7 @@ async def get_anime_detail(db: AsyncSession, anime_uuid: UUID) -> AnimeDetail:
         other_names=anime.other_names or [],
         description=anime.description,
         cover_image=anime.cover_image,
+        is_finished=anime.completion is not None,
         media=media_items,
         **agg,
     )

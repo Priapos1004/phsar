@@ -76,6 +76,8 @@ class AnimeAggregatedBase(BaseModel):
     has_upcoming: bool = False
     # Age rating (max across media)
     age_rating_numeric: Optional[int] = None
+    # Admin-set story-complete flag (presence of an anime_completion row)
+    is_finished: bool = False
 
 
 class AnimeSearchResult(AnimeAggregatedBase):
