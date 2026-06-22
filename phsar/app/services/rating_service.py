@@ -92,10 +92,13 @@ async def _upsert_note_embedding(db: AsyncSession, rating: Ratings, note: str | 
 
 async def _upsert_single_rating(
     db: AsyncSession, user_id: int, media: Media, fields: dict, note: str | None,
-    existing: Ratings | None,
+    existing: Ratings | None, *, known_has_events: bool | None = None,
 ) -> UUID:
     """Core upsert logic: create or update one rating and manage its note embedding.
-    Returns the rating UUID. Does not commit — caller manages the transaction."""
+    Returns the rating UUID. Does not commit — caller manages the transaction.
+
+    `known_has_events` lets a batch caller pass the media's prior-event existence
+    (fetched once for the whole batch) so the first-watch check skips its per-media query."""
 
     if existing:
         old_note = existing.note
@@ -117,21 +120,32 @@ async def _upsert_single_rating(
 
         result_uuid = rating.uuid
 
-    await _maybe_log_first_watch(db, user_id, media.id, fields.get("watch_status"))
+    await _maybe_log_first_watch(
+        db, user_id, media.id, fields.get("watch_status"), known_has_events=known_has_events
+    )
     return result_uuid
 
 
 async def _maybe_log_first_watch(
-    db: AsyncSession, user_id: int, media_id: int, watch_status: WatchStatus | None
+    db: AsyncSession, user_id: int, media_id: int, watch_status: WatchStatus | None,
+    *, known_has_events: bool | None = None,
 ) -> None:
     """Log the first watch event when a rating write lands as `completed` and the user has
     no prior history for this media. Covers the first completion and an on_hold/dropped →
     completed transition, but a re-rate of media that already has events never duplicates —
     so an accidental delete-then-re-add can't pollute the watch time series. Rewatches go
-    through `log_rewatch` instead."""
+    through `log_rewatch` instead.
+
+    `known_has_events` short-circuits the per-media existence query when a batch caller
+    already fetched it for the whole set (avoids an N+1 in the bulk-upsert loop)."""
     if watch_status != WatchStatus.completed:
         return
-    if not await watch_event_dao.exists_for_user_media(db, user_id, media_id):
+    has_events = (
+        known_has_events
+        if known_has_events is not None
+        else await watch_event_dao.exists_for_user_media(db, user_id, media_id)
+    )
+    if not has_events:
         await watch_event_dao.create_event(db, user_id, media_id)
 
 
@@ -286,6 +300,11 @@ async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCr
     media_ids = [m.id for m in media_list]
     existing_ratings = await rating_dao.get_by_user_and_media_ids(db, user_id, media_ids)
     existing_by_media_id = {r.media_id: r for r in existing_ratings}
+    # Pre-fetch which media already have watch events (one grouped query) so the per-media
+    # first-watch check in the loop doesn't issue an existence query per media.
+    media_with_events = set(
+        await watch_event_dao.counts_for_user_media_ids(db, user_id, media_ids)
+    )
 
     # Note goes on the last "main" media; falls back to last media if no main exists
     main_indices = [i for i, m in enumerate(media_list) if m.relation_type.value == "main"]
@@ -298,7 +317,10 @@ async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCr
         # Auto-fill episodes_watched per media from its total episodes
         per_media_fields = {**shared_fields, "episodes_watched": media.episodes}
         existing = existing_by_media_id.get(media.id)
-        uuid = await _upsert_single_rating(db, user_id, media, per_media_fields, note, existing)
+        uuid = await _upsert_single_rating(
+            db, user_id, media, per_media_fields, note, existing,
+            known_has_events=media.id in media_with_events,
+        )
         rating_uuids.append(uuid)
 
     # Recompute visibility for each affected anime
