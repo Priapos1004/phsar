@@ -24,6 +24,7 @@ phsar/
 │   │   ├── maintenance_middleware.py
 │   │   └── security.py
 │   ├── daos/
+│   │   ├── anime_completion_dao.py
 │   │   ├── anime_dao.py
 │   │   ├── base_dao.py
 │   │   ├── base_mal_id_dao.py
@@ -38,11 +39,13 @@ phsar/
 │   │   ├── split_candidate_dao.py
 │   │   ├── studio_dao.py
 │   │   ├── user_dao.py
-│   │   └── user_settings_dao.py
+│   │   ├── user_settings_dao.py
+│   │   └── watch_event_dao.py
 │   ├── exceptions.py
 │   ├── main.py
 │   ├── models/
 │   │   ├── anime.py
+│   │   ├── anime_completion.py
 │   │   ├── anime_freshness.py
 │   │   ├── anime_search.py
 │   │   ├── base.py
@@ -65,10 +68,12 @@ phsar/
 │   │   ├── user_settings.py
 │   │   ├── user_visible_media.py
 │   │   ├── users.py
+│   │   ├── watch_event.py
 │   │   ├── watchlist.py
 │   │   └── watchlist_tag.py
 │   ├── routers/
 │   │   ├── admin.py
+│   │   ├── admin_completion.py
 │   │   ├── admin_jobs.py
 │   │   ├── admin_merge.py
 │   │   ├── admin_split.py
@@ -114,6 +119,7 @@ phsar/
 │       ├── auth_service.py
 │       ├── backup_dispatcher.py
 │       ├── backup_service.py
+│       ├── completion_service.py
 │       ├── export_service.py
 │       ├── filter_service.py
 │       ├── jikan_scraper.py
@@ -163,6 +169,7 @@ phsar/
 │   │   │   │   │   ├── AdminOverviewTab.svelte
 │   │   │   │   │   ├── AdminTabNav.svelte
 │   │   │   │   │   ├── AnimeUmbrellaCard.svelte
+│   │   │   │   │   ├── CompletionStatusCard.svelte
 │   │   │   │   │   ├── DismissedDecisionsSection.svelte
 │   │   │   │   │   ├── JobDetailCounters.svelte
 │   │   │   │   │   ├── JobDetailHeader.svelte
@@ -172,6 +179,7 @@ phsar/
 │   │   │   │   │   └── types.ts
 │   │   │   │   ├── BulkRateDialog.svelte
 │   │   │   │   ├── DangerZone.svelte
+│   │   │   │   ├── DeleteWatchHistoryToggle.svelte
 │   │   │   │   ├── DoubleRangeSlider.svelte
 │   │   │   │   ├── EChart.svelte
 │   │   │   │   ├── InfoDiashow.svelte
@@ -274,6 +282,7 @@ phsar/
 │   │       ├── api-download.test.ts
 │   │       ├── auth-store.test.ts
 │   │       ├── backups-card.test.ts
+│   │       ├── completion-status-card.test.ts
 │   │       ├── format-string.test.ts
 │   │       ├── job-bell.test.ts
 │   │       ├── job-detail-counters.test.ts
@@ -324,6 +333,7 @@ phsar/
     ├── routers/
     │   ├── conftest.py
     │   ├── test_admin.py
+    │   ├── test_admin_completion.py
     │   ├── test_admin_nightly.py
     │   ├── test_admin_seasonal.py
     │   ├── test_admin_sweep.py

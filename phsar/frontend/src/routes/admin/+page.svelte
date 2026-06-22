@@ -5,6 +5,7 @@
 	import BackupsCard from '$lib/components/BackupsCard.svelte';
 	import MergeCandidatesCard from '$lib/components/MergeCandidatesCard.svelte';
 	import SplitCandidatesCard from '$lib/components/SplitCandidatesCard.svelte';
+	import CompletionStatusCard from '$lib/components/admin/CompletionStatusCard.svelte';
 	import AdminJobsLogTab from '$lib/components/admin/AdminJobsLogTab.svelte';
 	import AdminOverviewTab from '$lib/components/admin/AdminOverviewTab.svelte';
 	import RegistrationTokensCard from '$lib/components/admin/RegistrationTokensCard.svelte';
@@ -19,6 +20,7 @@
 		{ key: 'jobs', label: 'Jobs Log' },
 		{ key: 'tokens', label: 'Tokens' },
 		{ key: 'curation', label: 'Curation' },
+		{ key: 'completion', label: 'Completion' },
 		{ key: 'backups', label: 'Backups' },
 	];
 	const DEFAULT_TAB: AdminTabKey = 'overview';
@@ -62,6 +64,9 @@
 	<div class:hidden={active !== 'curation'} class="space-y-6">
 		<MergeCandidatesCard currentUsername={getUsername() ?? ''} />
 		<SplitCandidatesCard currentUsername={getUsername() ?? ''} />
+	</div>
+	<div class:hidden={active !== 'completion'}>
+		<CompletionStatusCard />
 	</div>
 	<div class:hidden={active !== 'backups'}>
 		<BackupsCard currentUsername={getUsername() ?? ''} />

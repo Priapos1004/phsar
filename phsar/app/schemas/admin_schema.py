@@ -37,6 +37,19 @@ class MergeCandidateAnimeSummary(BaseModel):
     rating_count: int = 0
 
 
+class FinishedAnimeItem(BaseModel):
+    """A story-complete anime for the admin Completion tab. Carries the cover
+    image so the admin can recognize the title at a glance, plus the audit trail
+    (who marked it + when) like the registration-token list."""
+    uuid: str
+    title: str
+    name_eng: str | None = None
+    name_jap: str | None = None
+    cover_image: str | None = None
+    marked_by_username: str | None = None
+    marked_at: datetime
+
+
 class MergeCandidateListItem(BaseModel):
     uuid: str
     similarity_score: float

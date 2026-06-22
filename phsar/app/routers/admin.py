@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_db, require_roles
 from app.models.job import JobKind, JobStatus
 from app.models.users import RoleType
+from app.routers.admin_completion import router as admin_completion_router
 from app.routers.admin_jobs import enqueue_backup_job
 from app.routers.admin_jobs import router as admin_jobs_router
 from app.routers.admin_merge import router as admin_merge_router
@@ -220,3 +221,4 @@ router.include_router(backups_router)
 router.include_router(admin_jobs_router)
 router.include_router(admin_merge_router)
 router.include_router(admin_split_router)
+router.include_router(admin_completion_router)

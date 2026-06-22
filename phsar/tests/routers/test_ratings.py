@@ -45,15 +45,164 @@ async def test_media_list(db_session):
 async def test_upsert_rating_creates(client, user_auth_headers, test_media):
     response = await client.put(
         f"/ratings/media/{test_media.uuid}",
-        json={"rating": 8.5, "dropped": False},
+        json={"rating": 8.5, "watch_status": "completed"},
         headers=user_auth_headers,
     )
     assert response.status_code == 200
     data = response.json()
     assert data["rating"] == 8.5
-    assert data["dropped"] is False
+    assert data["watch_status"] == "completed"
     assert data["media_uuid"] == str(test_media.uuid)
     assert data["anime_title"] == "Test Anime"
+    # A completed rating logs the first watch event
+    assert data["watched_count"] == 1
+
+
+async def test_upsert_rating_on_hold_with_episodes(client, user_auth_headers, test_media):
+    response = await client.put(
+        f"/ratings/media/{test_media.uuid}",
+        json={"rating": 7.0, "watch_status": "on_hold", "episodes_watched": 5},
+        headers=user_auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["watch_status"] == "on_hold"
+    assert data["episodes_watched"] == 5
+    # on_hold is not a completion — no watch event logged
+    assert data["watched_count"] == 0
+
+
+# --- Watch events / rewatch (v0.14.10) ---
+
+
+async def test_rewatch_increments_count(client, user_auth_headers, test_media):
+    create = await client.put(
+        f"/ratings/media/{test_media.uuid}",
+        json={"rating": 8.0, "watch_status": "completed"},
+        headers=user_auth_headers,
+    )
+    rating_uuid = create.json()["uuid"]
+
+    r1 = await client.post(f"/ratings/{rating_uuid}/rewatch", headers=user_auth_headers)
+    assert r1.status_code == 200
+    assert r1.json()["watched_count"] == 2
+
+    r2 = await client.post(f"/ratings/{rating_uuid}/rewatch", headers=user_auth_headers)
+    assert r2.json()["watched_count"] == 3
+
+
+async def test_rewatch_rejected_for_non_completed(client, user_auth_headers, test_media):
+    # A watch event is a completion, so on_hold/dropped ratings can't log a rewatch.
+    create = await client.put(
+        f"/ratings/media/{test_media.uuid}",
+        json={"rating": 6.0, "watch_status": "on_hold", "episodes_watched": 3},
+        headers=user_auth_headers,
+    )
+    rating_uuid = create.json()["uuid"]
+    resp = await client.post(f"/ratings/{rating_uuid}/rewatch", headers=user_auth_headers)
+    assert resp.status_code == 409
+
+
+async def test_first_event_logged_once_on_status_transition(client, user_auth_headers, test_media):
+    # Start on_hold (no event), then complete → exactly one event logged
+    await client.put(
+        f"/ratings/media/{test_media.uuid}",
+        json={"rating": 6.0, "watch_status": "on_hold", "episodes_watched": 3},
+        headers=user_auth_headers,
+    )
+    done = await client.put(
+        f"/ratings/media/{test_media.uuid}",
+        json={"rating": 9.0, "watch_status": "completed"},
+        headers=user_auth_headers,
+    )
+    assert done.json()["watched_count"] == 1
+
+    # Editing an already-completed rating does not log another event
+    again = await client.put(
+        f"/ratings/media/{test_media.uuid}",
+        json={"rating": 9.5, "watch_status": "completed"},
+        headers=user_auth_headers,
+    )
+    assert again.json()["watched_count"] == 1
+
+
+async def test_delete_keeps_watch_history_by_default(client, user_auth_headers, test_media):
+    create = await client.put(
+        f"/ratings/media/{test_media.uuid}",
+        json={"rating": 8.0, "watch_status": "completed"},
+        headers=user_auth_headers,
+    )
+    rating_uuid = create.json()["uuid"]
+    await client.post(f"/ratings/{rating_uuid}/rewatch", headers=user_auth_headers)  # count → 2
+
+    # Delete without the flag keeps history
+    await client.delete(f"/ratings/{rating_uuid}", headers=user_auth_headers)
+
+    # Re-rating completed does NOT mint a fresh first event — history preserved (still 2)
+    recreate = await client.put(
+        f"/ratings/media/{test_media.uuid}",
+        json={"rating": 7.0, "watch_status": "completed"},
+        headers=user_auth_headers,
+    )
+    assert recreate.json()["watched_count"] == 2
+
+
+async def test_downgrade_with_delete_history_clears_events(client, user_auth_headers, test_media):
+    # Complete + rewatch → 2 events
+    create = await client.put(
+        f"/ratings/media/{test_media.uuid}",
+        json={"rating": 8.0, "watch_status": "completed"},
+        headers=user_auth_headers,
+    )
+    rating_uuid = create.json()["uuid"]
+    await client.post(f"/ratings/{rating_uuid}/rewatch", headers=user_auth_headers)
+
+    # Downgrade to on_hold AND remove history
+    downgrade = await client.put(
+        f"/ratings/media/{test_media.uuid}?delete_watch_history=true",
+        json={"rating": 8.0, "watch_status": "on_hold", "episodes_watched": 4},
+        headers=user_auth_headers,
+    )
+    assert downgrade.json()["watch_status"] == "on_hold"
+    assert downgrade.json()["watched_count"] == 0
+
+
+async def test_downgrade_keeps_events_by_default(client, user_auth_headers, test_media):
+    await client.put(
+        f"/ratings/media/{test_media.uuid}",
+        json={"rating": 8.0, "watch_status": "completed"},
+        headers=user_auth_headers,
+    )
+    # Downgrade without the flag keeps the history (watched twice, now paused)
+    downgrade = await client.put(
+        f"/ratings/media/{test_media.uuid}",
+        json={"rating": 8.0, "watch_status": "on_hold", "episodes_watched": 4},
+        headers=user_auth_headers,
+    )
+    assert downgrade.json()["watch_status"] == "on_hold"
+    assert downgrade.json()["watched_count"] == 1
+
+
+async def test_delete_with_history_flag_clears_events(client, user_auth_headers, test_media):
+    create = await client.put(
+        f"/ratings/media/{test_media.uuid}",
+        json={"rating": 8.0, "watch_status": "completed"},
+        headers=user_auth_headers,
+    )
+    rating_uuid = create.json()["uuid"]
+    await client.post(f"/ratings/{rating_uuid}/rewatch", headers=user_auth_headers)  # count → 2
+
+    await client.delete(
+        f"/ratings/{rating_uuid}?delete_watch_history=true", headers=user_auth_headers
+    )
+
+    # History wiped → re-rating starts a fresh first event at count 1
+    recreate = await client.put(
+        f"/ratings/media/{test_media.uuid}",
+        json={"rating": 7.0, "watch_status": "completed"},
+        headers=user_auth_headers,
+    )
+    assert recreate.json()["watched_count"] == 1
 
 
 async def test_upsert_rating_with_note(client, user_auth_headers, test_media):
@@ -314,6 +463,61 @@ async def test_bulk_delete(client, user_auth_headers, test_media_list):
     list_resp = await client.get("/ratings", headers=user_auth_headers)
     assert len(list_resp.json()) == 1
     assert list_resp.json()[0]["media_title"] == "Bulk Test Media 3"
+
+
+async def test_bulk_delete_with_history_flag_clears_events(client, user_auth_headers, test_media_list):
+    """Bulk delete with delete_watch_history=true wipes events; default keeps them."""
+    media = test_media_list[0]
+    await client.put(
+        f"/ratings/media/{media.uuid}",
+        json={"rating": 7.0, "watch_status": "completed"},
+        headers=user_auth_headers,
+    )
+
+    await client.post(
+        "/ratings/bulk-delete?delete_watch_history=true",
+        json={"media_uuids": [str(media.uuid)]},
+        headers=user_auth_headers,
+    )
+
+    # History wiped → re-rating completed starts a fresh first event at count 1
+    recreate = await client.put(
+        f"/ratings/media/{media.uuid}",
+        json={"rating": 7.0, "watch_status": "completed"},
+        headers=user_auth_headers,
+    )
+    assert recreate.json()["watched_count"] == 1
+
+
+async def test_bulk_delete_history_scoped_to_rated_media(client, user_auth_headers, test_media_list):
+    """delete_watch_history must not reach media with no rating in the set — selecting an
+    unrated media (whose rating was deleted earlier but history kept) can't wipe its events."""
+    media = test_media_list[0]
+    create = await client.put(
+        f"/ratings/media/{media.uuid}",
+        json={"rating": 8.0, "watch_status": "completed"},
+        headers=user_auth_headers,
+    )
+    rating_uuid = create.json()["uuid"]
+    await client.post(f"/ratings/{rating_uuid}/rewatch", headers=user_auth_headers)  # count → 2
+
+    # Delete the rating but keep history (default), so the media now has events, no rating
+    await client.delete(f"/ratings/{rating_uuid}", headers=user_auth_headers)
+
+    # Bulk-delete the (now-unrated) media WITH the history flag → must be a no-op for events
+    await client.post(
+        "/ratings/bulk-delete?delete_watch_history=true",
+        json={"media_uuids": [str(media.uuid)]},
+        headers=user_auth_headers,
+    )
+
+    # Re-rating completed sees the preserved events → count stays 2 (would be 1 if wrongly wiped)
+    recreate = await client.put(
+        f"/ratings/media/{media.uuid}",
+        json={"rating": 7.0, "watch_status": "completed"},
+        headers=user_auth_headers,
+    )
+    assert recreate.json()["watched_count"] == 2
 
 
 # --- Validation ---

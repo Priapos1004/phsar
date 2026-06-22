@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/svelte';
+import { render, screen, fireEvent } from '@testing-library/svelte';
 import RatingCard from '$lib/components/RatingCard.svelte';
+import { api } from '$lib/api';
 import type { RatingOut } from '$lib/types/api';
 
 vi.mock('$lib/api', () => ({
@@ -25,7 +26,8 @@ vi.mock('$lib/api', () => ({
 const mockExistingRating: RatingOut = {
 	uuid: 'rating-uuid-1',
 	rating: 8.5,
-	dropped: false,
+	watch_status: 'completed',
+	watched_count: 1,
 	episodes_watched: 12,
 	note: 'Great anime',
 	media_uuid: 'media-uuid-1',
@@ -102,7 +104,7 @@ describe('RatingCard', () => {
 		render(RatingCard, {
 			props: {
 				mediaUuid: 'media-uuid-1',
-	
+
 				totalEpisodes: 12,
 				existingRating: mockExistingRating,
 				onSaved: vi.fn(),
@@ -111,5 +113,70 @@ describe('RatingCard', () => {
 		});
 
 		expect(screen.getByText(/"Great anime"/)).toBeInTheDocument();
+	});
+
+	it('shows the On Hold badge for an on_hold rating', () => {
+		render(RatingCard, {
+			props: {
+				mediaUuid: 'media-uuid-1',
+				totalEpisodes: 12,
+				existingRating: { ...mockExistingRating, watch_status: 'on_hold' },
+				onSaved: vi.fn(),
+				onDeleted: vi.fn(),
+			},
+		});
+
+		expect(screen.getByText('On Hold')).toBeInTheDocument();
+	});
+
+	it('shows the watched-count badge once rewatched', () => {
+		render(RatingCard, {
+			props: {
+				mediaUuid: 'media-uuid-1',
+				totalEpisodes: 12,
+				existingRating: { ...mockExistingRating, watched_count: 3 },
+				onSaved: vi.fn(),
+				onDeleted: vi.fn(),
+			},
+		});
+
+		expect(screen.getByText(/Watched 3/)).toBeInTheDocument();
+	});
+
+	it('logs a rewatch only after confirming in the pop-up', async () => {
+		vi.mocked(api.post).mockResolvedValue({ ...mockExistingRating, watched_count: 2 });
+		const onSaved = vi.fn();
+		render(RatingCard, {
+			props: {
+				mediaUuid: 'media-uuid-1',
+				totalEpisodes: 12,
+				existingRating: mockExistingRating,
+				onSaved,
+				onDeleted: vi.fn(),
+			},
+		});
+
+		// Opening the confirm pop-up does NOT call the API
+		await fireEvent.click(screen.getByText('Rewatch'));
+		expect(api.post).not.toHaveBeenCalled();
+		expect(screen.getByText('Log a rewatch?')).toBeInTheDocument();
+
+		// Confirming in the dialog hits the rewatch endpoint
+		await fireEvent.click(screen.getByText('Log rewatch'));
+		expect(api.post).toHaveBeenCalledWith('/ratings/rating-uuid-1/rewatch', {});
+	});
+
+	it('does not offer rewatch for a dropped rating', () => {
+		render(RatingCard, {
+			props: {
+				mediaUuid: 'media-uuid-1',
+				totalEpisodes: 12,
+				existingRating: { ...mockExistingRating, watch_status: 'dropped' },
+				onSaved: vi.fn(),
+				onDeleted: vi.fn(),
+			},
+		});
+
+		expect(screen.queryByText('Rewatch')).not.toBeInTheDocument();
 	});
 });

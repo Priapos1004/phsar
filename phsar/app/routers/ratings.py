@@ -17,9 +17,14 @@ async def upsert_rating(
     data: rating_schema.RatingCreate,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_user_or_admin),
+    delete_watch_history: bool = Query(default=False),
 ):
-    """Create or update a rating for a media. Idempotent — always succeeds."""
-    return await rating_service.upsert_rating(db, current_user.id, media_uuid, data)
+    """Create or update a rating for a media. Idempotent — always succeeds.
+    `delete_watch_history` wipes the media's watch events alongside the write
+    (used when downgrading from completed back to on_hold/dropped)."""
+    return await rating_service.upsert_rating(
+        db, current_user.id, media_uuid, data, delete_watch_history=delete_watch_history
+    )
 
 
 @router.get("/media/{media_uuid}", response_model=rating_schema.RatingOut)
@@ -50,13 +55,26 @@ async def get_user_ratings(
     return await rating_service.get_user_ratings(db, current_user.id, limit, offset)
 
 
+@router.post("/{rating_uuid}/rewatch", response_model=rating_schema.RatingOut)
+async def log_rewatch(
+    rating_uuid: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_user_or_admin),
+):
+    """Log a rewatch for a rating's media (appends a watch event, bumps watched_count)."""
+    return await rating_service.log_rewatch(db, current_user.id, rating_uuid)
+
+
 @router.delete("/{rating_uuid}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_rating(
     rating_uuid: UUID,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_user_or_admin),
+    delete_watch_history: bool = Query(default=False),
 ):
-    await rating_service.delete_rating(db, current_user.id, rating_uuid)
+    await rating_service.delete_rating(
+        db, current_user.id, rating_uuid, delete_watch_history=delete_watch_history
+    )
 
 
 @router.put("/bulk", response_model=list[rating_schema.RatingOut])
@@ -84,7 +102,10 @@ async def bulk_delete_ratings(
     data: rating_schema.RatingBulkDelete,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_user_or_admin),
+    delete_watch_history: bool = Query(default=False),
 ):
     """Delete ratings for multiple media at once. Returns the count of deleted ratings."""
-    count = await rating_service.bulk_delete_ratings(db, current_user.id, data.media_uuids)
+    count = await rating_service.bulk_delete_ratings(
+        db, current_user.id, data.media_uuids, delete_watch_history=delete_watch_history
+    )
     return {"deleted": count}

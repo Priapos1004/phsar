@@ -69,8 +69,13 @@
 				const relation = formatRelationType(mr.media.relation_type);
 				const season = formatSeason(mr.media.anime_season_name, mr.media.anime_season_year) ?? '';
 				if (mr.rating) {
-					const dropped = mr.rating.dropped ? ' <span style="color:#ef4444">(Dropped)</span>' : '';
-					return `<strong>${title}</strong>${dropped}<br/>${formatMediaType(mr.media.media_type)} · ${relation} · ${season}<br/>Your score: <strong>${formatDecimalDigits(mr.rating.rating, Math.max(minScoreDecimals, decimalPlaces(mr.rating.rating)))}</strong>`;
+					const statusSuffix =
+						mr.rating.watch_status === 'dropped'
+							? ' <span style="color:#ef4444">(Dropped)</span>'
+							: mr.rating.watch_status === 'on_hold'
+								? ' <span style="color:#d97706">(On Hold)</span>'
+								: '';
+					return `<strong>${title}</strong>${statusSuffix}<br/>${formatMediaType(mr.media.media_type)} · ${relation} · ${season}<br/>Your score: <strong>${formatDecimalDigits(mr.rating.rating, Math.max(minScoreDecimals, decimalPlaces(mr.rating.rating)))}</strong>`;
 				}
 				return `<strong>${title}</strong><br/>${formatMediaType(mr.media.media_type)} · ${relation} · ${season}<br/><span style="opacity:0.6">Not rated</span>`;
 			},
@@ -109,7 +114,13 @@
 					const typeColor = relationColors[mr.media.relation_type] ?? CHART_COLORS.chart4;
 					const highlighted = allSelected || !deselected.has(mr.media.relation_type);
 					const value = mr.rating ? mr.rating.rating : 0.3;
-					const opacity = !mr.rating ? UNRATED_OPACITY : mr.rating.dropped ? 0.5 : 1;
+					const opacity = !mr.rating
+						? UNRATED_OPACITY
+						: mr.rating.watch_status === 'dropped'
+							? 0.5
+							: mr.rating.watch_status === 'on_hold'
+								? 0.7
+								: 1;
 					return {
 						value,
 						itemStyle: {

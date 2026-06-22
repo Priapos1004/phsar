@@ -3,12 +3,14 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { scoreColor } from '$lib/utils/chartColors';
 	import { formatDecimalDigits, percentOf } from '$lib/utils/formatString';
+	import * as cls from '$lib/styles/classes';
 
 	interface Props {
 		avgScore: number;
 		ratedCount: number;
 		totalCount: number;
 		droppedCount: number;
+		onHoldCount: number;
 		totalEpisodesWatched: number;
 		totalEpisodesAvailable: number;
 	}
@@ -18,6 +20,7 @@
 		ratedCount,
 		totalCount,
 		droppedCount,
+		onHoldCount,
 		totalEpisodesWatched,
 		totalEpisodesAvailable,
 	}: Props = $props();
@@ -67,7 +70,7 @@
 	});
 </script>
 
-<div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+<div class="grid grid-cols-2 md:grid-cols-5 gap-4">
 	<div class="flex flex-col items-center">
 		<EChart option={gaugeOption} width="96px" height="96px" />
 		<span class="text-sm text-muted-foreground -mt-2">Your Average</span>
@@ -103,6 +106,15 @@
 			</div>
 		{/if}
 		<span class="text-sm text-muted-foreground">Episodes Watched</span>
+	</div>
+
+	<div class="flex flex-col items-center justify-center gap-2">
+		<span class="text-2xl font-bold text-card-foreground">{onHoldCount}</span>
+		{#if onHoldCount > 0}
+			<Badge variant="secondary" class={cls.badgeOnHold}>On Hold</Badge>
+		{:else}
+			<span class="text-sm text-muted-foreground">On Hold</span>
+		{/if}
 	</div>
 
 	<div class="flex flex-col items-center justify-center gap-2">

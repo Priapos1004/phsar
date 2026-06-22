@@ -78,7 +78,7 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 | `/watchlist` | (placeholder) | Yes |
 | `/settings` | User preferences (theme, language, rating step, spoiler level, data export, account deletion) | Yes |
 | `/library/add` | Add anime via MAL query + recent additions panel | Yes (form disabled for restricted users) |
-| `/admin` | Admin sections behind a `?tab=` switcher (Overview / Jobs Log / Tokens / Curation / Backups) | Yes (admin) |
+| `/admin` | Admin sections behind a `?tab=` switcher (Overview / Jobs Log / Tokens / Curation / Completion / Backups) | Yes (admin) |
 | `/admin/jobs/[uuid]` | Per-job inspection page for update_sweep v2+ rows (per-media field diffs, umbrella reclassifications) | Yes (admin) |
 | `/statistics` | (placeholder) | Yes |
 | `/getting-started` | (placeholder) | Yes |
@@ -157,7 +157,8 @@ Each media search result card shows:
 ### 5.2 Anime Card (anime view)
 Each anime search result card shows:
 - Cover image (from anime, lazy-loaded with fallback)
-- Title, average score + average scored-by ("ratings/media"), season range (e.g., "Spring 2017 - Winter 2024")
+- Title, with a small emerald "✓ Complete" badge when an admin has marked the anime story-complete (no tooltip in search — the full explanation lives on the detail page)
+- Average score + average scored-by ("ratings/media"), season range (e.g., "Spring 2017 - Winter 2024")
 - Airing status for active/upcoming anime ("Currently Airing + upcoming content", "Not yet aired", or "upcoming content" for finished anime with announced sequels)
 - Age rating (max across media)
 - Genre tags (strict majority rule: genre must be on >50% of media)
@@ -179,6 +180,7 @@ Each anime search result card shows:
 ### 6.2 Hero Card
 - Same blurred cover background pattern as media detail
 - Title (English preferred), alternate titles, airing status badge: green (Currently Airing), yellow (Not yet aired), blue (upcoming content), grey (Finished Airing)
+- "Story Complete" badge (emerald, additive — shown alongside the airing badge when an admin marked the anime story-complete). Hovering shows a tooltip explaining it differs from "Finished Airing" (broadcast ended) — the *story* has concluded
 - Average MAL score with "ratings/media" label; hovering the score pill shows a tooltip clarifying it's the MyAnimeList community score, not Phsar users' ratings
 - Relation type badges with counts (e.g., "main: 5"), media type badges with counts (e.g., "TV: 3")
 - Age rating badge (max across media), genre badges (strict majority rule)
@@ -199,18 +201,18 @@ Each anime search result card shows:
   - Action bar slides in: "Select all/Deselect all", selected count, "Rate" button, "Watchlist" button
   - "Delete Ratings" button appears when any selected media have existing ratings
   - **Rate** opens BulkRateDialog: score circle + slider, note (applied to last main media), collapsible attributes grid. Overwrite warning shown if any selected media already rated. On save: exits select mode, shows "Note Added" info dialog naming which media received the note.
-  - **Delete Ratings** opens a destructive confirmation dialog, then `POST /ratings/bulk-delete`
+  - **Delete Ratings** opens a destructive confirmation dialog. When any selected media have recorded watches, the dialog offers an "Also delete watch history" checkbox showing how many have watches (and how many were watched more than once); kept by default. Submits `POST /ratings/bulk-delete?delete_watch_history=`
   - **Watchlist** opens a stub dialog (wired in v0.15.0)
   - "Cancel" exits select mode and clears selection
 
 ### 6.5 Ratings Overview ("Your Ratings")
 - Appears when the user has rated at least one media in the anime
-- **Stats gauge**: Average score displayed in a gauge chart (formatted to 1 decimal), progress bars for media rated / total and episodes watched / total, dropped count badge
-- **Rating Timeline**: Bar chart with one bar per media in release order, colored by relation type (Main Story = theme primary, Alt Version = yellow, Side Story = accent red, Summary = secondary green, Crossover = theme ring — a muted shade reserved for the rarest type). Dropped items at 50% opacity. HTML legend showing active relation types. Tooltip shows title, media type, relation type, season, and score.
+- **Stats gauge**: Average score displayed in a gauge chart (formatted to 1 decimal), progress bars for media rated / total and episodes watched / total, on-hold count badge (amber) and dropped count badge (red)
+- **Rating Timeline**: Bar chart with one bar per media in release order, colored by relation type (Main Story = theme primary, Alt Version = yellow, Side Story = accent red, Summary = secondary green, Crossover = theme ring — a muted shade reserved for the rarest type). Dropped items at 50% opacity, on-hold at 70%. HTML legend showing active relation types. Tooltip shows title, media type, relation type, season, and score; dropped/on-hold entries get a "(Dropped)" / "(On Hold)" suffix.
 - **Attribute Summary** (side-by-side on desktop, stacked on mobile):
   - *Quality Radar* (pentagon): 5 quality axes (animation quality, dialogue quality, character depth, story quality, ending quality) normalized to 0–1 scale with 3 split rings. Tooltip shows closest label per axis or "--" for no data. `ending_quality: not_applicable` is excluded from averaging.
   - *Descriptive Pills* (orbital): 6 descriptive attributes (pace, 3D animation, watched format, fan service, ending type, originality) displayed as tilted pills arranged in an elliptical orbit. Each shows "Label: Majority Value" or "--" for no data. Hover straightens and scales the pill. Click triggers a color-burst glow animation cycling through the chart palette.
-  - *Collapsible details*: "Show attribute details" toggle expands stacked distribution bars for all 11 attributes. Unrated attributes shown greyed out with "No data" label.
+  - *Collapsible details*: "Show attribute details" toggle expands stacked distribution bars for all 11 attributes. Unrated attributes shown greyed out with "No data" label. `ending_quality: not_applicable` (auto-set on on-hold/dropped ratings) is treated as unrated — excluded from the bars and the radar.
 - **Notes**: Collapsible list of user notes per media (first note visible, "Show all N notes" to expand)
 
 ### 6.6 Back Navigation
@@ -249,16 +251,19 @@ Each anime search result card shows:
 ### 7.4 Rating Card
 - **No rating exists, not editing**: CTA card with star icon and "Rate This" button
 - **Restricted users**: Disabled "Rate This" button with "Upgrade your account" message
-- **Rating exists, not editing**: Display card showing score circle, dropped/completed status, episodes watched (with total if known), filled attribute badges (ending quality hidden when "Not Applicable"), and note (if any). Edit and Delete buttons.
+- **Rating exists, not editing**: Display card showing score circle, watch status (Completed = plain text, On Hold = amber badge, Dropped = red badge), episodes watched (with total if known), a "Watched N×" badge when rewatched (count > 1), filled attribute badges (ending quality hidden when "Not Applicable"), and note (if any). Edit, Rewatch (completed only), and Delete buttons.
+- **Rewatch**: opens a confirmation pop-up explaining the action (records another completed watch dated today, raises the count from N to N+1, can't be easily undone) before logging — a two-step guard since there's no easy undo. Calls `POST /ratings/{uuid}/rewatch`.
+- **Delete**: opens a confirmation pop-up. When the media has recorded watches, the dialog offers an explained "Also delete watch history" checkbox (kept by default — re-rating later keeps the watch dates).
 - **Editing mode** (new or existing):
   - Score: editable circle with direct text input + slider (0-10, step 0.5)
-  - Dropped checkbox + episodes watched input (auto-filled with total episodes when not dropped; editable when dropped)
+  - Watch-status selector (segmented: Completed / On Hold / Dropped) + episodes watched input (auto-filled with total episodes when Completed; revealed/editable when On Hold or Dropped)
   - Note textarea (max 1000 chars with counter)
-  - Collapsible "Details" section with 11 attribute selectors (pace, animation quality, 3D animation, watched format, fan service, dialogue quality, character depth, ending type, ending quality, story quality, originality) — shows set/total count badge. Ending quality: when dropped, auto-set to "Not Applicable" and disabled; when not dropped, only 3 quality options shown (Unsatisfying, Satisfying, Exceptional)
+  - Collapsible "Details" section with 11 attribute selectors (pace, animation quality, 3D animation, watched format, fan service, dialogue quality, character depth, ending type, ending quality, story quality, originality) — shows set/total count badge. Ending quality: when On Hold or Dropped, auto-set to "Not Applicable" and disabled; when Completed, only 3 quality options shown (Unsatisfying, Satisfying, Exceptional)
   - Submit/Update button (disabled when no changes detected on existing rating)
+  - **Downgrade prompt**: saving a change from Completed to On Hold/Dropped while watch history exists opens a "Keep your watch history?" pop-up — Keep history / Remove history / Cancel.
   - Cancel button returns to display mode
   - Error message display on save/delete failure
-- **API calls**: `PUT /ratings/media/{uuid}` to create/update, `DELETE /ratings/{uuid}` to delete
+- **API calls**: `PUT /ratings/media/{uuid}` to create/update (with `?delete_watch_history=` on a confirmed downgrade), `POST /ratings/{uuid}/rewatch` to log a rewatch, `DELETE /ratings/{uuid}?delete_watch_history=` to delete
 
 ### 7.5 Related Media Carousel
 - Always shown — displays parent anime name as a clickable link to the anime detail page
@@ -346,7 +351,7 @@ Each anime search result card shows:
 - NavBar dropdown shows "Admin" link only for admin users
 
 ### 10.1a Tab navigation
-- Admin sections live behind a tab bar driven by the `?tab=` query param (`/admin?tab=overview`, `?tab=jobs`, `?tab=tokens`, `?tab=curation`, `?tab=backups`). Default tab is `overview` if `?tab=` is absent or unknown — a stale bookmark to a retired tab key still lands the admin somewhere useful instead of a blank page.
+- Admin sections live behind a tab bar driven by the `?tab=` query param (`/admin?tab=overview`, `?tab=jobs`, `?tab=tokens`, `?tab=curation`, `?tab=completion`, `?tab=backups`). Default tab is `overview` if `?tab=` is absent or unknown — a stale bookmark to a retired tab key still lands the admin somewhere useful instead of a blank page.
 - The active tab is preserved across refresh and is bookmarkable. Tabs eager-render on first admin load and stay mounted across switches — visibility toggles via `class:hidden`, not conditional unmount. Admin sessions usually touch several tabs in a row, so the one-time parallel-fetch cost on first paint buys instant subsequent switches. No card polls, so keeping them mounted doesn't generate ongoing traffic.
 
 ### 10.1b Overview tab (default)
@@ -450,6 +455,12 @@ Each anime search result card shows:
 - **Resurface**: each row has a "Resurface" button → a username-gated confirm dialog (type the admin username, mirroring backup restore). On confirm it `POST`s `/{uuid}/delete`, removes the row, then re-runs the card's detection so the freed candidate re-flags as pending immediately (rather than waiting for the nightly sweep). Only `dismissed` rows are deletable; merged rows no longer exist and deleting a split-status row wouldn't undo the split.
 - The detector itself is invisible to non-admin users; nothing about it surfaces outside this card.
 
+### 10.8 Completion tab (Story Completion)
+- Admin-only manual curation (no detector): mark an anime as story-complete when its narrative has concluded — distinct from "Finished Airing".
+- **Search to mark**: a debounced search box (reuses `/search/anime`, title search) with a clear-✕ button. Results list cover thumbnail + title; each row has a "Mark complete" button, or a "Marked" label if already complete. Marking (`POST /admin/finished-anime/{uuid}`) clears + closes the search so it reads as a committed selection.
+- **Marked list**: cover thumbnail + title (links to the anime page same-tab, "Back to completion") + "marked {date} by {admin}" audit line. Sort control: Newest marked (default) / Oldest marked / Title A–Z. Each row has an unmark (✕) button (`DELETE /admin/finished-anime/{uuid}`).
+- The mark surfaces on the anime detail page (emerald "Story Complete" badge + tooltip) and on anime search cards (small "✓ Complete" badge).
+
 ---
 
 ## 11. API Endpoints Used by Frontend
@@ -468,6 +479,7 @@ Each anime search result card shows:
 | `/ratings/media/{uuid}` | GET | Media detail page load (fetch user's rating) |
 | `/ratings/anime/{uuid}` | GET | Anime detail page load (fetch user's ratings for all media) |
 | `/ratings/media/{uuid}` | PUT | Create or update a rating |
+| `/ratings/{uuid}/rewatch` | POST | Log a rewatch (increments watch count) |
 | `/ratings/bulk` | PUT | Bulk rate selected media from anime detail |
 | `/ratings/bulk-delete` | POST | Bulk delete ratings from anime detail |
 | `/ratings/{uuid}` | DELETE | Delete a rating |
@@ -497,6 +509,9 @@ Each anime search result card shows:
 | `/admin/split-candidates/{uuid}/split` | POST | Admin page Split Candidates card (split clusters into separate anime, re-parent media) |
 | `/admin/split-candidates/{uuid}/dismiss` | POST | Admin page Split Candidates card (mark as reviewed-keep-bundled) |
 | `/admin/split-candidates/backfill` | POST | Admin page Split Candidates card "Re-run detection" — re-runs disjoint-franchise detection across the catalog |
+| `/admin/finished-anime` | GET | Admin Completion tab (list story-complete anime) |
+| `/admin/finished-anime/{uuid}` | POST | Admin Completion tab (mark anime story-complete) |
+| `/admin/finished-anime/{uuid}` | DELETE | Admin Completion tab (remove story-complete flag) |
 | `/auth/register` | POST | Registration page |
 | `/maintenance/status` | GET | Polled by MaintenanceBanner every 30s on every page (no auth) |
 | `/jobs/scrape` | POST | `/library/add` form submission (enqueues a `user_scrape` job; restricted users rejected by role check) |

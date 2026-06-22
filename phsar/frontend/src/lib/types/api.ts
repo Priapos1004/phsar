@@ -104,12 +104,21 @@ export type EndingType = 'open' | 'closed' | 'cliffhanger';
 export type EndingQuality = 'unsatisfying' | 'satisfying' | 'very_satisfying' | 'not_applicable';
 export type StoryQuality = 'weak' | 'average' | 'good' | 'outstanding';
 export type Originality = 'conventional' | 'unique' | 'experimental';
+export type WatchStatus = 'completed' | 'on_hold' | 'dropped';
+
+/** Watch-status options for the rating selector + display badges (single source of truth). */
+export const WATCH_STATUS_OPTIONS: { value: WatchStatus; label: string }[] = [
+	{ value: 'completed', label: 'Completed' },
+	{ value: 'on_hold', label: 'On Hold' },
+	{ value: 'dropped', label: 'Dropped' },
+];
 
 // Ratings
 export interface RatingOut {
 	uuid: string;
 	rating: number;
-	dropped: boolean;
+	watch_status: WatchStatus;
+	watched_count: number;
 	episodes_watched: number | null;
 	note: string | null;
 	media_uuid: string;
@@ -134,7 +143,7 @@ export interface RatingOut {
 
 export interface RatingCreate {
 	rating: number;
-	dropped?: boolean;
+	watch_status?: WatchStatus;
 	episodes_watched?: number | null;
 	note?: string | null;
 	pace?: Pace | null;
@@ -153,6 +162,17 @@ export interface RatingCreate {
 /** Read a dynamic attribute key from a rating object (needed because attribute keys are iterated at runtime). */
 export function getRatingAttr(obj: RatingOut | RatingCreate, key: string): string | null {
 	return (obj as unknown as Record<string, string | null>)[key] ?? null;
+}
+
+/**
+ * True when an attribute value is a real rating, not unset or the auto-set
+ * `not_applicable` sentinel (set on on_hold/dropped ratings whose ending wasn't
+ * reached). Single source of truth for "count this attribute as rated" — used by
+ * the per-rating card display, the distribution bars, and the overview gate so the
+ * radar/bars/badges all agree.
+ */
+export function isAttrRated(value: string | null): boolean {
+	return value !== null && value !== 'not_applicable';
 }
 
 /** Maps each rating attribute to its display label and possible values. */
@@ -202,6 +222,7 @@ export interface AnimeAggregatedBase {
 	airing_status: string;
 	has_upcoming: boolean;
 	age_rating_numeric: number | null;
+	is_finished: boolean;
 }
 
 export interface AnimeSearchResult extends AnimeAggregatedBase {}
@@ -252,6 +273,17 @@ export type UserSettingsUpdate = Partial<UserSettings>;
 // Spoiler visibility
 export interface SpoilerVisibility {
 	visible_media_uuids: string[];
+}
+
+// Admin — Story completion
+export interface FinishedAnimeItem {
+	uuid: string;
+	title: string;
+	name_eng: string | null;
+	name_jap: string | null;
+	cover_image: string | null;
+	marked_by_username: string | null;
+	marked_at: string;
 }
 
 // Admin — Merge candidates

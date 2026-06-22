@@ -14,6 +14,7 @@
 
 	let target = $derived.by(() => {
 		if (fromParam === 'job' && jobUuid) return { href: `/admin/jobs/${jobUuid}`, label: 'Back to job' };
+		if (fromParam === 'completion') return { href: '/admin?tab=completion', label: 'Back to completion' };
 		if (fromParam === 'library') return { href: '/library/add', label: 'Back to library' };
 		if (searchToken) return { href: `/search?q=${encodeURIComponent(searchToken)}`, label: 'Back to search' };
 		return null;

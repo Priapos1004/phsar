@@ -16,6 +16,7 @@ from app.models.ratings import (
     StoryQuality,
     ThreeDAnimation,
     WatchedFormat,
+    WatchStatus,
 )
 from app.schemas.media_filter_schema import MediaSearchFilters
 from app.schemas.media_schema import MediaConnected
@@ -39,7 +40,7 @@ class RatingAttributes(BaseModel):
 class RatingBase(RatingAttributes):
     """Shared core rating fields and validators for create schemas."""
     rating: float
-    dropped: bool = False
+    watch_status: WatchStatus = WatchStatus.completed
     episodes_watched: Optional[int] = None
     note: Optional[str] = None
 
@@ -72,7 +73,8 @@ class RatingCreate(RatingBase):
 class RatingOut(RatingAttributes):
     uuid: UUID
     rating: float
-    dropped: bool
+    watch_status: WatchStatus
+    watched_count: int
     episodes_watched: Optional[int]
     note: Optional[str]
     media_uuid: UUID
@@ -113,7 +115,7 @@ class RatingSearchFilters(MediaSearchFilters):
     """Extends media filters with rating-specific filters for searching within a user's ratings."""
     user_rating_min: Optional[float] = None
     user_rating_max: Optional[float] = None
-    dropped: Optional[bool] = None
+    watch_status: Optional[list[WatchStatus]] = None
     pace: Optional[list[Pace]] = None
     animation_quality: Optional[list[AnimationQuality]] = None
     has_3d_animation: Optional[list[ThreeDAnimation]] = None
@@ -137,7 +139,8 @@ class RatedMediaResult(MediaConnected, RatingAttributes):
     Inherits media fields from MediaConnected and enum fields from RatingAttributes."""
     rating_uuid: UUID
     user_rating: float
-    dropped: bool
+    watch_status: WatchStatus
+    watched_count: int
     episodes_watched: Optional[int] = None
     note: Optional[str] = None
     rating_created_at: datetime

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr } from '$lib/types/api';
+	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr, isAttrRated } from '$lib/types/api';
 	import { getThemedChartColorPalette } from '$lib/utils/chartColors';
 	import type { RatingOut } from '$lib/types/api';
 
@@ -27,8 +27,8 @@
 
 			for (const r of ratings) {
 				const val = getRatingAttr(r, key);
-				if (val) {
-					counts.set(val, (counts.get(val) ?? 0) + 1);
+				if (isAttrRated(val)) {
+					counts.set(val!, (counts.get(val!) ?? 0) + 1);
 					totalSet++;
 				}
 			}

@@ -1,4 +1,5 @@
 from app.models.anime import Anime
+from app.models.anime_completion import AnimeCompletion
 from app.models.anime_freshness import AnimeFreshness
 from app.models.anime_search import AnimeSearch
 from app.models.genre import Genre
@@ -20,5 +21,6 @@ from app.models.tag import Tag
 from app.models.user_settings import UserSettings
 from app.models.user_visible_media import UserVisibleMedia
 from app.models.users import Users
+from app.models.watch_event import WatchEvent
 from app.models.watchlist import Watchlist
 from app.models.watchlist_tag import WatchlistTag

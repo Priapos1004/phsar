@@ -92,6 +92,9 @@ FastAPI endpoint definitions. Each router maps to an API prefix.
     - `POST /admin/split-candidates/backfill` re-runs detection across the catalog on demand; idempotent via cluster-signature supersede in the DAO
     - Execute creates one new Anime row per detected cluster, re-parents the cluster's media (UUIDs stable so existing ratings stay attached), reclassifies both sides, and re-runs merge detection on the new rows
     - `GET /admin/split-candidates/dismissed` + `POST /admin/split-candidates/{uuid}/delete` mirror the merge pair: deleting a dismissed row clears its cluster-signature from the sticky-dismissal history so re-detection resurfaces it
+  - Story-completion curation (v0.14.10) — a **manual** flag (no detector): admin marks an anime as story-complete (narrative concluded), distinct from MAL's broadcast `airing_status`. Backed by the `anime_completion` 1:1 sidecar (row-presence = finished)
+    - `GET /admin/finished-anime` lists marked anime (cover + who/when audit) for the Completion tab; `POST`/`DELETE /admin/finished-anime/{anime_uuid}` mark/unmark (mark is idempotent). The tab's anime search reuses the public `/search/anime` — no admin-specific search query
+    - Surfaced read-side as `AnimeDetail.is_finished` + `AnimeSearchResult.is_finished` (both via `selectinload(Anime.completion)`); the frontend renders a "Story Complete" badge on the anime page + anime search cards
   - Three cron-token-authed sweep schedulers:
     - `POST /admin/jobs/schedule-sweep?delay_minutes=N` — enqueues an `update_sweep` job (nightly catalog refresh + relations probe)
     - `POST /admin/jobs/schedule-seasonal?delay_minutes=N` — enqueues a `seasonal_sweep` job (weekly `/seasons/now` scrape)
@@ -132,7 +135,8 @@ Modules:
 - `relation_classifier.py` — pure-function two-pass classifier (DB-less) + third-pass `find_disjoint_franchises` for split detection
 - `anime_relation_service.py` — `reclassify_anime` orchestration; umbrella drift detection
 - `anime_summary.py` — shared `summarize_anime(anime, rating_count)` helper for the merge + split admin cards
-- `rating_service.py` — rating CRUD + note search
+- `completion_service.py` — admin story-complete mark/unmark + the marked list (with cover + marked-by audit) for the Completion tab
+- `rating_service.py` — rating CRUD + note search; logs watch events (first completion + rewatches) and derives `watched_count`
 - `spoiler_service.py` — frontier algorithm + `user_visible_media` cache
 - `export_service.py` — flat media-level export
 - `backup_service.py` — pg_dump/pg_restore orchestration; retention pools; `.current_db.json` pointer
@@ -142,7 +146,7 @@ Modules:
 Data access layer.
 
 - **`BaseDAO`** — generic async CRUD
-- **Specialized DAOs** (media, anime, genre, studio, user, user_settings, registration_token, rating, job, merge_candidate, split_candidate) — domain-specific queries with vector similarity, filtering, aggregation
+- **Specialized DAOs** (media, anime, anime_completion, genre, studio, user, user_settings, registration_token, rating, watch_event, job, merge_candidate, split_candidate) — domain-specific queries with vector similarity, filtering, aggregation
 - **`AnimeDAO`**:
   - `search_anime_aggregated` — two-phase query: SQL GROUP BY with HAVING for filtering/ordering, then detail fetch
   - `select_due_media_for_sweep` — **media-level** four-tier sweep selection (v0.14.8): each atom is a direct predicate on the media row + its `MediaFreshness` sidecar (airing now / still stabilizing `stable_check_count < SWEEP_STABILIZE_THRESHOLD` / weekly recent main / `SWEEP_LONG_TAIL_DAYS` long tail), so a still-airing umbrella's stable members are no longer dragged through a refresh every night. Returns `Media` rows with the parent `Anime` + its full media set eager-loaded (the dispatcher groups by `anime.id`). `LIMIT` bounds MAL calls = media (the real 1 req/s cost unit). Replaced the anime-grained `select_due_for_sweep`. Backed by:
@@ -165,6 +169,8 @@ SQLAlchemy ORM models mapped to PostgreSQL tables.
 - **`media_relation_edges.py`** — 1:1 sidecar to `media` holding the raw MAL relation list (`[[target_mal_id, normalized_rel], ...]` JSONB). Off the canonical row so `selectinload(Anime.media)` on detail/search hot paths doesn't drag the JSONB through every load. Read at merge / preview / backfill time via explicit `selectinload(Media.relation_edges)`. Edges persisted unfiltered (including targets outside the local catalog) so bridge edges activate when split franchises later get merged
 - **`anime_search.py`** — anime-level embeddings
 - **`rating_search.py`** — note embeddings for rating note search
+- **`ratings.py`** — `watch_status` enum (`completed`/`on_hold`/`dropped`, replaced the legacy `dropped` boolean in v0.14.10) + 11 optional attribute enums; one row per (user, media)
+- **`watch_event.py`** — append-only watch/rewatch log keyed to (user_id, media_id), NOT to a rating row (so history survives a rating delete + re-add). `watched_count` is derived `COUNT(events)`, never stored. Both FKs `ON DELETE CASCADE`; no ORM back-relationships (read only via grouped count queries in `WatchEventDAO`). `watched_at` (distinct from `created_at`) is the watch moment, for future time-series analysis
 - **`user_settings.py`** — per-user preferences (1:1 with Users) with enums for theme, name language, search view, rating step, spoiler level
 - **`user_visible_media.py`** — precomputed spoiler-visibility cache per user, updated on rating changes
 - **`merge_candidate.py`** — admin-reviewable duplicate pairs
@@ -183,6 +189,7 @@ SQLAlchemy ORM models mapped to PostgreSQL tables.
   - `result_summary` JSONB carries `retryable: bool` for the bell
   - `version: int NOT NULL DEFAULT 1` — per-kind schema version for `result_summary`. Runtime source of truth is the `JOB_KIND_VERSIONS` registry in `app/core/job_versions.py`; every Job-construction site goes through the `make_job(kind, **kw)` helper which stamps the current registry value. Frontend dispatches on `(kind, version)` so historical rows render with the correct schema. Bump the integer per kind when its result_summary shape changes (current: `update_sweep` at v6 after v0.14.9 added `probe_attached_anime[]` + `counters.probe_attached_media_count`; all others at v1)
   - Partial composite index on `(created_at) WHERE status='queued'` keeps the worker's FIFO claim cheap regardless of finished-row volume
+- **`anime_completion.py`** — 1:1 sidecar (`unique=True` on FK) for the admin story-complete flag (v0.14.10). **Row-presence = finished** (no boolean): marking inserts, unmarking deletes. `marked_by_user_id` (FK `SET NULL`) + `created_at` are the who/when audit. Sidecar so the admin flag can't leak into the anime Pydantic schemas; surfaced explicitly as `is_finished` on detail + search results
 - **`anime_freshness.py`** / **`media_freshness.py`** — 1:1 sidecars (`unique=True` on FK) for the nightly update sweep
   - Both hold `last_checked_at` + `stable_check_count` outside canonical rows so sweep cadence can't leak into Pydantic schemas via `model_dump()`. v0.14.8 added `stable_check_count` to `media_freshness` (server_default 0): `MediaFreshness` is the per-media **refresh** clock that drives `select_due_media_for_sweep`; `AnimeFreshness` is the per-anime **probe** clock
   - Existing rows backfilled to parent's `created_at` so sweep enters them at honest age, not "never checked"

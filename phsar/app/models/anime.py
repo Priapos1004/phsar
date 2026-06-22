@@ -32,3 +32,12 @@ class Anime(BaseModel):
         uselist=False,
         lazy="raise",
     )
+
+    # One-to-one sidecar: presence = admin marked the story as complete (v0.14.10).
+    completion = relationship(
+        "AnimeCompletion",
+        back_populates="anime",
+        cascade="all, delete-orphan",
+        uselist=False,
+        lazy="raise",
+    )

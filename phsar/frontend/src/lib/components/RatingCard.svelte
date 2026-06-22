@@ -1,20 +1,21 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import * as Select from '$lib/components/ui/select';
 	import { Button } from '$lib/components/ui/button';
-	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Slider } from '$lib/components/ui/slider';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Badge } from '$lib/components/ui/badge';
 	import { api, ApiError } from '$lib/api';
-	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr } from '$lib/types/api';
-	import type { RatingOut, RatingCreate } from '$lib/types/api';
+	import { RATING_ATTRIBUTE_OPTIONS, WATCH_STATUS_OPTIONS, getRatingAttr, isAttrRated } from '$lib/types/api';
+	import type { RatingOut, RatingCreate, WatchStatus } from '$lib/types/api';
+	import DeleteWatchHistoryToggle from '$lib/components/DeleteWatchHistoryToggle.svelte';
 	import { formatDecimalDigits, clampAndSnapScore, decimalPlaces } from '$lib/utils/formatString';
 	import { userSettings } from '$lib/stores/userSettings';
 	import * as cls from '$lib/styles/classes';
-	import { ChevronDown, ChevronUp, Star, Pencil, Trash2 } from 'lucide-svelte';
+	import { ChevronDown, ChevronUp, Star, Pencil, Trash2, RotateCcw } from 'lucide-svelte';
 
 	interface Props {
 		mediaUuid: string;
@@ -35,20 +36,28 @@
 
 	let editing = $state(false);
 	let score = $state<number>(5.0);
-	let dropped = $state(false);
+	let status = $state<WatchStatus>('completed');
 	let episodesWatched = $state<string>('');
 	let note = $state('');
 	let showAttributes = $state(false);
 	let saving = $state(false);
 	let deleting = $state(false);
-	let confirmingDelete = $state(false);
+	let deleteOpen = $state(false);
+	let deleteHistory = $state(false);
+	let loggingRewatch = $state(false);
+	let rewatchOpen = $state(false);
+	let downgradeOpen = $state(false);
 	let error = $state('');
 	let attributes = $state<Record<string, string | null>>({});
+
+	// On Hold and Dropped both mean the anime wasn't finished, so the episode
+	// input is revealed and ending-quality is treated as unratable for both.
+	let revealsEpisodes = $derived(status === 'on_hold' || status === 'dropped');
 
 	let hasChanges = $derived.by(() => {
 		if (!existingRating) return true;
 		if (score !== existingRating.rating) return true;
-		if (dropped !== existingRating.dropped) return true;
+		if (status !== existingRating.watch_status) return true;
 		const epVal = episodesWatched ? parseInt(episodesWatched) : null;
 		if (epVal !== existingRating.episodes_watched) return true;
 		if ((note.trim() || null) !== (existingRating.note ?? null)) return true;
@@ -60,10 +69,7 @@
 
 	let filledAttributes = $derived(
 		existingRating ? Object.entries(RATING_ATTRIBUTE_OPTIONS)
-			.filter(([key]) => {
-				const val = getRatingAttr(existingRating!, key);
-				return val && !(key === 'ending_quality' && val === 'not_applicable');
-			})
+			.filter(([key]) => isAttrRated(getRatingAttr(existingRating!, key)))
 			.map(([key, config]) => ({
 				label: config.label,
 				value: config.options.find(o => o.value === getRatingAttr(existingRating!, key))?.label
@@ -91,7 +97,7 @@
 	function resetForm() {
 		if (existingRating) {
 			score = existingRating.rating;
-			dropped = existingRating.dropped;
+			status = existingRating.watch_status;
 			episodesWatched = existingRating.episodes_watched?.toString() ?? '';
 			note = existingRating.note ?? '';
 			for (const key of Object.keys(RATING_ATTRIBUTE_OPTIONS)) {
@@ -99,7 +105,7 @@
 			}
 		} else {
 			score = 5.0;
-			dropped = false;
+			status = 'completed';
 			episodesWatched = totalEpisodes?.toString() ?? '';
 			note = '';
 			for (const key of Object.keys(RATING_ATTRIBUTE_OPTIONS)) {
@@ -117,14 +123,14 @@
 
 	$effect(() => {
 		// Only auto-fill episodes when creating a new rating (not editing existing)
-		if (!existingRating && !dropped && totalEpisodes !== null) {
+		if (!existingRating && !revealsEpisodes && totalEpisodes !== null) {
 			episodesWatched = totalEpisodes.toString();
 		}
 	});
 
 	$effect(() => {
-		// Dropped → ending_quality is not ratable; not dropped → clear auto-set value
-		if (dropped) {
+		// On hold / dropped → ending_quality is not ratable; completed → clear auto-set value
+		if (revealsEpisodes) {
 			attributes['ending_quality'] = 'not_applicable';
 		} else if (attributes['ending_quality'] === 'not_applicable') {
 			attributes['ending_quality'] = null;
@@ -142,7 +148,25 @@
 		editing = false;
 	}
 
-	async function handleSave() {
+	// True when saving would turn a previously-completed rating (with recorded watches)
+	// into on_hold/dropped — the point where we must ask about the now-orphaned history.
+	let isDowngradingWithHistory = $derived(
+		!!existingRating &&
+		existingRating.watch_status === 'completed' &&
+		status !== 'completed' &&
+		existingRating.watched_count > 0,
+	);
+
+	function handleSave() {
+		// Intercept a downgrade that would strand watch history — confirm keep vs remove first.
+		if (isDowngradingWithHistory) {
+			downgradeOpen = true;
+			return;
+		}
+		doSave(false);
+	}
+
+	async function doSave(deleteWatchHistory: boolean) {
 		saving = true;
 		error = '';
 
@@ -153,16 +177,18 @@
 
 		const payload: RatingCreate = {
 			rating: snappedScore,
-			dropped,
+			watch_status: status,
 			episodes_watched: episodesWatched ? parseInt(episodesWatched) : null,
 			note: note.trim() || null,
 			...attrFields,
 		};
 
 		try {
-			const result = await api.put<RatingOut>(`/ratings/media/${mediaUuid}`, payload);
+			const qs = deleteWatchHistory ? '?delete_watch_history=true' : '';
+			const result = await api.put<RatingOut>(`/ratings/media/${mediaUuid}${qs}`, payload);
 			onSaved(result);
 			editing = false;
+			downgradeOpen = false;
 		} catch (err) {
 			error = err instanceof ApiError ? err.detail : 'Failed to save rating';
 		} finally {
@@ -171,11 +197,8 @@
 	}
 
 	function requestDelete() {
-		confirmingDelete = true;
-	}
-
-	function cancelDelete() {
-		confirmingDelete = false;
+		deleteHistory = false;
+		deleteOpen = true;
 	}
 
 	async function handleDelete() {
@@ -184,14 +207,31 @@
 		error = '';
 
 		try {
-			await api.del(`/ratings/${existingRating.uuid}`);
+			const qs = deleteHistory ? '?delete_watch_history=true' : '';
+			await api.del(`/ratings/${existingRating.uuid}${qs}`);
 			onDeleted();
 			editing = false;
+			deleteOpen = false;
 		} catch (err) {
 			error = err instanceof ApiError ? err.detail : 'Failed to delete rating';
 		} finally {
 			deleting = false;
-			confirmingDelete = false;
+		}
+	}
+
+	async function handleRewatch() {
+		if (!existingRating) return;
+		loggingRewatch = true;
+		error = '';
+
+		try {
+			const updated = await api.post<RatingOut>(`/ratings/${existingRating.uuid}/rewatch`, {});
+			onSaved(updated);
+			rewatchOpen = false;
+		} catch (err) {
+			error = err instanceof ApiError ? err.detail : 'Failed to log rewatch';
+		} finally {
+			loggingRewatch = false;
 		}
 	}
 </script>
@@ -216,22 +256,18 @@
 			<div class="space-y-4">
 				<div class="flex items-center justify-between">
 					<h2 class="text-sm font-medium text-muted-foreground uppercase tracking-wide">Your Rating</h2>
-					<div class="flex gap-1.5">
+					<div class="flex gap-1.5 items-center flex-wrap justify-end">
 						<Button variant="secondary" size="sm" onclick={startEditing}>
 							<Pencil class="size-3.5 mr-1" /> Edit
 						</Button>
-						{#if confirmingDelete}
-							<Button variant="secondary" size="sm" onclick={cancelDelete} disabled={deleting}>
-								Cancel
-							</Button>
-							<Button variant="destructive" size="sm" onclick={handleDelete} disabled={deleting}>
-								{deleting ? '...' : 'Confirm'}
-							</Button>
-						{:else}
-							<Button variant="destructive" size="sm" onclick={requestDelete}>
-								<Trash2 class="size-3.5 mr-1" /> Delete
+						{#if existingRating.watch_status === 'completed'}
+							<Button variant="secondary" size="sm" onclick={() => (rewatchOpen = true)}>
+								<RotateCcw class="size-3.5 mr-1" /> Rewatch
 							</Button>
 						{/if}
+						<Button variant="destructive" size="sm" onclick={requestDelete}>
+							<Trash2 class="size-3.5 mr-1" /> Delete
+						</Button>
 					</div>
 				</div>
 
@@ -243,8 +279,10 @@
 					</div>
 					<div class="space-y-1">
 						<div class="flex items-center gap-2">
-							{#if existingRating.dropped}
+							{#if existingRating.watch_status === 'dropped'}
 								<Badge variant="destructive">Dropped</Badge>
+							{:else if existingRating.watch_status === 'on_hold'}
+								<Badge variant="secondary" class={cls.badgeOnHold}>On Hold</Badge>
 							{:else}
 								<span class="text-card-foreground font-medium">Completed</span>
 							{/if}
@@ -252,6 +290,9 @@
 								<span class="text-muted-foreground">
 									· {existingRating.episodes_watched}{totalEpisodes ? `/${totalEpisodes}` : ''} eps
 								</span>
+							{/if}
+							{#if existingRating.watched_count > 1}
+								<Badge variant="secondary">Watched {existingRating.watched_count}×</Badge>
 							{/if}
 						</div>
 						{#if filledAttributes.length}
@@ -308,14 +349,23 @@
 				</div>
 
 				<div class="bg-muted/40 rounded-lg p-4 space-y-4">
-					<!-- Dropped + Episodes on one line -->
+					<!-- Watch status (segmented) + Episodes -->
 					<div class="flex items-center gap-4 flex-wrap">
 						<div class="flex items-center gap-2">
-							<Checkbox
-								checked={dropped}
-								onCheckedChange={(val: boolean | 'indeterminate') => { dropped = val === true; }}
-							/>
-							<Label>Dropped</Label>
+							<Label>Status</Label>
+							<div class="inline-flex rounded-md border border-border overflow-hidden">
+								{#each WATCH_STATUS_OPTIONS as opt}
+									<Button
+										type="button"
+										variant={status === opt.value ? 'default' : 'ghost'}
+										size="sm"
+										class="rounded-none border-0"
+										onclick={() => { status = opt.value; }}
+									>
+										{opt.label}
+									</Button>
+								{/each}
+							</div>
 						</div>
 						<span class="text-border hidden sm:inline">·</span>
 						<div class="flex items-center gap-2">
@@ -326,7 +376,7 @@
 								max={totalEpisodes ?? undefined}
 								bind:value={episodesWatched}
 								placeholder="—"
-								disabled={!dropped && totalEpisodes !== null}
+								disabled={!revealsEpisodes && totalEpisodes !== null}
 								class="bg-card w-20 text-center"
 							/>
 							{#if totalEpisodes !== null}
@@ -368,8 +418,8 @@
 							<div class="grid grid-cols-2 gap-3 mt-3">
 								{#each Object.entries(RATING_ATTRIBUTE_OPTIONS) as [key, config]}
 									{@const isEndingQuality = key === 'ending_quality'}
-									{@const isDisabled = isEndingQuality && dropped}
-									{@const visibleOptions = isEndingQuality && !dropped
+									{@const isDisabled = isEndingQuality && revealsEpisodes}
+									{@const visibleOptions = isEndingQuality && !revealsEpisodes
 										? config.options.filter(o => o.value !== 'not_applicable')
 										: config.options}
 									<div class="space-y-1">
@@ -419,3 +469,83 @@
 		{/if}
 	</Card.Content>
 </Card.Root>
+
+<!-- Rewatch confirm — a pop-up (not an inline button) so the action + its consequence are explicit -->
+<Dialog.Root bind:open={rewatchOpen}>
+	<Dialog.Content class="sm:max-w-md">
+		<Dialog.Header>
+			<Dialog.Title>Log a rewatch?</Dialog.Title>
+			<Dialog.Description class="text-muted-foreground">
+				This records that you finished this anime again (dated today) and raises your watch
+				count from {existingRating?.watched_count ?? 0} to {(existingRating?.watched_count ?? 0) + 1}.
+				It feeds your watch history and future recommendations, and can't be easily undone.
+			</Dialog.Description>
+		</Dialog.Header>
+		{#if error}<p class="text-destructive text-sm">{error}</p>{/if}
+		<Dialog.Footer>
+			<Button variant="secondary" onclick={() => (rewatchOpen = false)} disabled={loggingRewatch}>
+				Cancel
+			</Button>
+			<Button onclick={handleRewatch} disabled={loggingRewatch}>
+				{loggingRewatch ? 'Logging...' : 'Log rewatch'}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Delete confirm — with an explicit, explained watch-history choice -->
+<Dialog.Root bind:open={deleteOpen}>
+	<Dialog.Content class="sm:max-w-md">
+		<Dialog.Header>
+			<Dialog.Title>Delete this rating?</Dialog.Title>
+			<Dialog.Description class="text-muted-foreground">
+				Your score, note, and attributes for this media will be removed. This can't be undone.
+			</Dialog.Description>
+		</Dialog.Header>
+		{#if existingRating && existingRating.watched_count > 0}
+			<DeleteWatchHistoryToggle
+				bind:checked={deleteHistory}
+				detail="You have {existingRating.watched_count} recorded watch{existingRating.watched_count > 1 ? 'es' : ''}."
+			/>
+		{/if}
+		{#if error}<p class="text-destructive text-sm">{error}</p>{/if}
+		<Dialog.Footer>
+			<Button variant="secondary" onclick={() => (deleteOpen = false)} disabled={deleting}>
+				Cancel
+			</Button>
+			<Button variant="destructive" onclick={handleDelete} disabled={deleting}>
+				{deleting ? 'Deleting...' : 'Delete rating'}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Downgrade confirm — completed → on_hold/dropped while watch history exists -->
+<Dialog.Root bind:open={downgradeOpen}>
+	<Dialog.Content class="sm:max-w-md">
+		<Dialog.Header>
+			<Dialog.Title>Keep your watch history?</Dialog.Title>
+			<Dialog.Description class="text-muted-foreground">
+				You're changing this from Completed to
+				{WATCH_STATUS_OPTIONS.find((o) => o.value === status)?.label ?? status}.
+				{#if existingRating}
+					You have {existingRating.watched_count} recorded watch{existingRating.watched_count > 1 ? 'es' : ''}.
+				{/if}
+				Keep them if you finished it before (e.g. you're rewatching and paused), or remove them if
+				you hadn't really completed it.
+			</Dialog.Description>
+		</Dialog.Header>
+		{#if error}<p class="text-destructive text-sm">{error}</p>{/if}
+		<Dialog.Footer>
+			<Button variant="secondary" onclick={() => (downgradeOpen = false)} disabled={saving}>
+				Cancel
+			</Button>
+			<Button variant="destructive" onclick={() => doSave(true)} disabled={saving}>
+				Remove history
+			</Button>
+			<Button onclick={() => doSave(false)} disabled={saving}>
+				Keep history
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

@@ -1,7 +1,6 @@
 import enum
 
 from sqlalchemy import (
-    Boolean,
     CheckConstraint,
     Column,
     Enum,
@@ -77,6 +76,16 @@ class Originality(str, enum.Enum):
     experimental = "experimental"
 
 
+class WatchStatus(str, enum.Enum):
+    """User's watch status for a media. Replaced the legacy `dropped` boolean
+    in v0.14.10. `on_hold` is distinguished from `dropped` so a future
+    "continue watching" surface can resume paused-but-not-abandoned shows.
+    `on_hold` and `dropped` both carry `episodes_watched`."""
+    completed = "completed"
+    on_hold = "on_hold"
+    dropped = "dropped"
+
+
 class Ratings(BaseModel):
     __tablename__ = "ratings"
 
@@ -95,11 +104,16 @@ class Ratings(BaseModel):
     # Optional note field
     note = Column(String(1000), nullable=True)
 
-    # Number of episodes watched (can be used to infer dropped)
+    # Number of episodes watched (relevant for on_hold / dropped)
     episodes_watched = Column(Integer, nullable=True)
 
-    # Explicitly track whether the user dropped the anime
-    dropped = Column(Boolean, default=False)
+    # Watch status — completed / on_hold / dropped (replaced the `dropped` boolean in v0.14.10)
+    watch_status = Column(
+        Enum(WatchStatus),
+        nullable=False,
+        default=WatchStatus.completed,
+        server_default=WatchStatus.completed.value,
+    )
 
     # Rating attributes (all optional) — keep RATING_ATTRIBUTE_FIELDS in sync
     pace = Column(Enum(Pace), nullable=True)
