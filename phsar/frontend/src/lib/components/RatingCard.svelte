@@ -66,6 +66,7 @@
 	let showNeighbors = $state(false);
 	let neighborItems = $state<RatingScoreItem[] | null>(null);
 	let loadingNeighbors = $state(false);
+	let neighborsError = $state(false);
 	let expandedNeighbors = $state<Record<string, boolean>>({});
 
 	// On Hold and Dropped both mean the anime wasn't finished, so the episode
@@ -129,20 +130,28 @@
 		...[...neighbors.below].sort((a, b) => b.rating - a.rating),
 	]);
 
-	async function toggleNeighbors() {
-		showNeighbors = !showNeighbors;
-		if (showNeighbors && neighborItems === null && !loadingNeighbors) {
-			loadingNeighbors = true;
-			try {
-				neighborItems = await api.get<RatingScoreItem[]>('/ratings/scores');
-			} catch {
-				neighborItems = []; // helper is optional — a failed fetch just shows the empty state
-			} finally {
-				loadingNeighbors = false;
-			}
+	async function loadNeighbors() {
+		if (loadingNeighbors) return;
+		loadingNeighbors = true;
+		neighborsError = false;
+		try {
+			neighborItems = await api.get<RatingScoreItem[]>('/ratings/scores');
+		} catch {
+			// Leave neighborItems null (not []) so a re-expand or the explicit
+			// "Try again" retries instead of latching the misleading empty state.
+			neighborsError = true;
+		} finally {
+			loadingNeighbors = false;
 		}
 	}
 
+	function toggleNeighbors() {
+		showNeighbors = !showNeighbors;
+		// loadNeighbors self-guards against a concurrent in-flight fetch.
+		if (showNeighbors && neighborItems === null) {
+			void loadNeighbors();
+		}
+	}
 
 	function resetForm() {
 		if (existingRating) {
@@ -521,6 +530,13 @@
 					{#if showNeighbors}
 						{#if loadingNeighbors}
 							<p class="text-sm text-muted-foreground mt-2">Loading…</p>
+						{:else if neighborsError}
+							<p class="text-sm text-muted-foreground mt-2">
+								Couldn't load your ratings.
+								<button type="button" class="text-primary hover:underline" onclick={loadNeighbors}>
+									Try again
+								</button>
+							</p>
 						{:else if neighborRows.length === 0}
 							<p class="text-sm text-muted-foreground mt-2">
 								Rate a few titles from other anime to compare your scores here.

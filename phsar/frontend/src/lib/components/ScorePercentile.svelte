@@ -21,7 +21,12 @@
 <!-- Always-visible chip (no hover needed → works on mobile); the tooltip only
      adds the full explanation. -->
 {#if topPercent !== null}
-	{@const explanation = `Higher MyAnimeList score than ${100 - topPercent}% of titles in Phsar's catalog. Ranked by score weighted by vote count, so a high score from few votes doesn't rank top.`}
+	<!-- Phrased as the chip's own "top N%" rank rather than an inverted
+	     "higher than (100-N)%" figure: topPercent is floored at 1, so the
+	     inverted form overstated the best title (always "higher than 99%") and
+	     was nonsensical for a tiny catalog. "Among the top N%" is honest at every
+	     catalog size. -->
+	{@const explanation = `Among the top ${topPercent}% of Phsar's catalog by MyAnimeList score. Ranked by score weighted by vote count, so a high score from few votes doesn't rank near the top.`}
 	<Tooltip text={explanation}>
 		<span class="text-xs font-semibold rounded-full px-2 py-0.5 border whitespace-nowrap {tone(topPercent)}">
 			Top {topPercent}%
