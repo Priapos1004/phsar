@@ -20,6 +20,7 @@ from app.schemas.rating_schema import (
     RatingBulkCreate,
     RatingCreate,
     RatingOut,
+    RatingScoreItem,
     RatingSearchFilters,
 )
 from app.services.media_search_service import media_to_dict
@@ -205,6 +206,32 @@ async def get_ratings_for_anime(
 ) -> list[RatingOut]:
     ratings = await rating_dao.get_by_user_and_anime_uuid(db, user_id, anime_uuid)
     return await _ratings_to_out(db, user_id, ratings)
+
+
+def _rating_to_score_item(r: Ratings) -> RatingScoreItem:
+    data = {
+        "media_uuid": r.media.uuid,
+        "anime_uuid": r.media.anime.uuid,
+        "media_title": r.media.title,
+        "anime_title": r.media.anime.title,
+        "media_cover_image": r.media.cover_image,
+        "rating": r.rating,
+        "watch_status": r.watch_status,
+        "age_rating_numeric": r.media.age_rating_numeric,
+        "genres": [mg.genre.name for mg in r.media.media_genre],
+        "studios": [ms.studio.name for ms in r.media.media_studio],
+        "modified_at": r.modified_at,
+    }
+    for field in RatingAttributes.model_fields:
+        data[field] = getattr(r, field)
+    return RatingScoreItem(**data)
+
+
+async def get_rating_score_items(db: AsyncSession, user_id: int) -> list[RatingScoreItem]:
+    """Compact list of all the user's ratings for the rating-consistency helper.
+    No watched_count batch (the helper doesn't show it) — keeps this to one query."""
+    ratings = await rating_dao.get_all_for_score_items(db, user_id)
+    return [_rating_to_score_item(r) for r in ratings]
 
 
 async def delete_rating(

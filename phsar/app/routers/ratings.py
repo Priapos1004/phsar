@@ -55,6 +55,16 @@ async def get_user_ratings(
     return await rating_service.get_user_ratings(db, current_user.id, limit, offset)
 
 
+@router.get("/scores", response_model=list[rating_schema.RatingScoreItem])
+async def get_rating_score_items(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_user_or_admin),
+):
+    """All of the current user's ratings in a compact shape, for the
+    rating-consistency helper's client-side nearest-score comparison."""
+    return await rating_service.get_rating_score_items(db, current_user.id)
+
+
 @router.post("/{rating_uuid}/rewatch", response_model=rating_schema.RatingOut)
 async def log_rewatch(
     rating_uuid: UUID,

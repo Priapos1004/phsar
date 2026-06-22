@@ -88,6 +88,28 @@ class RatingOut(RatingAttributes):
     model_config = ConfigDict(from_attributes=True)
 
 
+class RatingScoreItem(RatingAttributes):
+    """Compact projection of one of a user's ratings, for the rating-consistency
+    helper. The frontend fetches the whole set once and does all selection +
+    tiebreak client-side, so this ships the comparison inputs (anime_uuid to
+    exclude/dedupe by anime, genres/studios/age for the tiebreak) alongside the
+    11 attribute fields (inherited) and the cover/title for display."""
+
+    media_uuid: UUID
+    anime_uuid: UUID
+    media_title: str
+    anime_title: str
+    media_cover_image: Optional[str]
+    rating: float
+    watch_status: WatchStatus
+    age_rating_numeric: Optional[int]
+    genres: list[str] = []
+    studios: list[str] = []
+    # Recency is the final deterministic tiebreak when two ratings are equally
+    # close in score and tie on attributes/genre/studio/age.
+    modified_at: datetime
+
+
 class _BulkMediaUuids(BaseModel):
     """Shared base for bulk operations: validates the media_uuids list."""
     media_uuids: list[UUID]
