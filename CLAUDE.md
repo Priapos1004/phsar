@@ -136,7 +136,7 @@ Modules:
 - `anime_relation_service.py` — `reclassify_anime` orchestration; umbrella drift detection
 - `anime_summary.py` — shared `summarize_anime(anime, rating_count)` helper for the merge + split admin cards
 - `completion_service.py` — admin story-complete mark/unmark + the marked list (with cover + marked-by audit) for the Completion tab
-- `rating_service.py` — rating CRUD + note search; logs watch events (first completion + rewatches) and derives `watched_count`
+- `rating_service.py` — rating CRUD + note search; logs watch events (first completion + rewatches) and derives `watched_count`. `get_rating_score_items` (v0.14.11) backs `GET /ratings/scores` — a compact projection of all a user's ratings (titles, cover, score, genres/studios/age, attributes) for the rating-consistency helper's client-side nearest-score compare
 - `spoiler_service.py` — frontier algorithm + `user_visible_media` cache
 - `export_service.py` — flat media-level export
 - `backup_service.py` — pg_dump/pg_restore orchestration; retention pools; `.current_db.json` pointer

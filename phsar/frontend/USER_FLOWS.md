@@ -261,6 +261,7 @@ Each anime search result card shows:
   - Watch-status selector (segmented: Completed / On Hold / Dropped) + episodes watched input (auto-filled with total episodes when Completed; revealed/editable when On Hold or Dropped)
   - Note textarea (max 1000 chars with counter)
   - Collapsible "Details" section with 11 attribute selectors (pace, animation quality, 3D animation, watched format, fan service, dialogue quality, character depth, ending type, ending quality, story quality, originality) — shows set/total count badge. Ending quality: when On Hold or Dropped, auto-set to "Not Applicable" and disabled; when Completed, only 3 quality options shown (Unsatisfying, Satisfying, Exceptional)
+  - Collapsible "How you rated similar titles" panel — on first expand fetches the user's ratings once (`GET /ratings/scores`) and shows the 2 closest at-or-below + 2 closest above the current score, each from a different anime; the list re-selects live as the score slider moves (no refetch). Each row shows cover + title + score and expands to reveal that title's attributes. Empty/short state prompts the user to rate more titles
   - Submit/Update button (disabled when no changes detected on existing rating)
   - **Downgrade prompt**: saving a change from Completed to On Hold/Dropped while watch history exists opens a "Keep your watch history?" pop-up — Keep history / Remove history / Cancel.
   - Cancel button returns to display mode
@@ -482,6 +483,7 @@ Each anime search result card shows:
 | `/search/media` | GET | Media-view search after token verification |
 | `/media/anime/{uuid}` | GET | Anime detail page load |
 | `/media/{uuid}` | GET | Media detail page load |
+| `/ratings/scores` | GET | Rating-consistency helper (compact list of the user's ratings; fetched once on panel expand) |
 | `/ratings/media/{uuid}` | GET | Media detail page load (fetch user's rating) |
 | `/ratings/anime/{uuid}` | GET | Anime detail page load (fetch user's ratings for all media) |
 | `/ratings/media/{uuid}` | PUT | Create or update a rating |

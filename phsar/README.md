@@ -251,6 +251,7 @@ phsar/
 │   │   │       ├── jobBadges.ts
 │   │   │       ├── mediaChangeSort.ts
 │   │   │       ├── navigation.ts
+│   │   │       ├── ratingNeighbors.ts
 │   │   │       ├── search.ts
 │   │   │       └── spoilerFrontier.ts
 │   │   ├── routes/
@@ -301,6 +302,7 @@ phsar/
 │   │       ├── navbar.test.ts
 │   │       ├── navigation.test.ts
 │   │       ├── rating-modal.test.ts
+│   │       ├── rating-neighbors.test.ts
 │   │       ├── searchbar.test.ts
 │   │       ├── spoiler-frontier.test.ts
 │   │       ├── spoiler-guard.test.ts
@@ -353,6 +355,7 @@ phsar/
     │   ├── test_jobs.py
     │   ├── test_maintenance.py
     │   ├── test_media_detail.py
+    │   ├── test_rating_scores.py
     │   ├── test_ratings.py
     │   ├── test_save.py
     │   ├── test_search_anime.py
