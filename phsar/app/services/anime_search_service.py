@@ -225,6 +225,7 @@ async def get_anime_detail(db: AsyncSession, anime_uuid: UUID) -> AnimeDetail:
     )
     agg = _compute_anime_aggregates(media_list)
     media_items = [_media_to_anime_media_item(m) for m in media_list]
+    score_top_percent = await anime_dao.score_top_percent(db, anime.id)
 
     return AnimeDetail(
         uuid=anime.uuid,
@@ -235,6 +236,7 @@ async def get_anime_detail(db: AsyncSession, anime_uuid: UUID) -> AnimeDetail:
         description=anime.description,
         cover_image=anime.cover_image,
         is_finished=anime.completion is not None,
+        score_top_percent=score_top_percent,
         media=media_items,
         **agg,
     )

@@ -9,6 +9,7 @@ from app.daos.studio_dao import StudioDAO
 from app.models.genre import Genre
 from app.models.media import Media
 from app.models.media_genre import MediaGenre
+from app.schemas.genre_schema import GenreOut
 from app.schemas.media_filter_schema import ViewType
 
 logger = logging.getLogger(__name__)
@@ -151,6 +152,13 @@ async def _fetch_shared_filter_values(db: AsyncSession) -> dict:
         "score_min": 0.0,
         "score_max": 10.0,
     }
+
+
+async def fetch_genres(db: AsyncSession) -> list[GenreOut]:
+    """All genres with their descriptions, for the frontend's genre-badge
+    tooltip lookup. Small static set — fetched once and cached client-side."""
+    rows = await genre_dao.get_name_descriptions(db)
+    return [GenreOut(name=name, description=description) for name, description in rows]
 
 
 async def fetch_filter_values(db: AsyncSession, view_type: ViewType = ViewType.MEDIA) -> dict:

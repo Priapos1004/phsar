@@ -111,5 +111,9 @@ class AnimeDetail(AnimeAggregatedBase):
     """Full anime detail with all media and aggregated metadata."""
     other_names: list[str] = []
     description: Optional[str] = None
+    # "Top N%" rank of this anime's confidence-weighted MAL score among all
+    # scored anime in the catalog (None when unscored). Detail-only — not on
+    # the search cards.
+    score_top_percent: Optional[int] = None
     # All media in this anime
     media: list[AnimeMediaItem] = []

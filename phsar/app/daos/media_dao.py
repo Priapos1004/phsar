@@ -6,7 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.daos.base_mal_id_dao import MalIdDAO
-from app.daos.search_filters import apply_media_filters, apply_vector_ordering
+from app.daos.search_filters import (
+    apply_media_filters,
+    apply_vector_ordering,
+    weighted_score_expr,
+)
 from app.models.anime import Anime
 from app.models.media import Media
 from app.models.media_genre import MediaGenre
@@ -45,6 +49,28 @@ class MediaDAO(MalIdDAO[Media]):
         result = await db.execute(stmt)
         return result.scalars().first()
 
+    async def score_top_percent(self, db: AsyncSession, media_id: int) -> int | None:
+        """Where this media ranks among all scored media by its
+        confidence-weighted MAL score, as a "top N%" (1 = best).
+
+        Metric is `score * log10(scored_by + 1)` — the same weighting search
+        ranking uses — so a high score from a handful of votes doesn't outrank
+        a well-voted title. Returns None when the media is unscored or the
+        catalog has no scored media."""
+        metric = weighted_score_expr(Media.score, Media.scored_by)
+        this_metric = (
+            select(metric).where(Media.id == media_id).scalar_subquery()
+        )
+        stmt = select(
+            this_metric.label("m_this"),
+            func.count().filter(metric > this_metric),
+            func.count(),
+        ).where(Media.score.is_not(None))
+        m_this, better, total = (await db.execute(stmt)).one()
+        if m_this is None or total == 0:
+            return None
+        return max(1, round(better / total * 100))
+
     async def search_media_by_vector_with_filters(
         self,
         db: AsyncSession,
@@ -75,9 +101,7 @@ class MediaDAO(MalIdDAO[Media]):
                 title_columns=[Media.title, Media.name_eng],
             )
         else:
-            # log10 chosen over ln to dampen the scored_by weight — prevents very popular
-            # but mediocre-scored media from outranking higher-scored niche media
-            weighted_score = Media.score * func.log(Media.scored_by + 1)
+            weighted_score = weighted_score_expr(Media.score, Media.scored_by)
             stmt = stmt.order_by(weighted_score.desc().nullslast())
 
         stmt = stmt.limit(limit)

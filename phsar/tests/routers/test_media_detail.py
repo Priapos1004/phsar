@@ -107,6 +107,16 @@ async def test_get_media_detail(client, user_auth_headers, test_anime_with_sibli
         assert "score" not in sibling
 
 
+async def test_media_detail_score_top_percent(client, user_auth_headers, test_anime_with_siblings):
+    """A scored media always gets a top-N% rank in [1, 100]."""
+    media = test_anime_with_siblings["main"]
+    response = await client.get(f"/media/{media.uuid}", headers=user_auth_headers)
+    data = response.json()
+
+    assert data["score_top_percent"] is not None
+    assert 1 <= data["score_top_percent"] <= 100
+
+
 async def test_sibling_position_when_current_is_oldest(client, user_auth_headers, test_anime_with_siblings):
     """Querying the OVA (Spring 2019, oldest) puts the marker before every
     sibling — exercises the leading boundary."""

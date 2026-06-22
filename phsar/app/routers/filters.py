@@ -3,12 +3,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_db, verify_url_token
 from app.schemas.auth_schema import TokenPayload
+from app.schemas.genre_schema import GenreOut
 from app.schemas.media_filter_schema import (
     ExtendedMediaSearchFilters,
     MediaFilterValues,
     ViewType,
 )
-from app.services.filter_service import fetch_filter_values
+from app.services.filter_service import fetch_filter_values, fetch_genres
 from app.services.token_service import generate_search_token
 
 router = APIRouter(prefix="/filters", tags=["filters"])
@@ -20,6 +21,14 @@ async def get_filter_values(
     db: AsyncSession = Depends(get_db),
 ):
     return await fetch_filter_values(db, view_type=view_type)
+
+@router.get("/genres", response_model=list[GenreOut])
+async def get_genres(
+    current_user = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Genre names + descriptions for the frontend's genre-badge tooltips."""
+    return await fetch_genres(db)
 
 @router.post("/create-token", response_model=TokenPayload)
 async def create_search_token(

@@ -137,6 +137,16 @@ async def test_anime_detail_season_range(client, user_auth_headers, anime_for_de
     assert data["season_end"] == "Fall 2021"
 
 
+async def test_anime_detail_score_top_percent(client, user_auth_headers, anime_for_detail):
+    """A scored anime always gets a top-N% rank in [1, 100]."""
+    anime = anime_for_detail["anime"]
+    response = await client.get(f"/media/anime/{anime.uuid}", headers=user_auth_headers)
+    data = response.json()
+
+    assert data["score_top_percent"] is not None
+    assert 1 <= data["score_top_percent"] <= 100
+
+
 async def test_anime_detail_media_list(client, user_auth_headers, anime_for_detail):
     anime = anime_for_detail["anime"]
     response = await client.get(f"/media/anime/{anime.uuid}", headers=user_auth_headers)

@@ -25,6 +25,16 @@ _VECTOR_COLUMNS = {
 }
 
 
+def weighted_score_expr(score, scored_by):
+    """Confidence-weighted MAL score `score * log10(scored_by + 1)` — log10 (not
+    ln) dampens the vote-count weight so a very popular but mediocre title can't
+    outrank a higher-scored niche one. Single source of truth for the SQL form,
+    shared by media + anime search ranking and the `score_top_percent` percentile
+    DAOs (the Python twin is `scrape_dispatcher._weighted_score`). `score` /
+    `scored_by` may be plain columns (per-media) or aggregates (per-anime avg)."""
+    return score * func.log(scored_by + 1)
+
+
 def _apply_studio_filter(stmt, studio_names: list[str]):
     """Subquery-based studio filter to avoid duplicate rows from multiple matching studios."""
     studio_subquery = (

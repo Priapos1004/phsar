@@ -12,6 +12,7 @@ from app.daos.search_filters import (
     apply_anime_having_filters,
     apply_anime_pre_filters,
     apply_vector_ordering,
+    weighted_score_expr,
 )
 from app.models.anime import Anime
 from app.models.anime_search import AnimeSearch
@@ -154,6 +155,39 @@ class AnimeDAO(MalIdDAO[Anime]):
         )
         result = await db.execute(stmt)
         return result.scalars().first()
+
+    async def score_top_percent(self, db: AsyncSession, anime_id: int) -> int | None:
+        """Where this anime ranks among all scored anime by its
+        confidence-weighted MAL score, as a "top N%" (1 = best).
+
+        Per-anime metric is `avg_score * log10(avg_scored_by + 1)` using the
+        same mean aggregates the detail card shows (avg over non-null scores /
+        avg over all media's vote counts), so the rank lines up with the
+        displayed pill. Returns None when the anime has no scored media or the
+        catalog has none."""
+        per_anime = (
+            select(
+                Media.anime_id.label("anime_id"),
+                weighted_score_expr(func.avg(Media.score), func.avg(Media.scored_by)).label("metric"),
+            )
+            .group_by(Media.anime_id)
+            .having(func.avg(Media.score).is_not(None))
+            .cte("per_anime_score")
+        )
+        this_metric = (
+            select(per_anime.c.metric)
+            .where(per_anime.c.anime_id == anime_id)
+            .scalar_subquery()
+        )
+        stmt = select(
+            this_metric.label("m_this"),
+            func.count().filter(per_anime.c.metric > this_metric),
+            func.count(),
+        ).select_from(per_anime)
+        m_this, better, total = (await db.execute(stmt)).one()
+        if m_this is None or total == 0:
+            return None
+        return max(1, round(better / total * 100))
 
     async def get_by_media_mal_id_with_media(
         self, db: AsyncSession, media_mal_id: int,
@@ -444,9 +478,7 @@ class AnimeDAO(MalIdDAO[Anime]):
                 stmt = stmt.order_by(avg_distance.asc().nullslast())
         else:
             # Default ordering: weighted score = avg(score) * log10(avg(scored_by) + 1)
-            # log10 chosen over ln to dampen the scored_by weight — prevents very popular
-            # but mediocre-scored anime from outranking higher-scored niche anime
-            weighted = avg_score * func.log(avg_scored_by + 1)
+            weighted = weighted_score_expr(avg_score, avg_scored_by)
             stmt = stmt.order_by(weighted.desc().nullslast())
 
         stmt = stmt.limit(limit)
