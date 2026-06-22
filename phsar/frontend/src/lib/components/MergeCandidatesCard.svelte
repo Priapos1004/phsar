@@ -8,6 +8,7 @@
     import DismissedDecisionsSection from '$lib/components/admin/DismissedDecisionsSection.svelte';
     import { GitMerge, X, RefreshCw, ArrowLeftRight, Search, ChevronRight, ChevronDown } from 'lucide-svelte';
     import { bumpCurationRefresh } from '$lib/stores/jobs';
+    import { buildDetailHref } from '$lib/utils/navigation';
     import { formatRelationType } from '$lib/utils/formatString';
     import type {
         MergeBackfillResult,
@@ -206,10 +207,8 @@
                                         Anime {i === 0 ? 'A (kept)' : 'B (merged in)'}
                                     </div>
                                     <a
-                                        href="/anime?uuid={anime.uuid}"
+                                        href={buildDetailHref('anime', anime.uuid, { from: 'curation' })}
                                         class="text-sm font-medium text-card-foreground hover:text-primary transition block"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
                                     >
                                         {anime.title}
                                     </a>
