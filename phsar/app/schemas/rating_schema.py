@@ -126,10 +126,15 @@ class RatingScoreItem(RatingAttributes):
     mal_score: Optional[float]
     scored_by: int
     # Watch-time stats: episodes is the catalog total; total_watch_time is seconds
-    # (episodes × duration_seconds); anime_season_year buckets the by-year breakdown.
+    # (episodes × duration_seconds). anime_season_name + _year feed the season filter
+    # (and the by-year breakdown); both are null together (catalog constraint).
     episodes: Optional[int]
     total_watch_time: Optional[int]
+    anime_season_name: Optional[str]
     anime_season_year: Optional[int]
+    # Per-media relation type (main / alternative_version / side_story / …) → the
+    # anime card's "X main · Y side" breakdown.
+    relation_type: str
     # created_at drives the ratings-over-time timeline; modified_at is the final
     # deterministic tiebreak when two ratings are equally close in score and tie on
     # attributes/genre/studio/age.

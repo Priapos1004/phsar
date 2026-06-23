@@ -86,7 +86,9 @@ async def test_rating_scores_returns_compact_items(client, user_auth_headers, ra
     assert item_a["scored_by"] == 1200
     assert item_a["episodes"] == 12
     assert item_a["total_watch_time"] == 12 * 1440  # episodes × duration_seconds
+    assert item_a["anime_season_name"] == "Spring"
     assert item_a["anime_season_year"] == 2021
+    assert item_a["relation_type"] == "main"  # media_kwargs default
 
     item_b = by_uuid[str(media_b.uuid)]
     assert item_b["genres"] == []
@@ -96,6 +98,7 @@ async def test_rating_scores_returns_compact_items(client, user_auth_headers, ra
     assert item_b["mal_score"] is None
     assert item_b["scored_by"] == 0
     assert item_b["total_watch_time"] is None
+    assert item_b["anime_season_name"] is None
     assert item_b["anime_season_year"] is None
     assert item_b["anime_cover_image"] is None
 
