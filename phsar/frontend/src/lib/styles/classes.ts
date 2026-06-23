@@ -13,8 +13,10 @@ export const badgeRelationTypeColor = 'bg-blue-100 text-blue-800';
 export const badgeGenreColor = 'bg-primary/10 text-primary';
 export const badgeAgeRatingColor = 'bg-orange-100 text-orange-800';
 // On-hold watch status (amber) — shared so RatingCard + RatingsOverviewStats can't drift.
-// (Dropped uses the built-in `destructive` Badge variant; completed renders as plain text.)
 export const badgeOnHold = 'bg-amber-100 text-amber-800 border-amber-200';
+// Dropped watch status (solid rose) — same visual weight as on-hold, for the ratings
+// list where the translucent built-in `destructive` variant read too faint.
+export const badgeDropped = 'bg-rose-100 text-rose-800 border-rose-200';
 // Story-complete (emerald) — shared by the anime-page badge + the anime search card badge.
 export const badgeComplete = 'bg-emerald-100 text-emerald-800 border-emerald-200';
 

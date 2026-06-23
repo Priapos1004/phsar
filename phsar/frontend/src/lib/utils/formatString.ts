@@ -1,6 +1,16 @@
 import { RELATION_TYPE_LABELS } from '$lib/utils/chartColors';
 import type { JobKind } from '$lib/types/api';
 
+/** Labels for the numeric age-rating buckets (mirrors the backend AGE_RATING_MAP:
+ * G=0, PG=6, PG-13=13, R=17, R+=18). */
+export const AGE_RATING_LABELS: Record<number, string> = {
+	0: 'All Ages',
+	6: 'PG',
+	13: 'PG-13',
+	17: 'R-17+',
+	18: 'R+',
+};
+
 /** Formats a raw relation_type value to a user-friendly label. */
 export function formatRelationType(type: string): string {
 	return RELATION_TYPE_LABELS[type] ?? type;

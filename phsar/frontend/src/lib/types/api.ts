@@ -176,7 +176,9 @@ export interface RatingScoreItem {
 	scored_by: number;
 	episodes: number | null;
 	total_watch_time: number | null;
+	anime_season_name: string | null;
 	anime_season_year: number | null;
+	relation_type: string;
 	pace: Pace | null;
 	animation_quality: AnimationQuality | null;
 	has_3d_animation: ThreeDAnimation | null;

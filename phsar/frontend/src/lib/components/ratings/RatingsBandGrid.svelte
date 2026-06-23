@@ -7,13 +7,14 @@
 		rows: AnimeRatingRow[];
 		nameLanguage: 'english' | 'japanese' | 'romaji';
 		scoreDecimals: number;
+		bandDir: 'asc' | 'desc';
 	}
 
-	let { rows, nameLanguage, scoreDecimals }: Props = $props();
+	let { rows, nameLanguage, scoreDecimals, bandDir }: Props = $props();
 
-	// `rows` arrive pre-sorted (the filter bar owns sort); banding preserves that
-	// within-band order, bands themselves descend by score.
-	let bands = $derived(toScoreBands(rows));
+	// `rows` arrive fixed-sorted (rating desc, title asc). toScoreBands keeps that
+	// within-band order; the arrow only flips which band sits on top (10 vs 0).
+	let bands = $derived(bandDir === 'asc' ? toScoreBands(rows).reverse() : toScoreBands(rows));
 </script>
 
 <div class="space-y-8">

@@ -5,6 +5,12 @@
 // stats endpoint, no scipy (the regression + correlation are closed-form below).
 
 import { RATING_ATTRIBUTE_OPTIONS, isAttrRated, getRatingAttr, type RatingScoreItem, type WatchStatus } from '$lib/types/api';
+import { formatSeason } from '$lib/utils/formatString';
+
+/** Display + match key for a media's season, e.g. "Spring 2021"; null when undated. */
+export function seasonLabel(it: RatingScoreItem): string | null {
+	return formatSeason(it.anime_season_name, it.anime_season_year);
+}
 
 type NameLanguage = 'english' | 'japanese' | 'romaji';
 
@@ -33,12 +39,28 @@ export interface AnimeRatingRow {
 	/** Priority-collapsed status flag for the card badge (dropped > on_hold > completed→null). */
 	statusBadge: 'dropped' | 'on_hold' | null;
 	ratedMediaCount: number;
+	/** Rated-media counts split into the main story (main + alternative_version
+	 * retellings) vs everything else (side stories, summaries, crossovers). */
+	mainCount: number;
+	sideCount: number;
 	/** Most recent modified_at across the rated media (drives the "date rated" sort). */
 	modifiedAt: string;
 }
 
 function mean(nums: number[]): number {
 	return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
+}
+
+// "Main story" = the canonical chain plus alternative-version retellings; everything
+// else (side stories, summaries, crossovers) counts as side.
+const MAIN_RELATION_TYPES = new Set(['main', 'alternative_version']);
+
+/** "X main · Y side" rated-media breakdown for the card + table (a count of 0 is
+ * omitted, so a side-story-only anime reads "1 side"). */
+export function mainSideLabel(row: AnimeRatingRow): string {
+	return [row.mainCount ? `${row.mainCount} main` : null, row.sideCount ? `${row.sideCount} side` : null]
+		.filter(Boolean)
+		.join(' · ');
 }
 
 export function groupByAnime(items: RatingScoreItem[]): AnimeRatingRow[] {
@@ -74,6 +96,8 @@ export function groupByAnime(items: RatingScoreItem[]): AnimeRatingRow[] {
 				? 'on_hold'
 				: null;
 
+		const mainCount = members.filter((m) => MAIN_RELATION_TYPES.has(m.relation_type)).length;
+
 		// Anime cover, falling back to the first member's media cover when absent.
 		const cover_image =
 			members.find((m) => m.anime_cover_image)?.anime_cover_image ??
@@ -95,6 +119,8 @@ export function groupByAnime(items: RatingScoreItem[]): AnimeRatingRow[] {
 			statuses,
 			statusBadge,
 			ratedMediaCount: members.length,
+			mainCount,
+			sideCount: members.length - mainCount,
 			modifiedAt: members.reduce((a, m) => (m.modified_at > a ? m.modified_at : a), first.modified_at),
 		});
 	}
@@ -106,30 +132,48 @@ export function groupByAnime(items: RatingScoreItem[]): AnimeRatingRow[] {
 export interface RatingFilters {
 	genres: string[];
 	genreMode: 'any' | 'all';
-	statuses: WatchStatus[];
-	scoreMin: number;
-	scoreMax: number;
+	ageRatings: number[]; // any-match against age_rating_numeric; [] = no age filter
+	seasons: string[]; // any-match against the media's "Spring 2021" season; [] = no filter
 }
 
-/** Filter the per-media items BEFORE grouping (so genre/status/score act per media). */
+/** Filter the per-media items BEFORE grouping (genre + age + season act per media;
+ * the filters AND together, so an anime survives if it has ≥1 media matching all). */
 export function filterItems(items: RatingScoreItem[], f: RatingFilters): RatingScoreItem[] {
+	if (!f.genres.length && !f.ageRatings.length && !f.seasons.length) return items;
 	return items.filter((it) => {
-		if (it.rating < f.scoreMin || it.rating > f.scoreMax) return false;
-		if (f.statuses.length && !f.statuses.includes(it.watch_status)) return false;
 		if (f.genres.length) {
 			const has = (g: string) => it.genres.includes(g);
 			if (f.genreMode === 'all' ? !f.genres.every(has) : !f.genres.some(has)) return false;
+		}
+		if (f.ageRatings.length && (it.age_rating_numeric == null || !f.ageRatings.includes(it.age_rating_numeric)))
+			return false;
+		if (f.seasons.length) {
+			const s = seasonLabel(it);
+			if (s == null || !f.seasons.includes(s)) return false;
 		}
 		return true;
 	});
 }
 
-export type SortKey = 'score' | 'title' | 'date' | 'malDelta';
+export type SortKey = 'score' | 'title' | 'date' | 'mal' | 'malDelta' | 'status';
 
 function titleOf(r: AnimeRatingRow, lang: NameLanguage): string {
 	if (lang === 'japanese' && r.name_jap) return r.name_jap;
 	if (lang === 'english' && r.name_eng) return r.name_eng;
 	return r.title;
+}
+
+// Ascending status order: dropped < on hold < completed.
+function statusRank(r: AnimeRatingRow): number {
+	return r.statusBadge === 'dropped' ? 0 : r.statusBadge === 'on_hold' ? 1 : 2;
+}
+
+// Compare two nullable numbers, sending nulls to the end regardless of direction.
+function cmpNullable(a: number | null, b: number | null, dir: 'asc' | 'desc'): number {
+	if (a == null && b == null) return 0;
+	if (a == null) return dir === 'asc' ? 1 : -1;
+	if (b == null) return dir === 'asc' ? 1 : -1;
+	return a - b;
 }
 
 export function sortAnimeRows(
@@ -145,12 +189,12 @@ export function sortAnimeRows(
 				return titleOf(a, nameLanguage).localeCompare(titleOf(b, nameLanguage));
 			case 'date':
 				return a.modifiedAt < b.modifiedAt ? -1 : a.modifiedAt > b.modifiedAt ? 1 : 0;
+			case 'status':
+				return statusRank(a) - statusRank(b);
+			case 'mal':
+				return cmpNullable(a.malScore, b.malScore, dir);
 			case 'malDelta':
-				// Rows without a MAL delta sort to the end regardless of direction.
-				if (a.malDelta == null && b.malDelta == null) return 0;
-				if (a.malDelta == null) return 1 * (dir === 'asc' ? 1 : -1);
-				if (b.malDelta == null) return -1 * (dir === 'asc' ? 1 : -1);
-				return a.malDelta - b.malDelta;
+				return cmpNullable(a.malDelta, b.malDelta, dir);
 			case 'score':
 			default:
 				return a.userScore - b.userScore;
@@ -175,9 +219,9 @@ const BAND_WORD: Record<number, string> = {
 	9: 'Great',
 	8: 'Very good',
 	7: 'Good',
-	6: 'Fine',
-	5: 'Mixed',
-	4: 'Weak',
+	6: 'Solid',
+	5: 'Decent', // lowest score still worth recommending
+	4: 'Mixed',
 	3: 'Bad',
 	2: 'Awful',
 	1: 'Terrible',

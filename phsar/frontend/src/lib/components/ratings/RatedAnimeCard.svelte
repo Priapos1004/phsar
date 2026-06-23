@@ -4,7 +4,7 @@
 	import { formatDecimalDigits, resolveTitle } from '$lib/utils/formatString';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import * as cls from '$lib/styles/classes';
-	import type { AnimeRatingRow } from '$lib/utils/ratingStats';
+	import { mainSideLabel, type AnimeRatingRow } from '$lib/utils/ratingStats';
 
 	interface Props {
 		row: AnimeRatingRow;
@@ -49,7 +49,7 @@
 			</span>
 
 			{#if row.statusBadge === 'dropped'}
-				<Badge variant="destructive" class="absolute top-1.5 left-1.5 text-[10px] h-5">Dropped</Badge>
+				<Badge variant="secondary" class="absolute top-1.5 left-1.5 text-[10px] h-5 {cls.badgeDropped}">Dropped</Badge>
 			{:else if row.statusBadge === 'on_hold'}
 				<Badge variant="secondary" class="absolute top-1.5 left-1.5 text-[10px] h-5 {cls.badgeOnHold}">On Hold</Badge>
 			{/if}
@@ -59,16 +59,9 @@
 			<h3 class="text-sm font-medium text-card-foreground line-clamp-2 leading-snug" title={title}>
 				{title}
 			</h3>
-			<div class="mt-auto flex items-center gap-2 flex-wrap text-[11px]">
-				{#if row.ratedMediaCount > 1}
-					<span class="rounded bg-muted px-1.5 py-0.5 text-muted-foreground">{row.ratedMediaCount} rated</span>
-				{/if}
-				{#if row.malDelta !== null}
-					<span class="font-medium {row.malDelta >= 0 ? 'text-emerald-600' : 'text-rose-600'}">
-						{row.malDelta >= 0 ? '+' : ''}{formatDecimalDigits(row.malDelta, 1)} vs MAL
-					</span>
-				{/if}
-			</div>
+			<span class="mt-auto w-fit rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
+				{mainSideLabel(row)}
+			</span>
 		</div>
 	</div>
 </a>

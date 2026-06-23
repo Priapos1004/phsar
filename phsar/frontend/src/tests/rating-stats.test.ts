@@ -37,7 +37,9 @@ function item(o: Partial<RatingScoreItem> & { media_uuid: string; anime_uuid: st
 		scored_by: 0,
 		episodes: null,
 		total_watch_time: null,
+		anime_season_name: null,
 		anime_season_year: null,
+		relation_type: 'main',
 		pace: null,
 		animation_quality: null,
 		has_3d_animation: null,
@@ -74,6 +76,17 @@ describe('groupByAnime', () => {
 		expect(r.cover_image).toBe('a.jpg');
 	});
 
+	it('splits rated media into main (incl. alternative_version) vs side', () => {
+		const [r] = groupByAnime([
+			item({ media_uuid: '1', anime_uuid: 'A', rating: 8, relation_type: 'main' }),
+			item({ media_uuid: '2', anime_uuid: 'A', rating: 8, relation_type: 'alternative_version' }),
+			item({ media_uuid: '3', anime_uuid: 'A', rating: 8, relation_type: 'side_story' }),
+			item({ media_uuid: '4', anime_uuid: 'A', rating: 8, relation_type: 'summary' }),
+		]);
+		expect(r.mainCount).toBe(2);
+		expect(r.sideCount).toBe(2);
+	});
+
 	it('dropped beats on_hold in the status badge; null mal → null delta', () => {
 		const [r] = groupByAnime([
 			item({ media_uuid: 'm1', anime_uuid: 'A', rating: 5, watch_status: 'dropped' }),
@@ -87,21 +100,37 @@ describe('groupByAnime', () => {
 
 describe('filterItems', () => {
 	const items = [
-		item({ media_uuid: 'a', anime_uuid: 'A', rating: 9, genres: ['Action', 'Comedy'], watch_status: 'completed' }),
-		item({ media_uuid: 'b', anime_uuid: 'B', rating: 4, genres: ['Action'], watch_status: 'dropped' }),
-		item({ media_uuid: 'c', anime_uuid: 'C', rating: 7, genres: ['Comedy'], watch_status: 'completed' }),
+		item({ media_uuid: 'a', anime_uuid: 'A', rating: 9, genres: ['Action', 'Comedy'] }),
+		item({ media_uuid: 'b', anime_uuid: 'B', rating: 4, genres: ['Action'] }),
+		item({ media_uuid: 'c', anime_uuid: 'C', rating: 7, genres: ['Comedy'] }),
 	];
-	it('filters by score range', () => {
-		expect(filterItems(items, { genres: [], genreMode: 'any', statuses: [], scoreMin: 5, scoreMax: 10 }).map((i) => i.media_uuid)).toEqual(['a', 'c']);
-	});
-	it('filters by status', () => {
-		expect(filterItems(items, { genres: [], genreMode: 'any', statuses: ['dropped'], scoreMin: 0, scoreMax: 10 }).map((i) => i.media_uuid)).toEqual(['b']);
+	const base = { genreMode: 'any' as const, ageRatings: [] as number[], seasons: [] as string[] };
+	it('no filters → returns all', () => {
+		expect(filterItems(items, { ...base, genres: [] })).toHaveLength(3);
 	});
 	it('genre any vs all', () => {
-		const any = filterItems(items, { genres: ['Action', 'Comedy'], genreMode: 'any', statuses: [], scoreMin: 0, scoreMax: 10 });
+		const any = filterItems(items, { ...base, genres: ['Action', 'Comedy'], genreMode: 'any' });
 		expect(any.map((i) => i.media_uuid)).toEqual(['a', 'b', 'c']);
-		const all = filterItems(items, { genres: ['Action', 'Comedy'], genreMode: 'all', statuses: [], scoreMin: 0, scoreMax: 10 });
+		const all = filterItems(items, { ...base, genres: ['Action', 'Comedy'], genreMode: 'all' });
 		expect(all.map((i) => i.media_uuid)).toEqual(['a']);
+	});
+	it('filters by age rating (any-match); excludes null age', () => {
+		const aged = [
+			item({ media_uuid: 'x', anime_uuid: 'X', rating: 8, age_rating_numeric: 13 }),
+			item({ media_uuid: 'y', anime_uuid: 'Y', rating: 8, age_rating_numeric: 17 }),
+			item({ media_uuid: 'z', anime_uuid: 'Z', rating: 8, age_rating_numeric: null }),
+		];
+		expect(filterItems(aged, { ...base, genres: [], ageRatings: [13, 17] }).map((i) => i.media_uuid)).toEqual(['x', 'y']);
+		expect(filterItems(aged, { ...base, genres: [], ageRatings: [13] }).map((i) => i.media_uuid)).toEqual(['x']);
+	});
+	it('filters by season (any-match); excludes undated', () => {
+		const seasoned = [
+			item({ media_uuid: 'x', anime_uuid: 'X', rating: 8, anime_season_name: 'Spring', anime_season_year: 2021 }),
+			item({ media_uuid: 'y', anime_uuid: 'Y', rating: 8, anime_season_name: 'Fall', anime_season_year: 2020 }),
+			item({ media_uuid: 'z', anime_uuid: 'Z', rating: 8, anime_season_name: null, anime_season_year: null }),
+		];
+		expect(filterItems(seasoned, { ...base, genres: [], seasons: ['Spring 2021'] }).map((i) => i.media_uuid)).toEqual(['x']);
+		expect(filterItems(seasoned, { ...base, genres: [], seasons: ['Spring 2021', 'Fall 2020'] }).map((i) => i.media_uuid)).toEqual(['x', 'y']);
 	});
 });
 
@@ -116,6 +145,14 @@ describe('sortAnimeRows + toScoreBands', () => {
 	});
 	it('sorts by title asc', () => {
 		expect(sortAnimeRows(rows, 'title', 'asc', 'english').map((r) => r.name_eng)).toEqual(['Alpha', 'Mango', 'Zebra']);
+	});
+	it('sorts by status asc (dropped < on_hold < completed)', () => {
+		const statusRows = groupByAnime([
+			item({ media_uuid: 'd', anime_uuid: 'D', rating: 5, watch_status: 'dropped', anime_name_eng: 'D' }),
+			item({ media_uuid: 'h', anime_uuid: 'H', rating: 5, watch_status: 'on_hold', anime_name_eng: 'H' }),
+			item({ media_uuid: 'c', anime_uuid: 'C', rating: 5, watch_status: 'completed', anime_name_eng: 'C' }),
+		]);
+		expect(sortAnimeRows(statusRows, 'status', 'asc', 'english').map((r) => r.anime_uuid)).toEqual(['D', 'H', 'C']);
 	});
 	it('bands by floored score, descending, empty bands omitted', () => {
 		const bands = toScoreBands(sortAnimeRows(rows, 'title', 'asc', 'english'));

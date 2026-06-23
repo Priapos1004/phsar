@@ -1,119 +1,154 @@
 <script lang="ts">
-	import { LayoutGrid, Table as TableIcon } from 'lucide-svelte';
+	import { LayoutGrid, Table as TableIcon, ArrowDown, ArrowUp } from 'lucide-svelte';
+	import * as Card from '$lib/components/ui/card';
+	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
 	import TagSelect from '$lib/components/TagSelect.svelte';
-	import DoubleRangeSlider from '$lib/components/DoubleRangeSlider.svelte';
 	import { ratingsFilter } from '$lib/stores/ratingsFilter';
-	import type { SortKey } from '$lib/utils/ratingStats';
-	import { WATCH_STATUS_OPTIONS, type WatchStatus } from '$lib/types/api';
-	import { formatDecimalDigits } from '$lib/utils/formatString';
+	import { AGE_RATING_LABELS } from '$lib/utils/formatString';
+	import * as cls from '$lib/styles/classes';
 
 	interface Props {
 		genreOptions: string[];
-		step: number;
+		ageOptions: number[];
+		seasonOptions: string[];
 	}
 
-	let { genreOptions, step }: Props = $props();
+	let { genreOptions, ageOptions, seasonOptions }: Props = $props();
 
-	// One combined sort control (key + direction) — no separate direction toggle.
-	const SORT_OPTIONS: { value: string; label: string; sort: SortKey; dir: 'asc' | 'desc' }[] = [
-		{ value: 'score|desc', label: 'Score: high → low', sort: 'score', dir: 'desc' },
-		{ value: 'score|asc', label: 'Score: low → high', sort: 'score', dir: 'asc' },
-		{ value: 'title|asc', label: 'Title: A → Z', sort: 'title', dir: 'asc' },
-		{ value: 'date|desc', label: 'Recently rated', sort: 'date', dir: 'desc' },
-		{ value: 'malDelta|desc', label: 'Most above MAL', sort: 'malDelta', dir: 'desc' },
-		{ value: 'malDelta|asc', label: 'Most below MAL', sort: 'malDelta', dir: 'asc' },
-	];
-	let sortValue = $derived(`${$ratingsFilter.sort}|${$ratingsFilter.sortDir}`);
-
-	const PILL = 'px-3 py-1 rounded-full text-sm border transition-colors';
-	const PILL_ON = 'border-primary bg-primary/15 text-primary';
-	const PILL_OFF = 'border-white/15 text-white/60 hover:text-white hover:border-white/30';
-
-	function toggleStatus(s: WatchStatus) {
+	function toggleAge(age: number) {
 		ratingsFilter.update((f) => ({
 			...f,
-			statuses: f.statuses.includes(s) ? f.statuses.filter((x) => x !== s) : [...f.statuses, s],
+			ageRatings: f.ageRatings.includes(age) ? f.ageRatings.filter((a) => a !== age) : [...f.ageRatings, age],
 		}));
 	}
+
+	// Only the value filters (not view / sort / order, which are display prefs).
+	let hasActiveFilters = $derived(
+		$ratingsFilter.genres.length > 0 || $ratingsFilter.ageRatings.length > 0 || $ratingsFilter.seasons.length > 0,
+	);
+	function clearFilters() {
+		ratingsFilter.update((f) => ({ ...f, genres: [], genreMode: 'any', ageRatings: [], seasons: [] }));
+	}
+
+	// View pills — identical sizing to the Statistics inner-nav (px-3.5 py-1.5) so the
+	// control row doesn't jump when switching top-level tabs. On the dark page bg.
+	const VIEW_ON = 'border-primary bg-primary/15 text-primary font-medium';
+	const VIEW_OFF = 'border-white/15 text-white/60 hover:text-white hover:border-white/30';
+	// In-card controls sit on the WHITE card, so inactive text is card-foreground (dark),
+	// never the light page `foreground` token. Selected = solid primary; resting = muted.
+	const CHIP_ON = 'bg-primary text-white shadow-sm';
+	const CHIP_OFF = 'bg-muted text-card-foreground/70 hover:bg-muted/70';
+	const labelCls = 'text-muted-foreground text-xs uppercase tracking-wide';
 </script>
 
-<div class="space-y-3 mb-6">
-	<div class="flex flex-wrap items-center gap-x-6 gap-y-3">
-		<!-- View -->
-		<div class="flex items-center gap-2">
-			<Label class="text-white/50 text-xs uppercase tracking-wide">View</Label>
-			<div class="flex gap-1.5">
-				<button class="{PILL} inline-flex items-center gap-1.5 {$ratingsFilter.view === 'grid' ? PILL_ON : PILL_OFF}" onclick={() => ratingsFilter.update((f) => ({ ...f, view: 'grid' }))}>
-					<LayoutGrid class="size-3.5" /> Grid
-				</button>
-				<button class="{PILL} inline-flex items-center gap-1.5 {$ratingsFilter.view === 'table' ? PILL_ON : PILL_OFF}" onclick={() => ratingsFilter.update((f) => ({ ...f, view: 'table' }))}>
-					<TableIcon class="size-3.5" /> Table
-				</button>
-			</div>
-		</div>
+<!-- relative z-20 lifts the filter (and its genre dropdown) above the results card,
+     which creates its own stacking context via backdrop-blur and would otherwise
+     paint over the dropdown. -->
+<div class="space-y-3 mb-4 relative z-20">
+	<!-- View selection -->
+	<div class="flex gap-2">
+		<button
+			class="px-3.5 py-1.5 rounded-full text-sm border transition-colors inline-flex items-center gap-1.5 {$ratingsFilter.view === 'grid' ? VIEW_ON : VIEW_OFF}"
+			onclick={() => ratingsFilter.update((f) => ({ ...f, view: 'grid' }))}
+		>
+			<LayoutGrid class="size-3.5" /> Grid
+		</button>
+		<button
+			class="px-3.5 py-1.5 rounded-full text-sm border transition-colors inline-flex items-center gap-1.5 {$ratingsFilter.view === 'table' ? VIEW_ON : VIEW_OFF}"
+			onclick={() => ratingsFilter.update((f) => ({ ...f, view: 'table' }))}
+		>
+			<TableIcon class="size-3.5" /> Table
+		</button>
+	</div>
 
-		<!-- Sort -->
-		<div class="flex items-center gap-2">
-			<Label class="text-white/50 text-xs uppercase tracking-wide">Sort</Label>
-			<select
-				class="rounded-md border border-white/15 bg-black/20 text-white/80 text-sm px-2.5 py-1.5 hover:border-white/30 focus:outline-none focus:border-primary"
-				value={sortValue}
-				onchange={(e) => {
-					const opt = SORT_OPTIONS.find((o) => o.value === e.currentTarget.value);
-					if (opt) ratingsFilter.update((f) => ({ ...f, sort: opt.sort, sortDir: opt.dir }));
-				}}
+	<!-- Filter / order card. overflow-visible so the genre/season dropdowns can extend
+	     past the card edge (shadcn Card.Root is overflow-hidden by default). items-start
+	     + an h-7 header per block keeps all the titles on one line. -->
+	<Card.Root class="{cls.cardGlass} overflow-visible relative">
+		<!-- Clear button matches the search-bar filter clear (ghost + destructive +
+		     hover bg). Absolutely positioned so toggling it never reflows the filters
+		     below — it sits in the empty top-right corner above them. -->
+		{#if hasActiveFilters}
+			<Button
+				variant="ghost"
+				size="sm"
+				class="absolute top-2 right-2 z-10 text-destructive hover:text-destructive hover:bg-destructive/10"
+				onclick={clearFilters}
 			>
-				{#each SORT_OPTIONS as opt}
-					<option value={opt.value} class="bg-background text-foreground">{opt.label}</option>
-				{/each}
-			</select>
-		</div>
-
-		<!-- Status -->
-		<div class="flex items-center gap-2">
-			<Label class="text-white/50 text-xs uppercase tracking-wide">Status</Label>
-			<div class="flex gap-1.5">
-				{#each WATCH_STATUS_OPTIONS as opt}
-					<button class="{PILL} {$ratingsFilter.statuses.includes(opt.value) ? PILL_ON : PILL_OFF}" onclick={() => toggleStatus(opt.value)}>
-						{opt.label}
+				Clear all
+			</Button>
+		{/if}
+		<Card.Content class="flex flex-wrap items-start gap-x-6 gap-y-4 py-4">
+			{#if $ratingsFilter.view === 'grid'}
+				<!-- Grid order: the score bands are fixed; this arrow just flips whether 10 or
+				     0 sits on top. Within each band the order (rating, then title) never changes. -->
+				<div class="space-y-1.5">
+					<div class="flex h-7 items-center"><Label class={labelCls}>Order</Label></div>
+					<button
+						class="size-12 rounded-xl bg-card/80 backdrop-blur border border-input flex items-center justify-center text-card-foreground hover:bg-muted transition-colors"
+						title={$ratingsFilter.bandDir === 'desc' ? 'Highest score first (click for lowest)' : 'Lowest score first (click for highest)'}
+						aria-label="Toggle score order"
+						onclick={() => ratingsFilter.update((f) => ({ ...f, bandDir: f.bandDir === 'desc' ? 'asc' : 'desc' }))}
+					>
+						{#if $ratingsFilter.bandDir === 'desc'}<ArrowDown class="size-4" />{:else}<ArrowUp class="size-4" />{/if}
 					</button>
-				{/each}
-			</div>
-		</div>
-	</div>
-
-	<div class="flex flex-wrap items-start gap-x-6 gap-y-3">
-		<!-- Genre filter -->
-		<div class="space-y-1 min-w-[16rem] flex-grow max-w-md">
-			<div class="flex items-center justify-between">
-				<Label class="text-white/50 text-xs uppercase tracking-wide">Genres</Label>
-				<div class="flex gap-1">
-					<button class="px-2 py-0.5 rounded-full text-xs border transition-colors {$ratingsFilter.genreMode === 'any' ? PILL_ON : PILL_OFF}" onclick={() => ratingsFilter.update((f) => ({ ...f, genreMode: 'any' }))}>Any</button>
-					<button class="px-2 py-0.5 rounded-full text-xs border transition-colors {$ratingsFilter.genreMode === 'all' ? PILL_ON : PILL_OFF}" onclick={() => ratingsFilter.update((f) => ({ ...f, genreMode: 'all' }))}>All</button>
 				</div>
-			</div>
-			<TagSelect
-				placeholder="Filter by genre…"
-				options={genreOptions}
-				selectedItems={$ratingsFilter.genres}
-				onAdd={(g) => ratingsFilter.update((f) => ({ ...f, genres: [...f.genres, g] }))}
-				onRemove={(g) => ratingsFilter.update((f) => ({ ...f, genres: f.genres.filter((x) => x !== g) }))}
-			/>
-		</div>
+			{/if}
 
-		<!-- Score range -->
-		<div class="min-w-[15rem] flex-grow max-w-xs">
-			<DoubleRangeSlider
-				label="Score range"
-				minValue={0}
-				maxValue={10}
-				step={step}
-				from={$ratingsFilter.scoreMin}
-				to={$ratingsFilter.scoreMax}
-				onChange={({ from, to }) => ratingsFilter.update((f) => ({ ...f, scoreMin: from, scoreMax: to }))}
-				formatDisplay={(v) => formatDecimalDigits(v, 1)}
-			/>
-		</div>
-	</div>
+			<div class="space-y-1.5 flex-grow min-w-[14rem] max-w-md">
+				<div class="flex h-7 items-center justify-between">
+					<Label class={labelCls}>Genres</Label>
+					<!-- Segmented control: muted track + solid-primary thumb (clearly visible
+					     on the white card; no faint grey-on-grey borders). -->
+					<div class="inline-flex rounded-full bg-muted p-0.5 text-xs">
+						<button
+							class="px-2.5 py-0.5 rounded-full transition-colors {$ratingsFilter.genreMode === 'any' ? CHIP_ON : 'text-card-foreground/70 hover:text-card-foreground'}"
+							onclick={() => ratingsFilter.update((f) => ({ ...f, genreMode: 'any' }))}
+						>Any</button>
+						<button
+							class="px-2.5 py-0.5 rounded-full transition-colors {$ratingsFilter.genreMode === 'all' ? CHIP_ON : 'text-card-foreground/70 hover:text-card-foreground'}"
+							onclick={() => ratingsFilter.update((f) => ({ ...f, genreMode: 'all' }))}
+						>All</button>
+					</div>
+				</div>
+				<TagSelect
+					placeholder="Filter by genre…"
+					options={genreOptions}
+					selectedItems={$ratingsFilter.genres}
+					onAdd={(g) => ratingsFilter.update((f) => ({ ...f, genres: [...f.genres, g] }))}
+					onRemove={(g) => ratingsFilter.update((f) => ({ ...f, genres: f.genres.filter((x) => x !== g) }))}
+				/>
+			</div>
+
+			{#if seasonOptions.length}
+				<div class="space-y-1.5 flex-grow min-w-[12rem] max-w-xs">
+					<div class="flex h-7 items-center"><Label class={labelCls}>Season</Label></div>
+					<TagSelect
+						placeholder="Filter by season…"
+						options={seasonOptions}
+						selectedItems={$ratingsFilter.seasons}
+						onAdd={(s) => ratingsFilter.update((f) => ({ ...f, seasons: [...f.seasons, s] }))}
+						onRemove={(s) => ratingsFilter.update((f) => ({ ...f, seasons: f.seasons.filter((x) => x !== s) }))}
+					/>
+				</div>
+			{/if}
+
+			{#if ageOptions.length}
+				<div class="space-y-1.5">
+					<div class="flex h-7 items-center"><Label class={labelCls}>Age rating</Label></div>
+					<!-- Chips live in a box mirroring the TagSelect (same border / radius /
+					     min-height) so the filters line up; filled-chip toggle reads cleanly. -->
+					<div class="bg-card/80 backdrop-blur border border-input rounded-xl px-2 min-h-[48px] flex flex-wrap items-center gap-1.5">
+						{#each ageOptions as age (age)}
+							<button
+								class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors {$ratingsFilter.ageRatings.includes(age) ? CHIP_ON : CHIP_OFF}"
+								onclick={() => toggleAge(age)}
+							>{AGE_RATING_LABELS[age] ?? age}</button>
+						{/each}
+					</div>
+				</div>
+			{/if}
+		</Card.Content>
+	</Card.Root>
 </div>
