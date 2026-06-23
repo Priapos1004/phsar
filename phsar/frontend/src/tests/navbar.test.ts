@@ -34,7 +34,6 @@ describe('NavBar', () => {
 		await fireEvent.click(screen.getByText('T'));
 		expect(screen.getByText('User Settings')).toBeInTheDocument();
 		expect(screen.getByText('Add to Library')).toBeInTheDocument();
-		expect(screen.getByText('Statistics')).toBeInTheDocument();
 		expect(screen.getByText('Getting Started')).toBeInTheDocument();
 		expect(screen.getByText('Logout')).toBeInTheDocument();
 

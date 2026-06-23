@@ -16,6 +16,7 @@
 		if (fromParam === 'job' && jobUuid) return { href: `/admin/jobs/${jobUuid}`, label: 'Back to job' };
 		if (fromParam === 'completion') return { href: '/admin?tab=completion', label: 'Back to completion' };
 		if (fromParam === 'curation') return { href: '/admin?tab=curation', label: 'Back to curation' };
+		if (fromParam === 'ratings') return { href: '/ratings', label: 'Back to ratings' };
 		if (fromParam === 'library') return { href: '/library/add', label: 'Back to library' };
 		if (searchToken) return { href: `/search?q=${encodeURIComponent(searchToken)}`, label: 'Back to search' };
 		return null;
