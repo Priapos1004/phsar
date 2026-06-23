@@ -33,6 +33,13 @@ export function buildDetailHref(
     return `/${type}?${params.toString()}`;
 }
 
+/** Jump to an anime-view search filtered to a single studio ("other anime from this
+ * studio"). Shared by StudioLinks and the ratings genre/studio chart so the filter
+ * shape can't drift between them. */
+export function searchByStudio(studio: string): void {
+	void navigateToSearch({ query: '', search_type: 'title', view_type: 'anime', studio_name: [studio] });
+}
+
 export async function navigateToSearch(params: MediaSearchFilters) {
     try {
         const data = await api.post<SearchTokenResponse>('/filters/create-token', params);

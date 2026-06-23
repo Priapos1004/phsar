@@ -33,15 +33,6 @@
 	let error = $state('');
 	let unauthenticated = $state(false);
 
-	// The Statistics tab mounts ~8 ECharts; defer that construction until the
-	// user actually opens the tab (the only deviation from the admin page's
-	// eager-render-everything). Once visited it stays mounted, so re-switching
-	// is instant — the data is already in hand from the single fetch.
-	let visitedStats = $state(false);
-	$effect(() => {
-		if (active === 'stats') visitedStats = true;
-	});
-
 	async function load() {
 		loading = true;
 		error = '';
@@ -87,14 +78,13 @@
 			<Button href="/search">Browse anime</Button>
 		</div>
 	{:else if items}
-		<!-- Ratings tab eager-renders; Statistics lazy-mounts on first visit. -->
+		<!-- Ratings tab stays mounted (preserves list scroll/state); Statistics mounts only
+		     while active, so its charts replay their build-up animation on every entry. -->
 		<div class:hidden={active !== 'ratings'}>
 			<RatingsListTab {items} {nameLanguage} {ratingStep} />
 		</div>
-		{#if visitedStats}
-			<div class:hidden={active !== 'stats'}>
-				<RatingsStatsTab {items} />
-			</div>
+		{#if active === 'stats'}
+			<RatingsStatsTab {items} />
 		{/if}
 	{/if}
 </div>

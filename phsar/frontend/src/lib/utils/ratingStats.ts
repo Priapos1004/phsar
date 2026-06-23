@@ -405,21 +405,15 @@ export function spearman(pairs: { x: number; y: number }[]): SpearmanResult {
 
 export type TagDim = 'genres' | 'studios';
 
-export interface TagAvg {
+export interface TagMetric {
 	tag: string;
-	avg: number;
-	count: number;
+	avg: number; // mean rating across the rated media carrying the tag
+	count: number; // distinct rated ANIME carrying the tag (not media — a 5-season show counts once)
+	watchSeconds: number; // total watch time across those media (media grain)
+	weighted: number; // composite, normalized so the strongest tag = 1
 }
 
-export interface TagStatusBreakdown {
-	tag: string;
-	completed: number;
-	onHold: number;
-	dropped: number;
-	total: number;
-}
-
-/** Collect (tag → rating[]) once; genre + studio breakdowns reuse it. */
+/** Collect (tag → rating[]) once. */
 function bucketByTag(items: RatingScoreItem[], dim: TagDim): Map<string, RatingScoreItem[]> {
 	const map = new Map<string, RatingScoreItem[]>();
 	for (const it of items) {
@@ -432,31 +426,23 @@ function bucketByTag(items: RatingScoreItem[], dim: TagDim): Map<string, RatingS
 	return map;
 }
 
-/** Average score per tag (genre or studio), highest first. */
-export function tagAvg(items: RatingScoreItem[], dim: TagDim): TagAvg[] {
-	return [...bucketByTag(items, dim).entries()]
-		.map(([tag, rs]) => ({ tag, avg: mean(rs.map((r) => r.rating)), count: rs.length }))
-		.sort((a, b) => b.avg - a.avg || b.count - a.count);
-}
-
-/** Per-tag watch-status counts ("what you watch most" + how much you finish vs
- * drop, in one stacked bar). Replaces separate frequency + dropped-rate plots:
- * a tag with 5 dropped out of 200 reads as a small red segment on a long bar
- * instead of a lonely 2.5% stamp. Sorted by total (most-rated first). */
-export function tagStatusBreakdown(items: RatingScoreItem[], dim: TagDim): TagStatusBreakdown[] {
-	return [...bucketByTag(items, dim).entries()]
-		.map(([tag, rs]) => {
-			let completed = 0;
-			let onHold = 0;
-			let dropped = 0;
-			for (const r of rs) {
-				if (r.watch_status === 'completed') completed++;
-				else if (r.watch_status === 'on_hold') onHold++;
-				else dropped++;
-			}
-			return { tag, completed, onHold, dropped, total: rs.length };
-		})
-		.sort((a, b) => b.total - a.total || a.tag.localeCompare(b.tag));
+/** Per-tag metrics (genre or studio) in one pass: avg rating, count, total watch
+ * time, and a composite `weighted` score. The composite blends quality, volume and
+ * watch time — `avg × log10(count+1) × (1 + log10(hours+1))` — then divides by the
+ * strongest tag so the best is 1 and the rest scale below it (the same log-damping
+ * idea as the MAL confidence weight, extended with watch time; the `1 +` keeps a tag
+ * with no episode/duration data from zeroing out). Unsorted — the caller picks the
+ * metric to sort + slice by. */
+export function tagMetrics(items: RatingScoreItem[], dim: TagDim): TagMetric[] {
+	const rows = [...bucketByTag(items, dim).entries()].map(([tag, rs]) => {
+		const avg = mean(rs.map((r) => r.rating));
+		const count = new Set(rs.map((r) => r.anime_uuid)).size; // distinct shows, not per-season media
+		const watchSeconds = rs.reduce((s, r) => s + (r.total_watch_time ?? 0), 0);
+		const raw = avg * Math.log10(count + 1) * (1 + Math.log10(watchSeconds / 3600 + 1));
+		return { tag, avg, count, watchSeconds, raw };
+	});
+	const maxRaw = rows.reduce((m, r) => Math.max(m, r.raw), 0) || 1;
+	return rows.map(({ raw, ...r }) => ({ ...r, weighted: raw / maxRaw }));
 }
 
 // ── Attribute analysis ───────────────────────────────────────────────────────

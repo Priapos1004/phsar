@@ -1,12 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import StudioLinks from '$lib/components/StudioLinks.svelte';
-import { navigateToSearch } from '$lib/utils/navigation';
+import { searchByStudio } from '$lib/utils/navigation';
 
-vi.mock('$lib/utils/navigation', () => ({ navigateToSearch: vi.fn() }));
+// Studio search is delegated to the shared searchByStudio helper (its filter shape
+// is covered in navigation.test.ts); here we just verify the click wires through.
+vi.mock('$lib/utils/navigation', () => ({ searchByStudio: vi.fn() }));
 
 describe('StudioLinks', () => {
-	beforeEach(() => vi.mocked(navigateToSearch).mockClear());
+	beforeEach(() => vi.mocked(searchByStudio).mockClear());
 
 	it('renders a clickable button per studio', () => {
 		render(StudioLinks, { props: { studios: ['MAPPA', 'Wit Studio'] } });
@@ -14,15 +16,13 @@ describe('StudioLinks', () => {
 		expect(screen.getByRole('button', { name: /Wit Studio/ })).toBeInTheDocument();
 	});
 
-	it('navigates to an anime-view search filtered by the clicked studio', async () => {
+	it('searches for the clicked studio', async () => {
 		render(StudioLinks, { props: { studios: ['MAPPA', 'Wit Studio'] } });
 
 		await fireEvent.click(screen.getByRole('button', { name: /Wit Studio/ }));
 
-		expect(navigateToSearch).toHaveBeenCalledTimes(1);
-		expect(navigateToSearch).toHaveBeenCalledWith(
-			expect.objectContaining({ studio_name: ['Wit Studio'], view_type: 'anime' }),
-		);
+		expect(searchByStudio).toHaveBeenCalledTimes(1);
+		expect(searchByStudio).toHaveBeenCalledWith('Wit Studio');
 	});
 
 	it('renders nothing when there are no studios', () => {

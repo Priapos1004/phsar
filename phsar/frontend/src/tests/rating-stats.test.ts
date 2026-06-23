@@ -9,8 +9,7 @@ import {
 	alignmentPoints,
 	weightedLinearFit,
 	spearman,
-	tagAvg,
-	tagStatusBreakdown,
+	tagMetrics,
 	attributeCorrelations,
 	attributeCategoryEffects,
 	ratingSequence,
@@ -287,24 +286,29 @@ describe('alignmentPoints', () => {
 	});
 });
 
-describe('tag breakdowns (genre + studio)', () => {
+describe('tagMetrics (genre + studio)', () => {
 	const items = [
-		item({ media_uuid: 'a', anime_uuid: 'A', rating: 9, genres: ['Action'], studios: ['MAPPA'], watch_status: 'completed' }),
-		item({ media_uuid: 'b', anime_uuid: 'B', rating: 5, genres: ['Action'], studios: ['MAPPA'], watch_status: 'dropped' }),
-		item({ media_uuid: 'c', anime_uuid: 'C', rating: 7, genres: ['Comedy'], studios: ['Kyoto'], watch_status: 'completed' }),
+		// a + b are two media of the SAME anime A → count once at the anime grain.
+		item({ media_uuid: 'a', anime_uuid: 'A', rating: 9, genres: ['Action'], studios: ['MAPPA'], total_watch_time: 7200 }),
+		item({ media_uuid: 'b', anime_uuid: 'A', rating: 5, genres: ['Action'], studios: ['MAPPA'], total_watch_time: 3600 }),
+		item({ media_uuid: 'c', anime_uuid: 'B', rating: 7, genres: ['Action'], studios: ['Bones'], total_watch_time: 1800 }),
+		item({ media_uuid: 'd', anime_uuid: 'C', rating: 7, genres: ['Comedy'], studios: ['Kyoto'], total_watch_time: 1800 }),
 	];
-	it('tagAvg by genre and by studio (avg ties break on count desc)', () => {
-		expect(tagAvg(items, 'genres')).toEqual([
-			{ tag: 'Action', avg: 7, count: 2 },
-			{ tag: 'Comedy', avg: 7, count: 1 },
-		]);
-		expect(tagAvg(items, 'studios')[0].tag).toBe('MAPPA');
+	it('counts distinct anime (not media), sums media-level watch time', () => {
+		const g = tagMetrics(items, 'genres');
+		// Action spans 3 media but only 2 anime (A, B); watch time is the media sum.
+		expect(g.find((t) => t.tag === 'Action')).toMatchObject({ avg: 7, count: 2, watchSeconds: 12600 });
+		// MAPPA = anime A's two media → 1 distinct anime, watch time summed.
+		expect(tagMetrics(items, 'studios').find((t) => t.tag === 'MAPPA')).toMatchObject({ count: 1, watchSeconds: 10800 });
 	});
-	it('tagStatusBreakdown counts completed/on_hold/dropped per tag', () => {
-		const byGenre = tagStatusBreakdown(items, 'genres');
-		expect(byGenre[0]).toMatchObject({ tag: 'Action', total: 2, completed: 1, dropped: 1, onHold: 0 });
-		const mappa = tagStatusBreakdown(items, 'studios').find((t) => t.tag === 'MAPPA');
-		expect(mappa).toMatchObject({ total: 2, completed: 1, dropped: 1 });
+	it('normalizes the composite so exactly the strongest tag is 1', () => {
+		const g = tagMetrics(items, 'genres');
+		// Action: more anime + more watch time at the same avg → strongest.
+		expect(g.find((t) => t.tag === 'Action')!.weighted).toBe(1);
+		const comedy = g.find((t) => t.tag === 'Comedy')!.weighted;
+		expect(comedy).toBeGreaterThan(0);
+		expect(comedy).toBeLessThan(1);
+		expect(g.filter((t) => t.weighted === 1)).toHaveLength(1);
 	});
 });
 
