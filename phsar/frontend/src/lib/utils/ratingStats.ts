@@ -297,7 +297,11 @@ export interface AlignmentPoint {
 	x: number; // MAL score
 	y: number; // user rating
 	w: number; // confidence weight = log10(scored_by + 1)
+	mediaUuid: string; // → media detail page on click
+	// Raw title fields so the consumer can resolve to the user's name language.
 	title: string;
+	nameEng: string | null;
+	nameJap: string | null;
 }
 
 /** Per-media points (only media with a MAL score). Weight = log10(scored_by + 1),
@@ -309,7 +313,10 @@ export function alignmentPoints(items: RatingScoreItem[]): AlignmentPoint[] {
 			x: it.mal_score as number,
 			y: it.rating,
 			w: Math.log10((it.scored_by ?? 0) + 1),
+			mediaUuid: it.media_uuid,
 			title: it.media_title,
+			nameEng: it.media_name_eng,
+			nameJap: it.media_name_jap,
 		}));
 }
 

@@ -12,6 +12,8 @@
 	import { formatDuration } from '$lib/utils/formatString';
 	import { scoreGaugeOption } from '$lib/utils/chartTheme';
 	import { totalWatchTime } from '$lib/utils/ratingStats';
+	import { ratingsFilter } from '$lib/stores/ratingsFilter';
+	import type { StatsSection } from './types';
 	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr, isAttrRated, type RatingScoreItem } from '$lib/types/api';
 
 	interface Props {
@@ -36,23 +38,30 @@
 	// ── Inner tabs: only the active section mounts, so its charts animate in on
 	// switch (ECharts plays its entrance animation on a fresh init) and we never
 	// hold ~8 chart instances live at once. ──────────────────────────────────
-	type Section = 'overview' | 'alignment' | 'tags' | 'attributes' | 'activity';
-	const SECTIONS: { key: Section; label: string }[] = [
+	const SECTIONS: { key: StatsSection; label: string }[] = [
 		{ key: 'overview', label: 'Overview' },
 		{ key: 'alignment', label: 'You vs MAL' },
 		{ key: 'tags', label: 'Genres & Studios' },
 		{ key: 'attributes', label: 'Attributes' },
 		{ key: 'activity', label: 'Activity' },
 	];
-	let active = $state<Section>('overview');
 	let visibleSections = $derived(SECTIONS.filter((s) => s.key !== 'attributes' || hasAttributes));
+	// Active section lives in the store so a round-trip to a detail page lands back here.
+	// Fall back to Overview if the persisted section isn't currently available (e.g.
+	// Attributes hidden when no attributes are rated).
+	let active = $derived(
+		visibleSections.some((s) => s.key === $ratingsFilter.statsSection) ? $ratingsFilter.statsSection : 'overview',
+	);
+	function setSection(key: StatsSection) {
+		ratingsFilter.update((f) => ({ ...f, statsSection: key }));
+	}
 </script>
 
 <div class="space-y-5">
 	<nav class="flex flex-wrap gap-2">
 		{#each visibleSections as s (s.key)}
 			<button
-				onclick={() => (active = s.key)}
+				onclick={() => setSection(s.key)}
 				class="px-3.5 py-1.5 rounded-full text-sm border transition-colors {active === s.key
 					? 'border-primary bg-primary/15 text-primary font-medium'
 					: 'border-white/15 text-white/60 hover:text-white hover:border-white/30'}"
@@ -99,7 +108,8 @@
 		<Card.Root class={cls.cardGlass}>
 			<Card.Content class="space-y-3">
 				<p class="text-sm text-muted-foreground">
-					Each point is a rated title; bigger points have more MAL votes (more reliable scores).
+					Each point is a rated title (bigger = more MAL votes, so more reliable). Green sits
+					above your trend line (you rate it higher than your MAL pattern predicts), rose below.
 				</p>
 				<RatingsAlignmentChart {items} />
 			</Card.Content>

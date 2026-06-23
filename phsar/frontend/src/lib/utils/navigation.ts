@@ -7,7 +7,7 @@ import { token } from '$lib/stores/auth';
 /** Closed set of non-search origin markers that detail pages handle.
  * Extend this union (and BackLink.svelte's `target` switch) when a new
  * entry point needs a labeled back button. */
-export type DetailOrigin = 'library' | 'job' | 'completion' | 'curation' | 'ratings';
+export type DetailOrigin = 'library' | 'job' | 'completion' | 'curation' | 'ratings' | 'ratings-stats';
 
 export interface DetailHrefOptions {
     /** Search token to propagate so the detail page renders "Back to search". */

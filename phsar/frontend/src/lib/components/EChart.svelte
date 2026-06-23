@@ -7,9 +7,12 @@
 		option: EChartsOption;
 		width?: string;
 		height?: string;
+		/** Optional click handler — receives the ECharts click event params (e.g.
+		 * `seriesType`, `dataIndex`) so callers can map a point back to its datum. */
+		onClick?: (params: unknown) => void;
 	}
 
-	let { option, width = '100%', height = '200px' }: Props = $props();
+	let { option, width = '100%', height = '200px', onClick }: Props = $props();
 
 	let container: HTMLDivElement;
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -23,6 +26,9 @@
 			if (disposed) return;
 
 			const instance = echarts.init(container);
+
+			// Read `onClick` live so a reactive change is honoured without re-init.
+			instance.on('click', (params: unknown) => onClick?.(params));
 
 			observer = new ResizeObserver(() => instance.resize());
 			observer.observe(container);
