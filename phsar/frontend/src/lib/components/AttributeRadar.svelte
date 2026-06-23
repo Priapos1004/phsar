@@ -2,6 +2,7 @@
 	import EChart from '$lib/components/EChart.svelte';
 	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr } from '$lib/types/api';
 	import { getThemedChartColorPalette } from '$lib/utils/chartColors';
+	import { chartTooltipStyle } from '$lib/utils/chartTheme';
 	import type { RatingOut, RatingScoreItem } from '$lib/types/api';
 
 	interface Props {
@@ -102,7 +103,9 @@
 				},
 			],
 			tooltip: {
+				...chartTooltipStyle,
 				trigger: 'item' as const,
+				confine: true,
 				formatter: () =>
 					RADAR_LABELS.map((label, i) => {
 						const closestLabel = radarData.closestLabels[i];

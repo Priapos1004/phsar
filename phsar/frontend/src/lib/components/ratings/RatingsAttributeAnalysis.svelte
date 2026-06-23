@@ -3,6 +3,7 @@
 	import { scoreColor, STATUS_COLORS } from '$lib/utils/chartColors';
 	import { formatDecimalDigits } from '$lib/utils/formatString';
 	import { attributeCorrelations, attributeCategoryEffects } from '$lib/utils/ratingStats';
+	import { chartTooltipStyle } from '$lib/utils/chartTheme';
 	import { RATING_ATTRIBUTE_OPTIONS, type RatingScoreItem } from '$lib/types/api';
 
 	interface Props {
@@ -24,6 +25,7 @@
 	let corrOption = $derived({
 		grid: { left: 4, right: 16, top: 8, bottom: 24, containLabel: true },
 		tooltip: {
+			...chartTooltipStyle,
 			trigger: 'axis' as const,
 			axisPointer: { type: 'shadow' as const },
 			formatter: (params: unknown) => {
@@ -64,6 +66,7 @@
 		return {
 			grid: { left: 4, right: 16, top: 8, bottom: 24, containLabel: true },
 			tooltip: {
+				...chartTooltipStyle,
 				trigger: 'axis' as const,
 				axisPointer: { type: 'shadow' as const },
 				formatter: (params: unknown) => {

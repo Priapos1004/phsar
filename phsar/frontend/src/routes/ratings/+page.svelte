@@ -93,7 +93,7 @@
 		</div>
 		{#if visitedStats}
 			<div class:hidden={active !== 'stats'}>
-				<RatingsStatsTab {items} {ratingStep} />
+				<RatingsStatsTab {items} />
 			</div>
 		{/if}
 	{/if}

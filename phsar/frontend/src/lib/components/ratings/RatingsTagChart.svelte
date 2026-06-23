@@ -2,6 +2,7 @@
 	import EChart from '$lib/components/EChart.svelte';
 	import { scoreColor, STATUS_COLORS } from '$lib/utils/chartColors';
 	import { tagAvg, tagStatusBreakdown, type TagDim } from '$lib/utils/ratingStats';
+	import { chartTooltipStyle } from '$lib/utils/chartTheme';
 	import type { RatingScoreItem } from '$lib/types/api';
 
 	interface Props {
@@ -34,7 +35,7 @@
 
 	let avgOption = $derived({
 		grid: baseGrid,
-		tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const } },
+		tooltip: { ...chartTooltipStyle, trigger: 'axis' as const, axisPointer: { type: 'shadow' as const } },
 		xAxis: valAxis({ min: 0, max: 10 }),
 		yAxis: catAxis(avg.map((t) => t.tag)),
 		series: [
@@ -55,7 +56,7 @@
 	let statusOption = $derived({
 		grid: baseGrid,
 		legend: { data: ['Completed', 'On hold', 'Dropped'], top: 0, right: 0, textStyle: { color: 'rgba(0,0,0,0.6)' }, itemWidth: 10, itemHeight: 10 },
-		tooltip: { trigger: 'axis' as const, axisPointer: { type: 'shadow' as const } },
+		tooltip: { ...chartTooltipStyle, trigger: 'axis' as const, axisPointer: { type: 'shadow' as const } },
 		xAxis: valAxis({ minInterval: 1 }),
 		yAxis: catAxis(status.map((t) => t.tag)),
 		series: [

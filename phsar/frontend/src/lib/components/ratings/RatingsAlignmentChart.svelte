@@ -2,6 +2,7 @@
 	import EChart from '$lib/components/EChart.svelte';
 	import { getThemedChartColorPalette } from '$lib/utils/chartColors';
 	import { alignmentPoints, weightedLinearFit, spearman } from '$lib/utils/ratingStats';
+	import { chartTooltipStyle } from '$lib/utils/chartTheme';
 	import { formatDecimalDigits } from '$lib/utils/formatString';
 	import type { RatingScoreItem } from '$lib/types/api';
 
@@ -40,6 +41,7 @@
 	let option = $derived({
 		grid: { left: 40, right: 16, top: 16, bottom: 32 },
 		tooltip: {
+			...chartTooltipStyle,
 			trigger: 'item' as const,
 			formatter: (params: unknown) => {
 				const p = params as { data: number[]; seriesType: string };

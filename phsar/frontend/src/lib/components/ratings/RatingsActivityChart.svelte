@@ -2,6 +2,7 @@
 	import EChart from '$lib/components/EChart.svelte';
 	import { getThemedChartColorPalette } from '$lib/utils/chartColors';
 	import { ratingSequence, movingAverage, cumulativeWatchTime } from '$lib/utils/ratingStats';
+	import { chartTooltipStyle } from '$lib/utils/chartTheme';
 	import { formatDuration } from '$lib/utils/formatString';
 	import type { RatingScoreItem } from '$lib/types/api';
 
@@ -26,7 +27,7 @@
 
 	let trendOption = $derived({
 		grid: { left: 32, right: 12, top: 12, bottom: 28 },
-		tooltip: { trigger: 'axis' as const },
+		tooltip: { ...chartTooltipStyle, trigger: 'axis' as const },
 		xAxis: {
 			type: 'value' as const,
 			name: 'rating #',
@@ -86,6 +87,7 @@
 	let cumOption = $derived({
 		grid: { left: 48, right: 12, top: 12, bottom: 28 },
 		tooltip: {
+			...chartTooltipStyle,
 			trigger: 'axis' as const,
 			valueFormatter: (v: unknown) => formatDuration(Number(v)),
 		},

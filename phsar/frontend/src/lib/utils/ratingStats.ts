@@ -248,21 +248,47 @@ export function toScoreBands(rows: AnimeRatingRow[]): ScoreBand[] {
 export interface HistogramBucket {
 	center: number;
 	count: number;
+	main: number; // count split by relation type (main = main + alternative_version)
+	side: number;
 }
 
-/** Histogram of raw per-media scores, bucketed by the user's rating step. */
-export function scoreHistogram(items: RatingScoreItem[], step: number): HistogramBucket[] {
+// Fixed 0.5-wide buckets across the 0–10 scale: a finer width (0.1/0.25) would blow
+// past a legible bar count for any wide-spread library, so 0.5 is what shows in
+// practice — we just always use it. 0.5 → 1-decimal axis labels.
+export const SCORE_HISTOGRAM_WIDTH = 0.5;
+
+/**
+ * Histogram of raw per-media scores in fixed 0.5-wide buckets (scores snapped to the
+ * nearest 0.5). Buckets are contiguous (empty ones filled with 0) so the x-axis stays
+ * evenly spaced and gaps read as gaps — never collapsing two distinct scores into one bar.
+ */
+export function scoreHistogram(items: RatingScoreItem[]): HistogramBucket[] {
 	if (!items.length) return [];
-	const s = step > 0 ? step : 0.5;
-	const counts = new Map<number, number>();
+	const w = SCORE_HISTOGRAM_WIDTH;
+	const snap = (v: number) => Math.round(v / w) * w;
+	// Single pass for the range — avoids a throwaway array + Math.min/max(...spread),
+	// which has a call-stack ceiling on large libraries.
+	let lo = Infinity;
+	let hi = -Infinity;
 	for (const it of items) {
-		// Snap to the nearest step multiple; round to avoid float drift in the key.
-		const center = Math.round(Math.round(it.rating / s) * s * 100) / 100;
-		counts.set(center, (counts.get(center) ?? 0) + 1);
+		if (it.rating < lo) lo = it.rating;
+		if (it.rating > hi) hi = it.rating;
 	}
-	return [...counts.entries()]
-		.sort((a, b) => a[0] - b[0])
-		.map(([center, count]) => ({ center, count }));
+	const loCenter = snap(lo);
+	const steps = Math.round((snap(hi) - loCenter) / w);
+	const buckets: HistogramBucket[] = Array.from({ length: steps + 1 }, (_, i) => ({
+		center: Math.round((loCenter + i * w) * 100) / 100,
+		count: 0,
+		main: 0,
+		side: 0,
+	}));
+	for (const it of items) {
+		const b = buckets[Math.round((snap(it.rating) - loCenter) / w)];
+		b.count++;
+		if (MAIN_RELATION_TYPES.has(it.relation_type)) b.main++;
+		else b.side++;
+	}
+	return buckets;
 }
 
 // ── You vs MAL alignment ─────────────────────────────────────────────────────

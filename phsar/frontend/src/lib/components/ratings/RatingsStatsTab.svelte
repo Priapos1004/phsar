@@ -16,16 +16,14 @@
 
 	interface Props {
 		items: RatingScoreItem[];
-		ratingStep: number;
 	}
 
-	let { items, ratingStep }: Props = $props();
+	let { items }: Props = $props();
 
 	// ── Summary metrics over the whole library ──────────────────────────────
 	let totalRatings = $derived(items.length);
 	let distinctAnime = $derived(new Set(items.map((i) => i.anime_uuid)).size);
 	let avgScore = $derived(totalRatings ? items.reduce((s, i) => s + i.rating, 0) / totalRatings : 0);
-	let completedCount = $derived(items.filter((i) => i.watch_status === 'completed').length);
 	let onHoldCount = $derived(items.filter((i) => i.watch_status === 'on_hold').length);
 	let droppedCount = $derived(items.filter((i) => i.watch_status === 'dropped').length);
 	let totalWatchSeconds = $derived(totalWatchTime(items));
@@ -65,26 +63,26 @@
 	{#if active === 'overview'}
 		<Card.Root class={cls.cardGlass}>
 			<Card.Content class="space-y-5">
-				<div class="grid grid-cols-2 md:grid-cols-5 gap-4 items-center">
+				<div class="grid grid-cols-2 md:grid-cols-4 gap-4 items-center">
 					<div class="flex flex-col items-center">
 						<EChart option={gaugeOption} width="96px" height="96px" />
 						<span class="text-sm text-muted-foreground -mt-2">Your average</span>
 					</div>
-					<div class="flex flex-col items-center justify-center">
+					<!-- Ratings = the whole library; the hold/dropped badges sit underneath to
+					     show they're a subset already counted in the total above. -->
+					<div class="flex flex-col items-center justify-center gap-1">
 						<span class="text-2xl font-bold text-card-foreground">{totalRatings}</span>
 						<span class="text-sm text-muted-foreground">Ratings</span>
+						{#if onHoldCount > 0 || droppedCount > 0}
+							<div class="flex flex-wrap justify-center gap-1">
+								{#if onHoldCount > 0}<Badge variant="secondary" class={cls.badgeOnHold}>{onHoldCount} hold</Badge>{/if}
+								{#if droppedCount > 0}<Badge variant="secondary" class={cls.badgeDropped}>{droppedCount} dropped</Badge>{/if}
+							</div>
+						{/if}
 					</div>
 					<div class="flex flex-col items-center justify-center">
 						<span class="text-2xl font-bold text-card-foreground">{distinctAnime}</span>
 						<span class="text-sm text-muted-foreground">Anime</span>
-					</div>
-					<div class="flex flex-col items-center justify-center gap-1">
-						<span class="text-2xl font-bold text-card-foreground">{completedCount}</span>
-						<div class="flex gap-1">
-							{#if onHoldCount > 0}<Badge variant="secondary" class={cls.badgeOnHold}>{onHoldCount} hold</Badge>{/if}
-							{#if droppedCount > 0}<Badge variant="destructive">{droppedCount} dropped</Badge>{/if}
-						</div>
-						<span class="text-sm text-muted-foreground">Completed</span>
 					</div>
 					<div class="flex flex-col items-center justify-center">
 						<span class="text-2xl font-bold text-card-foreground">{formatDuration(totalWatchSeconds)}</span>
@@ -93,7 +91,7 @@
 				</div>
 				<div>
 					<p class="text-xs text-muted-foreground mb-1">Score distribution</p>
-					<RatingsScoreHistogram {items} step={ratingStep} />
+					<RatingsScoreHistogram {items} />
 				</div>
 			</Card.Content>
 		</Card.Root>

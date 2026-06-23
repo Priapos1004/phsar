@@ -2,6 +2,7 @@
 	import EChart from '$lib/components/EChart.svelte';
 	import { formatSeason, formatDecimalDigits, decimalPlaces, formatRelationType, formatMediaType, resolveTitle } from '$lib/utils/formatString';
 	import { getThemedRelationTypeColors, RELATION_TYPE_ORDER, CHART_COLORS } from '$lib/utils/chartColors';
+	import { chartTooltipStyle } from '$lib/utils/chartTheme';
 	import { userSettings } from '$lib/stores/userSettings';
 	import type { AnimeMediaItem, RatingOut } from '$lib/types/api';
 
@@ -60,8 +61,8 @@
 
 	let chartOption = $derived({
 		tooltip: {
+			...chartTooltipStyle,
 			trigger: 'item' as const,
-			confine: true,
 			formatter: (params: unknown) => {
 				const p = params as { dataIndex: number };
 				const mr = mediaWithRatings[p.dataIndex];

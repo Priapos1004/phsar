@@ -162,19 +162,53 @@ describe('sortAnimeRows + toScoreBands', () => {
 });
 
 describe('scoreHistogram', () => {
-	it('buckets by step', () => {
+	it('buckets in fixed 0.5-wide bins', () => {
 		const items = [
 			item({ media_uuid: 'a', anime_uuid: 'A', rating: 8.0 }),
 			item({ media_uuid: 'b', anime_uuid: 'B', rating: 8.0 }),
 			item({ media_uuid: 'c', anime_uuid: 'C', rating: 8.5 }),
 		];
-		expect(scoreHistogram(items, 0.5)).toEqual([
-			{ center: 8.0, count: 2 },
-			{ center: 8.5, count: 1 },
+		expect(scoreHistogram(items)).toEqual([
+			{ center: 8.0, count: 2, main: 2, side: 0 },
+			{ center: 8.5, count: 1, main: 1, side: 0 },
+		]);
+	});
+	it('splits each bucket into main vs side counts', () => {
+		const items = [
+			item({ media_uuid: 'a', anime_uuid: 'A', rating: 8.0, relation_type: 'main' }),
+			item({ media_uuid: 'b', anime_uuid: 'A', rating: 8.0, relation_type: 'alternative_version' }),
+			item({ media_uuid: 'c', anime_uuid: 'A', rating: 8.0, relation_type: 'side_story' }),
+		];
+		// main + alternative_version count as "main"; everything else as "side".
+		expect(scoreHistogram(items)).toEqual([{ center: 8.0, count: 3, main: 2, side: 1 }]);
+	});
+	it('snaps fine-grained scores to the nearest 0.5', () => {
+		// 0.01-step ratings collapse into 0.5 bins (7.53 → 7.5, 8.37 → 8.5).
+		const items = [
+			item({ media_uuid: 'a', anime_uuid: 'A', rating: 7.5 }),
+			item({ media_uuid: 'b', anime_uuid: 'B', rating: 7.53 }),
+			item({ media_uuid: 'c', anime_uuid: 'C', rating: 8.37 }),
+		];
+		expect(scoreHistogram(items)).toEqual([
+			{ center: 7.5, count: 2, main: 2, side: 0 },
+			{ center: 8.0, count: 0, main: 0, side: 0 },
+			{ center: 8.5, count: 1, main: 1, side: 0 },
+		]);
+	});
+	it('fills the gap between min and max with empty buckets', () => {
+		const items = [
+			item({ media_uuid: 'a', anime_uuid: 'A', rating: 7.0 }),
+			item({ media_uuid: 'b', anime_uuid: 'B', rating: 8.5 }),
+		];
+		expect(scoreHistogram(items)).toEqual([
+			{ center: 7.0, count: 1, main: 1, side: 0 },
+			{ center: 7.5, count: 0, main: 0, side: 0 },
+			{ center: 8.0, count: 0, main: 0, side: 0 },
+			{ center: 8.5, count: 1, main: 1, side: 0 },
 		]);
 	});
 	it('empty input → []', () => {
-		expect(scoreHistogram([], 0.5)).toEqual([]);
+		expect(scoreHistogram([])).toEqual([]);
 	});
 });
 

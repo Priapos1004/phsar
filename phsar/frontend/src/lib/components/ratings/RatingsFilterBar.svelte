@@ -4,6 +4,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
 	import TagSelect from '$lib/components/TagSelect.svelte';
+	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { ratingsFilter } from '$lib/stores/ratingsFilter';
 	import { AGE_RATING_LABELS } from '$lib/utils/formatString';
 	import * as cls from '$lib/styles/classes';
@@ -85,14 +86,18 @@
 				     0 sits on top. Within each band the order (rating, then title) never changes. -->
 				<div class="space-y-1.5">
 					<div class="flex h-7 items-center"><Label class={labelCls}>Order</Label></div>
-					<button
-						class="size-12 rounded-xl bg-card/80 backdrop-blur border border-input flex items-center justify-center text-card-foreground hover:bg-muted transition-colors"
-						title={$ratingsFilter.bandDir === 'desc' ? 'Highest score first (click for lowest)' : 'Lowest score first (click for highest)'}
-						aria-label="Toggle score order"
-						onclick={() => ratingsFilter.update((f) => ({ ...f, bandDir: f.bandDir === 'desc' ? 'asc' : 'desc' }))}
-					>
-						{#if $ratingsFilter.bandDir === 'desc'}<ArrowDown class="size-4" />{:else}<ArrowUp class="size-4" />{/if}
-					</button>
+					<Tooltip text={$ratingsFilter.bandDir === 'desc' ? 'Highest score first (click for lowest)' : 'Lowest score first (click for highest)'}>
+						{#snippet trigger(props)}
+							<button
+								{...props}
+								class="size-12 rounded-xl bg-card/80 backdrop-blur border border-input flex items-center justify-center text-card-foreground hover:bg-muted transition-colors"
+								aria-label="Toggle score order"
+								onclick={() => ratingsFilter.update((f) => ({ ...f, bandDir: f.bandDir === 'desc' ? 'asc' : 'desc' }))}
+							>
+								{#if $ratingsFilter.bandDir === 'desc'}<ArrowDown class="size-4" />{:else}<ArrowUp class="size-4" />{/if}
+							</button>
+						{/snippet}
+					</Tooltip>
 				</div>
 			{/if}
 
