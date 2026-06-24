@@ -96,15 +96,15 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 ### 4.1 Anime/Media View Toggle
 - A small pill-shaped toggle sits in the top-right corner of the search page, below the navbar
 - Default view: **Anime** (aggregated search grouping media by parent anime)
-- Switching toggle: clears all filters and results, reloads filter options for the new view, auto-submits an empty search
+- Switching toggle: **partial clear** — carries the filters that apply identically in both views (query, genres, studios, seasons, age ratings, airing status, media type, and the fixed 0–10 score range) into a fresh search token, and drops the rest (relation type + the view-relative ranges: episodes, scored-by, duration, watch time). Closes the filter panel, reloads filter options for the new view, and re-runs the search
 - The `view_type` is encoded in the search token, so "Back to search" restores the correct toggle state
 - SearchBar placeholder changes: "Search anime..." / "Search media..."
 
 ### 4.2 Submitting a Search
-1. User types a query in the SearchBar text input
+1. User types a query in the SearchBar text input (filter toggle on the left, search button on the right)
 2. Optionally toggles "Expand search to descriptions" checkbox
-3. Optionally opens the filter panel and sets filters
-4. Submits the form (Enter key)
+3. Optionally opens the filter panel (left icon) and sets filters
+4. Submits via the Enter key or the search button on the right of the input
 5. Frontend POSTs filter params (including `view_type`) to `/filters/create-token` → receives a search token
 6. Navigates to `/search?q=<token>`
 
@@ -125,7 +125,7 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 Filters appear in a collapsible panel below the search input. Filter options adapt to the current view type.
 
 **List filters** (searchable tag-select dropdowns, max 5 items each):
-- Genres (anime view shows only majority-qualifying genres), Seasons, Studios, Airing Status, Relation Type, Media Type, Age Rating
+- Genres (anime view shows only majority-qualifying genres), Seasons, Studios, Airing Status, Relation Type (**media view only** — a per-media property, meaningless on aggregated anime rows), Media Type, Age Rating
 
 **Range filters** (dual-thumb sliders):
 - Episodes (integer, linear — aggregated sum for anime view)
