@@ -449,21 +449,22 @@ export function tagMetrics(items: RatingScoreItem[], dim: TagDim): TagMetric[] {
 // Averaging ordinal/nominal attributes (the old radar/bars) isn't meaningful, so
 // instead we measure how each attribute RELATES to the score.
 
-// Ordinal attributes have a natural low→high order (read off RATING_ATTRIBUTE_OPTIONS).
-export const ORDINAL_ATTR_KEYS = [
+// Quality scales: the dimensions where "higher = better" is meaningful (these match the
+// attribute radar), analyzed by rank correlation — "does rating this higher go with scoring
+// the title higher?". Only these get a ρ; a correlation only makes sense when there's a
+// quality direction.
+export const QUALITY_SCALE_KEYS = [
 	'animation_quality',
 	'story_quality',
 	'character_depth',
 	'dialogue_quality',
 	'ending_quality',
-	'pace',
-	'fan_service',
-	'originality',
-	'has_3d_animation',
 ] as const;
-// Nominal attributes have no order — a mean over codes is meaningless, so we look
-// at per-category mean scores instead.
-export const NOMINAL_ATTR_KEYS = ['watched_format', 'ending_type'] as const;
+// Everything else is shown as per-choice averages, not a correlation — either genuinely
+// nominal (watched_format, ending_type) or ordered-but-no-quality-direction (pace, fan_service,
+// originality, 3D amount). No option is inherently "better", and a single ρ would hide a peaked
+// preference (e.g. you might score MILD fan service highest, not none or lots).
+export const PER_CHOICE_KEYS = ['pace', 'fan_service', 'originality', 'has_3d_animation', 'watched_format', 'ending_type'] as const;
 
 const MIN_ATTR_SAMPLES = 5;
 
@@ -473,13 +474,13 @@ export interface AttributeCorrelation {
 	n: number;
 }
 
-/** For each ordinal attribute, how strongly its level tracks your score (signed
+/** For each quality scale, how strongly its level tracks your score (signed
  * Spearman ρ). Answers "does higher animation quality raise my rating more than
  * higher story quality?". Sorted by |ρ|; attributes with <5 rated samples or no
  * variation are dropped (spearman returns ok=false). */
 export function attributeCorrelations(items: RatingScoreItem[]): AttributeCorrelation[] {
 	const out: AttributeCorrelation[] = [];
-	for (const key of ORDINAL_ATTR_KEYS) {
+	for (const key of QUALITY_SCALE_KEYS) {
 		const order = RATING_ATTRIBUTE_OPTIONS[key].options
 			.map((o) => o.value)
 			.filter((v) => v !== 'not_applicable');
@@ -510,13 +511,14 @@ export interface NominalAttributeEffect {
 	categories: CategoryEffect[];
 }
 
-/** For each nominal attribute, the mean score per category vs your overall mean
+/** For each per-choice attribute, the mean score per option vs your overall mean
  * ("when the ending is open, you score ~0.6 higher"). `eta` (correlation ratio)
  * gives a single 0…1 magnitude of how much the attribute explains your score
- * spread, so a near-0 eta says "this doesn't really move your scores". */
+ * spread, so a near-0 eta says "this doesn't really move your scores". Used for
+ * options with no quality direction, where a peaked preference would defeat a ρ. */
 export function attributeCategoryEffects(items: RatingScoreItem[]): NominalAttributeEffect[] {
 	const out: NominalAttributeEffect[] = [];
-	for (const key of NOMINAL_ATTR_KEYS) {
+	for (const key of PER_CHOICE_KEYS) {
 		const rated = items.filter((it) => {
 			const v = getRatingAttr(it, key);
 			return !!v && isAttrRated(v);

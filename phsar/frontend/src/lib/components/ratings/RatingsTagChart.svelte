@@ -37,7 +37,7 @@
 	type MetricKey = 'avg' | 'count' | 'watch' | 'weighted';
 	const METRICS: { key: MetricKey; label: string; value: (t: TagMetric) => number; axisMax?: number }[] = [
 		{ key: 'avg', label: 'Avg rating', value: (t) => t.avg, axisMax: 10 },
-		{ key: 'count', label: 'Number rated', value: (t) => t.count },
+		{ key: 'count', label: 'Rated anime', value: (t) => t.count },
 		{ key: 'watch', label: 'Watch time', value: (t) => t.watchSeconds },
 		{ key: 'weighted', label: 'Weighted score', value: (t) => t.weighted, axisMax: 1 },
 	];
@@ -93,7 +93,7 @@
 				const idx = (params as { dataIndex: number }[])[0]?.dataIndex ?? 0;
 				const t = rows[idx];
 				return t
-					? `<strong>${t.tag}</strong><br/>Avg ${formatDecimalDigits(t.avg, 2)} · ${t.count} rated · ${formatDuration(t.watchSeconds)}`
+					? `<strong>${t.tag}</strong><br/>Avg ${formatDecimalDigits(t.avg, 2)} · ${t.count} anime · ${formatDuration(t.watchSeconds)}`
 					: '';
 			},
 		},
@@ -129,8 +129,9 @@
 
 <div class="space-y-4">
 	<div class="flex flex-wrap items-center justify-between gap-3">
-		<h3 class="text-sm font-semibold text-card-foreground">
-			Breakdown by {dim === 'genres' ? 'genre' : 'studio'}{#if allMetrics.length > rows.length} <span class="font-normal text-muted-foreground">Top {rows.length} of {allMetrics.length}</span>{/if}
+		<h3 class="flex items-baseline gap-2 text-sm font-semibold text-card-foreground">
+			<span>Breakdown by {dim === 'genres' ? 'genre' : 'studio'}</span>
+			{#if allMetrics.length > rows.length}<span class="font-normal text-muted-foreground">Top {rows.length} of {allMetrics.length}</span>{/if}
 		</h3>
 		<!-- Segmented toggle (muted track + solid-primary thumb), matching the grid filter. -->
 		<div class="inline-flex rounded-full bg-muted p-0.5 text-xs">

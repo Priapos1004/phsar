@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { RatingScoreItem, WatchStatus } from '$lib/types/api';
+import { RATING_ATTRIBUTE_OPTIONS, type RatingScoreItem, type WatchStatus } from '$lib/types/api';
 import {
 	groupByAnime,
 	filterItems,
@@ -12,6 +12,8 @@ import {
 	tagMetrics,
 	attributeCorrelations,
 	attributeCategoryEffects,
+	QUALITY_SCALE_KEYS,
+	PER_CHOICE_KEYS,
 	ratingSequence,
 	movingAverage,
 	cumulativeWatchTime,
@@ -345,6 +347,14 @@ describe('attributeCategoryEffects', () => {
 		expect(eff!.categories[0].value).toBe('closed'); // highest mean first
 		expect(eff!.categories[0].delta).toBeGreaterThan(0);
 		expect(eff!.eta).toBeGreaterThan(0.5); // strong separation
+	});
+
+	it('every rated attribute lands in exactly one analysis bucket', () => {
+		// Guards against a new attribute silently appearing in NEITHER chart, or in both:
+		// the two key lists must partition RATING_ATTRIBUTE_OPTIONS (exhaustive + disjoint).
+		const all = Object.keys(RATING_ATTRIBUTE_OPTIONS).sort();
+		const partitioned = [...QUALITY_SCALE_KEYS, ...PER_CHOICE_KEYS].sort();
+		expect(partitioned).toEqual(all);
 	});
 });
 
