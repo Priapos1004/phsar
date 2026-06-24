@@ -62,8 +62,14 @@
 	let attributes = $state<Record<string, string | null>>({});
 
 	// On Hold and Dropped both mean the anime wasn't finished, so the episode
-	// input is revealed and ending-quality is treated as unratable for both.
+	// input is revealed and the ending fields are treated as unratable for both.
 	let revealsEpisodes = $derived(status === 'on_hold' || status === 'dropped');
+
+	// The ending can't be judged on an unfinished watch, so both ending fields are
+	// auto-set to the not_applicable sentinel + disabled when on_hold/dropped, and
+	// cleared back on completed. One list so the auto-set effect and the disabled
+	// prop can't drift.
+	const AUTO_NA_FIELDS: string[] = ['ending_type', 'ending_quality'];
 
 	let hasChanges = $derived.by(() => {
 		if (!existingRating) return true;
@@ -131,11 +137,13 @@
 	});
 
 	$effect(() => {
-		// On hold / dropped → ending_quality is not ratable; completed → clear auto-set value
-		if (revealsEpisodes) {
-			attributes['ending_quality'] = 'not_applicable';
-		} else if (attributes['ending_quality'] === 'not_applicable') {
-			attributes['ending_quality'] = null;
+		// On hold / dropped → ending fields aren't ratable; completed → clear auto-set value
+		for (const key of AUTO_NA_FIELDS) {
+			if (revealsEpisodes) {
+				attributes[key] = 'not_applicable';
+			} else if (attributes[key] === 'not_applicable') {
+				attributes[key] = null;
+			}
 		}
 	});
 
@@ -424,7 +432,7 @@
 										options={config.options}
 										value={attributes[key] ?? null}
 										onChange={(v) => (attributes[key] = v)}
-										disabled={key === 'ending_quality' && revealsEpisodes}
+										disabled={AUTO_NA_FIELDS.includes(key) && revealsEpisodes}
 									/>
 								{/each}
 							</div>

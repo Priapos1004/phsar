@@ -28,9 +28,13 @@ class AnimationQuality(str, enum.Enum):
     very_good = "very_good"
 
 class ThreeDAnimation(str, enum.Enum):
+    # Frequency/extent scale mirroring FanService (none/rare/medium/heavy) so the two
+    # "amount of X" attributes share buckets. v0.14.13 renamed partial→medium, full→heavy
+    # and added rare (the "occasional bursts" case, e.g. Overlord S3's last 2 eps).
     none = "none"
-    partial = "partial"
-    full = "full"
+    rare = "rare"
+    medium = "medium"
+    heavy = "heavy"
 
 class WatchedFormat(str, enum.Enum):
     sub = "sub"
@@ -57,9 +61,15 @@ class EndingType(str, enum.Enum):
     open = "open"
     closed = "closed"
     cliffhanger = "cliffhanger"
+    # Auto-set sentinel (never user-selectable) — set when the watch wasn't finished
+    # (on_hold/dropped), alongside ending_quality. v0.14.13.
+    not_applicable = "not_applicable"
 
 class EndingQuality(str, enum.Enum):
     unsatisfying = "unsatisfying"
+    # Middle anchor (v0.14.13) so an indifferent "it was okay" ending has its own value
+    # instead of collapsing into a forced side or an ambiguous unset.
+    neutral = "neutral"
     satisfying = "satisfying"
     very_satisfying = "very_satisfying"
     not_applicable = "not_applicable"
