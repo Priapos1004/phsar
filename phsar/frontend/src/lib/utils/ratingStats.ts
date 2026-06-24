@@ -220,7 +220,7 @@ const BAND_WORD: Record<number, string> = {
 	8: 'Very good',
 	7: 'Good',
 	6: 'Solid',
-	5: 'Decent', // lowest score still worth recommending
+	5: 'Worthwhile', // lowest score still worth recommending
 	4: 'Mixed',
 	3: 'Bad',
 	2: 'Awful',
