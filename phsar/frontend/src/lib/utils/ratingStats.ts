@@ -600,11 +600,15 @@ export function ratingSequence(items: RatingScoreItem[]): SequencePoint[] {
 export function movingAverage(values: number[], window: number): number[] {
 	if (!values.length) return [];
 	const w = Math.max(1, Math.min(Math.round(window), values.length));
+	// Rolling sum: add the entering value, drop the one leaving the trailing window —
+	// O(n) with no per-point slice/reduce allocation. The first w−1 points divide by
+	// how many are available (i + 1) so the line has no gap.
 	const out: number[] = [];
+	let sum = 0;
 	for (let i = 0; i < values.length; i++) {
-		const start = Math.max(0, i - w + 1);
-		const slice = values.slice(start, i + 1);
-		out.push(slice.reduce((a, b) => a + b, 0) / slice.length);
+		sum += values[i];
+		if (i >= w) sum -= values[i - w];
+		out.push(sum / Math.min(i + 1, w));
 	}
 	return out;
 }
