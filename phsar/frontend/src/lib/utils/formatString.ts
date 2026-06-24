@@ -250,6 +250,16 @@ export function formatDecimalDigits(value: number, digits: number): string {
 }
 
 /**
+ * Format a 0–10 rating for display. Rounds to the finest rating step (0.01 → 2 dp)
+ * first to shed float-arithmetic noise (7.890000000000001 → "7.89"), then shows only
+ * the decimals that remain so whole/half scores stay clean (8.5 → "8.5", 10 → "10").
+ */
+export function formatScore(value: number): string {
+	const rounded = Math.round(value * 100) / 100;
+	return formatDecimalDigits(rounded, decimalPlaces(rounded));
+}
+
+/**
  * Resolve the display title based on user's name language preference.
  * Falls back through: preferred language → english name → romaji title.
  */

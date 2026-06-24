@@ -1,10 +1,11 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog';
-	import * as Select from '$lib/components/ui/select';
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
 	import { Slider } from '$lib/components/ui/slider';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import AttributeSelect from '$lib/components/AttributeSelect.svelte';
+	import RatingNeighbors from '$lib/components/RatingNeighbors.svelte';
 	import { ChevronDown, ChevronUp } from 'lucide-svelte';
 	import { clampAndSnapScore, decimalPlaces } from '$lib/utils/formatString';
 	import { RATING_ATTRIBUTE_OPTIONS } from '$lib/types/api';
@@ -17,6 +18,12 @@
 		selectedUuids: Set<string>;
 		alreadyRatedCount: number;
 		onSaved: (results: RatingOut[], note: string) => void;
+		// Anime context for the rating-consistency helper (bulk rating is anime-scoped, so
+		// this excludes the current anime + feeds the tiebreak — same as the media page).
+		animeUuid?: string;
+		genres?: string[];
+		studios?: string[];
+		ageRatingNumeric?: number | null;
 	}
 
 	let {
@@ -24,6 +31,10 @@
 		selectedUuids,
 		alreadyRatedCount,
 		onSaved,
+		animeUuid,
+		genres = [],
+		studios = [],
+		ageRatingNumeric = null,
 	}: Props = $props();
 
 	let SCORE_STEP = $derived(parseFloat($userSettings?.rating_step ?? '0.5'));
@@ -71,7 +82,7 @@
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="max-h-[85vh] overflow-y-auto sm:max-w-md">
+	<Dialog.Content class="max-h-[85vh] overflow-y-auto sm:max-w-xl">
 		<Dialog.Header>
 			<Dialog.Title>Rate {selectedUuids.size} Media</Dialog.Title>
 			<Dialog.Description class="text-muted-foreground">
@@ -79,7 +90,10 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		<div class="space-y-4 py-2">
+		<!-- min-w-0: Dialog.Content is a CSS grid, whose items default to min-width:auto and
+		     refuse to shrink below a nowrap child (a long neighbor title) — this lets the
+		     inner truncate engage instead of overflowing the dialog. -->
+		<div class="space-y-4 py-2 min-w-0">
 			{#if alreadyRatedCount > 0}
 				<div class="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
 					This will overwrite {alreadyRatedCount} existing rating{alreadyRatedCount > 1 ? 's' : ''}.
@@ -142,34 +156,21 @@
 					{#if showAttributes}
 						<div class="grid grid-cols-2 gap-3 mt-3">
 							{#each Object.entries(RATING_ATTRIBUTE_OPTIONS) as [key, config]}
-								<div class="space-y-1">
-									<Label class={attributes[key] ? 'text-card-foreground font-medium' : 'text-muted-foreground'}>
-										{config.label}
-									</Label>
-									<Select.Root
-										type="single"
-										value={attributes[key] ?? undefined}
-										onValueChange={(val: string) => { attributes[key] = val || null; }}
-									>
-										<Select.Trigger class="w-full {attributes[key] ? 'bg-primary/5 border-2 border-primary/40' : 'bg-card'}">
-											{#if attributes[key]}
-												{config.options.find(o => o.value === attributes[key])?.label ?? 'Select...'}
-											{:else}
-												<span class="text-muted-foreground">Not set</span>
-											{/if}
-										</Select.Trigger>
-										<Select.Content>
-											{#each config.options as option}
-												<Select.Item value={option.value}>{option.label}</Select.Item>
-											{/each}
-										</Select.Content>
-									</Select.Root>
-								</div>
+								<AttributeSelect
+									label={config.label}
+									options={config.options}
+									value={attributes[key] ?? null}
+									onChange={(v) => (attributes[key] = v)}
+								/>
 							{/each}
 						</div>
 					{/if}
 				</div>
 			</div>
+
+			<!-- Rating-consistency helper: how you rated nearby-scored titles from other
+			     anime (bulk rating is anime-scoped, so this behaves like the media page). -->
+			<RatingNeighbors score={snappedScore} {animeUuid} {genres} {studios} {ageRatingNumeric} />
 
 			{#if error}
 				<p class="text-destructive">{error}</p>

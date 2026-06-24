@@ -624,6 +624,10 @@
 			{selectedUuids}
 			{alreadyRatedCount}
 			onSaved={handleBulkRateSaved}
+			animeUuid={anime?.uuid}
+			genres={anime?.genres}
+			studios={anime?.studios}
+			ageRatingNumeric={anime?.age_rating_numeric}
 		/>
 
 		<Dialog.Root bind:open={showWatchlistDialog}>

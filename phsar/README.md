@@ -178,6 +178,7 @@ phsar/
 │   │   │   │   │   ├── RegistrationTokensCard.svelte
 │   │   │   │   │   ├── SweepTiersCard.svelte
 │   │   │   │   │   └── types.ts
+│   │   │   │   ├── AttributeSelect.svelte
 │   │   │   │   ├── BulkRateDialog.svelte
 │   │   │   │   ├── DangerZone.svelte
 │   │   │   │   ├── DeleteWatchHistoryToggle.svelte
@@ -193,6 +194,7 @@ phsar/
 │   │   │   │   ├── NavBar.svelte
 │   │   │   │   ├── Notice.svelte
 │   │   │   │   ├── RatingCard.svelte
+│   │   │   │   ├── RatingNeighbors.svelte
 │   │   │   │   ├── RatingsOverview.svelte
 │   │   │   │   ├── RatingsOverviewAttributes.svelte
 │   │   │   │   ├── RatingsOverviewNotes.svelte
@@ -268,6 +270,7 @@ phsar/
 │   │   │       ├── jobBadges.ts
 │   │   │       ├── mediaChangeSort.ts
 │   │   │       ├── navigation.ts
+│   │   │       ├── ratingAttributes.ts
 │   │   │       ├── ratingNeighbors.ts
 │   │   │       ├── ratingStats.ts
 │   │   │       ├── search.ts
