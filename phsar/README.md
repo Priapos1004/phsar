@@ -198,9 +198,24 @@ phsar/
 │   │   │   │   ├── RatingsOverviewNotes.svelte
 │   │   │   │   ├── RatingsOverviewStats.svelte
 │   │   │   │   ├── RatingsOverviewTimeline.svelte
+│   │   │   │   ├── ratings/        # /ratings page (list + statistics)
+│   │   │   │   │   ├── RatedAnimeCard.svelte
+│   │   │   │   │   ├── RatingsActivityChart.svelte
+│   │   │   │   │   ├── RatingsAlignmentChart.svelte
+│   │   │   │   │   ├── RatingsAttributeAnalysis.svelte
+│   │   │   │   │   ├── RatingsBandGrid.svelte
+│   │   │   │   │   ├── RatingsFilterBar.svelte
+│   │   │   │   │   ├── RatingsListTab.svelte
+│   │   │   │   │   ├── RatingsScoreHistogram.svelte
+│   │   │   │   │   ├── RatingsStatsTab.svelte
+│   │   │   │   │   ├── RatingsTabNav.svelte
+│   │   │   │   │   ├── RatingsTable.svelte
+│   │   │   │   │   ├── RatingsTagChart.svelte
+│   │   │   │   │   └── types.ts
 │   │   │   │   ├── RelatedMediaCarousel.svelte
 │   │   │   │   ├── ScorePercentile.svelte
 │   │   │   │   ├── ScrollableCard.svelte
+│   │   │   │   ├── SegmentedControl.svelte
 │   │   │   │   ├── SpoilerGuard.svelte
 │   │   │   │   ├── SearchBar.svelte
 │   │   │   │   ├── SkeletonMediaInfo.svelte
@@ -236,6 +251,7 @@ phsar/
 │   │   │   │   ├── genres.ts
 │   │   │   │   ├── jobs.ts
 │   │   │   │   ├── maintenance.ts
+│   │   │   │   ├── ratingsFilter.ts
 │   │   │   │   ├── spoilerVisibility.ts
 │   │   │   │   └── userSettings.ts
 │   │   │   ├── styles/
@@ -244,6 +260,7 @@ phsar/
 │   │   │   │   └── api.ts
 │   │   │   └── utils/
 │   │   │       ├── chartColors.ts
+│   │   │       ├── chartTheme.ts
 │   │   │       ├── cn.ts
 │   │   │       ├── formatString.ts
 │   │   │       ├── getSeason.ts
@@ -252,6 +269,7 @@ phsar/
 │   │   │       ├── mediaChangeSort.ts
 │   │   │       ├── navigation.ts
 │   │   │       ├── ratingNeighbors.ts
+│   │   │       ├── ratingStats.ts
 │   │   │       ├── search.ts
 │   │   │       └── spoilerFrontier.ts
 │   │   ├── routes/
@@ -274,6 +292,9 @@ phsar/
 │   │   │   ├── login/
 │   │   │   │   └── +page.svelte
 │   │   │   ├── media/
+│   │   │   │   └── +page.svelte
+│   │   │   ├── ratings/
+│   │   │   │   ├── +layout.svelte
 │   │   │   │   └── +page.svelte
 │   │   │   ├── register/
 │   │   │   │   └── +page.svelte
@@ -303,7 +324,9 @@ phsar/
 │   │       ├── navigation.test.ts
 │   │       ├── rating-modal.test.ts
 │   │       ├── rating-neighbors.test.ts
+│   │       ├── rating-stats.test.ts
 │   │       ├── searchbar.test.ts
+│   │       ├── segmented-control.test.ts
 │   │       ├── spoiler-frontier.test.ts
 │   │       ├── spoiler-guard.test.ts
 │   │       └── studio-links.test.ts
