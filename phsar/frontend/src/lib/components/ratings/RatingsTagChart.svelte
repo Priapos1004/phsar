@@ -3,6 +3,7 @@
 	import { ArrowDown, ArrowUp } from 'lucide-svelte';
 	import EChart from '$lib/components/EChart.svelte';
 	import Tooltip from '$lib/components/Tooltip.svelte';
+	import SegmentedControl from '$lib/components/SegmentedControl.svelte';
 	import * as Select from '$lib/components/ui/select';
 	import { scoreColor, getThemedChartColorPalette } from '$lib/utils/chartColors';
 	import { tagMetrics, type TagDim, type TagMetric } from '$lib/utils/ratingStats';
@@ -133,15 +134,13 @@
 			<span>Breakdown by {dim === 'genres' ? 'genre' : 'studio'}</span>
 			{#if allMetrics.length > rows.length}<span class="font-normal text-muted-foreground">Top {rows.length} of {allMetrics.length}</span>{/if}
 		</h3>
-		<!-- Segmented toggle (muted track + solid-primary thumb), matching the grid filter. -->
-		<div class="inline-flex rounded-full bg-muted p-0.5 text-xs">
-			{#each [{ key: 'genres', label: 'Genres' }, { key: 'studios', label: 'Studios' }] as opt (opt.key)}
-				<button
-					onclick={() => (dim = opt.key as TagDim)}
-					class="px-3 py-1 rounded-full transition-colors {dim === opt.key ? 'bg-primary text-white shadow-sm' : 'text-card-foreground/70 hover:text-card-foreground'}"
-				>{opt.label}</button>
-			{/each}
-		</div>
+		<SegmentedControl
+			size="md"
+			ariaLabel="Breakdown dimension"
+			options={[{ value: 'genres', label: 'Genres' }, { value: 'studios', label: 'Studios' }]}
+			value={dim}
+			onSelect={(v) => (dim = v)}
+		/>
 	</div>
 
 	<div class="flex flex-wrap items-center gap-2">

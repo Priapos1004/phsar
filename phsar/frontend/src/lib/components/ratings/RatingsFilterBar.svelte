@@ -5,6 +5,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import TagSelect from '$lib/components/TagSelect.svelte';
 	import Tooltip from '$lib/components/Tooltip.svelte';
+	import SegmentedControl from '$lib/components/SegmentedControl.svelte';
 	import { ratingsFilter } from '$lib/stores/ratingsFilter';
 	import { AGE_RATING_LABELS } from '$lib/utils/formatString';
 	import * as cls from '$lib/styles/classes';
@@ -104,18 +105,12 @@
 			<div class="space-y-1.5 flex-grow min-w-[14rem] max-w-md">
 				<div class="flex h-7 items-center justify-between">
 					<Label class={labelCls}>Genres</Label>
-					<!-- Segmented control: muted track + solid-primary thumb (clearly visible
-					     on the white card; no faint grey-on-grey borders). -->
-					<div class="inline-flex rounded-full bg-muted p-0.5 text-xs">
-						<button
-							class="px-2.5 py-0.5 rounded-full transition-colors {$ratingsFilter.genreMode === 'any' ? CHIP_ON : 'text-card-foreground/70 hover:text-card-foreground'}"
-							onclick={() => ratingsFilter.update((f) => ({ ...f, genreMode: 'any' }))}
-						>Any</button>
-						<button
-							class="px-2.5 py-0.5 rounded-full transition-colors {$ratingsFilter.genreMode === 'all' ? CHIP_ON : 'text-card-foreground/70 hover:text-card-foreground'}"
-							onclick={() => ratingsFilter.update((f) => ({ ...f, genreMode: 'all' }))}
-						>All</button>
-					</div>
+					<SegmentedControl
+						ariaLabel="Genre match mode"
+						options={[{ value: 'any', label: 'Any' }, { value: 'all', label: 'All' }]}
+						value={$ratingsFilter.genreMode}
+						onSelect={(v) => ratingsFilter.update((f) => ({ ...f, genreMode: v }))}
+					/>
 				</div>
 				<TagSelect
 					placeholder="Filter by genre…"

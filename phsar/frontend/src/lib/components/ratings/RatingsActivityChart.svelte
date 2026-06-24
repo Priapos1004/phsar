@@ -1,5 +1,6 @@
 <script lang="ts">
 	import EChart from '$lib/components/EChart.svelte';
+	import SegmentedControl from '$lib/components/SegmentedControl.svelte';
 	import { getThemedChartColorPalette } from '$lib/utils/chartColors';
 	import { ratingSequence, movingAverage, cumulativeWatchTime } from '$lib/utils/ratingStats';
 	import { chartTooltipStyle } from '$lib/utils/chartTheme';
@@ -140,16 +141,12 @@
 		<div class="flex items-center justify-between mb-1">
 			<p class="text-sm font-medium text-card-foreground">Score trend (in rating order)</p>
 			{#if windowOptions.length > 1}
-				<div class="inline-flex rounded-full bg-muted p-0.5 text-xs">
-					{#each windowOptions as w}
-						<button
-							onclick={() => (maWindow = w)}
-							class="px-2.5 py-0.5 rounded-full transition-colors {effectiveWindow === w
-								? 'bg-primary text-white shadow-sm'
-								: 'text-card-foreground/70 hover:text-card-foreground'}"
-						>{w}</button>
-					{/each}
-				</div>
+				<SegmentedControl
+					ariaLabel="Moving-average window"
+					options={windowOptions.map((w) => ({ value: w, label: String(w) }))}
+					value={effectiveWindow}
+					onSelect={(v) => (maWindow = v)}
+				/>
 			{/if}
 		</div>
 		{#if seq.length >= 2}
@@ -166,16 +163,12 @@
 	<div>
 		<div class="flex items-center justify-between mb-1">
 			<p class="text-sm font-medium text-card-foreground">Cumulative watch time</p>
-			<div class="inline-flex rounded-full bg-muted p-0.5 text-xs">
-				{#each RANGES as r (r.key)}
-					<button
-						onclick={() => (range = r.key)}
-						class="px-2.5 py-0.5 rounded-full transition-colors {range === r.key
-							? 'bg-primary text-white shadow-sm'
-							: 'text-card-foreground/70 hover:text-card-foreground'}"
-					>{r.label}</button>
-				{/each}
-			</div>
+			<SegmentedControl
+				ariaLabel="Time range"
+				options={RANGES.map((r) => ({ value: r.key, label: r.label }))}
+				value={range}
+				onSelect={(v) => (range = v)}
+			/>
 		</div>
 		{#if cumulative.length}
 			<EChart option={cumOption} height="220px" />
