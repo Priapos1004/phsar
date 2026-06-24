@@ -389,6 +389,18 @@ describe('cumulativeWatchTime', () => {
 			{ date: '2026-03-01T00:00:00Z', seconds: 150 },
 		]);
 	});
+
+	it('collapses ratings made at the exact same instant (bulk rating) to one point', () => {
+		const items = [
+			item({ media_uuid: 'a', anime_uuid: 'A', rating: 8, watch_status: 'completed', total_watch_time: 100, created_at: '2026-01-01T09:00:00Z' }),
+			item({ media_uuid: 'b', anime_uuid: 'A', rating: 7, watch_status: 'completed', total_watch_time: 50, created_at: '2026-01-01T09:00:00Z' }),
+			item({ media_uuid: 'c', anime_uuid: 'B', rating: 6, watch_status: 'completed', total_watch_time: 30, created_at: '2026-01-01T09:00:05Z' }),
+		];
+		const cum = cumulativeWatchTime(items);
+		expect(cum).toHaveLength(2); // the two identical-timestamp ratings collapse; 09:00:05 stays
+		expect(cum[0].seconds).toBe(150); // running total at that instant (both summed)
+		expect(cum[1].seconds).toBe(180);
+	});
 });
 
 describe('totalWatchTime', () => {

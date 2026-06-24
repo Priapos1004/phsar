@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatNumber, formatDuration, formatDecimalDigits, clampAndSnapScore } from '$lib/utils/formatString';
+import { formatNumber, formatDuration, formatDurationCompact, formatDecimalDigits, clampAndSnapScore } from '$lib/utils/formatString';
 
 describe('formatNumber', () => {
 	it('formats integers with commas', () => {
@@ -46,6 +46,23 @@ describe('formatDuration', () => {
 
 	it('returns 0s for negative', () => {
 		expect(formatDuration(-5)).toBe('0s');
+	});
+});
+
+describe('formatDurationCompact', () => {
+	it('keeps the two most-significant contiguous units', () => {
+		expect(formatDurationCompact(360000)).toBe('4d 4h'); // 4d 4h 0m 0s
+	});
+	it('takes a contiguous run — does NOT skip an interior zero unit', () => {
+		// 1d 0h 1m 1s: formatDuration would render "1d 1m 1s" (skips 0h); compact stops at days.
+		expect(formatDurationCompact(86461)).toBe('1d');
+	});
+	it('trims trailing zero units', () => {
+		expect(formatDurationCompact(86400)).toBe('1d'); // not "1d 0h"
+	});
+	it('falls back to smaller units when no large ones', () => {
+		expect(formatDurationCompact(125)).toBe('2m 5s');
+		expect(formatDurationCompact(0)).toBe('0s');
 	});
 });
 

@@ -79,6 +79,28 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
+ * Compact duration for tight spaces (e.g. axis ticks): the most-significant non-zero
+ * unit plus up to `maxUnits-1` following units, with trailing zero units trimmed.
+ * Unlike formatDuration it takes a CONTIGUOUS run of units rather than skipping zero
+ * ones, so e.g. 1d 0h 1m reads "1d" (not a misleading "1d 1m") and adjacent ticks stay
+ * on a consistent scale.
+ */
+export function formatDurationCompact(seconds: number, maxUnits = 2): string {
+	if (seconds <= 0) return '0s';
+	const units: [number, string][] = [
+		[Math.floor(seconds / 86400), 'd'],
+		[Math.floor((seconds % 86400) / 3600), 'h'],
+		[Math.floor((seconds % 3600) / 60), 'm'],
+		[Math.floor(seconds % 60), 's'],
+	];
+	const first = units.findIndex(([v]) => v > 0);
+	if (first === -1) return '0s';
+	const parts = units.slice(first, first + maxUnits);
+	while (parts.length > 1 && parts[parts.length - 1][0] === 0) parts.pop();
+	return parts.map(([v, u]) => `${v}${u}`).join(' ');
+}
+
+/**
  * Wall-clock duration between started_at and finished_at, or
  * started_at → `now` if the job is still running. Returns '—' for
  * never-started rows so callers don't need their own null guard.

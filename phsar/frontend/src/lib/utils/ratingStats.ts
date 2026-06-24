@@ -559,15 +559,22 @@ export interface SequencePoint {
 	index: number; // 1-based position in chronological rating order
 	score: number;
 	title: string;
+	nameEng: string | null;
+	nameJap: string | null;
 	date: string;
 }
 
 /** Your scores in the order you rated them (equidistant on the x-axis, not by
  * calendar date) — the substrate for a moving-average trend line. */
 export function ratingSequence(items: RatingScoreItem[]): SequencePoint[] {
-	return [...items]
-		.sort(byCreatedAsc)
-		.map((it, i) => ({ index: i + 1, score: it.rating, title: it.media_title, date: it.created_at }));
+	return [...items].sort(byCreatedAsc).map((it, i) => ({
+		index: i + 1,
+		score: it.rating,
+		title: it.media_title,
+		nameEng: it.media_name_eng,
+		nameJap: it.media_name_jap,
+		date: it.created_at,
+	}));
 }
 
 /** Trailing simple moving average. Window is clamped to [1, values.length]; the
@@ -598,10 +605,15 @@ export interface CumulativePoint {
 export function cumulativeWatchTime(items: RatingScoreItem[], sinceISO?: string): CumulativePoint[] {
 	const sorted = items.filter((it) => it.watch_status === 'completed').sort(byCreatedAsc);
 	let cum = 0;
-	const pts = sorted.map((it) => {
+	// Collapse points that share the exact same created_at — bulk-rating an anime writes
+	// them at the same instant — to a single point (the running total at that instant), so
+	// they don't stack on one x. Sorted ascending + last-write-wins keeps the highest total.
+	const byInstant = new Map<string, CumulativePoint>();
+	for (const it of sorted) {
 		cum += it.total_watch_time ?? 0;
-		return { date: it.created_at, seconds: cum };
-	});
+		byInstant.set(it.created_at, { date: it.created_at, seconds: cum });
+	}
+	const pts = [...byInstant.values()];
 	return sinceISO ? pts.filter((p) => p.date >= sinceISO) : pts;
 }
 

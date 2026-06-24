@@ -3,7 +3,8 @@
 	import { getThemedChartColorPalette } from '$lib/utils/chartColors';
 	import { ratingSequence, movingAverage, cumulativeWatchTime } from '$lib/utils/ratingStats';
 	import { chartTooltipStyle } from '$lib/utils/chartTheme';
-	import { formatDuration } from '$lib/utils/formatString';
+	import { formatDuration, formatDurationCompact, formatDecimalDigits, resolveTitle } from '$lib/utils/formatString';
+	import { userSettings } from '$lib/stores/userSettings';
 	import type { RatingScoreItem } from '$lib/types/api';
 
 	interface Props {
@@ -13,6 +14,7 @@
 	let { items }: Props = $props();
 
 	let palette = $derived(getThemedChartColorPalette());
+	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
 
 	// ── (f) Rating trend: equidistant sequence + trailing moving average ──────
 	let seq = $derived(ratingSequence(items));
@@ -26,8 +28,24 @@
 	let ma = $derived(movingAverage(seq.map((p) => p.score), effectiveWindow));
 
 	let trendOption = $derived({
-		grid: { left: 32, right: 12, top: 12, bottom: 28 },
-		tooltip: { ...chartTooltipStyle, trigger: 'axis' as const },
+		// bottom:44 gives the "rating #" axis name room below the tick labels instead of
+		// jamming it against the chart edge (where it crowded the caption below).
+		grid: { left: 32, right: 12, top: 12, bottom: 44 },
+		tooltip: {
+			...chartTooltipStyle,
+			trigger: 'axis' as const,
+			// Prepend the title (in the user's name language); keep the default colored
+			// dot + series rows (Score / moving average) below it.
+			formatter: (params: unknown) => {
+				const arr = params as { dataIndex: number; seriesType: string; marker: string; seriesName: string; value: [number, number] }[];
+				const p = seq[arr[0]?.dataIndex ?? 0];
+				const head = p ? `<strong>${resolveTitle(p.title, p.nameEng, p.nameJap, nameLanguage)}</strong><br/>` : '';
+				const rows = arr
+					.map((a) => `${a.marker} ${a.seriesName} ${formatDecimalDigits(Number(a.value[1]), a.seriesType === 'scatter' ? 1 : 2)}`)
+					.join('<br/>');
+				return head + rows;
+			},
+		},
 		xAxis: {
 			type: 'value' as const,
 			name: 'rating #',
@@ -70,11 +88,11 @@
 
 	// ── (g) Cumulative watch time over when you rated ─────────────────────────
 	const RANGES = [
-		{ key: 'all', label: 'All' },
-		{ key: '3m', label: '3 months' },
 		{ key: '1m', label: '1 month' },
+		{ key: '3m', label: '3 months' },
+		{ key: 'all', label: 'All' },
 	] as const;
-	let range = $state<'all' | '3m' | '1m'>('all');
+	let range = $state<'all' | '3m' | '1m'>('1m');
 
 	function cutoffISO(r: 'all' | '3m' | '1m'): string | undefined {
 		if (r === 'all') return undefined;
@@ -98,7 +116,8 @@
 		},
 		yAxis: {
 			type: 'value' as const,
-			axisLabel: { color: 'rgba(0,0,0,0.55)', fontSize: 11, formatter: (v: number) => `${Math.round(v / 3600)}h` },
+			// Compact d/h/m label so the ticks fit (full duration is in the tooltip).
+			axisLabel: { color: 'rgba(0,0,0,0.55)', fontSize: 11, formatter: (v: number) => formatDurationCompact(v) },
 			splitLine: { lineStyle: { color: 'rgba(0,0,0,0.07)' } },
 		},
 		series: [
@@ -119,15 +138,15 @@
 	<!-- (f) Rating trend -->
 	<div>
 		<div class="flex items-center justify-between mb-1">
-			<p class="text-xs text-muted-foreground">Score trend (in rating order)</p>
+			<p class="text-sm font-medium text-card-foreground">Score trend (in rating order)</p>
 			{#if windowOptions.length > 1}
-				<div class="flex gap-1.5">
+				<div class="inline-flex rounded-full bg-muted p-0.5 text-xs">
 					{#each windowOptions as w}
 						<button
 							onclick={() => (maWindow = w)}
-							class="px-2 py-0.5 rounded-full text-[11px] border transition-colors {effectiveWindow === w
-								? 'border-primary bg-primary/15 text-primary'
-								: 'border-border text-muted-foreground hover:bg-muted/40'}"
+							class="px-2.5 py-0.5 rounded-full transition-colors {effectiveWindow === w
+								? 'bg-primary text-white shadow-sm'
+								: 'text-card-foreground/70 hover:text-card-foreground'}"
 						>{w}</button>
 					{/each}
 				</div>
@@ -135,8 +154,8 @@
 		</div>
 		{#if seq.length >= 2}
 			<EChart option={trendOption} height="240px" />
-			<p class="text-[11px] text-muted-foreground mt-1">
-				Each point is one rating in the order you made them; the line is a {effectiveWindow}-rating moving average — a downward slope means you've been rating things lower lately.
+			<p class="text-[11px] text-muted-foreground mt-3">
+				Each point is one of your ratings, oldest to newest; the line is a {effectiveWindow}-rating moving average — a downward slope means you've been rating things lower lately.
 			</p>
 		{:else}
 			<p class="text-sm text-muted-foreground">Rate a few more titles to see your trend.</p>
@@ -146,23 +165,20 @@
 	<!-- (g) Cumulative watch time -->
 	<div>
 		<div class="flex items-center justify-between mb-1">
-			<p class="text-xs text-muted-foreground">Cumulative watch time</p>
-			<div class="flex gap-1.5">
+			<p class="text-sm font-medium text-card-foreground">Cumulative watch time</p>
+			<div class="inline-flex rounded-full bg-muted p-0.5 text-xs">
 				{#each RANGES as r (r.key)}
 					<button
 						onclick={() => (range = r.key)}
-						class="px-2 py-0.5 rounded-full text-[11px] border transition-colors {range === r.key
-							? 'border-primary bg-primary/15 text-primary'
-							: 'border-border text-muted-foreground hover:bg-muted/40'}"
+						class="px-2.5 py-0.5 rounded-full transition-colors {range === r.key
+							? 'bg-primary text-white shadow-sm'
+							: 'text-card-foreground/70 hover:text-card-foreground'}"
 					>{r.label}</button>
 				{/each}
 			</div>
 		</div>
 		{#if cumulative.length}
 			<EChart option={cumOption} height="220px" />
-			<p class="text-[11px] text-muted-foreground mt-1">
-				Watch time accumulated by when you rated each title — a steep start is back-cataloguing; the later slope is your ongoing pace.
-			</p>
 		{:else}
 			<p class="text-sm text-muted-foreground">No completed titles with known episode counts in this range.</p>
 		{/if}
