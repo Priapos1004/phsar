@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { Badge } from '$lib/components/ui/badge';
 	import { api } from '$lib/api';
+	import { getRatingAttr } from '$lib/types/api';
 	import type { RatingScoreItem } from '$lib/types/api';
 	import { selectRatingNeighbors } from '$lib/utils/ratingNeighbors';
-	import { attributeBadges } from '$lib/utils/ratingAttributes';
+	import { attributeBadges, compareAttribute, type AttributeComparison } from '$lib/utils/ratingAttributes';
 	import { formatScore, resolveTitle } from '$lib/utils/formatString';
 	import { userSettings } from '$lib/stores/userSettings';
+	import * as cls from '$lib/styles/classes';
 	import { ChevronDown, ChevronUp, Star } from 'lucide-svelte';
 
 	interface Props {
@@ -17,9 +19,20 @@
 		genres?: string[];
 		studios?: string[];
 		ageRatingNumeric?: number | null;
+		// The user's live in-progress selection — each neighbor attribute is colored by how
+		// it compares (green higher / red lower / blue differs / plain neutral). Reactive, so
+		// the colors update as the user changes their own picks, not just the score.
+		currentAttributes?: Record<string, string | null>;
 	}
 
-	let { score, animeUuid, genres = [], studios = [], ageRatingNumeric = null }: Props = $props();
+	let { score, animeUuid, genres = [], studios = [], ageRatingNumeric = null, currentAttributes = {} }: Props = $props();
+
+	const COMPARISON_CLASS: Record<AttributeComparison, string> = {
+		higher: cls.badgeAttrHigher,
+		lower: cls.badgeAttrLower,
+		differs: cls.badgeAttrDiffers,
+		neutral: cls.badgeAttrNeutral,
+	};
 
 	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
 
@@ -102,13 +115,16 @@
 			<div class="mt-2 space-y-2">
 				{#each neighborRows as n (n.media_uuid)}
 					{@const attrs = attributeBadges(n)}
+						<!-- Default-expanded when the neighbor has rated attributes — the comparison
+						     shows without clicking each row; an explicit toggle overrides. -->
+						{@const expanded = expandedNeighbors[n.media_uuid] ?? attrs.length > 0}
 					{@const mediaName = resolveTitle(n.media_title, n.media_name_eng, n.media_name_jap, nameLanguage)}
 					{@const animeName = resolveTitle(n.anime_title, n.anime_name_eng, n.anime_name_jap, nameLanguage)}
 					<div class="rounded-lg border border-border bg-card overflow-hidden">
 						<button
 							type="button"
 							class="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-muted/40 transition"
-							onclick={() => (expandedNeighbors[n.media_uuid] = !expandedNeighbors[n.media_uuid])}
+							onclick={() => (expandedNeighbors[n.media_uuid] = !expanded)}
 						>
 							{#if n.media_cover_image}
 								<img src={n.media_cover_image} alt="" loading="lazy" class="w-8 h-11 rounded object-cover shrink-0" />
@@ -121,17 +137,18 @@
 								<Star class="size-3.5 text-primary" fill="currentColor" />
 								{formatScore(n.rating)}
 							</span>
-							{#if expandedNeighbors[n.media_uuid]}
+							{#if expanded}
 								<ChevronUp class="size-4 text-muted-foreground shrink-0" />
 							{:else}
 								<ChevronDown class="size-4 text-muted-foreground shrink-0" />
 							{/if}
 						</button>
-						{#if expandedNeighbors[n.media_uuid]}
+						{#if expanded}
 							<div class="px-3 pb-2 flex flex-wrap gap-1">
 								{#if attrs.length}
 									{#each attrs as attr}
-										<Badge variant="secondary" class="font-normal">{attr.label}: {attr.value}</Badge>
+										{@const verdict = compareAttribute(attr.key, getRatingAttr(n, attr.key) ?? '', currentAttributes[attr.key] ?? null)}
+										<Badge variant="secondary" class="font-normal {COMPARISON_CLASS[verdict]}">{attr.label}: {attr.value}</Badge>
 									{/each}
 								{:else}
 									<span class="text-xs text-muted-foreground">No attributes rated</span>

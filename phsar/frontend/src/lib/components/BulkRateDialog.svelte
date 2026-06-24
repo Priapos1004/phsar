@@ -170,7 +170,7 @@
 
 			<!-- Rating-consistency helper: how you rated nearby-scored titles from other
 			     anime (bulk rating is anime-scoped, so this behaves like the media page). -->
-			<RatingNeighbors score={snappedScore} {animeUuid} {genres} {studios} {ageRatingNumeric} />
+			<RatingNeighbors score={snappedScore} {animeUuid} {genres} {studios} {ageRatingNumeric} currentAttributes={attributes} />
 
 			{#if error}
 				<p class="text-destructive">{error}</p>

@@ -442,7 +442,7 @@
 
 				<!-- Rating-consistency helper: how you rated nearby-scored titles from other
 				     anime, so the user can keep their scale consistent. -->
-				<RatingNeighbors score={snappedScore} {animeUuid} {genres} {studios} {ageRatingNumeric} />
+				<RatingNeighbors score={snappedScore} {animeUuid} {genres} {studios} {ageRatingNumeric} currentAttributes={attributes} />
 
 				{#if error}
 					<p class="text-destructive">{error}</p>

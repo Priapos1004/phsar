@@ -18,3 +18,33 @@ export function attributeBadges(item: RatingOut | RatingScoreItem): { key: strin
 				?? String(getRatingAttr(item, key)),
 		}));
 }
+
+// The 5 attributes with a clear better/worse order — compared by ordinal position
+// (higher/lower) in the neighbor color-coding. The other 6 are categorical (differ/match).
+export const QUALITY_ATTR_KEYS = new Set([
+	'animation_quality', 'story_quality', 'dialogue_quality', 'character_depth', 'ending_quality',
+]);
+
+export type AttributeComparison = 'higher' | 'lower' | 'differs' | 'neutral';
+
+/**
+ * Compare a neighbor's attribute value against the user's current selection, for the
+ * "How you rated similar titles" color-coding. Only differences are flagged — `neutral`
+ * (the quiet/grey badge) covers both "you haven't set this" and "matches your pick".
+ * Quality attrs (QUALITY_ATTR_KEYS) compare by ordinal position → higher/lower; the rest
+ * are categorical → differs. `neighborValue` is always a real rated value (the caller
+ * only colors badges attributeBadges emitted, which skip unset + not_applicable).
+ */
+export function compareAttribute(
+	key: string,
+	neighborValue: string,
+	currentValue: string | null,
+): AttributeComparison {
+	if (!isAttrRated(currentValue) || neighborValue === currentValue) return 'neutral';
+	if (!QUALITY_ATTR_KEYS.has(key)) return 'differs';
+	const opts = RATING_ATTRIBUTE_OPTIONS[key]?.options ?? [];
+	const ni = opts.findIndex((o) => o.value === neighborValue);
+	const ci = opts.findIndex((o) => o.value === currentValue);
+	if (ni < 0 || ci < 0) return 'differs'; // unknown value — fall back to a plain "differs"
+	return ni > ci ? 'higher' : 'lower';
+}

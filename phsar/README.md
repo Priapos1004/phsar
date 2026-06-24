@@ -325,6 +325,7 @@ phsar/
 │   │       ├── merge-candidates-card.test.ts
 │   │       ├── navbar.test.ts
 │   │       ├── navigation.test.ts
+│   │       ├── rating-attributes.test.ts
 │   │       ├── rating-modal.test.ts
 │   │       ├── rating-neighbors.test.ts
 │   │       ├── rating-stats.test.ts

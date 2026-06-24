@@ -20,6 +20,16 @@ export const badgeDropped = 'bg-rose-100 text-rose-800 border-rose-200';
 // Story-complete (emerald) — shared by the anime-page badge + the anime search card badge.
 export const badgeComplete = 'bg-emerald-100 text-emerald-800 border-emerald-200';
 
+// "How you rated similar titles" comparison badges (v0.14.13): a neighbor's attribute
+// vs your current selection. Only differences are colored — green = neighbor higher,
+// red = neighbor lower (quality attrs), blue = differs (categorical); neutral keeps the
+// plain secondary look (matches your pick OR you haven't set it). Light tints to read on
+// the bg-card neighbor rows; override the Badge's secondary variant via tailwind-merge.
+export const badgeAttrHigher = 'bg-emerald-100 text-emerald-800 border-emerald-200';
+export const badgeAttrLower = 'bg-rose-100 text-rose-800 border-rose-200';
+export const badgeAttrDiffers = 'bg-sky-100 text-sky-800 border-sky-200';
+export const badgeAttrNeutral = '';
+
 // Badge defaults for normal-sized contexts (hero card, search cards)
 const badgeSize = 'text-sm h-auto px-2.5 py-0.5';
 export const badgeMediaType = `${badgeMediaTypeColor} ${badgeSize}`;
