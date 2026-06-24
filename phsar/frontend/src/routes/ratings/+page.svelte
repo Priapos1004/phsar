@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, getContext } from 'svelte';
+	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { api, ApiError } from '$lib/api';
 	import { userSettings } from '$lib/stores/userSettings';
@@ -10,8 +10,6 @@
 	import RatingsStatsTab from '$lib/components/ratings/RatingsStatsTab.svelte';
 	import Notice from '$lib/components/Notice.svelte';
 	import { Button } from '$lib/components/ui/button';
-
-	const getUserRole = getContext<() => string | null>('userRole');
 
 	const TABS: { key: RatingsTabKey; label: string }[] = [
 		{ key: 'ratings', label: 'Ratings' },

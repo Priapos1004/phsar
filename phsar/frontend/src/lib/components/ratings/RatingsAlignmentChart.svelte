@@ -6,7 +6,7 @@
 	import { alignmentPoints, weightedLinearFit, spearman } from '$lib/utils/ratingStats';
 	import { chartTooltipStyle } from '$lib/utils/chartTheme';
 	import { buildDetailHref } from '$lib/utils/navigation';
-	import { formatDecimalDigits, resolveTitle } from '$lib/utils/formatString';
+	import { formatDecimalDigits, resolveTitle, escapeHtml } from '$lib/utils/formatString';
 	import { userSettings } from '$lib/stores/userSettings';
 	import type { RatingScoreItem } from '$lib/types/api';
 
@@ -85,7 +85,7 @@
 				const pt = points[p.dataIndex];
 				if (!pt) return '';
 				const title = resolveTitle(pt.title, pt.nameEng, pt.nameJap, nameLanguage);
-				return `<strong>${title}</strong><br/>MAL ${formatDecimalDigits(pt.x, 2)} · You ${formatDecimalDigits(pt.y, 1)}`;
+				return `<strong>${escapeHtml(title)}</strong><br/>MAL ${formatDecimalDigits(pt.x, 2)} · You ${formatDecimalDigits(pt.y, 1)}`;
 			},
 		},
 		xAxis: {

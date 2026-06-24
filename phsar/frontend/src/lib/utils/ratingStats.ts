@@ -168,12 +168,15 @@ function statusRank(r: AnimeRatingRow): number {
 	return r.statusBadge === 'dropped' ? 0 : r.statusBadge === 'on_hold' ? 1 : 2;
 }
 
-// Compare two nullable numbers, sending nulls to the end regardless of direction.
+// Compare two nullable numbers for a sortable column: real values follow `dir`,
+// and nulls always sort to the END regardless of direction. Returns a final,
+// direction-applied result — callers must NOT re-apply the sort sign to it (doing
+// so double-signs the null sentinels and scatters nulls through the column).
 function cmpNullable(a: number | null, b: number | null, dir: 'asc' | 'desc'): number {
 	if (a == null && b == null) return 0;
-	if (a == null) return dir === 'asc' ? 1 : -1;
-	if (b == null) return dir === 'asc' ? 1 : -1;
-	return a - b;
+	if (a == null) return 1; // nulls last
+	if (b == null) return -1; // nulls last
+	return dir === 'asc' ? a - b : b - a;
 }
 
 export function sortAnimeRows(
@@ -183,26 +186,29 @@ export function sortAnimeRows(
 	nameLanguage: NameLanguage,
 ): AnimeRatingRow[] {
 	const sign = dir === 'asc' ? 1 : -1;
+	// Each branch returns a fully direction-applied comparison. The nullable MAL
+	// columns own their direction inside cmpNullable (so nulls stay last whichever
+	// way the real values go) and are NOT multiplied by `sign`; the others are.
 	const cmp = (a: AnimeRatingRow, b: AnimeRatingRow): number => {
 		switch (key) {
 			case 'title':
-				return titleOf(a, nameLanguage).localeCompare(titleOf(b, nameLanguage));
+				return sign * titleOf(a, nameLanguage).localeCompare(titleOf(b, nameLanguage));
 			case 'date':
-				return a.modifiedAt < b.modifiedAt ? -1 : a.modifiedAt > b.modifiedAt ? 1 : 0;
+				return sign * (a.modifiedAt < b.modifiedAt ? -1 : a.modifiedAt > b.modifiedAt ? 1 : 0);
 			case 'status':
-				return statusRank(a) - statusRank(b);
+				return sign * (statusRank(a) - statusRank(b));
 			case 'mal':
 				return cmpNullable(a.malScore, b.malScore, dir);
 			case 'malDelta':
 				return cmpNullable(a.malDelta, b.malDelta, dir);
 			case 'score':
 			default:
-				return a.userScore - b.userScore;
+				return sign * (a.userScore - b.userScore);
 		}
 	};
 	// Stable title tiebreak so equal primary keys read predictably.
 	return [...rows].sort((a, b) => {
-		const primary = cmp(a, b) * sign;
+		const primary = cmp(a, b);
 		if (primary !== 0) return primary;
 		return titleOf(a, nameLanguage).localeCompare(titleOf(b, nameLanguage));
 	});
@@ -312,7 +318,7 @@ export function alignmentPoints(items: RatingScoreItem[]): AlignmentPoint[] {
 		.map((it) => ({
 			x: it.mal_score as number,
 			y: it.rating,
-			w: Math.log10((it.scored_by ?? 0) + 1),
+			w: Math.log10(Math.max(0, it.scored_by ?? 0) + 1),
 			mediaUuid: it.media_uuid,
 			title: it.media_title,
 			nameEng: it.media_name_eng,
@@ -437,7 +443,9 @@ export function tagMetrics(items: RatingScoreItem[], dim: TagDim): TagMetric[] {
 	const rows = [...bucketByTag(items, dim).entries()].map(([tag, rs]) => {
 		const avg = mean(rs.map((r) => r.rating));
 		const count = new Set(rs.map((r) => r.anime_uuid)).size; // distinct shows, not per-season media
-		const watchSeconds = rs.reduce((s, r) => s + (r.total_watch_time ?? 0), 0);
+		// Clamp per-item so a stray negative watch time can't drive the log10 below 0
+		// (a single NaN/-Infinity raw would poison every tag via the maxRaw divide).
+		const watchSeconds = rs.reduce((s, r) => s + Math.max(0, r.total_watch_time ?? 0), 0);
 		const raw = avg * Math.log10(count + 1) * (1 + Math.log10(watchSeconds / 3600 + 1));
 		return { tag, avg, count, watchSeconds, raw };
 	});
@@ -551,8 +559,12 @@ export function attributeCategoryEffects(items: RatingScoreItem[]): NominalAttri
 
 // ── Rating trend over the sequence of ratings ────────────────────────────────
 
-function byCreatedAsc(a: RatingScoreItem, b: RatingScoreItem): number {
-	return a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0;
+/** Parse an ISO timestamp to epoch ms; NaN for missing/malformed values so callers
+ * can drop them rather than sort/plot a NaN. Comparing on epoch (not the raw string)
+ * also normalizes timezone-format differences (Z vs +00:00, precision) between the
+ * backend's serialization and the JS cutoff built from `Date`. */
+function epochMs(iso: string | null | undefined): number {
+	return iso ? Date.parse(iso) : NaN;
 }
 
 export interface SequencePoint {
@@ -567,14 +579,20 @@ export interface SequencePoint {
 /** Your scores in the order you rated them (equidistant on the x-axis, not by
  * calendar date) — the substrate for a moving-average trend line. */
 export function ratingSequence(items: RatingScoreItem[]): SequencePoint[] {
-	return [...items].sort(byCreatedAsc).map((it, i) => ({
-		index: i + 1,
-		score: it.rating,
-		title: it.media_title,
-		nameEng: it.media_name_eng,
-		nameJap: it.media_name_jap,
-		date: it.created_at,
-	}));
+	// Decorate-sort-undecorate: parse each created_at once (not O(n log n) times in
+	// the comparator), dropping unparseable dates in the same pass.
+	return items
+		.map((it) => ({ it, t: epochMs(it.created_at) }))
+		.filter((d) => Number.isFinite(d.t))
+		.sort((a, b) => a.t - b.t)
+		.map(({ it }, i) => ({
+			index: i + 1,
+			score: it.rating,
+			title: it.media_title,
+			nameEng: it.media_name_eng,
+			nameJap: it.media_name_jap,
+			date: it.created_at,
+		}));
 }
 
 /** Trailing simple moving average. Window is clamped to [1, values.length]; the
@@ -603,18 +621,25 @@ export interface CumulativePoint {
  * to your ongoing rate. `sinceISO` clips the x-axis to a recent window while
  * keeping the y-values absolute, so the recent slope stays truthful. */
 export function cumulativeWatchTime(items: RatingScoreItem[], sinceISO?: string): CumulativePoint[] {
-	const sorted = items.filter((it) => it.watch_status === 'completed').sort(byCreatedAsc);
+	// Decorate-sort-undecorate: parse each created_at once instead of in the comparator.
+	const sorted = items
+		.map((it) => ({ it, t: epochMs(it.created_at) }))
+		.filter((d) => d.it.watch_status === 'completed' && Number.isFinite(d.t))
+		.sort((a, b) => a.t - b.t);
 	let cum = 0;
 	// Collapse points that share the exact same created_at — bulk-rating an anime writes
 	// them at the same instant — to a single point (the running total at that instant), so
 	// they don't stack on one x. Sorted ascending + last-write-wins keeps the highest total.
 	const byInstant = new Map<string, CumulativePoint>();
-	for (const it of sorted) {
-		cum += it.total_watch_time ?? 0;
+	for (const { it } of sorted) {
+		cum += Math.max(0, it.total_watch_time ?? 0);
 		byInstant.set(it.created_at, { date: it.created_at, seconds: cum });
 	}
 	const pts = [...byInstant.values()];
-	return sinceISO ? pts.filter((p) => p.date >= sinceISO) : pts;
+	// Compare on epoch ms, not the raw string, so the cutoff (built from JS `Date`)
+	// clips correctly regardless of timezone-format differences in created_at.
+	const since = epochMs(sinceISO);
+	return Number.isFinite(since) ? pts.filter((p) => epochMs(p.date) >= since) : pts;
 }
 
 // ── Watch time ───────────────────────────────────────────────────────────────
@@ -624,6 +649,6 @@ export function cumulativeWatchTime(items: RatingScoreItem[], sinceISO?: string)
  * total_watch_time (episodes × duration) as the per-media estimate. The
  * over-time view is the cumulative chart below. */
 export function totalWatchTime(items: RatingScoreItem[]): number {
-	return items.reduce((a, it) => (it.watch_status === 'completed' ? a + (it.total_watch_time ?? 0) : a), 0);
+	return items.reduce((a, it) => (it.watch_status === 'completed' ? a + Math.max(0, it.total_watch_time ?? 0) : a), 0);
 }
 

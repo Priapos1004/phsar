@@ -16,6 +16,19 @@ export function formatRelationType(type: string): string {
 	return RELATION_TYPE_LABELS[type] ?? type;
 }
 
+/** Escape a string for safe interpolation into an HTML string. ECharts renders a
+ * tooltip `formatter`'s return value as HTML (`innerHTML`), so any catalog-sourced
+ * text spliced into one — anime/media titles, genre/studio names — must be escaped,
+ * since Svelte's auto-escaping doesn't reach inside these hand-built strings. */
+export function escapeHtml(s: string): string {
+	return s
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;');
+}
+
 const MEDIA_TYPE_LABELS: Record<string, string> = {
 	TVSpecial: 'TV Special',
 };

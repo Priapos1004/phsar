@@ -155,6 +155,24 @@ describe('sortAnimeRows + toScoreBands', () => {
 		]);
 		expect(sortAnimeRows(statusRows, 'status', 'asc', 'english').map((r) => r.anime_uuid)).toEqual(['D', 'H', 'C']);
 	});
+	// Regression: the nullable MAL columns must order real values by direction while
+	// keeping null-MAL rows pinned to the end (they used to scatter through the column).
+	const malRows = groupByAnime([
+		item({ media_uuid: 'm1', anime_uuid: 'A', rating: 8, mal_score: 9 }),
+		item({ media_uuid: 'm2', anime_uuid: 'B', rating: 8, mal_score: null }),
+		item({ media_uuid: 'm3', anime_uuid: 'C', rating: 8, mal_score: 7 }),
+	]);
+	it('sorts by mal desc, nulls last', () => {
+		expect(sortAnimeRows(malRows, 'mal', 'desc', 'english').map((r) => r.anime_uuid)).toEqual(['A', 'C', 'B']);
+	});
+	it('sorts by mal asc, nulls last', () => {
+		expect(sortAnimeRows(malRows, 'mal', 'asc', 'english').map((r) => r.anime_uuid)).toEqual(['C', 'A', 'B']);
+	});
+	it('sorts by malDelta in both directions, nulls last', () => {
+		// deltas: A 8−9=−1, C 8−7=+1, B null
+		expect(sortAnimeRows(malRows, 'malDelta', 'desc', 'english').map((r) => r.anime_uuid)).toEqual(['C', 'A', 'B']);
+		expect(sortAnimeRows(malRows, 'malDelta', 'asc', 'english').map((r) => r.anime_uuid)).toEqual(['A', 'C', 'B']);
+	});
 	it('bands by floored score, descending, empty bands omitted', () => {
 		const bands = toScoreBands(sortAnimeRows(rows, 'title', 'asc', 'english'));
 		expect(bands.map((b) => b.band)).toEqual([9, 8]);
@@ -367,6 +385,13 @@ describe('ratingSequence + movingAverage', () => {
 		expect(seq.map((p) => p.score)).toEqual([9, 7]);
 		expect(seq.map((p) => p.index)).toEqual([1, 2]);
 	});
+	it('drops items with an unparseable created_at rather than ordering on NaN', () => {
+		const seq = ratingSequence([
+			item({ media_uuid: 'a', anime_uuid: 'A', rating: 9, created_at: '2026-01-01T00:00:00Z' }),
+			item({ media_uuid: 'bad', anime_uuid: 'B', rating: 5, created_at: 'not-a-date' }),
+		]);
+		expect(seq.map((p) => p.score)).toEqual([9]);
+	});
 	it('trailing moving average smooths the series', () => {
 		expect(movingAverage([2, 4, 6, 8], 2)).toEqual([2, 3, 5, 7]);
 		expect(movingAverage([], 3)).toEqual([]);
@@ -400,6 +425,14 @@ describe('cumulativeWatchTime', () => {
 		expect(cum).toHaveLength(2); // the two identical-timestamp ratings collapse; 09:00:05 stays
 		expect(cum[0].seconds).toBe(150); // running total at that instant (both summed)
 		expect(cum[1].seconds).toBe(180);
+	});
+
+	it('ignores a completed rating with an unparseable created_at', () => {
+		const cum = cumulativeWatchTime([
+			item({ media_uuid: 'a', anime_uuid: 'A', rating: 8, watch_status: 'completed', total_watch_time: 100, created_at: '2026-01-01T00:00:00Z' }),
+			item({ media_uuid: 'bad', anime_uuid: 'B', rating: 7, watch_status: 'completed', total_watch_time: 999, created_at: '' }),
+		]);
+		expect(cum).toEqual([{ date: '2026-01-01T00:00:00Z', seconds: 100 }]);
 	});
 });
 

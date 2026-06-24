@@ -7,14 +7,9 @@
  * alternative_version — retellings extend the story, so they gate too).
  */
 
-const ANCHOR_TYPES = new Set(['main', 'alternative_version']);
+import { SEASON_ORDER } from '$lib/utils/getSeason';
 
-const SEASON_ORDER: Record<string, number> = {
-	Winter: 1,
-	Spring: 2,
-	Summer: 3,
-	Fall: 4
-};
+const ANCHOR_TYPES = new Set(['main', 'alternative_version']);
 
 interface MediaForFrontier {
 	uuid: string;

@@ -4,6 +4,7 @@
 	import RatingsTable from './RatingsTable.svelte';
 	import { ratingsFilter } from '$lib/stores/ratingsFilter';
 	import { decimalPlaces } from '$lib/utils/formatString';
+	import { SEASON_ORDER } from '$lib/utils/getSeason';
 	import { filterItems, groupByAnime, sortAnimeRows, seasonLabel, type SortKey } from '$lib/utils/ratingStats';
 	import type { RatingScoreItem } from '$lib/types/api';
 
@@ -20,7 +21,6 @@
 	let ageOptions = $derived(
 		[...new Set(items.map((i) => i.age_rating_numeric).filter((a): a is number => a != null))].sort((a, b) => a - b),
 	);
-	const SEASON_ORDER: Record<string, number> = { Winter: 0, Spring: 1, Summer: 2, Fall: 3 };
 	let seasonOptions = $derived.by(() => {
 		const seen = new Map<string, { year: number; idx: number }>();
 		for (const it of items) {

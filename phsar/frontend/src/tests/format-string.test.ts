@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatNumber, formatDuration, formatDurationCompact, formatDecimalDigits, clampAndSnapScore } from '$lib/utils/formatString';
+import { formatNumber, formatDuration, formatDurationCompact, formatDecimalDigits, clampAndSnapScore, escapeHtml } from '$lib/utils/formatString';
 
 describe('formatNumber', () => {
 	it('formats integers with commas', () => {
@@ -160,5 +160,17 @@ describe('clampAndSnapScore', () => {
 			expect(clampAndSnapScore(6.13, step)).toBe(6.25);
 			expect(clampAndSnapScore(6.9, step)).toBe(7.0);
 		});
+	});
+});
+
+describe('escapeHtml', () => {
+	it('escapes all five HTML-significant characters (& first)', () => {
+		expect(escapeHtml(`<img src="x" onerror='alert(1)'> & done`)).toBe(
+			'&lt;img src=&quot;x&quot; onerror=&#39;alert(1)&#39;&gt; &amp; done',
+		);
+	});
+
+	it('leaves plain text untouched', () => {
+		expect(escapeHtml('Fullmetal Alchemist: Brotherhood')).toBe('Fullmetal Alchemist: Brotherhood');
 	});
 });

@@ -4,7 +4,7 @@
 	import { getThemedChartColorPalette } from '$lib/utils/chartColors';
 	import { ratingSequence, movingAverage, cumulativeWatchTime } from '$lib/utils/ratingStats';
 	import { chartTooltipStyle } from '$lib/utils/chartTheme';
-	import { formatDuration, formatDurationCompact, formatDecimalDigits, resolveTitle } from '$lib/utils/formatString';
+	import { formatDuration, formatDurationCompact, formatDecimalDigits, resolveTitle, escapeHtml } from '$lib/utils/formatString';
 	import { userSettings } from '$lib/stores/userSettings';
 	import type { RatingScoreItem } from '$lib/types/api';
 
@@ -40,7 +40,7 @@
 			formatter: (params: unknown) => {
 				const arr = params as { dataIndex: number; seriesType: string; marker: string; seriesName: string; value: [number, number] }[];
 				const p = seq[arr[0]?.dataIndex ?? 0];
-				const head = p ? `<strong>${resolveTitle(p.title, p.nameEng, p.nameJap, nameLanguage)}</strong><br/>` : '';
+				const head = p ? `<strong>${escapeHtml(resolveTitle(p.title, p.nameEng, p.nameJap, nameLanguage))}</strong><br/>` : '';
 				const rows = arr
 					.map((a) => `${a.marker} ${a.seriesName} ${formatDecimalDigits(Number(a.value[1]), a.seriesType === 'scatter' ? 1 : 2)}`)
 					.join('<br/>');

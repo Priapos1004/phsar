@@ -9,7 +9,7 @@
 	import { tagMetrics, type TagDim, type TagMetric } from '$lib/utils/ratingStats';
 	import { chartTooltipStyle } from '$lib/utils/chartTheme';
 	import { searchByStudio } from '$lib/utils/navigation';
-	import { formatDecimalDigits, formatDuration } from '$lib/utils/formatString';
+	import { formatDecimalDigits, formatDuration, escapeHtml } from '$lib/utils/formatString';
 	import { genreDescriptions, ensureGenresLoaded } from '$lib/stores/genres';
 	import type { RatingScoreItem } from '$lib/types/api';
 
@@ -94,7 +94,7 @@
 				const idx = (params as { dataIndex: number }[])[0]?.dataIndex ?? 0;
 				const t = rows[idx];
 				return t
-					? `<strong>${t.tag}</strong><br/>Avg ${formatDecimalDigits(t.avg, 2)} · ${t.count} anime · ${formatDuration(t.watchSeconds)}`
+					? `<strong>${escapeHtml(t.tag)}</strong><br/>Avg ${formatDecimalDigits(t.avg, 2)} · ${t.count} anime · ${formatDuration(t.watchSeconds)}`
 					: '';
 			},
 		},
