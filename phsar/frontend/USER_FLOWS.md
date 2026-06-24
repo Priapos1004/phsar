@@ -56,7 +56,6 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
   - User button (first letter of username) toggling a dropdown with:
     - User Settings → `/settings`
     - Admin → `/admin` (visible only to admin role)
-    - Statistics → `/statistics`
     - Getting Started → `/getting-started`
     - Logout (red) → clears token, redirects to `/login`
 
@@ -74,13 +73,12 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 | `/search?q=<token>` | Search results (anime or media view) | Yes |
 | `/anime?uuid=<uuid>` | Anime detail (aggregated metadata + media table) | Yes |
 | `/media?uuid=<uuid>` | Media detail + rating | Yes |
-| `/ratings` | (placeholder) | Yes |
+| `/ratings?tab=ratings\|stats` | Your ratings: anime-level list (`ratings`, default) + ECharts statistics (`stats`) | Yes |
 | `/watchlist` | (placeholder) | Yes |
 | `/settings` | User preferences (theme, language, rating step, spoiler level, data export, account deletion) | Yes |
 | `/library/add` | Add anime via MAL query + recent additions panel | Yes (form disabled for restricted users) |
 | `/admin` | Admin sections behind a `?tab=` switcher (Overview / Jobs Log / Tokens / Curation / Completion / Backups) | Yes (admin) |
 | `/admin/jobs/[uuid]` | Per-job inspection page for update_sweep v2+ rows (per-media field diffs, umbrella reclassifications) | Yes (admin) |
-| `/statistics` | (placeholder) | Yes |
 | `/getting-started` | (placeholder) | Yes |
 
 ---
@@ -283,15 +281,43 @@ Each anime search result card shows:
   - `?from=job&job=<uuid>` → "Back to job" (admin job-detail page's failed-refresh / failed-probe / attached links → `/admin/jobs/[uuid]`)
   - `?from=completion` → "Back to completion" (admin Completion tab's anime links → `/admin?tab=completion`)
   - `?from=curation` → "Back to curation" (Merge/Split candidate cards' anime links → `/admin?tab=curation`)
+  - `?from=ratings-stats` → "Back to statistics" (a You-vs-MAL scatter point → `/ratings?tab=stats`)
   - neither → no back button (direct-URL arrivals stay clean)
 - These flags propagate across the entire anime↔media jump chain (anime → media tile, media → anime link, related-media carousel) via `buildDetailHref`'s options bag, so a deep dive like curation → anime → media → sibling stays linkable back to the origin
-- Origin set is a closed `DetailOrigin` TS union (`'library' | 'job' | 'completion' | 'curation'`); extending it requires updating both `lib/utils/navigation.ts` AND `BackLink.svelte`'s switch — surfaces as a type error otherwise
+- Origin set is a closed `DetailOrigin` TS union (`'library' | 'job' | 'completion' | 'curation' | 'ratings-stats'`); extending it requires updating both `lib/utils/navigation.ts` AND `BackLink.svelte`'s switch — surfaces as a type error otherwise
 
 ---
 
-## 8. Settings Page
+## 8. Ratings Page
 
-### 8.1 Theme
+`/ratings` is your personal ratings hub (replaces the old `/statistics` placeholder). One `GET /ratings/scores` fetch on page load feeds both tabs; all grouping, filtering, and statistics are computed client-side.
+
+### 8.1 Tab Navigation
+- Two tabs via a `?tab=` query param: **Ratings** (`ratings`, default) and **Statistics** (`stats`). An unknown/missing value falls back to `ratings`.
+- Page-level states cover both tabs: a loading state while the fetch is in flight, an error state with a retry button on failure, and an empty state ("You haven't rated anything yet" → link to search) when the user has no ratings.
+- Leaving `/ratings` entirely resets the filter state; switching between the two tabs preserves it.
+
+### 8.2 Ratings List Tab
+- Ratings are grouped to the **anime level** (one card/row per anime; an anime's score is the mean of its rated media).
+- **View toggle** (grid / table pills):
+  - **Grid** (default): cards grouped under score-band dividers (by integer score), each band labeled + score-colored with a count. An order arrow flips whether the highest or lowest band sits on top.
+  - **Table**: sortable columns (title, your score, MAL, Δ, genres, status, date); clicking a header toggles the sort; scrolls horizontally on narrow widths.
+- Each card/row links to the anime detail page; multi-media anime show a "N rated" indicator and a watch-status mix.
+- **Filter bar**: genre filter with an any/all match toggle, season filter, and age-rating chips; a "Clear all" button appears when any value filter is active. Filter options are the union of values present in your ratings (no extra fetch).
+
+### 8.3 Statistics Tab
+Lazy-mounts on first entry and re-mounts each time you return to it, so the charts replay their build-up animation. Five sections:
+- **Overview** — summary counters + a score-distribution histogram (fixed 0.5-wide buckets, bars score-colored, main/side split per bucket).
+- **You vs MAL** — a scatter of your score vs the MAL score, one point per rated media, point size scaled by MAL vote count. With enough varied points it adds a weighted best-fit line, R², and Spearman ρ with a plain-English read-out; otherwise a skip note. Clicking a point opens that media's detail page with a "Back to statistics" return.
+- **Genres & Studios** — one configurable horizontal bar chart with a genre/studio toggle, a sort select (avg rating / rated-anime count / watch time / weighted score), and an asc/desc arrow that swaps between the top and bottom tags. Genre axis labels carry description tooltips; studio labels link to a studio-filtered search.
+- **Attributes** — split into quality-scale correlations (the 5 radar attributes, shown as importance |ρ|) and categorical-choice effects (per-choice averages + a sample-weighted spread), each with an explanation of what the measure means.
+- **Activity** — a score trend in rating order (with a selectable moving-average window) and cumulative watch time over time (with a 1-month / 3-month / all range toggle, default 1 month).
+
+---
+
+## 9. Settings Page
+
+### 9.1 Theme
 - "Theme" card with "Design your lobby" subtitle
 - Horizontal scrollable row of theme cards (snap scrolling, `overflow-x-auto`)
 - Each card: landscape character pic (`aspect-video`), theme label below, `w-48 sm:w-56`
@@ -301,7 +327,7 @@ Each anime search result card shows:
 - Four themes: Default (purple), Crimson (red), Ocean (blue), Forest (green)
 - Theme applied via CSS class on `<html>` with localStorage sync for FOUC prevention
 
-### 8.2 Spoiler Protection
+### 9.2 Spoiler Protection
 - Three-level dropdown: Off, Blur, Hide
 - **Off**: No spoiler protection
 - **Blur**: "Blur covers and descriptions to avoid spoilers" — media beyond the spoiler frontier are blurred with a "Click to reveal" overlay on covers and descriptions
@@ -312,7 +338,7 @@ Each anime search result card shows:
 - Visibility data loaded on auth and refreshed after rating changes
 - **Restricted (guest) users**: the spoiler control is disabled and pinned to **Off** — guests can't rate, so a frontier would freeze at episode 1 of every anime and hide the catalogue (they're also excluded from the spoiler-visibility cache). The Rating Step and Data Export controls are likewise shown disabled rather than hidden. Enforced server-side (`PUT /users/settings` drops `spoiler_level` for restricted users)
 
-### 8.3 Account Deletion (Danger Zone)
+### 9.3 Account Deletion (Danger Zone)
 - Red-bordered "Danger Zone" card at the bottom of the settings page
 - Glass overlay covers the entire card; the "Danger Zone" title shows through the tinted glass
 - Lock icon and "Click to unlock" prompt centered on the glass
@@ -328,13 +354,13 @@ Each anime search result card shows:
 
 ---
 
-## 9. Add to Library Page
+## 10. Add to Library Page
 
-### 9.1 Layout
+### 10.1 Layout
 - Two-column card: left is a "Search MAL" form (text input + submit button), right is a "Recently added" panel showing the most recent saved anime across all users (catalog is family-shared, so this is a global feed).
 - Restricted users see the page but the form is disabled (`POST /jobs/scrape` rejects them backend-side via `require_user_or_admin` regardless).
 
-### 9.2 Submitting a Scrape Job
+### 10.2 Submitting a Scrape Job
 - The query must be at least 4 chars (`minlength` attr + button stays disabled until 4 chars typed). MAL's top-3 search is too ambiguous on shorter queries.
 - Submitting POSTs `{ query }` to `/jobs/scrape`. Successful enqueue returns 202 with the new job uuid; the form clears and bumps `jobsRefresh` (in `lib/stores/jobs.ts`) so the navbar bell refetches in tens of milliseconds instead of waiting for the next 30s poll.
 - 409 dedupe: re-submitting the same normalized query within `JOBS_DEDUPE_HOURS` (default 24) returns "This query is already queued" — failed jobs don't count, so a transient MAL outage doesn't lock the user out for a day.
@@ -342,25 +368,25 @@ Each anime search result card shows:
 - 429 daily cap: more than `JOBS_DAILY_LIMIT` (default 50) user_scrape submissions in any trailing 24h window — counts every status, including failed jobs, so a fast-failing client can't cycle through the limit — returns "You've hit your daily limit of 50 anime additions. Please try again tomorrow." Marked permanent so the bell hides retry.
 - The job's lifecycle is then surfaced by the navbar bell (see 2.1). Long-term history lives on this page's recent-additions panel rather than the bell, which is intentionally session-scoped.
 
-### 9.3 Recent Additions Panel
+### 10.3 Recent Additions Panel
 - Server-rendered list from `GET /library/recent` returning the most recent anime saved across the catalog (not just this user's scrapes). Each row links to the anime detail page with `?from=library` so the destination renders a "Back to library" button (see 7.6).
 - Carries `name_eng` + `name_jap` so the frontend can call `resolveTitle(...)` with the user's `name_language` setting — no second fetch.
 - Refreshes automatically when the bell observes a NEW `succeeded` `user_scrape` (bumps `librarySaved` in `lib/stores/jobs.ts`; this panel subscribes via `onBump`). No manual reload required.
 
 ---
 
-## 10. Admin Page
+## 11. Admin Page
 
-### 10.1 Access
+### 11.1 Access
 - Only accessible to users with `admin` role
 - Non-admin users are redirected to `/` on mount
 - NavBar dropdown shows "Admin" link only for admin users
 
-### 10.1a Tab navigation
+### 11.1a Tab navigation
 - Admin sections live behind a tab bar driven by the `?tab=` query param (`/admin?tab=overview`, `?tab=jobs`, `?tab=tokens`, `?tab=curation`, `?tab=completion`, `?tab=backups`). Default tab is `overview` if `?tab=` is absent or unknown — a stale bookmark to a retired tab key still lands the admin somewhere useful instead of a blank page.
 - The active tab is preserved across refresh and is bookmarkable. Tabs eager-render on first admin load and stay mounted across switches — visibility toggles via `class:hidden`, not conditional unmount. Admin sessions usually touch several tabs in a row, so the one-time parallel-fetch cost on first paint buys instant subsequent switches. No card polls, so keeping them mounted doesn't generate ongoing traffic.
 
-### 10.1b Overview tab (default)
+### 11.1b Overview tab (default)
 - Four stat cards sourced from `GET /admin/stats/overview`:
   - **Catalog**: total anime count, total media count, anime added in the last 7 days, media added in the last 7 days
   - **Job health (7d)**: per-kind succeeded/failed counts, parenthesized retryable-failed subset, and a colored success-rate percentage (theme-primary at ≥90%, amber at 75–89%, destructive red below 75%). Percent cell is fixed-width + `tabular-nums` so the column edge stays aligned. The `user_scrape` row counts user-initiated submissions only — seasonal-sweep children (system-attributed user_scrapes) are excluded so a Sunday burst of Music/PV-filtered shows doesn't drag the user-facing signal down. Retryable-failed counts ALSO drop system jobs (sweeps, cron backups) since the bell's retry button only fires on user-owned rows; counting cron retries would imply admin action is available when it isn't
@@ -370,7 +396,7 @@ Each anime search result card shows:
 - All counts are aggregate. The Overview tab is leaderboard-free — per-user breakdowns are scoped to the Jobs Log tab where they're needed for debugging
 - Cache: none. Admin-only, queries are sub-150ms
 
-### 10.1c Jobs Log tab
+### 11.1c Jobs Log tab
 - Paginated all-jobs table sourced from `GET /admin/jobs` (50 rows per page, newest-first by `created_at`). Backed by `ix_jobs_created_at_desc` so the default unfiltered scan + COUNT stays cheap as the jobs table grows
 - **Clustering**: the default view hides rows whose `parent_job_id` is set, so the list isn't dominated by ~50 system user_scrape children that land after every Sunday's seasonal_sweep. Each `seasonal_sweep` row renders an expander chevron — clicking fetches `?parent_uuid=<UUID>&limit=500` and renders the children inline below the parent, indented with a left primary-tinted border. Re-collapse hides them without re-fetching (state cached per parent). If a sweep ever exceeds the 500-row cap, the expanded view surfaces an amber "Showing X of Y children — rest are older than the 500-row cap" notice rather than silently truncating
 - Filters: **Kind** dropdown (All / user_scrape / update_sweep / seasonal_sweep / backup / restore) and **Status** dropdown (All / queued / running / succeeded / failed). Changing either filter resets pagination to page 1 — keeping a stale offset against a narrower filter would strand the admin past the result tail. A monotonic request-id guards against a fast filter-then-page click letting an older response overwrite the newer state
@@ -382,12 +408,12 @@ Each anime search result card shows:
   - **Duration** — wall-clock seconds since `started_at` (or `started_at → finished_at`). Live-ticks every 1s while any row on the page is `running`; queued rows show `—`. The interval is gated by a `hasRunning` derived so a stable page doesn't keep the timer alive
   - **User** — `requested_by_username` (flattened server-side from the eager-loaded relationship) or `system` for cron + seasonal-sweep children
   - **Detail** — for failed rows, the `error_message` in destructive color; for succeeded rows the dispatcher's `result_summary` rendered per-kind: user_scrape → "+N anime · +M media", update_sweep v5 → "N media refreshed · X media w/ dynamic · Y media w/ static · Z umbrella · W new attached" (v2–v4 use the anime-grained "N touched · X anime w/ dynamic · …"; v1 rows fall back to the legacy "refreshed N anime · M changed · …" copy), seasonal_sweep → "N season entries · M new scrapes enqueued · K already known", backup/restore → filename
-- **Click-through to detail page**: rows of kind `update_sweep` with `version >= 2` are clickable (cursor-pointer, hover tint, keyboard-accessible via Enter) — they route to `/admin/jobs/[uuid]` (see 10.1d). Other kinds and pre-v0.14.5 update_sweep rows stay non-clickable since the detail page has nothing to add beyond what the row already shows
+- **Click-through to detail page**: rows of kind `update_sweep` with `version >= 2` are clickable (cursor-pointer, hover tint, keyboard-accessible via Enter) — they route to `/admin/jobs/[uuid]` (see 11.1d). Other kinds and pre-v0.14.5 update_sweep rows stay non-clickable since the detail page has nothing to add beyond what the row already shows
 - **Unknown-genre-tag highlight**: update_sweep v3 rows whose `result_summary.unknown_genre_tags` is non-empty get an amber tint + a left amber accent border + an inline subline under the payload summary listing the missing tag names ("⚠ New genre tags need seeding: Survival Game, Dark Fantasy"). The seeder is the deliberate source of truth for the user-facing genre taxonomy, so unknown tags don't auto-seed — they surface here for admin to add manually before the next sweep
 - Pagination footer: `"start–end of total"` range on the left, prev/next buttons + `"Page N of M"` on the right. Buttons disable at the boundaries. `total === 0` degrades to `"0 of 0"` and both buttons disabled
 - Tab eager-renders on first admin paint (visibility toggles via `class:hidden`, not unmount) — first paint pays one filtered COUNT + SELECT alongside the other tabs' fetches, subsequent tab switches are instant
 
-### 10.1d Job detail page (`/admin/jobs/[uuid]`)
+### 11.1d Job detail page (`/admin/jobs/[uuid]`)
 - Standalone route (not a tab — a separate SvelteKit page). Reached by clicking an `update_sweep v2+` row in the Jobs Log. Direct-URL access works too; admin role is enforced on mount (non-admin → `/`)
 - **Header card**: kind badge, color-coded status badge, version chip (`v3`), duration (live-ticks for running jobs), created / started / finished timestamps, requested_by username, parent-job link if `parent_job_uuid` is set, "← Jobs Log" back link. Failed jobs render the `error_message` in a destructive-tinted banner below the metadata grid — this is the actionable info, the page omits the "predates v0.14.5" notice for failed rows since their missing counters reflect a crashed run, not an old schema
 - **Counters grid** (v2+ jobs only): version-aware stats from `result_summary.counters`. v5 (v0.14.8, media-level) shows media refreshed, anime touched, media skipped (media belonging to touched anime not refreshed this run — tooltip), media w/ dynamic changes, media w/ static changes, umbrella reclassed, probes succeeded, probes failed, anime w/ new attach, orphaned studios removed, failed refresh. v2–v4 show the original anime-grained set (anime refreshed + anime w/ dynamic/static rollups instead of the media-level trio). The "Failed refresh" cell renders "—" for v<4 (not a misleading 0) and tints amber when > 0. Plus inline warning lines if `merge_detect_failed` or `cache_recompute_failed` fired (the catalog work still committed; only the post-sweep merge-detection / spoiler-cache recompute failed)
@@ -396,19 +422,19 @@ Each anime search result card shows:
 - **Anime field changes section** (v2+ only) — heading "Anime field changes": for each anime whose 7 aggregate fields drifted, an `AnimeUmbrellaCard` shows the anime title (link to `/anime?uuid=<uuid>`, new tab), "anchor moved" / "embedding regen" badges when applicable, a Field/Was/Now table for the changed umbrella fields, and a list of per-media relation reclassifications (`mal_id=NNNN: old_rt → new_rt`)
 - **v1 fallback**: pre-v0.14.5 sweeps (job version 1) didn't capture per-media diffs. The page renders the header + a "predates v0.14.5's per-media diff capture" notice in place of the counters/diff sections. v1 rows are NOT clickable from the Jobs Log so this fallback is reached only via direct URL
 
-### 10.2 Create Registration Token (Tokens tab)
+### 11.2 Create Registration Token (Tokens tab)
 - Form with role selector (User / Restricted User) and expiry dropdown (1 day / 7 days / 30 days)
 - "Create" button POSTs to `/admin/registration-tokens`
 - On success: token string shown in a highlighted banner with copy button and toast feedback
 - Changing the role or expiry selector dismisses the success banner
 
-### 10.3 Token List
+### 11.3 Token List
 - Card title shows the live count: `Registration Tokens (N)`.
 - Displays all registration tokens with: truncated token (click to copy), status badge (active/used/expired), role badge, creation date, and either an expiry date (active/expired tokens) or a "Used &lt;date&gt; by &lt;username&gt;" line (used tokens — once consumed, the expiry date is no longer the useful piece of info, so it's replaced with the consumption date)
 - **Sort options** (dropdown): By Status (default: active → used → expired), Newest First, Expiring Soon (active tokens first by soonest expiry), Recently Used
 - **Delete**: trash icon on unused/expired tokens opens confirm/cancel inline buttons. Used tokens cannot be deleted. DELETE returns 204.
 
-### 10.4 Backups (Backups tab)
+### 11.4 Backups (Backups tab)
 - Card title shows the live count: `Backups (N)`.
 - **Create backup**: POST returns 202 with `{job_uuid}` instead of running pg_dump synchronously. The button shows a toast ("Backup queued. We'll let you know when it's ready.") and disables for 5 seconds to absorb double-clicks. The bell shows a queued row instantly (optimistic stub seeded from the returned uuid; see 2.1) and tracks the job through to completion. When the job succeeds the bell bumps `backupSaved`; this card subscribes via `onBump` and refetches the dump list, so the new row appears with a green `ok` integrity badge and a source badge (`Manual`, `Scheduled`, `Pre-restore`, or `Upload`) without any manual reload. Cron-triggered backups stay system jobs (invisible to every bell) — they appear in this list on the card's next mount or sort change.
 - **Upload**: file input accepts `.dump` files; `/admin/backups/upload` runs `pg_restore -f -` to validate + compute a content hash that ignores per-run timestamps and psql `\restrict` tokens. An upload whose DB state matches an existing dump returns 409 ("identical to `<filename>`"). Uploads never move the "Current" badge — uploaded bytes are external and the backend can't verify they match live DB.
@@ -420,7 +446,7 @@ Each anime search result card shows:
 - **Restore**: rotate-back icon opens a destructive-confirm dialog that requires typing the admin's username. Disabled on `corrupt` rows. Backend auto-snapshots as a `pre-restore` dump *before* entering maintenance mode, then flips the maintenance flag, closes the SQLAlchemy pool, terminates any other DB sessions, and runs `pg_restore --clean --if-exists` (timeout configurable via `BACKUP_RESTORE_TIMEOUT_SECONDS`, default 10 min). After pg_restore returns, the backend warms the connection pool before lifting the maintenance gate so the first post-restore request doesn't flap the liveness probe. Result banner reports the pre-restore filename, and the "Current" badge now follows the restored dump. The pre-restore snapshot's `restored_to` is stamped to the restored dump, so the restored (now-current) row shows "Previous state saved as …" and the pre-restore tied to the current state is retention-pinned (kept until a later restore supersedes it). All non-admin users in the app are bounced to `/login` for the duration; the sticky global banner conveys the maintenance state (see 1.5).
 - **Delete**: trash icon opens inline confirm/cancel buttons. DELETE returns 204.
 
-### 10.5 Merge Candidates (Curation tab)
+### 11.5 Merge Candidates (Curation tab)
 - Card title shows the live count: `Merge Candidates (N)`.
 - Admin-only.
 - **List**: pending merge candidates flagged by the duplicate detector (running on every save covering new × new and new × existing pairs, at app startup covering existing × existing, and on admin demand via the Re-run detection button). Each row shows:
@@ -438,7 +464,7 @@ Each anime search result card shows:
 - Already-resolved candidates (merged or dismissed) return 409 if the action is retried.
 - The detector itself is invisible to non-admin users; nothing about it surfaces outside this card.
 
-### 10.6 Split Candidates (Curation tab)
+### 11.6 Split Candidates (Curation tab)
 - Card title shows the live count: `Split Candidates (N)`.
 - Stacked below Merge Candidates on the same Curation tab. Admin-only.
 - **List**: pending split candidates flagged by `find_disjoint_franchises`, which finds substance-passing media inside one anime row that form their own connected sequel chain — the BNHA↔Vigilante, Toaru Index↔Railgun, Pretty Rhythm↔(PriPara/King of Prism/Pri☆chan/AiPri) shapes. Detection runs on every save (scrape-time), inside the relation-backfiller's per-anime loop (lifespan startup + admin re-trigger), AND after every merge survivor reclassify (so a merge that surfaces previously-dangling bridges gets flagged). Each row shows:
@@ -454,14 +480,14 @@ Each anime search result card shows:
 - Already-resolved candidates (split or dismissed) return 409 if the action is retried.
 - **Stale-candidate fail-loud**: if the classifier on the cluster subset picks a different anchor than the candidate's `suggested_anchor_mal_id` at execute time (e.g., MAL added a sequel between detection and execution), the backend returns 409 SplitCandidateStaleError. Admin re-runs detection to refresh the payload.
 
-### 10.7 Dismissed decisions (both Curation cards)
+### 11.7 Dismissed decisions (both Curation cards)
 - Each card has a collapsible **"Dismissed decisions (N)"** section at the bottom (shared `DismissedDecisionsSection` component). Collapsed by default; the list is lazy-fetched (`GET /admin/{merge,split}-candidates/dismissed`) the first time it's expanded, so the common pending view never pays for the history.
 - Newest dismissal first. Merge rows show `A ↔ B` + detector + match %; split rows show the source anime + "would split off: <member titles>" per cluster. Each row shows when it was dismissed.
 - The counter and list stay fresh: dismissing a new candidate in the card above bumps `curationRefresh`, which the section subscribes to and re-fetches (if already expanded) — no stale `(N)`.
 - **Resurface**: each row has a "Resurface" button → a username-gated confirm dialog (type the admin username, mirroring backup restore). On confirm it `POST`s `/{uuid}/delete`, removes the row, then re-runs the card's detection so the freed candidate re-flags as pending immediately (rather than waiting for the nightly sweep). Only `dismissed` rows are deletable; merged rows no longer exist and deleting a split-status row wouldn't undo the split.
 - The detector itself is invisible to non-admin users; nothing about it surfaces outside this card.
 
-### 10.8 Completion tab (Story Completion)
+### 11.8 Completion tab (Story Completion)
 - Admin-only manual curation (no detector): mark an anime as story-complete when its narrative has concluded — distinct from "Finished Airing".
 - **Search to mark**: a debounced search box (reuses `/search/anime`, title search) with a clear-✕ button. Results list cover thumbnail + title; each row has a "Mark complete" button, or a "Marked" label if already complete. Marking (`POST /admin/finished-anime/{uuid}`) clears + closes the search so it reads as a committed selection.
 - **Marked list**: cover thumbnail + title (links to the anime page same-tab, "Back to completion") + "marked {date} by {admin}" audit line. Sort control: Newest marked (default) / Oldest marked / Title A–Z. Each row has an unmark (✕) button (`DELETE /admin/finished-anime/{uuid}`), guarded by a click-to-arm confirm: the first click arms the row (✕ → red check, "Click again to confirm removal", auto-disarms after ~3s), the second click within the window removes the flag — so a stray click can't silently un-mark.
@@ -469,7 +495,7 @@ Each anime search result card shows:
 
 ---
 
-## 11. API Endpoints Used by Frontend
+## 12. API Endpoints Used by Frontend
 
 | Endpoint | Method | When |
 |----------|--------|------|
@@ -532,7 +558,7 @@ Each anime search result card shows:
 
 ---
 
-## 12. Error States
+## 13. Error States
 
 | Scenario | Expected Behavior |
 |----------|-------------------|

@@ -2,10 +2,13 @@
 	import EChart from '$lib/components/EChart.svelte';
 	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr } from '$lib/types/api';
 	import { getThemedChartColorPalette } from '$lib/utils/chartColors';
-	import type { RatingOut } from '$lib/types/api';
+	import { chartTooltipStyle } from '$lib/utils/chartTheme';
+	import type { RatingOut, RatingScoreItem } from '$lib/types/api';
 
 	interface Props {
-		ratings: RatingOut[];
+		// Accepts either shape — only the 11 attribute keys are read (via getRatingAttr),
+		// which both RatingOut and the /ratings page's RatingScoreItem carry.
+		ratings: RatingOut[] | RatingScoreItem[];
 	}
 
 	let { ratings }: Props = $props();
@@ -100,7 +103,9 @@
 				},
 			],
 			tooltip: {
+				...chartTooltipStyle,
 				trigger: 'item' as const,
+				confine: true,
 				formatter: () =>
 					RADAR_LABELS.map((label, i) => {
 						const closestLabel = radarData.closestLabels[i];

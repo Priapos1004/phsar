@@ -150,9 +150,12 @@ export interface RatingOut {
 	modified_at: string;
 }
 
-// Compact rating projection (GET /ratings/scores) for the rating-consistency
-// helper — ships the comparison inputs (anime_uuid, genres, studios, age) +
-// the 11 attribute fields so selection + tiebreak run client-side.
+// Compact rating projection (GET /ratings/scores). Two consumers, one fetch:
+// (1) the rating-consistency helper — ships the comparison inputs (anime_uuid,
+// genres, studios, age) + the 11 attribute fields so selection + tiebreak run
+// client-side; (2) the /ratings page (list + statistics) — adds the anime cover,
+// MAL score/votes (You-vs-MAL alignment), watch-time + season-year (watch-time
+// stats), and created_at (ratings-over-time timeline). All derived client-side.
 export interface RatingScoreItem {
 	media_uuid: string;
 	anime_uuid: string;
@@ -163,11 +166,19 @@ export interface RatingScoreItem {
 	anime_name_eng: string | null;
 	anime_name_jap: string | null;
 	media_cover_image: string | null;
+	anime_cover_image: string | null;
 	rating: number;
 	watch_status: WatchStatus;
 	age_rating_numeric: number | null;
 	genres: string[];
 	studios: string[];
+	mal_score: number | null;
+	scored_by: number;
+	episodes: number | null;
+	total_watch_time: number | null;
+	anime_season_name: string | null;
+	anime_season_year: number | null;
+	relation_type: string;
 	pace: Pace | null;
 	animation_quality: AnimationQuality | null;
 	has_3d_animation: ThreeDAnimation | null;
@@ -179,6 +190,7 @@ export interface RatingScoreItem {
 	ending_quality: EndingQuality | null;
 	story_quality: StoryQuality | null;
 	originality: Originality | null;
+	created_at: string;
 	modified_at: string;
 }
 

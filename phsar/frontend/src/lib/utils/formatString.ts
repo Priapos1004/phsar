@@ -1,9 +1,32 @@
 import { RELATION_TYPE_LABELS } from '$lib/utils/chartColors';
 import type { JobKind } from '$lib/types/api';
 
+/** Labels for the numeric age-rating buckets (mirrors the backend AGE_RATING_MAP:
+ * G=0, PG=6, PG-13=13, R=17, R+=18). */
+export const AGE_RATING_LABELS: Record<number, string> = {
+	0: 'All Ages',
+	6: 'PG',
+	13: 'PG-13',
+	17: 'R-17+',
+	18: 'R+',
+};
+
 /** Formats a raw relation_type value to a user-friendly label. */
 export function formatRelationType(type: string): string {
 	return RELATION_TYPE_LABELS[type] ?? type;
+}
+
+/** Escape a string for safe interpolation into an HTML string. ECharts renders a
+ * tooltip `formatter`'s return value as HTML (`innerHTML`), so any catalog-sourced
+ * text spliced into one — anime/media titles, genre/studio names — must be escaped,
+ * since Svelte's auto-escaping doesn't reach inside these hand-built strings. */
+export function escapeHtml(s: string): string {
+	return s
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;');
 }
 
 const MEDIA_TYPE_LABELS: Record<string, string> = {
@@ -66,6 +89,28 @@ export function formatDuration(seconds: number): string {
 	if (secs || parts.length === 0) parts.push(`${secs}s`);
 
 	return parts.join(' ');
+}
+
+/**
+ * Compact duration for tight spaces (e.g. axis ticks): the most-significant non-zero
+ * unit plus up to `maxUnits-1` following units, with trailing zero units trimmed.
+ * Unlike formatDuration it takes a CONTIGUOUS run of units rather than skipping zero
+ * ones, so e.g. 1d 0h 1m reads "1d" (not a misleading "1d 1m") and adjacent ticks stay
+ * on a consistent scale.
+ */
+export function formatDurationCompact(seconds: number, maxUnits = 2): string {
+	if (seconds <= 0) return '0s';
+	const units: [number, string][] = [
+		[Math.floor(seconds / 86400), 'd'],
+		[Math.floor((seconds % 86400) / 3600), 'h'],
+		[Math.floor((seconds % 3600) / 60), 'm'],
+		[Math.floor(seconds % 60), 's'],
+	];
+	const first = units.findIndex(([v]) => v > 0);
+	if (first === -1) return '0s';
+	const parts = units.slice(first, first + maxUnits);
+	while (parts.length > 1 && parts[parts.length - 1][0] === 0) parts.pop();
+	return parts.map(([v, u]) => `${v}${u}`).join(' ');
 }
 
 /**

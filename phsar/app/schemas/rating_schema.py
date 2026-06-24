@@ -89,11 +89,21 @@ class RatingOut(RatingAttributes):
 
 
 class RatingScoreItem(RatingAttributes):
-    """Compact projection of one of a user's ratings, for the rating-consistency
-    helper. The frontend fetches the whole set once and does all selection +
-    tiebreak client-side, so this ships the comparison inputs (anime_uuid to
-    exclude/dedupe by anime, genres/studios/age for the tiebreak) alongside the
-    11 attribute fields (inherited) and the cover/title for display."""
+    """Compact projection of one of a user's ratings. Two consumers, one query:
+
+    1. The rating-consistency helper (RatingCard) — fetches the whole set once and
+       does nearest-score selection + tiebreak client-side, so this ships the
+       comparison inputs (anime_uuid to exclude/dedupe by anime, genres/studios/age
+       for the tiebreak) alongside the 11 attribute fields (inherited).
+    2. The /ratings page (list + statistics) — groups by anime client-side and
+       derives every chart from this one fetch, so this also ships the anime cover,
+       the MAL score/vote-count (You-vs-MAL alignment), watch-time + season-year
+       (watch-time stats), and created_at (the ratings-over-time timeline).
+
+    All fields are columns on rows already eager-loaded by
+    RatingDAO.get_all_for_score_items (media → anime + genres + studios), so no
+    extra query cost. watched_count/episodes_watched stay out by design (they'd
+    need the per-media watch-event count batch this query deliberately skips)."""
 
     media_uuid: UUID
     anime_uuid: UUID
@@ -104,13 +114,31 @@ class RatingScoreItem(RatingAttributes):
     anime_name_eng: Optional[str]
     anime_name_jap: Optional[str]
     media_cover_image: Optional[str]
+    anime_cover_image: Optional[str]
     rating: float
     watch_status: WatchStatus
     age_rating_numeric: Optional[int]
     genres: list[str] = []
     studios: list[str] = []
-    # Recency is the final deterministic tiebreak when two ratings are equally
-    # close in score and tie on attributes/genre/studio/age.
+    # MAL score + vote count power the You-vs-MAL alignment scatter (point weight =
+    # log10(scored_by + 1), the shared confidence weight). mal_score is None when
+    # MAL has no score; scored_by is never None (0 when no votes).
+    mal_score: Optional[float]
+    scored_by: int
+    # Watch-time stats: episodes is the catalog total; total_watch_time is seconds
+    # (episodes × duration_seconds). anime_season_name + _year feed the season filter
+    # (and the by-year breakdown); both are null together (catalog constraint).
+    episodes: Optional[int]
+    total_watch_time: Optional[int]
+    anime_season_name: Optional[str]
+    anime_season_year: Optional[int]
+    # Per-media relation type (main / alternative_version / side_story / …) → the
+    # anime card's "X main · Y side" breakdown.
+    relation_type: str
+    # created_at drives the ratings-over-time timeline; modified_at is the final
+    # deterministic tiebreak when two ratings are equally close in score and tie on
+    # attributes/genre/studio/age.
+    created_at: datetime
     modified_at: datetime
 
 

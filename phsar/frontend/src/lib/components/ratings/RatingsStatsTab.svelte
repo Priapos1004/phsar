@@ -1,0 +1,138 @@
+<script lang="ts">
+	import * as Card from '$lib/components/ui/card';
+	import { Badge } from '$lib/components/ui/badge';
+	import EChart from '$lib/components/EChart.svelte';
+	import Notice from '$lib/components/Notice.svelte';
+	import RatingsScoreHistogram from './RatingsScoreHistogram.svelte';
+	import RatingsAlignmentChart from './RatingsAlignmentChart.svelte';
+	import RatingsTagChart from './RatingsTagChart.svelte';
+	import RatingsAttributeAnalysis from './RatingsAttributeAnalysis.svelte';
+	import RatingsActivityChart from './RatingsActivityChart.svelte';
+	import * as cls from '$lib/styles/classes';
+	import { formatDuration } from '$lib/utils/formatString';
+	import { scoreGaugeOption } from '$lib/utils/chartTheme';
+	import { totalWatchTime } from '$lib/utils/ratingStats';
+	import { ratingsFilter } from '$lib/stores/ratingsFilter';
+	import type { StatsSection } from './types';
+	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr, isAttrRated, type RatingScoreItem } from '$lib/types/api';
+
+	interface Props {
+		items: RatingScoreItem[];
+	}
+
+	let { items }: Props = $props();
+
+	// ── Summary metrics over the whole library ──────────────────────────────
+	let totalRatings = $derived(items.length);
+	let distinctAnime = $derived(new Set(items.map((i) => i.anime_uuid)).size);
+	let avgScore = $derived(totalRatings ? items.reduce((s, i) => s + i.rating, 0) / totalRatings : 0);
+	let onHoldCount = $derived(items.filter((i) => i.watch_status === 'on_hold').length);
+	let droppedCount = $derived(items.filter((i) => i.watch_status === 'dropped').length);
+	let totalWatchSeconds = $derived(totalWatchTime(items));
+
+	let gaugeOption = $derived(scoreGaugeOption(avgScore));
+
+	const ATTR_KEYS = Object.keys(RATING_ATTRIBUTE_OPTIONS);
+	let hasAttributes = $derived(items.some((r) => ATTR_KEYS.some((k) => isAttrRated(getRatingAttr(r, k)))));
+
+	// ── Inner tabs: only the active section mounts, so its charts animate in on
+	// switch (ECharts plays its entrance animation on a fresh init) and we never
+	// hold ~8 chart instances live at once. ──────────────────────────────────
+	const SECTIONS: { key: StatsSection; label: string }[] = [
+		{ key: 'overview', label: 'Overview' },
+		{ key: 'alignment', label: 'You vs MAL' },
+		{ key: 'tags', label: 'Genres & Studios' },
+		{ key: 'attributes', label: 'Attributes' },
+		{ key: 'activity', label: 'Activity' },
+	];
+	let visibleSections = $derived(SECTIONS.filter((s) => s.key !== 'attributes' || hasAttributes));
+	// Active section lives in the store so a round-trip to a detail page lands back here.
+	// Fall back to Overview if the persisted section isn't currently available (e.g.
+	// Attributes hidden when no attributes are rated).
+	let active = $derived(
+		visibleSections.some((s) => s.key === $ratingsFilter.statsSection) ? $ratingsFilter.statsSection : 'overview',
+	);
+	function setSection(key: StatsSection) {
+		ratingsFilter.update((f) => ({ ...f, statsSection: key }));
+	}
+</script>
+
+<div class="space-y-5">
+	<nav class="flex flex-wrap gap-2">
+		{#each visibleSections as s (s.key)}
+			<button
+				onclick={() => setSection(s.key)}
+				class="px-3.5 py-1.5 rounded-full text-sm border transition-colors {active === s.key
+					? 'border-primary bg-primary/15 text-primary font-medium'
+					: 'border-white/15 text-white/60 hover:text-white hover:border-white/30'}"
+			>{s.label}</button>
+		{/each}
+	</nav>
+
+	{#if active === 'overview'}
+		<Card.Root class={cls.cardGlass}>
+			<Card.Content class="space-y-5">
+				<div class="grid grid-cols-2 md:grid-cols-4 gap-4 items-center">
+					<div class="flex flex-col items-center">
+						<EChart option={gaugeOption} width="96px" height="96px" />
+						<span class="text-sm text-muted-foreground -mt-2">Your average</span>
+					</div>
+					<!-- Ratings = the whole library; the hold/dropped badges sit underneath to
+					     show they're a subset already counted in the total above. -->
+					<div class="flex flex-col items-center justify-center gap-1">
+						<span class="text-2xl font-bold text-card-foreground">{totalRatings}</span>
+						<span class="text-sm text-muted-foreground">Ratings</span>
+						{#if onHoldCount > 0 || droppedCount > 0}
+							<div class="flex flex-wrap justify-center gap-1">
+								{#if onHoldCount > 0}<Badge variant="secondary" class={cls.badgeOnHold}>{onHoldCount} hold</Badge>{/if}
+								{#if droppedCount > 0}<Badge variant="secondary" class={cls.badgeDropped}>{droppedCount} dropped</Badge>{/if}
+							</div>
+						{/if}
+					</div>
+					<div class="flex flex-col items-center justify-center">
+						<span class="text-2xl font-bold text-card-foreground">{distinctAnime}</span>
+						<span class="text-sm text-muted-foreground">Anime</span>
+					</div>
+					<div class="flex flex-col items-center justify-center">
+						<span class="text-2xl font-bold text-card-foreground">{formatDuration(totalWatchSeconds)}</span>
+						<span class="text-sm text-muted-foreground">Watch time</span>
+					</div>
+				</div>
+				<div>
+					<p class="text-xs text-muted-foreground mb-1">Score distribution</p>
+					<RatingsScoreHistogram {items} />
+				</div>
+			</Card.Content>
+		</Card.Root>
+	{:else if active === 'alignment'}
+		<Card.Root class={cls.cardGlass}>
+			<Card.Content class="space-y-3">
+				<p class="text-sm text-muted-foreground">
+					Each point is a rated title (bigger = more MAL votes, so more reliable). Green sits
+					above your trend line (you rate it higher than your MAL pattern predicts), rose below.
+				</p>
+				<RatingsAlignmentChart {items} />
+			</Card.Content>
+		</Card.Root>
+	{:else if active === 'tags'}
+		<Card.Root class={cls.cardGlass}>
+			<Card.Content>
+				<RatingsTagChart {items} />
+			</Card.Content>
+		</Card.Root>
+	{:else if active === 'attributes'}
+		<Card.Root class={cls.cardGlass}>
+			<Card.Content>
+				<RatingsAttributeAnalysis {items} />
+			</Card.Content>
+		</Card.Root>
+	{:else if active === 'activity'}
+		<Card.Root class={cls.cardGlass}>
+			<Card.Content>
+				<RatingsActivityChart {items} />
+			</Card.Content>
+		</Card.Root>
+	{/if}
+
+	<Notice>More statistics are on the way — taste clusters and a true watch-history timeline.</Notice>
+</div>

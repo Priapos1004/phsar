@@ -15,7 +15,6 @@
         { href: '/settings', label: 'User Settings' },
         { href: '/library/add', label: 'Add to Library' },
         { href: '/admin', label: 'Admin', adminOnly: true },
-        { href: '/statistics', label: 'Statistics' },
         { href: '/getting-started', label: 'Getting Started' },
     ];
 

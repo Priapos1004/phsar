@@ -7,7 +7,7 @@ import { token } from '$lib/stores/auth';
 /** Closed set of non-search origin markers that detail pages handle.
  * Extend this union (and BackLink.svelte's `target` switch) when a new
  * entry point needs a labeled back button. */
-export type DetailOrigin = 'library' | 'job' | 'completion' | 'curation';
+export type DetailOrigin = 'library' | 'job' | 'completion' | 'curation' | 'ratings' | 'ratings-stats';
 
 export interface DetailHrefOptions {
     /** Search token to propagate so the detail page renders "Back to search". */
@@ -33,6 +33,17 @@ export function buildDetailHref(
     return `/${type}?${params.toString()}`;
 }
 
+/** Jump to an anime-view search filtered to a single studio ("other anime from this
+ * studio"). Shared by StudioLinks and the ratings genre/studio chart so the filter
+ * shape can't drift between them. */
+export function searchByStudio(studio: string): void {
+	void navigateToSearch({ query: '', search_type: 'title', view_type: 'anime', studio_name: [studio] });
+}
+
+/** Create a search token from the filters and navigate to /search. Best-effort and
+ * fire-and-forget: a 401 redirects to login; any other failure is logged, not thrown,
+ * so every caller (StudioLinks, the ratings tag chart, the home + search pages) can
+ * invoke it without a `.catch` and never trip an unhandled promise rejection. */
 export async function navigateToSearch(params: MediaSearchFilters) {
     try {
         const data = await api.post<SearchTokenResponse>('/filters/create-token', params);
@@ -42,7 +53,7 @@ export async function navigateToSearch(params: MediaSearchFilters) {
             token.set(null);
             window.location.href = '/login';
         } else {
-            throw err;
+            console.error('Search navigation failed:', err);
         }
     }
 }

@@ -1,8 +1,8 @@
 <script lang="ts">
 	import EChart from '$lib/components/EChart.svelte';
 	import { Badge } from '$lib/components/ui/badge';
-	import { scoreColor } from '$lib/utils/chartColors';
-	import { formatDecimalDigits, percentOf } from '$lib/utils/formatString';
+	import { scoreGaugeOption } from '$lib/utils/chartTheme';
+	import { percentOf } from '$lib/utils/formatString';
 	import * as cls from '$lib/styles/classes';
 
 	interface Props {
@@ -30,44 +30,7 @@
 		Math.round(percentOf(totalEpisodesWatched, totalEpisodesAvailable)),
 	);
 
-	let gaugeOption = $derived({
-		series: [
-			{
-				type: 'gauge' as const,
-				emphasis: { disabled: true },
-				startAngle: 220,
-				endAngle: -40,
-				min: 0,
-				max: 10,
-				radius: '100%',
-				center: ['50%', '55%'],
-				pointer: { show: false },
-				progress: {
-					show: true,
-					width: 10,
-					roundCap: true,
-					itemStyle: { color: scoreColor(avgScore) },
-				},
-				axisLine: {
-					lineStyle: {
-						width: 10,
-						color: [[1, 'rgba(0,0,0,0.08)']] as [number, string][],
-					},
-				},
-				axisTick: { show: false },
-				splitLine: { show: false },
-				axisLabel: { show: false },
-				detail: {
-					offsetCenter: [0, '0%'],
-					fontSize: 22,
-					fontWeight: 'bold' as const,
-					color: scoreColor(avgScore),
-					formatter: (val: number) => formatDecimalDigits(val, 2),
-				},
-				data: [{ value: avgScore }],
-			},
-		],
-	});
+	let gaugeOption = $derived(scoreGaugeOption(avgScore));
 </script>
 
 <div class="grid grid-cols-2 md:grid-cols-5 gap-4">

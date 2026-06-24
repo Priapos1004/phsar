@@ -219,11 +219,22 @@ def _rating_to_score_item(r: Ratings) -> RatingScoreItem:
         "anime_name_eng": r.media.anime.name_eng,
         "anime_name_jap": r.media.anime.name_jap,
         "media_cover_image": r.media.cover_image,
+        "anime_cover_image": r.media.anime.cover_image,
         "rating": r.rating,
         "watch_status": r.watch_status,
         "age_rating_numeric": r.media.age_rating_numeric,
         "genres": [mg.genre.name for mg in r.media.media_genre],
         "studios": [ms.studio.name for ms in r.media.media_studio],
+        # MAL score/votes + watch-time + season-year feed the /ratings page charts;
+        # all are columns on the already-loaded media row (no extra query).
+        "mal_score": r.media.score,
+        "scored_by": r.media.scored_by,
+        "episodes": r.media.episodes,
+        "total_watch_time": r.media.total_watch_time,
+        "anime_season_name": r.media.anime_season_name.value if r.media.anime_season_name else None,
+        "anime_season_year": r.media.anime_season_year,
+        "relation_type": r.media.relation_type.value,
+        "created_at": r.created_at,
         "modified_at": r.modified_at,
     }
     for field in RatingAttributes.model_fields:

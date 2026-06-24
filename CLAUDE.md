@@ -136,7 +136,7 @@ Modules:
 - `anime_relation_service.py` — `reclassify_anime` orchestration; umbrella drift detection
 - `anime_summary.py` — shared `summarize_anime(anime, rating_count)` helper for the merge + split admin cards
 - `completion_service.py` — admin story-complete mark/unmark + the marked list (with cover + marked-by audit) for the Completion tab
-- `rating_service.py` — rating CRUD + note search; logs watch events (first completion + rewatches) and derives `watched_count`. `get_rating_score_items` (v0.14.11) backs `GET /ratings/scores` — a compact projection of all a user's ratings (titles, cover, score, genres/studios/age, attributes) for the rating-consistency helper's client-side nearest-score compare
+- `rating_service.py` — rating CRUD + note search; logs watch events (first completion + rewatches) and derives `watched_count`. `get_rating_score_items` backs `GET /ratings/scores` — one wide projection consumed by both the RatingCard consistency helper (v0.14.11) and the `/ratings` page list + statistics (v0.14.12); the field list + wide-DTO trade-off live in the services CLAUDE.md + the `RatingScoreItem` docstring
 - `spoiler_service.py` — frontier algorithm + `user_visible_media` cache
 - `export_service.py` — flat media-level export
 - `backup_service.py` — pg_dump/pg_restore orchestration; retention pools; `.current_db.json` pointer
@@ -236,7 +236,7 @@ SQLAlchemy ORM models mapped to PostgreSQL tables.
 SvelteKit with file-based routing, Svelte 5 runes, Tailwind CSS 4, shadcn-svelte component library. **Component / store / theme details live in [phsar/frontend/CLAUDE.md](phsar/frontend/CLAUDE.md)** (loaded automatically when working in the frontend tree).
 
 Quick map:
-- `routes/` — pages + `GET /health` for Coolify liveness
+- `routes/` — pages + `GET /health` for Coolify liveness. The `/ratings` page (v0.14.12 — anime-level list + ECharts statistics, both client-side off the one `GET /ratings/scores` fetch) consolidated the old `/statistics` nav placeholder, which is gone
 - `lib/api.ts` — centralized API client with maintenance-503 handler
 - `lib/stores/` — auth, settings, spoiler visibility, bell session, cross-component bumps (`jobs.ts`, `maintenance.ts`, `bell-session.ts`)
 - `lib/utils/` — formatters, search params, chart colors, client-side spoiler frontier

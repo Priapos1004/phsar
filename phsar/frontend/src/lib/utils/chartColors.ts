@@ -14,6 +14,17 @@ export const CHART_COLORS = {
 	teal: 'oklch(0.65 0.17 195)',          // red-theme replacement for chart5
 } as const;
 
+/** Watch-status colors for charts (raw hex — ECharts can't read CSS vars).
+ * Kept aligned with the badge styles in styles/classes.ts (emerald / amber /
+ * rose) so chart segments match the status badges on the rating cards. Also
+ * reused as the positive / negative sentiment pair (completed = good = green,
+ * dropped = bad = rose) in the attribute-correlation chart. */
+export const STATUS_COLORS = {
+	completed: '#10b981', // emerald-500
+	on_hold: '#f59e0b', // amber-500
+	dropped: '#f43f5e', // rose-500
+} as const;
+
 /** Maps a 0–10 score to a chart color. */
 export function scoreColor(score: number): string {
 	if (score < 4) return CHART_COLORS.chart5;
