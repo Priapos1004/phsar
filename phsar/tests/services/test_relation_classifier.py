@@ -10,8 +10,12 @@ from app.services.relation_classifier import (
     SUBSTANCE_MIN_EPISODES,
     SUBSTANCE_MIN_MOVIE_DURATION_S,
     SUBSTANCE_MIN_TV_DURATION_S,
+    SUBSTANCE_POPULAR_WAIVER_SCORED_BY,
     classify_anime_relations,
     find_disjoint_franchises,
+    passes_popularity_waiver,
+    passes_substance,
+    would_be_dropped_as_weak_anchor,
 )
 
 
@@ -542,6 +546,65 @@ def test_substance_thresholds_match_constants():
             assert out[weak_id] == "main", f"{weak_id} should pass substance"
         else:
             assert out[weak_id] == "side_story", f"{weak_id} should fail substance"
+
+
+# --- popularity waiver for the weak-anchor keep decision ---------------
+#
+# A short-duration anchor (fails the duration floor) is normally dropped
+# on a plain unseeded title search. The popularity waiver keeps it as its
+# own anime IF it still clears the type + episode gates AND has at least
+# SUBSTANCE_POPULAR_WAIVER_SCORED_BY MAL scorers ("Love is Like a
+# Cocktail": TV, 13 eps, 3 min/ep, ~112k scorers). The waiver is scoped to
+# this keep decision only — it must NOT leak into anchor selection or
+# relation-type ranking, which stay on the strict substance gate.
+
+
+def test_popular_short_kept_as_weak_anchor():
+    # Osake wa Fuufu ni Natte kara: TV, 13 eps, 3 min/ep, over the scorer
+    # floor. Standalone (no cross-link), unseeded title search.
+    nodes = {35484: _tv(episodes=13, duration_s=180,
+                        scored_by=SUBSTANCE_POPULAR_WAIVER_SCORED_BY)}
+    assert not passes_substance(nodes[35484])  # strict gate still fails
+    assert passes_popularity_waiver(nodes[35484])
+    assert not would_be_dropped_as_weak_anchor(
+        nodes, 35484, seed_mal_id=None, cross_link_mal_ids=set(),
+    )
+
+
+def test_obscure_short_still_dropped():
+    # Same shape, just under the scorer floor → no waiver → dropped.
+    nodes = {999: _tv(episodes=13, duration_s=180,
+                     scored_by=SUBSTANCE_POPULAR_WAIVER_SCORED_BY - 1)}
+    assert not passes_popularity_waiver(nodes[999])
+    assert would_be_dropped_as_weak_anchor(
+        nodes, 999, seed_mal_id=None, cross_link_mal_ids=set(),
+    )
+
+
+def test_popularity_waiver_requires_episode_floor():
+    # A wildly popular short that fails the EPISODE floor (a 2-ep promo
+    # short) is NOT waived — the waiver only relaxes the duration floor.
+    nodes = {888: _tv(episodes=SUBSTANCE_MIN_EPISODES - 1, duration_s=180,
+                     scored_by=500_000)}
+    assert not passes_popularity_waiver(nodes[888])
+    assert would_be_dropped_as_weak_anchor(
+        nodes, 888, seed_mal_id=None, cross_link_mal_ids=set(),
+    )
+
+
+def test_popularity_waiver_does_not_affect_relation_ranking():
+    # The waiver must NOT leak into classify_anime_relations: a popular
+    # short sequel to a real TV main is still demoted to side_story by the
+    # strict substance gate, and the long TV keeps the anchor.
+    nodes = {
+        1: _tv(episodes=26, duration_s=1440, aired="2000-01-01", scored_by=50_000),
+        2: _tv(episodes=13, duration_s=180, aired="2005-01-01", scored_by=500_000),
+    }
+    edges = [(1, 2, "sequel")]
+    out, anchor = classify_anime_relations(nodes, edges)
+    assert anchor == 1
+    assert out[1] == "main"
+    assert out[2] == "side_story"
 
 
 # --- find_disjoint_franchises: cross-franchise split detection ---------

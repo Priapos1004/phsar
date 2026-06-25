@@ -86,13 +86,15 @@ async def search_mal_api(
         # Substance-failing anchor means the graph's "main" is a weak
         # fallback (donghua with sparse metadata, orphan side-story).
         # Three-way decision:
-        #   (1) Title-search mode with no attach target → drop (shared
-        #       predicate with search_title's rollback so the two sites
-        #       can't drift; see `would_be_dropped_as_weak_anchor`).
+        #   (1) Title-search mode with no attach target → drop UNLESS the
+        #       anchor clears the popularity waiver (a widely-scored
+        #       short-form show is a substantial catalog addition — keep
+        #       it). Shared predicate with search_title's rollback so the
+        #       two sites can't drift; see `would_be_dropped_as_weak_anchor`.
         #   (2) Single cross-link to an existing parent → attach instead
         #       of creating a duplicate anime row.
-        #   (3) Seeded BFS mode → save as new anime; the seasonal sweep
-        #       picked this mal_id deliberately.
+        #   (3) Seeded BFS mode (seasonal sweep picked this mal_id) OR a
+        #       popularity-waiver keeper → save as new anime.
         if would_be_dropped_as_weak_anchor(
             nodes, anime_mal_id, seed_mal_id, cross_link_mal_ids,
         ):
@@ -118,13 +120,16 @@ async def search_mal_api(
                     target_mal_id, anime_mal_id,
                 )
                 continue
-            # Seeded mode: log the weak-anchor save and fall through to
-            # the unconnected_media_list build below.
+            # Reached via seeded BFS or the popularity waiver (a
+            # substance-failing-but-widely-scored short). Log the
+            # weak-anchor save and fall through to the
+            # unconnected_media_list build below.
             logger.info(
-                "Seeded weak-anchor graph saving as new anime "
-                "(seed=%s, anchor=%s, type=%s)",
+                "Weak-anchor graph saving as new anime "
+                "(seed=%s, anchor=%s, type=%s, scored_by=%s)",
                 seed_mal_id, anime_mal_id,
                 related_anime_graph[anime_mal_id].get("media_type"),
+                all_info.get(anime_mal_id, {}).get("scored_by"),
             )
 
         unconnected_media_list = []

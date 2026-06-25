@@ -74,6 +74,21 @@ SUBSTANCE_MIN_EPISODES = 8
 SUBSTANCE_MIN_TV_DURATION_S = 600    # 10 min
 SUBSTANCE_MIN_MOVIE_DURATION_S = 1800  # 30 min
 
+# Popularity waiver for the WEAK-ANCHOR KEEP DECISION ONLY (see
+# `would_be_dropped_as_weak_anchor`). A short-form entry (3-min episodes,
+# e.g. "Love is Like a Cocktail") fails the duration floor above and is
+# normally dropped on a plain title search. But a short that otherwise
+# clears the type + episode gates AND has been scored by this many MAL
+# users is a real, widely-watched show — just short-form — and is a
+# substantial addition to the catalog, so we keep it as its own anime.
+# Deliberately NOT consulted by `passes_substance` / `_pick_anchor` /
+# `classify_anime_relations` / `find_disjoint_franchises`: anchor choice,
+# relation-type ranking, and split detection stay on the strict gate so a
+# popular short can't steal a franchise anchor or spawn false-positive
+# split candidates. The waiver only answers "is this lone weak anchor
+# worth keeping?", never "what is this within a franchise?".
+SUBSTANCE_POPULAR_WAIVER_SCORED_BY = 10_000
+
 _TV_LIKE_TYPES = frozenset({"tv", "ona", "tvspecial"})
 _MOVIE_TYPES = frozenset({"movie"})
 
@@ -374,6 +389,23 @@ def classify_anime_relations(
     return classifications, anchor
 
 
+def passes_popularity_waiver(node: ClassifierNode) -> bool:
+    """Whether a substance-failing node clears the popularity waiver: a
+    short-duration entry that still passes the type + episode gates AND
+    has at least `SUBSTANCE_POPULAR_WAIVER_SCORED_BY` MAL scorers. Reuses
+    `passes_substance(relax_duration=True)` so the type gate (Music/PV
+    never qualify) and the episode floor are enforced identically — only
+    the duration floor is waived.
+
+    Scoped to the weak-anchor keep decision (see
+    `would_be_dropped_as_weak_anchor` and the module constant); not part
+    of the substance gate that ranks relation types.
+    """
+    if (node.get("scored_by") or 0) < SUBSTANCE_POPULAR_WAIVER_SCORED_BY:
+        return False
+    return passes_substance(node, relax_duration=True)
+
+
 def would_be_dropped_as_weak_anchor(
     nodes: dict[int, ClassifierNode],
     anchor: int | None,
@@ -383,7 +415,8 @@ def would_be_dropped_as_weak_anchor(
     """Mirror of the weak-anchor-skip branch in
     `search_service.search_mal_api`. Returns True when the (nodes, edges)
     graph would be silently dropped at save time: anchor fails substance
-    AND there's no attach target (single cross-link) AND no seed.
+    AND fails the popularity waiver AND there's no attach target (single
+    cross-link) AND no seed.
 
     Used by `jikan_scraper.search_title` to detect this case BEFORE
     appending the graph to `relations`, so the visited_ids claims for
@@ -396,6 +429,12 @@ def would_be_dropped_as_weak_anchor(
     if anchor is None:
         return False
     if passes_substance(nodes[anchor]):
+        return False
+    # Popularity waiver: a widely-scored short-form anchor is a
+    # substantial catalog addition, so keep it as its own anime rather
+    # than dropping it (the "Love is Like a Cocktail" case). Scoped to
+    # this keep decision only — see SUBSTANCE_POPULAR_WAIVER_SCORED_BY.
+    if passes_popularity_waiver(nodes[anchor]):
         return False
     if seed_mal_id is not None:
         return False
