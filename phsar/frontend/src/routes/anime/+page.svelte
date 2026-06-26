@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { getContext } from 'svelte';
 	import { api, ApiError } from '$lib/api';
-	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, formatAiringStatus, resolveTitle, resolveSubtitles, decimalPlaces, formatRelationType, formatMediaType } from '$lib/utils/formatString';
+	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, formatAiringStatus, resolveTitle, resolveSubtitles, decimalPlaces, roundScore, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -31,8 +31,10 @@
 	// Display decimals: at least enough for the step, or more if existing ratings need it
 	let scoreDecimals = $derived.by(() => {
 		const minDecimals = decimalPlaces(ratingStep);
+		// roundScore first so one noisy legacy rating (5.3500000000000005 → 16 dp) can't
+		// blow the whole column out to 16 decimals.
 		const maxRatingDecimals = userRatingsList.reduce((max, r) =>
-			Math.max(max, decimalPlaces(r.rating)), 0);
+			Math.max(max, decimalPlaces(roundScore(r.rating))), 0);
 		return Math.max(minDecimals, maxRatingDecimals);
 	});
 

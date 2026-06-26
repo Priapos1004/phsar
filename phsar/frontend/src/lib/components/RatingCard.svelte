@@ -14,7 +14,7 @@
 	import AttributeSelect from '$lib/components/AttributeSelect.svelte';
 	import RatingNeighbors from '$lib/components/RatingNeighbors.svelte';
 	import { attributeBadges } from '$lib/utils/ratingAttributes';
-	import { formatDecimalDigits, clampAndSnapScore, decimalPlaces } from '$lib/utils/formatString';
+	import { formatDecimalDigits, clampAndSnapScore, decimalPlaces, roundScore } from '$lib/utils/formatString';
 	import { userSettings } from '$lib/stores/userSettings';
 	import * as cls from '$lib/styles/classes';
 	import { ChevronDown, ChevronUp, Star, Pencil, Trash2, RotateCcw } from 'lucide-svelte';
@@ -89,9 +89,10 @@
 	let SCORE_STEP = $derived(parseFloat($userSettings?.rating_step ?? '0.5'));
 	// Edit form: precision matches current step (user inputs at this precision)
 	let STEP_DECIMALS = $derived(decimalPlaces(SCORE_STEP));
-	// Display: enough decimals to accurately show the stored value (may exceed current step)
+	// Display: enough decimals to accurately show the stored value (may exceed current step).
+	// roundScore first so a noisy legacy rating (5.3500000000000005) reports 2 dp, not 16.
 	let DISPLAY_DECIMALS = $derived(
-		existingRating ? Math.max(STEP_DECIMALS, decimalPlaces(existingRating.rating)) : STEP_DECIMALS
+		existingRating ? Math.max(STEP_DECIMALS, decimalPlaces(roundScore(existingRating.rating))) : STEP_DECIMALS
 	);
 
 	function clampAndSnap(val: number): number {

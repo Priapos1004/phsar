@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatNumber, formatDuration, formatDurationCompact, formatDecimalDigits, clampAndSnapScore, escapeHtml } from '$lib/utils/formatString';
+import { formatNumber, formatDuration, formatDurationCompact, formatDecimalDigits, clampAndSnapScore, roundScore, formatScore, escapeHtml } from '$lib/utils/formatString';
 
 describe('formatNumber', () => {
 	it('formats integers with commas', () => {
@@ -160,6 +160,31 @@ describe('clampAndSnapScore', () => {
 			expect(clampAndSnapScore(6.13, step)).toBe(6.25);
 			expect(clampAndSnapScore(6.9, step)).toBe(7.0);
 		});
+	});
+
+	describe('sheds float-arithmetic noise', () => {
+		// Math.round(5.35 / 0.01) * 0.01 === 5.3500000000000005 — the snap must round it
+		// back to a clean 2-dp value so the noise never reaches a saved rating.
+		it('snaps cleanly at step 0.01', () => {
+			expect(clampAndSnapScore(5.35, 0.01)).toBe(5.35);
+			expect(clampAndSnapScore(7.07, 0.01)).toBe(7.07);
+		});
+		it('snaps cleanly at step 0.1', () => {
+			expect(clampAndSnapScore(5.3, 0.1)).toBe(5.3);
+		});
+	});
+});
+
+describe('roundScore / formatScore', () => {
+	it('roundScore strips float noise to 2 dp', () => {
+		expect(roundScore(5.3500000000000005)).toBe(5.35);
+		expect(roundScore(7.890000000000001)).toBe(7.89);
+		expect(roundScore(8.5)).toBe(8.5);
+	});
+	it('formatScore shows only the decimals that remain after de-noising', () => {
+		expect(formatScore(5.3500000000000005)).toBe('5.35');
+		expect(formatScore(8.5)).toBe('8.5');
+		expect(formatScore(10)).toBe('10');
 	});
 });
 

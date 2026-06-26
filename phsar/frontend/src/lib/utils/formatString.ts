@@ -223,7 +223,9 @@ export function formatBytes(bytes: number): string {
  */
 export function clampAndSnapScore(val: number, step: number): number {
 	const clamped = Math.min(10, Math.max(0, val));
-	return Math.round(clamped / step) * step;
+	// Round to 2 dp (the finest rating step is 0.01) so step-division noise like
+	// 535 * 0.01 = 5.3500000000000005 never reaches a saved rating in the first place.
+	return roundScore(Math.round(clamped / step) * step);
 }
 
 /**
@@ -250,12 +252,22 @@ export function formatDecimalDigits(value: number, digits: number): string {
 }
 
 /**
+ * Round a 0–10 rating to the finest rating step (0.01 → 2 dp), shedding float-arithmetic
+ * noise like 535 * 0.01 = 5.3500000000000005. The single guard behind both formatScore and
+ * any value-derived decimal count — measure precision off `decimalPlaces(roundScore(r))`, never
+ * the raw stored float, or one noisy legacy rating reports 16 decimals and blows out the display.
+ */
+export function roundScore(value: number): number {
+	return Math.round(value * 100) / 100;
+}
+
+/**
  * Format a 0–10 rating for display. Rounds to the finest rating step (0.01 → 2 dp)
  * first to shed float-arithmetic noise (7.890000000000001 → "7.89"), then shows only
  * the decimals that remain so whole/half scores stay clean (8.5 → "8.5", 10 → "10").
  */
 export function formatScore(value: number): string {
-	const rounded = Math.round(value * 100) / 100;
+	const rounded = roundScore(value);
 	return formatDecimalDigits(rounded, decimalPlaces(rounded));
 }
 
