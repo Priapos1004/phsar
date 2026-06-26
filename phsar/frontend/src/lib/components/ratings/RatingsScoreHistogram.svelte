@@ -7,6 +7,7 @@
 	import type { RatingScoreItem } from '$lib/types/api';
 
 	const HALF = SCORE_HISTOGRAM_WIDTH / 2; // each bar spans center ± half-width
+	const STEP = 0.01; // smallest rating step — the lower edge is exclusive, so nudge it up one step
 
 	interface Props {
 		items: RatingScoreItem[];
@@ -26,8 +27,9 @@
 			formatter: (params: unknown) => {
 				const idx = (params as { dataIndex: number }[])[0]?.dataIndex ?? 0;
 				const b = buckets[idx];
-				// Clamp to the 0–10 scale so the edge bars don't read -0.25 / 10.25.
-				const lo = Math.max(0, b.center - HALF);
+				// Disjoint range: lower edge exclusive (+STEP so a boundary shows in the lower
+				// bucket only), upper inclusive. Clamp to 0–10 so edge bars don't read negative / >10.
+				const lo = Math.max(0, b.center - HALF + STEP);
 				const hi = Math.min(10, b.center + HALF);
 				const range = `${formatDecimalDigits(lo, 2)}–${formatDecimalDigits(hi, 2)}`;
 				const parts: string[] = [];

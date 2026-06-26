@@ -214,6 +214,18 @@ describe('scoreHistogram', () => {
 			{ center: 8.5, count: 1, main: 1, side: 0 },
 		]);
 	});
+	it('puts a boundary score in the lower bucket (upper-inclusive, disjoint)', () => {
+		// Center 8.0 covers (7.75, 8.25]; center 8.5 covers (8.25, 8.75]. So 8.25 → 8.0,
+		// 8.26 → 8.5 — no score is ambiguous between two bars.
+		const items = [
+			item({ media_uuid: 'a', anime_uuid: 'A', rating: 8.25 }),
+			item({ media_uuid: 'b', anime_uuid: 'B', rating: 8.26 }),
+		];
+		expect(scoreHistogram(items)).toEqual([
+			{ center: 8.0, count: 1, main: 1, side: 0 },
+			{ center: 8.5, count: 1, main: 1, side: 0 },
+		]);
+	});
 	it('fills the gap between min and max with empty buckets', () => {
 		const items = [
 			item({ media_uuid: 'a', anime_uuid: 'A', rating: 7.0 }),

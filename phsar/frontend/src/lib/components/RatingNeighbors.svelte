@@ -20,8 +20,8 @@
 		studios?: string[];
 		ageRatingNumeric?: number | null;
 		// The user's live in-progress selection — each neighbor attribute is colored by how
-		// it compares (green higher / red lower / blue differs / plain neutral). Reactive, so
-		// the colors update as the user changes their own picks, not just the score.
+		// it compares (green higher / red lower / blue differs / cream match / grey unset).
+		// Reactive, so the colors update as the user changes their own picks, not just the score.
 		currentAttributes?: Record<string, string | null>;
 	}
 
@@ -31,6 +31,7 @@
 		higher: cls.badgeAttrHigher,
 		lower: cls.badgeAttrLower,
 		differs: cls.badgeAttrDiffers,
+		match: cls.badgeAttrMatch,
 		neutral: cls.badgeAttrNeutral,
 	};
 
@@ -44,17 +45,13 @@
 	let neighborsError = $state(false);
 	let expandedNeighbors = $state<Record<string, boolean>>({});
 
-	// above shown high→low, then below high→low, so the four rows straddle the
-	// current score in descending order.
+	// Shown high→low so the rows straddle the current score in descending order.
 	let neighbors = $derived(
 		neighborItems
 			? selectRatingNeighbors(neighborItems, score, { animeUuid, genres, studios, ageRatingNumeric })
-			: { below: [], above: [] },
+			: [],
 	);
-	let neighborRows = $derived([
-		...[...neighbors.above].sort((a, b) => b.rating - a.rating),
-		...[...neighbors.below].sort((a, b) => b.rating - a.rating),
-	]);
+	let neighborRows = $derived([...neighbors].sort((a, b) => b.rating - a.rating));
 
 	async function loadNeighbors() {
 		if (loadingNeighbors) return;

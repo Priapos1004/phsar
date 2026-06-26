@@ -264,14 +264,18 @@ export interface HistogramBucket {
 export const SCORE_HISTOGRAM_WIDTH = 0.5;
 
 /**
- * Histogram of raw per-media scores in fixed 0.5-wide buckets (scores snapped to the
- * nearest 0.5). Buckets are contiguous (empty ones filled with 0) so the x-axis stays
- * evenly spaced and gaps read as gaps — never collapsing two distinct scores into one bar.
+ * Histogram of raw per-media scores in fixed 0.5-wide buckets. Buckets are disjoint and
+ * upper-inclusive: a score on a boundary (e.g. 4.75) snaps DOWN to the lower bucket (center
+ * 4.5 covers 4.26–4.75, center 5.0 covers 4.76–5.25), so no score is ambiguous between two
+ * bars. Buckets are contiguous (empty ones filled with 0) so the x-axis stays evenly spaced
+ * and gaps read as gaps — never collapsing two distinct scores into one bar.
  */
 export function scoreHistogram(items: RatingScoreItem[]): HistogramBucket[] {
 	if (!items.length) return [];
 	const w = SCORE_HISTOGRAM_WIDTH;
-	const snap = (v: number) => Math.round(v / w) * w;
+	// Round-half-DOWN so the boundary belongs to the lower bucket (upper-inclusive). Boundaries
+	// are odd multiples of 0.25 — exact in float — so the ceil(... - 0.5) is stable.
+	const snap = (v: number) => Math.ceil(v / w - 0.5) * w;
 	// Single pass for the range — avoids a throwaway array + Math.min/max(...spread),
 	// which has a call-stack ceiling on large libraries.
 	let lo = Infinity;

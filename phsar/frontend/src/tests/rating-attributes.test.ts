@@ -10,9 +10,9 @@ describe('compareAttribute', () => {
 		expect(compareAttribute('ending_quality', 'satisfying', 'not_applicable')).toBe('neutral');
 	});
 
-	it('returns neutral when the neighbor matches the current pick', () => {
-		expect(compareAttribute('animation_quality', 'good', 'good')).toBe('neutral');
-		expect(compareAttribute('watched_format', 'sub', 'sub')).toBe('neutral');
+	it('returns match when the neighbor agrees with the current pick (distinct from unset)', () => {
+		expect(compareAttribute('animation_quality', 'good', 'good')).toBe('match');
+		expect(compareAttribute('watched_format', 'sub', 'sub')).toBe('match');
 	});
 
 	it('compares quality attributes by ordinal position (higher/lower)', () => {
