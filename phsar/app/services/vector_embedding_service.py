@@ -30,7 +30,13 @@ async def generate_embedding(text: str) -> list[float]:
     # disconnects), abandon the thread instead of blocking until encode() finishes.
     # Without this, cancelled requests keep the thread pool occupied during the
     # CPU-heavy embedding computation.
-    return await to_thread.run_sync(lambda: model.encode(text).tolist(), abandon_on_cancel=True)
+    # show_progress_bar=False: encode() defaults to a tqdm "Batches: ..." bar on
+    # stdout. We encode one short string per call (search queries, saves, sweeps,
+    # re-embed), so the bar is pure noise — it flooded the Coolify logs.
+    return await to_thread.run_sync(
+        lambda: model.encode(text, show_progress_bar=False).tolist(),
+        abandon_on_cancel=True,
+    )
 
 
 async def _compute_search_embeddings(
