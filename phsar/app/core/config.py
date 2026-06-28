@@ -18,7 +18,12 @@ class Settings(BaseSettings):
     # JWT / Security settings
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30  # Default 30 minutes expiry
+    # Short-lived idle clock: the token is silently re-issued via /auth/refresh
+    # while the user is active (so an active session never logs out), and an
+    # idle user is warned by the frontend countdown banner before it lapses.
+    # 10 min balances a comfortable idle grace against a tight passive-leak
+    # window. See compound-docs/ (v0.14.13 sliding session).
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 10
 
     SEARCH_SECRET_KEY: str
     CURRENT_SEARCH_API_VERSION: str = "v1.1.0" # Used to expire tokens when API changes
