@@ -87,10 +87,12 @@ async def search_mal_api(
         # fallback (donghua with sparse metadata, orphan side-story).
         # Three-way decision:
         #   (1) Title-search mode with no attach target → drop UNLESS the
-        #       anchor clears the popularity waiver (a widely-scored
-        #       short-form show is a substantial catalog addition — keep
-        #       it). Shared predicate with search_title's rollback so the
-        #       two sites can't drift; see `would_be_dropped_as_weak_anchor`.
+        #       anchor clears a keep-waiver: the popularity waiver (a
+        #       widely-scored short-form show) or the feature-length-ONA
+        #       waiver (a film MAL mislabeled ONA, e.g. "Bubble"). Either
+        #       is a substantial catalog addition — keep it. Shared
+        #       predicate with search_title's rollback so the two sites
+        #       can't drift; see `would_be_dropped_as_weak_anchor`.
         #   (2) Single cross-link to an existing parent → attach instead
         #       of creating a duplicate anime row.
         #   (3) Seeded BFS mode (seasonal sweep picked this mal_id) OR a
@@ -120,10 +122,10 @@ async def search_mal_api(
                     target_mal_id, anime_mal_id,
                 )
                 continue
-            # Reached via seeded BFS or the popularity waiver (a
-            # substance-failing-but-widely-scored short). Log the
-            # weak-anchor save and fall through to the
-            # unconnected_media_list build below.
+            # Reached via seeded BFS or a keep-waiver (popularity: a
+            # substance-failing-but-widely-scored short; or feature-length
+            # ONA: a film MAL labeled ONA). Log the weak-anchor save and
+            # fall through to the unconnected_media_list build below.
             logger.info(
                 "Weak-anchor graph saving as new anime "
                 "(seed=%s, anchor=%s, type=%s, scored_by=%s)",

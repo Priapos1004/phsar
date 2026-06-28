@@ -89,6 +89,33 @@ SUBSTANCE_MIN_MOVIE_DURATION_S = 1800  # 30 min
 # worth keeping?", never "what is this within a franchise?".
 SUBSTANCE_POPULAR_WAIVER_SCORED_BY = 10_000
 
+# Feature-length-ONA waiver for the WEAK-ANCHOR KEEP DECISION ONLY (see
+# `would_be_dropped_as_weak_anchor`). MAL labels a fair number of theatrical
+# / Netflix-original films as ONA rather than Movie (e.g. "Bubble", mal_id
+# 50549 — a 99-min Wit Studio film). As an ONA it's held to the TV-like rule
+# (>= SUBSTANCE_MIN_EPISODES), and a 1-episode film fails it, so a plain title
+# search silently drops the film. A single-episode ONA with a feature-length
+# runtime is a movie in all but MAL's label — keep it as its own anime. The
+# 60-min floor is deliberately stricter than SUBSTANCE_MIN_MOVIE_DURATION_S
+# (30 min) to stay conservative: it admits genuine features, not long OVA-ish
+# one-shots. Scoped identically to the popularity waiver above — NOT consulted
+# by `passes_substance` / `_pick_anchor` / `classify_anime_relations` /
+# `find_disjoint_franchises`, so a recap/compilation ONA inside a franchise
+# can't steal the anchor or spawn a false-positive split.
+FEATURE_LENGTH_ONA_MIN_DURATION_S = 3600  # 60 min
+
+# Design trip-wire: ONA is forced through the TV episode floor here, which is
+# why BOTH keep-decision waivers above exist (popularity waives the duration
+# floor; feature-length waives the episode floor). ONA is genuinely bimodal on
+# MAL — web-series-shaped AND film-shaped — and a single TV-vs-Movie bucket
+# can't capture that. Two narrow keep-decision waivers is the ceiling: if a
+# THIRD is ever proposed, stop and model ONA's shape at the gate instead (decide
+# movie-vs-TV treatment from episodes/duration BEFORE the tier sort, reworking
+# `anchor_tier` in lockstep + re-running split-detection tests) rather than
+# adding another special case. The gate-level fix is deliberately deferred
+# because it couples the one valuable capability (standalone feature-ONA
+# anchoring, which the keep-decision path already delivers) to a dangerous one
+# (a feature-ONA stealing a Movie-led franchise's anchor on tier).
 _TV_LIKE_TYPES = frozenset({"tv", "ona", "tvspecial"})
 _MOVIE_TYPES = frozenset({"movie"})
 
@@ -406,6 +433,23 @@ def passes_popularity_waiver(node: ClassifierNode) -> bool:
     return passes_substance(node, relax_duration=True)
 
 
+def passes_feature_length_ona_waiver(node: ClassifierNode) -> bool:
+    """Whether a substance-failing node is a feature-length film that MAL
+    mislabeled as ONA: exactly 1 episode and a runtime of at least
+    `FEATURE_LENGTH_ONA_MIN_DURATION_S`. These fail the TV-like episode
+    floor purely because a film is one "episode" (the "Bubble" case).
+
+    Scoped to the weak-anchor keep decision (see
+    `would_be_dropped_as_weak_anchor` and the module constant); not part
+    of the substance gate that ranks relation types.
+    """
+    if _normalize_media_type(node.get("media_type")) != "ona":
+        return False
+    if node.get("episodes") != 1:
+        return False
+    return (node.get("duration_seconds") or 0) >= FEATURE_LENGTH_ONA_MIN_DURATION_S
+
+
 def would_be_dropped_as_weak_anchor(
     nodes: dict[int, ClassifierNode],
     anchor: int | None,
@@ -415,8 +459,8 @@ def would_be_dropped_as_weak_anchor(
     """Mirror of the weak-anchor-skip branch in
     `search_service.search_mal_api`. Returns True when the (nodes, edges)
     graph would be silently dropped at save time: anchor fails substance
-    AND fails the popularity waiver AND there's no attach target (single
-    cross-link) AND no seed.
+    AND fails both keep-waivers (popularity / feature-length ONA) AND
+    there's no attach target (single cross-link) AND no seed.
 
     Used by `jikan_scraper.search_title` to detect this case BEFORE
     appending the graph to `relations`, so the visited_ids claims for
@@ -435,6 +479,12 @@ def would_be_dropped_as_weak_anchor(
     # than dropping it (the "Love is Like a Cocktail" case). Scoped to
     # this keep decision only — see SUBSTANCE_POPULAR_WAIVER_SCORED_BY.
     if passes_popularity_waiver(nodes[anchor]):
+        return False
+    # Feature-length-ONA waiver: a 1-episode ONA with a theatrical runtime
+    # is a film MAL labeled ONA rather than Movie (the "Bubble" case). Keep
+    # it as its own anime. Scoped to this keep decision only — see
+    # FEATURE_LENGTH_ONA_MIN_DURATION_S.
+    if passes_feature_length_ona_waiver(nodes[anchor]):
         return False
     if seed_mal_id is not None:
         return False

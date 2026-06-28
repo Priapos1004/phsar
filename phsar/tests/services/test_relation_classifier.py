@@ -7,12 +7,14 @@ classifier's per-mal_id labels.
 
 from app.models.media import RelationType
 from app.services.relation_classifier import (
+    FEATURE_LENGTH_ONA_MIN_DURATION_S,
     SUBSTANCE_MIN_EPISODES,
     SUBSTANCE_MIN_MOVIE_DURATION_S,
     SUBSTANCE_MIN_TV_DURATION_S,
     SUBSTANCE_POPULAR_WAIVER_SCORED_BY,
     classify_anime_relations,
     find_disjoint_franchises,
+    passes_feature_length_ona_waiver,
     passes_popularity_waiver,
     passes_substance,
     would_be_dropped_as_weak_anchor,
@@ -601,6 +603,70 @@ def test_popularity_waiver_does_not_affect_relation_ranking():
         2: _tv(episodes=13, duration_s=180, aired="2005-01-01", scored_by=500_000),
     }
     edges = [(1, 2, "sequel")]
+    out, anchor = classify_anime_relations(nodes, edges)
+    assert anchor == 1
+    assert out[1] == "main"
+    assert out[2] == "side_story"
+
+
+# --- feature-length-ONA waiver for the weak-anchor keep decision -------
+#
+# MAL labels some theatrical / Netflix-original films as ONA, not Movie.
+# As an ONA a 1-episode film fails the TV-like episode floor and is
+# normally dropped on a plain unseeded title search. The waiver keeps a
+# 1-episode ONA whose runtime clears FEATURE_LENGTH_ONA_MIN_DURATION_S as
+# its own anime ("Bubble": ONA, 1 ep, 99 min, mal_id 50549). Scoped to the
+# keep decision only — like the popularity waiver, it must not touch anchor
+# selection or relation-type ranking.
+
+
+def test_feature_length_ona_kept_as_weak_anchor():
+    # Bubble: ONA, 1 ep, 99 min. Standalone, unseeded title search.
+    nodes = {50549: _ona(episodes=1, duration_s=5940)}
+    assert not passes_substance(nodes[50549])  # strict gate fails (1 ep)
+    assert passes_feature_length_ona_waiver(nodes[50549])
+    assert not would_be_dropped_as_weak_anchor(
+        nodes, 50549, seed_mal_id=None, cross_link_mal_ids=set(),
+    )
+
+
+def test_short_one_episode_ona_still_dropped():
+    # "Bubble Beam Berry Blast" (mal_id 59013): ONA, 1 ep, 1 min — a
+    # one-shot, not a film. Under the runtime floor → no waiver → dropped.
+    nodes = {59013: _ona(episodes=1, duration_s=60)}
+    assert not passes_feature_length_ona_waiver(nodes[59013])
+    assert would_be_dropped_as_weak_anchor(
+        nodes, 59013, seed_mal_id=None, cross_link_mal_ids=set(),
+    )
+
+
+def test_feature_length_ona_waiver_requires_single_episode():
+    # A multi-episode ONA that's over the runtime floor per-episode but
+    # under the episode floor is NOT a film — the waiver requires exactly
+    # 1 episode, so it stays dropped.
+    nodes = {777: _ona(episodes=2, duration_s=FEATURE_LENGTH_ONA_MIN_DURATION_S)}
+    assert not passes_feature_length_ona_waiver(nodes[777])
+    assert would_be_dropped_as_weak_anchor(
+        nodes, 777, seed_mal_id=None, cross_link_mal_ids=set(),
+    )
+
+
+def test_feature_length_movie_label_not_treated_as_ona():
+    # A genuine Movie (correct MAL label) is handled by the movie duration
+    # gate, not this waiver — the waiver is ONA-only.
+    nodes = {666: _movie(duration_s=5940)}
+    assert not passes_feature_length_ona_waiver(nodes[666])
+
+
+def test_feature_length_ona_waiver_does_not_affect_relation_ranking():
+    # The waiver must NOT leak into classify_anime_relations: a 99-min ONA
+    # film that is a side story of a TV main stays side_story; the TV keeps
+    # the anchor.
+    nodes = {
+        1: _tv(episodes=26, duration_s=1440, aired="2000-01-01"),
+        2: _ona(episodes=1, duration_s=5940, aired="2005-01-01"),
+    }
+    edges = [(1, 2, "side_story")]
     out, anchor = classify_anime_relations(nodes, edges)
     assert anchor == 1
     assert out[1] == "main"
