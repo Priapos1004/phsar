@@ -16,7 +16,7 @@ from app.daos.job_dao import JobDAO
 from app.exceptions import PhsarBaseError
 from app.models.job import JobKind
 from app.seeders.anime_title_backfiller import backfill_anime_title_suffixes
-from app.seeders.embedding_backfiller import backfill_embeddings
+from app.seeders.embedding_backfiller import backfill_embeddings, reembed_all_embeddings
 from app.seeders.genre_seeder import seed_genres
 from app.seeders.relation_backfiller import backfill_relations
 from app.seeders.split_candidate_backfiller import backfill_split_candidates
@@ -58,12 +58,23 @@ async def _post_yield_backfills() -> None:
     miss self-heals.
 
     Each pass runs in its own session so the identity map doesn't grow
-    across the three catalog-wide scans — the relation backfill loads
-    every Anime + Media + sidecar, and reusing one session for all three
-    would pin ~3× the working set in memory through the whole ~14-min
-    cold start.
+    across the catalog-wide scans — the relation backfill loads every
+    Anime + Media + sidecar, and reusing one session for all of them would
+    pin ~Nx the working set in memory through the whole ~14-min cold start.
+
+    A one-shot full re-embed (`reembed_all_embeddings`) runs first when
+    `EMBEDDING_REEMBED_ON_STARTUP` is set — the case-folding re-normalization
+    path, gated OFF by default.
     """
     try:
+        # One-shot catalog re-encode (case-folding fix). Its own session so
+        # the ~1k-row scan's identity map is dropped before the relation
+        # backfill loads the whole catalog again. Gated OFF by default; see
+        # EMBEDDING_REEMBED_ON_STARTUP. Runs first so the re-normalized
+        # vectors are in place before anything else this cold start.
+        if settings.EMBEDDING_REEMBED_ON_STARTUP:
+            async with async_session_maker() as session:
+                await reembed_all_embeddings(session)
         if settings.RELATION_BACKFILL_ON_STARTUP:
             async with async_session_maker() as session:
                 await backfill_relations(session)

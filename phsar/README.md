@@ -391,6 +391,9 @@ phsar/
     │   ├── test_search_ranking.py
     │   ├── test_search_ratings.py
     │   └── test_user_settings.py
+    ├── seeders/
+    │   ├── test_embedding_backfiller.py
+    │   └── test_relation_backfiller.py
     └── services/
         ├── test_anime_service.py
         ├── test_backup_jobs.py
@@ -465,6 +468,12 @@ SEARCH_SECRET_KEY=supersecretsearchsecretkey
 # populated rows and finish in seconds. Disable for tight maintenance windows
 # on fresh deploys.
 # RELATION_BACKFILL_ON_STARTUP=True
+# One-shot: regenerate EVERY search embedding in place at startup so the catalog
+# picks up a generate_embedding change (the query/document case-fold). Default
+# off — a ~5-9 min catalog re-encode on the 2-vCPU VM is wasteful on every
+# restart. Flip on for a single deploy, watch for the "Re-embed complete" log,
+# then flip off. Runs post-yield in the background so it never blocks /health.
+# EMBEDDING_REEMBED_ON_STARTUP=False
 ```
 
 *Change `animeuser`, `animepass`, `admin`, `supersecretpassword`, `supersecretsecretkey`, and `supersecretsearchsecretkey`*

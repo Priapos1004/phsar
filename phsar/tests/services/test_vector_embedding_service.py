@@ -19,3 +19,16 @@ async def test_generate_embedding():
 
     # Check embedding size
     assert len(embedding) == 384, "Unexpected embedding size"
+
+
+@pytest.mark.asyncio
+async def test_generate_embedding_is_case_insensitive():
+    """The model is *cased*, so before the case-fold the same query in
+    different capitalisation produced different vectors — enough to reorder
+    title search and bury the intended show (capitalising "kurokos" dropped
+    Kuroko's Basketball off the page). `generate_embedding` lowercases so
+    the query and the stored documents share one case space."""
+    lower = await generate_embedding("kurokos")
+    upper = await generate_embedding("KUROKOS")
+    title = await generate_embedding("Kurokos")
+    assert lower == upper == title

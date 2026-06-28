@@ -81,6 +81,15 @@ class Settings(BaseSettings):
     # windows on a fresh deployment.
     RELATION_BACKFILL_ON_STARTUP: bool = True
 
+    # One-shot: regenerate EVERY search embedding in place at startup so the
+    # catalog picks up a `generate_embedding` change (the case-folding fix).
+    # Default OFF — a ~5-9 min catalog re-encode on the 2-vCPU VM is wasteful
+    # on every restart. Flip ON in Coolify for a single deploy, watch for the
+    # "Re-embed complete" log line, then flip OFF. Runs post-yield in the
+    # background so it never blocks /health. See
+    # `embedding_backfiller.reembed_all_embeddings`.
+    EMBEDDING_REEMBED_ON_STARTUP: bool = False
+
     model_config = ConfigDict(env_file=".env")  # Tell Pydantic to load from .env
 
 settings = Settings()

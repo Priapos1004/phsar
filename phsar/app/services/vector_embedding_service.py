@@ -14,6 +14,18 @@ logger = logging.getLogger(__name__)
 model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
 async def generate_embedding(text: str) -> list[float]:
+    # Case-fold before encoding. `paraphrase-multilingual-MiniLM-L12-v2` is a
+    # *cased* model, so "Kurokos" and "kurokos" produce materially different
+    # vectors — and the query case difference alone reorders title results
+    # enough to drop the intended show off the page (the cosine swing exceeds
+    # the literal-match bonus). This is the single chokepoint every embedding
+    # passes through — search queries AND stored title/description/note text —
+    # so lowering here keeps the query and the documents in one case space
+    # (the textbook precondition for embedding retrieval). Lowering at the
+    # query call-sites alone would only paper over the symptom and risk a new
+    # query↔document mismatch. Existing catalog vectors predate this and are
+    # re-normalized by `embedding_backfiller.reembed_all_embeddings`.
+    text = text.lower()
     # abandon_on_cancel=True: if the calling async task is cancelled (e.g. client
     # disconnects), abandon the thread instead of blocking until encode() finishes.
     # Without this, cancelled requests keep the thread pool occupied during the
@@ -98,3 +110,15 @@ async def regenerate_anime_embedding(
     await _regenerate_search_embedding(
         db, AnimeSearch, AnimeSearch.anime_id, anime_id, title_texts, description_text,
     )
+
+
+async def regenerate_rating_embedding(db: AsyncSession, rating_id: int, note: str) -> None:
+    """Replace a rating's note embedding (single embedding, no title/desc
+    split). Encode first, then delete + insert, so an encode failure leaves
+    the prior row intact (same discipline as `_regenerate_search_embedding`).
+    Tolerates a missing row — the DELETE is a no-op — so it doubles as a
+    backfill for a note that never got a search row."""
+    embedding = await generate_embedding(note)
+    await db.execute(delete(RatingSearch).where(RatingSearch.rating_id == rating_id))
+    db.add(RatingSearch(rating_id=rating_id, note_embedding=embedding))
+    await db.flush()
