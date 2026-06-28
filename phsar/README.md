@@ -225,6 +225,7 @@ phsar/
 │   │   │   │   ├── StudioLinks.svelte
 │   │   │   │   ├── TagSelect.svelte
 │   │   │   │   ├── Toast.svelte
+│   │   │   │   ├── ToastHost.svelte
 │   │   │   │   ├── TokenExpiryDialog.svelte
 │   │   │   │   ├── Tooltip.svelte
 │   │   │   │   ├── VersionFooter.svelte
@@ -255,6 +256,7 @@ phsar/
 │   │   │   │   ├── maintenance.ts
 │   │   │   │   ├── ratingsFilter.ts
 │   │   │   │   ├── spoilerVisibility.ts
+│   │   │   │   ├── toast.ts
 │   │   │   │   └── userSettings.ts
 │   │   │   ├── styles/
 │   │   │   │   └── classes.ts
@@ -333,7 +335,8 @@ phsar/
 │   │       ├── segmented-control.test.ts
 │   │       ├── spoiler-frontier.test.ts
 │   │       ├── spoiler-guard.test.ts
-│   │       └── studio-links.test.ts
+│   │       ├── studio-links.test.ts
+│   │       └── toast.test.ts
 │   ├── static/
 │   │   ├── apple-touch-icon.png
 │   │   ├── favicon-192x192.png

@@ -238,10 +238,10 @@ SvelteKit with file-based routing, Svelte 5 runes, Tailwind CSS 4, shadcn-svelte
 Quick map:
 - `routes/` — pages + `GET /health` for Coolify liveness. The `/ratings` page (v0.14.12 — anime-level list + ECharts statistics, both client-side off the one `GET /ratings/scores` fetch) consolidated the old `/statistics` nav placeholder, which is gone
 - `lib/api.ts` — centralized API client with maintenance-503 handler
-- `lib/stores/` — auth, settings, spoiler visibility, bell session, cross-component bumps (`jobs.ts`, `maintenance.ts`, `bell-session.ts`)
+- `lib/stores/` — auth, settings, spoiler visibility, bell session, cross-component bumps (`jobs.ts`, `maintenance.ts`, `bell-session.ts`), global toast (`toast.ts`)
 - `lib/utils/` — formatters, search params, chart colors, client-side spoiler frontier
 - `lib/themes.ts` + `src/app.css` — centralized theme system (CSS custom props + `.theme-*` overrides)
-- `lib/components/` — MaintenanceBanner, JobBell, BackupsCard, MergeCandidatesCard, SplitCandidatesCard, RatingsOverview, attribute viz, etc.
+- `lib/components/` — MaintenanceBanner, JobBell, BackupsCard, MergeCandidatesCard, SplitCandidatesCard, RatingsOverview, Toast/ToastHost (global toast host in the layout), attribute viz, etc.
 - `lib/components/ui/` — shadcn-svelte base components
 - `tests/` — Vitest + @testing-library/svelte
 
@@ -299,6 +299,7 @@ Quick map:
   - Crash recovery: `JobDAO.reap_orphans` runs at lifespan startup, marks `running` → `failed`
   - Bell cadence: 2s active poll while anything is queued/running, 30s idle
   - Optimistic-stub pattern: pages that enqueue push a `queued` stub keyed on `job_uuid` into `optimisticJobs` store; bell merges optimistic ∪ fetched (UUID-deduped); `reconcileOptimisticJobs(fresh)` prunes landed entries
+  - Bell completion toasts (v0.14.13): on an active→finished transition the bell fires a green/red global toast (`pushToast`) for `user_scrape` + `backup`; opening the bell now also acknowledges still-running jobs so the badge is dismissible mid-fetch, and succeeded scrape/backup rows are clickable (→ `/library/add` / `/admin?tab=backups`). Frontend-only — see `frontend/CLAUDE.md`
   - Parent-child clustering: `seasonal_sweep_dispatcher` stamps `parent_job_id=parent.id` on every enqueued `user_scrape` child (self-referential FK with `ON DELETE SET NULL` so deleting the parent doesn't cascade-delete audit history). Backs the admin Jobs Log expander — default list hides children (`parent_job_id IS NULL`), `?parent_uuid=<UUID>` returns the flock under that sweep. Historical pre-FK rows can be retro-clustered via `scripts/backfill_seasonal_sweep_parents.py` (safe because the dispatcher is the only production source of NULL-user user_scrapes)
 - **Maintenance mode**: destructive ops flip `core/maintenance.py`'s `_active` flag
   - Triggers: backup restore (synchronous, request-scoped), `update_sweep`/`seasonal_sweep` (worker brackets in try/finally)

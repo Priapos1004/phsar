@@ -11,6 +11,7 @@
     import TokenExpiryDialog from '$lib/components/TokenExpiryDialog.svelte';
     import LoadingScreen from '$lib/components/LoadingScreen.svelte';
     import VersionFooter from '$lib/components/VersionFooter.svelte';
+    import ToastHost from '$lib/components/ToastHost.svelte';
     import { getThemeCssClass, isValidTheme } from '$lib/themes';
     import '../app.css';
     import type { Snippet } from 'svelte';
@@ -160,6 +161,11 @@
     </main>
 
     <VersionFooter />
+
+    <!-- Single global toast slot — the navbar JobBell fires completion toasts
+         through it (pushToast), and /library/add routes its enqueue toast here
+         too so the two never overlap. -->
+    <ToastHost />
 
     <TokenExpiryDialog open={showExpiryDialog} onLogin={handleLogout} />
 {/if}

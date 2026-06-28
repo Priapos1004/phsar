@@ -13,8 +13,9 @@
 		reconcileOptimisticJobs,
 	} from '$lib/stores/jobs';
 	import { BELL_CURATION_SEEN_KEY, BELL_LOGIN_KEY, BELL_SEEN_KEY } from '$lib/stores/bell-session';
-	import { formatBytes, percentOf } from '$lib/utils/formatString';
-	import type { BackupResultSummary, CurationPendingCounts, Job } from '$lib/types/api';
+	import { pushToast, type ToastVariant } from '$lib/stores/toast';
+	import { formatBytes, formatJobKind, JOB_SUCCESS_HREF, percentOf } from '$lib/utils/formatString';
+	import type { BackupResultSummary, CurationPendingCounts, Job, JobStatus } from '$lib/types/api';
 
 	const getUserRole = getContext<() => string | null>('userRole');
 	let isAdmin = $derived(getUserRole?.() === 'admin');
@@ -84,6 +85,13 @@
 	// bumpLibrarySaved — prevents the bell from re-triggering a refresh on
 	// every poll while a succeeded job is still in the response window.
 	let announcedSavedUuids = new Set<string>();
+	// Per-fetch status snapshot + a once-only toast guard, both non-reactive.
+	// A completion toast fires only on an active→finished TRANSITION (prev
+	// status was queued/running). Starting empty means jobs already finished
+	// on the first fetch never toast, and toastedUuids stops a double-fire if
+	// a scheduled poll and a jobsRefresh fetch overlap on the same transition.
+	let prevStatusByUuid = new Map<string, JobStatus>();
+	let toastedUuids = new Set<string>();
 	// Block re-clicks while a retry is in flight so each click maps to one job.
 	let retryingUuid = $state<string | null>(null);
 
@@ -104,13 +112,18 @@
 	let activeJobs = $derived(
 		visibleJobs.filter((j) => j.status === 'queued' || j.status === 'running'),
 	);
+	// Active jobs are dismissible like finished ones now: opening the bell marks
+	// them seen, so the badge can clear even while a job is still fetching. The
+	// completion toast is what announces the result afterwards. pollDelay still
+	// keys off the full activeJobs list so cadence stays fast post-dismiss.
+	let unseenActive = $derived(activeJobs.filter((j) => !seenUuids.has(j.uuid)));
 	let unseenFinished = $derived(
 		visibleJobs.filter(
 			(j) =>
 				(j.status === 'succeeded' || j.status === 'failed') && !seenUuids.has(j.uuid),
 		),
 	);
-	let badgeCount = $derived(activeJobs.length + unseenFinished.length + unseenCuration);
+	let badgeCount = $derived(unseenActive.length + unseenFinished.length + unseenCuration);
 	let hiddenCount = $derived(Math.max(0, visibleJobs.length - MAX_VISIBLE));
 	let pollDelay = $derived(activeJobs.length > 0 ? ACTIVE_POLL_MS : IDLE_POLL_MS);
 
@@ -154,6 +167,26 @@
 			}
 			if (anyScrape) bumpLibrarySaved();
 			if (anyBackup) bumpBackupSaved();
+
+			// Completion toasts: fire once when a job we watched go active
+			// flips to finished. Restore/sweep are intentionally excluded
+			// (toastForJob returns null) — a restore hard-navigates the admin
+			// off-page, and sweeps are system jobs.
+			for (const job of fresh) {
+				if (job.created_at < sessionStart) continue;
+				if (toastedUuids.has(job.uuid)) continue;
+				const prev = prevStatusByUuid.get(job.uuid);
+				const wasActive = prev === 'queued' || prev === 'running';
+				const nowFinished = job.status === 'succeeded' || job.status === 'failed';
+				if (!wasActive || !nowFinished) continue;
+				const toast = toastForJob(job);
+				if (!toast) continue;
+				toastedUuids.add(job.uuid);
+				pushToast(toast.message, toast.variant);
+			}
+			// Rebuild the snapshot from this fetch so the next one can detect
+			// the next transition.
+			prevStatusByUuid = new Map(fresh.map((j) => [j.uuid, j.status]));
 		} catch (err) {
 			// 401 means logged out — the global ApiError handler in api.ts will
 			// redirect on maintenance; for plain auth failures we just stop
@@ -209,12 +242,16 @@
 	$effect(() => onBump(curationRefresh, () => void fetchCurationCounts()));
 
 	$effect(() => {
-		// Mark all currently-finished jobs as seen the moment the dropdown opens.
+		// Mark every currently-visible job (active OR finished) as seen the
+		// moment the dropdown opens. Acknowledging running jobs too is what
+		// lets the badge clear while a job is still fetching — the completion
+		// toast announces the result later, so a seen-while-running job stays
+		// out of the badge when it finishes.
 		if (!dropdownOpen) return;
 		const updated = new Set(seenUuids);
 		let changed = false;
 		for (const job of visibleJobs) {
-			if ((job.status === 'succeeded' || job.status === 'failed') && !updated.has(job.uuid)) {
+			if (!updated.has(job.uuid)) {
 				updated.add(job.uuid);
 				changed = true;
 			}
@@ -283,7 +320,34 @@
 		}
 		const query = typeof job.payload?.query === 'string' ? job.payload.query : null;
 		if (query) return `Add: "${query}"`;
-		return job.kind.replace('_', ' ');
+		return formatJobKind(job.kind);
+	}
+
+	// Where a finished row navigates when clicked, or null if it isn't a link.
+	// Only *succeeded* rows link (failed rows keep their retry button instead);
+	// the per-kind destination lives in JOB_SUCCESS_HREF.
+	function rowHref(job: Job): string | null {
+		if (job.status !== 'succeeded') return null;
+		return JOB_SUCCESS_HREF[job.kind] ?? null;
+	}
+
+	// The completion-toast copy + color for a finished job, or null for kinds
+	// that shouldn't toast (restore, sweeps).
+	function toastForJob(job: Job): { message: string; variant: ToastVariant } | null {
+		const succeeded = job.status === 'succeeded';
+		if (job.kind === 'user_scrape') {
+			const query = typeof job.payload?.query === 'string' ? job.payload.query : null;
+			const label = query ? `"${query}"` : 'anime';
+			return succeeded
+				? { message: `Added ${label} to your library.`, variant: 'success' }
+				: { message: `Couldn't add ${label}.`, variant: 'error' };
+		}
+		if (job.kind === 'backup') {
+			return succeeded
+				? { message: 'Backup completed.', variant: 'success' }
+				: { message: 'Backup failed.', variant: 'error' };
+		}
+		return null;
 	}
 
 	function canRetry(job: Job): boolean {
@@ -344,6 +408,64 @@
 	onDestroy(stopPolling);
 </script>
 
+{#snippet jobRow(job: Job)}
+	{@const Icon = statusIcon(job)}
+	{@const pct = progressPercent(job)}
+	{@const href = rowHref(job)}
+	<div class="flex items-start gap-2">
+		<Icon
+			class="w-4 h-4 mt-0.5 shrink-0 {statusColor(job)} {job.status === 'running'
+				? 'animate-spin'
+				: ''}"
+		/>
+		<div class="flex-1 min-w-0">
+			<div class="text-sm font-medium truncate">{describeJob(job)}</div>
+			{#if job.status === 'running' && job.stage}
+				<div class="text-xs text-muted-foreground">
+					{job.stage}{pct !== null ? ` — ${job.items_done}/${job.items_total}` : ''}
+				</div>
+				{#if pct !== null}
+					<div class="mt-1 h-1 bg-muted rounded overflow-hidden">
+						<div class="h-full bg-primary transition-all" style="width: {pct}%"></div>
+					</div>
+				{/if}
+			{:else if job.status === 'queued'}
+				<div class="text-xs text-muted-foreground">Waiting in queue…</div>
+			{:else if job.status === 'succeeded' && job.kind === 'user_scrape'}
+				<div class="text-xs text-muted-foreground">Added to your library</div>
+			{:else if job.status === 'succeeded' && job.kind === 'backup'}
+				{@const summary = job.result_summary as BackupResultSummary | null}
+				{#if summary?.deduped_against}
+					<div class="text-xs text-muted-foreground">
+						Re-confirmed existing dump (no new data)
+					</div>
+				{:else if typeof summary?.size_bytes === 'number'}
+					<div class="text-xs text-muted-foreground">
+						Backup ready ({formatBytes(summary.size_bytes)})
+					</div>
+				{/if}
+			{:else if job.status === 'failed'}
+				<div class="text-xs text-destructive truncate">
+					{describeError(job)}
+				</div>
+			{/if}
+		</div>
+		{#if canRetry(job)}
+			<button
+				type="button"
+				onclick={(e) => retryJob(job, e)}
+				disabled={retryingUuid !== null}
+				class="shrink-0 p-1 rounded hover:bg-muted transition disabled:opacity-50 disabled:cursor-not-allowed"
+				aria-label="Retry job"
+			>
+				<RefreshCw class="w-3.5 h-3.5 {retryingUuid === job.uuid ? 'animate-spin' : ''}" />
+			</button>
+		{:else if href}
+			<ChevronRight class="w-4 h-4 mt-0.5 shrink-0 text-muted-foreground" />
+		{/if}
+	</div>
+{/snippet}
+
 <DropdownMenu.Root bind:open={dropdownOpen}>
 	<DropdownMenu.Trigger
 		class="relative w-9 h-9 rounded-full hover:bg-white/10 flex items-center justify-center transition"
@@ -380,59 +502,24 @@
 			</div>
 		{:else}
 			{#each displayedJobs as job (job.uuid)}
-				{@const Icon = statusIcon(job)}
-				{@const pct = progressPercent(job)}
-				<div class="px-3 py-2 border-b last:border-b-0">
-					<div class="flex items-start gap-2">
-						<Icon
-							class="w-4 h-4 mt-0.5 shrink-0 {statusColor(job)} {job.status ===
-							'running'
-								? 'animate-spin'
-								: ''}"
-						/>
-						<div class="flex-1 min-w-0">
-							<div class="text-sm font-medium truncate">{describeJob(job)}</div>
-							{#if job.status === 'running' && job.stage}
-								<div class="text-xs text-muted-foreground">
-									{job.stage}{pct !== null ? ` — ${job.items_done}/${job.items_total}` : ''}
-								</div>
-								{#if pct !== null}
-									<div class="mt-1 h-1 bg-muted rounded overflow-hidden">
-										<div class="h-full bg-primary transition-all" style="width: {pct}%"></div>
-									</div>
-								{/if}
-							{:else if job.status === 'queued'}
-								<div class="text-xs text-muted-foreground">Waiting in queue…</div>
-							{:else if job.status === 'succeeded' && job.kind === 'backup'}
-								{@const summary = job.result_summary as BackupResultSummary | null}
-								{#if summary?.deduped_against}
-									<div class="text-xs text-muted-foreground">
-										Re-confirmed existing dump (no new data)
-									</div>
-								{:else if typeof summary?.size_bytes === 'number'}
-									<div class="text-xs text-muted-foreground">
-										Backup ready ({formatBytes(summary.size_bytes)})
-									</div>
-								{/if}
-							{:else if job.status === 'failed'}
-								<div class="text-xs text-destructive truncate">
-									{describeError(job)}
-								</div>
-							{/if}
-						</div>
-						{#if canRetry(job)}
-							<button
-								type="button"
-								onclick={(e) => retryJob(job, e)}
-								disabled={retryingUuid !== null}
-								class="shrink-0 p-1 rounded hover:bg-muted transition disabled:opacity-50 disabled:cursor-not-allowed"
-								aria-label="Retry job"
-							>
-								<RefreshCw class="w-3.5 h-3.5 {retryingUuid === job.uuid ? 'animate-spin' : ''}" />
-							</button>
-						{/if}
+				{@const href = rowHref(job)}
+				<!-- Succeeded scrape/backup rows are links (see rowHref); every
+				     other row is a plain div. Split into two wrappers rather than
+				     <svelte:element> so the anchor is a real interactive element
+				     (no a11y role guesswork) and the div carries no click handler. -->
+				{#if href}
+					<a
+						{href}
+						onclick={() => (dropdownOpen = false)}
+						class="block px-3 py-2 border-b last:border-b-0 hover:bg-primary/10 cursor-pointer transition"
+					>
+						{@render jobRow(job)}
+					</a>
+				{:else}
+					<div class="px-3 py-2 border-b last:border-b-0">
+						{@render jobRow(job)}
 					</div>
-				</div>
+				{/if}
 			{/each}
 			{#if hiddenCount > 0}
 				<a

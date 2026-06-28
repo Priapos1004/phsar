@@ -42,6 +42,10 @@ describe('JobBell', () => {
 		// Clear in-memory optimistic queue so per-test state doesn't bleed.
 		const { optimisticJobs } = await import('../lib/stores/jobs');
 		optimisticJobs.set([]);
+		// Reset the shared global toast slot so a completion toast from one
+		// test isn't observed by the next.
+		const { activeToast } = await import('../lib/stores/toast');
+		activeToast.set(null);
 		vi.useFakeTimers();
 	});
 
@@ -579,5 +583,131 @@ describe('JobBell', () => {
 		bumpJobsRefresh();
 		await new Promise((r) => setTimeout(r, 50));
 		expect(get(backupSaved)).toBe(baseline + 1);
+	});
+
+	it('renders a succeeded scrape row as a link to /library/add', async () => {
+		mockJobsResponse([
+			makeJob({ status: 'succeeded', finished_at: '2026-05-09T10:01:00Z' }),
+		]);
+		render(JobBell);
+		await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+		await fireEvent.click(screen.getByLabelText('Background jobs'));
+		// The dropdown content is portaled; query by text and walk up to the
+		// wrapping anchor rather than getByRole (which filters the portal).
+		const row = await vi.waitFor(() => screen.getByText('Add: "naruto"'));
+		const link = row.closest('a');
+		expect(link).not.toBeNull();
+		expect(link).toHaveAttribute('href', '/library/add');
+	});
+
+	it('renders a succeeded backup row as a link to the admin backups tab', async () => {
+		mockJobsResponse([
+			makeJob({
+				kind: 'backup',
+				status: 'succeeded',
+				finished_at: '2026-05-09T10:05:00Z',
+				payload: { source: 'manual' },
+				result_summary: {
+					filename: 'phsar-2026-05-09T10-04-00Z.dump',
+					size_bytes: 1024,
+					integrity: 'ok',
+					source: 'manual',
+					deduped_against: null,
+				},
+				uuid: '99999999-9999-9999-9999-999999999999',
+			}),
+		]);
+		render(JobBell);
+		await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+		await fireEvent.click(screen.getByLabelText('Background jobs'));
+		const row = await vi.waitFor(() => screen.getByText('Backup'));
+		const link = row.closest('a');
+		expect(link).not.toBeNull();
+		expect(link).toHaveAttribute('href', '/admin?tab=backups');
+	});
+
+	it('clears the badge for a still-running job once the bell is opened', async () => {
+		// The dismissible-while-fetching behavior: opening the bell acknowledges
+		// running jobs too, so the badge can clear before the job finishes.
+		mockJobsResponse([makeJob({ status: 'running' })]);
+		render(JobBell);
+		const trigger = await vi.waitFor(() => screen.getByLabelText('Background jobs'));
+		await vi.waitFor(() => expect(screen.getByText('1')).toBeInTheDocument());
+
+		await fireEvent.click(trigger);
+		await vi.waitFor(() => {
+			expect(screen.queryByText('1')).not.toBeInTheDocument();
+		});
+	});
+
+	it('pushes a green success toast when a watched scrape transitions to succeeded', async () => {
+		const running = makeJob({ status: 'running', uuid: 'a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1' });
+		const succeeded = makeJob({
+			status: 'succeeded',
+			finished_at: '2026-05-09T10:01:00Z',
+			uuid: 'a1a1a1a1-a1a1-a1a1-a1a1-a1a1a1a1a1a1',
+		});
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve([running]) })
+			.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve([succeeded]) });
+		globalThis.fetch = fetchMock;
+
+		const { activeToast } = await import('../lib/stores/toast');
+		const { get } = await import('svelte/store');
+
+		render(JobBell);
+		await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+		// First fetch saw it running — no transition yet.
+		expect(get(activeToast)).toBeNull();
+
+		// Next active poll (2s) returns the succeeded row → transition → toast.
+		await vi.advanceTimersByTimeAsync(2000);
+		await vi.waitFor(() => {
+			const t = get(activeToast);
+			expect(t?.variant).toBe('success');
+			expect(t?.message).toContain('naruto');
+		});
+	});
+
+	it('pushes a red error toast when a watched scrape transitions to failed', async () => {
+		const running = makeJob({ status: 'running', uuid: 'b2b2b2b2-b2b2-b2b2-b2b2-b2b2b2b2b2b2' });
+		const failed = makeJob({
+			status: 'failed',
+			error_message: 'MAL timed out',
+			uuid: 'b2b2b2b2-b2b2-b2b2-b2b2-b2b2b2b2b2b2',
+		});
+		const fetchMock = vi
+			.fn()
+			.mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve([running]) })
+			.mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve([failed]) });
+		globalThis.fetch = fetchMock;
+
+		const { activeToast } = await import('../lib/stores/toast');
+		const { get } = await import('svelte/store');
+
+		render(JobBell);
+		await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+		await vi.advanceTimersByTimeAsync(2000);
+		await vi.waitFor(() => {
+			expect(get(activeToast)?.variant).toBe('error');
+		});
+	});
+
+	it('does not toast a job that is already finished on the first fetch', async () => {
+		// No active→finished transition was ever observed (the bell first saw it
+		// already succeeded), so the toast must stay silent.
+		mockJobsResponse([
+			makeJob({ status: 'succeeded', finished_at: '2026-05-09T10:01:00Z' }),
+		]);
+		const { activeToast } = await import('../lib/stores/toast');
+		const { get } = await import('svelte/store');
+
+		render(JobBell);
+		await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+		// Idle poll cadence (30s) — advance past it; same row comes back, still
+		// no transition.
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(get(activeToast)).toBeNull();
 	});
 });

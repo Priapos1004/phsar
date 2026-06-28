@@ -52,6 +52,14 @@ export const JOB_KIND_LABELS: Record<JobKind, string> = {
  * frontend's "row deserves a chevron" guard. */
 export const PARENTING_KINDS: ReadonlySet<JobKind> = new Set<JobKind>(['seasonal_sweep']);
 
+/** Where a *succeeded* job of each kind navigates when its bell row is clicked.
+ * Per-kind static metadata (kept here next to JOB_KIND_LABELS rather than as an
+ * if-ladder in JobBell); a kind absent from the map has no clickable target. */
+export const JOB_SUCCESS_HREF: Partial<Record<JobKind, string>> = {
+	user_scrape: '/library/add',
+	backup: '/admin?tab=backups',
+};
+
 /** Formats a JobKind enum value to a user-friendly label. Accepts string
  * so callers can pass raw backend values without a guard; unknown values
  * fall through unchanged. */
