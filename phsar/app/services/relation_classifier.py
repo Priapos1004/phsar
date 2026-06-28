@@ -405,8 +405,31 @@ def classify_anime_relations(
     aired = [n for n in nodes.values() if not _is_metadata_pending(n)]
     relax_duration = not any(passes_substance(n, relax_episodes=True) for n in aired)
     relax_episodes = not any(passes_substance(n, relax_duration=True) for n in aired)
+
+    # Recap demotion: a media that declares a `full_story` edge ("my full
+    # story is elsewhere") is a condensed recap of content already in the
+    # franchise — never canonical, even when it's a full-length film that
+    # cleared the substance gate and got pulled into the main chain via a
+    # sequel/prequel bridge. The Kuroko Winter Cup shape: Last Game (a
+    # genuine new-story sequel film) carries a second `prequel` edge to
+    # recap Movie 3, dragging the three Winter Cup recap movies into the
+    # main chain where, as ~87-min films, they clear the substance gate and
+    # stay `main`. The signal lives on the recap's OWN sidecar, so it's
+    # present whenever the recap is in-graph (the only time it can be
+    # demoted). NOTE: "full_story ⇒ recap" is validated against the catalog
+    # (every full_story-carrying main today is a genuine recap), not a
+    # logical invariant — a film that both recaps AND continues the story
+    # would be demoted; none exist. Scoped to the main chain (the loop
+    # below) so an alt-version retelling carrying full_story stays
+    # `alternative_version`.
+    recap_ids = {a for a, _b, rel in edges if rel == "full_story"}
     for mal_id in main_chain:
         if mal_id == anchor:
+            continue
+        # Recap takes precedence over the substance demotion below: a
+        # full-length recap passes substance but is still not canonical.
+        if mal_id in recap_ids:
+            classifications[mal_id] = "summary"
             continue
         if not passes_substance(
             nodes[mal_id], relax_duration=relax_duration, relax_episodes=relax_episodes,

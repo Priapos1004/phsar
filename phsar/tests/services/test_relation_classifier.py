@@ -70,6 +70,18 @@ def _special(duration_s: int = 600, aired: str = "2010-01-01",
     }
 
 
+def _tvspecial(episodes: int = 1, duration_s: int = 1380, aired: str = "2019-01-01",
+               airing_status: str = "Finished Airing"):
+    return {
+        "media_type": "TVSpecial",
+        "aired_from": aired,
+        "episodes": episodes,
+        "duration_seconds": duration_s,
+        "scored_by": 500,
+        "airing_status": airing_status,
+    }
+
+
 # --- Evangelion ---------------------------------------------------------
 
 def test_evangelion_tv_anchors_movies_are_alternative_version():
@@ -215,6 +227,125 @@ def test_summary_outranks_side_story_when_node_has_both_edges():
     assert out[501] == "summary"
 
 
+# --- Recap (full_story) demotion ----------------------------------------
+
+def test_kuroko_winter_cup_recaps_demoted_to_summary():
+    # Real-data shape. S1-S3 TV main spine; Movie 4 "Last Game" is a
+    # genuine new-story sequel film (no full_story). MAL gives Last Game a
+    # SECOND prequel edge to Winter Cup Movie 3, dragging the three
+    # ~87-min Winter Cup recap movies into the main chain — each carries a
+    # full_story edge to its TV season, so they're recaps, not canon.
+    nodes = {
+        11771: _tv(episodes=25, duration_s=1440, aired="2012-04-08"),
+        16894: _tv(episodes=25, duration_s=1440, aired="2013-10-05"),
+        24415: _tv(episodes=25, duration_s=1440, aired="2015-01-10"),
+        31658: _movie(duration_s=5400, aired="2017-03-18"),  # Last Game
+        32869: _movie(duration_s=5220, aired="2016-09-03"),  # Winter Cup 1
+        32870: _movie(duration_s=5220, aired="2016-10-08"),  # Winter Cup 2
+        32871: _movie(duration_s=5280, aired="2016-12-03"),  # Winter Cup 3
+    }
+    edges = [
+        (11771, 16894, "sequel"),
+        (16894, 24415, "sequel"),
+        (24415, 31658, "sequel"),   # S3 -> Last Game (clean spine)
+        (31658, 32871, "prequel"),  # Last Game's 2nd prequel -> recap WC3
+        (32871, 32870, "prequel"),
+        (32870, 32869, "prequel"),
+        (32869, 11771, "full_story"),
+        (32870, 16894, "full_story"),
+        (32871, 24415, "full_story"),
+    ]
+    out, anchor = classify_anime_relations(nodes, edges)
+    assert anchor == 11771
+    assert out[11771] == "main"
+    assert out[16894] == "main"
+    assert out[24415] == "main"
+    assert out[31658] == "main"  # genuine sequel film stays canon
+    assert out[32869] == "summary"
+    assert out[32870] == "summary"
+    assert out[32871] == "summary"
+
+
+def test_genuine_sequel_movie_with_no_full_story_stays_main():
+    # A full-length sequel film without a full_story edge clears the
+    # substance gate and is NOT a recap — it stays main.
+    nodes = {
+        1: _tv(episodes=25, duration_s=1440, aired="2012-01-01"),
+        2: _movie(duration_s=5400, aired="2017-01-01"),
+    }
+    edges = [(1, 2, "sequel")]
+    out, _ = classify_anime_relations(nodes, edges)
+    assert out[1] == "main"
+    assert out[2] == "main"
+
+
+def test_recap_reachable_only_via_recap_keeps_downstream_main():
+    # Relabel-only proof: a genuine main reachable ONLY through a recap
+    # stays main. The recap (2) bridges anchor (1) to a later main (3);
+    # demoting 2 to summary must not orphan 3.
+    nodes = {
+        1: _tv(episodes=12, duration_s=1440, aired="2010-01-01"),
+        2: _movie(duration_s=5400, aired="2012-01-01"),  # recap bridge
+        3: _tv(episodes=12, duration_s=1440, aired="2014-01-01"),
+    }
+    edges = [
+        (1, 2, "sequel"),
+        (2, 3, "sequel"),
+        (2, 1, "full_story"),  # 2 is a recap of the anchor
+    ]
+    out, _ = classify_anime_relations(nodes, edges)
+    assert out[1] == "main"
+    assert out[2] == "summary"
+    assert out[3] == "main"
+
+
+def test_short_recap_special_in_main_chain_is_summary_not_side_story():
+    # Real shape (SAO / BNHA recap TVSpecials): a short recap special is
+    # pulled into the main chain via a sequel edge and fails the substance
+    # gate — the old classifier left it `side_story`. With its full_story
+    # edge, recap demotion takes precedence and labels it `summary`.
+    nodes = {
+        1: _tv(episodes=25, duration_s=1440, aired="2018-10-06"),
+        2: _tvspecial(aired="2019-09-21"),  # 1 ep, 23 min -> fails substance gate
+        3: _tv(episodes=12, duration_s=1440, aired="2019-10-12"),
+    }
+    edges = [
+        (1, 2, "sequel"),
+        (2, 3, "sequel"),
+        (2, 1, "full_story"),
+    ]
+    out, _ = classify_anime_relations(nodes, edges)
+    assert out[1] == "main"
+    assert out[2] == "summary"  # recap precedence over the side_story demotion
+    assert out[3] == "main"
+
+
+def test_recap_as_lone_anchor_not_demoted():
+    # If a recap is the anchor (nothing more canonical exists) it stays
+    # main — the demotion loop skips the anchor.
+    nodes = {1: _movie(duration_s=5400, aired="2015-01-01")}
+    edges = [(1, 999, "full_story")]  # dangling target
+    out, anchor = classify_anime_relations(nodes, edges)
+    assert anchor == 1
+    assert out[1] == "main"
+
+
+def test_alt_version_recap_not_demoted():
+    # A full_story node that lands in the ALT chain keeps
+    # alternative_version — recap demotion is scoped to the main chain.
+    nodes = {
+        1: _tv(episodes=26, duration_s=1440, aired="1995-01-01"),
+        2: _movie(duration_s=5400, aired="1997-01-01"),
+    }
+    edges = [
+        (1, 2, "alternative_version"),
+        (2, 1, "full_story"),
+    ]
+    out, _ = classify_anime_relations(nodes, edges)
+    assert out[1] == "main"
+    assert out[2] == "alternative_version"
+
+
 # --- Anchor selection rules ---------------------------------------------
 
 def test_tv_beats_movie_even_when_movie_aired_first():
@@ -287,11 +418,14 @@ def test_classifier_outputs_are_valid_relation_type_values():
         2: _movie(),
         3: _special(),
         4: _movie(duration_s=60),
+        5: _movie(),  # recap: enters main chain via sequel, demoted via full_story
     }
     edges = [
         (1, 2, "alternative_version"),
         (1, 3, "summary"),
         (1, 4, "crossover"),
+        (1, 5, "sequel"),
+        (5, 1, "full_story"),
     ]
     out, _ = classify_anime_relations(nodes, edges)
     valid = {rt.value for rt in RelationType}
