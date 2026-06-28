@@ -10,13 +10,13 @@
 
     let { message, show, variant = 'info' }: Props = $props();
 
-    // info keeps the original primary-themed banner so existing callers
-    // (Settings, BackupsCard) look identical; success/error give the
-    // completion toasts their green/red read. success uses a literal emerald
-    // (not a themed token) deliberately — there's no `--success` in the theme
-    // system, and emerald is already the app's de-facto "success/complete"
-    // green (Story Complete badge, bell status icon); error reuses the themed
-    // `destructive` token since one exists.
+    // info is the default neutral/primary banner for plain confirmations
+    // ("Settings updated", "Copied to clipboard", "Backup queued"); success /
+    // error give the bell's completion toasts their green/red read. success
+    // uses a literal emerald (not a themed token) deliberately — there's no
+    // `--success` in the theme system, and emerald is already the app's
+    // de-facto "success/complete" green (Story Complete badge, bell status
+    // icon); error reuses the themed `destructive` token since one exists.
     const VARIANT_CLASS: Record<ToastVariant, string> = {
         info: 'bg-primary text-primary-foreground',
         success: 'bg-emerald-600 text-white',
