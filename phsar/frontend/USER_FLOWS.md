@@ -19,14 +19,15 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 - Navigating to any route except `/login` without a token redirects to `/login`
 - On every page load, the stored token is validated via `GET /auth/validate`
 - If validation returns 401, token is cleared from localStorage and user is redirected to `/login`
+- A 401 on any *other* in-app API call is **not** globally redirected — that would let a background poll on a just-expired token bypass the idle-timeout dialog (1.6). The caller handles it (e.g. the JobBell silently stops polling); stale tokens are otherwise caught by the navigation guard above and the session tick
 
 ### 1.3 Logout
 - Clicking "Logout" in the NavBar dropdown clears the token immediately, shows a ~1.5s themed sakura-ring loading screen as a soft transition, then redirects to `/login`
-- Involuntary logouts (401 from API, token expiry, account deletion) skip the animation and redirect instantly
+- Involuntary logouts (maintenance 503, account deletion) skip the animation and redirect instantly. The idle-timeout case (1.6) instead shows the "Session Expired" dialog first, then runs the same animated logout when the user clicks "Log in"
 
 ### 1.4 Token Persistence
 - Token is stored in and loaded from localStorage
-- Closing and reopening the browser keeps the user logged in (until token expires or is invalidated)
+- Closing and reopening the browser keeps the user logged in until the session idle-timeout lapses (1.6) or the token is invalidated
 
 ### 1.5 Maintenance Mode
 - **Sticky pre-warning banner.** A yellow `Notice` card sits in a sticky container at the top of every page (including `/login` and `/register`), pinned alongside the navbar so scrolling the page keeps both visible. Renders only when a maintenance window is upcoming or active.
@@ -37,6 +38,13 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
   - When neither: banner is hidden.
 - **Mid-window redirect.** When the backend returns 503 with `{maintenance: true}` on *any other* request, the API client clears the token, bumps `maintenanceRefresh` so the global banner refetches state immediately, and hard-navigates to `/login` (when the user wasn't already there).
 - **/login during a maintenance window.** The form has no inline maintenance message — the global sticky banner above the navbar conveys the state. A 503 from `/auth/login` is silently swallowed by the form's catch (no error text, no submit-disable); the user can retry once the global banner clears.
+
+### 1.6 Session idle timeout (sliding session)
+- The JWT lives 10 minutes and acts as an **idle clock**, not a hard ceiling. While you interact with the app (mouse / keyboard / scroll / touch), the token is silently refreshed in the background (`POST /auth/refresh`) — an **active** session is never logged out.
+- After ~7 minutes of no interaction, a yellow countdown banner appears in the sticky header (above the maintenance banner): `"You'll be signed out in m:ss due to inactivity — click your mouse to stay signed in."`, ticking down over the final 3 minutes. Any activity refreshes the token and dismisses the banner.
+- If you stay idle to 0:00, the blocking "Session Expired" dialog appears; clicking "Log in" runs the sakura-ring transition back to `/login`.
+- **Multi-tab:** refreshing the token in one tab propagates to the others (a `storage` event), so a background tab won't log you out while another tab is active.
+- A backgrounded or slept tab re-checks when it becomes visible again — if the token already lapsed it shows the expired dialog immediately rather than waiting.
 
 ---
 

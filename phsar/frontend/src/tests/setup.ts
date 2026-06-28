@@ -1,5 +1,20 @@
 import '@testing-library/jest-dom/vitest';
-import { vi } from 'vitest';
+import { afterEach, vi } from 'vitest';
+
+// bits-ui's body-scroll-lock (Dialog/Popover) schedules a ~24ms real setTimeout
+// to restore <body> styles when a locked component unmounts. If that unmount is
+// the last thing a test file does, the timer can fire AFTER jsdom is torn down
+// → an uncaught "document is not defined". This afterEach runs after Testing
+// Library's auto-unmount (setup files register their hooks earliest and vitest
+// runs afterEach LIFO), so when a lock is still pending — `overflow:hidden`
+// lingers until the deferred restore — we flush it inside the live-document
+// window. No-op for the common no-dialog test, so the wait lands only where a
+// dialog actually opened.
+afterEach(async () => {
+	if (typeof document !== 'undefined' && document.body.style.overflow === 'hidden') {
+		await new Promise((resolve) => setTimeout(resolve, 30));
+	}
+});
 
 // Polyfill Web Animations API for jsdom
 if (typeof Element.prototype.animate === 'undefined') {

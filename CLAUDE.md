@@ -103,6 +103,7 @@ FastAPI endpoint definitions. Each router maps to an API prefix.
   - All three are bound to `Query(20, ge=0, le=1440)` on `delay_minutes`
   - All three are allowlisted in the maintenance gate so a cron retry while a sweep is running can't 503 the cron itself
   - All four cron-authed endpoints (including `/backups/auto`) share `JOBS_CRON_TOKEN` — one bearer for the whole machine-only surface
+- **`/auth`** — `POST /auth/login` + `POST /auth/register` issue a JWT (`sub`, `role`, `exp`); `GET /auth/validate` checks one. `POST /auth/refresh` re-issues a fresh full-lifetime token to any **still-valid** token (an expired token 401s, same as `/validate`) — the sliding-session re-issue the frontend calls on activity (see Sliding session under Key Patterns). Bare `get_current_user` (not role-gated) so restricted/guest users keep their sessions alive too; role is re-read from the DB user
 - **`/search`** — `/search/media` (per-media) and `/search/anime` (aggregated by anime)
 - **`/media`** — `/media/{uuid}` and `/media/anime/{uuid}`
 - **`/users`** — settings CRUD, data export, and account deletion
@@ -249,6 +250,10 @@ Quick map:
 
 - **Dependency injection**: FastAPI `Depends()` for DB sessions, current user extraction, role-based access (`require_roles()` accepts `RoleType` enum)
 - **Role-based access**: three roles — `admin`, `user`, `restricted_user`
+- **Sliding session / idle timeout**: the JWT `exp` is a short idle clock (`ACCESS_TOKEN_EXPIRE_MINUTES=10`), not a hard ceiling
+  - Backend is stateless: no refresh-token table, no absolute session cap. `POST /auth/refresh` simply re-issues a fresh token to any still-valid one (see the `/auth` router)
+  - The frontend owns the policy (`lib/components/SessionTimeoutBanner.svelte` + pure `lib/utils/sessionTimeout.ts`): a 1s tick reads `exp`, silently refreshes on recent activity, shows a countdown warning banner over the last 3 min when idle, and triggers logout at expiry. An **active** user is never logged out; an idle one is warned then signed out — see the frontend CLAUDE.md for the full component/constant rationale
+  - Security note: shortening the token only tightens the *passive-leak* window; the token lives in `localStorage`, so XSS (which can also call `/auth/refresh`) is the real exposure. HttpOnly-cookie auth is the bigger lever and is out of scope
 - **Async throughout**: asyncpg driver, SQLAlchemy AsyncSession, async service/DAO methods
   - All ORM relationships use `lazy="raise"` to prevent implicit lazy loading — every relationship access must go through explicit `selectinload` in the DAO query
   - **🎯 Never `asyncio.gather` coroutines that share one `AsyncSession`** — SQLAlchemy's AsyncSession can't multiplex concurrent operations on a single session, and `gather` corrupts the in-flight query state. Pure-CPU coroutines (e.g. `to_thread.run_sync` over an embedding encode) that don't touch the session are fine to gather; anything that touches the session must run sequentially. See the inline comment at `seasonal_sweep_dispatcher.py:48-51` for the canonical "don't" example and `compound-docs/2026-05-09-v0.14.0-content-pipeline.md` (LANDMINE entry) for the failure mode.
@@ -328,6 +333,7 @@ Quick map:
 ### Backend (optional)
 
 - `DEBUG` — enables SQL echo
+- `ACCESS_TOKEN_EXPIRE_MINUTES` — default 10; JWT lifetime = the sliding-session idle clock (frontend refreshes on activity, warns over the last 3 min, logs out at expiry — see Sliding session under Key Patterns)
 - `CORS_ORIGINS` — JSON list of allowed origins
 - `GUEST_USERNAME` + `GUEST_PASSWORD` — seeds a read-only guest account with `restricted_user` role
 - `APP_VERSION` — deployed version tag surfaced on `/health`; injected via backend Dockerfile build arg

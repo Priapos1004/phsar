@@ -218,6 +218,7 @@ phsar/
 │   │   │   │   ├── ScorePercentile.svelte
 │   │   │   │   ├── ScrollableCard.svelte
 │   │   │   │   ├── SegmentedControl.svelte
+│   │   │   │   ├── SessionTimeoutBanner.svelte
 │   │   │   │   ├── SpoilerGuard.svelte
 │   │   │   │   ├── SearchBar.svelte
 │   │   │   │   ├── SkeletonMediaInfo.svelte
@@ -276,6 +277,7 @@ phsar/
 │   │   │       ├── ratingNeighbors.ts
 │   │   │       ├── ratingStats.ts
 │   │   │       ├── search.ts
+│   │   │       ├── sessionTimeout.ts
 │   │   │       └── spoilerFrontier.ts
 │   │   ├── routes/
 │   │   │   ├── +layout.svelte
