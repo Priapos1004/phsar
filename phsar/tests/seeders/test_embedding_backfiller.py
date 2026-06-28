@@ -16,8 +16,8 @@ from app.models.anime import Anime
 from app.models.anime_search import AnimeSearch
 from app.models.media import Media
 from app.models.media_search import MediaSearch
-from app.models.ratings import Ratings, WatchStatus
 from app.models.rating_search import RatingSearch
+from app.models.ratings import Ratings, WatchStatus
 from app.models.users import RoleType, Users
 from app.seeders.embedding_backfiller import reembed_all_embeddings
 from app.services.anime_search_service import anime_title_texts
