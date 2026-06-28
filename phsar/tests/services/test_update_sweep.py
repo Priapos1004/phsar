@@ -1575,6 +1575,78 @@ async def test_dispatcher_isolates_failures_per_anime(tracked_anime, monkeypatch
     assert anime_by_id[a2_id].freshness.last_checked_at == old
 
 
+@pytest.mark.asyncio
+async def test_dispatcher_partial_anime_failure_rolls_back_media_freshness(
+    tracked_anime, monkeypatch,
+):
+    """Multi-media anime where an EARLIER media refreshes cleanly but a
+    LATER one 504s. The step-1 savepoint is per-anime (one begin_nested over
+    all its due media), so the earlier media's already-advanced
+    stable_check_count MUST roll back — otherwise an intermittent MAL outage
+    would silently walk media through the stabilizing graphic without a
+    durable refresh.
+
+    `test_dispatcher_isolates_failures_per_anime` does NOT cover this: each
+    of its anime has a single media that raises on its first refresh_anime
+    call, before _advance_media_freshness ever runs — so no in-flight media
+    freshness change exists for the savepoint to undo."""
+    old = datetime.now(timezone.utc) - timedelta(days=10)
+    m_ok, m_fail = -8301 * 100, -8301 * 100 + 1
+    async with async_session_maker() as s:
+        anime = Anime(mal_id=-8301, title="A-8301")
+        s.add(anime)
+        await s.flush()
+        # m_ok added first → lower id → refreshed first in the loop. Its
+        # fields match _payload() so the refresh is a NO-diff (counter would
+        # CLIMB 2 → 3, also leaving the stabilizing bucket) rather than reset.
+        ok_media = Media(**media_kwargs(
+            anime_id=anime.id, mal_id=m_ok,
+            score=7.5, scored_by=1000, episodes=12,
+            aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        ))
+        fail_media = Media(**media_kwargs(anime_id=anime.id, mal_id=m_fail))
+        s.add_all([ok_media, fail_media])
+        await s.flush()  # one round-trip; add-order fixes the ids
+        s.add(MediaFreshness(
+            media_id=ok_media.id, last_checked_at=old, stable_check_count=2,
+        ))
+        s.add(MediaFreshness(
+            media_id=fail_media.id, last_checked_at=old, stable_check_count=1,
+        ))
+        s.add(AnimeFreshness(
+            anime_id=anime.id, last_checked_at=old, stable_check_count=2,
+        ))
+        await s.commit()
+        a_id, ok_id = anime.id, ok_media.id
+    tracked_anime.append(a_id)
+
+    fake = _FakeScraper(
+        {m_ok: _payload(), m_fail: _payload()}, error_for_mal_id=m_fail,
+    )
+    summary, _, _ = await _run_dispatcher_harness(
+        monkeypatch, fake, [a_id], job_id=8301,
+    )
+
+    # Whole anime rolled back — nothing counts as refreshed/touched.
+    assert summary["counters"]["media_refreshed"] == 0
+    assert summary["counters"]["anime_touched"] == 0
+    assert summary["counters"]["step1_failed"] == 1
+    # m_ok must actually have been refreshed (then rolled back) for the freshness
+    # assertion below to mean anything — guards against a vacuous pass where the
+    # loop never reached m_ok (e.g. ordering regressed and m_fail ran first).
+    assert sorted(fake.refresh_calls) == sorted([m_ok, m_fail])
+
+    # The crux: m_ok refreshed cleanly but its freshness must be untouched
+    # because m_fail's exception rolled back the shared savepoint. (m_fail's own
+    # freshness is uninteresting — it raised before _advance_media_freshness.)
+    async with async_session_maker() as s:
+        ok_fresh = (await s.execute(
+            select(MediaFreshness).where(MediaFreshness.media_id == ok_id)
+        )).scalars().one()
+    assert ok_fresh.stable_check_count == 2  # NOT 3 — savepoint reverted
+    assert ok_fresh.last_checked_at == old
+
+
 # ---------------------------------------------------------------------------
 # 7c — relations probe gate (_qualifies_for_relations_probe)
 # ---------------------------------------------------------------------------
