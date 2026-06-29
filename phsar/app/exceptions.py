@@ -248,6 +248,16 @@ class RewatchNotAllowedError(PhsarBaseError):
         super().__init__("Only completed ratings can log a rewatch.")
 
 
+class CannotRateUnairedError(PermanentPhsarError):
+    """Raised when creating a rating for a media that hasn't aired yet — there's
+    nothing to have watched. The frontend hides the rating form for these, so this
+    is a defensive guard against a direct/stale API call."""
+    status_code = 422
+
+    def __init__(self):
+        super().__init__("This media hasn't aired yet — you can't rate it.")
+
+
 class AnimeNotFoundByUuidError(PhsarBaseError):
     """Raised when an anime UUID does not resolve to an existing anime."""
     status_code = 404

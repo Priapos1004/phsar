@@ -1,7 +1,7 @@
 import pytest
 
 from app.models.anime import Anime
-from app.models.media import Media, RelationType
+from app.models.media import Media, RelationType, SeasonType
 from tests._helpers import media_kwargs
 
 
@@ -70,6 +70,29 @@ async def test_upsert_rating_on_hold_with_episodes(client, user_auth_headers, te
     assert data["episodes_watched"] == 5
     # on_hold is not a completion — no watch event logged
     assert data["watched_count"] == 0
+
+
+async def test_episodes_watched_clamped_to_media_total(client, user_auth_headers, test_media_list):
+    """A bogus episodes_watched is clamped server-side to the media's episode total."""
+    media = test_media_list[0]  # episodes=12
+    response = await client.put(
+        f"/ratings/media/{media.uuid}",
+        json={"rating": 7.0, "watch_status": "on_hold", "episodes_watched": 999999},
+        headers=user_auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["episodes_watched"] == 12
+
+
+async def test_episodes_watched_clamped_to_cap_when_no_total(client, user_auth_headers, test_media):
+    """With no episode total, episodes_watched is clamped to the unknown-total cap (2000)."""
+    response = await client.put(
+        f"/ratings/media/{test_media.uuid}",
+        json={"rating": 7.0, "watch_status": "on_hold", "episodes_watched": 999999},
+        headers=user_auth_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["episodes_watched"] == 2000
 
 
 # --- Watch events / rewatch (v0.14.10) ---
@@ -381,25 +404,40 @@ async def test_bulk_upsert(client, user_auth_headers, test_media_list):
     assert data[2]["episodes_watched"] == 6
 
 
-async def test_bulk_upsert_note_on_last_main_media(client, user_auth_headers, db_session):
-    """Note should land on the last 'main' media, not the last media overall."""
+async def test_bulk_upsert_note_on_chronologically_last_main_invariant_to_order(
+    client, user_auth_headers, db_session
+):
+    """Note lands on the chronologically-last 'main' media (the order the media table
+    shows), independent of the order media_uuids arrive in — not the last *selected*,
+    and not a later side story."""
     anime = Anime(mal_id=77777, title="Mixed Relation Anime")
     db_session.add(anime)
     await db_session.flush()
 
-    media_items = []
-    relation_types = [RelationType.Main, RelationType.Main, RelationType.SideStory]
-    for i, rt in enumerate(relation_types):
-        media = Media(**media_kwargs(
-            anime.id, 77770 + i,
-            title=f"Mixed Media {i + 1}",
-            relation_type=rt,
-        ))
-        db_session.add(media)
-        media_items.append(media)
+    # winner = the latest-season main; an earlier main + a later-season side story
+    # (which must NOT win — it isn't main) bracket it.
+    winner = Media(**media_kwargs(
+        anime.id, 77772, title="Latest Main",
+        relation_type=RelationType.Main,
+        anime_season_name=SeasonType.Spring, anime_season_year=2022,
+    ))
+    earlier_main = Media(**media_kwargs(
+        anime.id, 77770, title="Earlier Main",
+        relation_type=RelationType.Main,
+        anime_season_name=SeasonType.Winter, anime_season_year=2020,
+    ))
+    later_side = Media(**media_kwargs(
+        anime.id, 77779, title="Later Side Story",
+        relation_type=RelationType.SideStory,
+        anime_season_name=SeasonType.Fall, anime_season_year=2023,
+    ))
+    db_session.add_all([winner, earlier_main, later_side])
     await db_session.flush()
 
-    uuids = [str(m.uuid) for m in media_items]
+    # Submit scrambled (later side first, winner second, earlier main last) so the note
+    # target can't coincide with "last submitted". Response order mirrors request order.
+    submit = [later_side, winner, earlier_main]
+    uuids = [str(m.uuid) for m in submit]
     response = await client.put(
         "/ratings/bulk",
         json={"rating": 8.0, "media_uuids": uuids, "note": "Great anime"},
@@ -407,10 +445,10 @@ async def test_bulk_upsert_note_on_last_main_media(client, user_auth_headers, db
     )
     assert response.status_code == 200
     data = response.json()
-    # Note on index 1 (last main), not index 2 (last overall, which is "other")
-    assert data[0]["note"] is None
-    assert data[1]["note"] == "Great anime"
-    assert data[2]["note"] is None
+    by_uuid = {item["media_uuid"]: item for item in data}
+    assert by_uuid[str(winner.uuid)]["note"] == "Great anime"
+    assert by_uuid[str(earlier_main.uuid)]["note"] is None
+    assert by_uuid[str(later_side.uuid)]["note"] is None
 
 
 async def test_get_ratings_for_anime(client, user_auth_headers, test_media_list):

@@ -447,9 +447,9 @@ export function tagMetrics(items: RatingScoreItem[], dim: TagDim): TagMetric[] {
 	const rows = [...bucketByTag(items, dim).entries()].map(([tag, rs]) => {
 		const avg = mean(rs.map((r) => r.rating));
 		const count = new Set(rs.map((r) => r.anime_uuid)).size; // distinct shows, not per-season media
-		// Clamp per-item so a stray negative watch time can't drive the log10 below 0
-		// (a single NaN/-Infinity raw would poison every tag via the maxRaw divide).
-		const watchSeconds = rs.reduce((s, r) => s + Math.max(0, r.total_watch_time ?? 0), 0);
+		// watchedSeconds is already finite + non-negative per item, so a stray catalog row
+		// can't drive the log10 below 0 or poison every tag via the maxRaw divide.
+		const watchSeconds = rs.reduce((s, r) => s + watchedSeconds(r), 0);
 		const raw = avg * Math.log10(count + 1) * (1 + Math.log10(watchSeconds / 3600 + 1));
 		return { tag, avg, count, watchSeconds, raw };
 	});
@@ -621,18 +621,20 @@ export function movingAverage(values: number[], window: number): number[] {
 
 export interface CumulativePoint {
 	date: string; // the rating's created_at
-	seconds: number; // cumulative completed watch time up to and including this point
+	seconds: number; // cumulative actual watch time up to and including this point
 }
 
-/** Cumulative completed watch time plotted against when you rated each title.
- * The slope is your watch pace — steep early (back-cataloguing), then settling
- * to your ongoing rate. `sinceISO` clips the x-axis to a recent window while
- * keeping the y-values absolute, so the recent slope stays truthful. */
+/** Cumulative watch time plotted against when you rated each title. The slope is
+ * your watch pace — steep early (back-cataloguing), then settling to your ongoing
+ * rate. Credits actual watched time (episodes_watched × per-episode runtime) for
+ * every status, so on-hold/dropped partials count. `sinceISO` clips the x-axis to
+ * a recent window while keeping the y-values absolute, so the recent slope stays
+ * truthful. */
 export function cumulativeWatchTime(items: RatingScoreItem[], sinceISO?: string): CumulativePoint[] {
 	// Decorate-sort-undecorate: parse each created_at once instead of in the comparator.
 	const sorted = items
 		.map((it) => ({ it, t: epochMs(it.created_at) }))
-		.filter((d) => d.it.watch_status === 'completed' && Number.isFinite(d.t))
+		.filter((d) => Number.isFinite(d.t))
 		.sort((a, b) => a.t - b.t);
 	let cum = 0;
 	// Collapse points that share the exact same created_at — bulk-rating an anime writes
@@ -640,7 +642,7 @@ export function cumulativeWatchTime(items: RatingScoreItem[], sinceISO?: string)
 	// they don't stack on one x. Sorted ascending + last-write-wins keeps the highest total.
 	const byInstant = new Map<string, CumulativePoint>();
 	for (const { it } of sorted) {
-		cum += Math.max(0, it.total_watch_time ?? 0);
+		cum += watchedSeconds(it);
 		byInstant.set(it.created_at, { date: it.created_at, seconds: cum });
 	}
 	const pts = [...byInstant.values()];
@@ -652,11 +654,43 @@ export function cumulativeWatchTime(items: RatingScoreItem[], sinceISO?: string)
 
 // ── Watch time ───────────────────────────────────────────────────────────────
 
-/** Total completed watch time in seconds. Counts only completed ratings (an
- * on-hold/dropped series wasn't fully watched); uses the catalog
- * total_watch_time (episodes × duration) as the per-media estimate. The
- * over-time view is the cumulative chart below. */
+/** Estimated seconds the user actually watched of one media: the episodes they
+ * watched × the per-episode runtime (`duration_seconds`). Counted for every watch
+ * status, so a partly-watched on-hold/dropped series contributes its real time
+ * rather than zero. Returns 0 when we can't estimate (no per-episode runtime — e.g.
+ * a show with unknown duration), so the result is always finite and non-negative.
+ *
+ * episodes_watched is clamped to [0, episodes] when the catalog total is known, so a
+ * stale over-count can't exceed the full runtime; a completed row with no recorded
+ * episodes_watched (legacy, predating per-status counts) is assumed to have watched
+ * the full run. duration_seconds is used directly (not total_watch_time / episodes)
+ * so a currently-airing show with no episode total still credits its watched time. */
+export function watchedSeconds(it: RatingScoreItem): number {
+	const dur = it.duration_seconds;
+	if (!dur || dur <= 0) return 0;
+	const eps = it.episodes;
+	let watched = episodesWatchedOf(it.episodes_watched, it.watch_status, eps);
+	if (eps != null && eps > 0) watched = Math.min(eps, watched); // clamp to known total
+	return watched * dur;
+}
+
+/** Episodes the user watched of one media, with the completed→full-run fallback for
+ * rows that predate per-status episode counts (a completed rating with no recorded
+ * count is assumed to have watched the full run). Always non-negative. Clamping to the
+ * catalog total is left to the caller — `watchedSeconds` clamps it; the anime overview's
+ * episode count deliberately shows the raw value and gates the ratio separately. Shared
+ * by both so the fallback rule lives in one place. */
+export function episodesWatchedOf(
+	episodesWatched: number | null,
+	watchStatus: WatchStatus,
+	episodes: number | null,
+): number {
+	return Math.max(0, episodesWatched ?? (watchStatus === 'completed' ? (episodes ?? 0) : 0));
+}
+
+/** Total actual watch time in seconds across all ratings (every status). The
+ * over-time view is the cumulative chart above. */
 export function totalWatchTime(items: RatingScoreItem[]): number {
-	return items.reduce((a, it) => (it.watch_status === 'completed' ? a + Math.max(0, it.total_watch_time ?? 0) : a), 0);
+	return items.reduce((a, it) => a + watchedSeconds(it), 0);
 }
 

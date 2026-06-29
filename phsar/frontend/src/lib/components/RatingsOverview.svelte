@@ -7,6 +7,7 @@
 	import RatingsOverviewNotes from '$lib/components/RatingsOverviewNotes.svelte';
 	import RatingsOverviewAttributes from '$lib/components/RatingsOverviewAttributes.svelte';
 	import { resolveTitle } from '$lib/utils/formatString';
+	import { episodesWatchedOf } from '$lib/utils/ratingStats';
 	import { userSettings } from '$lib/stores/userSettings';
 	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr, isAttrRated, type AnimeMediaItem, type RatingOut } from '$lib/types/api';
 
@@ -35,12 +36,24 @@
 	let onHoldCount = $derived(ratings.filter((r) => r.watch_status === 'on_hold').length);
 
 	let totalEpisodesWatched = $derived(
-		ratings.reduce((sum, r) => sum + (r.episodes_watched ?? 0), 0),
+		mediaWithRatings.reduce(
+			(sum, { media: m, rating: r }) =>
+				r ? sum + episodesWatchedOf(r.episodes_watched, r.watch_status, m.episodes) : sum,
+			0,
+		),
 	);
 
 	// All media, not just rated ones
 	let totalEpisodesAvailable = $derived(
 		media.reduce((sum, m) => sum + (m.episodes ?? 0), 0),
+	);
+
+	// The aggregate denominator (Σ episodes) is only meaningful when every rated media has
+	// a known episode total. If a watched media has no total (a still-airing series), it's
+	// in the numerator but not the denominator, so "100 / 108" pits a watched count against
+	// an unrelated total — in that case the stat shows only the watched count.
+	let episodeTotalKnown = $derived(
+		mediaWithRatings.every(({ media: m, rating: r }) => !r || m.episodes != null),
 	);
 
 	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
@@ -75,6 +88,7 @@
 			{onHoldCount}
 			{totalEpisodesWatched}
 			{totalEpisodesAvailable}
+			{episodeTotalKnown}
 		/>
 
 		<Separator />

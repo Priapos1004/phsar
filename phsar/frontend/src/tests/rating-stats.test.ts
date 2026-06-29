@@ -18,6 +18,7 @@ import {
 	movingAverage,
 	cumulativeWatchTime,
 	totalWatchTime,
+	watchedSeconds,
 } from '$lib/utils/ratingStats';
 
 function item(o: Partial<RatingScoreItem> & { media_uuid: string; anime_uuid: string; rating: number }): RatingScoreItem {
@@ -31,13 +32,14 @@ function item(o: Partial<RatingScoreItem> & { media_uuid: string; anime_uuid: st
 		media_cover_image: null,
 		anime_cover_image: null,
 		watch_status: 'completed' as WatchStatus,
+		episodes_watched: null,
 		age_rating_numeric: null,
 		genres: [],
 		studios: [],
 		mal_score: null,
 		scored_by: 0,
 		episodes: null,
-		total_watch_time: null,
+		duration_seconds: null,
 		anime_season_name: null,
 		anime_season_year: null,
 		relation_type: 'main',
@@ -319,12 +321,14 @@ describe('alignmentPoints', () => {
 });
 
 describe('tagMetrics (genre + studio)', () => {
+	// Completed rows with no explicit episodes_watched fall back to the full run, so
+	// watched time = episodes × duration_seconds (e.g. a = 6×1200 = 7200s).
 	const items = [
 		// a + b are two media of the SAME anime A → count once at the anime grain.
-		item({ media_uuid: 'a', anime_uuid: 'A', rating: 9, genres: ['Action'], studios: ['MAPPA'], total_watch_time: 7200 }),
-		item({ media_uuid: 'b', anime_uuid: 'A', rating: 5, genres: ['Action'], studios: ['MAPPA'], total_watch_time: 3600 }),
-		item({ media_uuid: 'c', anime_uuid: 'B', rating: 7, genres: ['Action'], studios: ['Bones'], total_watch_time: 1800 }),
-		item({ media_uuid: 'd', anime_uuid: 'C', rating: 7, genres: ['Comedy'], studios: ['Kyoto'], total_watch_time: 1800 }),
+		item({ media_uuid: 'a', anime_uuid: 'A', rating: 9, genres: ['Action'], studios: ['MAPPA'], episodes: 6, duration_seconds: 1200 }),
+		item({ media_uuid: 'b', anime_uuid: 'A', rating: 5, genres: ['Action'], studios: ['MAPPA'], episodes: 3, duration_seconds: 1200 }),
+		item({ media_uuid: 'c', anime_uuid: 'B', rating: 7, genres: ['Action'], studios: ['Bones'], episodes: 1, duration_seconds: 1800 }),
+		item({ media_uuid: 'd', anime_uuid: 'C', rating: 7, genres: ['Comedy'], studios: ['Kyoto'], episodes: 1, duration_seconds: 1800 }),
 	];
 	it('counts distinct anime (not media), sums media-level watch time', () => {
 		const g = tagMetrics(items, 'genres');
@@ -410,28 +414,50 @@ describe('ratingSequence + movingAverage', () => {
 	});
 });
 
+describe('watchedSeconds', () => {
+	it('credits actual watched time = episodes_watched × per-episode duration', () => {
+		// dropped at 2 of 10 eps (30s each) → 60s of real time, not the full 300s.
+		expect(watchedSeconds(item({ media_uuid: 'a', anime_uuid: 'A', rating: 6, watch_status: 'dropped', episodes: 10, duration_seconds: 30, episodes_watched: 2 }))).toBe(60);
+	});
+	it('assumes the full run for a completed row with no recorded episodes_watched', () => {
+		expect(watchedSeconds(item({ media_uuid: 'a', anime_uuid: 'A', rating: 8, watch_status: 'completed', episodes: 12, duration_seconds: 60, episodes_watched: null }))).toBe(720);
+	});
+	it('returns 0 (not NaN) when the per-episode duration is unknown', () => {
+		expect(watchedSeconds(item({ media_uuid: 'a', anime_uuid: 'A', rating: 8, watch_status: 'dropped', episodes: 24, duration_seconds: null, episodes_watched: 12 }))).toBe(0);
+	});
+	it('credits an unknown-total airing show from its known per-episode duration', () => {
+		// One Piece on-hold: no episode total, but the per-ep runtime is known.
+		expect(watchedSeconds(item({ media_uuid: 'a', anime_uuid: 'A', rating: 9, watch_status: 'on_hold', episodes: null, duration_seconds: 1440, episodes_watched: 500 }))).toBe(720000);
+	});
+	it('clamps a stale episodes_watched above the catalog total', () => {
+		expect(watchedSeconds(item({ media_uuid: 'a', anime_uuid: 'A', rating: 7, watch_status: 'dropped', episodes: 24, duration_seconds: 60, episodes_watched: 66 }))).toBe(24 * 60);
+	});
+});
+
 describe('cumulativeWatchTime', () => {
-	it('accumulates completed watch time by rating date; clips x to a window', () => {
+	it('accumulates actual watch time by rating date (all statuses); clips x to a window', () => {
 		const items = [
-			item({ media_uuid: 'a', anime_uuid: 'A', rating: 8, watch_status: 'completed', total_watch_time: 100, created_at: '2026-01-01T00:00:00Z' }),
-			item({ media_uuid: 'b', anime_uuid: 'B', rating: 7, watch_status: 'dropped', total_watch_time: 999, created_at: '2026-02-01T00:00:00Z' }),
-			item({ media_uuid: 'c', anime_uuid: 'C', rating: 6, watch_status: 'completed', total_watch_time: 50, created_at: '2026-03-01T00:00:00Z' }),
+			item({ media_uuid: 'a', anime_uuid: 'A', rating: 8, watch_status: 'completed', episodes: 1, duration_seconds: 100, created_at: '2026-01-01T00:00:00Z' }),
+			// dropped now contributes its partial (2 of 10 eps × 30s = 60s), not zero.
+			item({ media_uuid: 'b', anime_uuid: 'B', rating: 7, watch_status: 'dropped', episodes: 10, duration_seconds: 30, episodes_watched: 2, created_at: '2026-02-01T00:00:00Z' }),
+			item({ media_uuid: 'c', anime_uuid: 'C', rating: 6, watch_status: 'completed', episodes: 1, duration_seconds: 50, created_at: '2026-03-01T00:00:00Z' }),
 		];
 		expect(cumulativeWatchTime(items)).toEqual([
 			{ date: '2026-01-01T00:00:00Z', seconds: 100 },
-			{ date: '2026-03-01T00:00:00Z', seconds: 150 }, // dropped excluded; cumulative absolute
+			{ date: '2026-02-01T00:00:00Z', seconds: 160 }, // dropped partial included
+			{ date: '2026-03-01T00:00:00Z', seconds: 210 },
 		]);
 		// window clips x but keeps absolute y
 		expect(cumulativeWatchTime(items, '2026-02-15T00:00:00Z')).toEqual([
-			{ date: '2026-03-01T00:00:00Z', seconds: 150 },
+			{ date: '2026-03-01T00:00:00Z', seconds: 210 },
 		]);
 	});
 
 	it('collapses ratings made at the exact same instant (bulk rating) to one point', () => {
 		const items = [
-			item({ media_uuid: 'a', anime_uuid: 'A', rating: 8, watch_status: 'completed', total_watch_time: 100, created_at: '2026-01-01T09:00:00Z' }),
-			item({ media_uuid: 'b', anime_uuid: 'A', rating: 7, watch_status: 'completed', total_watch_time: 50, created_at: '2026-01-01T09:00:00Z' }),
-			item({ media_uuid: 'c', anime_uuid: 'B', rating: 6, watch_status: 'completed', total_watch_time: 30, created_at: '2026-01-01T09:00:05Z' }),
+			item({ media_uuid: 'a', anime_uuid: 'A', rating: 8, watch_status: 'completed', episodes: 1, duration_seconds: 100, created_at: '2026-01-01T09:00:00Z' }),
+			item({ media_uuid: 'b', anime_uuid: 'A', rating: 7, watch_status: 'completed', episodes: 1, duration_seconds: 50, created_at: '2026-01-01T09:00:00Z' }),
+			item({ media_uuid: 'c', anime_uuid: 'B', rating: 6, watch_status: 'completed', episodes: 1, duration_seconds: 30, created_at: '2026-01-01T09:00:05Z' }),
 		];
 		const cum = cumulativeWatchTime(items);
 		expect(cum).toHaveLength(2); // the two identical-timestamp ratings collapse; 09:00:05 stays
@@ -439,22 +465,23 @@ describe('cumulativeWatchTime', () => {
 		expect(cum[1].seconds).toBe(180);
 	});
 
-	it('ignores a completed rating with an unparseable created_at', () => {
+	it('ignores a rating with an unparseable created_at', () => {
 		const cum = cumulativeWatchTime([
-			item({ media_uuid: 'a', anime_uuid: 'A', rating: 8, watch_status: 'completed', total_watch_time: 100, created_at: '2026-01-01T00:00:00Z' }),
-			item({ media_uuid: 'bad', anime_uuid: 'B', rating: 7, watch_status: 'completed', total_watch_time: 999, created_at: '' }),
+			item({ media_uuid: 'a', anime_uuid: 'A', rating: 8, watch_status: 'completed', episodes: 1, duration_seconds: 100, created_at: '2026-01-01T00:00:00Z' }),
+			item({ media_uuid: 'bad', anime_uuid: 'B', rating: 7, watch_status: 'completed', episodes: 1, duration_seconds: 999, created_at: '' }),
 		]);
 		expect(cum).toEqual([{ date: '2026-01-01T00:00:00Z', seconds: 100 }]);
 	});
 });
 
 describe('totalWatchTime', () => {
-	it('sums only completed watch time', () => {
+	it('sums actual watched time across all statuses', () => {
 		const total = totalWatchTime([
-			item({ media_uuid: 'a', anime_uuid: 'A', rating: 8, watch_status: 'completed', total_watch_time: 100 }),
-			item({ media_uuid: 'b', anime_uuid: 'B', rating: 7, watch_status: 'completed', total_watch_time: 50 }),
-			item({ media_uuid: 'c', anime_uuid: 'C', rating: 6, watch_status: 'dropped', total_watch_time: 999 }),
+			item({ media_uuid: 'a', anime_uuid: 'A', rating: 8, watch_status: 'completed', episodes: 1, duration_seconds: 100 }),
+			item({ media_uuid: 'b', anime_uuid: 'B', rating: 7, watch_status: 'completed', episodes: 1, duration_seconds: 50 }),
+			// dropped at 2 of 10 eps (30s) → 60s counted, not the full 300s and not zero.
+			item({ media_uuid: 'c', anime_uuid: 'C', rating: 6, watch_status: 'dropped', episodes: 10, duration_seconds: 30, episodes_watched: 2 }),
 		]);
-		expect(total).toBe(150); // dropped excluded
+		expect(total).toBe(210);
 	});
 });

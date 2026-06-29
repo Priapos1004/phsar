@@ -169,13 +169,15 @@ export interface RatingScoreItem {
 	anime_cover_image: string | null;
 	rating: number;
 	watch_status: WatchStatus;
+	episodes_watched: number | null;
 	age_rating_numeric: number | null;
 	genres: string[];
 	studios: string[];
 	mal_score: number | null;
 	scored_by: number;
 	episodes: number | null;
-	total_watch_time: number | null;
+	// Per-episode runtime; actual watched time = episodes_watched × duration_seconds.
+	duration_seconds: number | null;
 	anime_season_name: string | null;
 	anime_season_year: number | null;
 	relation_type: string;
