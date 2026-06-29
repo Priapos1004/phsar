@@ -15,7 +15,10 @@
 
 	interface Props {
 		open: boolean;
+		// Already filtered to the ratable subset (not-yet-aired media are excluded
+		// by the caller — they stay selectable for the watchlist but can't be rated).
 		selectedUuids: Set<string>;
+		excludedNotYetAiredCount?: number;
 		alreadyRatedCount: number;
 		onSaved: (results: RatingOut[], note: string) => void;
 		// Anime context for the rating-consistency helper (bulk rating is anime-scoped, so
@@ -29,6 +32,7 @@
 	let {
 		open = $bindable(),
 		selectedUuids,
+		excludedNotYetAiredCount = 0,
 		alreadyRatedCount,
 		onSaved,
 		animeUuid,
@@ -36,6 +40,8 @@
 		studios = [],
 		ageRatingNumeric = null,
 	}: Props = $props();
+
+	let nothingToRate = $derived(selectedUuids.size === 0);
 
 	let SCORE_STEP = $derived(parseFloat($userSettings?.rating_step ?? '0.5'));
 	let SCORE_DECIMALS = $derived(decimalPlaces(SCORE_STEP));
@@ -100,9 +106,21 @@
 				</div>
 			{/if}
 
+			{#if excludedNotYetAiredCount > 0}
+				<div class="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
+					{#if nothingToRate}
+						{excludedNotYetAiredCount === 1 ? 'The selected media' : `All ${excludedNotYetAiredCount} selected media`}
+						{excludedNotYetAiredCount === 1 ? "hasn't" : "haven't"} aired yet, so there's nothing to rate.
+					{:else}
+						{excludedNotYetAiredCount} selected media {excludedNotYetAiredCount === 1 ? "hasn't" : "haven't"}
+						aired yet and {excludedNotYetAiredCount === 1 ? 'is' : 'are'} excluded from this rating.
+					{/if}
+				</div>
+			{/if}
+
 			<!-- Score: editable circle + slider -->
 			<div class="flex flex-col items-center py-2 space-y-3">
-				<div class="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center">
+				<div class="w-24 h-24 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center">
 					<input
 						type="text"
 						inputmode="decimal"
@@ -113,7 +131,7 @@
 							e.currentTarget.value = clampAndSnapScore(parsed, SCORE_STEP).toFixed(SCORE_DECIMALS);
 						}}
 						onkeydown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-						class="w-14 text-center text-2xl font-bold text-card-foreground bg-transparent outline-none"
+						class="w-20 text-center text-2xl font-bold text-card-foreground bg-transparent outline-none"
 					/>
 				</div>
 				<div class="w-full max-w-xs">
@@ -132,7 +150,7 @@
 						placeholder="Your thoughts on this anime..."
 						class="bg-card"
 					/>
-					<p class="text-xs text-muted-foreground">Applied to the last main media only.</p>
+					<p class="text-xs text-muted-foreground">Applied to the latest-aired main media only.</p>
 				</div>
 
 				<!-- Attributes -->
@@ -176,7 +194,7 @@
 				<p class="text-destructive">{error}</p>
 			{/if}
 
-			<Button class="w-full" onclick={handleSave} disabled={saving}>
+			<Button class="w-full" onclick={handleSave} disabled={saving || nothingToRate}>
 				{#if saving}
 					Saving...
 				{:else}

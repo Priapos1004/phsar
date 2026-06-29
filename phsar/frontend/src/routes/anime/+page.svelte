@@ -73,8 +73,16 @@
 	let bulkDeleteError = $state('');
 	let bulkDeleteHistory = $state(false);
 
+	// A not-yet-aired media stays selectable (the selection also drives the bulk
+	// watchlist), but it can't be rated — so bulk rating excludes it and warns.
+	let notYetAiredUuids = $derived(
+		new Set((anime?.media ?? []).filter(m => m.airing_status === 'Not yet aired').map(m => m.uuid))
+	);
+	let ratableUuids = $derived(new Set([...selectedUuids].filter(uuid => !notYetAiredUuids.has(uuid))));
+	let excludedNotYetAired = $derived(selectedUuids.size - ratableUuids.size);
+
 	let alreadyRatedCount = $derived(
-		[...selectedUuids].filter(uuid => userRatings.has(uuid)).length
+		[...ratableUuids].filter(uuid => userRatings.has(uuid)).length
 	);
 
 	// Watch-history footprint of the current selection, surfaced in the bulk-delete dialog
@@ -623,7 +631,8 @@
 		<BulkRateDialog
 			bind:this={bulkRateDialog}
 			bind:open={showRateDialog}
-			{selectedUuids}
+			selectedUuids={ratableUuids}
+			excludedNotYetAiredCount={excludedNotYetAired}
 			{alreadyRatedCount}
 			onSaved={handleBulkRateSaved}
 			animeUuid={anime?.uuid}

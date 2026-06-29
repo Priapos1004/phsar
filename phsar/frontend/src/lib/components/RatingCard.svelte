@@ -13,6 +13,7 @@
 	import DeleteWatchHistoryToggle from '$lib/components/DeleteWatchHistoryToggle.svelte';
 	import AttributeSelect from '$lib/components/AttributeSelect.svelte';
 	import RatingNeighbors from '$lib/components/RatingNeighbors.svelte';
+	import Notice from '$lib/components/Notice.svelte';
 	import { attributeBadges } from '$lib/utils/ratingAttributes';
 	import { formatDecimalDigits, clampAndSnapScore, decimalPlaces, roundScore } from '$lib/utils/formatString';
 	import { userSettings } from '$lib/stores/userSettings';
@@ -30,6 +31,8 @@
 		genres?: string[];
 		studios?: string[];
 		ageRatingNumeric?: number | null;
+		// MAL airing status — a not-yet-aired media can't be rated yet.
+		airingStatus?: string;
 	}
 
 	let {
@@ -42,7 +45,26 @@
 		genres = [],
 		studios = [],
 		ageRatingNumeric = null,
+		airingStatus,
 	}: Props = $props();
+
+	// Generous cap for the episodes field when the catalog has no episode total — a
+	// still-airing long-runner (One Piece is ~1100) stays well under this. Mirrors
+	// UNKNOWN_EPISODES_CAP in backend rating_service.py (which clamps server-side too).
+	const UNKNOWN_EPISODES_CAP = 2000;
+	// A not-yet-aired media can't have been watched, so a fresh rating is blocked
+	// (an existing rating, an edge, is still editable below).
+	let notYetAired = $derived(airingStatus === 'Not yet aired');
+	let episodesMax = $derived(totalEpisodes ?? UNKNOWN_EPISODES_CAP);
+	// With no episode total (usually a still-airing series like One Piece) there's no way
+	// to have watched the whole thing, so "Completed" isn't offered — only On Hold / Dropped.
+	let canComplete = $derived(totalEpisodes !== null);
+
+	function clampEpisodes() {
+		if (episodesWatched === '') return;
+		const n = parseInt(episodesWatched);
+		episodesWatched = Number.isNaN(n) ? '' : String(Math.min(episodesMax, Math.max(0, n)));
+	}
 
 
 	let editing = $state(false);
@@ -114,7 +136,8 @@
 			}
 		} else {
 			score = 5.0;
-			status = 'completed';
+			// No episode total → can't be Completed, so a new rating starts as On Hold.
+			status = canComplete ? 'completed' : 'on_hold';
 			episodesWatched = totalEpisodes?.toString() ?? '';
 			note = '';
 			for (const key of Object.keys(RATING_ATTRIBUTE_OPTIONS)) {
@@ -130,12 +153,17 @@
 		editing = false;
 	});
 
-	$effect(() => {
-		// Only auto-fill episodes when creating a new rating (not editing existing)
-		if (!existingRating && !revealsEpisodes && totalEpisodes !== null) {
-			episodesWatched = totalEpisodes.toString();
+	function selectStatus(next: WatchStatus) {
+		if (next === status) return;
+		status = next;
+		// Switching to Completed means the full run was watched: fill to the total when it's
+		// known, else clear so a stale on-hold count doesn't linger. Driven by the click (not a
+		// mount effect) so it also fires when editing an existing rating. On_hold/dropped keep
+		// the current value so the user can edit it.
+		if (next === 'completed') {
+			episodesWatched = totalEpisodes !== null ? totalEpisodes.toString() : '';
 		}
-	});
+	}
 
 	$effect(() => {
 		// On hold / dropped → ending fields aren't ratable; completed → clear auto-set value
@@ -249,7 +277,12 @@
 
 <Card.Root class={cls.cardGlass}>
 	<Card.Content>
-		{#if !existingRating && !editing}
+		{#if notYetAired && !existingRating}
+			<div class="space-y-3 py-2">
+				<h2 class="text-sm font-medium text-muted-foreground uppercase tracking-wide">Your Rating</h2>
+				<Notice>This anime hasn't aired yet — you'll be able to rate it once it's out.</Notice>
+			</div>
+		{:else if !existingRating && !editing}
 			<div class="flex flex-col items-center py-4 space-y-3">
 				<div class="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
 					<Star class="size-7 text-primary" />
@@ -338,9 +371,11 @@
 					</Button>
 				</div>
 
-				<!-- Score: editable circle + slider -->
+				<!-- Score: editable circle + slider. Circle/input sized so the widest value
+				     "10.00" (two integer digits + a 0.01-step's decimals) fits without the
+				     input clipping it on the right. -->
 				<div class="flex flex-col items-center py-2 space-y-3">
-					<div class="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center">
+					<div class="w-24 h-24 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center">
 						<input
 							type="text"
 							inputmode="decimal"
@@ -351,7 +386,7 @@
 								e.currentTarget.value = clampAndSnap(parsed).toFixed(STEP_DECIMALS);
 							}}
 							onkeydown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-							class="w-14 text-center text-2xl font-bold text-card-foreground bg-transparent outline-none"
+							class="w-20 text-center text-2xl font-bold text-card-foreground bg-transparent outline-none"
 						/>
 					</div>
 					<div class="w-full max-w-xs">
@@ -371,7 +406,8 @@
 										variant={status === opt.value ? 'default' : 'ghost'}
 										size="sm"
 										class="rounded-none border-0"
-										onclick={() => { status = opt.value; }}
+										disabled={opt.value === 'completed' && !canComplete && status !== 'completed'}
+										onclick={() => selectStatus(opt.value)}
 									>
 										{opt.label}
 									</Button>
@@ -384,10 +420,11 @@
 							<Input
 								type="number"
 								min={0}
-								max={totalEpisodes ?? undefined}
+								max={episodesMax}
 								bind:value={episodesWatched}
+								onblur={clampEpisodes}
 								placeholder="—"
-								disabled={!revealsEpisodes && totalEpisodes !== null}
+								disabled={!revealsEpisodes}
 								class="bg-card w-20 text-center"
 							/>
 							{#if totalEpisodes !== null}
@@ -395,6 +432,10 @@
 							{/if}
 						</div>
 					</div>
+
+					{#if !canComplete}
+						<p class="text-xs text-muted-foreground">No episode count yet, so this can't be marked Completed — only On Hold or Dropped.</p>
+					{/if}
 
 					<div class="space-y-1">
 						<Label>Note <span class="text-muted-foreground font-normal">({note.length}/1000)</span></Label>
