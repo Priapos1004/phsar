@@ -9,7 +9,8 @@
     import { GitMerge, X, RefreshCw, ArrowLeftRight, Search, ChevronRight, ChevronDown } from 'lucide-svelte';
     import { bumpCurationRefresh } from '$lib/stores/jobs';
     import { buildDetailHref } from '$lib/utils/navigation';
-    import { formatRelationType } from '$lib/utils/formatString';
+    import { formatRelationType, resolveTitle } from '$lib/utils/formatString';
+    import { userSettings } from '$lib/stores/userSettings';
     import type {
         MergeBackfillResult,
         MergeCandidateAnimeSummary,
@@ -17,6 +18,8 @@
     } from '$lib/types/api';
 
     let { currentUsername = '' }: { currentUsername?: string } = $props();
+
+    let nameLanguage = $derived($userSettings?.name_language ?? 'english');
 
     let candidates = $state<MergeCandidateListItem[]>([]);
     // `loading` flips off after the first fetch and stays off; subsequent
@@ -202,6 +205,7 @@
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                             {#each sides(c) as anime, i (anime.uuid)}
+                                {@const animeTitle = resolveTitle(anime.title, anime.name_eng, anime.name_jap, nameLanguage)}
                                 <div class="rounded border bg-card px-3 py-2 space-y-1">
                                     <div class="text-xs font-semibold uppercase text-muted-foreground tracking-wide">
                                         Anime {i === 0 ? 'A (kept)' : 'B (merged in)'}
@@ -210,9 +214,9 @@
                                         href={buildDetailHref('anime', anime.uuid, { from: 'curation' })}
                                         class="text-sm font-medium text-card-foreground hover:text-primary transition block"
                                     >
-                                        {anime.title}
+                                        {animeTitle}
                                     </a>
-                                    {#if anime.name_eng && anime.name_eng !== anime.title}
+                                    {#if anime.name_eng && anime.name_eng !== animeTitle}
                                         <p class="text-xs text-muted-foreground">{anime.name_eng}</p>
                                     {/if}
                                     <p class="text-xs text-muted-foreground">{summaryLine(anime)}</p>
@@ -240,7 +244,7 @@
                                     <ul class="mt-2 ml-4 space-y-1 text-muted-foreground">
                                         {#each c.pending_reclassifications as p (p.media_uuid)}
                                             <li class="flex items-baseline gap-2">
-                                                <span class="text-card-foreground">{p.title}</span>
+                                                <span class="text-card-foreground">{resolveTitle(p.title, p.name_eng, p.name_jap, nameLanguage)}</span>
                                                 <span class="text-xs">
                                                     {formatRelationType(p.old_relation_type)} → {formatRelationType(p.new_relation_type)}
                                                 </span>
@@ -297,9 +301,9 @@
         >
             {#snippet row(item: MergeCandidateListItem)}
                 <div class="text-sm text-card-foreground flex items-center gap-1.5 flex-wrap">
-                    <span class="font-medium">{item.anime_a.title}</span>
+                    <span class="font-medium">{resolveTitle(item.anime_a.title, item.anime_a.name_eng, item.anime_a.name_jap, nameLanguage)}</span>
                     <ArrowLeftRight class="size-3 text-muted-foreground shrink-0" />
-                    <span class="font-medium">{item.anime_b.title}</span>
+                    <span class="font-medium">{resolveTitle(item.anime_b.title, item.anime_b.name_eng, item.anime_b.name_jap, nameLanguage)}</span>
                 </div>
                 <p class="text-[11px] text-muted-foreground">
                     {item.detected_by} · {(item.similarity_score * 100).toFixed(0)}% match

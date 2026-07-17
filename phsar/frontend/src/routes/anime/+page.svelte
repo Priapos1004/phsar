@@ -450,7 +450,7 @@
 		{/if}
 
 		{#if userRatingsList.length > 0 && anime}
-			<RatingsOverview ratings={userRatingsList} media={anime.media} {scoreDecimals} minScoreDecimals={decimalPlaces(ratingStep)} />
+			<RatingsOverview ratings={userRatingsList} media={anime.media} {scoreDecimals} {ratingStep} />
 		{/if}
 
 		<!-- Media table -->

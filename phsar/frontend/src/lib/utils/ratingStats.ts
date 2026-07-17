@@ -574,6 +574,7 @@ function epochMs(iso: string | null | undefined): number {
 export interface SequencePoint {
 	index: number; // 1-based position in chronological rating order
 	score: number;
+	mediaUuid: string; // → media detail page on click (mirrors AlignmentPoint)
 	title: string;
 	nameEng: string | null;
 	nameJap: string | null;
@@ -592,6 +593,7 @@ export function ratingSequence(items: RatingScoreItem[]): SequencePoint[] {
 		.map(({ it }, i) => ({
 			index: i + 1,
 			score: it.rating,
+			mediaUuid: it.media_uuid,
 			title: it.media_title,
 			nameEng: it.media_name_eng,
 			nameJap: it.media_name_jap,

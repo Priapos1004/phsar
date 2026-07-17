@@ -290,7 +290,7 @@ Each anime search result card shows:
   - `?from=job&job=<uuid>` → "Back to job" (admin job-detail page's failed-refresh / failed-probe / attached links → `/admin/jobs/[uuid]`)
   - `?from=completion` → "Back to completion" (admin Completion tab's anime links → `/admin?tab=completion`)
   - `?from=curation` → "Back to curation" (Merge/Split candidate cards' anime links → `/admin?tab=curation`)
-  - `?from=ratings-stats` → "Back to statistics" (a You-vs-MAL scatter point → `/ratings?tab=stats`)
+  - `?from=ratings-stats` → "Back to statistics" (a You-vs-MAL scatter point **or** an Activity score-trend point → `/ratings?tab=stats`, landing back on the section you came from)
   - neither → no back button (direct-URL arrivals stay clean)
 - These flags propagate across the entire anime↔media jump chain (anime → media tile, media → anime link, related-media carousel) via `buildDetailHref`'s options bag, so a deep dive like curation → anime → media → sibling stays linkable back to the origin
 - Origin set is a closed `DetailOrigin` TS union (`'library' | 'job' | 'completion' | 'curation' | 'ratings-stats'`); extending it requires updating both `lib/utils/navigation.ts` AND `BackLink.svelte`'s switch — surfaces as a type error otherwise
@@ -320,7 +320,7 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 - **You vs MAL** — a scatter of your score vs the MAL score, one point per rated media, point size scaled by MAL vote count. With enough varied points it adds a weighted best-fit line, R², and Spearman ρ with a plain-English read-out; otherwise a skip note. Clicking a point opens that media's detail page with a "Back to statistics" return.
 - **Genres & Studios** — one configurable horizontal bar chart with a genre/studio toggle, a sort select (avg rating / rated-anime count / watch time / weighted score), and an asc/desc arrow that swaps between the top and bottom tags. Genre axis labels carry description tooltips; studio labels link to a studio-filtered search.
 - **Attributes** — split into quality-scale correlations (the 5 radar attributes, shown as importance |ρ|) and categorical-choice effects (per-choice averages + a sample-weighted spread), each with an explanation of what the measure means.
-- **Activity** — a score trend in rating order (with a selectable moving-average window) and cumulative **actual** watch time over time — episodes watched × per-episode duration, counted across every status (with a 1-month / 3-month / all range toggle, default 1 month).
+- **Activity** — a score trend in rating order (with a selectable moving-average window) and cumulative **actual** watch time over time — episodes watched × per-episode duration, counted across every status (with a 1-month / 3-month / all range toggle, default 1 month). Clicking anywhere in the score-trend plot opens the media of the rating the hover pointer is on (its detail page, with a "Back to statistics" return) — no need to hit the small point exactly. The cumulative line runs flat to today (nothing watched since your last rating), and its y-axis labels stay readable past 99 days.
 
 ---
 

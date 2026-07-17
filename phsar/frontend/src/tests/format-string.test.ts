@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatNumber, formatDuration, formatDurationCompact, formatDecimalDigits, clampAndSnapScore, roundScore, formatScore, escapeHtml } from '$lib/utils/formatString';
+import { formatNumber, formatDuration, formatDurationCompact, formatDecimalDigits, clampAndSnapScore, roundScore, formatScore, formatScoreWithStep, escapeHtml } from '$lib/utils/formatString';
 
 describe('formatNumber', () => {
 	it('formats integers with commas', () => {
@@ -185,6 +185,26 @@ describe('roundScore / formatScore', () => {
 		expect(formatScore(5.3500000000000005)).toBe('5.35');
 		expect(formatScore(8.5)).toBe('8.5');
 		expect(formatScore(10)).toBe('10');
+	});
+});
+
+describe('formatScoreWithStep', () => {
+	it('does NOT round a fine value down to one decimal (the chart bug)', () => {
+		// 4.25 at any step must never render "4.3".
+		expect(formatScoreWithStep(4.25, 0.25)).toBe('4.25');
+		expect(formatScoreWithStep(4.25, 0.5)).toBe('4.25');
+	});
+	it('floors precision to the step decimals (8 → "8.0" at 0.5-step)', () => {
+		expect(formatScoreWithStep(8, 0.5)).toBe('8.0');
+		expect(formatScoreWithStep(8, 0.25)).toBe('8.00');
+		expect(formatScoreWithStep(8, 1)).toBe('8');
+	});
+	it('expands beyond the step when the value itself needs it', () => {
+		// A finer legacy rating keeps its precision even at a coarse step.
+		expect(formatScoreWithStep(7.75, 0.5)).toBe('7.75');
+	});
+	it('sheds float-arithmetic noise before measuring precision', () => {
+		expect(formatScoreWithStep(7.890000000000001, 0.5)).toBe('7.89');
 	});
 });
 

@@ -400,6 +400,9 @@ describe('ratingSequence + movingAverage', () => {
 		]);
 		expect(seq.map((p) => p.score)).toEqual([9, 7]);
 		expect(seq.map((p) => p.index)).toEqual([1, 2]);
+		// media_uuid rides along so the Activity scatter can link each point to
+		// its media detail page (mirrors alignmentPoints).
+		expect(seq.map((p) => p.mediaUuid)).toEqual(['a', 'b']);
 	});
 	it('drops items with an unparseable created_at rather than ordering on NaN', () => {
 		const seq = ratingSequence([

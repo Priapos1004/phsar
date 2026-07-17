@@ -15,10 +15,10 @@
 		ratings: RatingOut[];
 		media: AnimeMediaItem[];
 		scoreDecimals: number;
-		minScoreDecimals: number;
+		ratingStep: number;
 	}
 
-	let { ratings, media, scoreDecimals, minScoreDecimals }: Props = $props();
+	let { ratings, media, scoreDecimals, ratingStep }: Props = $props();
 
 	let ratingsMap = $derived(new Map(ratings.map((r) => [r.media_uuid, r])));
 
@@ -93,7 +93,7 @@
 
 		<Separator />
 
-		<RatingsOverviewTimeline {mediaWithRatings} {minScoreDecimals} />
+		<RatingsOverviewTimeline {mediaWithRatings} {ratingStep} />
 
 		{#if hasAttributes}
 			<Separator />

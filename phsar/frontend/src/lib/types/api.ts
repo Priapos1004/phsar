@@ -360,6 +360,8 @@ export interface MergeCandidateAnimeSummary {
 export interface PendingReclassification {
 	media_uuid: string;
 	title: string;
+	name_eng: string | null;
+	name_jap: string | null;
 	old_relation_type: string;
 	new_relation_type: string;
 }
@@ -385,6 +387,8 @@ export interface SplitClusterMember {
 	media_uuid: string;
 	mal_id: number;
 	title: string;
+	name_eng: string | null;
+	name_jap: string | null;
 	media_type: string;
 	relation_type: string;
 }

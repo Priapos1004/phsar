@@ -82,7 +82,7 @@
 			<RatingsListTab {items} {nameLanguage} {ratingStep} />
 		</div>
 		{#if active === 'stats'}
-			<RatingsStatsTab {items} />
+			<RatingsStatsTab {items} {ratingStep} />
 		{/if}
 	{/if}
 </div>

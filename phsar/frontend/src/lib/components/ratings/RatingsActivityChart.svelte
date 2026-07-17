@@ -1,18 +1,21 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import EChart from '$lib/components/EChart.svelte';
 	import SegmentedControl from '$lib/components/SegmentedControl.svelte';
 	import { getThemedChartColorPalette } from '$lib/utils/chartColors';
+	import { buildDetailHref } from '$lib/utils/navigation';
 	import { ratingSequence, movingAverage, cumulativeWatchTime } from '$lib/utils/ratingStats';
 	import { chartTooltipStyle } from '$lib/utils/chartTheme';
-	import { formatDuration, formatDurationCompact, formatDecimalDigits, resolveTitle, escapeHtml } from '$lib/utils/formatString';
+	import { formatDuration, formatDurationCompact, formatDecimalDigits, formatScoreWithStep, resolveTitle, escapeHtml } from '$lib/utils/formatString';
 	import { userSettings } from '$lib/stores/userSettings';
 	import type { RatingScoreItem } from '$lib/types/api';
 
 	interface Props {
 		items: RatingScoreItem[];
+		ratingStep: number;
 	}
 
-	let { items }: Props = $props();
+	let { items, ratingStep }: Props = $props();
 
 	let palette = $derived(getThemedChartColorPalette());
 	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
@@ -28,6 +31,16 @@
 	);
 	let ma = $derived(movingAverage(seq.map((p) => p.score), effectiveWindow));
 
+	// Click anywhere in the plot → the media detail page of the rating the axis
+	// pointer is currently on (the dotted line), not only a pixel-perfect hit on
+	// the tiny scatter dot — feels far more natural. The x-axis is 1-based
+	// "rating #", so snap the clicked x to the nearest index and look it up in
+	// `seq`. Back link to the Statistics tab, mirroring the You-vs-MAL scatter.
+	function handleTrendGridClick([xVal]: [number, number]) {
+		const pt = seq[Math.round(xVal) - 1];
+		if (pt) goto(buildDetailHref('media', pt.mediaUuid, { from: 'ratings-stats' }));
+	}
+
 	let trendOption = $derived({
 		// bottom:44 gives the "rating #" axis name room below the tick labels instead of
 		// jamming it against the chart edge (where it crowded the caption below).
@@ -42,7 +55,13 @@
 				const p = seq[arr[0]?.dataIndex ?? 0];
 				const head = p ? `<strong>${escapeHtml(resolveTitle(p.title, p.nameEng, p.nameJap, nameLanguage))}</strong><br/>` : '';
 				const rows = arr
-					.map((a) => `${a.marker} ${a.seriesName} ${formatDecimalDigits(Number(a.value[1]), a.seriesType === 'scatter' ? 1 : 2)}`)
+					.map((a) => {
+						const v = Number(a.value[1]);
+						// The scatter is your actual rating (step-aware precision); the line is
+						// the moving average (an average, not a rating multiple → fixed 2 dp).
+						const shown = a.seriesType === 'scatter' ? formatScoreWithStep(v, ratingStep) : formatDecimalDigits(v, 2);
+						return `${a.marker} ${a.seriesName} ${shown}`;
+					})
 					.join('<br/>');
 				return head + rows;
 			},
@@ -71,6 +90,7 @@
 				emphasis: { disabled: true },
 				symbolSize: 5,
 				itemStyle: { color: palette[0], opacity: 0.3 },
+				cursor: 'pointer', // points link to the media detail page
 				data: seq.map((p) => [p.index, p.score]),
 				z: 2,
 			},
@@ -103,8 +123,23 @@
 	}
 
 	let cumulative = $derived(cumulativeWatchTime(items, cutoffISO(range)));
+	// Extend the line flat from the last rating to "now" — nothing was watched
+	// since, so the plateau is truthful and the line doesn't end abruptly mid-axis
+	// on the last rating's date. Same series (no separate projection): if the last
+	// rating was today, `now` ≈ the last point and it just keeps its vertical step.
+	let cumData = $derived.by(() => {
+		const pts: [number, number][] = cumulative.map((p) => [new Date(p.date).getTime(), p.seconds]);
+		if (pts.length) {
+			const [lastT, lastV] = pts[pts.length - 1];
+			const now = Date.now();
+			if (now > lastT) pts.push([now, lastV]);
+		}
+		return pts;
+	});
 	let cumOption = $derived({
-		grid: { left: 48, right: 12, top: 12, bottom: 28 },
+		// containLabel lets ECharts reserve the y-label width automatically, so a
+		// wide "153d 4h" tick (>99 days) isn't clipped by a fixed left gutter.
+		grid: { left: 8, right: 12, top: 12, bottom: 28, containLabel: true },
 		tooltip: {
 			...chartTooltipStyle,
 			trigger: 'axis' as const,
@@ -129,7 +164,7 @@
 				step: 'end' as const,
 				lineStyle: { color: palette[1], width: 2 },
 				areaStyle: { color: palette[1], opacity: 0.12 },
-				data: cumulative.map((p) => [new Date(p.date).getTime(), p.seconds]),
+				data: cumData,
 			},
 		],
 	});
@@ -150,7 +185,7 @@
 			{/if}
 		</div>
 		{#if seq.length >= 2}
-			<EChart option={trendOption} height="240px" />
+			<EChart option={trendOption} height="240px" onGridClick={handleTrendGridClick} />
 			<p class="text-[11px] text-muted-foreground mt-3">
 				Each point is one of your ratings, oldest to newest; the line is a {effectiveWindow}-rating moving average — a downward slope means you've been rating things lower lately.
 			</p>

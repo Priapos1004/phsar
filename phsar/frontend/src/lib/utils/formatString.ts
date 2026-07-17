@@ -275,8 +275,21 @@ export function roundScore(value: number): number {
  * the decimals that remain so whole/half scores stay clean (8.5 → "8.5", 10 → "10").
  */
 export function formatScore(value: number): string {
+	// The step-agnostic case of the step-aware rule below (step 1 → no decimal floor).
+	return formatScoreWithStep(value, 1);
+}
+
+/**
+ * Format a 0–10 rating at a precision that honours the user's rating-step setting:
+ * at least the step's own decimals (so a 0.5-step user reads "8.0", not "8"), and
+ * more when the value itself needs them (a finer legacy rating like 4.25 keeps its
+ * 2 dp instead of rounding to "4.3"). This is the step-aware display rule used across
+ * the ratings list/table and the anime detail page — extracted here so the charts and
+ * those pages share one implementation. `ratingStep` is the numeric step (0.5/0.25/0.1/0.01).
+ */
+export function formatScoreWithStep(value: number, ratingStep: number): string {
 	const rounded = roundScore(value);
-	return formatDecimalDigits(rounded, decimalPlaces(rounded));
+	return formatDecimalDigits(rounded, Math.max(decimalPlaces(ratingStep), decimalPlaces(rounded)));
 }
 
 /**

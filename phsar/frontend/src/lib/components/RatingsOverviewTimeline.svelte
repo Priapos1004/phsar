@@ -1,6 +1,6 @@
 <script lang="ts">
 	import EChart from '$lib/components/EChart.svelte';
-	import { formatSeason, formatDecimalDigits, decimalPlaces, roundScore, formatRelationType, formatMediaType, resolveTitle, escapeHtml } from '$lib/utils/formatString';
+	import { formatSeason, formatScoreWithStep, formatRelationType, formatMediaType, resolveTitle, escapeHtml } from '$lib/utils/formatString';
 	import { getThemedRelationTypeColors, RELATION_TYPE_ORDER, CHART_COLORS } from '$lib/utils/chartColors';
 	import { chartTooltipStyle } from '$lib/utils/chartTheme';
 	import { userSettings } from '$lib/stores/userSettings';
@@ -13,10 +13,10 @@
 
 	interface Props {
 		mediaWithRatings: MediaWithRating[];
-		minScoreDecimals: number;
+		ratingStep: number;
 	}
 
-	let { mediaWithRatings, minScoreDecimals }: Props = $props();
+	let { mediaWithRatings, ratingStep }: Props = $props();
 
 	const DIMMED_COLOR = 'rgba(0,0,0,0.10)';
 	const UNRATED_OPACITY = 0.2;
@@ -76,7 +76,7 @@
 							: mr.rating.watch_status === 'on_hold'
 								? ' <span style="color:#d97706">(On Hold)</span>'
 								: '';
-					return `<strong>${title}</strong>${statusSuffix}<br/>${formatMediaType(mr.media.media_type)} · ${relation} · ${season}<br/>Your score: <strong>${formatDecimalDigits(mr.rating.rating, Math.max(minScoreDecimals, decimalPlaces(roundScore(mr.rating.rating))))}</strong>`;
+					return `<strong>${title}</strong>${statusSuffix}<br/>${formatMediaType(mr.media.media_type)} · ${relation} · ${season}<br/>Your score: <strong>${formatScoreWithStep(mr.rating.rating, ratingStep)}</strong>`;
 				}
 				return `<strong>${title}</strong><br/>${formatMediaType(mr.media.media_type)} · ${relation} · ${season}<br/><span style="opacity:0.6">Not rated</span>`;
 			},
