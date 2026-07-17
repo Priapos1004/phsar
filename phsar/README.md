@@ -467,6 +467,11 @@ SEARCH_SECRET_KEY=supersecretsearchsecretkey
 # JOBS_DEDUPE_HOURS=24
 # Bounds the nightly update_sweep batch size.
 # JOBS_SWEEP_MAX_PER_RUN=200
+# Circuit breaker: abort update_sweep after this many CONSECUTIVE upstream
+# (MAL 5xx/timeout) failures so a total outage can't hold the maintenance
+# window (503 on login) for hours. Job fails retryable; maintenance clears
+# at once. A stray non-upstream failure (404) neither trips nor resets it.
+# JOBS_SWEEP_ABORT_AFTER_CONSECUTIVE_FAILURES=5
 # Re-runs the relation classifier over the catalog at lifespan startup. First
 # cold start lazy-fetches missing MediaRelationEdges sidecars from MAL at
 # 1 req/s (~14 min for an 800-media catalog); subsequent restarts skip already-

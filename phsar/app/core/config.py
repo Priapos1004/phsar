@@ -65,6 +65,16 @@ class Settings(BaseSettings):
     # Only binds during the post-migration herd + stabilizing bursts; steady
     # state finishes in seconds.
     JOBS_SWEEP_MAX_PER_RUN: int = 500
+    # Circuit breaker for a total MAL outage during update_sweep. Each anime
+    # burns the full tenacity retry budget (~30s on fast 504s, up to ~11 min
+    # on read-timeouts) before being recorded as a failure; without a cap, an
+    # outage grinds through all JOBS_SWEEP_MAX_PER_RUN media while maintenance
+    # is held — locking every request (incl. login) behind a 503 for hours. On
+    # this many CONSECUTIVE upstream failures the dispatcher aborts (raises
+    # TransientUpstreamError → job failed+retryable, maintenance clears at
+    # once). 5 tolerates a few genuinely-flaky rows without dragging out an
+    # actual outage; the sweep is retryable and runs nightly.
+    JOBS_SWEEP_ABORT_AFTER_CONSECUTIVE_FAILURES: int = 5
     # Dedupe window for user_scrape: re-running the same query within this
     # window would just produce empty BFS results (everything is in
     # excluded_mal_ids already) and fail with AnimeNotFoundError. Shortened

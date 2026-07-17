@@ -16,12 +16,15 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 
+import httpx
 import pytest
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.core.db import async_session_maker
 from app.daos.anime_dao import AnimeDAO
+from app.exceptions import TransientUpstreamError
 from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
 from app.models.genre import Genre, GenreType
@@ -59,9 +62,14 @@ class _FakeScraper:
         error_for_mal_id: int | None = None,
         search_title_returns: dict[int, tuple] | None = None,
         search_title_error_for_seed: int | None = None,
+        error_for_all: BaseException | None = None,
     ):
         self._payloads = payloads_by_mal_id
         self._error_for = error_for_mal_id
+        # When set, EVERY refresh_anime call raises this — models a total MAL
+        # outage (every media 504s), the scenario the sweep circuit breaker
+        # aborts on.
+        self._error_for_all = error_for_all
         self.refresh_calls: list[int] = []
         self._search_title_returns = search_title_returns or {}
         self._search_title_error_for_seed = search_title_error_for_seed
@@ -75,6 +83,8 @@ class _FakeScraper:
 
     async def refresh_anime(self, mal_id: int) -> dict:
         self.refresh_calls.append(mal_id)
+        if self._error_for_all is not None:
+            raise self._error_for_all
         if self._error_for is not None and mal_id == self._error_for:
             raise RuntimeError(f"simulated MAL failure for {mal_id}")
         return self._payloads[mal_id]
@@ -1573,6 +1583,50 @@ async def test_dispatcher_isolates_failures_per_anime(tracked_anime, monkeypatch
     assert anime_by_id[a3_id].freshness.last_checked_at > old
     # a2's freshness unchanged (stays at seeded value).
     assert anime_by_id[a2_id].freshness.last_checked_at == old
+
+
+def _http_504() -> httpx.HTTPStatusError:
+    """A 504 the same shape JikanScraper reraises on a sustained MAL outage
+    (classify_error tags any httpx 5xx as `upstream_outage`)."""
+    request = httpx.Request("GET", "https://api.jikan.moe/v4/anime/1/full")
+    response = httpx.Response(504, request=request)
+    return httpx.HTTPStatusError("504 Gateway Timeout", request=request, response=response)
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_aborts_on_total_upstream_outage(tracked_anime, monkeypatch):
+    """Every media 504s (MAL fully down). The sweep must NOT grind through all
+    selected anime — after JOBS_SWEEP_ABORT_AFTER_CONSECUTIVE_FAILURES
+    consecutive upstream failures it raises TransientUpstreamError so the worker
+    fails the job (retryable) and clears maintenance immediately instead of
+    holding the window for ~30s × N anime.
+
+    Regression for the v0.14.13 runaway: before the circuit breaker this ran to
+    completion, returned a summary, and the job was marked *succeeded*."""
+    monkeypatch.setattr(settings, "JOBS_SWEEP_ABORT_AFTER_CONSECUTIVE_FAILURES", 5)
+    old = datetime.now(timezone.utc) - timedelta(days=10)
+    # One more anime than the threshold so the breaker trips before the last.
+    anime_ids = [
+        await _real_seed(mal_id=-8150 - i, last_checked_at=old) for i in range(6)
+    ]
+    tracked_anime.extend(anime_ids)
+
+    fake = _FakeScraper({}, error_for_all=_http_504())
+
+    with pytest.raises(TransientUpstreamError):
+        await _run_dispatcher_harness(monkeypatch, fake, anime_ids, job_id=997)
+
+    # Aborted at the threshold — did NOT attempt every anime.
+    assert len(fake.refresh_calls) == 5
+
+    # No anime committed a refresh (all failed), so freshness stays untouched.
+    async with async_session_maker() as s:
+        result = await s.execute(
+            select(Anime).where(Anime.id.in_(anime_ids))
+            .options(selectinload(Anime.freshness))
+        )
+        for a in result.scalars().all():
+            assert a.freshness.last_checked_at == old
 
 
 @pytest.mark.asyncio

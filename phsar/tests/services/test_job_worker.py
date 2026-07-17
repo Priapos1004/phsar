@@ -236,6 +236,36 @@ async def test_sweep_kind_clears_flag_on_dispatcher_failure(tracked_jobs):
 
 
 @pytest.mark.asyncio
+async def test_sweep_abort_transient_upstream_clears_flag_and_stays_retryable(tracked_jobs):
+    """The update_sweep circuit breaker raises TransientUpstreamError on a total
+    MAL outage. The worker must fail the job as RETRYABLE + upstream_outage AND
+    clear maintenance at once — the whole point of the abort is that the app
+    recovers without a restart."""
+    from app.exceptions import TransientUpstreamError
+
+    async def outage(session, job):
+        raise TransientUpstreamError("update_sweep after 5 consecutive upstream failures")
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.update_sweep, outage)
+
+    job_id = await _enqueue(kind=JobKind.update_sweep)
+    tracked_jobs.append(job_id)
+
+    ran = await worker.dispatch_one()
+    assert ran is True
+
+    assert maintenance.is_maintenance_active() is False
+    assert maintenance.get_scheduled_at() is None
+
+    refreshed = await _get(job_id)
+    assert refreshed.status is JobStatus.failed
+    assert refreshed.result_summary is not None
+    assert refreshed.result_summary.get("error_category") == "upstream_outage"
+    assert refreshed.result_summary.get("retryable") is True
+
+
+@pytest.mark.asyncio
 async def test_sweep_finally_preserves_future_scheduled_at(tracked_jobs):
     """A Coolify cron retry can hit /admin/jobs/schedule-sweep mid-sweep
     (allowlisted) and write a *future* `_scheduled_at` for the next

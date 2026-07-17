@@ -204,12 +204,13 @@ class JobWorker:
         failure: Exception | None = None
         in_maintenance = kind in _MAINTENANCE_KINDS
         # Flip the flag *before* the work session opens so the middleware
-        # sees the same window as the running job. Try/finally guarantees
-        # it clears even on dispatcher crash — a stuck flag would lock every
-        # endpoint behind a 503 until restart.
-        if in_maintenance:
-            set_maintenance(True)
+        # sees the same window as the running job. Set INSIDE the try so the
+        # try/finally provably covers it — a stuck flag would lock every
+        # endpoint behind a 503 until restart, so the clear must never be
+        # skipped by a raise between the flip and the try.
         try:
+            if in_maintenance:
+                set_maintenance(True)
             # Outer catch-all so any failure between claim and the
             # fail_session block — including bugs in our own session
             # plumbing — routes through the explicit `failed` write

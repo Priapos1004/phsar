@@ -34,6 +34,7 @@ from app.exceptions import (
     AnimeFilteredOutError,
     AnimeNotFoundError,
     MainMediaNotFoundError,
+    TransientUpstreamError,
 )
 from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
@@ -55,7 +56,7 @@ from app.services.jikan_scraper import (
     parse_mal_datetime,
     parse_relation_edges,
 )
-from app.services.job_worker import classify_error
+from app.services.job_worker import ERROR_CATEGORY_UPSTREAM_OUTAGE, classify_error
 from app.services.merge_detection_service import (
     detect_merge_candidates,
     find_cross_anime_relation_pairs,
@@ -316,6 +317,11 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     # chunk of its workload is visible instead of reading as fully clean.
     step1_failed = 0
     step1_failures: list[dict] = []
+    # Circuit breaker: consecutive step-1 failures categorized as an upstream
+    # outage. Reset on any successful refresh; a total MAL outage climbs it to
+    # the threshold on the first anime and aborts the whole sweep (below)
+    # instead of paying the full retry budget for every selected media.
+    consecutive_upstream_failures = 0
     # Symmetric to step1_failures: anime whose step-2 probe raised.
     probe_failures: list[dict] = []
     # Track which existing anime had new media attached so we can re-run
@@ -353,7 +359,27 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
                 step1_failed += 1
                 step1_failures.append(step1._asdict())
                 await progress.update(items_done=media_refreshed)
+                # Circuit breaker: a run of upstream failures means MAL is down,
+                # not that one row is bad. Bail before burning the retry budget
+                # on every remaining anime (~30s–11min each) while maintenance
+                # is held — raising fails the job (retryable) and clears the
+                # maintenance flag at once instead of hours later. A non-upstream
+                # failure (e.g. a stray 404) neither trips nor resets the breaker.
+                if step1.error_category == ERROR_CATEGORY_UPSTREAM_OUTAGE:
+                    consecutive_upstream_failures += 1
+                    if (
+                        consecutive_upstream_failures
+                        >= settings.JOBS_SWEEP_ABORT_AFTER_CONSECUTIVE_FAILURES
+                    ):
+                        raise TransientUpstreamError(
+                            f"update_sweep after {consecutive_upstream_failures} "
+                            "consecutive upstream failures — MAL appears to be "
+                            "unavailable"
+                        )
                 continue
+
+            # A successful refresh means MAL is reachable — reset the breaker.
+            consecutive_upstream_failures = 0
 
             # Step 1 committed durably inside _try_step1_refresh, so account
             # for its refresh work NOW — independent of the probe outcome. A

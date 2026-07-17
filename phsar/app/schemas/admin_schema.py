@@ -16,6 +16,11 @@ class PendingReclassification(BaseModel):
     main → side_story — before clicking the button."""
     media_uuid: str
     title: str
+    # eng/jap so the admin card can render the media title in the admin's
+    # name-language setting (via the frontend's resolveTitle), matching the
+    # anime-level summary + the job-detail media cards.
+    name_eng: str | None = None
+    name_jap: str | None = None
     old_relation_type: str
     new_relation_type: str
 
@@ -91,6 +96,10 @@ class SplitClusterMember(BaseModel):
     media_uuid: str
     mal_id: int
     title: str
+    # eng/jap so the cluster-member titles render in the admin's name-language
+    # setting (frontend resolveTitle), like the anime-level summary.
+    name_eng: str | None = None
+    name_jap: str | None = None
     media_type: str
     relation_type: str
 

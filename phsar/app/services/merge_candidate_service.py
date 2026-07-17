@@ -85,6 +85,7 @@ async def list_pending(db: AsyncSession) -> list[MergeCandidateListItem]:
         pending = [
             PendingReclassification(
                 media_uuid=str(media.uuid), title=media.title,
+                name_eng=media.name_eng, name_jap=media.name_jap,
                 old_relation_type=old_rt, new_relation_type=new_rt,
             )
             for media, old_rt, new_rt in preview_reclassifications(row.anime_a, row.anime_b)
