@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     # idle user is warned by the frontend countdown banner before it lapses.
     # 10 min balances a comfortable idle grace against a tight passive-leak
     # window. See compound-docs/ (v0.14.13 sliding session).
+    # Keep this ABOVE ~8 min: the frontend sliding-session constants in
+    # frontend/src/lib/utils/sessionTimeout.ts (REFRESH_THRESHOLD_MS=5m,
+    # WARNING_LEAD_MS=3m, ACTIVITY_WINDOW_MS=60s) assume a lifetime comfortably
+    # larger than the refresh threshold — a shorter lifetime makes active users
+    # refresh nearly every tick (refresh storm) and idle users warn immediately.
+    # Lowering it below that needs those constants re-tuned in lockstep.
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10
 
     SEARCH_SECRET_KEY: str

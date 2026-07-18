@@ -4,7 +4,6 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Slider } from '$lib/components/ui/slider';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Badge } from '$lib/components/ui/badge';
 	import { api, ApiError } from '$lib/api';
@@ -13,6 +12,7 @@
 	import DeleteWatchHistoryToggle from '$lib/components/DeleteWatchHistoryToggle.svelte';
 	import AttributeSelect from '$lib/components/AttributeSelect.svelte';
 	import RatingNeighbors from '$lib/components/RatingNeighbors.svelte';
+	import ScoreDial from '$lib/components/ScoreDial.svelte';
 	import Notice from '$lib/components/Notice.svelte';
 	import { attributeBadges } from '$lib/utils/ratingAttributes';
 	import { formatDecimalDigits, clampAndSnapScore, decimalPlaces, roundScore } from '$lib/utils/formatString';
@@ -117,11 +117,7 @@
 		existingRating ? Math.max(STEP_DECIMALS, decimalPlaces(roundScore(existingRating.rating))) : STEP_DECIMALS
 	);
 
-	function clampAndSnap(val: number): number {
-		return clampAndSnapScore(val, SCORE_STEP);
-	}
-
-	let snappedScore = $derived(clampAndSnap(score));
+	let snappedScore = $derived(clampAndSnapScore(score, SCORE_STEP));
 	let setAttrCount = $derived(Object.keys(RATING_ATTRIBUTE_OPTIONS).filter(k => attributes[k]).length);
 	let totalAttrCount = Object.keys(RATING_ATTRIBUTE_OPTIONS).length;
 
@@ -371,28 +367,8 @@
 					</Button>
 				</div>
 
-				<!-- Score: editable circle + slider. Circle/input sized so the widest value
-				     "10.00" (two integer digits + a 0.01-step's decimals) fits without the
-				     input clipping it on the right. -->
-				<div class="flex flex-col items-center py-2 space-y-3">
-					<div class="w-24 h-24 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center">
-						<input
-							type="text"
-							inputmode="decimal"
-							value={snappedScore.toFixed(STEP_DECIMALS)}
-							onblur={(e) => {
-								const parsed = parseFloat(e.currentTarget.value.replace(',', '.')) || 0;
-								score = clampAndSnap(parsed);
-								e.currentTarget.value = clampAndSnap(parsed).toFixed(STEP_DECIMALS);
-							}}
-							onkeydown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-							class="w-20 text-center text-2xl font-bold text-card-foreground bg-transparent outline-none"
-						/>
-					</div>
-					<div class="w-full max-w-xs">
-						<Slider type="single" bind:value={score} min={0} max={10} step={SCORE_STEP} />
-					</div>
-				</div>
+				<!-- Score: editable circle + slider (shared ScoreDial). -->
+				<ScoreDial bind:score step={SCORE_STEP} decimals={STEP_DECIMALS} />
 
 				<div class="bg-muted/40 rounded-lg p-4 space-y-4">
 					<!-- Watch status (segmented) + Episodes -->

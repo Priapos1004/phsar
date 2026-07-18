@@ -95,6 +95,51 @@ async def test_episodes_watched_clamped_to_cap_when_no_total(client, user_auth_h
     assert response.json()["episodes_watched"] == 2000
 
 
+async def test_upsert_rating_rejects_unaired_media(client, user_auth_headers, db_session):
+    """A fresh rating on a not-yet-aired media is rejected (422) — the frontend hides the
+    form, so this backstops a direct/stale API call."""
+    anime = Anime(mal_id=77777, title="Unaired Anime")
+    db_session.add(anime)
+    await db_session.flush()
+    media = Media(**media_kwargs(
+        anime.id, 77770, title="Unaired Media", airing_status="Not yet aired",
+    ))
+    db_session.add(media)
+    await db_session.flush()
+
+    response = await client.put(
+        f"/ratings/media/{media.uuid}",
+        json={"rating": 8.0, "watch_status": "completed"},
+        headers=user_auth_headers,
+    )
+    assert response.status_code == 422
+
+
+async def test_bulk_upsert_rejects_unaired_media(client, user_auth_headers, db_session):
+    """The bulk path guards not-yet-aired media identically to the single path — the guard
+    lives in the shared upsert core, so both reject a fresh rating on an unaired member.
+    (The write aborts atomically in production because the service raises before commit and
+    the per-request session closes uncommitted; that isn't asserted here — the test client
+    shares one rolled-back transaction, so an earlier member's pre-raise flush stays visible
+    within it regardless.)"""
+    anime = Anime(mal_id=77778, title="Bulk Unaired Anime")
+    db_session.add(anime)
+    await db_session.flush()
+    aired = Media(**media_kwargs(anime.id, 77771, title="Aired Media", episodes=12))
+    unaired = Media(**media_kwargs(
+        anime.id, 77772, title="Unaired Media", airing_status="Not yet aired",
+    ))
+    db_session.add_all([aired, unaired])
+    await db_session.flush()
+
+    response = await client.put(
+        "/ratings/bulk",
+        json={"rating": 7.0, "media_uuids": [str(aired.uuid), str(unaired.uuid)]},
+        headers=user_auth_headers,
+    )
+    assert response.status_code == 422
+
+
 # --- Watch events / rewatch (v0.14.10) ---
 
 

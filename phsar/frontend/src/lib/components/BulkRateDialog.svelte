@@ -2,10 +2,10 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
-	import { Slider } from '$lib/components/ui/slider';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import AttributeSelect from '$lib/components/AttributeSelect.svelte';
 	import RatingNeighbors from '$lib/components/RatingNeighbors.svelte';
+	import ScoreDial from '$lib/components/ScoreDial.svelte';
 	import { ChevronDown, ChevronUp } from 'lucide-svelte';
 	import { clampAndSnapScore, decimalPlaces } from '$lib/utils/formatString';
 	import { RATING_ATTRIBUTE_OPTIONS } from '$lib/types/api';
@@ -118,26 +118,8 @@
 				</div>
 			{/if}
 
-			<!-- Score: editable circle + slider -->
-			<div class="flex flex-col items-center py-2 space-y-3">
-				<div class="w-24 h-24 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center">
-					<input
-						type="text"
-						inputmode="decimal"
-						value={snappedScore.toFixed(SCORE_DECIMALS)}
-						onblur={(e) => {
-							const parsed = parseFloat(e.currentTarget.value.replace(',', '.')) || 0;
-							score = clampAndSnapScore(parsed, SCORE_STEP);
-							e.currentTarget.value = clampAndSnapScore(parsed, SCORE_STEP).toFixed(SCORE_DECIMALS);
-						}}
-						onkeydown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-						class="w-20 text-center text-2xl font-bold text-card-foreground bg-transparent outline-none"
-					/>
-				</div>
-				<div class="w-full max-w-xs">
-					<Slider type="single" bind:value={score} min={0} max={10} step={SCORE_STEP} />
-				</div>
-			</div>
+			<!-- Score: editable circle + slider (shared ScoreDial). -->
+			<ScoreDial bind:score step={SCORE_STEP} decimals={SCORE_DECIMALS} />
 
 			<div class="bg-muted/40 rounded-lg p-4 space-y-4">
 				<!-- Note -->

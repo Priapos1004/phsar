@@ -68,7 +68,12 @@
 			if (thisRequest !== loadRequestId) return;
 			if (!silent) error = err instanceof ApiError ? err.detail : 'Failed to load jobs';
 		} finally {
-			if (!silent && thisRequest === loadRequestId) loading = false;
+			// Clear the spinner whenever the LATEST request settles, silent or not. A silent
+			// poll never SETS loading, but it can advance loadRequestId past an in-flight
+			// manual load — so gating this reset on `!silent` would strand loading=true (and
+			// keep the pager buttons disabled) until the next filter change. Guard on the id
+			// so only the newest request touches it.
+			if (thisRequest === loadRequestId) loading = false;
 		}
 	}
 

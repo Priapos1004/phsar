@@ -110,6 +110,13 @@ async def _upsert_single_rating(
     `known_has_events` lets a batch caller pass the media's prior-event existence
     (fetched once for the whole batch) so the first-watch check skips its per-media query."""
 
+    # A not-yet-aired media can't have been watched — block a *fresh* rating here, in the
+    # shared core, so the single AND bulk paths are guarded identically (the frontend
+    # hides/excludes it; this defends a direct/stale call). An existing rating stays
+    # editable so a correction isn't trapped once the show later airs.
+    if existing is None and media.airing_status == AIRING_STATUS_NOT_YET_AIRED:
+        raise CannotRateUnairedError()
+
     # Clamp episodes_watched so a direct/stale API call can't store a nonsense value (e.g.
     # INT_MAX). Bounded by the media's episode total when known, else the unknown-total cap.
     # The client already clamps on input; this is the server-side backstop. (Bulk passes the
@@ -181,10 +188,8 @@ async def upsert_rating(
 
     media = (await _resolve_media_uuids(db, [media_uuid]))[0]
     existing = await rating_dao.get_by_user_and_media(db, user_id, media.id)
-    # A not-yet-aired media can't have been watched — block a fresh rating (the frontend
-    # hides the form; this defends a direct/stale call). An existing rating stays editable.
-    if existing is None and media.airing_status == AIRING_STATUS_NOT_YET_AIRED:
-        raise CannotRateUnairedError()
+    # The not-yet-aired guard lives in the shared `_upsert_single_rating` so the single and
+    # bulk paths reject a fresh rating on an unaired media identically.
     # Honor history deletion only on a genuine completed -> on_hold/dropped downgrade,
     # derived server-side from the actual transition rather than trusting the raw flag —
     # so the flag can't wipe history on an upgrade or no-op edit.
