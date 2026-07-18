@@ -244,7 +244,7 @@ async def test_sweep_abort_transient_upstream_clears_flag_and_stays_retryable(tr
     from app.exceptions import TransientUpstreamError
 
     async def outage(session, job):
-        raise TransientUpstreamError("update_sweep after 5 consecutive upstream failures")
+        raise TransientUpstreamError("update_sweep after 10 consecutive upstream failures")
 
     worker = JobWorker()
     worker.register_dispatcher(JobKind.update_sweep, outage)
@@ -263,6 +263,52 @@ async def test_sweep_abort_transient_upstream_clears_flag_and_stays_retryable(tr
     assert refreshed.result_summary is not None
     assert refreshed.result_summary.get("error_category") == "upstream_outage"
     assert refreshed.result_summary.get("retryable") is True
+
+
+@pytest.mark.asyncio
+async def test_sweep_abort_partial_summary_persisted_on_failed_job(tracked_jobs):
+    """A circuit-breaker abort carries the stats it gathered before bailing via
+    TransientUpstreamError.partial_summary. The worker must seed the failed
+    job's result_summary with them — so the detail page still renders the
+    refreshed counters + the per-anime 504 list — AND merge retryable +
+    error_category on top of them."""
+    from app.exceptions import TransientUpstreamError
+
+    partial = {
+        "counters": {"media_refreshed": 42, "step1_failed": 10},
+        "step1_failures": [
+            {
+                "anime_uuid": "abc",
+                "title": "Some Show",
+                "error_category": "upstream_outage",
+                "error_message": "504 Gateway Timeout",
+            }
+        ],
+    }
+
+    async def outage(session, job):
+        raise TransientUpstreamError(
+            "update_sweep after 10 consecutive upstream failures",
+            partial_summary=partial,
+        )
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.update_sweep, outage)
+
+    job_id = await _enqueue(kind=JobKind.update_sweep)
+    tracked_jobs.append(job_id)
+
+    assert await worker.dispatch_one() is True
+
+    refreshed = await _get(job_id)
+    assert refreshed.status is JobStatus.failed
+    rs = refreshed.result_summary
+    # Seeded partial stats survive on the failed row...
+    assert rs["counters"]["media_refreshed"] == 42
+    assert len(rs["step1_failures"]) == 1
+    # ...and mark_failed merged the failure metadata on top of them.
+    assert rs["retryable"] is True
+    assert rs["error_category"] == "upstream_outage"
 
 
 @pytest.mark.asyncio

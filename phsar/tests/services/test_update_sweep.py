@@ -63,6 +63,7 @@ class _FakeScraper:
         search_title_returns: dict[int, tuple] | None = None,
         search_title_error_for_seed: int | None = None,
         error_for_all: BaseException | None = None,
+        error_504_for_mal_ids: set[int] | None = None,
     ):
         self._payloads = payloads_by_mal_id
         self._error_for = error_for_mal_id
@@ -70,6 +71,11 @@ class _FakeScraper:
         # outage (every media 504s), the scenario the sweep circuit breaker
         # aborts on.
         self._error_for_all = error_for_all
+        # A subset of media that 504 while the rest refresh cleanly — models a
+        # partial outage (some anime committed, then MAL goes down), so a test
+        # can assert the breaker still carries the gathered stats. The 504
+        # shape is what classify_error tags `upstream_outage` (breaker-tripping).
+        self._error_504_for = error_504_for_mal_ids or set()
         self.refresh_calls: list[int] = []
         self._search_title_returns = search_title_returns or {}
         self._search_title_error_for_seed = search_title_error_for_seed
@@ -85,6 +91,8 @@ class _FakeScraper:
         self.refresh_calls.append(mal_id)
         if self._error_for_all is not None:
             raise self._error_for_all
+        if mal_id in self._error_504_for:
+            raise _http_504()
         if self._error_for is not None and mal_id == self._error_for:
             raise RuntimeError(f"simulated MAL failure for {mal_id}")
         return self._payloads[mal_id]
@@ -1613,11 +1621,22 @@ async def test_dispatcher_aborts_on_total_upstream_outage(tracked_anime, monkeyp
 
     fake = _FakeScraper({}, error_for_all=_http_504())
 
-    with pytest.raises(TransientUpstreamError):
+    with pytest.raises(TransientUpstreamError) as exc_info:
         await _run_dispatcher_harness(monkeypatch, fake, anime_ids, job_id=997)
 
     # Aborted at the threshold — did NOT attempt every anime.
     assert len(fake.refresh_calls) == 5
+
+    # The abort carries the (here: all-failed) stats so the failed job's detail
+    # page can still list the 504s instead of showing only the error banner.
+    partial = exc_info.value.partial_summary
+    assert partial is not None
+    assert partial["counters"]["media_refreshed"] == 0
+    assert partial["counters"]["step1_failed"] == 5
+    assert len(partial["step1_failures"]) == 5
+    assert all(
+        f["error_category"] == "upstream_outage" for f in partial["step1_failures"]
+    )
 
     # No anime committed a refresh (all failed), so freshness stays untouched.
     async with async_session_maker() as s:
@@ -1627,6 +1646,45 @@ async def test_dispatcher_aborts_on_total_upstream_outage(tracked_anime, monkeyp
         )
         for a in result.scalars().all():
             assert a.freshness.last_checked_at == old
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_abort_carries_partial_stats(tracked_anime, monkeypatch):
+    """Partial outage: two anime refresh cleanly, THEN a run of 504s trips the
+    breaker. The abort must carry the stats gathered before the outage so the
+    300-media-then-outage case shows the work it did, not a bare error.
+
+    Regression for the v0.14.13 follow-up: the mid-loop `raise` used to discard
+    the whole result_summary, so a failed sweep lost every counter + failure it
+    had already collected."""
+    monkeypatch.setattr(settings, "JOBS_SWEEP_ABORT_AFTER_CONSECUTIVE_FAILURES", 3)
+    old = datetime.now(timezone.utc) - timedelta(days=10)
+    # Seeded in call order → ascending ids → processed good-first (the fake
+    # selection orders by anime id), so the two clean refreshes commit before
+    # the three consecutive 504s trip the breaker.
+    good_ids = [await _real_seed(mal_id=-8160 - i, last_checked_at=old) for i in range(2)]
+    bad_ids = [await _real_seed(mal_id=-8170 - i, last_checked_at=old) for i in range(3)]
+    tracked_anime.extend(good_ids + bad_ids)
+
+    good_media = {(-8160 - i) * 100: _payload() for i in range(2)}
+    bad_media = {(-8170 - i) * 100 for i in range(3)}
+    fake = _FakeScraper(good_media, error_504_for_mal_ids=bad_media)
+
+    with pytest.raises(TransientUpstreamError) as exc_info:
+        await _run_dispatcher_harness(
+            monkeypatch, fake, good_ids + bad_ids, job_id=996,
+        )
+
+    # Two good + exactly threshold bad refresh calls, then abort.
+    assert len(fake.refresh_calls) == 5
+
+    partial = exc_info.value.partial_summary
+    assert partial is not None
+    # The stats gathered before the outage survive on the failed job.
+    assert partial["counters"]["media_refreshed"] == 2
+    assert partial["counters"]["anime_touched"] == 2
+    assert partial["counters"]["step1_failed"] == 3
+    assert len(partial["step1_failures"]) == 3
 
 
 @pytest.mark.asyncio

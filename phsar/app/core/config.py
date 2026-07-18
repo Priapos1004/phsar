@@ -78,9 +78,9 @@ class Settings(BaseSettings):
     # is held — locking every request (incl. login) behind a 503 for hours. On
     # this many CONSECUTIVE upstream failures the dispatcher aborts (raises
     # TransientUpstreamError → job failed+retryable, maintenance clears at
-    # once). 5 tolerates a few genuinely-flaky rows without dragging out an
+    # once). 10 tolerates a run of genuinely-flaky rows without dragging out an
     # actual outage; the sweep is retryable and runs nightly.
-    JOBS_SWEEP_ABORT_AFTER_CONSECUTIVE_FAILURES: int = 5
+    JOBS_SWEEP_ABORT_AFTER_CONSECUTIVE_FAILURES: int = 10
     # Dedupe window for user_scrape: re-running the same query within this
     # window would just produce empty BFS results (everything is in
     # excluded_mal_ids already) and fail with AnimeNotFoundError. Shortened

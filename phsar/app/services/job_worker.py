@@ -286,12 +286,20 @@ class JobWorker:
             async with async_session_maker() as fail_session:
                 failing = await self._dao.get_by_id(fail_session, job_id)
                 if failing is not None:
+                    # A mid-run abort (the update_sweep circuit breaker) carries
+                    # the stats it gathered before bailing. Pass them to
+                    # mark_failed (mirrors mark_succeeded's result_summary param)
+                    # so the failed job's detail page still shows the refreshed
+                    # counters + the per-anime failure list — mark_failed merges
+                    # retryable/error_category on top. Non-carrying failures pass
+                    # None → the DAO falls back to the row's existing summary.
                     await self._dao.mark_failed(
                         fail_session,
                         failing,
                         str(failure) or type(failure).__name__,
                         retryable=retryable,
                         error_category=error_category,
+                        result_summary=getattr(failure, "partial_summary", None),
                     )
                     await fail_session.commit()
         except Exception:
