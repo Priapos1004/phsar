@@ -34,6 +34,20 @@ class Settings(BaseSettings):
     SEARCH_SECRET_KEY: str
     CURRENT_SEARCH_API_VERSION: str = "v1.1.0" # Used to expire tokens when API changes
 
+    # MyAnimeList official API v2 (https://api.myanimelist.net/v2). Public data
+    # needs no OAuth — every request carries the `X-MAL-CLIENT-ID` header set to
+    # this client id (created in the MAL API panel). Required: the scraper fails
+    # closed without it. Replaced the unauthenticated Jikan mirror in v0.14.14.
+    MY_ANIME_LIST_CLIENT_ID: str
+    # Base URL + client-side rate interval lifted to settings so a MAL policy
+    # change (or a future self-hosted proxy) can be retuned via env without an
+    # image rebuild. 1 req/s matches the sustained ceiling that kept Jikan under
+    # 60/min; MAL's official limit is undocumented but ~1 req/s is safe in
+    # practice, and v2 needs only ONE call per node (detail + relations bundled)
+    # so effective throughput already doubled vs the two-call Jikan path.
+    MAL_BASE_URL: str = "https://api.myanimelist.net/v2"
+    MAL_MIN_REQUEST_INTERVAL_S: float = 1.0
+
     # Filter settings
     MAX_ITEMS: int = 5  # Maximum number of items to keep search token size manageable
     MAX_TOKEN_LENGTH: int = 1400  # Safe for URLs

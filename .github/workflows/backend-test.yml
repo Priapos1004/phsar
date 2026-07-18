@@ -40,6 +40,7 @@ jobs:
       ADMIN_PASSWORD: adminpassword
       SECRET_KEY: ci-test-secret-key
       SEARCH_SECRET_KEY: ci-test-search-secret-key
+      MY_ANIME_LIST_CLIENT_ID: ci-test-mal-client-id
 
     steps:
     - name: Checkout code
