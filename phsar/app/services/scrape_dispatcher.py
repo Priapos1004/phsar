@@ -41,7 +41,7 @@ from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
 from app.models.genre import Genre
 from app.models.job import Job
-from app.models.media import Media, MediaType, RelationType
+from app.models.media import Media, MediaType, RelationType, SeasonType
 from app.models.media_freshness import MediaFreshness
 from app.models.media_genre import MediaGenre
 from app.models.media_relation_edges import MediaRelationEdges
@@ -955,18 +955,20 @@ _EMBEDDING_TEXT_FIELDS = ("title", "name_eng", "name_jap", "other_names", "descr
 # Handled in the metadata bucket (NOT the volatile one) so a late correction
 # lands WITHOUT resetting the stability counter — a settled anime shouldn't drop
 # back to weekly polling over a duration typo. All None-guarded in the loop below
-# so a MAL omission never nulls a populated value. media_type + aired_from are
-# self-healed too but need special handling (enum-validity guard / datetime
-# parse) so they live outside this tuple.
+# so a MAL omission never nulls a populated value. media_type, anime_season_name
+# and aired_from are self-healed too but need special handling (enum coercion /
+# datetime parse) so they live outside this tuple.
 _METADATA_NONTEXT_FIELDS = (
     "cover_image", "age_rating", "original_source",
-    "duration_seconds", "anime_season_name", "anime_season_year", "mal_url",
+    "duration_seconds", "anime_season_year", "mal_url",
 )
 
-# Valid MediaType enum values — the guard for the media_type self-heal so a
-# freak music/cm/pv (which extract_information passes through un-translated for
-# the scrape-time skip rule) can't crash the savepoint on an existing row.
+# Valid enum values — the guards for the media_type / anime_season_name
+# self-heals so a freak music/cm/pv (which extract_information passes through
+# un-translated for the scrape-time skip rule) or a stray season string can't
+# crash the savepoint on an existing row.
 _VALID_MEDIA_TYPES = frozenset(mt.value for mt in MediaType)
+_VALID_SEASON_NAMES = frozenset(s.value for s in SeasonType)
 
 
 def _jsonable(value: object) -> object:
@@ -1008,6 +1010,26 @@ async def _apply_metadata_diff(
         if diff_sink is not None:
             diff_sink.append({"field": field, "old": _jsonable(old), "new": _jsonable(new)})
 
+    def _heal_enum(field: str, enum_cls, valid_values: frozenset[str]) -> bool:
+        """Self-heal an Enum-typed column from the MAL payload, returning True
+        when a change landed. Coerce to the enum MEMBER, not the bare string:
+        SQLAlchemy only coerces an Enum column at flush, so a raw-string
+        assignment leaves the in-memory attribute a `str` — and
+        reclassify_anime (same savepoint, before commit) reads e.g.
+        `media.media_type.value`, which then blows up with "'str' object has
+        no attribute 'value'". The valid-values guard does double duty: it
+        rejects an untranslatable value (a freak music/cm/pv that
+        extract_information passes through un-translated for the scrape-time
+        skip rule) AND folds in the MAL-omitted (None) skip, so no separate
+        None guard is needed."""
+        new_val = payload.get(field)
+        current = getattr(media, field)
+        if new_val in valid_values and current != new_val:
+            _capture(field, current, new_val)
+            setattr(media, field, enum_cls(new_val))
+            return True
+        return False
+
     for field in _EMBEDDING_TEXT_FIELDS:
         new_val = payload.get(field)
         if field == "other_names":
@@ -1042,15 +1064,12 @@ async def _apply_metadata_diff(
             setattr(media, field, new_val)
             other_changed = True
 
-    # media_type self-heal (v0.14.14): MAL occasionally reclassifies a media
-    # (TV↔ONA↔Movie). Refresh it — but ONLY to a valid MediaType enum value,
-    # so a freak music/cm/pv can't crash the insert on a row already in the
-    # catalog. Feeds the reclassify step the sweep runs after the diffs.
-    new_media_type = payload.get("media_type")
-    if new_media_type in _VALID_MEDIA_TYPES and media.media_type != new_media_type:
-        _capture("media_type", media.media_type, new_media_type)
-        media.media_type = new_media_type
-        other_changed = True
+    # Enum-typed self-heals (v0.14.14): media_type (MAL reclassifies
+    # TV↔ONA↔Movie) and anime_season_name. Handled here rather than in the
+    # generic string loop above because Enum columns need coercion to a member
+    # (see _heal_enum). Feeds the reclassify step the sweep runs after the diffs.
+    other_changed |= _heal_enum("media_type", MediaType, _VALID_MEDIA_TYPES)
+    other_changed |= _heal_enum("anime_season_name", SeasonType, _VALID_SEASON_NAMES)
 
     if text_changed:
         # Same DELETE-then-INSERT discipline as anime-side regen: a new

@@ -28,7 +28,7 @@ from app.exceptions import TransientUpstreamError
 from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
 from app.models.genre import Genre, GenreType
-from app.models.media import Media
+from app.models.media import Media, MediaType, SeasonType
 from app.models.media_freshness import MediaFreshness
 from app.models.media_genre import MediaGenre
 from app.models.media_relation_edges import MediaRelationEdges
@@ -449,6 +449,50 @@ async def test_metadata_diff_other_names_added_regenerates_embedding(monkeypatch
     assert media.other_names == ["alpha", "beta"]
     assert len(calls) == 1
     assert "beta" in calls[0]["title_texts"]
+
+
+@pytest.mark.asyncio
+async def test_metadata_diff_media_type_self_heal_writes_enum_member(monkeypatch):
+    """v0.14.14 regression guard (the "Demons' Crest" crash): the media_type
+    self-heal must assign a MediaType ENUM MEMBER, not the translated bare
+    string. SQLAlchemy only coerces the Enum column at flush, and the sweep
+    reads `media.media_type.value` in reclassify (same savepoint, pre-commit) —
+    a bare str there raised "'str' object has no attribute 'value'"."""
+    _patch_regen(monkeypatch)
+    media = _aligned_media(mal_id=1, media_type=MediaType.TV)
+    assert await _apply_metadata_diff(
+        None, media, _metadata_payload(media_type="ONA"),
+    ) is True
+    assert media.media_type is MediaType.ONA
+    # The exact access that crashed on a bare str.
+    assert media.media_type.value == "ONA"
+
+
+@pytest.mark.asyncio
+async def test_metadata_diff_media_type_skips_untranslatable_value(monkeypatch):
+    """A freak music/cm/pv (passed through un-translated for the scrape-time
+    skip rule) isn't a valid MediaType member — the guard skips it rather
+    than crash the savepoint on a row already in the catalog."""
+    _patch_regen(monkeypatch)
+    media = _aligned_media(mal_id=1, media_type=MediaType.TV)
+    assert await _apply_metadata_diff(
+        None, media, _metadata_payload(media_type="music"),
+    ) is False
+    assert media.media_type is MediaType.TV
+
+
+@pytest.mark.asyncio
+async def test_metadata_diff_season_name_self_heal_writes_enum_member(monkeypatch):
+    """anime_season_name is Enum(SeasonType) — same enum-coercion hazard as
+    media_type: a bare-string write breaks any later `.value` read before
+    flush, so the self-heal must assign the SeasonType member."""
+    _patch_regen(monkeypatch)
+    media = _aligned_media(mal_id=1, anime_season_name=SeasonType.Winter)
+    assert await _apply_metadata_diff(
+        None, media, _metadata_payload(anime_season_name="Spring"),
+    ) is True
+    assert media.anime_season_name is SeasonType.Spring
+    assert media.anime_season_name.value == "Spring"
 
 
 # ---------------------------------------------------------------------------
