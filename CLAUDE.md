@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Phsar is a full-stack anime search and rating web application. It combines a FastAPI backend with a SvelteKit frontend, using PostgreSQL with pgvector for semantic vector search over anime data sourced from the MyAnimeList (Jikan) API.
+Phsar is a full-stack anime search and rating web application. It combines a FastAPI backend with a SvelteKit frontend, using PostgreSQL with pgvector for semantic vector search over anime data sourced from the official MyAnimeList API (v2).
 
 ## Commands
 
@@ -97,7 +97,7 @@ FastAPI endpoint definitions. Each router maps to an API prefix.
     - Surfaced read-side as `AnimeDetail.is_finished` + `AnimeSearchResult.is_finished` (both via `selectinload(Anime.completion)`); the frontend renders a "Story Complete" badge on the anime page + anime search cards
   - Three cron-token-authed sweep schedulers:
     - `POST /admin/jobs/schedule-sweep?delay_minutes=N` — enqueues an `update_sweep` job (nightly catalog refresh + relations probe)
-    - `POST /admin/jobs/schedule-seasonal?delay_minutes=N` — enqueues a `seasonal_sweep` job (weekly `/seasons/now` scrape)
+    - `POST /admin/jobs/schedule-seasonal?delay_minutes=N` — enqueues a `seasonal_sweep` job (weekly current-season scrape)
     - `POST /admin/jobs/schedule-nightly?delay_minutes=N` — combined daily entry: backup (immediate, no banner needed since pg_dump is MVCC-snapshot), update_sweep (delayed), and — when `datetime.now(timezone.utc).weekday() == 6` (Sunday UTC) — a seasonal_sweep with the same delay so the weekly pickup piggybacks on the daily maintenance window
   - All three sweep schedulers set `core/maintenance.set_scheduled_at(...)` so the banner countdown shows
   - All three are bound to `Query(20, ge=0, le=1440)` on `delay_minutes`
@@ -119,9 +119,9 @@ FastAPI endpoint definitions. Each router maps to an API prefix.
 Business logic as module-level async functions. **Per-service design rationale lives in [phsar/app/services/CLAUDE.md](phsar/app/services/CLAUDE.md)** (loaded automatically when working in the backend tree).
 
 Modules:
-- `jikan_scraper.py` — MAL API client with retry, 1 req/s rate limiter, BFS in `search_title` (supports `seed_mal_id` for sweep probes)
+- `mal_scraper.py` — official **MyAnimeList API v2** client. Header auth (`X-MAL-CLIENT-ID` on every request — no OAuth for public data), retry + 1 req/s rate limiter (`MAL_MIN_REQUEST_INTERVAL_S`), BFS in `search_title` (supports `seed_mal_id` for sweep probes). **One MAL call per node**: `/anime/{id}?fields=…` returns the record AND its `related_anime` in one response, so a BFS/sweep node costs a single request. A **value-translation layer** in `extract_information` maps MAL's snake_case/lowercase `media_type`/`status`/`rating`/`source` to the catalog's stored title-cased strings, so the DB enums, the `ix_media_airing_now` index, `age_rating_numeric`, the classifier sentinels, and filter facets stay stable; partial MAL dates (`YYYY`/`YYYY-MM`) normalize to full midnight-UTC ISO
 - `job_worker.py` — single asyncio FIFO worker; `with_for_update(skip_locked=True)`; maintenance-aware
-- `scrape_dispatcher.py` — handlers for `user_scrape` + `update_sweep`. v0.14.8 made `update_sweep` **media-level**: it selects the due *media* via `AnimeDAO.select_due_media_for_sweep`, groups them by parent anime, and refreshes only those media (`_refresh_one_anime(media_to_refresh)`) — `MediaFreshness` is the per-media refresh clock, `AnimeFreshness` the per-anime probe clock (probe gated by a 7-day floor). Writes a v5 `result_summary` (media-grained counters `media_refreshed`/`anime_touched`/`media_skipped_fresh`, the `anime_with_*` pair dropped; per-media field diffs + per-anime umbrella diffs + aggregated `unknown_genre_tags` + per-anime `step1_failures` + symmetric `probe_failures[]`). v0.14.5 relaxed the drift apply policy so genre + studio additions AND removals apply, with unknown genre tags surfaced for seeder review; v0.14.7 added `step1_failed`/`step1_failures[]`
+- `scrape_dispatcher.py` — handlers for `user_scrape` + `update_sweep`. v0.14.8 made `update_sweep` **media-level**: it selects the due *media* via `AnimeDAO.select_due_media_for_sweep`, groups them by parent anime, and refreshes only those media (`_refresh_one_anime(media_to_refresh)`) — `MediaFreshness` is the per-media refresh clock, `AnimeFreshness` the per-anime probe clock (probe gated by a 7-day floor). Writes a v5 `result_summary` (media-grained counters `media_refreshed`/`anime_touched`/`media_skipped_fresh`, the `anime_with_*` pair dropped; per-media field diffs + per-anime umbrella diffs + aggregated `unknown_genre_tags` + per-anime `step1_failures` + symmetric `probe_failures[]`). v0.14.5 relaxed the drift apply policy so genre + studio additions AND removals apply, with unknown genre tags surfaced for seeder review; v0.14.7 added `step1_failed`/`step1_failures[]`. v0.14.14 made the sweep **self-healing** — it now also refreshes columns previously frozen at creation (`duration_seconds`, `aired_from`, `media_type` (enum-guarded), `anime_season_name`/`anime_season_year`, `mal_url`), all None-guarded and non-stability-resetting (expected one-time churn: the first sweep rewrites `duration_seconds` for ~1400 media as MAL supplies exact per-episode seconds where the values were previously whole-minute-rounded)
 - `seasonal_sweep_dispatcher.py` — `seasonal_sweep` handler (separate; pure discovery pass)
 - `backup_dispatcher.py` — `backup` JobKind handler (no maintenance bracket — pg_dump is MVCC-snapshot)
 - `progress_reporter.py` — throttled autocommit-tx progress writer
@@ -273,13 +273,13 @@ Quick map:
   - Centralized config in `lib/themes.ts`; FOUC prevention via inline localStorage script in `app.html`
   - Per-theme chart color palettes in `chartColors.ts` avoid hue clashes
 - **Two-pass relation classifier + third-pass split detection**: scrape-time + merge-time + backfill-time. See [compound-docs/2026-05-11-jikan-scraper-quirks.md](compound-docs/2026-05-11-jikan-scraper-quirks.md) for v0.14.1 classifier rationale and [compound-docs/2026-05-18-v0.14.2-split-candidates.md](compound-docs/2026-05-18-v0.14.2-split-candidates.md) for the third pass
-  - Pass 1 (`jikan_scraper.search_title`) captures relation **edges** during BFS — no classification baked in. TERMINAL nodes (arrived via identity-breaking edges) now fetch `/relations` so their outgoing edges land in the sidecar (the v0.14.2 split-candidates change), but the BFS still does NOT recurse from them — the graph stays bounded. Sidecars persist edges unfiltered, including dangling targets
-  - Pass 2 (`relation_classifier.classify_anime_relations`) picks a canonical anchor by substance gate + tier (TV > ONA > Movie) + oldest aired_from, builds main chain via sequel/prequel closure, classifies alt-chain via `alternative_version` edges, defaults rest to `side_story`; demotes weak Mains via substance gate and recaps (`full_story`) to `summary`. **Not-yet-aired entries** get a provisional substance pass (so an announced sequel stays Main) but are **anchor-ineligible** (a franchise can't anchor on something unaired) — see services CLAUDE.md. The `AIRING_STATUS_*` sentinels live in `relation_classifier` (re-imported by `jikan_scraper`)
+  - Pass 1 (`mal_scraper.search_title`) captures relation **edges** during BFS — no classification baked in. TERMINAL nodes (arrived via identity-breaking edges) still capture their outgoing edges into the sidecar (bundled in their own detail fetch since the v2 migration; the v0.14.2 split-candidates change), but the BFS still does NOT recurse from them — the graph stays bounded. Sidecars persist edges unfiltered, including dangling targets
+  - Pass 2 (`relation_classifier.classify_anime_relations`) picks a canonical anchor by substance gate + tier (TV > ONA > Movie) + oldest aired_from, builds main chain via sequel/prequel closure, classifies alt-chain via `alternative_version` edges, defaults rest to `side_story`; demotes weak Mains via substance gate and recaps (`full_story`) to `summary`. **Not-yet-aired entries** get a provisional substance pass (so an announced sequel stays Main) but are **anchor-ineligible** (a franchise can't anchor on something unaired) — see services CLAUDE.md. The `AIRING_STATUS_*` sentinels live in `relation_classifier` (re-imported by `mal_scraper`)
   - Pass 3 (`relation_classifier.find_disjoint_franchises`) takes the classified graph and flags substance-passing media outside the anchor's main+alt chain that form their own connected sub-chain — the Overlord+Eminence, BNHA+Vigilante, Toaru Index+Railgun shapes. Conan-exception: movie-only clusters bridged via `parent_story` or `summary` are legitimate side-story chains and stay quiet. Surfaces as a `split_candidate` for admin review; never auto-splits
-  - `RelationType.AlternativeVersion` enum value distinguishes retellings (Evangelion TV ↔ Rebuild Movies, Hokuto no Ken alts) from genuine side stories. Spoiler frontier treats alt-version as an anchor
+  - `RelationType.AlternativeVersion` enum value distinguishes retellings (Evangelion TV ↔ Rebuild Movies, Hokuto no Ken alts) from genuine side stories. Spoiler frontier treats alt-version as an anchor. `RelationType` is now `Main`/`Summary`/`SideStory`/`AlternativeVersion` — v0.14.14 dropped the unused `Crossover` value (MAL v2 never emits `crossover`, routing those links through `character` which is already excluded from edge capture; 0 catalog rows carried it), recreating the PG enum via migration `f1b9c4e2a7d3`
   - Same three passes run at three sites: scrape (per BFS-result), merge survivor (consolidated A∪B), backfiller (per catalog row)
   - Bridge edges across previously-different-anime boundaries: persisted unfiltered in sidecars; classifier's `_build_adjacency` filters dangling endpoints at adjacency-build time. Merge consolidation surfaces bridges that were dangling at scrape time (Dr. Stone split-merge case)
-  - Backfiller (`relation_backfiller`) lazy-fetches `/anime/{id}/relations` for media with empty sidecars; per-anime commit checkpoints incrementally so a 14-min cold start can't lose progress
+  - Backfiller (`relation_backfiller`) lazy-fetches each media's relations (`/anime/{id}?fields=id,related_anime`) for media with empty sidecars; per-anime commit checkpoints incrementally so a 14-min cold start can't lose progress
   - `anime_relation_service.reclassify_anime` is the orchestration helper; rewrites all 7 umbrella fields (mal_id, title, name_eng, name_jap, other_names, description, cover_image) on any drift, regenerates embedding only on title-affecting drift
 - **Spoiler protection**: three levels (`off`/`blur`/`hide`) via `SpoilerLevel` user setting
   - Frontier algorithm: per anime, all media up to and including the next unwatched **anchor** (`main` or `alternative_version`) entry are visible — retellings extend the story so each alt-version gates the next
@@ -328,11 +328,13 @@ Quick map:
 
 ### Backend (required)
 
-`phsar/.env` file with: `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `SECRET_KEY`, `SEARCH_SECRET_KEY`.
+`phsar/.env` file with: `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_NAME`, `ADMIN_USERNAME`, `ADMIN_PASSWORD`, `SECRET_KEY`, `SEARCH_SECRET_KEY`, `MY_ANIME_LIST_CLIENT_ID` (MAL API v2 client id — the scraper fails closed without it).
 
 ### Backend (optional)
 
 - `DEBUG` — enables SQL echo
+- `MAL_BASE_URL` — default `https://api.myanimelist.net/v2`; the MAL API v2 root (retune only for a MAL policy change or a self-hosted proxy)
+- `MAL_MIN_REQUEST_INTERVAL_S` — default 1.0; client-side rate-limit interval (request *starts* spaced ≥ this many seconds — the safe sustained rate for MAL's undocumented limit)
 - `ACCESS_TOKEN_EXPIRE_MINUTES` — default 10; JWT lifetime = the sliding-session idle clock (frontend refreshes on activity, warns over the last 3 min, logs out at expiry — see Sliding session under Key Patterns)
 - `CORS_ORIGINS` — JSON list of allowed origins
 - `GUEST_USERNAME` + `GUEST_PASSWORD` — seeds a read-only guest account with `restricted_user` role
