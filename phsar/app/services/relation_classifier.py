@@ -342,7 +342,7 @@ def classify_anime_relations(
     edges: list[tuple[int, int, str]],
 ) -> tuple[dict[int, str], int | None]:
     """Classify every node in `nodes` as one of: main, alternative_version,
-    side_story, summary, crossover. Returns `(classifications, anchor)`
+    side_story, summary. Returns `(classifications, anchor)`
     where `anchor` is the mal_id picked by the substance-gate + tier
     sort (or `None` for empty input). Callers that need the anchor
     don't have to call `_pick_anchor` separately.
@@ -383,8 +383,6 @@ def classify_anime_relations(
         edge_types = {rel for n, rel in adj.get(mal_id, []) if n in anchored}
         if "summary" in edge_types:
             classifications[mal_id] = "summary"
-        elif "crossover" in edge_types:
-            classifications[mal_id] = "crossover"
         else:
             classifications[mal_id] = "side_story"
 

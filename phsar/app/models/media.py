@@ -30,7 +30,6 @@ class MediaType(str, enum.Enum):
 class RelationType(str, enum.Enum):
     Main = "main"
     Summary = "summary"
-    Crossover = "crossover"
     SideStory = "side_story"
     AlternativeVersion = "alternative_version"
 

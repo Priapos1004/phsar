@@ -30,7 +30,7 @@ TOO_LONG_FILTER_PAYLOAD = {
         "Summer 2021",
         "Winter 2023"],
     "media_type": ["TV", "Movie", "OVA", "ONA", "TVSpecial"],
-    "relation_type": ["main", "summary", "crossover", "side_story"],
+    "relation_type": ["main", "summary", "alternative_version", "side_story"],
     "age_rating": [
         "G - All Ages",
         "PG - Children",

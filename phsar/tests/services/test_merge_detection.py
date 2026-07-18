@@ -332,8 +332,8 @@ async def test_backfill_idempotent_across_restarts(db_session):
 @pytest.mark.asyncio
 async def test_detect_relation_link_flags_unrelated_titles(db_session):
     """The relation-link signal trusts MAL: even unrelated-looking titles
-    flag if the BFS surfaced one as related to the other (non-crossover).
-    No title or studio gate."""
+    flag if the BFS surfaced one as related to the other via a strong-link
+    relation. No title or studio gate."""
     existing = await _make_anime_with_studio(
         db_session, mal_id=70091, title="Completely Unique Show", studio_name="Studio One",
     )
@@ -512,10 +512,11 @@ async def test_sidecar_sequel_edge_proposes_pair(db_session):
 
 
 @pytest.mark.asyncio
-async def test_sidecar_crossover_edge_does_not_propose_pair(db_session):
-    """crossover edges are graph boundaries, not duplicate signals. The
-    BFS's existing crossover_arrivals tracking excludes them — the SQL
-    allowlist must match."""
+async def test_sidecar_weak_link_edge_does_not_propose_pair(db_session):
+    """Weak relation edges (`other`, side_story, spin-off, …) are "related
+    but distinct", not duplicate signals — only the strong-link allowlist
+    (sequel/prequel/alternative_version) proposes a pair. `other` is the
+    label MAL v2 uses for cross-franchise collab bridges."""
     a = await _make_anime_with_studio(
         db_session, mal_id=80021, title="Show A", studio_name="Studio One",
     )
@@ -525,7 +526,7 @@ async def test_sidecar_crossover_edge_does_not_propose_pair(db_session):
     a_media = await _media_for_anime(db_session, a.id)
     b_media = await _media_for_anime(db_session, b.id)
     await _attach_relation_edges(
-        db_session, a_media.id, [[b_media.mal_id, "crossover"]],
+        db_session, a_media.id, [[b_media.mal_id, "other"]],
     )
 
     pairs = await find_cross_anime_relation_pairs(db_session, scope_anime_ids=[a.id, b.id])
@@ -536,7 +537,7 @@ async def test_sidecar_crossover_edge_does_not_propose_pair(db_session):
 @pytest.mark.asyncio
 async def test_sidecar_target_in_media_unwanted_does_not_propose_pair(db_session):
     """A target mal_id sitting in media_unwanted is filtered franchise-
-    overlap evidence (Music/PV stripped by jikan_scraper at save time).
+    overlap evidence (Music/PV stripped by mal_scraper at save time).
     It must not count as relation_link signal even when the relation type
     itself is in the allowlist."""
     a = await _make_anime_with_studio(

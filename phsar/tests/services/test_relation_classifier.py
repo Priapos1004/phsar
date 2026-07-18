@@ -192,7 +192,7 @@ def test_donghua_ona_anchors_when_no_tv_present():
     assert out[202] == "side_story"
 
 
-# --- Summary / crossover labels -----------------------------------------
+# --- Summary labels -----------------------------------------------------
 
 def test_summary_edge_classifies_as_summary():
     nodes = {
@@ -202,16 +202,6 @@ def test_summary_edge_classifies_as_summary():
     edges = [(300, 301, "summary")]
     out, _ = classify_anime_relations(nodes, edges)
     assert out[301] == "summary"
-
-
-def test_crossover_edge_classifies_as_crossover():
-    nodes = {
-        400: _tv(),
-        401: _movie(),
-    }
-    edges = [(400, 401, "crossover")]
-    out, _ = classify_anime_relations(nodes, edges)
-    assert out[401] == "crossover"
 
 
 def test_summary_outranks_side_story_when_node_has_both_edges():
@@ -423,7 +413,7 @@ def test_classifier_outputs_are_valid_relation_type_values():
     edges = [
         (1, 2, "alternative_version"),
         (1, 3, "summary"),
-        (1, 4, "crossover"),
+        (1, 4, "other"),
         (1, 5, "sequel"),
         (5, 1, "full_story"),
     ]
