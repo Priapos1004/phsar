@@ -575,6 +575,17 @@ def test_parse_relation_edges_aliases_spinoff_and_excludes_character():
     assert all(target != 20 for target, _rel in edges)
 
 
+@pytest.mark.asyncio
+async def test_client_follows_redirects():
+    """MAL v2 intermittently answers a valid `/anime/{id}` with a 307; httpx
+    defaults to NOT following redirects and `raise_for_status()` then treats
+    the 3xx as an error, so the client must be created with
+    follow_redirects=True (a live sweep surfaced ~1-2% step-1 failures without
+    it). Guards against a regression that drops the flag."""
+    async with MalScraper() as scraper:
+        assert scraper.client.follow_redirects is True
+
+
 DURATION_EXPECTED_PAIRS = [
     # Check different string format:
     ("24 min per ep", 24 * 60),

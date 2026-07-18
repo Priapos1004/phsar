@@ -313,9 +313,18 @@ class MalScraper:
         # Every MAL v2 request carries the client-id header; public data needs
         # no OAuth. The header is set on the client so it can't be forgotten
         # on an individual call.
+        #
+        # follow_redirects=True because MAL v2 intermittently answers a valid
+        # `/anime/{id}` with a 307 Temporary Redirect (observed on ~1-2% of a
+        # live sweep, on otherwise-fine ids like One Piece). httpx defaults to
+        # NOT following redirects, and `raise_for_status()` treats an unfollowed
+        # 3xx as an error — so without this a 307 surfaced as a non-retryable
+        # step-1 failure (307 is neither 429 nor ≥500, so the retry predicate
+        # skips it). Following the redirect resolves to the real 200 payload.
         self.client = httpx.AsyncClient(
             timeout=self.timeout,
             headers={"X-MAL-CLIENT-ID": settings.MY_ANIME_LIST_CLIENT_ID},
+            follow_redirects=True,
         )
         return self
 
