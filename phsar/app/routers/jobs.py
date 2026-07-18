@@ -36,9 +36,13 @@ async def enqueue_scrape(
     if active >= settings.JOBS_PER_USER_LIMIT:
         raise JobQueueLimitExceededError(settings.JOBS_PER_USER_LIMIT)
 
-    daily = await dao.count_user_scrapes_in_window(db, current_user.id)
-    if daily >= settings.JOBS_DAILY_LIMIT:
-        raise DailyJobLimitExceededError(settings.JOBS_DAILY_LIMIT)
+    # The daily cap is an anti-abuse ceiling for regular/restricted users; admins are
+    # trusted operators (catalog seeding/fixing), so it doesn't apply to them. The
+    # concurrent cap above + dedup below still bound an admin's load.
+    if current_user.role != RoleType.Admin:
+        daily = await dao.count_user_scrapes_in_window(db, current_user.id)
+        if daily >= settings.JOBS_DAILY_LIMIT:
+            raise DailyJobLimitExceededError(settings.JOBS_DAILY_LIMIT)
 
     # Dedupe across all users: re-running an already-scraped query just
     # fails with AnimeNotFoundError because the BFS sees every mal_id in

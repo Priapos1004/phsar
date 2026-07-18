@@ -100,6 +100,8 @@ def _build_list_item(
                 media_uuid=str(m.uuid),
                 mal_id=m.mal_id,
                 title=m.title,
+                name_eng=m.name_eng,
+                name_jap=m.name_jap,
                 media_type=m.media_type.value,
                 relation_type=m.relation_type.value,
             ))

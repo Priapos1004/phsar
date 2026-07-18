@@ -129,6 +129,25 @@ async def test_anime_substring_match_outranks_non_match(
         )
 
 
+async def test_anime_query_case_does_not_change_ranking(
+    client, user_auth_headers, lord_of_anime_set,
+):
+    """Capitalising the query must not change results. The reported bug:
+    typing "Kurokos" instead of "kurokos" buried Kuroko's Basketball
+    because the cased embedding model gave the two a materially different
+    vector. `generate_embedding` now folds case, and the SQL bonuses were
+    already case-insensitive, so query case is irrelevant end to end."""
+    lower = await _ordered_fixture_titles(
+        client, user_auth_headers, url=ANIME_SEARCH_URL,
+        query=f"{_RANK_FIXTURE_QUERY} Lord of",
+    )
+    upper = await _ordered_fixture_titles(
+        client, user_auth_headers, url=ANIME_SEARCH_URL,
+        query=f"{_RANK_FIXTURE_QUERY} Lord of".upper(),
+    )
+    assert lower == upper, f"Query case changed ranking: {lower} vs {upper}"
+
+
 # ---------------------------------------------------------------------------
 # Fuzzy / typo tolerance via pg_trgm
 # ---------------------------------------------------------------------------

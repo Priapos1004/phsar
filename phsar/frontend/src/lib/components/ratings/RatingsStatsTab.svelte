@@ -18,9 +18,10 @@
 
 	interface Props {
 		items: RatingScoreItem[];
+		ratingStep: number;
 	}
 
-	let { items }: Props = $props();
+	let { items, ratingStep }: Props = $props();
 
 	// ── Summary metrics over the whole library ──────────────────────────────
 	let totalRatings = $derived(items.length);
@@ -111,7 +112,7 @@
 					Each point is a rated title (bigger = more MAL votes, so more reliable). Green sits
 					above your trend line (you rate it higher than your MAL pattern predicts), rose below.
 				</p>
-				<RatingsAlignmentChart {items} />
+				<RatingsAlignmentChart {items} {ratingStep} />
 			</Card.Content>
 		</Card.Root>
 	{:else if active === 'tags'}
@@ -129,7 +130,7 @@
 	{:else if active === 'activity'}
 		<Card.Root class={cls.cardGlass}>
 			<Card.Content>
-				<RatingsActivityChart {items} />
+				<RatingsActivityChart {items} {ratingStep} />
 			</Card.Content>
 		</Card.Root>
 	{/if}

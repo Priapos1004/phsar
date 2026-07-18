@@ -8,7 +8,7 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { Copy, Trash2, Plus, ArrowUpDown } from 'lucide-svelte';
-	import Toast from '$lib/components/Toast.svelte';
+	import { pushToast } from '$lib/stores/toast';
 	import { formatShortDate } from '$lib/utils/formatString';
 	import type { RegistrationTokenListItem } from '$lib/types/api';
 
@@ -35,8 +35,6 @@
 	let newTokenStr = $state<string | null>(null);
 	let confirmDeleteUuid = $state<string | null>(null);
 	let deleting = $state(false);
-	let showToast = $state(false);
-	let toastMessage = $state('');
 
 	let sortedTokens = $derived.by(() => {
 		const sorted = [...tokens];
@@ -69,19 +67,13 @@
 		return sorted;
 	});
 
-	function toast(msg: string) {
-		toastMessage = msg;
-		showToast = true;
-		setTimeout(() => (showToast = false), 2000);
-	}
-
 	function truncateToken(t: string): string {
 		return t.length > 16 ? `${t.slice(0, 8)}...${t.slice(-8)}` : t;
 	}
 
 	async function copyToClipboard(text: string) {
 		await navigator.clipboard.writeText(text);
-		toast('Copied to clipboard');
+		pushToast('Copied to clipboard');
 	}
 
 	onMount(fetchTokens);
@@ -122,7 +114,7 @@
 		try {
 			await api.del(`/admin/registration-tokens/${uuid}`);
 			confirmDeleteUuid = null;
-			toast('Token deleted');
+			pushToast('Token deleted');
 			await fetchTokens();
 		} catch (err) {
 			error = err instanceof ApiError ? err.detail : 'Failed to delete token';
@@ -281,5 +273,3 @@
 		</Card.Content>
 	</Card.Root>
 </div>
-
-<Toast message={toastMessage} show={showToast} />

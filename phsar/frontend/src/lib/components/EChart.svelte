@@ -10,9 +10,15 @@
 		/** Optional click handler — receives the ECharts click event params (e.g.
 		 * `seriesType`, `dataIndex`) so callers can map a point back to its datum. */
 		onClick?: (params: unknown) => void;
+		/** Optional plot-area click — fires when the user clicks anywhere inside the
+		 * grid, not only on a data item (which is all `onClick` catches). Receives the
+		 * clicked point as `[xValue, yValue]` in the primary grid's DATA coordinates, so
+		 * the caller stays in data terms (e.g. snap x to the nearest category) and never
+		 * touches zrender / convertFromPixel. Single-grid charts only. */
+		onGridClick?: (coord: [number, number]) => void;
 	}
 
-	let { option, width = '100%', height = '200px', onClick }: Props = $props();
+	let { option, width = '100%', height = '200px', onClick, onGridClick }: Props = $props();
 
 	let container: HTMLDivElement;
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -29,6 +35,17 @@
 
 			// Read `onClick` live so a reactive change is honoured without re-init.
 			instance.on('click', (params: unknown) => onClick?.(params));
+			// Plot-area clicks need zrender (ECharts' own 'click' only fires on data
+			// items). Wire it only when a consumer wants it, so other charts don't pay
+			// the containPixel/convertFromPixel cost on every click. Hand back DATA
+			// coordinates so the ECharts-internals stay inside the wrapper.
+			if (onGridClick) {
+				instance.getZr().on('click', (event: { offsetX: number; offsetY: number }) => {
+					const point = [event.offsetX, event.offsetY];
+					if (!instance.containPixel('grid', point)) return;
+					onGridClick(instance.convertFromPixel({ gridIndex: 0 }, point) as [number, number]);
+				});
+			}
 
 			// ResizeObserver fires an initial callback right after observe(). Hold the
 			// first setOption (and thus the entrance animation) until then: resize to the

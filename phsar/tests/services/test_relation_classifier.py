@@ -7,11 +7,17 @@ classifier's per-mal_id labels.
 
 from app.models.media import RelationType
 from app.services.relation_classifier import (
+    FEATURE_LENGTH_ONA_MIN_DURATION_S,
     SUBSTANCE_MIN_EPISODES,
     SUBSTANCE_MIN_MOVIE_DURATION_S,
     SUBSTANCE_MIN_TV_DURATION_S,
+    SUBSTANCE_POPULAR_WAIVER_SCORED_BY,
     classify_anime_relations,
     find_disjoint_franchises,
+    passes_feature_length_ona_waiver,
+    passes_popularity_waiver,
+    passes_substance,
+    would_be_dropped_as_weak_anchor,
 )
 
 
@@ -60,6 +66,18 @@ def _special(duration_s: int = 600, aired: str = "2010-01-01",
         "episodes": 1,
         "duration_seconds": duration_s,
         "scored_by": 100,
+        "airing_status": airing_status,
+    }
+
+
+def _tvspecial(episodes: int = 1, duration_s: int = 1380, aired: str = "2019-01-01",
+               airing_status: str = "Finished Airing"):
+    return {
+        "media_type": "TVSpecial",
+        "aired_from": aired,
+        "episodes": episodes,
+        "duration_seconds": duration_s,
+        "scored_by": 500,
         "airing_status": airing_status,
     }
 
@@ -209,6 +227,125 @@ def test_summary_outranks_side_story_when_node_has_both_edges():
     assert out[501] == "summary"
 
 
+# --- Recap (full_story) demotion ----------------------------------------
+
+def test_kuroko_winter_cup_recaps_demoted_to_summary():
+    # Real-data shape. S1-S3 TV main spine; Movie 4 "Last Game" is a
+    # genuine new-story sequel film (no full_story). MAL gives Last Game a
+    # SECOND prequel edge to Winter Cup Movie 3, dragging the three
+    # ~87-min Winter Cup recap movies into the main chain — each carries a
+    # full_story edge to its TV season, so they're recaps, not canon.
+    nodes = {
+        11771: _tv(episodes=25, duration_s=1440, aired="2012-04-08"),
+        16894: _tv(episodes=25, duration_s=1440, aired="2013-10-05"),
+        24415: _tv(episodes=25, duration_s=1440, aired="2015-01-10"),
+        31658: _movie(duration_s=5400, aired="2017-03-18"),  # Last Game
+        32869: _movie(duration_s=5220, aired="2016-09-03"),  # Winter Cup 1
+        32870: _movie(duration_s=5220, aired="2016-10-08"),  # Winter Cup 2
+        32871: _movie(duration_s=5280, aired="2016-12-03"),  # Winter Cup 3
+    }
+    edges = [
+        (11771, 16894, "sequel"),
+        (16894, 24415, "sequel"),
+        (24415, 31658, "sequel"),   # S3 -> Last Game (clean spine)
+        (31658, 32871, "prequel"),  # Last Game's 2nd prequel -> recap WC3
+        (32871, 32870, "prequel"),
+        (32870, 32869, "prequel"),
+        (32869, 11771, "full_story"),
+        (32870, 16894, "full_story"),
+        (32871, 24415, "full_story"),
+    ]
+    out, anchor = classify_anime_relations(nodes, edges)
+    assert anchor == 11771
+    assert out[11771] == "main"
+    assert out[16894] == "main"
+    assert out[24415] == "main"
+    assert out[31658] == "main"  # genuine sequel film stays canon
+    assert out[32869] == "summary"
+    assert out[32870] == "summary"
+    assert out[32871] == "summary"
+
+
+def test_genuine_sequel_movie_with_no_full_story_stays_main():
+    # A full-length sequel film without a full_story edge clears the
+    # substance gate and is NOT a recap — it stays main.
+    nodes = {
+        1: _tv(episodes=25, duration_s=1440, aired="2012-01-01"),
+        2: _movie(duration_s=5400, aired="2017-01-01"),
+    }
+    edges = [(1, 2, "sequel")]
+    out, _ = classify_anime_relations(nodes, edges)
+    assert out[1] == "main"
+    assert out[2] == "main"
+
+
+def test_recap_reachable_only_via_recap_keeps_downstream_main():
+    # Relabel-only proof: a genuine main reachable ONLY through a recap
+    # stays main. The recap (2) bridges anchor (1) to a later main (3);
+    # demoting 2 to summary must not orphan 3.
+    nodes = {
+        1: _tv(episodes=12, duration_s=1440, aired="2010-01-01"),
+        2: _movie(duration_s=5400, aired="2012-01-01"),  # recap bridge
+        3: _tv(episodes=12, duration_s=1440, aired="2014-01-01"),
+    }
+    edges = [
+        (1, 2, "sequel"),
+        (2, 3, "sequel"),
+        (2, 1, "full_story"),  # 2 is a recap of the anchor
+    ]
+    out, _ = classify_anime_relations(nodes, edges)
+    assert out[1] == "main"
+    assert out[2] == "summary"
+    assert out[3] == "main"
+
+
+def test_short_recap_special_in_main_chain_is_summary_not_side_story():
+    # Real shape (SAO / BNHA recap TVSpecials): a short recap special is
+    # pulled into the main chain via a sequel edge and fails the substance
+    # gate — the old classifier left it `side_story`. With its full_story
+    # edge, recap demotion takes precedence and labels it `summary`.
+    nodes = {
+        1: _tv(episodes=25, duration_s=1440, aired="2018-10-06"),
+        2: _tvspecial(aired="2019-09-21"),  # 1 ep, 23 min -> fails substance gate
+        3: _tv(episodes=12, duration_s=1440, aired="2019-10-12"),
+    }
+    edges = [
+        (1, 2, "sequel"),
+        (2, 3, "sequel"),
+        (2, 1, "full_story"),
+    ]
+    out, _ = classify_anime_relations(nodes, edges)
+    assert out[1] == "main"
+    assert out[2] == "summary"  # recap precedence over the side_story demotion
+    assert out[3] == "main"
+
+
+def test_recap_as_lone_anchor_not_demoted():
+    # If a recap is the anchor (nothing more canonical exists) it stays
+    # main — the demotion loop skips the anchor.
+    nodes = {1: _movie(duration_s=5400, aired="2015-01-01")}
+    edges = [(1, 999, "full_story")]  # dangling target
+    out, anchor = classify_anime_relations(nodes, edges)
+    assert anchor == 1
+    assert out[1] == "main"
+
+
+def test_alt_version_recap_not_demoted():
+    # A full_story node that lands in the ALT chain keeps
+    # alternative_version — recap demotion is scoped to the main chain.
+    nodes = {
+        1: _tv(episodes=26, duration_s=1440, aired="1995-01-01"),
+        2: _movie(duration_s=5400, aired="1997-01-01"),
+    }
+    edges = [
+        (1, 2, "alternative_version"),
+        (2, 1, "full_story"),
+    ]
+    out, _ = classify_anime_relations(nodes, edges)
+    assert out[1] == "main"
+    assert out[2] == "alternative_version"
+
+
 # --- Anchor selection rules ---------------------------------------------
 
 def test_tv_beats_movie_even_when_movie_aired_first():
@@ -281,11 +418,14 @@ def test_classifier_outputs_are_valid_relation_type_values():
         2: _movie(),
         3: _special(),
         4: _movie(duration_s=60),
+        5: _movie(),  # recap: enters main chain via sequel, demoted via full_story
     }
     edges = [
         (1, 2, "alternative_version"),
         (1, 3, "summary"),
         (1, 4, "crossover"),
+        (1, 5, "sequel"),
+        (5, 1, "full_story"),
     ]
     out, _ = classify_anime_relations(nodes, edges)
     valid = {rt.value for rt in RelationType}
@@ -542,6 +682,129 @@ def test_substance_thresholds_match_constants():
             assert out[weak_id] == "main", f"{weak_id} should pass substance"
         else:
             assert out[weak_id] == "side_story", f"{weak_id} should fail substance"
+
+
+# --- popularity waiver for the weak-anchor keep decision ---------------
+#
+# A short-duration anchor (fails the duration floor) is normally dropped
+# on a plain unseeded title search. The popularity waiver keeps it as its
+# own anime IF it still clears the type + episode gates AND has at least
+# SUBSTANCE_POPULAR_WAIVER_SCORED_BY MAL scorers ("Love is Like a
+# Cocktail": TV, 13 eps, 3 min/ep, ~112k scorers). The waiver is scoped to
+# this keep decision only — it must NOT leak into anchor selection or
+# relation-type ranking, which stay on the strict substance gate.
+
+
+def test_popular_short_kept_as_weak_anchor():
+    # Osake wa Fuufu ni Natte kara: TV, 13 eps, 3 min/ep, over the scorer
+    # floor. Standalone (no cross-link), unseeded title search.
+    nodes = {35484: _tv(episodes=13, duration_s=180,
+                        scored_by=SUBSTANCE_POPULAR_WAIVER_SCORED_BY)}
+    assert not passes_substance(nodes[35484])  # strict gate still fails
+    assert passes_popularity_waiver(nodes[35484])
+    assert not would_be_dropped_as_weak_anchor(
+        nodes, 35484, seed_mal_id=None, cross_link_mal_ids=set(),
+    )
+
+
+def test_obscure_short_still_dropped():
+    # Same shape, just under the scorer floor → no waiver → dropped.
+    nodes = {999: _tv(episodes=13, duration_s=180,
+                     scored_by=SUBSTANCE_POPULAR_WAIVER_SCORED_BY - 1)}
+    assert not passes_popularity_waiver(nodes[999])
+    assert would_be_dropped_as_weak_anchor(
+        nodes, 999, seed_mal_id=None, cross_link_mal_ids=set(),
+    )
+
+
+def test_popularity_waiver_requires_episode_floor():
+    # A wildly popular short that fails the EPISODE floor (a 2-ep promo
+    # short) is NOT waived — the waiver only relaxes the duration floor.
+    nodes = {888: _tv(episodes=SUBSTANCE_MIN_EPISODES - 1, duration_s=180,
+                     scored_by=500_000)}
+    assert not passes_popularity_waiver(nodes[888])
+    assert would_be_dropped_as_weak_anchor(
+        nodes, 888, seed_mal_id=None, cross_link_mal_ids=set(),
+    )
+
+
+def test_popularity_waiver_does_not_affect_relation_ranking():
+    # The waiver must NOT leak into classify_anime_relations: a popular
+    # short sequel to a real TV main is still demoted to side_story by the
+    # strict substance gate, and the long TV keeps the anchor.
+    nodes = {
+        1: _tv(episodes=26, duration_s=1440, aired="2000-01-01", scored_by=50_000),
+        2: _tv(episodes=13, duration_s=180, aired="2005-01-01", scored_by=500_000),
+    }
+    edges = [(1, 2, "sequel")]
+    out, anchor = classify_anime_relations(nodes, edges)
+    assert anchor == 1
+    assert out[1] == "main"
+    assert out[2] == "side_story"
+
+
+# --- feature-length-ONA waiver for the weak-anchor keep decision -------
+#
+# MAL labels some theatrical / Netflix-original films as ONA, not Movie.
+# As an ONA a 1-episode film fails the TV-like episode floor and is
+# normally dropped on a plain unseeded title search. The waiver keeps a
+# 1-episode ONA whose runtime clears FEATURE_LENGTH_ONA_MIN_DURATION_S as
+# its own anime ("Bubble": ONA, 1 ep, 99 min, mal_id 50549). Scoped to the
+# keep decision only — like the popularity waiver, it must not touch anchor
+# selection or relation-type ranking.
+
+
+def test_feature_length_ona_kept_as_weak_anchor():
+    # Bubble: ONA, 1 ep, 99 min. Standalone, unseeded title search.
+    nodes = {50549: _ona(episodes=1, duration_s=5940)}
+    assert not passes_substance(nodes[50549])  # strict gate fails (1 ep)
+    assert passes_feature_length_ona_waiver(nodes[50549])
+    assert not would_be_dropped_as_weak_anchor(
+        nodes, 50549, seed_mal_id=None, cross_link_mal_ids=set(),
+    )
+
+
+def test_short_one_episode_ona_still_dropped():
+    # "Bubble Beam Berry Blast" (mal_id 59013): ONA, 1 ep, 1 min — a
+    # one-shot, not a film. Under the runtime floor → no waiver → dropped.
+    nodes = {59013: _ona(episodes=1, duration_s=60)}
+    assert not passes_feature_length_ona_waiver(nodes[59013])
+    assert would_be_dropped_as_weak_anchor(
+        nodes, 59013, seed_mal_id=None, cross_link_mal_ids=set(),
+    )
+
+
+def test_feature_length_ona_waiver_requires_single_episode():
+    # A multi-episode ONA that's over the runtime floor per-episode but
+    # under the episode floor is NOT a film — the waiver requires exactly
+    # 1 episode, so it stays dropped.
+    nodes = {777: _ona(episodes=2, duration_s=FEATURE_LENGTH_ONA_MIN_DURATION_S)}
+    assert not passes_feature_length_ona_waiver(nodes[777])
+    assert would_be_dropped_as_weak_anchor(
+        nodes, 777, seed_mal_id=None, cross_link_mal_ids=set(),
+    )
+
+
+def test_feature_length_movie_label_not_treated_as_ona():
+    # A genuine Movie (correct MAL label) is handled by the movie duration
+    # gate, not this waiver — the waiver is ONA-only.
+    nodes = {666: _movie(duration_s=5940)}
+    assert not passes_feature_length_ona_waiver(nodes[666])
+
+
+def test_feature_length_ona_waiver_does_not_affect_relation_ranking():
+    # The waiver must NOT leak into classify_anime_relations: a 99-min ONA
+    # film that is a side story of a TV main stays side_story; the TV keeps
+    # the anchor.
+    nodes = {
+        1: _tv(episodes=26, duration_s=1440, aired="2000-01-01"),
+        2: _ona(episodes=1, duration_s=5940, aired="2005-01-01"),
+    }
+    edges = [(1, 2, "side_story")]
+    out, anchor = classify_anime_relations(nodes, edges)
+    assert anchor == 1
+    assert out[1] == "main"
+    assert out[2] == "side_story"
 
 
 # --- find_disjoint_franchises: cross-franchise split detection ---------

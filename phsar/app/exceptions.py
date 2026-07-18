@@ -52,15 +52,19 @@ class TransientUpstreamError(PhsarBaseError):
     worker stamps retryable=True and the bell shows its retry button;
     job_worker's classify_error also tags it as `upstream_outage` so
     the bell renders the friendly 'MAL temporarily unavailable' copy
-    instead of leaking this internal message to users."""
+    instead of leaking this internal message to users.
+
+    `partial_summary` lets a mid-run abort (the update_sweep circuit
+    breaker) carry the stats it gathered before bailing, so job_worker
+    can seed the failed job's `result_summary` with them — the failed
+    job's detail page then still shows the refreshed counters + the
+    per-anime failure list instead of only the error banner."""
     status_code = 502
 
-    def __init__(self, identifier: str):
+    def __init__(self, identifier: str, partial_summary: dict | None = None):
         self.identifier = identifier
-        message = (
-            f"MAL returned no data for {identifier}. "
-            "This usually clears on retry."
-        )
+        self.partial_summary = partial_summary
+        message = f"MAL returned no data for {identifier}."
         super().__init__(message)
 
 
@@ -246,6 +250,16 @@ class RewatchNotAllowedError(PhsarBaseError):
 
     def __init__(self):
         super().__init__("Only completed ratings can log a rewatch.")
+
+
+class CannotRateUnairedError(PermanentPhsarError):
+    """Raised when creating a rating for a media that hasn't aired yet — there's
+    nothing to have watched. The frontend hides the rating form for these, so this
+    is a defensive guard against a direct/stale API call."""
+    status_code = 422
+
+    def __init__(self):
+        super().__init__("This media hasn't aired yet — you can't rate it.")
 
 
 class AnimeNotFoundByUuidError(PhsarBaseError):

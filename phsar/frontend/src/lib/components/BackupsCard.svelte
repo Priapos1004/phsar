@@ -23,7 +23,7 @@
         Upload,
         X,
     } from 'lucide-svelte';
-    import Toast from '$lib/components/Toast.svelte';
+    import { pushToast } from '$lib/stores/toast';
     import { formatBytes, formatShortDateTime } from '$lib/utils/formatString';
     import { addOptimisticJob, backupSaved, bumpJobsRefresh, onBump } from '$lib/stores/jobs';
     import type { BackupMetadata, BackupSource } from '$lib/types/api';
@@ -69,25 +69,11 @@
     let editNameInput = $state('');
     let savingName = $state(false);
 
-    let toastShown = $state(false);
-    let toastMsg = $state('');
-    // Track timer handles so unmount mid-flight doesn't fire a $state write
-    // on a destroyed component.
-    let toastTimer: ReturnType<typeof setTimeout> | null = null;
+    // Track the create-button debounce timer so unmount mid-flight doesn't
+    // fire a $state write on a destroyed component.
     let creatingTimer: ReturnType<typeof setTimeout> | null = null;
 
-    function showToast(msg: string) {
-        toastMsg = msg;
-        toastShown = true;
-        if (toastTimer !== null) clearTimeout(toastTimer);
-        toastTimer = setTimeout(() => {
-            toastShown = false;
-            toastTimer = null;
-        }, 2500);
-    }
-
     onDestroy(() => {
-        if (toastTimer !== null) clearTimeout(toastTimer);
         if (creatingTimer !== null) clearTimeout(creatingTimer);
     });
 
@@ -185,7 +171,7 @@
             // Bump so the bell refetches in ms instead of waiting for its
             // 30s idle poll.
             bumpJobsRefresh();
-            showToast("Backup queued. We'll let you know when it's ready.");
+            pushToast("Backup queued. We'll let you know when it's ready.");
         } catch (err) {
             error = err instanceof ApiError ? err.detail : 'Failed to queue backup';
         } finally {
@@ -547,5 +533,3 @@
         </Dialog.Footer>
     </Dialog.Content>
 </Dialog.Root>
-
-<Toast message={toastMsg} show={toastShown} />

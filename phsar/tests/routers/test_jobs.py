@@ -107,6 +107,20 @@ async def test_enqueue_scrape_enforces_daily_cap(client, user_auth_headers, db_s
     assert "daily limit" in over.json()["detail"].lower()
 
 
+async def test_enqueue_scrape_daily_cap_exempts_admin(client, admin_auth_headers, db_session, monkeypatch):
+    """Admins are trusted operators, so the daily cap doesn't apply — submitting past
+    the limit still succeeds (the concurrent cap + dedup still bound them)."""
+    monkeypatch.setattr(settings, "JOBS_DAILY_LIMIT", 3)
+
+    # One past the cap; mark each succeeded so the concurrent cap stays clear.
+    for _ in range(settings.JOBS_DAILY_LIMIT + 1):
+        ok = await client.post("/jobs/scrape", json={"query": _q()}, headers=admin_auth_headers)
+        assert ok.status_code == 200, ok.text
+        job = await dao.get_by_uuid(db_session, UUID(ok.json()["uuid"]))
+        job.status = JobStatus.succeeded
+        await db_session.flush()
+
+
 async def test_enqueue_scrape_blocks_duplicate_recent_query(client, user_auth_headers):
     """Re-running the same query right after a previous run is rejected — the
     BFS would just see every mal_id in the excluded set and fail."""

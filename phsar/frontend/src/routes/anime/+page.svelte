@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { getContext } from 'svelte';
 	import { api, ApiError } from '$lib/api';
-	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, formatAiringStatus, resolveTitle, resolveSubtitles, decimalPlaces, formatRelationType, formatMediaType } from '$lib/utils/formatString';
+	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, formatAiringStatus, resolveTitle, resolveSubtitles, decimalPlaces, roundScore, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -31,8 +31,10 @@
 	// Display decimals: at least enough for the step, or more if existing ratings need it
 	let scoreDecimals = $derived.by(() => {
 		const minDecimals = decimalPlaces(ratingStep);
+		// roundScore first so one noisy legacy rating (5.3500000000000005 → 16 dp) can't
+		// blow the whole column out to 16 decimals.
 		const maxRatingDecimals = userRatingsList.reduce((max, r) =>
-			Math.max(max, decimalPlaces(r.rating)), 0);
+			Math.max(max, decimalPlaces(roundScore(r.rating))), 0);
 		return Math.max(minDecimals, maxRatingDecimals);
 	});
 
@@ -71,8 +73,16 @@
 	let bulkDeleteError = $state('');
 	let bulkDeleteHistory = $state(false);
 
+	// A not-yet-aired media stays selectable (the selection also drives the bulk
+	// watchlist), but it can't be rated — so bulk rating excludes it and warns.
+	let notYetAiredUuids = $derived(
+		new Set((anime?.media ?? []).filter(m => m.airing_status === 'Not yet aired').map(m => m.uuid))
+	);
+	let ratableUuids = $derived(new Set([...selectedUuids].filter(uuid => !notYetAiredUuids.has(uuid))));
+	let excludedNotYetAired = $derived(selectedUuids.size - ratableUuids.size);
+
 	let alreadyRatedCount = $derived(
-		[...selectedUuids].filter(uuid => userRatings.has(uuid)).length
+		[...ratableUuids].filter(uuid => userRatings.has(uuid)).length
 	);
 
 	// Watch-history footprint of the current selection, surfaced in the bulk-delete dialog
@@ -440,7 +450,7 @@
 		{/if}
 
 		{#if userRatingsList.length > 0 && anime}
-			<RatingsOverview ratings={userRatingsList} media={anime.media} {scoreDecimals} minScoreDecimals={decimalPlaces(ratingStep)} />
+			<RatingsOverview ratings={userRatingsList} media={anime.media} {scoreDecimals} {ratingStep} />
 		{/if}
 
 		<!-- Media table -->
@@ -621,9 +631,14 @@
 		<BulkRateDialog
 			bind:this={bulkRateDialog}
 			bind:open={showRateDialog}
-			{selectedUuids}
+			selectedUuids={ratableUuids}
+			excludedNotYetAiredCount={excludedNotYetAired}
 			{alreadyRatedCount}
 			onSaved={handleBulkRateSaved}
+			animeUuid={anime?.uuid}
+			genres={anime?.genres}
+			studios={anime?.studios}
+			ageRatingNumeric={anime?.age_rating_numeric}
 		/>
 
 		<Dialog.Root bind:open={showWatchlistDialog}>

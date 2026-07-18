@@ -15,6 +15,12 @@ logger = logging.getLogger(__name__)
 media_dao = MediaDAO()
 
 
+def media_title_texts(media: Media) -> list[str]:
+    """Build the list of title texts for embedding generation from a Media
+    object (parallel to `anime_search_service.anime_title_texts`)."""
+    return [media.title, media.name_eng, media.name_jap, *(media.other_names or [])]
+
+
 def media_to_dict(media: Media) -> dict:
     """Extract media fields into a dict for Pydantic schema construction.
     Flattens ORM relationships (genres, studios, anime) into plain values."""

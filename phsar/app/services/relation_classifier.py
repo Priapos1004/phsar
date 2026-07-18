@@ -74,6 +74,48 @@ SUBSTANCE_MIN_EPISODES = 8
 SUBSTANCE_MIN_TV_DURATION_S = 600    # 10 min
 SUBSTANCE_MIN_MOVIE_DURATION_S = 1800  # 30 min
 
+# Popularity waiver for the WEAK-ANCHOR KEEP DECISION ONLY (see
+# `would_be_dropped_as_weak_anchor`). A short-form entry (3-min episodes,
+# e.g. "Love is Like a Cocktail") fails the duration floor above and is
+# normally dropped on a plain title search. But a short that otherwise
+# clears the type + episode gates AND has been scored by this many MAL
+# users is a real, widely-watched show — just short-form — and is a
+# substantial addition to the catalog, so we keep it as its own anime.
+# Deliberately NOT consulted by `passes_substance` / `_pick_anchor` /
+# `classify_anime_relations` / `find_disjoint_franchises`: anchor choice,
+# relation-type ranking, and split detection stay on the strict gate so a
+# popular short can't steal a franchise anchor or spawn false-positive
+# split candidates. The waiver only answers "is this lone weak anchor
+# worth keeping?", never "what is this within a franchise?".
+SUBSTANCE_POPULAR_WAIVER_SCORED_BY = 10_000
+
+# Feature-length-ONA waiver for the WEAK-ANCHOR KEEP DECISION ONLY (see
+# `would_be_dropped_as_weak_anchor`). MAL labels a fair number of theatrical
+# / Netflix-original films as ONA rather than Movie (e.g. "Bubble", mal_id
+# 50549 — a 99-min Wit Studio film). As an ONA it's held to the TV-like rule
+# (>= SUBSTANCE_MIN_EPISODES), and a 1-episode film fails it, so a plain title
+# search silently drops the film. A single-episode ONA with a feature-length
+# runtime is a movie in all but MAL's label — keep it as its own anime. The
+# 60-min floor is deliberately stricter than SUBSTANCE_MIN_MOVIE_DURATION_S
+# (30 min) to stay conservative: it admits genuine features, not long OVA-ish
+# one-shots. Scoped identically to the popularity waiver above — NOT consulted
+# by `passes_substance` / `_pick_anchor` / `classify_anime_relations` /
+# `find_disjoint_franchises`, so a recap/compilation ONA inside a franchise
+# can't steal the anchor or spawn a false-positive split.
+FEATURE_LENGTH_ONA_MIN_DURATION_S = 3600  # 60 min
+
+# Design trip-wire: ONA is forced through the TV episode floor here, which is
+# why BOTH keep-decision waivers above exist (popularity waives the duration
+# floor; feature-length waives the episode floor). ONA is genuinely bimodal on
+# MAL — web-series-shaped AND film-shaped — and a single TV-vs-Movie bucket
+# can't capture that. Two narrow keep-decision waivers is the ceiling: if a
+# THIRD is ever proposed, stop and model ONA's shape at the gate instead (decide
+# movie-vs-TV treatment from episodes/duration BEFORE the tier sort, reworking
+# `anchor_tier` in lockstep + re-running split-detection tests) rather than
+# adding another special case. The gate-level fix is deliberately deferred
+# because it couples the one valuable capability (standalone feature-ONA
+# anchoring, which the keep-decision path already delivers) to a dangerous one
+# (a feature-ONA stealing a Movie-led franchise's anchor on tier).
 _TV_LIKE_TYPES = frozenset({"tv", "ona", "tvspecial"})
 _MOVIE_TYPES = frozenset({"movie"})
 
@@ -363,8 +405,31 @@ def classify_anime_relations(
     aired = [n for n in nodes.values() if not _is_metadata_pending(n)]
     relax_duration = not any(passes_substance(n, relax_episodes=True) for n in aired)
     relax_episodes = not any(passes_substance(n, relax_duration=True) for n in aired)
+
+    # Recap demotion: a media that declares a `full_story` edge ("my full
+    # story is elsewhere") is a condensed recap of content already in the
+    # franchise — never canonical, even when it's a full-length film that
+    # cleared the substance gate and got pulled into the main chain via a
+    # sequel/prequel bridge. The Kuroko Winter Cup shape: Last Game (a
+    # genuine new-story sequel film) carries a second `prequel` edge to
+    # recap Movie 3, dragging the three Winter Cup recap movies into the
+    # main chain where, as ~87-min films, they clear the substance gate and
+    # stay `main`. The signal lives on the recap's OWN sidecar, so it's
+    # present whenever the recap is in-graph (the only time it can be
+    # demoted). NOTE: "full_story ⇒ recap" is validated against the catalog
+    # (every full_story-carrying main today is a genuine recap), not a
+    # logical invariant — a film that both recaps AND continues the story
+    # would be demoted; none exist. Scoped to the main chain (the loop
+    # below) so an alt-version retelling carrying full_story stays
+    # `alternative_version`.
+    recap_ids = {a for a, _b, rel in edges if rel == "full_story"}
     for mal_id in main_chain:
         if mal_id == anchor:
+            continue
+        # Recap takes precedence over the substance demotion below: a
+        # full-length recap passes substance but is still not canonical.
+        if mal_id in recap_ids:
+            classifications[mal_id] = "summary"
             continue
         if not passes_substance(
             nodes[mal_id], relax_duration=relax_duration, relax_episodes=relax_episodes,
@@ -372,6 +437,40 @@ def classify_anime_relations(
             classifications[mal_id] = "side_story"
 
     return classifications, anchor
+
+
+def passes_popularity_waiver(node: ClassifierNode) -> bool:
+    """Whether a substance-failing node clears the popularity waiver: a
+    short-duration entry that still passes the type + episode gates AND
+    has at least `SUBSTANCE_POPULAR_WAIVER_SCORED_BY` MAL scorers. Reuses
+    `passes_substance(relax_duration=True)` so the type gate (Music/PV
+    never qualify) and the episode floor are enforced identically — only
+    the duration floor is waived.
+
+    Scoped to the weak-anchor keep decision (see
+    `would_be_dropped_as_weak_anchor` and the module constant); not part
+    of the substance gate that ranks relation types.
+    """
+    if (node.get("scored_by") or 0) < SUBSTANCE_POPULAR_WAIVER_SCORED_BY:
+        return False
+    return passes_substance(node, relax_duration=True)
+
+
+def passes_feature_length_ona_waiver(node: ClassifierNode) -> bool:
+    """Whether a substance-failing node is a feature-length film that MAL
+    mislabeled as ONA: exactly 1 episode and a runtime of at least
+    `FEATURE_LENGTH_ONA_MIN_DURATION_S`. These fail the TV-like episode
+    floor purely because a film is one "episode" (the "Bubble" case).
+
+    Scoped to the weak-anchor keep decision (see
+    `would_be_dropped_as_weak_anchor` and the module constant); not part
+    of the substance gate that ranks relation types.
+    """
+    if _normalize_media_type(node.get("media_type")) != "ona":
+        return False
+    if node.get("episodes") != 1:
+        return False
+    return (node.get("duration_seconds") or 0) >= FEATURE_LENGTH_ONA_MIN_DURATION_S
 
 
 def would_be_dropped_as_weak_anchor(
@@ -383,7 +482,8 @@ def would_be_dropped_as_weak_anchor(
     """Mirror of the weak-anchor-skip branch in
     `search_service.search_mal_api`. Returns True when the (nodes, edges)
     graph would be silently dropped at save time: anchor fails substance
-    AND there's no attach target (single cross-link) AND no seed.
+    AND fails both keep-waivers (popularity / feature-length ONA) AND
+    there's no attach target (single cross-link) AND no seed.
 
     Used by `jikan_scraper.search_title` to detect this case BEFORE
     appending the graph to `relations`, so the visited_ids claims for
@@ -396,6 +496,18 @@ def would_be_dropped_as_weak_anchor(
     if anchor is None:
         return False
     if passes_substance(nodes[anchor]):
+        return False
+    # Popularity waiver: a widely-scored short-form anchor is a
+    # substantial catalog addition, so keep it as its own anime rather
+    # than dropping it (the "Love is Like a Cocktail" case). Scoped to
+    # this keep decision only — see SUBSTANCE_POPULAR_WAIVER_SCORED_BY.
+    if passes_popularity_waiver(nodes[anchor]):
+        return False
+    # Feature-length-ONA waiver: a 1-episode ONA with a theatrical runtime
+    # is a film MAL labeled ONA rather than Movie (the "Bubble" case). Keep
+    # it as its own anime. Scoped to this keep decision only — see
+    # FEATURE_LENGTH_ONA_MIN_DURATION_S.
+    if passes_feature_length_ona_waiver(nodes[anchor]):
         return False
     if seed_mal_id is not None:
         return False

@@ -6,15 +6,16 @@
 	import { alignmentPoints, weightedLinearFit, spearman } from '$lib/utils/ratingStats';
 	import { chartTooltipStyle } from '$lib/utils/chartTheme';
 	import { buildDetailHref } from '$lib/utils/navigation';
-	import { formatDecimalDigits, resolveTitle, escapeHtml } from '$lib/utils/formatString';
+	import { formatDecimalDigits, formatScoreWithStep, resolveTitle, escapeHtml } from '$lib/utils/formatString';
 	import { userSettings } from '$lib/stores/userSettings';
 	import type { RatingScoreItem } from '$lib/types/api';
 
 	interface Props {
 		items: RatingScoreItem[];
+		ratingStep: number;
 	}
 
-	let { items }: Props = $props();
+	let { items, ratingStep }: Props = $props();
 
 	const MIN_POINTS = 5;
 	// Above the trend line = you rate it higher than your own MAL pattern predicts.
@@ -85,7 +86,7 @@
 				const pt = points[p.dataIndex];
 				if (!pt) return '';
 				const title = resolveTitle(pt.title, pt.nameEng, pt.nameJap, nameLanguage);
-				return `<strong>${escapeHtml(title)}</strong><br/>MAL ${formatDecimalDigits(pt.x, 2)} · You ${formatDecimalDigits(pt.y, 1)}`;
+				return `<strong>${escapeHtml(title)}</strong><br/>MAL ${formatDecimalDigits(pt.x, 2)} · You ${formatScoreWithStep(pt.y, ratingStep)}`;
 			},
 		},
 		xAxis: {

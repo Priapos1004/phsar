@@ -9,7 +9,8 @@
     import { Split, X, RefreshCw, Search, ChevronRight, ChevronDown } from 'lucide-svelte';
     import { bumpCurationRefresh } from '$lib/stores/jobs';
     import { buildDetailHref } from '$lib/utils/navigation';
-    import { formatRelationType } from '$lib/utils/formatString';
+    import { formatRelationType, resolveTitle } from '$lib/utils/formatString';
+    import { userSettings } from '$lib/stores/userSettings';
     import type {
         SplitBackfillResult,
         SplitCandidateListItem,
@@ -17,6 +18,8 @@
     } from '$lib/types/api';
 
     let { currentUsername = '' }: { currentUsername?: string } = $props();
+
+    let nameLanguage = $derived($userSettings?.name_language ?? 'english');
 
     let candidates = $state<SplitCandidateListItem[]>([]);
     // `loading` flips off after the first fetch and stays off; subsequent
@@ -171,6 +174,7 @@
         {:else}
             <div class="space-y-3">
                 {#each candidates as c (c.uuid)}
+                    {@const sourceTitle = resolveTitle(c.source_anime.title, c.source_anime.name_eng, c.source_anime.name_jap, nameLanguage)}
                     <div class="rounded-lg border bg-muted/30 px-4 py-3 space-y-3">
                         <div class="flex items-center gap-2 flex-wrap text-xs">
                             <Badge class="bg-primary/10 text-primary">
@@ -187,9 +191,9 @@
                                 href={buildDetailHref('anime', c.source_anime.uuid, { from: 'curation' })}
                                 class="text-sm font-medium text-card-foreground hover:text-primary transition block"
                             >
-                                {c.source_anime.title}
+                                {sourceTitle}
                             </a>
-                            {#if c.source_anime.name_eng && c.source_anime.name_eng !== c.source_anime.title}
+                            {#if c.source_anime.name_eng && c.source_anime.name_eng !== sourceTitle}
                                 <p class="text-xs text-muted-foreground">{c.source_anime.name_eng}</p>
                             {/if}
                             <p class="text-xs text-muted-foreground">{sourceSummaryLine(c)}</p>
@@ -220,7 +224,7 @@
                                             <ul class="space-y-0.5 text-muted-foreground">
                                                 {#each cluster.members as m (m.media_uuid)}
                                                     <li class="flex items-baseline gap-2">
-                                                        <span class="text-card-foreground">{m.title}</span>
+                                                        <span class="text-card-foreground">{resolveTitle(m.title, m.name_eng, m.name_jap, nameLanguage)}</span>
                                                         <span class="text-xs">
                                                             {m.media_type} · {formatRelationType(m.relation_type)}
                                                         </span>
@@ -288,11 +292,11 @@
             onResurfaced={handleRedetect}
         >
             {#snippet row(item: SplitCandidateListItem)}
-                <div class="text-sm font-medium text-card-foreground">{item.source_anime.title}</div>
+                <div class="text-sm font-medium text-card-foreground">{resolveTitle(item.source_anime.title, item.source_anime.name_eng, item.source_anime.name_jap, nameLanguage)}</div>
                 {#each item.clusters as cluster, i (i)}
                     <p class="text-[11px] text-muted-foreground">
                         <span class="text-card-foreground/70">would split off:</span>
-                        {cluster.members.map((m) => m.title).join(', ') || '—'}
+                        {cluster.members.map((m) => resolveTitle(m.title, m.name_eng, m.name_jap, nameLanguage)).join(', ') || '—'}
                     </p>
                 {/each}
                 <p class="text-[11px] text-muted-foreground/70">{item.detected_by}</p>

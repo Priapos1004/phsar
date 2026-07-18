@@ -1,10 +1,18 @@
 import logging
+from datetime import timedelta
 
 import pytest
+from jose import jwt
 
+from app.core.config import settings
+from app.core.security import create_access_token
 from app.models.users import RoleType
 
 logger = logging.getLogger(__name__)
+
+
+def _decode(token_value: str) -> dict:
+    return jwt.decode(token_value, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
 
 # Constants for test users
 TEST_USERNAME = "testuser1"
@@ -113,3 +121,83 @@ async def test_validate_with_invalid_token(client):
     )
     assert validate_resp.status_code == 401
     logger.debug(f"Validate with invalid token response: {validate_resp.json()}")
+
+
+@pytest.mark.asyncio
+async def test_refresh_extends_expiry(client, create_user_with_role):
+    # The user must exist for get_current_user's DB lookup; we then craft a
+    # short-lived (but still valid) token for them so the new full-lifetime
+    # token has an unambiguously later exp — proving the sliding re-issue.
+    await create_user_with_role(username=TEST_USERNAME, password=TEST_PASSWORD, role=RoleType.User)
+    short_token = create_access_token(
+        data={"sub": TEST_USERNAME, "role": RoleType.User.value},
+        expires_delta=timedelta(minutes=1),
+    )
+
+    refresh_resp = await client.post(
+        "/auth/refresh",
+        headers={"Authorization": f"Bearer {short_token}"},
+    )
+    assert refresh_resp.status_code == 200
+    new_token = refresh_resp.json()["access_token"]
+    assert _decode(new_token)["exp"] > _decode(short_token)["exp"]
+
+
+@pytest.mark.asyncio
+async def test_refresh_preserves_sub_and_role(client, create_user_with_role):
+    await create_user_with_role(username=TEST_USERNAME, password=TEST_PASSWORD, role=RoleType.User)
+    login_token = (await login_user(client, TEST_USERNAME, TEST_PASSWORD)).json()["access_token"]
+
+    refresh_resp = await client.post(
+        "/auth/refresh",
+        headers={"Authorization": f"Bearer {login_token}"},
+    )
+    assert refresh_resp.status_code == 200
+    payload = _decode(refresh_resp.json()["access_token"])
+    assert payload["sub"] == TEST_USERNAME
+    assert payload["role"] == RoleType.User.value
+
+
+@pytest.mark.asyncio
+async def test_restricted_user_can_refresh(client, create_user_with_role):
+    # Refresh must NOT be role-gated — guests keep their session alive too.
+    restricted_token = await create_user_with_role(
+        username="refreshguest", password="guestpass1", role=RoleType.RestrictedUser
+    )
+    refresh_resp = await client.post(
+        "/auth/refresh",
+        headers={"Authorization": f"Bearer {restricted_token}"},
+    )
+    assert refresh_resp.status_code == 200
+    assert _decode(refresh_resp.json()["access_token"])["role"] == RoleType.RestrictedUser.value
+
+
+@pytest.mark.asyncio
+async def test_refresh_without_token(client):
+    refresh_resp = await client.post("/auth/refresh")
+    assert refresh_resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_refresh_with_invalid_token(client):
+    refresh_resp = await client.post(
+        "/auth/refresh",
+        headers={"Authorization": f"Bearer {TEST_INVALID_TOKEN}"},
+    )
+    assert refresh_resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_refresh_with_expired_token(client, create_user_with_role):
+    # Can't refresh a dead token — get_current_user 401s on the expired exp
+    # before any DB lookup, so an idle session that lapsed stays logged out.
+    await create_user_with_role(username=TEST_USERNAME, password=TEST_PASSWORD, role=RoleType.User)
+    expired_token = create_access_token(
+        data={"sub": TEST_USERNAME, "role": RoleType.User.value},
+        expires_delta=timedelta(seconds=-1),
+    )
+    refresh_resp = await client.post(
+        "/auth/refresh",
+        headers={"Authorization": f"Bearer {expired_token}"},
+    )
+    assert refresh_resp.status_code == 401

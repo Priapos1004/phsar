@@ -19,14 +19,15 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 - Navigating to any route except `/login` without a token redirects to `/login`
 - On every page load, the stored token is validated via `GET /auth/validate`
 - If validation returns 401, token is cleared from localStorage and user is redirected to `/login`
+- A 401 on any *other* in-app API call is **not** globally redirected — that would let a background poll on a just-expired token bypass the idle-timeout dialog (1.6). The caller handles it (e.g. the JobBell silently stops polling); stale tokens are otherwise caught by the navigation guard above and the session tick
 
 ### 1.3 Logout
 - Clicking "Logout" in the NavBar dropdown clears the token immediately, shows a ~1.5s themed sakura-ring loading screen as a soft transition, then redirects to `/login`
-- Involuntary logouts (401 from API, token expiry, account deletion) skip the animation and redirect instantly
+- Involuntary logouts (maintenance 503, account deletion) skip the animation and redirect instantly. The idle-timeout case (1.6) instead shows the "Session Expired" dialog first, then runs the same animated logout when the user clicks "Log in"
 
 ### 1.4 Token Persistence
 - Token is stored in and loaded from localStorage
-- Closing and reopening the browser keeps the user logged in (until token expires or is invalidated)
+- Closing and reopening the browser keeps the user logged in until the session idle-timeout lapses (1.6) or the token is invalidated
 
 ### 1.5 Maintenance Mode
 - **Sticky pre-warning banner.** A yellow `Notice` card sits in a sticky container at the top of every page (including `/login` and `/register`), pinned alongside the navbar so scrolling the page keeps both visible. Renders only when a maintenance window is upcoming or active.
@@ -38,6 +39,13 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 - **Mid-window redirect.** When the backend returns 503 with `{maintenance: true}` on *any other* request, the API client clears the token, bumps `maintenanceRefresh` so the global banner refetches state immediately, and hard-navigates to `/login` (when the user wasn't already there).
 - **/login during a maintenance window.** The form has no inline maintenance message — the global sticky banner above the navbar conveys the state. A 503 from `/auth/login` is silently swallowed by the form's catch (no error text, no submit-disable); the user can retry once the global banner clears.
 
+### 1.6 Session idle timeout (sliding session)
+- The JWT lives 10 minutes and acts as an **idle clock**, not a hard ceiling. While you interact with the app (mouse / keyboard / scroll / touch), the token is silently refreshed in the background (`POST /auth/refresh`) — an **active** session is never logged out.
+- After ~7 minutes of no interaction, a yellow countdown banner appears in the sticky header (above the maintenance banner): `"You'll be signed out in m:ss due to inactivity — click your mouse to stay signed in."`, ticking down over the final 3 minutes. Any activity refreshes the token and dismisses the banner.
+- If you stay idle to 0:00, the blocking "Session Expired" dialog appears; clicking "Log in" runs the sakura-ring transition back to `/login`.
+- **Multi-tab:** refreshing the token in one tab propagates to the others (a `storage` event), so a background tab won't log you out while another tab is active.
+- A backgrounded or slept tab re-checks when it becomes visible again — if the token already lapsed it shows the expired dialog immediately rather than waiting.
+
 ---
 
 ## 2. Navigation
@@ -46,10 +54,11 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 - Sticky bar at the top of every page except `/login` (sits inside a sticky wrapper shared with `MaintenanceBanner` — see 1.5)
 - Left: logo + "PHSAR" text linking to `/`, "Ratings" link, "Watchlist" link, "Add to Library" link → `/library/add`
 - Right (when authenticated):
-  - **JobBell** (bell icon next to the user button): polls `GET /jobs/mine` every 2s while any of your jobs is queued/running, 30s when idle. Badge count surfaces session-scoped active jobs PLUS unseen-completed jobs since the tab opened (`bellLoginAt` + `bellSeenJobs` set in sessionStorage; cleared on every logout transition via `clearBellSession()` so a relogin in the same tab doesn't inherit the previous session). Clicking opens a dropdown listing up to 5 entries (active + recently-finished); a "View all in Library" tail links to `/library/add` for older jobs. Rendering is JobKind-aware:
-    - `user_scrape`: `Add: "<query>"`, stage Fetching → Saving → Done with `items_done/items_total` progress.
-    - `backup`: `Backup`, Database icon for the queued state (vs the default Bell), stage Dumping → Verifying backups → Applying retention → Done. On succeeded: `Backup ready (12.4 MB)` substext (using `formatBytes`), or `Re-confirmed existing dump (no new data)` when the create deduped against an existing dump.
-    - Failed rows show a friendly error + retry button. Retry is hidden when `result_summary.retryable === false` (permanent failures: `AnimeNotFoundError`, `MainMediaNotFoundError`, `MalIdAlreadyExistsError`, `AnimeFilteredOutError`). Backup-specific error categories (`backup_disk_full`, `backup_corrupt`) render friendly copy instead of the raw stderr — both stay retryable so admin can free space or re-run. While one retry is in flight, every retry button in the dropdown is disabled. Bell stops polling on 401 (token dead).
+  - **JobBell** (bell icon next to the user button): polls `GET /jobs/mine` every 2s while any of your jobs is queued/running, 30s when idle. Badge count surfaces session-scoped active jobs PLUS unseen-completed jobs since the tab opened (`bellLoginAt` + `bellSeenJobs` set in sessionStorage; cleared on every logout transition via `clearBellSession()` so a relogin in the same tab doesn't inherit the previous session). **Opening the dropdown acknowledges every visible job — including still-running ones — so the badge clears even while a job is fetching** (v0.14.13); the completion toast below announces the result afterward. Clicking opens a dropdown listing up to 5 entries (active + recently-finished); a "View all in Library" tail links to `/library/add` for older jobs. Rendering is JobKind-aware:
+    - `user_scrape`: `Add: "<query>"`, stage Fetching → Saving → Done with `items_done/items_total` progress. On succeeded: `Added to your library` substext and the **whole row is a link to `/library/add`** (chevron affordance; dropdown closes on click).
+    - `backup`: `Backup`, Database icon for the queued state (vs the default Bell), stage Dumping → Verifying backups → Applying retention → Done. On succeeded: `Backup ready (12.4 MB)` substext (using `formatBytes`), or `Re-confirmed existing dump (no new data)` when the create deduped against an existing dump; the succeeded row **links to `/admin?tab=backups`** (chevron affordance).
+    - Failed rows show a friendly error + retry button (never a link). Retry is hidden when `result_summary.retryable === false` (permanent failures: `AnimeNotFoundError`, `MainMediaNotFoundError`, `MalIdAlreadyExistsError`, `AnimeFilteredOutError`). Backup-specific error categories (`backup_disk_full`, `backup_corrupt`) render friendly copy instead of the raw stderr — both stay retryable so admin can free space or re-run. While one retry is in flight, every retry button in the dropdown is disabled. Bell stops polling on 401 (token dead).
+    - **Completion toast** (v0.14.13): when an `user_scrape` or `backup` job you were watching finishes, a toast slides in from the top — **green** on success (`Added "<query>" to your library.` / `Backup completed.`), **red** on failure (`Couldn't add "<query>".` / `Backup failed.`). It fires only on a live active→finished transition (jobs already finished when the tab opened don't toast), and restore/sweep jobs never toast. The toast is the single global one (`ToastHost` in the layout), so the `/library/add` enqueue toast and this completion toast never stack.
     - Optimistic-stub pattern: when `/library/add` or the BackupsCard `Create backup` button POSTs, the page pushes a `queued` row into the `optimisticJobs` store with the returned `job_uuid` so the bell renders it instantly without waiting for the next poll. The next `/jobs/mine` fetch reconciles it (UUID match) and replaces the stub with the real row.
     - **Admin pinned reminder**: when the user role is `admin`, the bell also polls `GET /admin/curation/pending-counts` each tick. If `merge + split > 0` the dropdown renders a non-dismissible row at the top (Settings icon, "Admin tasks" title, "N merge, M split pending" detail, chevron-right) linking to `/admin?tab=curation`. The row hover-tints (no idle background) and sits flush against the top corner — `DropdownMenu.Content` is `p-0 overflow-hidden`. The badge contribution counts as "unseen" via the same session-scoped acknowledgment as jobs: `unseenCuration = max(0, totalPending − BELL_CURATION_SEEN_KEY)`. Opening the dropdown snapshots `totalPending` into the sessionStorage key (so the badge clears); resolving a candidate that drops `totalPending` below the snapshot clamps the snapshot down too, so a later-arriving candidate that brings total back up still re-bumps the badge.
     - **Auto-refresh on curation actions**: MergeCandidatesCard and SplitCandidatesCard bump `curationRefresh` (lib/stores/jobs.ts) after a successful merge/dismiss/split/dismiss action (and after a re-detect that flagged new candidates). The bell subscribes via `onBump` and refetches the pending counts in milliseconds — same pattern as `jobsRefresh` / `librarySaved` / `backupSaved`.
@@ -96,15 +105,15 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 ### 4.1 Anime/Media View Toggle
 - A small pill-shaped toggle sits in the top-right corner of the search page, below the navbar
 - Default view: **Anime** (aggregated search grouping media by parent anime)
-- Switching toggle: clears all filters and results, reloads filter options for the new view, auto-submits an empty search
+- Switching toggle: **partial clear** — carries the filters that apply identically in both views (query, genres, studios, seasons, age ratings, airing status, media type, and the fixed 0–10 score range) into a fresh search token, and drops the rest (relation type + the view-relative ranges: episodes, scored-by, duration, watch time). Closes the filter panel, reloads filter options for the new view, and re-runs the search
 - The `view_type` is encoded in the search token, so "Back to search" restores the correct toggle state
 - SearchBar placeholder changes: "Search anime..." / "Search media..."
 
 ### 4.2 Submitting a Search
-1. User types a query in the SearchBar text input
+1. User types a query in the SearchBar text input (filter toggle on the left, search button on the right)
 2. Optionally toggles "Expand search to descriptions" checkbox
-3. Optionally opens the filter panel and sets filters
-4. Submits the form (Enter key)
+3. Optionally opens the filter panel (left icon) and sets filters
+4. Submits via the Enter key or the search button on the right of the input
 5. Frontend POSTs filter params (including `view_type`) to `/filters/create-token` → receives a search token
 6. Navigates to `/search?q=<token>`
 
@@ -119,13 +128,13 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 8. If no results: "No results found :-("
 9. If no search performed yet: "Start searching!!!"
 
-**Title-query ranking:** Title search starts from embedding cosine similarity, then boosts results whose titles literally contain the query (`Lord of` → `Lord of Mysteries` first, not `Overlord`) and results that fuzzy-match via trigram similarity (typos like `lor of` still surface the intended show near the top). Description and rating-notes search rank by embedding only — those queries are semantic, not literal.
+**Title-query ranking:** Title search starts from embedding cosine similarity, then boosts results whose titles literally contain the query (`Lord of` → `Lord of Mysteries` first, not `Overlord`) and results that fuzzy-match via trigram similarity (typos like `lor of` still surface the intended show near the top). Description and rating-notes search rank by embedding only — those queries are semantic, not literal. Search is **case-insensitive** — the query and stored titles are case-folded before embedding, so capitalization (`Kurokos` vs `kurokos`) never changes the results.
 
 ### 4.4 Search Filters
 Filters appear in a collapsible panel below the search input. Filter options adapt to the current view type.
 
 **List filters** (searchable tag-select dropdowns, max 5 items each):
-- Genres (anime view shows only majority-qualifying genres), Seasons, Studios, Airing Status, Relation Type, Media Type, Age Rating
+- Genres (anime view shows only majority-qualifying genres), Seasons, Studios, Airing Status, Relation Type (**media view only** — a per-media property, meaningless on aggregated anime rows), Media Type, Age Rating
 
 **Range filters** (dual-thumb sliders):
 - Episodes (integer, linear — aggregated sum for anime view)
@@ -199,14 +208,14 @@ Each anime search result card shows:
   - Clicking rows toggles selection instead of navigating
   - Action bar slides in: "Select all/Deselect all", selected count, "Rate" button, "Watchlist" button
   - "Delete Ratings" button appears when any selected media have existing ratings
-  - **Rate** opens BulkRateDialog: score circle + slider, note (applied to last main media), collapsible attributes grid. Overwrite warning shown if any selected media already rated. On save: exits select mode, shows "Note Added" info dialog naming which media received the note.
+  - **Rate** opens BulkRateDialog: score circle + slider, note (applied to the chronologically-last main media — the order the media table shows, not click order), collapsible attributes grid (each attribute clearable via a ✕), and the same "How you rated similar titles" panel as the media page (bulk is anime-scoped, so neighbors come from other anime). Not-yet-aired media in the selection are excluded from the rating with a yellow warning (they stay selected, since the selection also feeds the future watchlist); if every selected media is not-yet-aired, Save is disabled. Overwrite warning shown if any selected media already rated. On save: exits select mode, shows "Note Added" info dialog naming which media received the note.
   - **Delete Ratings** opens a destructive confirmation dialog. When any selected media have recorded watches, the dialog offers an "Also delete watch history" checkbox showing how many have watches (and how many were watched more than once); kept by default. Submits `POST /ratings/bulk-delete?delete_watch_history=`
   - **Watchlist** opens a stub dialog (wired in v0.15.0)
   - "Cancel" exits select mode and clears selection
 
 ### 6.5 Ratings Overview ("Your Ratings")
 - Appears when the user has rated at least one media in the anime
-- **Stats gauge**: Average score displayed in a gauge chart (formatted to 1 decimal), progress bars for media rated / total and episodes watched / total, on-hold count badge (amber) and dropped count badge (red)
+- **Stats gauge**: Average score displayed in a gauge chart (formatted to 1 decimal), a media-rated / total progress bar, and an episodes-watched stat crediting the actual episodes watched (every status). Its `/ total` denominator + bar appear only when every rated media has a known episode total; if a watched media has an unknown total (a still-airing series), the stat shows just the bare watched count to avoid a misleading ratio. On-hold count badge (amber) and dropped count badge (red)
 - **Rating Timeline**: Bar chart with one bar per media in release order, colored by relation type (Main Story = theme primary, Alt Version = yellow, Side Story = accent red, Summary = secondary green, Crossover = theme ring — a muted shade reserved for the rarest type). Dropped items at 50% opacity, on-hold at 70%. HTML legend showing active relation types. Tooltip shows title, media type, relation type, season, and score; dropped/on-hold entries get a "(Dropped)" / "(On Hold)" suffix.
 - **Attribute Summary** (side-by-side on desktop, stacked on mobile):
   - *Quality Radar* (pentagon): 5 quality axes (animation quality, dialogue quality, character depth, story quality, ending quality) normalized to 0–1 scale with 3 split rings. Tooltip shows closest label per axis or "--" for no data. `ending_quality: not_applicable` is excluded from averaging.
@@ -249,17 +258,17 @@ Each anime search result card shows:
 - HTML entities cleaned from description text; MAL attribution tags (`[Written by MAL Rewrite]`) and trailing `(Source: …)` / `[Source: …]` attributions stripped before display
 
 ### 7.4 Rating Card
-- **No rating exists, not editing**: CTA card with star icon and "Rate This" button
+- **No rating exists, not editing**: CTA card with star icon and "Rate This" button. If the media hasn't aired yet, the CTA is replaced with a notice ("This hasn't aired yet — you'll be able to rate it once it's out") and no rating can be created.
 - **Restricted users**: Disabled "Rate This" button with "Upgrade your account" message
 - **Rating exists, not editing**: Display card showing score circle, watch status (Completed = plain text, On Hold = amber badge, Dropped = red badge), episodes watched (with total if known), a "Watched N×" badge when rewatched (count > 1), filled attribute badges (ending quality hidden when "Not Applicable"), and note (if any). Edit, Rewatch (completed only), and Delete buttons.
 - **Rewatch**: opens a confirmation pop-up explaining the action (records another completed watch dated today, raises the count from N to N+1, can't be easily undone) before logging — a two-step guard since there's no easy undo. Calls `POST /ratings/{uuid}/rewatch`.
 - **Delete**: opens a confirmation pop-up. When the media has recorded watches, the dialog offers an explained "Also delete watch history" checkbox (kept by default — re-rating later keeps the watch dates).
 - **Editing mode** (new or existing):
   - Score: editable circle with direct text input + slider (0-10, step 0.5)
-  - Watch-status selector (segmented: Completed / On Hold / Dropped) + episodes watched input (auto-filled with total episodes when Completed; revealed/editable when On Hold or Dropped)
+  - Watch-status selector (segmented: Completed / On Hold / Dropped) — **"Completed" is disabled when the catalog has no episode total** (a still-airing series can't be finished); such a rating defaults to On Hold with a hint explaining why, while an already-completed existing rating stays selectable so it isn't trapped. The episodes-watched input is editable only for On Hold/Dropped (disabled, showing the full total, when Completed); it's clamped on blur to the episode total — or a 2000 cap when the total is unknown. Switching to Completed fills the count to the total, or clears it when there's no total.
   - Note textarea (max 1000 chars with counter)
-  - Collapsible "Details" section with 11 attribute selectors (pace, animation quality, 3D animation, watched format, fan service, dialogue quality, character depth, ending type, ending quality, story quality, originality) — shows set/total count badge. Ending quality: when On Hold or Dropped, auto-set to "Not Applicable" and disabled; when Completed, only 3 quality options shown (Unsatisfying, Satisfying, Exceptional)
-  - Collapsible "How you rated similar titles" panel — on first expand fetches the user's ratings once (`GET /ratings/scores`) and shows the 2 closest at-or-below + 2 closest above the current score, each from a different anime (only **completed** ratings, so dropped/on-hold scores don't skew the comparison); the list re-selects live as the score slider moves (no refetch). Titles render in the user's name language; each row shows cover + title + score and expands to reveal that title's attributes. Empty/short state prompts the user to rate more titles
+  - Collapsible "Details" section with 11 attribute selectors (pace, animation quality, 3D animation, watched format, fan service, dialogue quality, character depth, ending type, ending quality, story quality, originality) — shows set/total count badge. Each selector has a ✕ to clear it back to "Not set". The two ending fields (ending type + ending quality) can't be judged on an unfinished watch, so on On Hold or Dropped both are auto-set to "Not Applicable" and disabled; on Completed they clear. "Not Applicable" is never user-selectable in any dropdown (an auto-set-only sentinel). Ending quality's options are Unsatisfying / Neutral / Satisfying / Very Satisfying; 3D animation is None / Rare / Medium / Heavy (a frequency scale mirroring fan service)
+  - Collapsible "How you rated similar titles" panel (shared by the media rating card and the bulk dialog) — on first expand fetches the user's ratings once (`GET /ratings/scores`) and shows up to 4 ratings from other anime straddling the current score — up to 2 you rated at the **same** score, plus a lower and a higher one for context (when you have only one same-score rating the freed slot goes to a second higher; with none it shows two lower + two higher), using only **completed** ratings so dropped/on-hold scores don't skew the comparison; the list re-selects live as the score slider moves (no refetch). Titles render in the user's name language; each row shows cover + title + score and expands to reveal that title's attributes (rows with attributes are expanded by default; still collapsible). Each attribute badge is color-coded against your current in-progress selection: green/red when a quality attribute (animation, story, dialogue, character depth, ending quality) is rated higher/lower than yours, blue when a categorical attribute differs, warm cream when it matches your pick, grey when you haven't set it — updating live as you change your score or your own selections. Empty/short state prompts the user to rate more titles
   - Submit/Update button (disabled when no changes detected on existing rating)
   - **Downgrade prompt**: saving a change from Completed to On Hold/Dropped while watch history exists opens a "Keep your watch history?" pop-up — Keep history / Remove history / Cancel.
   - Cancel button returns to display mode
@@ -271,7 +280,7 @@ Each anime search result card shows:
 - If sibling media exist: horizontal scrollable row of compact cards (snap scrolling), **sorted chronologically via the shared `chronological_media_key()` helper** (`(season_year, season_quarter, mal_id)`) — same key as the anime page's media table and the spoiler frontier so the three surfaces never disagree on order
   - Each card: cover image (with fallback; blurred when spoiler-protected), title, media type + relation type badges, season or episode count
   - Clicking a sibling card navigates to that media's detail page (origin params preserved — see 7.6)
-  - **"You are here" marker**: a thin primary-colored vertical divider with a small pill label slots into the row at the position the current media occupies in the chronological chain. Backend computes the index (`current_position`) so the frontend doesn't need to compare dates client-side. Position 0 = current is the oldest entry (marker leads the row); position == siblings.length = current is the newest (marker trails the row)
+  - **"You are here" marker**: a thin primary-colored vertical divider with a small pill label slots into the row at the position the current media occupies in the chronological chain. Backend computes the index (`current_position`) so the frontend doesn't need to compare dates client-side. Position 0 = current is the oldest entry (marker leads the row); position == siblings.length = current is the newest (marker trails the row). On load the row auto-scrolls to center the marker, so a long chain opens at the current entry instead of the far left.
 - If no siblings: "No other media in this anime" message
 
 ### 7.6 Back Navigation
@@ -281,7 +290,7 @@ Each anime search result card shows:
   - `?from=job&job=<uuid>` → "Back to job" (admin job-detail page's failed-refresh / failed-probe / attached links → `/admin/jobs/[uuid]`)
   - `?from=completion` → "Back to completion" (admin Completion tab's anime links → `/admin?tab=completion`)
   - `?from=curation` → "Back to curation" (Merge/Split candidate cards' anime links → `/admin?tab=curation`)
-  - `?from=ratings-stats` → "Back to statistics" (a You-vs-MAL scatter point → `/ratings?tab=stats`)
+  - `?from=ratings-stats` → "Back to statistics" (a You-vs-MAL scatter point **or** an Activity score-trend point → `/ratings?tab=stats`, landing back on the section you came from)
   - neither → no back button (direct-URL arrivals stay clean)
 - These flags propagate across the entire anime↔media jump chain (anime → media tile, media → anime link, related-media carousel) via `buildDetailHref`'s options bag, so a deep dive like curation → anime → media → sibling stays linkable back to the origin
 - Origin set is a closed `DetailOrigin` TS union (`'library' | 'job' | 'completion' | 'curation' | 'ratings-stats'`); extending it requires updating both `lib/utils/navigation.ts` AND `BackLink.svelte`'s switch — surfaces as a type error otherwise
@@ -307,11 +316,11 @@ Each anime search result card shows:
 
 ### 8.3 Statistics Tab
 Lazy-mounts on first entry and re-mounts each time you return to it, so the charts replay their build-up animation. Five sections:
-- **Overview** — summary counters + a score-distribution histogram (fixed 0.5-wide buckets, bars score-colored, main/side split per bucket).
+- **Overview** — summary counters + a score-distribution histogram (fixed 0.5-wide buckets, bars score-colored, main/side split per bucket). Buckets are disjoint and upper-inclusive — a score on a boundary goes to the lower bucket, so tooltip ranges read `4.26–4.75` / `4.76–5.25` with no shared edge value.
 - **You vs MAL** — a scatter of your score vs the MAL score, one point per rated media, point size scaled by MAL vote count. With enough varied points it adds a weighted best-fit line, R², and Spearman ρ with a plain-English read-out; otherwise a skip note. Clicking a point opens that media's detail page with a "Back to statistics" return.
 - **Genres & Studios** — one configurable horizontal bar chart with a genre/studio toggle, a sort select (avg rating / rated-anime count / watch time / weighted score), and an asc/desc arrow that swaps between the top and bottom tags. Genre axis labels carry description tooltips; studio labels link to a studio-filtered search.
 - **Attributes** — split into quality-scale correlations (the 5 radar attributes, shown as importance |ρ|) and categorical-choice effects (per-choice averages + a sample-weighted spread), each with an explanation of what the measure means.
-- **Activity** — a score trend in rating order (with a selectable moving-average window) and cumulative watch time over time (with a 1-month / 3-month / all range toggle, default 1 month).
+- **Activity** — a score trend in rating order (with a selectable moving-average window) and cumulative **actual** watch time over time — episodes watched × per-episode duration, counted across every status (with a 1-month / 3-month / all range toggle, default 1 month). Clicking anywhere in the score-trend plot opens the media of the rating the hover pointer is on (its detail page, with a "Back to statistics" return) — no need to hit the small point exactly. The cumulative line runs flat to today (nothing watched since your last rating), and its y-axis labels stay readable past 99 days.
 
 ---
 

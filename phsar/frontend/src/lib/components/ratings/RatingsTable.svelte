@@ -76,7 +76,7 @@
 						{row.malScore !== null ? formatDecimalDigits(row.malScore, 2) : '—'}
 					</td>
 					<td class="px-3 py-2 text-right font-medium {row.malDelta === null ? 'text-muted-foreground/50' : row.malDelta >= 0 ? 'text-emerald-600' : 'text-rose-600'}">
-						{#if row.malDelta === null}—{:else}{row.malDelta >= 0 ? '+' : ''}{formatDecimalDigits(row.malDelta, 1)}{/if}
+						{#if row.malDelta === null}—{:else}{row.malDelta >= 0 ? '+' : ''}{formatDecimalDigits(row.malDelta, 2)}{/if}
 					</td>
 					<td class="px-3 py-2 text-center">
 						{#if row.statusBadge === 'dropped'}

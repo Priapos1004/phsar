@@ -24,10 +24,25 @@
 	let { siblings, currentPosition, searchToken = null, fromParam = null, jobUuid = null }: Props = $props();
 
 	let imgFailed = $state<Record<string, boolean>>({});
+
+	// Scroll the "You are here" marker into the centre on mount so a long chain opens at
+	// the current media instead of the far-left start. Browser clamps scrollLeft to
+	// [0, max], so a marker near either end naturally falls back to flush-left/right.
+	let scrollEl = $state<HTMLDivElement>();
+	let hereEl = $state<HTMLDivElement>();
+	let centered = false; // plain flag — center exactly once, don't fight user scrolling
+	$effect(() => {
+		if (centered || !scrollEl || !hereEl) return;
+		centered = true;
+		const c = scrollEl.getBoundingClientRect();
+		const m = hereEl.getBoundingClientRect();
+		scrollEl.scrollLeft += (m.left - c.left) - (scrollEl.clientWidth - hereEl.offsetWidth) / 2;
+	});
 </script>
 
 {#snippet hereMarker()}
 	<div
+		bind:this={hereEl}
 		role="separator"
 		aria-label="Current media position in the chain"
 		class="snap-start shrink-0 flex flex-col items-center justify-center gap-1 px-1"
@@ -38,7 +53,7 @@
 	</div>
 {/snippet}
 
-<div class="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2 no-scrollbar">
+<div bind:this={scrollEl} class="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2 no-scrollbar">
 	{#each siblings as sibling, i}
 		{#if i === currentPosition}{@render hereMarker()}{/if}
 		<a

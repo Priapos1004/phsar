@@ -16,12 +16,15 @@ import json
 import logging
 from datetime import datetime, timedelta, timezone
 
+import httpx
 import pytest
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.core.db import async_session_maker
 from app.daos.anime_dao import AnimeDAO
+from app.exceptions import TransientUpstreamError
 from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
 from app.models.genre import Genre, GenreType
@@ -59,9 +62,20 @@ class _FakeScraper:
         error_for_mal_id: int | None = None,
         search_title_returns: dict[int, tuple] | None = None,
         search_title_error_for_seed: int | None = None,
+        error_for_all: BaseException | None = None,
+        error_504_for_mal_ids: set[int] | None = None,
     ):
         self._payloads = payloads_by_mal_id
         self._error_for = error_for_mal_id
+        # When set, EVERY refresh_anime call raises this — models a total MAL
+        # outage (every media 504s), the scenario the sweep circuit breaker
+        # aborts on.
+        self._error_for_all = error_for_all
+        # A subset of media that 504 while the rest refresh cleanly — models a
+        # partial outage (some anime committed, then MAL goes down), so a test
+        # can assert the breaker still carries the gathered stats. The 504
+        # shape is what classify_error tags `upstream_outage` (breaker-tripping).
+        self._error_504_for = error_504_for_mal_ids or set()
         self.refresh_calls: list[int] = []
         self._search_title_returns = search_title_returns or {}
         self._search_title_error_for_seed = search_title_error_for_seed
@@ -75,6 +89,10 @@ class _FakeScraper:
 
     async def refresh_anime(self, mal_id: int) -> dict:
         self.refresh_calls.append(mal_id)
+        if self._error_for_all is not None:
+            raise self._error_for_all
+        if mal_id in self._error_504_for:
+            raise _http_504()
         if self._error_for is not None and mal_id == self._error_for:
             raise RuntimeError(f"simulated MAL failure for {mal_id}")
         return self._payloads[mal_id]
@@ -1573,6 +1591,172 @@ async def test_dispatcher_isolates_failures_per_anime(tracked_anime, monkeypatch
     assert anime_by_id[a3_id].freshness.last_checked_at > old
     # a2's freshness unchanged (stays at seeded value).
     assert anime_by_id[a2_id].freshness.last_checked_at == old
+
+
+def _http_504() -> httpx.HTTPStatusError:
+    """A 504 the same shape JikanScraper reraises on a sustained MAL outage
+    (classify_error tags any httpx 5xx as `upstream_outage`)."""
+    request = httpx.Request("GET", "https://api.jikan.moe/v4/anime/1/full")
+    response = httpx.Response(504, request=request)
+    return httpx.HTTPStatusError("504 Gateway Timeout", request=request, response=response)
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_aborts_on_total_upstream_outage(tracked_anime, monkeypatch):
+    """Every media 504s (MAL fully down). The sweep must NOT grind through all
+    selected anime — after JOBS_SWEEP_ABORT_AFTER_CONSECUTIVE_FAILURES
+    consecutive upstream failures it raises TransientUpstreamError so the worker
+    fails the job (retryable) and clears maintenance immediately instead of
+    holding the window for ~30s × N anime.
+
+    Regression for the v0.14.13 runaway: before the circuit breaker this ran to
+    completion, returned a summary, and the job was marked *succeeded*."""
+    monkeypatch.setattr(settings, "JOBS_SWEEP_ABORT_AFTER_CONSECUTIVE_FAILURES", 5)
+    old = datetime.now(timezone.utc) - timedelta(days=10)
+    # One more anime than the threshold so the breaker trips before the last.
+    anime_ids = [
+        await _real_seed(mal_id=-8150 - i, last_checked_at=old) for i in range(6)
+    ]
+    tracked_anime.extend(anime_ids)
+
+    fake = _FakeScraper({}, error_for_all=_http_504())
+
+    with pytest.raises(TransientUpstreamError) as exc_info:
+        await _run_dispatcher_harness(monkeypatch, fake, anime_ids, job_id=997)
+
+    # Aborted at the threshold — did NOT attempt every anime.
+    assert len(fake.refresh_calls) == 5
+
+    # The abort carries the (here: all-failed) stats so the failed job's detail
+    # page can still list the 504s instead of showing only the error banner.
+    partial = exc_info.value.partial_summary
+    assert partial is not None
+    assert partial["counters"]["media_refreshed"] == 0
+    assert partial["counters"]["step1_failed"] == 5
+    assert len(partial["step1_failures"]) == 5
+    assert all(
+        f["error_category"] == "upstream_outage" for f in partial["step1_failures"]
+    )
+
+    # No anime committed a refresh (all failed), so freshness stays untouched.
+    async with async_session_maker() as s:
+        result = await s.execute(
+            select(Anime).where(Anime.id.in_(anime_ids))
+            .options(selectinload(Anime.freshness))
+        )
+        for a in result.scalars().all():
+            assert a.freshness.last_checked_at == old
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_abort_carries_partial_stats(tracked_anime, monkeypatch):
+    """Partial outage: two anime refresh cleanly, THEN a run of 504s trips the
+    breaker. The abort must carry the stats gathered before the outage so the
+    300-media-then-outage case shows the work it did, not a bare error.
+
+    Regression for the v0.14.13 follow-up: the mid-loop `raise` used to discard
+    the whole result_summary, so a failed sweep lost every counter + failure it
+    had already collected."""
+    monkeypatch.setattr(settings, "JOBS_SWEEP_ABORT_AFTER_CONSECUTIVE_FAILURES", 3)
+    old = datetime.now(timezone.utc) - timedelta(days=10)
+    # Seeded in call order → ascending ids → processed good-first (the fake
+    # selection orders by anime id), so the two clean refreshes commit before
+    # the three consecutive 504s trip the breaker.
+    good_ids = [await _real_seed(mal_id=-8160 - i, last_checked_at=old) for i in range(2)]
+    bad_ids = [await _real_seed(mal_id=-8170 - i, last_checked_at=old) for i in range(3)]
+    tracked_anime.extend(good_ids + bad_ids)
+
+    good_media = {(-8160 - i) * 100: _payload() for i in range(2)}
+    bad_media = {(-8170 - i) * 100 for i in range(3)}
+    fake = _FakeScraper(good_media, error_504_for_mal_ids=bad_media)
+
+    with pytest.raises(TransientUpstreamError) as exc_info:
+        await _run_dispatcher_harness(
+            monkeypatch, fake, good_ids + bad_ids, job_id=996,
+        )
+
+    # Two good + exactly threshold bad refresh calls, then abort.
+    assert len(fake.refresh_calls) == 5
+
+    partial = exc_info.value.partial_summary
+    assert partial is not None
+    # The stats gathered before the outage survive on the failed job.
+    assert partial["counters"]["media_refreshed"] == 2
+    assert partial["counters"]["anime_touched"] == 2
+    assert partial["counters"]["step1_failed"] == 3
+    assert len(partial["step1_failures"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_partial_anime_failure_rolls_back_media_freshness(
+    tracked_anime, monkeypatch,
+):
+    """Multi-media anime where an EARLIER media refreshes cleanly but a
+    LATER one 504s. The step-1 savepoint is per-anime (one begin_nested over
+    all its due media), so the earlier media's already-advanced
+    stable_check_count MUST roll back — otherwise an intermittent MAL outage
+    would silently walk media through the stabilizing graphic without a
+    durable refresh.
+
+    `test_dispatcher_isolates_failures_per_anime` does NOT cover this: each
+    of its anime has a single media that raises on its first refresh_anime
+    call, before _advance_media_freshness ever runs — so no in-flight media
+    freshness change exists for the savepoint to undo."""
+    old = datetime.now(timezone.utc) - timedelta(days=10)
+    m_ok, m_fail = -8301 * 100, -8301 * 100 + 1
+    async with async_session_maker() as s:
+        anime = Anime(mal_id=-8301, title="A-8301")
+        s.add(anime)
+        await s.flush()
+        # m_ok added first → lower id → refreshed first in the loop. Its
+        # fields match _payload() so the refresh is a NO-diff (counter would
+        # CLIMB 2 → 3, also leaving the stabilizing bucket) rather than reset.
+        ok_media = Media(**media_kwargs(
+            anime_id=anime.id, mal_id=m_ok,
+            score=7.5, scored_by=1000, episodes=12,
+            aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        ))
+        fail_media = Media(**media_kwargs(anime_id=anime.id, mal_id=m_fail))
+        s.add_all([ok_media, fail_media])
+        await s.flush()  # one round-trip; add-order fixes the ids
+        s.add(MediaFreshness(
+            media_id=ok_media.id, last_checked_at=old, stable_check_count=2,
+        ))
+        s.add(MediaFreshness(
+            media_id=fail_media.id, last_checked_at=old, stable_check_count=1,
+        ))
+        s.add(AnimeFreshness(
+            anime_id=anime.id, last_checked_at=old, stable_check_count=2,
+        ))
+        await s.commit()
+        a_id, ok_id = anime.id, ok_media.id
+    tracked_anime.append(a_id)
+
+    fake = _FakeScraper(
+        {m_ok: _payload(), m_fail: _payload()}, error_for_mal_id=m_fail,
+    )
+    summary, _, _ = await _run_dispatcher_harness(
+        monkeypatch, fake, [a_id], job_id=8301,
+    )
+
+    # Whole anime rolled back — nothing counts as refreshed/touched.
+    assert summary["counters"]["media_refreshed"] == 0
+    assert summary["counters"]["anime_touched"] == 0
+    assert summary["counters"]["step1_failed"] == 1
+    # m_ok must actually have been refreshed (then rolled back) for the freshness
+    # assertion below to mean anything — guards against a vacuous pass where the
+    # loop never reached m_ok (e.g. ordering regressed and m_fail ran first).
+    assert sorted(fake.refresh_calls) == sorted([m_ok, m_fail])
+
+    # The crux: m_ok refreshed cleanly but its freshness must be untouched
+    # because m_fail's exception rolled back the shared savepoint. (m_fail's own
+    # freshness is uninteresting — it raised before _advance_media_freshness.)
+    async with async_session_maker() as s:
+        ok_fresh = (await s.execute(
+            select(MediaFreshness).where(MediaFreshness.media_id == ok_id)
+        )).scalars().one()
+    assert ok_fresh.stable_check_count == 2  # NOT 3 — savepoint reverted
+    assert ok_fresh.last_checked_at == old
 
 
 # ---------------------------------------------------------------------------

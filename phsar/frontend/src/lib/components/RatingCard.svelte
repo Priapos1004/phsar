@@ -1,19 +1,21 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import * as Select from '$lib/components/ui/select';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Slider } from '$lib/components/ui/slider';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Badge } from '$lib/components/ui/badge';
 	import { api, ApiError } from '$lib/api';
-	import { RATING_ATTRIBUTE_OPTIONS, WATCH_STATUS_OPTIONS, getRatingAttr, isAttrRated } from '$lib/types/api';
-	import type { RatingOut, RatingCreate, RatingScoreItem, WatchStatus } from '$lib/types/api';
+	import { RATING_ATTRIBUTE_OPTIONS, WATCH_STATUS_OPTIONS, getRatingAttr } from '$lib/types/api';
+	import type { RatingOut, RatingCreate, WatchStatus } from '$lib/types/api';
 	import DeleteWatchHistoryToggle from '$lib/components/DeleteWatchHistoryToggle.svelte';
-	import { selectRatingNeighbors } from '$lib/utils/ratingNeighbors';
-	import { formatDecimalDigits, clampAndSnapScore, decimalPlaces, resolveTitle } from '$lib/utils/formatString';
+	import AttributeSelect from '$lib/components/AttributeSelect.svelte';
+	import RatingNeighbors from '$lib/components/RatingNeighbors.svelte';
+	import ScoreDial from '$lib/components/ScoreDial.svelte';
+	import Notice from '$lib/components/Notice.svelte';
+	import { attributeBadges } from '$lib/utils/ratingAttributes';
+	import { formatDecimalDigits, clampAndSnapScore, decimalPlaces, roundScore } from '$lib/utils/formatString';
 	import { userSettings } from '$lib/stores/userSettings';
 	import * as cls from '$lib/styles/classes';
 	import { ChevronDown, ChevronUp, Star, Pencil, Trash2, RotateCcw } from 'lucide-svelte';
@@ -29,6 +31,8 @@
 		genres?: string[];
 		studios?: string[];
 		ageRatingNumeric?: number | null;
+		// MAL airing status — a not-yet-aired media can't be rated yet.
+		airingStatus?: string;
 	}
 
 	let {
@@ -41,7 +45,26 @@
 		genres = [],
 		studios = [],
 		ageRatingNumeric = null,
+		airingStatus,
 	}: Props = $props();
+
+	// Generous cap for the episodes field when the catalog has no episode total — a
+	// still-airing long-runner (One Piece is ~1100) stays well under this. Mirrors
+	// UNKNOWN_EPISODES_CAP in backend rating_service.py (which clamps server-side too).
+	const UNKNOWN_EPISODES_CAP = 2000;
+	// A not-yet-aired media can't have been watched, so a fresh rating is blocked
+	// (an existing rating, an edge, is still editable below).
+	let notYetAired = $derived(airingStatus === 'Not yet aired');
+	let episodesMax = $derived(totalEpisodes ?? UNKNOWN_EPISODES_CAP);
+	// With no episode total (usually a still-airing series like One Piece) there's no way
+	// to have watched the whole thing, so "Completed" isn't offered — only On Hold / Dropped.
+	let canComplete = $derived(totalEpisodes !== null);
+
+	function clampEpisodes() {
+		if (episodesWatched === '') return;
+		const n = parseInt(episodesWatched);
+		episodesWatched = Number.isNaN(n) ? '' : String(Math.min(episodesMax, Math.max(0, n)));
+	}
 
 
 	let editing = $state(false);
@@ -60,18 +83,15 @@
 	let error = $state('');
 	let attributes = $state<Record<string, string | null>>({});
 
-	// Rating-consistency helper: "how you rated similar titles". Fetched once on
-	// first expand and cached, so moving the score slider recomputes the nearby
-	// ratings client-side with no extra request.
-	let showNeighbors = $state(false);
-	let neighborItems = $state<RatingScoreItem[] | null>(null);
-	let loadingNeighbors = $state(false);
-	let neighborsError = $state(false);
-	let expandedNeighbors = $state<Record<string, boolean>>({});
-
 	// On Hold and Dropped both mean the anime wasn't finished, so the episode
-	// input is revealed and ending-quality is treated as unratable for both.
+	// input is revealed and the ending fields are treated as unratable for both.
 	let revealsEpisodes = $derived(status === 'on_hold' || status === 'dropped');
+
+	// The ending can't be judged on an unfinished watch, so both ending fields are
+	// auto-set to the not_applicable sentinel + disabled when on_hold/dropped, and
+	// cleared back on completed. One list so the auto-set effect and the disabled
+	// prop can't drift.
+	const AUTO_NA_FIELDS: string[] = ['ending_type', 'ending_quality'];
 
 	let hasChanges = $derived.by(() => {
 		if (!existingRating) return true;
@@ -86,72 +106,20 @@
 		return false;
 	});
 
-	// Shared label/value badge builder for the filled-attribute display and the
-	// rating-consistency rows (same filter+map shape over the 11 attributes).
-	function attributeBadges(item: RatingOut | RatingScoreItem): { label: string; value: string }[] {
-		return Object.entries(RATING_ATTRIBUTE_OPTIONS)
-			.filter(([key]) => isAttrRated(getRatingAttr(item, key)))
-			.map(([key, config]) => ({
-				label: config.label,
-				value: config.options.find(o => o.value === getRatingAttr(item, key))?.label
-					?? String(getRatingAttr(item, key)),
-			}));
-	}
-
 	let filledAttributes = $derived(existingRating ? attributeBadges(existingRating) : []);
 
 	let SCORE_STEP = $derived(parseFloat($userSettings?.rating_step ?? '0.5'));
-	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
 	// Edit form: precision matches current step (user inputs at this precision)
 	let STEP_DECIMALS = $derived(decimalPlaces(SCORE_STEP));
-	// Display: enough decimals to accurately show the stored value (may exceed current step)
+	// Display: enough decimals to accurately show the stored value (may exceed current step).
+	// roundScore first so a noisy legacy rating (5.3500000000000005) reports 2 dp, not 16.
 	let DISPLAY_DECIMALS = $derived(
-		existingRating ? Math.max(STEP_DECIMALS, decimalPlaces(existingRating.rating)) : STEP_DECIMALS
+		existingRating ? Math.max(STEP_DECIMALS, decimalPlaces(roundScore(existingRating.rating))) : STEP_DECIMALS
 	);
 
-	function clampAndSnap(val: number): number {
-		return clampAndSnapScore(val, SCORE_STEP);
-	}
-
-	let snappedScore = $derived(clampAndSnap(score));
+	let snappedScore = $derived(clampAndSnapScore(score, SCORE_STEP));
 	let setAttrCount = $derived(Object.keys(RATING_ATTRIBUTE_OPTIONS).filter(k => attributes[k]).length);
 	let totalAttrCount = Object.keys(RATING_ATTRIBUTE_OPTIONS).length;
-
-	// Recomputes live as the score slider moves (snappedScore), off the cached
-	// neighborItems — no refetch. above shown high→low, then below high→low, so
-	// the four rows straddle the current score in descending order.
-	let neighbors = $derived(
-		neighborItems
-			? selectRatingNeighbors(neighborItems, snappedScore, { animeUuid, genres, studios, ageRatingNumeric })
-			: { below: [], above: [] },
-	);
-	let neighborRows = $derived([
-		...[...neighbors.above].sort((a, b) => b.rating - a.rating),
-		...[...neighbors.below].sort((a, b) => b.rating - a.rating),
-	]);
-
-	async function loadNeighbors() {
-		if (loadingNeighbors) return;
-		loadingNeighbors = true;
-		neighborsError = false;
-		try {
-			neighborItems = await api.get<RatingScoreItem[]>('/ratings/scores');
-		} catch {
-			// Leave neighborItems null (not []) so a re-expand or the explicit
-			// "Try again" retries instead of latching the misleading empty state.
-			neighborsError = true;
-		} finally {
-			loadingNeighbors = false;
-		}
-	}
-
-	function toggleNeighbors() {
-		showNeighbors = !showNeighbors;
-		// loadNeighbors self-guards against a concurrent in-flight fetch.
-		if (showNeighbors && neighborItems === null) {
-			void loadNeighbors();
-		}
-	}
 
 	function resetForm() {
 		if (existingRating) {
@@ -164,7 +132,8 @@
 			}
 		} else {
 			score = 5.0;
-			status = 'completed';
+			// No episode total → can't be Completed, so a new rating starts as On Hold.
+			status = canComplete ? 'completed' : 'on_hold';
 			episodesWatched = totalEpisodes?.toString() ?? '';
 			note = '';
 			for (const key of Object.keys(RATING_ATTRIBUTE_OPTIONS)) {
@@ -180,19 +149,26 @@
 		editing = false;
 	});
 
-	$effect(() => {
-		// Only auto-fill episodes when creating a new rating (not editing existing)
-		if (!existingRating && !revealsEpisodes && totalEpisodes !== null) {
-			episodesWatched = totalEpisodes.toString();
+	function selectStatus(next: WatchStatus) {
+		if (next === status) return;
+		status = next;
+		// Switching to Completed means the full run was watched: fill to the total when it's
+		// known, else clear so a stale on-hold count doesn't linger. Driven by the click (not a
+		// mount effect) so it also fires when editing an existing rating. On_hold/dropped keep
+		// the current value so the user can edit it.
+		if (next === 'completed') {
+			episodesWatched = totalEpisodes !== null ? totalEpisodes.toString() : '';
 		}
-	});
+	}
 
 	$effect(() => {
-		// On hold / dropped → ending_quality is not ratable; completed → clear auto-set value
-		if (revealsEpisodes) {
-			attributes['ending_quality'] = 'not_applicable';
-		} else if (attributes['ending_quality'] === 'not_applicable') {
-			attributes['ending_quality'] = null;
+		// On hold / dropped → ending fields aren't ratable; completed → clear auto-set value
+		for (const key of AUTO_NA_FIELDS) {
+			if (revealsEpisodes) {
+				attributes[key] = 'not_applicable';
+			} else if (attributes[key] === 'not_applicable') {
+				attributes[key] = null;
+			}
 		}
 	});
 
@@ -297,7 +273,12 @@
 
 <Card.Root class={cls.cardGlass}>
 	<Card.Content>
-		{#if !existingRating && !editing}
+		{#if notYetAired && !existingRating}
+			<div class="space-y-3 py-2">
+				<h2 class="text-sm font-medium text-muted-foreground uppercase tracking-wide">Your Rating</h2>
+				<Notice>This anime hasn't aired yet — you'll be able to rate it once it's out.</Notice>
+			</div>
+		{:else if !existingRating && !editing}
 			<div class="flex flex-col items-center py-4 space-y-3">
 				<div class="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
 					<Star class="size-7 text-primary" />
@@ -386,26 +367,8 @@
 					</Button>
 				</div>
 
-				<!-- Score: editable circle + slider -->
-				<div class="flex flex-col items-center py-2 space-y-3">
-					<div class="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center">
-						<input
-							type="text"
-							inputmode="decimal"
-							value={snappedScore.toFixed(STEP_DECIMALS)}
-							onblur={(e) => {
-								const parsed = parseFloat(e.currentTarget.value.replace(',', '.')) || 0;
-								score = clampAndSnap(parsed);
-								e.currentTarget.value = clampAndSnap(parsed).toFixed(STEP_DECIMALS);
-							}}
-							onkeydown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-							class="w-14 text-center text-2xl font-bold text-card-foreground bg-transparent outline-none"
-						/>
-					</div>
-					<div class="w-full max-w-xs">
-						<Slider type="single" bind:value={score} min={0} max={10} step={SCORE_STEP} />
-					</div>
-				</div>
+				<!-- Score: editable circle + slider (shared ScoreDial). -->
+				<ScoreDial bind:score step={SCORE_STEP} decimals={STEP_DECIMALS} />
 
 				<div class="bg-muted/40 rounded-lg p-4 space-y-4">
 					<!-- Watch status (segmented) + Episodes -->
@@ -419,7 +382,8 @@
 										variant={status === opt.value ? 'default' : 'ghost'}
 										size="sm"
 										class="rounded-none border-0"
-										onclick={() => { status = opt.value; }}
+										disabled={opt.value === 'completed' && !canComplete && status !== 'completed'}
+										onclick={() => selectStatus(opt.value)}
 									>
 										{opt.label}
 									</Button>
@@ -432,10 +396,11 @@
 							<Input
 								type="number"
 								min={0}
-								max={totalEpisodes ?? undefined}
+								max={episodesMax}
 								bind:value={episodesWatched}
+								onblur={clampEpisodes}
 								placeholder="—"
-								disabled={!revealsEpisodes && totalEpisodes !== null}
+								disabled={!revealsEpisodes}
 								class="bg-card w-20 text-center"
 							/>
 							{#if totalEpisodes !== null}
@@ -443,6 +408,10 @@
 							{/if}
 						</div>
 					</div>
+
+					{#if !canComplete}
+						<p class="text-xs text-muted-foreground">No episode count yet, so this can't be marked Completed — only On Hold or Dropped.</p>
+					{/if}
 
 					<div class="space-y-1">
 						<Label>Note <span class="text-muted-foreground font-normal">({note.length}/1000)</span></Label>
@@ -476,120 +445,22 @@
 						{#if showAttributes}
 							<div class="grid grid-cols-2 gap-3 mt-3">
 								{#each Object.entries(RATING_ATTRIBUTE_OPTIONS) as [key, config]}
-									{@const isEndingQuality = key === 'ending_quality'}
-									{@const isDisabled = isEndingQuality && revealsEpisodes}
-									{@const visibleOptions = isEndingQuality && !revealsEpisodes
-										? config.options.filter(o => o.value !== 'not_applicable')
-										: config.options}
-									<div class="space-y-1">
-										<Label class={attributes[key] ? 'text-card-foreground font-medium' : 'text-muted-foreground'}>
-											{config.label}
-										</Label>
-										<Select.Root
-											type="single"
-											value={attributes[key] ?? undefined}
-											onValueChange={(val: string) => { attributes[key] = val || null; }}
-											disabled={isDisabled}
-										>
-											<Select.Trigger class="w-full {attributes[key] ? 'bg-primary/5 border-2 border-primary/40' : 'bg-card'}">
-												{#if attributes[key]}
-													{config.options.find(o => o.value === attributes[key])?.label ?? 'Select...'}
-												{:else}
-													<span class="text-muted-foreground">Not set</span>
-												{/if}
-											</Select.Trigger>
-											<Select.Content>
-												{#each visibleOptions as option}
-													<Select.Item value={option.value}>{option.label}</Select.Item>
-												{/each}
-											</Select.Content>
-										</Select.Root>
-									</div>
+									<AttributeSelect
+										label={config.label}
+										options={config.options}
+										value={attributes[key] ?? null}
+										onChange={(v) => (attributes[key] = v)}
+										disabled={AUTO_NA_FIELDS.includes(key) && revealsEpisodes}
+									/>
 								{/each}
 							</div>
 						{/if}
 					</div>
 				</div>
 
-				<!-- Rating-consistency helper: how you rated nearby-scored titles from
-				     other anime, so the user can keep their scale consistent. -->
-				<div>
-					<button
-						type="button"
-						class="flex items-center gap-2 text-primary group"
-						onclick={toggleNeighbors}
-					>
-						{#if showNeighbors}
-							<ChevronUp class="size-4" />
-						{:else}
-							<ChevronDown class="size-4" />
-						{/if}
-						<span class="group-hover:underline">How you rated similar titles</span>
-					</button>
-
-					{#if showNeighbors}
-						{#if loadingNeighbors}
-							<p class="text-sm text-muted-foreground mt-2">Loading…</p>
-						{:else if neighborsError}
-							<p class="text-sm text-muted-foreground mt-2">
-								Couldn't load your ratings.
-								<button type="button" class="text-primary hover:underline" onclick={loadNeighbors}>
-									Try again
-								</button>
-							</p>
-						{:else if neighborRows.length === 0}
-							<p class="text-sm text-muted-foreground mt-2">
-								Rate a few titles from other anime to compare your scores here.
-							</p>
-						{:else}
-							<p class="text-xs text-muted-foreground mt-2">
-								Your closest scores from other anime — a nudge toward a consistent scale.
-							</p>
-							<div class="mt-2 space-y-2">
-								{#each neighborRows as n (n.media_uuid)}
-									{@const attrs = attributeBadges(n)}
-									{@const mediaName = resolveTitle(n.media_title, n.media_name_eng, n.media_name_jap, nameLanguage)}
-									{@const animeName = resolveTitle(n.anime_title, n.anime_name_eng, n.anime_name_jap, nameLanguage)}
-									<div class="rounded-lg border border-border bg-card overflow-hidden">
-										<button
-											type="button"
-											class="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-muted/40 transition"
-											onclick={() => (expandedNeighbors[n.media_uuid] = !expandedNeighbors[n.media_uuid])}
-										>
-											{#if n.media_cover_image}
-												<img src={n.media_cover_image} alt="" loading="lazy" class="w-8 h-11 rounded object-cover shrink-0" />
-											{/if}
-											<div class="flex-1 min-w-0">
-												<p class="text-sm font-medium text-card-foreground truncate">{mediaName}</p>
-												<p class="text-xs text-muted-foreground truncate">{animeName}</p>
-											</div>
-											<span class="flex items-center gap-1 text-card-foreground font-bold shrink-0">
-												<Star class="size-3.5 text-primary" fill="currentColor" />
-												{formatDecimalDigits(n.rating, decimalPlaces(n.rating))}
-											</span>
-											{#if expandedNeighbors[n.media_uuid]}
-												<ChevronUp class="size-4 text-muted-foreground shrink-0" />
-											{:else}
-												<ChevronDown class="size-4 text-muted-foreground shrink-0" />
-											{/if}
-										</button>
-										{#if expandedNeighbors[n.media_uuid]}
-											<div class="px-3 pb-2 flex flex-wrap gap-1">
-												{#if attrs.length}
-													{#each attrs as attr}
-														<Badge variant="secondary" class="font-normal">{attr.label}: {attr.value}</Badge>
-													{/each}
-												{:else}
-													<span class="text-xs text-muted-foreground">No attributes rated</span>
-												{/if}
-											</div>
-										{/if}
-									</div>
-								{/each}
-							</div>
-						{/if}
-					{/if}
-				</div>
+				<!-- Rating-consistency helper: how you rated nearby-scored titles from other
+				     anime, so the user can keep their scale consistent. -->
+				<RatingNeighbors score={snappedScore} {animeUuid} {genres} {studios} {ageRatingNumeric} currentAttributes={attributes} />
 
 				{#if error}
 					<p class="text-destructive">{error}</p>

@@ -93,16 +93,37 @@
 		navigateToSearch({ ...params, view_type: viewType });
 	}
 
+	// Categorical filters that mean the same thing in both views, so they carry across a
+	// level toggle. Score carries too — it's always the fixed 0–10 scale. Everything else
+	// is dropped: relation type (media-only) and the view-relative ranges (episodes/
+	// scored-by/duration/watch-time, whose scale differs between per-media and aggregated).
+	const CARRY_LIST_KEYS = ['genre_name', 'studio_name', 'anime_season', 'age_rating', 'airing_status', 'media_type'] as const;
+	const CARRY_NUMBER_KEYS = ['score_min', 'score_max'] as const;
+
 	async function switchView(newView: 'anime' | 'media') {
 		if (newView === viewType) return;
 		viewType = newView;
 		mediaResults = [];
 		animeResults = [];
-		decodedParams = {};
 		error = '';
 		visibleCount = 20;
-		// Auto-submit empty search to show unfiltered results for the new view
-		navigateToSearch({ query: '', search_type: 'title', view_type: newView });
+		// Partial clear: carry the directly-applicable filters (query + categorical lists +
+		// score) through the new token and drop the rest, so toggling level keeps your broad
+		// filtering without dragging over view-specific ranges that don't translate.
+		const carried: MediaSearchFilters = {
+			query: decodedParams.query ?? '',
+			search_type: decodedParams.search_type ?? 'title',
+			view_type: newView,
+		};
+		for (const key of CARRY_LIST_KEYS) {
+			const vals = decodedParams[key];
+			if (vals?.length) carried[key] = [...vals];
+		}
+		for (const key of CARRY_NUMBER_KEYS) {
+			const val = decodedParams[key];
+			if (typeof val === 'number') carried[key] = val;
+		}
+		navigateToSearch(carried);
 	}
 </script>
 

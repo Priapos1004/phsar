@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { SlidersHorizontal } from 'lucide-svelte';
+	import { SlidersHorizontal, Search } from 'lucide-svelte';
 	import { api } from '$lib/api';
 	import type { FilterOptions } from '$lib/types/api';
 	import TagSelect from '$lib/components/TagSelect.svelte';
@@ -71,10 +71,12 @@
 		{ type: 'timeRange', minKey: 'total_watch_time_min', maxKey: 'total_watch_time_max', label: 'Total Watch Time', step: 60 },
 	];
 
-	// Adapt filters for anime view: hide duration-per-episode, clarify scored-by label
+	// Adapt filters for anime view: relation type is a per-media property (meaningless on
+	// aggregated anime rows), duration-per-episode doesn't apply, and scored-by is per-media.
 	let activeFilterConfig = $derived(
 		viewType === 'anime'
 			? filterConfig
+				.filter(c => !(c.type === 'list' && c.key === 'relation_type'))
 				.filter(c => !(c.type === 'timeRange' && c.minKey === 'duration_per_episode_min'))
 				.map(c => 'minKey' in c && c.minKey === 'scored_by_min' ? { ...c, label: 'Scored By (per Media)' } : c)
 			: filterConfig
@@ -173,8 +175,13 @@
 	let prevViewType: string | undefined;
 	$effect(() => {
 		if (prevViewType !== undefined && viewType !== prevViewType) {
-			clearFilters();
-			// Reset slider bounds so they don't show stale ranges during fetch
+			// Close the panel on a view switch so the user doesn't watch filters reorganize
+			// (relation type appearing/disappearing, ranges resetting) mid-toggle.
+			showFilters = false;
+			// Don't clearFilters() here — the page carries cross-view-compatible filters
+			// through the new search token, and syncFiltersFromParams (the searchParams
+			// effect) reconciles: it re-applies carried values and empties dropped ones.
+			// Only the per-view option bounds are stale, so reset + refetch those.
 			listFilterOptions = {};
 			numberFilterOptions = {};
 			fetchFilters();
@@ -243,25 +250,37 @@
 
 <form onsubmit={handleSubmit} class="w-full max-w-xl mx-auto">
 	<div class="relative">
-		<Input
-			type="text"
-			bind:value={query}
-			placeholder={viewType === 'anime' ? 'Search anime...' : 'Search media...'}
-			class="w-full h-12 px-5 rounded-full bg-card/80 backdrop-blur border-input pr-12"
-		/>
+		<!-- Filter toggle on the left; search trigger on the right so mobile users can
+		     tap to search instead of having to focus the field and press Enter.
+		     z-10 is load-bearing: the input's backdrop-blur makes it a stacking context
+		     painted in tree order, so without it the input would paint over the filter
+		     button that precedes it in source and hide it. -->
 		<Button
 			type="button"
 			variant="ghost"
 			size="icon"
-			class="absolute top-1/2 right-3 -translate-y-1/2 text-primary hover:text-primary/70"
+			class="absolute top-1/2 left-2 -translate-y-1/2 z-10 text-primary hover:text-primary/70"
 			onclick={() => (showFilters = !showFilters)}
 			aria-label="Toggle filters"
 		>
 			<SlidersHorizontal class="w-5 h-5" />
 		</Button>
+		<Input
+			type="text"
+			bind:value={query}
+			placeholder={viewType === 'anime' ? 'Search anime...' : 'Search media...'}
+			class="w-full h-12 pl-12 pr-12 rounded-full bg-card/80 backdrop-blur border-input"
+		/>
+		<Button
+			type="submit"
+			variant="ghost"
+			size="icon"
+			class="absolute top-1/2 right-2 -translate-y-1/2 z-10 text-primary hover:text-primary/70"
+			aria-label="Search"
+		>
+			<Search class="w-5 h-5" />
+		</Button>
 	</div>
-
-	<button type="submit" class="hidden">Submit</button>
 
 	{#if showFilters}
 		<Card.Root class="mt-3 bg-card/80 backdrop-blur relative z-10">

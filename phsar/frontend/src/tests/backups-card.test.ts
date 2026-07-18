@@ -36,6 +36,10 @@ describe('BackupsCard', () => {
 	beforeEach(async () => {
 		const { optimisticJobs } = await import('../lib/stores/jobs');
 		optimisticJobs.set([]);
+		// Reset the shared global toast slot — BackupsCard now fires its
+		// "queued" toast through push() rather than a local <Toast>.
+		const { activeToast } = await import('../lib/stores/toast');
+		activeToast.set(null);
 	});
 
 	afterEach(() => {
@@ -58,16 +62,19 @@ describe('BackupsCard', () => {
 		globalThis.fetch = fetchMock as typeof fetch;
 
 		const { optimisticJobs } = await import('../lib/stores/jobs');
+		const { activeToast } = await import('../lib/stores/toast');
 
 		render(BackupsCard, { props: { currentUsername: 'admin' } });
 		await vi.waitFor(() => expect(screen.getByText('Create backup')).toBeInTheDocument());
 
 		await fireEvent.click(screen.getByText('Create backup'));
 
+		// The toast is now global (pushToast → activeToast store, rendered by
+		// the layout's ToastHost which isn't mounted here), so assert the store.
 		await vi.waitFor(() => {
-			expect(
-				screen.getByText("Backup queued. We'll let you know when it's ready."),
-			).toBeInTheDocument();
+			expect(get(activeToast)?.message).toBe(
+				"Backup queued. We'll let you know when it's ready.",
+			);
 		});
 
 		const postCalls = fetchMock.mock.calls.filter(

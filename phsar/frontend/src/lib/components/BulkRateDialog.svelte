@@ -1,10 +1,11 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog';
-	import * as Select from '$lib/components/ui/select';
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
-	import { Slider } from '$lib/components/ui/slider';
 	import { Textarea } from '$lib/components/ui/textarea';
+	import AttributeSelect from '$lib/components/AttributeSelect.svelte';
+	import RatingNeighbors from '$lib/components/RatingNeighbors.svelte';
+	import ScoreDial from '$lib/components/ScoreDial.svelte';
 	import { ChevronDown, ChevronUp } from 'lucide-svelte';
 	import { clampAndSnapScore, decimalPlaces } from '$lib/utils/formatString';
 	import { RATING_ATTRIBUTE_OPTIONS } from '$lib/types/api';
@@ -14,17 +15,33 @@
 
 	interface Props {
 		open: boolean;
+		// Already filtered to the ratable subset (not-yet-aired media are excluded
+		// by the caller — they stay selectable for the watchlist but can't be rated).
 		selectedUuids: Set<string>;
+		excludedNotYetAiredCount?: number;
 		alreadyRatedCount: number;
 		onSaved: (results: RatingOut[], note: string) => void;
+		// Anime context for the rating-consistency helper (bulk rating is anime-scoped, so
+		// this excludes the current anime + feeds the tiebreak — same as the media page).
+		animeUuid?: string;
+		genres?: string[];
+		studios?: string[];
+		ageRatingNumeric?: number | null;
 	}
 
 	let {
 		open = $bindable(),
 		selectedUuids,
+		excludedNotYetAiredCount = 0,
 		alreadyRatedCount,
 		onSaved,
+		animeUuid,
+		genres = [],
+		studios = [],
+		ageRatingNumeric = null,
 	}: Props = $props();
+
+	let nothingToRate = $derived(selectedUuids.size === 0);
 
 	let SCORE_STEP = $derived(parseFloat($userSettings?.rating_step ?? '0.5'));
 	let SCORE_DECIMALS = $derived(decimalPlaces(SCORE_STEP));
@@ -71,7 +88,7 @@
 </script>
 
 <Dialog.Root bind:open>
-	<Dialog.Content class="max-h-[85vh] overflow-y-auto sm:max-w-md">
+	<Dialog.Content class="max-h-[85vh] overflow-y-auto sm:max-w-xl">
 		<Dialog.Header>
 			<Dialog.Title>Rate {selectedUuids.size} Media</Dialog.Title>
 			<Dialog.Description class="text-muted-foreground">
@@ -79,33 +96,30 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		<div class="space-y-4 py-2">
+		<!-- min-w-0: Dialog.Content is a CSS grid, whose items default to min-width:auto and
+		     refuse to shrink below a nowrap child (a long neighbor title) — this lets the
+		     inner truncate engage instead of overflowing the dialog. -->
+		<div class="space-y-4 py-2 min-w-0">
 			{#if alreadyRatedCount > 0}
 				<div class="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
 					This will overwrite {alreadyRatedCount} existing rating{alreadyRatedCount > 1 ? 's' : ''}.
 				</div>
 			{/if}
 
-			<!-- Score: editable circle + slider -->
-			<div class="flex flex-col items-center py-2 space-y-3">
-				<div class="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center">
-					<input
-						type="text"
-						inputmode="decimal"
-						value={snappedScore.toFixed(SCORE_DECIMALS)}
-						onblur={(e) => {
-							const parsed = parseFloat(e.currentTarget.value.replace(',', '.')) || 0;
-							score = clampAndSnapScore(parsed, SCORE_STEP);
-							e.currentTarget.value = clampAndSnapScore(parsed, SCORE_STEP).toFixed(SCORE_DECIMALS);
-						}}
-						onkeydown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
-						class="w-14 text-center text-2xl font-bold text-card-foreground bg-transparent outline-none"
-					/>
+			{#if excludedNotYetAiredCount > 0}
+				<div class="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
+					{#if nothingToRate}
+						{excludedNotYetAiredCount === 1 ? 'The selected media' : `All ${excludedNotYetAiredCount} selected media`}
+						{excludedNotYetAiredCount === 1 ? "hasn't" : "haven't"} aired yet, so there's nothing to rate.
+					{:else}
+						{excludedNotYetAiredCount} selected media {excludedNotYetAiredCount === 1 ? "hasn't" : "haven't"}
+						aired yet and {excludedNotYetAiredCount === 1 ? 'is' : 'are'} excluded from this rating.
+					{/if}
 				</div>
-				<div class="w-full max-w-xs">
-					<Slider type="single" bind:value={score} min={0} max={10} step={SCORE_STEP} />
-				</div>
-			</div>
+			{/if}
+
+			<!-- Score: editable circle + slider (shared ScoreDial). -->
+			<ScoreDial bind:score step={SCORE_STEP} decimals={SCORE_DECIMALS} />
 
 			<div class="bg-muted/40 rounded-lg p-4 space-y-4">
 				<!-- Note -->
@@ -118,7 +132,7 @@
 						placeholder="Your thoughts on this anime..."
 						class="bg-card"
 					/>
-					<p class="text-xs text-muted-foreground">Applied to the last main media only.</p>
+					<p class="text-xs text-muted-foreground">Applied to the latest-aired main media only.</p>
 				</div>
 
 				<!-- Attributes -->
@@ -142,40 +156,27 @@
 					{#if showAttributes}
 						<div class="grid grid-cols-2 gap-3 mt-3">
 							{#each Object.entries(RATING_ATTRIBUTE_OPTIONS) as [key, config]}
-								<div class="space-y-1">
-									<Label class={attributes[key] ? 'text-card-foreground font-medium' : 'text-muted-foreground'}>
-										{config.label}
-									</Label>
-									<Select.Root
-										type="single"
-										value={attributes[key] ?? undefined}
-										onValueChange={(val: string) => { attributes[key] = val || null; }}
-									>
-										<Select.Trigger class="w-full {attributes[key] ? 'bg-primary/5 border-2 border-primary/40' : 'bg-card'}">
-											{#if attributes[key]}
-												{config.options.find(o => o.value === attributes[key])?.label ?? 'Select...'}
-											{:else}
-												<span class="text-muted-foreground">Not set</span>
-											{/if}
-										</Select.Trigger>
-										<Select.Content>
-											{#each config.options as option}
-												<Select.Item value={option.value}>{option.label}</Select.Item>
-											{/each}
-										</Select.Content>
-									</Select.Root>
-								</div>
+								<AttributeSelect
+									label={config.label}
+									options={config.options}
+									value={attributes[key] ?? null}
+									onChange={(v) => (attributes[key] = v)}
+								/>
 							{/each}
 						</div>
 					{/if}
 				</div>
 			</div>
 
+			<!-- Rating-consistency helper: how you rated nearby-scored titles from other
+			     anime (bulk rating is anime-scoped, so this behaves like the media page). -->
+			<RatingNeighbors score={snappedScore} {animeUuid} {genres} {studios} {ageRatingNumeric} currentAttributes={attributes} />
+
 			{#if error}
 				<p class="text-destructive">{error}</p>
 			{/if}
 
-			<Button class="w-full" onclick={handleSave} disabled={saving}>
+			<Button class="w-full" onclick={handleSave} disabled={saving || nothingToRate}>
 				{#if saving}
 					Saving...
 				{:else}

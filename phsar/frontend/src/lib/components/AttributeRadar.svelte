@@ -21,7 +21,7 @@
 		dialogue_quality: { flat: 1, normal: 2, deep: 3 },
 		character_depth: { flat: 1, normal: 2, complex: 3 },
 		story_quality: { weak: 1, average: 2, good: 3, outstanding: 4 },
-		ending_quality: { unsatisfying: 1, satisfying: 2, very_satisfying: 3 },
+		ending_quality: { unsatisfying: 1, neutral: 2, satisfying: 3, very_satisfying: 4 },
 	};
 
 	const RADAR_KEYS = Object.keys(ATTR_SCORE_MAP);

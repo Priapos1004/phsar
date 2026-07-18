@@ -34,6 +34,7 @@ from app.exceptions import (
     AnimeFilteredOutError,
     AnimeNotFoundError,
     MainMediaNotFoundError,
+    TransientUpstreamError,
 )
 from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
@@ -55,7 +56,7 @@ from app.services.jikan_scraper import (
     parse_mal_datetime,
     parse_relation_edges,
 )
-from app.services.job_worker import classify_error
+from app.services.job_worker import ERROR_CATEGORY_UPSTREAM_OUTAGE, classify_error
 from app.services.merge_detection_service import (
     detect_merge_candidates,
     find_cross_anime_relation_pairs,
@@ -316,6 +317,11 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     # chunk of its workload is visible instead of reading as fully clean.
     step1_failed = 0
     step1_failures: list[dict] = []
+    # Circuit breaker: consecutive step-1 failures categorized as an upstream
+    # outage. Reset on any successful refresh; a total MAL outage climbs it to
+    # the threshold on the first anime and aborts the whole sweep (below)
+    # instead of paying the full retry budget for every selected media.
+    consecutive_upstream_failures = 0
     # Symmetric to step1_failures: anime whose step-2 probe raised.
     probe_failures: list[dict] = []
     # Track which existing anime had new media attached so we can re-run
@@ -341,6 +347,66 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     # off this; the Jobs Log row counts off `counters` below.
     media_changes_log: list[dict] = []
     anime_umbrella_changes_log: list[dict] = []
+    # Post-loop soft-warn state, initialized up front so the circuit-breaker
+    # abort (mid-loop) can build the SAME-shaped summary as the normal return.
+    # The post-loop blocks reassign these; at abort they stay at these
+    # defaults — correct, because merge detection / spoiler recompute / orphan
+    # cleanup simply never ran, they didn't fail.
+    merge_detect_failed = False
+    cache_recompute_failed = False
+    orphaned_studios_removed = 0
+
+    def build_result_summary() -> dict:
+        """Assemble the v6 result_summary from the loop accumulators (read via
+        closure). Called at the normal end-of-sweep return AND at the circuit-
+        breaker abort, so a failed sweep still carries the media_refreshed
+        counters + the per-anime failure list the detail page renders instead
+        of only the header error banner."""
+        return {
+            # v5 (v0.14.8): counters go media-grained. `media_refreshed` is the
+            # headline workload (individual media touched); `anime_touched` is
+            # the umbrella count that `anime_refreshed` used to give;
+            # `media_skipped_fresh` quantifies the work the media-level
+            # selection avoided. The anime_with_dynamic/static pair was dropped
+            # (an anime is no longer the work unit).
+            "counters": {
+                "media_refreshed": media_refreshed,
+                "anime_touched": anime_touched,
+                "media_skipped_fresh": media_skipped_fresh,
+                "media_with_dynamic_changes": media_with_dynamic_changes,
+                "media_with_static_changes": media_with_static_changes,
+                "umbrella_reclassed": umbrella_reclassed,
+                "probe_succeeded": probe_succeeded,
+                "probe_failed": probe_failed,
+                "probe_attached_anime_count": len(probe_attached_anime_ids),
+                "probe_attached_media_count": probe_attached_media_count,
+                "orphaned_studios_removed": orphaned_studios_removed,
+                "step1_failed": step1_failed,
+            },
+            "media_changes": media_changes_log,
+            "anime_umbrella_changes": anime_umbrella_changes_log,
+            # v6: per-anime list of media the step-2 relations probe attached
+            # this run — {anime_uuid, title, media: [{media_uuid, title}, ...]}.
+            # Backs the detail page's "Attached via probe" review card.
+            "probe_attached_anime": probe_attached_anime,
+            # Per-anime step-1 refresh failures: {anime_uuid, title,
+            # error_category, error_message}. Lets the detail page show exactly
+            # which shows were skipped and whether it was an MAL outage.
+            "step1_failures": step1_failures,
+            # Per-anime step-2 probe failures, same shape as step1_failures.
+            "probe_failures": probe_failures,
+            # Deduplicated across every media in this sweep. The Jobs Log
+            # tints rows when this is non-empty so the admin can spot which
+            # sweeps need a seeder update without drilling into details.
+            "unknown_genre_tags": sorted({
+                tag
+                for entry in media_changes_log
+                for tag in (entry.get("genre_drift") or {}).get("unknown_tags") or []
+            }),
+            "merge_detect_failed": merge_detect_failed,
+            "cache_recompute_failed": cache_recompute_failed,
+        }
+
     async with JikanScraper() as scraper:
         for anime, media_to_refresh in by_anime.values():
             step1 = await _try_step1_refresh(
@@ -353,7 +419,33 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
                 step1_failed += 1
                 step1_failures.append(step1._asdict())
                 await progress.update(items_done=media_refreshed)
+                # Circuit breaker: a run of upstream failures means MAL is down,
+                # not that one row is bad. Bail before burning the retry budget
+                # on every remaining anime (~30s–11min each) while maintenance
+                # is held — raising fails the job (retryable) and clears the
+                # maintenance flag at once instead of hours later. A non-upstream
+                # failure (e.g. a stray 404) neither trips nor resets the breaker.
+                if step1.error_category == ERROR_CATEGORY_UPSTREAM_OUTAGE:
+                    consecutive_upstream_failures += 1
+                    if (
+                        consecutive_upstream_failures
+                        >= settings.JOBS_SWEEP_ABORT_AFTER_CONSECUTIVE_FAILURES
+                    ):
+                        # Carry the stats gathered so far so the failed job's
+                        # detail page still shows the refreshed counters + the
+                        # per-anime failure list (the 504s) — same shape a
+                        # partially-successful sweep returns. job_worker seeds
+                        # result_summary from this before marking the job failed.
+                        raise TransientUpstreamError(
+                            f"update_sweep after {consecutive_upstream_failures} "
+                            "consecutive upstream failures — MAL appears to be "
+                            "unavailable",
+                            partial_summary=build_result_summary(),
+                        )
                 continue
+
+            # A successful refresh means MAL is reachable — reset the breaker.
+            consecutive_upstream_failures = 0
 
             # Step 1 committed durably inside _try_step1_refresh, so account
             # for its refresh work NOW — independent of the probe outcome. A
@@ -417,7 +509,6 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     # + merge detection share the maintenance window. Per-anime catalog
     # work has already committed, so a detection failure shouldn't fail
     # the whole sweep — soft-warn into result_summary.
-    merge_detect_failed = False
     cross_link_pairs: list[tuple[int, int]] = []
     if sidecar_touched_anime_ids:
         try:
@@ -444,7 +535,6 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
             merge_detect_failed = True
             await session.rollback()
 
-    cache_recompute_failed = False
     if probe_attached_anime_ids:
         # Only the probe-attach path adds media in a sweep (step 1 never
         # creates rows), so the recompute is scoped to exactly those anime.
@@ -465,7 +555,6 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     # night instead of letting corrected-typo studios accumulate forever.
     # Soft-warn like the blocks above — the per-anime catalog work has
     # already committed, so an orphan-cleanup failure shouldn't fail the sweep.
-    orphaned_studios_removed = 0
     try:
         orphaned_studios_removed = await StudioDAO().delete_orphaned(session)
         await session.commit()
@@ -474,50 +563,7 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
         await session.rollback()
 
     await progress.update(stage="Done", items_done=media_refreshed, force=True)
-    return {
-        # v5 (v0.14.8): counters go media-grained. `media_refreshed` is the
-        # headline workload (individual media touched); `anime_touched` is
-        # the umbrella count that `anime_refreshed` used to give;
-        # `media_skipped_fresh` quantifies the work the media-level
-        # selection avoided. The anime_with_dynamic/static pair was dropped
-        # (an anime is no longer the work unit).
-        "counters": {
-            "media_refreshed": media_refreshed,
-            "anime_touched": anime_touched,
-            "media_skipped_fresh": media_skipped_fresh,
-            "media_with_dynamic_changes": media_with_dynamic_changes,
-            "media_with_static_changes": media_with_static_changes,
-            "umbrella_reclassed": umbrella_reclassed,
-            "probe_succeeded": probe_succeeded,
-            "probe_failed": probe_failed,
-            "probe_attached_anime_count": len(probe_attached_anime_ids),
-            "probe_attached_media_count": probe_attached_media_count,
-            "orphaned_studios_removed": orphaned_studios_removed,
-            "step1_failed": step1_failed,
-        },
-        "media_changes": media_changes_log,
-        "anime_umbrella_changes": anime_umbrella_changes_log,
-        # v6: per-anime list of media the step-2 relations probe attached this
-        # run — {anime_uuid, title, media: [{media_uuid, title}, ...]}. Backs
-        # the detail page's "Attached via probe" review card.
-        "probe_attached_anime": probe_attached_anime,
-        # Per-anime step-1 refresh failures: {anime_uuid, title,
-        # error_category, error_message}. Lets the detail page show exactly
-        # which shows were skipped and whether it was an MAL outage.
-        "step1_failures": step1_failures,
-        # Per-anime step-2 probe failures, same shape as step1_failures.
-        "probe_failures": probe_failures,
-        # Deduplicated across every media in this sweep. The Jobs Log
-        # tints rows when this is non-empty so the admin can spot which
-        # sweeps need a seeder update without drilling into details.
-        "unknown_genre_tags": sorted({
-            tag
-            for entry in media_changes_log
-            for tag in (entry.get("genre_drift") or {}).get("unknown_tags") or []
-        }),
-        "merge_detect_failed": merge_detect_failed,
-        "cache_recompute_failed": cache_recompute_failed,
-    }
+    return build_result_summary()
 
 
 async def _try_step1_refresh(

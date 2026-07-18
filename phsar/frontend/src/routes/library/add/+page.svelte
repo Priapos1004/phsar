@@ -5,8 +5,8 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
-	import Toast from '$lib/components/Toast.svelte';
 	import { bumpJobsRefresh, librarySaved, onBump } from '$lib/stores/jobs';
+	import { pushToast } from '$lib/stores/toast';
 	import { userSettings } from '$lib/stores/userSettings';
 	import { formatShortDate, resolveTitle } from '$lib/utils/formatString';
 	import { buildDetailHref } from '$lib/utils/navigation';
@@ -32,16 +32,8 @@
 	let query = $state('');
 	let submitting = $state(false);
 	let errorMsg = $state<string | null>(null);
-	let toastShown = $state(false);
-	let toastMsg = $state('');
 	let recent = $state<AnimeRecentItem[]>([]);
 	let recentLoading = $state(true);
-
-	function showToast(msg: string) {
-		toastMsg = msg;
-		toastShown = true;
-		setTimeout(() => (toastShown = false), 2500);
-	}
 
 	async function loadRecent() {
 		try {
@@ -68,7 +60,7 @@
 		errorMsg = null;
 		try {
 			await api.post<Job>('/jobs/scrape', { query: trimmed });
-			showToast(`Added "${trimmed}" to the queue. Track progress in the bell.`);
+			pushToast(`Added "${trimmed}" to the queue. Track progress in the bell.`);
 			query = '';
 			// Tell the bell to refetch immediately so the new job shows up
 			// without waiting for its 30s idle poll. The bell will bump
@@ -90,8 +82,6 @@
 <svelte:head>
 	<title>Add to Library — Phsar</title>
 </svelte:head>
-
-<Toast message={toastMsg} show={toastShown} />
 
 <div class="max-w-3xl mx-auto py-12">
 	<Card.Root>

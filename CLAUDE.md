@@ -103,6 +103,7 @@ FastAPI endpoint definitions. Each router maps to an API prefix.
   - All three are bound to `Query(20, ge=0, le=1440)` on `delay_minutes`
   - All three are allowlisted in the maintenance gate so a cron retry while a sweep is running can't 503 the cron itself
   - All four cron-authed endpoints (including `/backups/auto`) share `JOBS_CRON_TOKEN` — one bearer for the whole machine-only surface
+- **`/auth`** — `POST /auth/login` + `POST /auth/register` issue a JWT (`sub`, `role`, `exp`); `GET /auth/validate` checks one. `POST /auth/refresh` re-issues a fresh full-lifetime token to any **still-valid** token (an expired token 401s, same as `/validate`) — the sliding-session re-issue the frontend calls on activity (see Sliding session under Key Patterns). Bare `get_current_user` (not role-gated) so restricted/guest users keep their sessions alive too; role is re-read from the DB user
 - **`/search`** — `/search/media` (per-media) and `/search/anime` (aggregated by anime)
 - **`/media`** — `/media/{uuid}` and `/media/anime/{uuid}`
 - **`/users`** — settings CRUD, data export, and account deletion
@@ -210,7 +211,7 @@ SQLAlchemy ORM models mapped to PostgreSQL tables.
   - `backfill_user_settings` — ensures all users have a UserSettings row
   - `backfill_spoiler_visibility` — computes visible media for users with **zero** cache rows (new deployments, pre-feature users); does **not** mop up partial-cache drift on existing users
   - `anime_title_backfiller.backfill_anime_title_suffixes` — strips season suffixes ("Season I", "第2期", "Part 2", " II"…) from `Anime.title`/`name_eng`/`name_jap` on rows scraped before the normalisation landed; regenerates the anime embedding for changed rows. Idempotent; subsequent restarts touch zero rows. `anime_service.create_anime_from_media` applies the same strip on new scrapes so the umbrella row reads like the franchise name, not the per-season identity
-  - `embedding_backfiller.py` — detects and regenerates missing anime/media/rating embeddings (enables seamless embedding model swaps via Alembic migration + restart)
+  - `embedding_backfiller.py` — `backfill_embeddings` detects and regenerates **missing** anime/media/rating embeddings (enables seamless embedding model swaps via Alembic migration + restart). `reembed_all_embeddings` regenerates **every** embedding in place (delete+insert per row, batched commits) — the one-time re-normalization path after a `generate_embedding` change (e.g. the query/document case-fold); gated by `EMBEDDING_REEMBED_ON_STARTUP`, fired post-yield so a ~5-9 min catalog re-encode can't block /health
   - `relation_backfiller.backfill_relations` — gated by `RELATION_BACKFILL_ON_STARTUP`. Re-runs the two-pass classifier over every Anime via `anime_relation_service.reclassify_anime` AND `detect_split_candidates_for_anime` inside the same per-anime SAVEPOINT. Lazy-fetches MAL relations (~1 req/s) checkpoint incrementally so a crash mid-run doesn't lose hours of pagination. `dry_run=True` powers the audit checkpoint (see `phsar/scripts/audit_relation_backfill.py`); supports `anime_ids` filter for the admin re-classify endpoint and tests
   - `merge_detection_service.backfill_merge_candidates` — one-shot existing × existing pair sweep so duplicates pre-dating the detector get flagged on first restart after upgrade
   - `split_candidate_backfiller.backfill_split_candidates` — one-shot disjoint-franchise detection across the catalog; runs after `backfill_merge_candidates` so resolved pairs don't surface duplicate split candidates. Pure structural (no MAL calls); idempotent on repeat restarts
@@ -225,7 +226,7 @@ SQLAlchemy ORM models mapped to PostgreSQL tables.
     - Bell keeps retry button; `classify_error` tags as `upstream_outage` for friendly copy
   - `AnimeFilteredOutError` (sibling to `AnimeNotFoundError` under permanent) — surfaces when seeded BFS returns nothing AND seed mal_id is in `media_unwanted`; admin sees `"'X' was filtered out as Music"` instead of misleading "not found"
 - **main.py** — app factory + lifespan
-  - Startup sequence: seeders → embedding backfill → `JobDAO.reap_orphans` → `job_worker.register_dispatcher` (for each of `user_scrape`, `update_sweep`, `seasonal_sweep`, `backup`) → `job_worker.start()` → yield → post-yield backfills (relation-backfiller → merge-candidate backfill → split-candidate backfill). Post-yield backfills run in `asyncio.create_task` so /health responds during the ~14-min relation cold start; split detection runs LAST so it sees relation-backfiller's TERMINAL sidecars and merge-backfiller's collapsed pairs
+  - Startup sequence: seeders → embedding backfill → `JobDAO.reap_orphans` → `job_worker.register_dispatcher` (for each of `user_scrape`, `update_sweep`, `seasonal_sweep`, `backup`) → `job_worker.start()` → yield → post-yield backfills (optional one-shot full re-embed when `EMBEDDING_REEMBED_ON_STARTUP` → relation-backfiller → merge-candidate backfill → split-candidate backfill). Post-yield backfills run in `asyncio.create_task` so /health responds during the ~14-min relation cold start; split detection runs LAST so it sees relation-backfiller's TERMINAL sidecars and merge-backfiller's collapsed pairs
   - Shutdown: `job_worker.stop()`
   - Direct endpoints: `GET /` and `GET /health`
     - Health returns `{status, version, db}` and pings DB with 2s `asyncio.wait_for` so transient unavailability produces a fast 503 instead of riding asyncpg's 60s connect timeout into a Coolify liveness flap
@@ -238,10 +239,10 @@ SvelteKit with file-based routing, Svelte 5 runes, Tailwind CSS 4, shadcn-svelte
 Quick map:
 - `routes/` — pages + `GET /health` for Coolify liveness. The `/ratings` page (v0.14.12 — anime-level list + ECharts statistics, both client-side off the one `GET /ratings/scores` fetch) consolidated the old `/statistics` nav placeholder, which is gone
 - `lib/api.ts` — centralized API client with maintenance-503 handler
-- `lib/stores/` — auth, settings, spoiler visibility, bell session, cross-component bumps (`jobs.ts`, `maintenance.ts`, `bell-session.ts`)
+- `lib/stores/` — auth, settings, spoiler visibility, bell session, cross-component bumps (`jobs.ts`, `maintenance.ts`, `bell-session.ts`), global toast (`toast.ts`)
 - `lib/utils/` — formatters, search params, chart colors, client-side spoiler frontier
 - `lib/themes.ts` + `src/app.css` — centralized theme system (CSS custom props + `.theme-*` overrides)
-- `lib/components/` — MaintenanceBanner, JobBell, BackupsCard, MergeCandidatesCard, SplitCandidatesCard, RatingsOverview, attribute viz, etc.
+- `lib/components/` — MaintenanceBanner, JobBell, BackupsCard, MergeCandidatesCard, SplitCandidatesCard, RatingsOverview, Toast/ToastHost (global toast host in the layout), attribute viz, etc.
 - `lib/components/ui/` — shadcn-svelte base components
 - `tests/` — Vitest + @testing-library/svelte
 
@@ -249,10 +250,15 @@ Quick map:
 
 - **Dependency injection**: FastAPI `Depends()` for DB sessions, current user extraction, role-based access (`require_roles()` accepts `RoleType` enum)
 - **Role-based access**: three roles — `admin`, `user`, `restricted_user`
+- **Sliding session / idle timeout**: the JWT `exp` is a short idle clock (`ACCESS_TOKEN_EXPIRE_MINUTES=10`), not a hard ceiling
+  - Backend is stateless: no refresh-token table, no absolute session cap. `POST /auth/refresh` simply re-issues a fresh token to any still-valid one (see the `/auth` router)
+  - The frontend owns the policy (`lib/components/SessionTimeoutBanner.svelte` + pure `lib/utils/sessionTimeout.ts`): a 1s tick reads `exp`, silently refreshes on recent activity, shows a countdown warning banner over the last 3 min when idle, and triggers logout at expiry. An **active** user is never logged out; an idle one is warned then signed out — see the frontend CLAUDE.md for the full component/constant rationale
+  - Security note: shortening the token only tightens the *passive-leak* window; the token lives in `localStorage`, so XSS (which can also call `/auth/refresh`) is the real exposure. HttpOnly-cookie auth is the bigger lever and is out of scope
 - **Async throughout**: asyncpg driver, SQLAlchemy AsyncSession, async service/DAO methods
   - All ORM relationships use `lazy="raise"` to prevent implicit lazy loading — every relationship access must go through explicit `selectinload` in the DAO query
   - **🎯 Never `asyncio.gather` coroutines that share one `AsyncSession`** — SQLAlchemy's AsyncSession can't multiplex concurrent operations on a single session, and `gather` corrupts the in-flight query state. Pure-CPU coroutines (e.g. `to_thread.run_sync` over an embedding encode) that don't touch the session are fine to gather; anything that touches the session must run sequentially. See the inline comment at `seasonal_sweep_dispatcher.py:48-51` for the canonical "don't" example and `compound-docs/2026-05-09-v0.14.0-content-pipeline.md` (LANDMINE entry) for the failure mode.
 - **Vector search**: `paraphrase-multilingual-MiniLM-L12-v2` model, pgvector storage
+  - **Case-folded**: `generate_embedding` lowercases before encoding. The model is *cased*, so without this the same query in different capitalisation produced a materially different vector — enough to reorder title results and bury the intended show (capitalising a query dropped it off the page). Folding in the one chokepoint every embedding passes through keeps the query and the stored documents in one case space. Existing catalog vectors are re-normalized by `reembed_all_embeddings` (see seeders)
   - `SearchType` enum (`title`, `description`, `rating_notes`) selects the target
   - `ViewType` enum (`anime`, `media`) selects the search mode
   - Filter schemas use inheritance: `MediaSearchFilters` (base) → `RatingSearchFilters` (adds rating-specific filters)
@@ -268,7 +274,7 @@ Quick map:
   - Per-theme chart color palettes in `chartColors.ts` avoid hue clashes
 - **Two-pass relation classifier + third-pass split detection**: scrape-time + merge-time + backfill-time. See [compound-docs/2026-05-11-jikan-scraper-quirks.md](compound-docs/2026-05-11-jikan-scraper-quirks.md) for v0.14.1 classifier rationale and [compound-docs/2026-05-18-v0.14.2-split-candidates.md](compound-docs/2026-05-18-v0.14.2-split-candidates.md) for the third pass
   - Pass 1 (`jikan_scraper.search_title`) captures relation **edges** during BFS — no classification baked in. TERMINAL nodes (arrived via identity-breaking edges) now fetch `/relations` so their outgoing edges land in the sidecar (the v0.14.2 split-candidates change), but the BFS still does NOT recurse from them — the graph stays bounded. Sidecars persist edges unfiltered, including dangling targets
-  - Pass 2 (`relation_classifier.classify_anime_relations`) picks a canonical anchor by substance gate + tier (TV > ONA > Movie) + oldest aired_from, builds main chain via sequel/prequel closure, classifies alt-chain via `alternative_version` edges, defaults rest to `side_story`; demotes weak Mains via substance gate. **Not-yet-aired entries** get a provisional substance pass (so an announced sequel stays Main) but are **anchor-ineligible** (a franchise can't anchor on something unaired) — see services CLAUDE.md. The `AIRING_STATUS_*` sentinels live in `relation_classifier` (re-imported by `jikan_scraper`)
+  - Pass 2 (`relation_classifier.classify_anime_relations`) picks a canonical anchor by substance gate + tier (TV > ONA > Movie) + oldest aired_from, builds main chain via sequel/prequel closure, classifies alt-chain via `alternative_version` edges, defaults rest to `side_story`; demotes weak Mains via substance gate and recaps (`full_story`) to `summary`. **Not-yet-aired entries** get a provisional substance pass (so an announced sequel stays Main) but are **anchor-ineligible** (a franchise can't anchor on something unaired) — see services CLAUDE.md. The `AIRING_STATUS_*` sentinels live in `relation_classifier` (re-imported by `jikan_scraper`)
   - Pass 3 (`relation_classifier.find_disjoint_franchises`) takes the classified graph and flags substance-passing media outside the anchor's main+alt chain that form their own connected sub-chain — the Overlord+Eminence, BNHA+Vigilante, Toaru Index+Railgun shapes. Conan-exception: movie-only clusters bridged via `parent_story` or `summary` are legitimate side-story chains and stay quiet. Surfaces as a `split_candidate` for admin review; never auto-splits
   - `RelationType.AlternativeVersion` enum value distinguishes retellings (Evangelion TV ↔ Rebuild Movies, Hokuto no Ken alts) from genuine side stories. Spoiler frontier treats alt-version as an anchor
   - Same three passes run at three sites: scrape (per BFS-result), merge survivor (consolidated A∪B), backfiller (per catalog row)
@@ -289,7 +295,7 @@ Quick map:
   - **Per-kind result_summary versioning**: `JOB_KIND_VERSIONS` registry in `app/core/job_versions.py` + `make_job()` helper at every Job-construction site. Frontend reads `job.version` to dispatch the parser. Bump the integer per kind when the shape changes — see `models/job.py` for the column rationale
   - **Hardened failure path** (v0.14.5): three guards keep `dispatch_one` from stranding a job in `running` after a downstream crash — (1) `str(job.uuid)` pre-captured immediately after claim so the failure logger never reads ORM attrs on a poisoned session, (2) the `work_session.rollback()` is wrapped in try/except so a PendingRollback cleanup failure doesn't escape, (3) an outer catch-all around the work-session block routes unexpected plumbing bugs through `mark_failed` instead of letting them propagate to the `_run` loop. The fail-session write is also wrapped — worst case it logs the failure and leaves the row for `reap_orphans` on next startup
   - Per-user concurrent cap: `JOBS_PER_USER_LIMIT=4` enforced at submission time (bounds queue depth, not concurrency — worker stays sequential because MAL's rate limit means parallel jobs just fragment bandwidth)
-  - Per-user daily cap: `JOBS_DAILY_LIMIT=50` rolling 24h on top of the concurrent cap. Counts every status (succeeded/failed too) so a fast-failing client can't cycle through the limit; 51st submission returns 429 marked `PermanentPhsarError` so the bell hides retry. Backed by partial composite `ix_jobs_user_scrape_recent (requested_by_user_id, created_at DESC) WHERE kind='user_scrape'` so per-POST cost stays O(in-window-rows)
+  - Per-user daily cap: `JOBS_DAILY_LIMIT=50` rolling 24h on top of the concurrent cap. **Admins are exempt** (trusted operators — catalog seeding/fixing; the concurrent cap + dedup still bound them). Counts every status (succeeded/failed too) so a fast-failing client can't cycle through the limit; 51st submission returns 429 marked `PermanentPhsarError` so the bell hides retry. Backed by partial composite `ix_jobs_user_scrape_recent (requested_by_user_id, created_at DESC) WHERE kind='user_scrape'` so per-POST cost stays O(in-window-rows)
   - System jobs submit with `requested_by_user_id=null` to skip cap
   - `ProgressReporter`: handlers stream `(stage, items_done, items_total)` to the bell before the job tx commits (autocommit txes, 0.5s throttle)
   - `PermanentPhsarError` gates retry: deterministic failures stamp `retryable = False`, bell hides retry button
@@ -298,6 +304,7 @@ Quick map:
   - Crash recovery: `JobDAO.reap_orphans` runs at lifespan startup, marks `running` → `failed`
   - Bell cadence: 2s active poll while anything is queued/running, 30s idle
   - Optimistic-stub pattern: pages that enqueue push a `queued` stub keyed on `job_uuid` into `optimisticJobs` store; bell merges optimistic ∪ fetched (UUID-deduped); `reconcileOptimisticJobs(fresh)` prunes landed entries
+  - Bell completion toasts (v0.14.13): on an active→finished transition the bell fires a green/red global toast (`pushToast`) for `user_scrape` + `backup`; opening the bell now also acknowledges still-running jobs so the badge is dismissible mid-fetch, and succeeded scrape/backup rows are clickable (→ `/library/add` / `/admin?tab=backups`). Frontend-only — see `frontend/CLAUDE.md`
   - Parent-child clustering: `seasonal_sweep_dispatcher` stamps `parent_job_id=parent.id` on every enqueued `user_scrape` child (self-referential FK with `ON DELETE SET NULL` so deleting the parent doesn't cascade-delete audit history). Backs the admin Jobs Log expander — default list hides children (`parent_job_id IS NULL`), `?parent_uuid=<UUID>` returns the flock under that sweep. Historical pre-FK rows can be retro-clustered via `scripts/backfill_seasonal_sweep_parents.py` (safe because the dispatcher is the only production source of NULL-user user_scrapes)
 - **Maintenance mode**: destructive ops flip `core/maintenance.py`'s `_active` flag
   - Triggers: backup restore (synchronous, request-scoped), `update_sweep`/`seasonal_sweep` (worker brackets in try/finally)
@@ -326,6 +333,7 @@ Quick map:
 ### Backend (optional)
 
 - `DEBUG` — enables SQL echo
+- `ACCESS_TOKEN_EXPIRE_MINUTES` — default 10; JWT lifetime = the sliding-session idle clock (frontend refreshes on activity, warns over the last 3 min, logs out at expiry — see Sliding session under Key Patterns)
 - `CORS_ORIGINS` — JSON list of allowed origins
 - `GUEST_USERNAME` + `GUEST_PASSWORD` — seeds a read-only guest account with `restricted_user` role
 - `APP_VERSION` — deployed version tag surfaced on `/health`; injected via backend Dockerfile build arg
@@ -333,10 +341,12 @@ Quick map:
 - `BACKUP_RESTORE_TIMEOUT_SECONDS` — default 600; raise if DB grows large enough that pg_restore legitimately takes >10 min (a mid-restore kill leaves the DB half-dropped)
 - `JOBS_CRON_TOKEN` — shared bearer secret for every cron-authed endpoint (`/admin/backups/auto`, the three sweep schedulers); empty disables all four, they fail closed
 - `JOBS_PER_USER_LIMIT` — default 4; max queued+running user_scrape jobs per non-system user; 5th submission returns 409
-- `JOBS_DAILY_LIMIT` — default 50; max user_scrape submissions per non-system user in any trailing 24h window (counts all statuses); 51st returns 429
+- `JOBS_DAILY_LIMIT` — default 50; max user_scrape submissions per non-system, non-admin user in any trailing 24h window (counts all statuses); 51st returns 429. Admins are exempt
 - `JOBS_DEDUPE_HOURS` — default 24; same scrape query within this window returns 409 unless prior job failed
 - `JOBS_SWEEP_MAX_PER_RUN` — default 500; bounds the nightly `update_sweep` batch (a **media** count since v0.14.8, was anime). Only binds during the post-migration herd + stabilizing bursts; steady-state sweeps finish in seconds
+- `JOBS_SWEEP_ABORT_AFTER_CONSECUTIVE_FAILURES` — default 10; the `update_sweep` circuit breaker (v0.14.13). On this many **consecutive** `upstream_outage` step-1 failures the sweep aborts (raises `TransientUpstreamError` → job failed+retryable, maintenance cleared at once) instead of grinding through every due media at the full retry budget while MAL is down — which held the maintenance window (503 on login) for hours until a restart. A non-upstream failure (stray 404) neither trips nor resets the breaker. On abort the failed job carries the partial stats gathered before bailing (counters + the per-anime 504 list), so its `/admin/jobs/[uuid]` detail page shows them beside the error banner instead of only the banner
 - `RELATION_BACKFILL_ON_STARTUP` — default `True`; runs `relation_backfiller` at lifespan startup. First cold start fetches missing `MediaRelationEdges` sidecars from MAL at 1 req/s (~14min for an 800-media catalog); subsequent restarts skip already-populated rows and finish in seconds. Disable for tight maintenance windows on fresh deployments
+- `EMBEDDING_REEMBED_ON_STARTUP` — default `False`; when `True`, regenerates **every** search embedding in place at startup (`reembed_all_embeddings`) so the catalog picks up a `generate_embedding` change (the query/document case-fold). Runs post-yield in the background (can't block /health). A ~5-9 min catalog re-encode on the 2-vCPU VM, wasteful on every restart — flip ON for a single deploy, watch for the `Re-embed complete` log line, then flip OFF
 
 ### Frontend (runtime)
 

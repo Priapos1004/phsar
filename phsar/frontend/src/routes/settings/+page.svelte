@@ -10,7 +10,7 @@
     import { userSettings } from '$lib/stores/userSettings';
     import { get } from 'svelte/store';
     import DangerZone from '$lib/components/DangerZone.svelte';
-    import Toast from '$lib/components/Toast.svelte';
+    import { pushToast } from '$lib/stores/toast';
     import { THEMES, isValidTheme } from '$lib/themes';
     import type { ThemeKey } from '$lib/themes';
     import type { UserSettings, UserSettingsUpdate } from '$lib/types/api';
@@ -21,7 +21,6 @@
 
     // Read from the shared store so changes propagate immediately across the app
     let settings = $derived($userSettings);
-    let showToast = $state(false);
     let error = $state('');
 
     onMount(async () => {
@@ -41,8 +40,7 @@
         try {
             const updated = await api.put<UserSettings>('/users/settings', update);
             userSettings.set(updated);
-            showToast = true;
-            setTimeout(() => showToast = false, 2000);
+            pushToast('Settings updated');
         } catch (err) {
             if (err instanceof ApiError) error = err.detail;
             else error = 'Failed to save settings.';
@@ -250,5 +248,3 @@
         <p class="text-muted-foreground">Loading settings...</p>
     {/if}
 </div>
-
-<Toast message="Settings updated" show={showToast} />

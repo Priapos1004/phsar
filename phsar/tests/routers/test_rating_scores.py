@@ -85,7 +85,8 @@ async def test_rating_scores_returns_compact_items(client, user_auth_headers, ra
     assert item_a["mal_score"] == 8.5
     assert item_a["scored_by"] == 1200
     assert item_a["episodes"] == 12
-    assert item_a["total_watch_time"] == 12 * 1440  # episodes × duration_seconds
+    assert item_a["duration_seconds"] == 1440  # per-episode runtime (actual-watched math input)
+    assert item_a["episodes_watched"] is None  # PUT didn't send it
     assert item_a["anime_season_name"] == "Spring"
     assert item_a["anime_season_year"] == 2021
     assert item_a["relation_type"] == "main"  # media_kwargs default
@@ -97,7 +98,7 @@ async def test_rating_scores_returns_compact_items(client, user_auth_headers, ra
     # media_b carries no MAL score and no season/duration → nulls + zero votes
     assert item_b["mal_score"] is None
     assert item_b["scored_by"] == 0
-    assert item_b["total_watch_time"] is None
+    assert item_b["duration_seconds"] is None
     assert item_b["anime_season_name"] is None
     assert item_b["anime_season_year"] is None
     assert item_b["anime_cover_image"] is None

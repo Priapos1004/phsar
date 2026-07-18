@@ -38,4 +38,30 @@ describe('auth store', () => {
 		expect(sessionStorage.getItem(BELL_LOGIN_KEY)).toBeNull();
 		expect(sessionStorage.getItem(BELL_SEEN_KEY)).toBeNull();
 	});
+
+	// Cross-tab sync: the sliding session refreshes the token in the active
+	// tab; the `storage` listener keeps a background tab from logging out on a
+	// stale token (which would clear the shared localStorage and kill every tab).
+	describe('cross-tab storage sync', () => {
+		function dispatchStorage(key: string, newValue: string | null) {
+			window.dispatchEvent(new StorageEvent('storage', { key, newValue }));
+		}
+
+		it('adopts a token written by another tab', () => {
+			dispatchStorage('token', 'fresh-jwt');
+			expect(get(token)).toBe('fresh-jwt');
+		});
+
+		it('clears the token when another tab logs out', () => {
+			token.set('some-jwt');
+			dispatchStorage('token', null);
+			expect(get(token)).toBeNull();
+		});
+
+		it('ignores storage events for unrelated keys', () => {
+			token.set('keep-me');
+			dispatchStorage('phsar-theme', 'theme-red');
+			expect(get(token)).toBe('keep-me');
+		});
+	});
 });

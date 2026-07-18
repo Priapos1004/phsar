@@ -52,6 +52,14 @@ export const JOB_KIND_LABELS: Record<JobKind, string> = {
  * frontend's "row deserves a chevron" guard. */
 export const PARENTING_KINDS: ReadonlySet<JobKind> = new Set<JobKind>(['seasonal_sweep']);
 
+/** Where a *succeeded* job of each kind navigates when its bell row is clicked.
+ * Per-kind static metadata (kept here next to JOB_KIND_LABELS rather than as an
+ * if-ladder in JobBell); a kind absent from the map has no clickable target. */
+export const JOB_SUCCESS_HREF: Partial<Record<JobKind, string>> = {
+	user_scrape: '/library/add',
+	backup: '/admin?tab=backups',
+};
+
 /** Formats a JobKind enum value to a user-friendly label. Accepts string
  * so callers can pass raw backend values without a guard; unknown values
  * fall through unchanged. */
@@ -223,7 +231,9 @@ export function formatBytes(bytes: number): string {
  */
 export function clampAndSnapScore(val: number, step: number): number {
 	const clamped = Math.min(10, Math.max(0, val));
-	return Math.round(clamped / step) * step;
+	// Round to 2 dp (the finest rating step is 0.01) so step-division noise like
+	// 535 * 0.01 = 5.3500000000000005 never reaches a saved rating in the first place.
+	return roundScore(Math.round(clamped / step) * step);
 }
 
 /**
@@ -247,6 +257,39 @@ export function decimalPlaces(value: number): number {
  */
 export function formatDecimalDigits(value: number, digits: number): string {
 	return value.toFixed(digits);
+}
+
+/**
+ * Round a 0–10 rating to the finest rating step (0.01 → 2 dp), shedding float-arithmetic
+ * noise like 535 * 0.01 = 5.3500000000000005. The single guard behind both formatScore and
+ * any value-derived decimal count — measure precision off `decimalPlaces(roundScore(r))`, never
+ * the raw stored float, or one noisy legacy rating reports 16 decimals and blows out the display.
+ */
+export function roundScore(value: number): number {
+	return Math.round(value * 100) / 100;
+}
+
+/**
+ * Format a 0–10 rating for display. Rounds to the finest rating step (0.01 → 2 dp)
+ * first to shed float-arithmetic noise (7.890000000000001 → "7.89"), then shows only
+ * the decimals that remain so whole/half scores stay clean (8.5 → "8.5", 10 → "10").
+ */
+export function formatScore(value: number): string {
+	// The step-agnostic case of the step-aware rule below (step 1 → no decimal floor).
+	return formatScoreWithStep(value, 1);
+}
+
+/**
+ * Format a 0–10 rating at a precision that honours the user's rating-step setting:
+ * at least the step's own decimals (so a 0.5-step user reads "8.0", not "8"), and
+ * more when the value itself needs them (a finer legacy rating like 4.25 keeps its
+ * 2 dp instead of rounding to "4.3"). This is the step-aware display rule used across
+ * the ratings list/table and the anime detail page — extracted here so the charts and
+ * those pages share one implementation. `ratingStep` is the numeric step (0.5/0.25/0.1/0.01).
+ */
+export function formatScoreWithStep(value: number, ratingStep: number): string {
+	const rounded = roundScore(value);
+	return formatDecimalDigits(rounded, Math.max(decimalPlaces(ratingStep), decimalPlaces(rounded)));
 }
 
 /**

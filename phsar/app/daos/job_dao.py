@@ -203,6 +203,7 @@ class JobDAO(BaseDAO[Job]):
         error_message: str,
         retryable: bool = True,
         error_category: str | None = None,
+        result_summary: dict | None = None,
     ) -> None:
         job.status = JobStatus.failed
         job.finished_at = datetime.now(timezone.utc)
@@ -212,7 +213,11 @@ class JobDAO(BaseDAO[Job]):
         # hides the retry button when False; error_category lets the
         # bell render friendly copy ("MAL is temporarily unavailable")
         # instead of the raw upstream message for known failure modes.
-        existing = dict(job.result_summary or {})
+        # `result_summary` seeds the base dict when the failure carried one
+        # (a mid-run abort's partial stats — mirrors mark_succeeded); else
+        # merge onto whatever the row already had.
+        base = result_summary if result_summary is not None else job.result_summary
+        existing = dict(base or {})
         existing["retryable"] = retryable
         if error_category is not None:
             existing["error_category"] = error_category

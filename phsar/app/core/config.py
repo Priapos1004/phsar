@@ -18,7 +18,18 @@ class Settings(BaseSettings):
     # JWT / Security settings
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30  # Default 30 minutes expiry
+    # Short-lived idle clock: the token is silently re-issued via /auth/refresh
+    # while the user is active (so an active session never logs out), and an
+    # idle user is warned by the frontend countdown banner before it lapses.
+    # 10 min balances a comfortable idle grace against a tight passive-leak
+    # window. See compound-docs/ (v0.14.13 sliding session).
+    # Keep this ABOVE ~8 min: the frontend sliding-session constants in
+    # frontend/src/lib/utils/sessionTimeout.ts (REFRESH_THRESHOLD_MS=5m,
+    # WARNING_LEAD_MS=3m, ACTIVITY_WINDOW_MS=60s) assume a lifetime comfortably
+    # larger than the refresh threshold — a shorter lifetime makes active users
+    # refresh nearly every tick (refresh storm) and idle users warn immediately.
+    # Lowering it below that needs those constants re-tuned in lockstep.
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 10
 
     SEARCH_SECRET_KEY: str
     CURRENT_SEARCH_API_VERSION: str = "v1.1.0" # Used to expire tokens when API changes
@@ -60,6 +71,16 @@ class Settings(BaseSettings):
     # Only binds during the post-migration herd + stabilizing bursts; steady
     # state finishes in seconds.
     JOBS_SWEEP_MAX_PER_RUN: int = 500
+    # Circuit breaker for a total MAL outage during update_sweep. Each anime
+    # burns the full tenacity retry budget (~30s on fast 504s, up to ~11 min
+    # on read-timeouts) before being recorded as a failure; without a cap, an
+    # outage grinds through all JOBS_SWEEP_MAX_PER_RUN media while maintenance
+    # is held — locking every request (incl. login) behind a 503 for hours. On
+    # this many CONSECUTIVE upstream failures the dispatcher aborts (raises
+    # TransientUpstreamError → job failed+retryable, maintenance clears at
+    # once). 10 tolerates a run of genuinely-flaky rows without dragging out an
+    # actual outage; the sweep is retryable and runs nightly.
+    JOBS_SWEEP_ABORT_AFTER_CONSECUTIVE_FAILURES: int = 10
     # Dedupe window for user_scrape: re-running the same query within this
     # window would just produce empty BFS results (everything is in
     # excluded_mal_ids already) and fail with AnimeNotFoundError. Shortened
@@ -80,6 +101,15 @@ class Settings(BaseSettings):
     # rows and run in seconds. Default on; disable for tight maintenance
     # windows on a fresh deployment.
     RELATION_BACKFILL_ON_STARTUP: bool = True
+
+    # One-shot: regenerate EVERY search embedding in place at startup so the
+    # catalog picks up a `generate_embedding` change (the case-folding fix).
+    # Default OFF — a ~5-9 min catalog re-encode on the 2-vCPU VM is wasteful
+    # on every restart. Flip ON in Coolify for a single deploy, watch for the
+    # "Re-embed complete" log line, then flip OFF. Runs post-yield in the
+    # background so it never blocks /health. See
+    # `embedding_backfiller.reembed_all_embeddings`.
+    EMBEDDING_REEMBED_ON_STARTUP: bool = False
 
     model_config = ConfigDict(env_file=".env")  # Tell Pydantic to load from .env
 

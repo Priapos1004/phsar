@@ -38,10 +38,14 @@ class RatingAttributes(BaseModel):
 
 
 class RatingBase(RatingAttributes):
-    """Shared core rating fields and validators for create schemas."""
+    """Shared core rating fields and validators for create schemas.
+
+    Deliberately does NOT carry watch_status / episodes_watched: those are per-media
+    watch state, part of the single-rating contract (RatingCreate) only. Bulk rating
+    (RatingBulkCreate) is a whole-anime 'I finished this' action pinned to completed /
+    full-run in the service, so exposing them on the bulk payload would advertise inputs
+    the endpoint ignores."""
     rating: float
-    watch_status: WatchStatus = WatchStatus.completed
-    episodes_watched: Optional[int] = None
     note: Optional[str] = None
 
     @field_validator("rating")
@@ -49,13 +53,6 @@ class RatingBase(RatingAttributes):
     def rating_in_range(cls, v: float) -> float:
         if not 0 <= v <= 10:
             raise ValueError("Rating must be between 0 and 10")
-        return v
-
-    @field_validator("episodes_watched")
-    @classmethod
-    def episodes_watched_non_negative(cls, v: Optional[int]) -> Optional[int]:
-        if v is not None and v < 0:
-            raise ValueError("Episodes watched must be non-negative")
         return v
 
     @field_validator("note")
@@ -67,7 +64,16 @@ class RatingBase(RatingAttributes):
 
 
 class RatingCreate(RatingBase):
-    pass
+    # Per-media watch state — single-rating only (bulk pins completed / full-run itself).
+    watch_status: WatchStatus = WatchStatus.completed
+    episodes_watched: Optional[int] = None
+
+    @field_validator("episodes_watched")
+    @classmethod
+    def episodes_watched_non_negative(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v < 0:
+            raise ValueError("Episodes watched must be non-negative")
+        return v
 
 
 class RatingOut(RatingAttributes):
@@ -102,8 +108,10 @@ class RatingScoreItem(RatingAttributes):
 
     All fields are columns on rows already eager-loaded by
     RatingDAO.get_all_for_score_items (media → anime + genres + studios), so no
-    extra query cost. watched_count/episodes_watched stay out by design (they'd
-    need the per-media watch-event count batch this query deliberately skips)."""
+    extra query cost. watched_count stays out by design (it needs the per-media
+    watch-event count batch this query deliberately skips); episodes_watched is on
+    the rating row itself, so it ships freely and powers the actual-watched-time
+    stats alongside the per-episode duration_seconds."""
 
     media_uuid: UUID
     anime_uuid: UUID
@@ -117,6 +125,7 @@ class RatingScoreItem(RatingAttributes):
     anime_cover_image: Optional[str]
     rating: float
     watch_status: WatchStatus
+    episodes_watched: Optional[int]
     age_rating_numeric: Optional[int]
     genres: list[str] = []
     studios: list[str] = []
@@ -125,11 +134,14 @@ class RatingScoreItem(RatingAttributes):
     # MAL has no score; scored_by is never None (0 when no votes).
     mal_score: Optional[float]
     scored_by: int
-    # Watch-time stats: episodes is the catalog total; total_watch_time is seconds
-    # (episodes × duration_seconds). anime_season_name + _year feed the season filter
-    # (and the by-year breakdown); both are null together (catalog constraint).
+    # Watch-time stats: episodes is the catalog total, duration_seconds the per-episode
+    # runtime. Actual watched time = episodes_watched × duration_seconds (credited for
+    # every status, so on-hold/dropped partials count). duration_seconds is carried
+    # directly instead of the full-series total_watch_time so the stat still works for a
+    # currently-airing show with no episode total (One Piece). anime_season_name + _year
+    # feed the season filter (and the by-year breakdown); both are null together.
     episodes: Optional[int]
-    total_watch_time: Optional[int]
+    duration_seconds: Optional[int]
     anime_season_name: Optional[str]
     anime_season_year: Optional[int]
     # Per-media relation type (main / alternative_version / side_story / …) → the

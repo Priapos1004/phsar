@@ -178,6 +178,7 @@ phsar/
 │   │   │   │   │   ├── RegistrationTokensCard.svelte
 │   │   │   │   │   ├── SweepTiersCard.svelte
 │   │   │   │   │   └── types.ts
+│   │   │   │   ├── AttributeSelect.svelte
 │   │   │   │   ├── BulkRateDialog.svelte
 │   │   │   │   ├── DangerZone.svelte
 │   │   │   │   ├── DeleteWatchHistoryToggle.svelte
@@ -193,6 +194,7 @@ phsar/
 │   │   │   │   ├── NavBar.svelte
 │   │   │   │   ├── Notice.svelte
 │   │   │   │   ├── RatingCard.svelte
+│   │   │   │   ├── RatingNeighbors.svelte
 │   │   │   │   ├── RatingsOverview.svelte
 │   │   │   │   ├── RatingsOverviewAttributes.svelte
 │   │   │   │   ├── RatingsOverviewNotes.svelte
@@ -213,9 +215,11 @@ phsar/
 │   │   │   │   │   ├── RatingsTagChart.svelte
 │   │   │   │   │   └── types.ts
 │   │   │   │   ├── RelatedMediaCarousel.svelte
+│   │   │   │   ├── ScoreDial.svelte
 │   │   │   │   ├── ScorePercentile.svelte
 │   │   │   │   ├── ScrollableCard.svelte
 │   │   │   │   ├── SegmentedControl.svelte
+│   │   │   │   ├── SessionTimeoutBanner.svelte
 │   │   │   │   ├── SpoilerGuard.svelte
 │   │   │   │   ├── SearchBar.svelte
 │   │   │   │   ├── SkeletonMediaInfo.svelte
@@ -223,6 +227,7 @@ phsar/
 │   │   │   │   ├── StudioLinks.svelte
 │   │   │   │   ├── TagSelect.svelte
 │   │   │   │   ├── Toast.svelte
+│   │   │   │   ├── ToastHost.svelte
 │   │   │   │   ├── TokenExpiryDialog.svelte
 │   │   │   │   ├── Tooltip.svelte
 │   │   │   │   ├── VersionFooter.svelte
@@ -253,6 +258,7 @@ phsar/
 │   │   │   │   ├── maintenance.ts
 │   │   │   │   ├── ratingsFilter.ts
 │   │   │   │   ├── spoilerVisibility.ts
+│   │   │   │   ├── toast.ts
 │   │   │   │   └── userSettings.ts
 │   │   │   ├── styles/
 │   │   │   │   └── classes.ts
@@ -268,9 +274,11 @@ phsar/
 │   │   │       ├── jobBadges.ts
 │   │   │       ├── mediaChangeSort.ts
 │   │   │       ├── navigation.ts
+│   │   │       ├── ratingAttributes.ts
 │   │   │       ├── ratingNeighbors.ts
 │   │   │       ├── ratingStats.ts
 │   │   │       ├── search.ts
+│   │   │       ├── sessionTimeout.ts
 │   │   │       └── spoilerFrontier.ts
 │   │   ├── routes/
 │   │   │   ├── +layout.svelte
@@ -322,6 +330,7 @@ phsar/
 │   │       ├── merge-candidates-card.test.ts
 │   │       ├── navbar.test.ts
 │   │       ├── navigation.test.ts
+│   │       ├── rating-attributes.test.ts
 │   │       ├── rating-modal.test.ts
 │   │       ├── rating-neighbors.test.ts
 │   │       ├── rating-stats.test.ts
@@ -329,7 +338,8 @@ phsar/
 │   │       ├── segmented-control.test.ts
 │   │       ├── spoiler-frontier.test.ts
 │   │       ├── spoiler-guard.test.ts
-│   │       └── studio-links.test.ts
+│   │       ├── studio-links.test.ts
+│   │       └── toast.test.ts
 │   ├── static/
 │   │   ├── apple-touch-icon.png
 │   │   ├── favicon-192x192.png
@@ -387,6 +397,9 @@ phsar/
     │   ├── test_search_ranking.py
     │   ├── test_search_ratings.py
     │   └── test_user_settings.py
+    ├── seeders/
+    │   ├── test_embedding_backfiller.py
+    │   └── test_relation_backfiller.py
     └── services/
         ├── test_anime_service.py
         ├── test_backup_jobs.py
@@ -455,12 +468,23 @@ SEARCH_SECRET_KEY=supersecretsearchsecretkey
 # JOBS_DEDUPE_HOURS=24
 # Bounds the nightly update_sweep batch size.
 # JOBS_SWEEP_MAX_PER_RUN=200
+# Circuit breaker: abort update_sweep after this many CONSECUTIVE upstream
+# (MAL 5xx/timeout) failures so a total outage can't hold the maintenance
+# window (503 on login) for hours. Job fails retryable; maintenance clears
+# at once. A stray non-upstream failure (404) neither trips nor resets it.
+# JOBS_SWEEP_ABORT_AFTER_CONSECUTIVE_FAILURES=10
 # Re-runs the relation classifier over the catalog at lifespan startup. First
 # cold start lazy-fetches missing MediaRelationEdges sidecars from MAL at
 # 1 req/s (~14 min for an 800-media catalog); subsequent restarts skip already-
 # populated rows and finish in seconds. Disable for tight maintenance windows
 # on fresh deploys.
 # RELATION_BACKFILL_ON_STARTUP=True
+# One-shot: regenerate EVERY search embedding in place at startup so the catalog
+# picks up a generate_embedding change (the query/document case-fold). Default
+# off — a ~5-9 min catalog re-encode on the 2-vCPU VM is wasteful on every
+# restart. Flip on for a single deploy, watch for the "Re-embed complete" log,
+# then flip off. Runs post-yield in the background so it never blocks /health.
+# EMBEDDING_REEMBED_ON_STARTUP=False
 ```
 
 *Change `animeuser`, `animepass`, `admin`, `supersecretpassword`, `supersecretsecretkey`, and `supersecretsearchsecretkey`*

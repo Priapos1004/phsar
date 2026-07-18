@@ -27,3 +27,17 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
 @router.get("/validate", response_model=auth_schema.TokenValidationResponse)
 async def validate_token(current_user = Depends(get_current_user)):
     return auth_schema.TokenValidationResponse(is_valid=True)
+
+@router.post("/refresh", response_model=auth_schema.Token)
+async def refresh(current_user = Depends(get_current_user)):
+    # Sliding re-issue: any still-valid (non-expired) token gets a fresh one.
+    # An expired token can't reach here — get_current_user 401s on it, exactly
+    # like /validate — so a lapsed idle session stays logged out. Bare
+    # get_current_user (not require_user_or_admin) so restricted/guest users
+    # keep their sessions alive too. Role is re-read from the DB user, so a
+    # role change propagates into the next token. No refresh-token table and
+    # no absolute session cap — the frontend drives this on activity.
+    access_token = create_access_token(
+        data={"sub": current_user.username, "role": current_user.role.value}
+    )
+    return auth_schema.Token(access_token=access_token)

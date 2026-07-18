@@ -44,10 +44,16 @@
 	let totalPages = $derived(page ? Math.max(1, Math.ceil(page.total / PAGE_SIZE)) : 1);
 	let currentPage = $derived(Math.floor(offset / PAGE_SIZE) + 1);
 
-	async function load() {
+	// `silent` (used by the live poll below) skips the loading spinner + the
+	// error banner so a background refetch never flashes the skeleton, snaps
+	// scroll, or blips a transient error over a good list — it only swaps in
+	// fresh rows on success (same idea as BackupsCard's silent refresh).
+	async function load(silent = false) {
 		const thisRequest = ++loadRequestId;
-		loading = true;
-		error = '';
+		if (!silent) {
+			loading = true;
+			error = '';
+		}
 		try {
 			const params = new URLSearchParams({
 				limit: String(PAGE_SIZE),
@@ -60,8 +66,13 @@
 			page = result;
 		} catch (err) {
 			if (thisRequest !== loadRequestId) return;
-			error = err instanceof ApiError ? err.detail : 'Failed to load jobs';
+			if (!silent) error = err instanceof ApiError ? err.detail : 'Failed to load jobs';
 		} finally {
+			// Clear the spinner whenever the LATEST request settles, silent or not. A silent
+			// poll never SETS loading, but it can advance loadRequestId past an in-flight
+			// manual load — so gating this reset on `!silent` would strand loading=true (and
+			// keep the pager buttons disabled) until the next filter change. Guard on the id
+			// so only the newest request touches it.
 			if (thisRequest === loadRequestId) loading = false;
 		}
 	}
@@ -145,6 +156,24 @@
 	$effect(() => {
 		if (!hasRunning) return;
 		const id = setInterval(() => (now = Date.now()), 1000);
+		return () => clearInterval(id);
+	});
+
+	// Keep the list live without a manual refresh. Without this the tab only
+	// loads on mount/filter change, so a row that was `running` at load froze
+	// forever (its Duration ticked off a stale `finished_at: null` and only
+	// corrected on navigate-away-and-back). Mirror the JobBell's cadence: a
+	// fast poll while anything runs (Duration stays live + freezes on
+	// completion), a slow idle poll otherwise (jobs started elsewhere — another
+	// user, the bell — surface within ~30s). Same active/idle idea as the JobBell,
+	// deliberately calmer here (3s vs the bell's 2s — a plain table needs no
+	// sub-2s refresh). Silent, so no skeleton flash. The effect re-runs when
+	// `hasRunning` flips, swapping the interval delay.
+	// (Expanded seasonal-sweep children aren't live-refreshed — the top-level
+	// list is the reported case.)
+	$effect(() => {
+		const delay = hasRunning ? 3000 : 30000;
+		const id = setInterval(() => void load(true), delay);
 		return () => clearInterval(id);
 	});
 

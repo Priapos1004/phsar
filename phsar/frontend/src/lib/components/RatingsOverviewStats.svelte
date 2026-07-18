@@ -13,6 +13,8 @@
 		onHoldCount: number;
 		totalEpisodesWatched: number;
 		totalEpisodesAvailable: number;
+		// True only when every rated media has a known episode total (gates the X/Y ratio).
+		episodeTotalKnown?: boolean;
 	}
 
 	let {
@@ -23,11 +25,20 @@
 		onHoldCount,
 		totalEpisodesWatched,
 		totalEpisodesAvailable,
+		episodeTotalKnown = true,
 	}: Props = $props();
 
 	let ratedPercent = $derived(Math.round(percentOf(ratedCount, totalCount)));
 	let episodePercent = $derived(
 		Math.round(percentOf(totalEpisodesWatched, totalEpisodesAvailable)),
+	);
+	// Show the X/Y ratio only when it's meaningful: every rated media has a known total
+	// (so numerator and denominator cover the same set) and the denominator is positive.
+	// An on-hold of a still-airing series (unknown total) drops the ratio — "100 / 108"
+	// pits a watched count against the other media's unrelated total — leaving the bare
+	// count. The ≤ guard is a defensive backstop for any legacy unclamped data.
+	let showEpisodeTotal = $derived(
+		episodeTotalKnown && totalEpisodesAvailable > 0 && totalEpisodesWatched <= totalEpisodesAvailable,
 	);
 
 	let gaugeOption = $derived(scoreGaugeOption(avgScore));
@@ -56,11 +67,11 @@
 	<div class="flex flex-col items-center justify-center gap-2">
 		<div class="text-center">
 			<span class="text-2xl font-bold text-card-foreground">{totalEpisodesWatched}</span>
-			{#if totalEpisodesAvailable > 0}
+			{#if showEpisodeTotal}
 				<span class="text-muted-foreground">/ {totalEpisodesAvailable}</span>
 			{/if}
 		</div>
-		{#if totalEpisodesAvailable > 0}
+		{#if showEpisodeTotal}
 			<div class="w-full max-w-[120px] h-2 rounded-full bg-muted overflow-hidden">
 				<div
 					class="h-full rounded-full bg-chart-2 transition-all duration-500"

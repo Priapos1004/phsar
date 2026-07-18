@@ -236,6 +236,82 @@ async def test_sweep_kind_clears_flag_on_dispatcher_failure(tracked_jobs):
 
 
 @pytest.mark.asyncio
+async def test_sweep_abort_transient_upstream_clears_flag_and_stays_retryable(tracked_jobs):
+    """The update_sweep circuit breaker raises TransientUpstreamError on a total
+    MAL outage. The worker must fail the job as RETRYABLE + upstream_outage AND
+    clear maintenance at once — the whole point of the abort is that the app
+    recovers without a restart."""
+    from app.exceptions import TransientUpstreamError
+
+    async def outage(session, job):
+        raise TransientUpstreamError("update_sweep after 10 consecutive upstream failures")
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.update_sweep, outage)
+
+    job_id = await _enqueue(kind=JobKind.update_sweep)
+    tracked_jobs.append(job_id)
+
+    ran = await worker.dispatch_one()
+    assert ran is True
+
+    assert maintenance.is_maintenance_active() is False
+    assert maintenance.get_scheduled_at() is None
+
+    refreshed = await _get(job_id)
+    assert refreshed.status is JobStatus.failed
+    assert refreshed.result_summary is not None
+    assert refreshed.result_summary.get("error_category") == "upstream_outage"
+    assert refreshed.result_summary.get("retryable") is True
+
+
+@pytest.mark.asyncio
+async def test_sweep_abort_partial_summary_persisted_on_failed_job(tracked_jobs):
+    """A circuit-breaker abort carries the stats it gathered before bailing via
+    TransientUpstreamError.partial_summary. The worker must seed the failed
+    job's result_summary with them — so the detail page still renders the
+    refreshed counters + the per-anime 504 list — AND merge retryable +
+    error_category on top of them."""
+    from app.exceptions import TransientUpstreamError
+
+    partial = {
+        "counters": {"media_refreshed": 42, "step1_failed": 10},
+        "step1_failures": [
+            {
+                "anime_uuid": "abc",
+                "title": "Some Show",
+                "error_category": "upstream_outage",
+                "error_message": "504 Gateway Timeout",
+            }
+        ],
+    }
+
+    async def outage(session, job):
+        raise TransientUpstreamError(
+            "update_sweep after 10 consecutive upstream failures",
+            partial_summary=partial,
+        )
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.update_sweep, outage)
+
+    job_id = await _enqueue(kind=JobKind.update_sweep)
+    tracked_jobs.append(job_id)
+
+    assert await worker.dispatch_one() is True
+
+    refreshed = await _get(job_id)
+    assert refreshed.status is JobStatus.failed
+    rs = refreshed.result_summary
+    # Seeded partial stats survive on the failed row...
+    assert rs["counters"]["media_refreshed"] == 42
+    assert len(rs["step1_failures"]) == 1
+    # ...and mark_failed merged the failure metadata on top of them.
+    assert rs["retryable"] is True
+    assert rs["error_category"] == "upstream_outage"
+
+
+@pytest.mark.asyncio
 async def test_sweep_finally_preserves_future_scheduled_at(tracked_jobs):
     """A Coolify cron retry can hit /admin/jobs/schedule-sweep mid-sweep
     (allowlisted) and write a *future* `_scheduled_at` for the next

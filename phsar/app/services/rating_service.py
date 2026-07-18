@@ -7,6 +7,7 @@ from app.daos.media_dao import MediaDAO
 from app.daos.rating_dao import RatingDAO
 from app.daos.watch_event_dao import WatchEventDAO
 from app.exceptions import (
+    CannotRateUnairedError,
     MediaNotFoundError,
     RatingNotFoundError,
     RewatchNotAllowedError,
@@ -23,7 +24,9 @@ from app.schemas.rating_schema import (
     RatingScoreItem,
     RatingSearchFilters,
 )
+from app.services.filter_service import chronological_media_key
 from app.services.media_search_service import media_to_dict
+from app.services.relation_classifier import AIRING_STATUS_NOT_YET_AIRED
 from app.services.spoiler_service import recompute_visibility_for_anime
 from app.services.vector_embedding_service import (
     create_rating_embedding,
@@ -37,6 +40,11 @@ media_dao = MediaDAO()
 watch_event_dao = WatchEventDAO()
 
 _EXCLUDE_BULK = {"media_uuids"}
+
+# Upper bound for episodes_watched when the media has no published episode total (a
+# still-airing long-runner like One Piece, ~1100). Keep in sync with UNKNOWN_EPISODES_CAP
+# in frontend RatingCard.svelte (the client clamps on input; this is the server backstop).
+UNKNOWN_EPISODES_CAP = 2000
 
 
 def _rating_to_out(r: Ratings, watched_count: int) -> RatingOut:
@@ -102,6 +110,21 @@ async def _upsert_single_rating(
     `known_has_events` lets a batch caller pass the media's prior-event existence
     (fetched once for the whole batch) so the first-watch check skips its per-media query."""
 
+    # A not-yet-aired media can't have been watched — block a *fresh* rating here, in the
+    # shared core, so the single AND bulk paths are guarded identically (the frontend
+    # hides/excludes it; this defends a direct/stale call). An existing rating stays
+    # editable so a correction isn't trapped once the show later airs.
+    if existing is None and media.airing_status == AIRING_STATUS_NOT_YET_AIRED:
+        raise CannotRateUnairedError()
+
+    # Clamp episodes_watched so a direct/stale API call can't store a nonsense value (e.g.
+    # INT_MAX). Bounded by the media's episode total when known, else the unknown-total cap.
+    # The client already clamps on input; this is the server-side backstop. (Bulk passes the
+    # media's own episode total, so this is a no-op there.)
+    if fields.get("episodes_watched") is not None:
+        cap = media.episodes if media.episodes is not None else UNKNOWN_EPISODES_CAP
+        fields["episodes_watched"] = max(0, min(fields["episodes_watched"], cap))
+
     if existing:
         old_note = existing.note
         for key, value in fields.items():
@@ -165,6 +188,8 @@ async def upsert_rating(
 
     media = (await _resolve_media_uuids(db, [media_uuid]))[0]
     existing = await rating_dao.get_by_user_and_media(db, user_id, media.id)
+    # The not-yet-aired guard lives in the shared `_upsert_single_rating` so the single and
+    # bulk paths reject a fresh rating on an unaired media identically.
     # Honor history deletion only on a genuine completed -> on_hold/dropped downgrade,
     # derived server-side from the actual transition rather than trusting the raw flag —
     # so the flag can't wipe history on an upgrade or no-op edit.
@@ -222,6 +247,7 @@ def _rating_to_score_item(r: Ratings) -> RatingScoreItem:
         "anime_cover_image": r.media.anime.cover_image,
         "rating": r.rating,
         "watch_status": r.watch_status,
+        "episodes_watched": r.episodes_watched,
         "age_rating_numeric": r.media.age_rating_numeric,
         "genres": [mg.genre.name for mg in r.media.media_genre],
         "studios": [ms.studio.name for ms in r.media.media_studio],
@@ -230,7 +256,7 @@ def _rating_to_score_item(r: Ratings) -> RatingScoreItem:
         "mal_score": r.media.score,
         "scored_by": r.media.scored_by,
         "episodes": r.media.episodes,
-        "total_watch_time": r.media.total_watch_time,
+        "duration_seconds": r.media.duration_seconds,
         "anime_season_name": r.media.anime_season_name.value if r.media.anime_season_name else None,
         "anime_season_year": r.media.anime_season_year,
         "relation_type": r.media.relation_type.value,
@@ -341,9 +367,19 @@ async def search_user_ratings(
 
 async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCreate) -> list[RatingOut]:
     """Create or update ratings for multiple media at once. Existing ratings are updated.
-    Note is placed on the last 'main' media (by relation_type); falls back to the last
-    media overall if none are main. Earlier media have their note cleared.
-    This is intentional: bulk-rating means 'rate the whole anime with one note.'"""
+    Note is placed on the chronologically-last 'main' media (by the shared
+    `chronological_media_key`); falls back to the last media overall if none are main.
+    Earlier media have their note cleared. This is intentional: bulk-rating means 'rate
+    the whole anime with one note,' and the note belongs on the most recent season — the
+    last row in the media table — not whatever was selected last (selection order is
+    arbitrary, so the ordering keys on intrinsic media properties, not request order).
+
+    Bulk rating is a whole-anime 'I finished this' action: every selected media is written
+    as `completed` with its full episode count, pinned per-media below. Per-media watch
+    state — a partial `episodes_watched`, or an on_hold/dropped `watch_status` — is a
+    single-media concern (it makes no sense to bulk-mark several seasons of one anime as
+    dropped), so `RatingBulkCreate` deliberately doesn't carry those fields at all — the
+    contract can't produce inconsistent data like a dropped rating claiming the full run."""
     logger.debug(f"DB session: {id(db)}")
 
     media_list = await _resolve_media_uuids(db, data.media_uuids)
@@ -358,16 +394,31 @@ async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCr
         await watch_event_dao.counts_for_user_media_ids(db, user_id, media_ids)
     )
 
-    # Note goes on the last "main" media; falls back to last media if no main exists
-    main_indices = [i for i, m in enumerate(media_list) if m.relation_type.value == "main"]
-    note_index = main_indices[-1] if main_indices else len(media_list) - 1
-    shared_fields = data.model_dump(exclude=_EXCLUDE_BULK | {"note", "episodes_watched"})
+    # Note goes on the chronologically-last "main" media; falls back to the last media
+    # overall if none are main. Ordered by the project-wide `chronological_media_key`
+    # (the same key the anime media table + carousel use), NOT request/selection order —
+    # so the note lands on the most recent season the user sees last in the table,
+    # regardless of the order media were clicked.
+    def _chrono_note_key(m: Media):
+        season = m.anime_season_name.value if m.anime_season_name else None
+        return chronological_media_key(m.anime_season_year, season, m.mal_id)
+
+    mains = [(i, m) for i, m in enumerate(media_list) if m.relation_type.value == "main"]
+    pool = mains or list(enumerate(media_list))
+    note_index = max(pool, key=lambda im: _chrono_note_key(im[1]))[0]
+    # note is attached to one media only (below); watch_status + episodes_watched aren't on
+    # RatingBulkCreate — both are pinned per-media to completed / full-run (see docstring).
+    shared_fields = data.model_dump(exclude=_EXCLUDE_BULK | {"note"})
     rating_uuids = []
 
     for i, media in enumerate(media_list):
         note = data.note if i == note_index else None
-        # Auto-fill episodes_watched per media from its total episodes
-        per_media_fields = {**shared_fields, "episodes_watched": media.episodes}
+        # Pin completed + full-run per media (the bulk contract — see docstring).
+        per_media_fields = {
+            **shared_fields,
+            "watch_status": WatchStatus.completed,
+            "episodes_watched": media.episodes,
+        }
         existing = existing_by_media_id.get(media.id)
         uuid = await _upsert_single_rating(
             db, user_id, media, per_media_fields, note, existing,

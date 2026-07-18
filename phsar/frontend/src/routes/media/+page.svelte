@@ -306,6 +306,7 @@
 				genres={media.genres}
 				studios={media.studio}
 				ageRatingNumeric={media.age_rating_numeric}
+				airingStatus={media.airing_status}
 			/>
 		{:else}
 			<Card.Root class={cls.cardGlass}>

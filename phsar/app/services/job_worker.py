@@ -204,12 +204,13 @@ class JobWorker:
         failure: Exception | None = None
         in_maintenance = kind in _MAINTENANCE_KINDS
         # Flip the flag *before* the work session opens so the middleware
-        # sees the same window as the running job. Try/finally guarantees
-        # it clears even on dispatcher crash — a stuck flag would lock every
-        # endpoint behind a 503 until restart.
-        if in_maintenance:
-            set_maintenance(True)
+        # sees the same window as the running job. Set INSIDE the try so the
+        # try/finally provably covers it — a stuck flag would lock every
+        # endpoint behind a 503 until restart, so the clear must never be
+        # skipped by a raise between the flip and the try.
         try:
+            if in_maintenance:
+                set_maintenance(True)
             # Outer catch-all so any failure between claim and the
             # fail_session block — including bugs in our own session
             # plumbing — routes through the explicit `failed` write
@@ -285,12 +286,20 @@ class JobWorker:
             async with async_session_maker() as fail_session:
                 failing = await self._dao.get_by_id(fail_session, job_id)
                 if failing is not None:
+                    # A mid-run abort (the update_sweep circuit breaker) carries
+                    # the stats it gathered before bailing. Pass them to
+                    # mark_failed (mirrors mark_succeeded's result_summary param)
+                    # so the failed job's detail page still shows the refreshed
+                    # counters + the per-anime failure list — mark_failed merges
+                    # retryable/error_category on top. Non-carrying failures pass
+                    # None → the DAO falls back to the row's existing summary.
                     await self._dao.mark_failed(
                         fail_session,
                         failing,
                         str(failure) or type(failure).__name__,
                         retryable=retryable,
                         error_category=error_category,
+                        result_summary=getattr(failure, "partial_summary", None),
                     )
                     await fail_session.commit()
         except Exception:
