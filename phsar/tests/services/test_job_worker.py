@@ -452,7 +452,7 @@ async def test_failure_stamps_upstream_outage_category_for_5xx(tracked_jobs):
     import httpx
 
     async def fake_dispatcher(session, job):
-        request = httpx.Request("GET", "https://api.jikan.moe/v4/anime")
+        request = httpx.Request("GET", "https://api.myanimelist.net/v2/anime")
         response = httpx.Response(504, request=request, content=b"gateway timeout")
         raise httpx.HTTPStatusError("504 Gateway Time-out", request=request, response=response)
 

@@ -10,7 +10,7 @@ from app.schemas.search_schema import (
     SearchResultDB,
     SearchResultDBExtended,
 )
-from app.services.jikan_scraper import JikanScraper
+from app.services.mal_scraper import MalScraper
 from app.services.media_service import media_unconnected_from_info
 from app.services.progress_reporter import ProgressReporter
 from app.services.relation_classifier import (
@@ -54,7 +54,7 @@ async def search_mal_api(
     # not part of any anime, and trying to attach to them resolves to no
     # parent.
     unwanted_mal_ids = unwanted_mal_ids or set()
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         relations, all_info, unwanted_media = await scraper.search_title(
             title=query,
             excluded_mal_ids=excluded_mal_ids,

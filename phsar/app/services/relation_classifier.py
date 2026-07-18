@@ -1,6 +1,6 @@
 """Two-pass relation classifier for anime media graphs.
 
-Pass 1 (in `jikan_scraper.py`) captures relation EDGES during BFS instead
+Pass 1 (in `mal_scraper.py`) captures relation EDGES during BFS instead
 of classifying nodes inline. Pass 2 (this module) picks a canonical
 anchor, builds the main chain via sequel/prequel transitive closure,
 classifies alt-version branches, then defaults the rest to side_story.
@@ -44,8 +44,8 @@ class DisjointFranchise(TypedDict):
 # Sentinel media.airing_status values MAL returns. Defined here (the
 # pure, DB-less module) so they live with the substance gate that
 # interprets them (see _METADATA_PENDING_STATUSES). Consumers import them
-# directly from here. They can't live in jikan_scraper: relation_classifier
-# would have to import them back, and jikan_scraper already imports from
+# directly from here. They can't live in mal_scraper: relation_classifier
+# would have to import them back, and mal_scraper already imports from
 # this module (that reverse import would cycle).
 AIRING_STATUS_CURRENTLY_AIRING = "Currently Airing"
 AIRING_STATUS_FINISHED_AIRING = "Finished Airing"
@@ -349,7 +349,7 @@ def classify_anime_relations(
 
     `nodes` maps `mal_id` to a node dict (see ClassifierNode TypedDict).
     `edges` is a list of (a, b, normalized_relation) tuples where
-    `normalized_relation` matches `jikan_scraper.normalize_relation`
+    `normalized_relation` matches `mal_scraper.normalize_relation`
     output (lowercased, spaces → underscores).
     """
     if not nodes:
@@ -485,7 +485,7 @@ def would_be_dropped_as_weak_anchor(
     AND fails both keep-waivers (popularity / feature-length ONA) AND
     there's no attach target (single cross-link) AND no seed.
 
-    Used by `jikan_scraper.search_title` to detect this case BEFORE
+    Used by `mal_scraper.search_title` to detect this case BEFORE
     appending the graph to `relations`, so the visited_ids claims for
     those mal_ids can be rolled back and subsequent roots' BFS can
     include them. Keeping the predicate in one place couples the

@@ -18,7 +18,7 @@ from app.models.anime_search import AnimeSearch
 from app.models.media import Media, MediaType, RelationType
 from app.models.media_relation_edges import MediaRelationEdges
 from app.seeders.relation_backfiller import backfill_relations
-from app.services.jikan_scraper import JikanScraper
+from app.services.mal_scraper import MalScraper
 from tests._helpers import media_kwargs
 
 
@@ -89,7 +89,7 @@ async def test_dry_run_reports_diff_without_writing(db_session, monkeypatch):
     reclassifications without mutating the rows."""
     async def _no_fetch(self, mal_id):
         raise AssertionError("dry-run should not hit MAL when edges are present")
-    monkeypatch.setattr(JikanScraper, "fetch_relations", _no_fetch)
+    monkeypatch.setattr(MalScraper, "fetch_relations", _no_fetch)
 
     anime = await _anime_with_media(
         db_session,
@@ -135,7 +135,7 @@ async def test_apply_rewrites_anchor_and_reclassifies(db_session, monkeypatch):
     anime row's title fields rewritten + embedding regenerated."""
     async def _no_fetch(self, mal_id):
         raise AssertionError("apply should not hit MAL when edges are present")
-    monkeypatch.setattr(JikanScraper, "fetch_relations", _no_fetch)
+    monkeypatch.setattr(MalScraper, "fetch_relations", _no_fetch)
 
     anime = await _anime_with_media(
         db_session,
@@ -189,7 +189,7 @@ async def test_idempotent_no_op_on_clean_catalog(db_session, monkeypatch):
     triggers a MAL fetch; stubbed to return no relations."""
     async def fake_fetch(self, mal_id):
         return []
-    monkeypatch.setattr(JikanScraper, "fetch_relations", fake_fetch)
+    monkeypatch.setattr(MalScraper, "fetch_relations", fake_fetch)
 
     anime = await _anime_with_media(
         db_session,
@@ -218,17 +218,15 @@ async def test_lazy_fetch_populates_missing_edges(db_session, monkeypatch):
         fetch_calls.append(mal_id)
         if mal_id == -200:
             return [
-                {"relation": "Sequel",
-                 "entry": [{"type": "anime", "mal_id": -201}]},
+                {"node": {"id": -201}, "relation_type": "sequel"},
             ]
         if mal_id == -201:
             return [
-                {"relation": "Prequel",
-                 "entry": [{"type": "anime", "mal_id": -200}]},
+                {"node": {"id": -200}, "relation_type": "prequel"},
             ]
         return []
 
-    monkeypatch.setattr(JikanScraper, "fetch_relations", fake_fetch)
+    monkeypatch.setattr(MalScraper, "fetch_relations", fake_fetch)
 
     anime = await _anime_with_media(
         db_session,
@@ -276,7 +274,7 @@ async def test_zero_relations_sidecar_does_not_refetch(db_session, monkeypatch):
         fetch_calls.append(mal_id)
         return []
 
-    monkeypatch.setattr(JikanScraper, "fetch_relations", fake_fetch)
+    monkeypatch.setattr(MalScraper, "fetch_relations", fake_fetch)
 
     # First-fetch scenario: sidecar has empty edges and no
     # last_fetched_at stamp. Backfiller fetches MAL once, gets empty,
@@ -318,13 +316,13 @@ async def test_per_anime_failure_does_not_abort_loop(db_session, monkeypatch):
     async def fake_fetch(self, mal_id):
         fetch_calls.append(mal_id)
         if mal_id == -700:
-            # Simulate a Jikan 504 that bypasses tenacity's retry budget.
-            request = httpx.Request("GET", f"https://api.jikan.moe/v4/anime/{mal_id}/relations")
+            # Simulate a MAL 504 that bypasses tenacity's retry budget.
+            request = httpx.Request("GET", f"https://api.myanimelist.net/v2/anime/{mal_id}")
             response = httpx.Response(504, request=request)
             raise httpx.HTTPStatusError("Gateway Timeout", request=request, response=response)
         return []
 
-    monkeypatch.setattr(JikanScraper, "fetch_relations", fake_fetch)
+    monkeypatch.setattr(MalScraper, "fetch_relations", fake_fetch)
 
     # Two anime: the first triggers a 504 chain, the second has a
     # populated sidecar and shouldn't be touched.
@@ -366,7 +364,7 @@ async def test_per_anime_failure_does_not_abort_loop(db_session, monkeypatch):
 async def test_anime_without_media_is_skipped(db_session, monkeypatch):
     async def fake_fetch(self, mal_id):
         return []
-    monkeypatch.setattr(JikanScraper, "fetch_relations", fake_fetch)
+    monkeypatch.setattr(MalScraper, "fetch_relations", fake_fetch)
 
     anime = Anime(
         mal_id=-500, title="Empty",

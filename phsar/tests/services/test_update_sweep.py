@@ -50,7 +50,7 @@ from tests._helpers import media_kwargs
 
 
 class _FakeScraper:
-    """Stand-in for JikanScraper in dispatcher tests.
+    """Stand-in for MalScraper in dispatcher tests.
 
     `extract_information` is the identity so tests cook payloads directly.
     `search_title` is implemented as a recorder that vends canned
@@ -823,12 +823,12 @@ async def test_refresh_bumps_last_checked_even_when_unchanged(db_session):
 
 @pytest.mark.asyncio
 async def test_refresh_rewrites_relation_edges_from_full_payload(db_session):
-    """Step 1 of the sweep refreshes `MediaRelationEdges` from the
-    /anime/{id}/full payload's bundled `relations` block. No extra MAL
-    hit — the relations are already in the response that the dispatcher
-    uses for canonical-field diffing. Catches MAL changes (new sequels,
-    new alt-versions) over the nightly sweep cycle and surfaces bridge
-    edges retroactively for pre-v0.14.1 rows."""
+    """Step 1 of the sweep refreshes `MediaRelationEdges` from the MAL v2
+    detail payload's bundled `related_anime` block. No extra MAL hit — the
+    relations are already in the response that the dispatcher uses for
+    canonical-field diffing. Catches MAL changes (new sequels, new
+    alt-versions) over the nightly sweep cycle and surfaces bridge edges
+    retroactively for pre-v0.14.1 rows."""
     anime = await _build_anime_with_one_media(
         db_session, mal_id_a=-9010, mal_id_m=-9110,
         freshness=AnimeFreshness(last_checked_at=datetime.now(timezone.utc) - timedelta(days=1)),
@@ -836,8 +836,8 @@ async def test_refresh_rewrites_relation_edges_from_full_payload(db_session):
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
         aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
     )
-    # Seed an existing sidecar with one stale edge; the /full payload
-    # returns two relations, so the rewrite should replace this.
+    # Seed an existing sidecar with one stale edge; the detail payload
+    # returns two anime relations, so the rewrite should replace this.
     db_session.add(MediaRelationEdges(media_id=anime.media[0].id, edges=[[-1, "sequel"]]))
     await db_session.flush()
     await db_session.refresh(anime.media[0], ["relation_edges"])
@@ -845,17 +845,18 @@ async def test_refresh_rewrites_relation_edges_from_full_payload(db_session):
     media_mal_id = anime.media[0].mal_id
     raw_with_relations = {
         **_payload(),
-        "relations": [
-            {"relation": "Sequel", "entry": [{"type": "anime", "mal_id": 100}]},
-            {"relation": "Side Story", "entry": [{"type": "anime", "mal_id": 200}]},
-            {"relation": "Adaptation", "entry": [{"type": "manga", "mal_id": 999}]},
+        "related_anime": [
+            {"node": {"id": 100}, "relation_type": "sequel"},
+            {"node": {"id": 200}, "relation_type": "side_story"},
+            {"node": {"id": 999}, "relation_type": "adaptation"},
         ],
     }
     scraper = _FakeScraper({media_mal_id: raw_with_relations})
 
     await _refresh_one_anime(db_session, anime, anime.media, scraper)
 
-    # Adaptation filtered (cross-franchise), manga entry filtered (non-anime).
+    # Adaptation filtered (excluded relation type); related_anime carries
+    # anime only, so no per-entry media-type check is needed.
     assert anime.media[0].relation_edges.edges == [
         [100, "sequel"],
         [200, "side_story"],
@@ -1426,7 +1427,7 @@ async def _run_dispatcher_harness(
     job_id: int = 999,
 ):
     """Bundles the four monkeypatches the per-test dispatcher setup blocks
-    duplicate (JikanScraper factory, ProgressReporter, AnimeDAO selection,
+    duplicate (MalScraper factory, ProgressReporter, AnimeDAO selection,
     optional probe pipeline) and runs `update_sweep_dispatcher` against
     a fresh session with a synthetic FakeJob.
 
@@ -1435,7 +1436,7 @@ async def _run_dispatcher_harness(
     (None otherwise) so tests can assert on attach/recompute call counts.
     """
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.JikanScraper", lambda: fake_scraper,
+        "app.services.scrape_dispatcher.MalScraper", lambda: fake_scraper,
     )
     monkeypatch.setattr(
         "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
@@ -1501,7 +1502,7 @@ async def test_dispatcher_progress_is_media_grained(tracked_anime, monkeypatch):
     _RecordingProgressReporter.last_items_total = None
     _RecordingProgressReporter.last_items_done = None
     fake = _FakeScraper({m1: _payload(), m2: _payload()})
-    monkeypatch.setattr("app.services.scrape_dispatcher.JikanScraper", lambda: fake)
+    monkeypatch.setattr("app.services.scrape_dispatcher.MalScraper", lambda: fake)
     monkeypatch.setattr(
         "app.services.scrape_dispatcher.ProgressReporter", _RecordingProgressReporter,
     )
@@ -1594,9 +1595,9 @@ async def test_dispatcher_isolates_failures_per_anime(tracked_anime, monkeypatch
 
 
 def _http_504() -> httpx.HTTPStatusError:
-    """A 504 the same shape JikanScraper reraises on a sustained MAL outage
+    """A 504 the same shape MalScraper reraises on a sustained MAL outage
     (classify_error tags any httpx 5xx as `upstream_outage`)."""
-    request = httpx.Request("GET", "https://api.jikan.moe/v4/anime/1/full")
+    request = httpx.Request("GET", "https://api.myanimelist.net/v2/anime/1")
     response = httpx.Response(504, request=request)
     return httpx.HTTPStatusError("504 Gateway Timeout", request=request, response=response)
 
@@ -1822,7 +1823,7 @@ def test_gate_accepts_when_last_probe_stale():
 # ---------------------------------------------------------------------------
 # 7c — relations probe behaviour (full-dispatcher integration tests)
 #
-# The probe seeds JikanScraper.search_title with each Main media's mal_id and
+# The probe seeds MalScraper.search_title with each Main media's mal_id and
 # attaches discovered media to the existing parent anime via
 # `attach_search_result_to_anime`. Filter logic (Music/PV/CM/Hentai/Unknown,
 # excluded mal_ids, is_main_story) lives inside search_title and is covered
@@ -1978,21 +1979,21 @@ async def test_probe_seeds_search_title_with_each_main_mal_id(
         ))
         await s.commit()
 
-    # Sweep refreshes sidecars from each payload's `relations` block, so
+    # Sweep refreshes sidecars from each payload's `related_anime` block, so
     # the chain edges must round-trip through the payload too — otherwise
     # _refresh_one_anime clobbers the seeded edges with [] and the
     # in-sweep classifier demotes media2 to side_story before the probe.
     payloads = {
         first_main_mal_id: {
             **_payload(),
-            "relations": [
-                {"relation": "Sequel", "entry": [{"type": "anime", "mal_id": second_main_mal_id}]},
+            "related_anime": [
+                {"node": {"id": second_main_mal_id}, "relation_type": "sequel"},
             ],
         },
         second_main_mal_id: {
             **_payload(),
-            "relations": [
-                {"relation": "Prequel", "entry": [{"type": "anime", "mal_id": first_main_mal_id}]},
+            "related_anime": [
+                {"node": {"id": first_main_mal_id}, "relation_type": "prequel"},
             ],
         },
     }
@@ -2169,7 +2170,7 @@ async def test_probe_persists_unwanted_media_returned_by_search_title(
         search_title_returns={seed_mal_id: ([], {}, unwanted_set)},
     )
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.JikanScraper", lambda: fake_scraper,
+        "app.services.scrape_dispatcher.MalScraper", lambda: fake_scraper,
     )
     monkeypatch.setattr(
         "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
@@ -2215,7 +2216,7 @@ async def test_relations_probe_failure_preserves_field_diff_but_not_anime_freshn
         search_title_error_for_seed=seed_mal_id,
     )
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.JikanScraper", lambda: fake_scraper,
+        "app.services.scrape_dispatcher.MalScraper", lambda: fake_scraper,
     )
     monkeypatch.setattr(
         "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,

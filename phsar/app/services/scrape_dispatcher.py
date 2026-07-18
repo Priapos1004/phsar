@@ -7,8 +7,9 @@ without waiting for the dispatcher's main transaction to commit.
 
 The update_sweep dispatcher refreshes existing catalog rows: tier-select the
 due *media* (v0.14.8 — media-level, not whole anime), group them by parent
-anime, re-fetch each due media via /anime/{id}/full, diff the volatile
-fields, and advance the per-media stability counter. Per-anime commit
+anime, re-fetch each due media via /anime/{id} (fields + bundled
+related_anime), diff the volatile fields, and advance the per-media
+stability counter. Per-anime commit
 boundary so a crash mid-sweep preserves the already-refreshed rows.
 
 The seasonal_sweep dispatcher lives in its own module
@@ -40,7 +41,7 @@ from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
 from app.models.genre import Genre
 from app.models.job import Job
-from app.models.media import Media, RelationType
+from app.models.media import Media, MediaType, RelationType
 from app.models.media_freshness import MediaFreshness
 from app.models.media_genre import MediaGenre
 from app.models.media_relation_edges import MediaRelationEdges
@@ -51,12 +52,12 @@ from app.services.anime_relation_service import (
     reclassify_anime,
     umbrella_diff_to_log_entry,
 )
-from app.services.jikan_scraper import (
-    JikanScraper,
+from app.services.job_worker import ERROR_CATEGORY_UPSTREAM_OUTAGE, classify_error
+from app.services.mal_scraper import (
+    MalScraper,
     parse_mal_datetime,
     parse_relation_edges,
 )
-from app.services.job_worker import ERROR_CATEGORY_UPSTREAM_OUTAGE, classify_error
 from app.services.merge_detection_service import (
     detect_merge_candidates,
     find_cross_anime_relation_pairs,
@@ -407,7 +408,7 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
             "cache_recompute_failed": cache_recompute_failed,
         }
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         for anime, media_to_refresh in by_anime.values():
             step1 = await _try_step1_refresh(
                 session, anime, media_to_refresh, scraper,
@@ -570,7 +571,7 @@ async def _try_step1_refresh(
     session: AsyncSession,
     anime: Anime,
     media_to_refresh: list[Media],
-    scraper: JikanScraper,
+    scraper: MalScraper,
 ) -> RefreshResult | Step1Failure:
     """Step 1 wrapper: refresh the due media + commit, or rollback +
     Step1Failure. Always commits durably so a worker crash later in the
@@ -628,7 +629,7 @@ async def _try_step2_probe(
     anime: Anime,
     raw_payloads: dict[int, dict],
     exclusions: set[int],
-    scraper: JikanScraper,
+    scraper: MalScraper,
 ) -> list[dict] | ProbeFailure:
     """Step 2 wrapper: relations probe + return the list of attached media
     ({"media_uuid", "title", "name_eng", "name_jap"} dicts; empty when none landed),
@@ -671,7 +672,7 @@ async def _refresh_one_anime(
     session: AsyncSession,
     anime: Anime,
     media_to_refresh: list[Media],
-    scraper: JikanScraper,
+    scraper: MalScraper,
 ) -> RefreshResult:
     """Refresh only the individually-due media (`media_to_refresh`), not
     the whole umbrella — the v0.14.8 media-level conversion. Stable
@@ -745,7 +746,7 @@ async def _refresh_one_anime(
             now=now,
         )
 
-        # `/anime/{id}/full` bundles the relations block; refresh the
+        # The MAL v2 detail response bundles `related_anime`; refresh the
         # sidecar so bridge edges land for pre-v0.14.1 rows scraped
         # under the dangling-edge filter, and so MAL adding a new
         # sequel/alt-version flows into the catalog over the nightly
@@ -753,7 +754,7 @@ async def _refresh_one_anime(
         # volatile_changed — edge churn is structural metadata, not the
         # volatile canonical fields the stable counter tracks.
         fresh_edges: list[list[int | str]] = [
-            [t, r] for t, r in parse_relation_edges(raw.get("relations") or [])
+            [t, r] for t, r in parse_relation_edges(raw.get("related_anime") or [])
         ]
         if media.relation_edges is None:
             media.relation_edges = MediaRelationEdges(
@@ -868,10 +869,10 @@ async def _probe_relations_for_anime(
     anime: Anime,
     raw_payloads: dict[int, dict],
     exclusions: set[int],
-    scraper: JikanScraper,
+    scraper: MalScraper,
 ) -> list[dict]:
     """For each Main media on the parent anime, walk its MAL relation graph
-    via `JikanScraper.search_title` seeded by the media's mal_id (skipping
+    via `MalScraper.search_title` seeded by the media's mal_id (skipping
     the title-fuzzy `q=` step that would otherwise pull in unrelated top-3
     matches). Newly-discovered media land on the existing parent anime via
     `attach_search_result_to_anime`. Disjoint sub-graphs (e.g. Vigilante
@@ -946,7 +947,26 @@ def _weighted_score(score: float | None, scored_by: int | None) -> float | None:
 _EMBEDDING_TEXT_FIELDS = ("title", "name_eng", "name_jap", "other_names", "description")
 
 # Fields refreshed but not part of any embedding — pure DB updates.
-_METADATA_NONTEXT_FIELDS = ("cover_image", "age_rating", "original_source")
+# Includes the v0.14.14 self-heal set: static columns set once at creation that
+# a sweep should be able to correct — an exact runtime (duration_seconds), a
+# season fix (from MAL), or `mal_url` (locally derived from mal_id, so this only
+# ever normalizes a Jikan-era slug URL `/anime/{id}/{slug}` to the canonical
+# `/anime/{id}` form — a no-op for MAL-era rows, never a MAL "correction").
+# Handled in the metadata bucket (NOT the volatile one) so a late correction
+# lands WITHOUT resetting the stability counter — a settled anime shouldn't drop
+# back to weekly polling over a duration typo. All None-guarded in the loop below
+# so a MAL omission never nulls a populated value. media_type + aired_from are
+# self-healed too but need special handling (enum-validity guard / datetime
+# parse) so they live outside this tuple.
+_METADATA_NONTEXT_FIELDS = (
+    "cover_image", "age_rating", "original_source",
+    "duration_seconds", "anime_season_name", "anime_season_year", "mal_url",
+)
+
+# Valid MediaType enum values — the guard for the media_type self-heal so a
+# freak music/cm/pv (which extract_information passes through un-translated for
+# the scrape-time skip rule) can't crash the savepoint on an existing row.
+_VALID_MEDIA_TYPES = frozenset(mt.value for mt in MediaType)
 
 
 def _jsonable(value: object) -> object:
@@ -1021,6 +1041,16 @@ async def _apply_metadata_diff(
             _capture(field, current, new_val)
             setattr(media, field, new_val)
             other_changed = True
+
+    # media_type self-heal (v0.14.14): MAL occasionally reclassifies a media
+    # (TV↔ONA↔Movie). Refresh it — but ONLY to a valid MediaType enum value,
+    # so a freak music/cm/pv can't crash the insert on a row already in the
+    # catalog. Feeds the reclassify step the sweep runs after the diffs.
+    new_media_type = payload.get("media_type")
+    if new_media_type in _VALID_MEDIA_TYPES and media.media_type != new_media_type:
+        _capture("media_type", media.media_type, new_media_type)
+        media.media_type = new_media_type
+        other_changed = True
 
     if text_changed:
         # Same DELETE-then-INSERT discipline as anime-side regen: a new
@@ -1240,5 +1270,15 @@ def _apply_media_diff(
         _capture("aired_to", media.aired_to, new_aired_to)
         media.aired_to = new_aired_to
         changed = True
+
+    # aired_from self-heal (v0.14.14): the volatile bucket already refreshes
+    # aired_to; aired_from was asymmetric and never corrected. Write it too —
+    # but do NOT flip `changed`: a premiere-date correction is a rare
+    # structural fix, not the volatile churn the stability counter tracks.
+    # None-guarded so a MAL omission never nulls a populated premiere date.
+    new_aired_from = parse_mal_datetime(payload.get("aired_from"))
+    if new_aired_from is not None and media.aired_from != new_aired_from:
+        _capture("aired_from", media.aired_from, new_aired_from)
+        media.aired_from = new_aired_from
 
     return changed
