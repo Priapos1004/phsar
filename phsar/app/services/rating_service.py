@@ -372,7 +372,14 @@ async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCr
     Earlier media have their note cleared. This is intentional: bulk-rating means 'rate
     the whole anime with one note,' and the note belongs on the most recent season — the
     last row in the media table — not whatever was selected last (selection order is
-    arbitrary, so the ordering keys on intrinsic media properties, not request order)."""
+    arbitrary, so the ordering keys on intrinsic media properties, not request order).
+
+    Bulk rating is a whole-anime 'I finished this' action: every selected media is written
+    as `completed` with its full episode count, pinned per-media below. Per-media watch
+    state — a partial `episodes_watched`, or an on_hold/dropped `watch_status` — is a
+    single-media concern (it makes no sense to bulk-mark several seasons of one anime as
+    dropped), so `RatingBulkCreate` deliberately doesn't carry those fields at all — the
+    contract can't produce inconsistent data like a dropped rating claiming the full run."""
     logger.debug(f"DB session: {id(db)}")
 
     media_list = await _resolve_media_uuids(db, data.media_uuids)
@@ -399,13 +406,19 @@ async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCr
     mains = [(i, m) for i, m in enumerate(media_list) if m.relation_type.value == "main"]
     pool = mains or list(enumerate(media_list))
     note_index = max(pool, key=lambda im: _chrono_note_key(im[1]))[0]
-    shared_fields = data.model_dump(exclude=_EXCLUDE_BULK | {"note", "episodes_watched"})
+    # note is attached to one media only (below); watch_status + episodes_watched aren't on
+    # RatingBulkCreate — both are pinned per-media to completed / full-run (see docstring).
+    shared_fields = data.model_dump(exclude=_EXCLUDE_BULK | {"note"})
     rating_uuids = []
 
     for i, media in enumerate(media_list):
         note = data.note if i == note_index else None
-        # Auto-fill episodes_watched per media from its total episodes
-        per_media_fields = {**shared_fields, "episodes_watched": media.episodes}
+        # Pin completed + full-run per media (the bulk contract — see docstring).
+        per_media_fields = {
+            **shared_fields,
+            "watch_status": WatchStatus.completed,
+            "episodes_watched": media.episodes,
+        }
         existing = existing_by_media_id.get(media.id)
         uuid = await _upsert_single_rating(
             db, user_id, media, per_media_fields, note, existing,

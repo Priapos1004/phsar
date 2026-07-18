@@ -20,7 +20,7 @@ export const badgeDropped = 'bg-rose-100 text-rose-800 border-rose-200';
 // Story-complete (emerald) — shared by the anime-page badge + the anime search card badge.
 export const badgeComplete = 'bg-emerald-100 text-emerald-800 border-emerald-200';
 
-// "How you rated similar titles" comparison badges (v0.14.13): a neighbor's attribute
+// "How you rated similar titles" comparison badges: a neighbor's attribute
 // vs your current selection. Green = neighbor higher, red = neighbor lower (quality attrs),
 // blue = differs (categorical), warm cream = matches your pick exactly, and neutral keeps the
 // plain secondary grey for "you haven't set this" (so a real match reads distinctly from

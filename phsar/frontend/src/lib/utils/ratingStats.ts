@@ -664,8 +664,8 @@ export function cumulativeWatchTime(items: RatingScoreItem[], sinceISO?: string)
  *
  * episodes_watched is clamped to [0, episodes] when the catalog total is known, so a
  * stale over-count can't exceed the full runtime; a completed row with no recorded
- * episodes_watched (legacy, predating per-status counts) is assumed to have watched
- * the full run. duration_seconds is used directly (not total_watch_time / episodes)
+ * episodes_watched (legacy, predating per-status counts) falls back to the full run
+ * when the catalog total is known, else 0. duration_seconds is used directly (not total_watch_time / episodes)
  * so a currently-airing show with no episode total still credits its watched time. */
 export function watchedSeconds(it: RatingScoreItem): number {
 	const dur = it.duration_seconds;
@@ -678,7 +678,8 @@ export function watchedSeconds(it: RatingScoreItem): number {
 
 /** Episodes the user watched of one media, with the completed→full-run fallback for
  * rows that predate per-status episode counts (a completed rating with no recorded
- * count is assumed to have watched the full run). Always non-negative. Clamping to the
+ * count falls back to the full run when the catalog total is known, else 0 —
+ * `episodes ?? 0`). Always non-negative. Clamping to the
  * catalog total is left to the caller — `watchedSeconds` clamps it; the anime overview's
  * episode count deliberately shows the raw value and gates the ratio separately. Shared
  * by both so the fallback rule lives in one place. */

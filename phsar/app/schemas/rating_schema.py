@@ -38,10 +38,14 @@ class RatingAttributes(BaseModel):
 
 
 class RatingBase(RatingAttributes):
-    """Shared core rating fields and validators for create schemas."""
+    """Shared core rating fields and validators for create schemas.
+
+    Deliberately does NOT carry watch_status / episodes_watched: those are per-media
+    watch state, part of the single-rating contract (RatingCreate) only. Bulk rating
+    (RatingBulkCreate) is a whole-anime 'I finished this' action pinned to completed /
+    full-run in the service, so exposing them on the bulk payload would advertise inputs
+    the endpoint ignores."""
     rating: float
-    watch_status: WatchStatus = WatchStatus.completed
-    episodes_watched: Optional[int] = None
     note: Optional[str] = None
 
     @field_validator("rating")
@@ -49,13 +53,6 @@ class RatingBase(RatingAttributes):
     def rating_in_range(cls, v: float) -> float:
         if not 0 <= v <= 10:
             raise ValueError("Rating must be between 0 and 10")
-        return v
-
-    @field_validator("episodes_watched")
-    @classmethod
-    def episodes_watched_non_negative(cls, v: Optional[int]) -> Optional[int]:
-        if v is not None and v < 0:
-            raise ValueError("Episodes watched must be non-negative")
         return v
 
     @field_validator("note")
@@ -67,7 +64,16 @@ class RatingBase(RatingAttributes):
 
 
 class RatingCreate(RatingBase):
-    pass
+    # Per-media watch state — single-rating only (bulk pins completed / full-run itself).
+    watch_status: WatchStatus = WatchStatus.completed
+    episodes_watched: Optional[int] = None
+
+    @field_validator("episodes_watched")
+    @classmethod
+    def episodes_watched_non_negative(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v < 0:
+            raise ValueError("Episodes watched must be non-negative")
+        return v
 
 
 class RatingOut(RatingAttributes):

@@ -449,6 +449,33 @@ async def test_bulk_upsert(client, user_auth_headers, test_media_list):
     assert data[2]["episodes_watched"] == 6
 
 
+async def test_bulk_upsert_normalizes_watch_state_to_completed_full_run(
+    client, user_auth_headers, test_media_list
+):
+    """Bulk rating is a whole-anime 'I finished this' action: watch_status +
+    episodes_watched are NOT part of the bulk contract. A direct/stale payload carrying
+    a dropped status + a partial count is normalized to completed + full-run rather than
+    producing an inconsistent 'dropped but watched the full run' row."""
+    uuids = [str(m.uuid) for m in test_media_list]
+    response = await client.put(
+        "/ratings/bulk",
+        json={
+            "rating": 7.0,
+            "media_uuids": uuids,
+            "watch_status": "dropped",
+            "episodes_watched": 1,
+        },
+        headers=user_auth_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert [r["watch_status"] for r in data] == ["completed"] * 3
+    # Full-run per media, not the payload's partial "1"
+    assert [r["episodes_watched"] for r in data] == [12, 24, 6]
+    # Every media completed → each logs its first watch event
+    assert all(r["watched_count"] == 1 for r in data)
+
+
 async def test_bulk_upsert_note_on_chronologically_last_main_invariant_to_order(
     client, user_auth_headers, db_session
 ):

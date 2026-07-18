@@ -62,12 +62,12 @@ class EndingType(str, enum.Enum):
     closed = "closed"
     cliffhanger = "cliffhanger"
     # Auto-set sentinel (never user-selectable) — set when the watch wasn't finished
-    # (on_hold/dropped), alongside ending_quality. v0.14.13.
+    # (on_hold/dropped), alongside ending_quality.
     not_applicable = "not_applicable"
 
 class EndingQuality(str, enum.Enum):
     unsatisfying = "unsatisfying"
-    # Middle anchor (v0.14.13) so an indifferent "it was okay" ending has its own value
+    # Middle anchor so an indifferent "it was okay" ending has its own value
     # instead of collapsing into a forced side or an ambiguous unset.
     neutral = "neutral"
     satisfying = "satisfying"
