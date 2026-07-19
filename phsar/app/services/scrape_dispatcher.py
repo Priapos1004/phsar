@@ -55,6 +55,7 @@ from app.services.anime_relation_service import (
 from app.services.job_worker import ERROR_CATEGORY_UPSTREAM_OUTAGE, classify_error
 from app.services.mal_scraper import (
     MalScraper,
+    is_hentai,
     parse_mal_datetime,
     parse_relation_edges,
 )
@@ -125,6 +126,22 @@ class ProbeFailure(NamedTuple):
     name_jap: str | None
     error_category: str | None
     error_message: str
+
+
+class HentaiRemoval(NamedTuple):
+    """A sweep-refreshed anime whose MAL record now flags Hentai (genre tag or
+    Rx rating). The fresh-scrape BFS already blacklists hentai, but the sweep
+    path otherwise had no equivalent, so a title that flipped after it was
+    scraped lingered in the catalog (only logged as an unknown genre tag).
+    The sweep now deletes the whole anime (a hentai member means the franchise
+    is hentai) and blacklists every one of its media mal_ids so a later
+    probe/search can't re-add it. Surfaced (like Step1Failure) so the removal
+    lands in `result_summary.hentai_removed` for the admin to see."""
+    anime_uuid: str
+    title: str
+    name_eng: str | None
+    name_jap: str | None
+    mal_ids: list[int]
 
 
 # Diff classification for the genre/studio drift detector. Both kinds
@@ -325,6 +342,10 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     consecutive_upstream_failures = 0
     # Symmetric to step1_failures: anime whose step-2 probe raised.
     probe_failures: list[dict] = []
+    # Anime deleted mid-sweep because MAL flipped them to Hentai (genre or Rx
+    # rating). Each entry: {anime_uuid, title, name_eng, name_jap, mal_ids}.
+    # The mal_ids were blacklisted so they can't be re-added.
+    hentai_removed_log: list[dict] = []
     # Track which existing anime had new media attached so we can re-run
     # merge detection on them at sweep end — a tier-3 anime whose probe
     # pulled in a new sibling franchise (Vigilante-shape) may now bridge
@@ -358,11 +379,13 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     orphaned_studios_removed = 0
 
     def build_result_summary() -> dict:
-        """Assemble the v6 result_summary from the loop accumulators (read via
+        """Assemble the v7 result_summary from the loop accumulators (read via
         closure). Called at the normal end-of-sweep return AND at the circuit-
         breaker abort, so a failed sweep still carries the media_refreshed
         counters + the per-anime failure list the detail page renders instead
-        of only the header error banner."""
+        of only the header error banner. v7 (v0.14.14) adds `hentai_removed`
+        (+ `counters.hentai_removed_count`) for anime deleted mid-sweep on a
+        Hentai flip."""
         return {
             # v5 (v0.14.8): counters go media-grained. `media_refreshed` is the
             # headline workload (individual media touched); `anime_touched` is
@@ -383,6 +406,8 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
                 "probe_attached_media_count": probe_attached_media_count,
                 "orphaned_studios_removed": orphaned_studios_removed,
                 "step1_failed": step1_failed,
+                # v7 (v0.14.14): anime deleted for flipping to Hentai.
+                "hentai_removed_count": len(hentai_removed_log),
             },
             "media_changes": media_changes_log,
             "anime_umbrella_changes": anime_umbrella_changes_log,
@@ -396,6 +421,10 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
             "step1_failures": step1_failures,
             # Per-anime step-2 probe failures, same shape as step1_failures.
             "probe_failures": probe_failures,
+            # v7 (v0.14.14): anime removed this sweep for flipping to Hentai —
+            # {anime_uuid, title, name_eng, name_jap, mal_ids}. The detail page
+            # lists them; the Jobs Log surfaces the count.
+            "hentai_removed": hentai_removed_log,
             # Deduplicated across every media in this sweep. The Jobs Log
             # tints rows when this is non-empty so the admin can spot which
             # sweeps need a seeder update without drilling into details.
@@ -443,6 +472,16 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
                             "unavailable",
                             partial_summary=build_result_summary(),
                         )
+                continue
+
+            if isinstance(step1, HentaiRemoval):
+                # The anime was deleted + blacklisted + committed inside
+                # _try_step1_refresh. MAL was reachable (we read the payload),
+                # so reset the breaker; then just record it — no probe, no
+                # freshness advance, not counted as refreshed (the row is gone).
+                consecutive_upstream_failures = 0
+                hentai_removed_log.append(step1._asdict())
+                await progress.update(items_done=media_refreshed)
                 continue
 
             # A successful refresh means MAL is reachable — reset the breaker.
@@ -572,9 +611,11 @@ async def _try_step1_refresh(
     anime: Anime,
     media_to_refresh: list[Media],
     scraper: MalScraper,
-) -> RefreshResult | Step1Failure:
+) -> RefreshResult | HentaiRemoval | Step1Failure:
     """Step 1 wrapper: refresh the due media + commit, or rollback +
-    Step1Failure. Always commits durably so a worker crash later in the
+    Step1Failure. A hentai flip returns a HentaiRemoval marker (the anime is
+    deleted + blacklisted inside the savepoint, committed here alongside a
+    normal refresh). Always commits durably so a worker crash later in the
     sweep can't take the field-diff work down with it, and a single bad
     MAL response fails *that* anime only without aborting the loop.
     Returns a `Step1Failure` (not None) so the dispatcher can record which
@@ -668,12 +709,37 @@ async def _try_step2_probe(
         )
 
 
+async def _remove_hentai_anime(session: AsyncSession, anime: Anime) -> HentaiRemoval:
+    """Delete a hentai anime + all its media and blacklist every media mal_id.
+    Blacklist BEFORE the delete so the mal_ids land in `media_unwanted` (no FK
+    to media, so it survives the cascade) and a later probe/search BFS skips
+    them via the excluded-ids gate. Uses a Core `delete(Anime)` (DB-level
+    ON DELETE CASCADE) rather than `session.delete(anime)`: the ORM cascade
+    would lazy-load each media's `lazy="raise"` children to delete them and
+    trip the guard — the same pattern `scripts/delete_anime_by_title` uses.
+    Snapshots the identifiers into the marker first (the delete expires the
+    ORM attrs)."""
+    removal = HentaiRemoval(
+        anime_uuid=str(anime.uuid),
+        title=anime.title,
+        name_eng=anime.name_eng,
+        name_jap=anime.name_jap,
+        mal_ids=[m.mal_id for m in anime.media],
+    )
+    await create_unwanted_media(
+        session,
+        {(m.mal_id, m.title, "Hentai") for m in anime.media},
+    )
+    await session.execute(delete(Anime).where(Anime.id == anime.id))
+    return removal
+
+
 async def _refresh_one_anime(
     session: AsyncSession,
     anime: Anime,
     media_to_refresh: list[Media],
     scraper: MalScraper,
-) -> RefreshResult:
+) -> RefreshResult | HentaiRemoval:
     """Refresh only the individually-due media (`media_to_refresh`), not
     the whole umbrella — the v0.14.8 media-level conversion. Stable
     siblings keep their MediaFreshness untouched and pay no MAL call.
@@ -700,6 +766,16 @@ async def _refresh_one_anime(
         raw = await scraper.refresh_anime(media.mal_id)
         raw_payloads[media.mal_id] = raw
         payload = scraper.extract_information(raw)
+
+        # Hentai self-defense (v0.14.14): MAL reclassified this media as
+        # Hentai (genre or Rx rating) since it was scraped. The fresh-scrape
+        # BFS blacklists hentai on the way in; the sweep must do the same or a
+        # flipped title lingers in the catalog. Remove the WHOLE anime + its
+        # media from the catalog and blacklist every member so it can't be
+        # re-added, then bail — no point diffing/reclassifying a row we delete.
+        if is_hentai(payload):
+            return await _remove_hentai_anime(session, anime)
+
         dynamic: list[dict] = []
         static: list[dict] = []
         media_volatile_changed = _apply_media_diff(media, payload, diff_sink=dynamic)

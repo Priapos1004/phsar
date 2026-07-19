@@ -5,6 +5,7 @@ import pytest
 from app.services.mal_scraper import (
     MalScraper,
     _mal_date_to_iso,
+    is_hentai,
     parse_relation_edges,
 )
 
@@ -490,6 +491,59 @@ async def test_search_title_blacklists_other_anomalous_no_media_type(monkeypatch
         )
 
     assert any(uw[0] == 2 and uw[2] == "Unknown" for uw in unwanted)
+
+
+# ---------------------------------------------------------------------------
+# is_hentai + hentai skip (v0.14.14)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "info, expected",
+    [
+        ({"genres": ["Action", "Hentai"]}, True),
+        ({"genres": ["hentai"]}, True),  # case-insensitive genre match
+        ({"genres": ["Action"], "age_rating": "Rx - Hentai"}, True),  # Rx signal
+        ({"genres": [], "age_rating": None}, False),
+        ({"genres": ["Ecchi"], "age_rating": "R+ - Mild Nudity"}, False),  # Ecchi/R+ ≠ hentai
+        ({}, False),  # missing keys are None-safe
+    ],
+)
+def test_is_hentai(info, expected):
+    assert is_hentai(info) is expected
+
+
+@pytest.mark.asyncio
+async def test_search_title_blacklists_hentai_with_null_media_type(monkeypatch):
+    """A hentai node with a null media_type is blacklisted as Hentai — the
+    check now runs BEFORE the media_type gate, so it no longer falls through
+    to the null-media_type 'Unknown' anomaly branch (v0.14.14 hardening)."""
+    async def fake_get(self, url: str, params=None):
+        if url.endswith("/anime") and params is not None and params.get("q"):
+            return {"data": [{"node": _make_anime(
+                1, "Origin Anime", related_anime=_related((2, "Other")),
+            )}]}
+        if "/anime/" in url:
+            mal_id = int(url.rsplit("/", 1)[-1])
+            obj = _make_anime(mal_id, f"Anime {mal_id}")
+            if mal_id == 2:
+                obj["media_type"] = "unknown"  # None after translate
+                obj["genres"] = [{"id": 12, "name": "Hentai"}]
+                obj["status"] = "finished_airing"
+            return obj
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
+
+    async with MalScraper() as scraper:
+        _relations, _all_info, unwanted = await scraper.search_title(
+            title="Origin", excluded_mal_ids=set(),
+        )
+
+    assert any(uw[0] == 2 and uw[2] == "Hentai" for uw in unwanted), (
+        "Null-media_type hentai node must be blacklisted as Hentai (checked "
+        "before the media_type gate), not the 'Unknown' anomaly branch"
+    )
 
 
 # ---------------------------------------------------------------------------

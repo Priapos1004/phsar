@@ -36,6 +36,7 @@ from app.models.media_studio import MediaStudio
 from app.models.media_unwanted import MediaUnwanted
 from app.models.studio import Studio
 from app.services.scrape_dispatcher import (
+    HentaiRemoval,
     _advance_anime_freshness,
     _advance_media_freshness,
     _apply_genre_diff,
@@ -930,6 +931,94 @@ async def test_refresh_creates_missing_sidecars_defensively(db_session):
 
     assert anime.freshness is not None
     assert anime.freshness.stable_check_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Hentai self-defense: sweep removal + blacklist (v0.14.14)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_refresh_hentai_genre_removes_anime_and_blacklists(db_session):
+    """A media that MAL flipped to the Hentai genre makes the sweep delete
+    the whole anime (cascade) and blacklist its media mal_ids, returning a
+    HentaiRemoval marker — mirroring the fresh-scrape BFS skip."""
+    anime = await _build_anime_with_one_media(
+        db_session, mal_id_a=-9310, mal_id_m=-9410,
+        score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
+        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+    )
+    media_mal_id = anime.media[0].mal_id
+    anime_uuid = str(anime.uuid)
+    scraper = _FakeScraper({media_mal_id: {"genres": ["Comedy", "Hentai"]}})
+
+    result = await _refresh_one_anime(db_session, anime, anime.media, scraper)
+
+    assert isinstance(result, HentaiRemoval)
+    assert result.anime_uuid == anime_uuid
+    assert result.mal_ids == [media_mal_id]
+    # Anime + its media are gone via the Core cascade delete.
+    assert (await db_session.execute(
+        select(Anime).where(Anime.mal_id == -9310)
+    )).scalars().first() is None
+    assert (await db_session.execute(
+        select(Media).where(Media.mal_id == media_mal_id)
+    )).scalars().first() is None
+    # Blacklisted so a later probe/search BFS can't re-add it.
+    unwanted = (await db_session.execute(
+        select(MediaUnwanted).where(MediaUnwanted.mal_id == media_mal_id)
+    )).scalars().first()
+    assert unwanted is not None
+    assert unwanted.reason == "Hentai"
+
+
+@pytest.mark.asyncio
+async def test_refresh_hentai_rx_rating_without_genre_tag_removes(db_session):
+    """The Rx age rating triggers removal even when the genre list omits the
+    Hentai tag — the hardening signal beyond the genre string."""
+    anime = await _build_anime_with_one_media(
+        db_session, mal_id_a=-9311, mal_id_m=-9411,
+        score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
+        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+    )
+    media_mal_id = anime.media[0].mal_id
+    scraper = _FakeScraper(
+        {media_mal_id: {"genres": ["Comedy"], "age_rating": "Rx - Hentai"}},
+    )
+
+    result = await _refresh_one_anime(db_session, anime, anime.media, scraper)
+
+    assert isinstance(result, HentaiRemoval)
+    assert (await db_session.execute(
+        select(Anime).where(Anime.mal_id == -9311)
+    )).scalars().first() is None
+    unwanted = (await db_session.execute(
+        select(MediaUnwanted).where(MediaUnwanted.mal_id == media_mal_id)
+    )).scalars().first()
+    assert unwanted is not None and unwanted.reason == "Hentai"
+
+
+@pytest.mark.asyncio
+async def test_refresh_non_hentai_is_not_removed(db_session):
+    """A normal refresh must not trip the hentai removal — the anime stays.
+    Query by PK, not mal_id: a clean refresh runs reclassify, which rewrites
+    the umbrella mal_id to the anchor media's."""
+    anime = await _build_anime_with_one_media(
+        db_session, mal_id_a=-9312, mal_id_m=-9412,
+        media_freshness=MediaFreshness(
+            last_checked_at=datetime.now(timezone.utc) - timedelta(days=1),
+        ),
+        score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
+        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+    )
+    anime_id = anime.id
+    media_mal_id = anime.media[0].mal_id
+    scraper = _FakeScraper({media_mal_id: {**_payload(), "genres": ["Action"]}})
+
+    result = await _refresh_one_anime(db_session, anime, anime.media, scraper)
+
+    assert not isinstance(result, HentaiRemoval)
+    assert await db_session.get(Anime, anime_id) is not None
 
 
 @pytest.mark.asyncio

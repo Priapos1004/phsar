@@ -2,13 +2,14 @@
 admin job-detail page (`/admin/jobs/[uuid]`) and the Jobs Log without
 waiting for a real nightly sweep.
 
-Builds a v6 `result_summary` populated from REAL catalog rows (so every
-anime/media link resolves) covering every surface the v0.14.9 changes
-touched: the counters grid, the "Anime changes" + "Media changes" cards
-(incl. genre/studio drift), the scrollable Failed-refresh / Failed-probe
-lists (~10 failures), the new "Attached via probe" card (Tensei Slime +
-siblings), the progress-divergence notice, and the Jobs Log amber
-(unknown-genre-tags) + blue (probe-attach) row tints.
+Builds a v7 `result_summary` populated from REAL catalog rows (so every
+anime/media link resolves) covering every surface the v0.14.9 + v0.14.14
+changes touched: the counters grid, the "Anime changes" + "Media changes"
+cards (incl. genre/studio drift), the scrollable Failed-refresh / Failed-probe
+lists (~10 failures), the "Attached via probe" card (Tensei Slime + siblings),
+the v7 "Removed (Hentai)" card (with --hentai), the progress-divergence notice,
+and the Jobs Log amber (unknown-genre-tags) / blue (probe-attach) / rose
+(hentai-removed) row tints.
 
 Dry-runs by default; pass --apply to insert. `--delete` removes any
 previously-seeded demo job (matched on the payload marker) so re-running
@@ -16,8 +17,9 @@ stays idempotent.
 
 Usage:
     cd phsar
-    python -m scripts.seed_demo_sweep_job            # dry-run (prints plan)
-    python -m scripts.seed_demo_sweep_job --apply     # insert the demo job
+    python -m scripts.seed_demo_sweep_job              # dry-run (prints plan)
+    python -m scripts.seed_demo_sweep_job --apply       # insert the demo job
+    python -m scripts.seed_demo_sweep_job --hentai --apply   # + Removed (Hentai) card
     python -m scripts.seed_demo_sweep_job --delete --apply   # remove it
 """
 
@@ -69,14 +71,21 @@ def _media_change(a: Anime, m, *, dynamic=None, static=None, genre_drift=None,
     }
 
 
-def _build_summary(animes: list[Anime], *, include_genre_tags: bool = True) -> dict:
-    """Compose a v6 result_summary from real catalog rows. `animes` is a
+def _build_summary(
+    animes: list[Anime], *, include_genre_tags: bool = True, include_hentai: bool = False,
+) -> dict:
+    """Compose a v7 result_summary from real catalog rows. `animes` is a
     pool of anime (media eager-loaded); roles are sliced off it so every
     uuid links to a live page.
 
     `include_genre_tags=False` drops the unknown-genre-tag drift entirely so
     the Jobs Log row gets NO amber tint — letting the blue probe-attach tint
-    (which amber otherwise outranks) show in isolation."""
+    (which amber otherwise outranks) show in isolation.
+
+    `include_hentai=True` adds a couple of `hentai_removed` entries so the v7
+    "Removed (Hentai)" card + the rose Jobs Log tint render. Opt-in because the
+    rose tint OUTRANKS amber + blue — with it on, the row is always rose, so
+    the other tints can't be evaluated on the same seeded job."""
     # --- probe attachments: Tensei Slime (if present) + two siblings ---
     slime = next((a for a in animes if a.mal_id == 37430), None)
     attach_pool = [a for a in animes if a.media][:6]
@@ -180,6 +189,20 @@ def _build_summary(animes: list[Anime], *, include_genre_tags: bool = True) -> d
                 "kind": "applied", "old": [], "new": ["Studio Demo"], "unknown_tags": [],
             }))
 
+    # --- hentai removals (v7): 2 anime "deleted" for flipping to Hentai ---
+    # Opt-in: the rose tint outranks amber/blue, so on by default it would mask
+    # the other tints. Uses real anime uuids (the card renders them non-linked).
+    hentai_removed = []
+    if include_hentai:
+        for a in [x for x in fail_pool[16:18] if x.media]:
+            hentai_removed.append({
+                "anime_uuid": str(a.uuid),
+                "title": a.title,
+                "name_eng": a.name_eng,
+                "name_jap": a.name_jap,
+                "mal_ids": [m.mal_id for m in a.media],
+            })
+
     media_refreshed = 500
     # Make items_done < items_total so the progress-divergence notice renders:
     # the gap is the media of the 10 step-1-failed anime.
@@ -197,6 +220,7 @@ def _build_summary(animes: list[Anime], *, include_genre_tags: bool = True) -> d
         "probe_attached_media_count": probe_attached_media_count,
         "orphaned_studios_removed": 4,
         "step1_failed": len(step1_failures),
+        "hentai_removed_count": len(hentai_removed),
     }
     return {
         "counters": counters,
@@ -205,6 +229,7 @@ def _build_summary(animes: list[Anime], *, include_genre_tags: bool = True) -> d
         "step1_failures": step1_failures,
         "probe_failures": probe_failures,
         "probe_attached_anime": probe_attached_anime,
+        "hentai_removed": hentai_removed,
         "unknown_genre_tags": ["Workplace", "Crime"] if include_genre_tags else [],
         "merge_detect_failed": False,
         "cache_recompute_failed": False,
@@ -212,7 +237,7 @@ def _build_summary(animes: list[Anime], *, include_genre_tags: bool = True) -> d
     }
 
 
-async def main(apply: bool, do_delete: bool, include_genre_tags: bool) -> None:
+async def main(apply: bool, do_delete: bool, include_genre_tags: bool, include_hentai: bool) -> None:
     async with async_session_maker() as session:
         # Scope --delete to our own demo rows: the unique marker AND the kind
         # we seed, so a future marker-key collision can't sweep unrelated jobs.
@@ -239,10 +264,12 @@ async def main(apply: bool, do_delete: bool, include_genre_tags: bool) -> None:
             print(f"Only {len(animes)} anime in the catalog — seed more first.")
             return
 
-        summary = _build_summary(animes, include_genre_tags=include_genre_tags)
+        summary = _build_summary(
+            animes, include_genre_tags=include_genre_tags, include_hentai=include_hentai,
+        )
         items_total = summary.pop("_items_total")
         c = summary["counters"]
-        print("Demo update_sweep v6 result_summary:")
+        print("Demo update_sweep v7 result_summary:")
         print(f"  media_refreshed={c['media_refreshed']} (items {c['media_refreshed']}/{items_total} — divergence notice)")
         print(f"  step1_failures={len(summary['step1_failures'])}  probe_failures={len(summary['probe_failures'])}")
         print(f"  probe_attached_anime={len(summary['probe_attached_anime'])} "
@@ -251,6 +278,8 @@ async def main(apply: bool, do_delete: bool, include_genre_tags: bool) -> None:
         print(f"  anime_umbrella_changes={len(summary['anime_umbrella_changes'])}  "
               f"media_changes={len(summary['media_changes'])}  "
               f"unknown_genre_tags={summary['unknown_genre_tags']}")
+        print(f"  hentai_removed={len(summary['hentai_removed'])}: "
+              f"{[e['title'] for e in summary['hentai_removed']]}")
 
         if not apply:
             print("\n(dry-run — pass --apply to insert the job)")
@@ -286,5 +315,14 @@ if __name__ == "__main__":
         help="drop unknown genre tags so the row gets NO amber tint — lets the blue "
              "probe-attach tint show in isolation",
     )
+    p.add_argument(
+        "--hentai", action="store_true",
+        help="add hentai-removed entries so the v7 'Removed (Hentai)' card + rose "
+             "Jobs Log tint render. Opt-in: the rose tint outranks amber/blue, so it "
+             "masks the other tints on the same row",
+    )
     args = p.parse_args()
-    asyncio.run(main(apply=args.apply, do_delete=args.delete, include_genre_tags=not args.no_genre_tags))
+    asyncio.run(main(
+        apply=args.apply, do_delete=args.delete,
+        include_genre_tags=not args.no_genre_tags, include_hentai=args.hentai,
+    ))

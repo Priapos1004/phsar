@@ -566,6 +566,9 @@ export interface UpdateSweepCounters {
 	// rows omit it — render "—" (not tracked), NOT 0 (which would falsely
 	// claim zero failures on sweeps that never recorded them).
 	step1_failed?: number;
+	// v7+: anime deleted mid-sweep because MAL flipped them to Hentai. Pre-v7
+	// rows omit it (renders as 0, no tint).
+	hentai_removed_count?: number;
 }
 
 // One step-1 refresh that raised and was skipped (v4+ update_sweep).
@@ -596,6 +599,17 @@ export interface UpdateSweepProbeAttached {
 	media: { media_uuid: string; title: string; name_eng?: string | null; name_jap?: string | null }[];
 }
 
+// One anime deleted mid-sweep because MAL flipped it to Hentai (v7+
+// update_sweep). The anime + its media are gone; mal_ids were blacklisted so
+// a later probe/search can't re-add them. No uuid link target (deleted).
+export interface UpdateSweepHentaiRemoved {
+	anime_uuid: string;
+	title: string;
+	name_eng?: string | null;
+	name_jap?: string | null;
+	mal_ids: number[];
+}
+
 // update_sweep result_summary v2+ shape. v1 rows omit these fields
 // entirely — renderers must check `row.version >= 2` before reading.
 // `unknown_genre_tags` is v3+; v2 rows don't carry it (the Jobs Log
@@ -610,6 +624,8 @@ export interface UpdateSweepResultSummary extends JobResultSummary {
 	probe_failures?: UpdateSweepProbeFailure[];
 	// v6+: anime the relations probe attached new media to this run.
 	probe_attached_anime?: UpdateSweepProbeAttached[];
+	// v7+: anime deleted this sweep for flipping to Hentai.
+	hentai_removed?: UpdateSweepHentaiRemoved[];
 	merge_detect_failed?: boolean;
 	cache_recompute_failed?: boolean;
 }

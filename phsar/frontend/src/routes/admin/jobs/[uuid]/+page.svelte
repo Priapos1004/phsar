@@ -288,6 +288,35 @@
 				</Card.Root>
 			{/if}
 
+			{#if v2Summary && (v2Summary.hentai_removed?.length ?? 0) > 0}
+				<Card.Root>
+					<Card.Header>
+						<h2 class="text-lg font-semibold text-card-foreground">
+							Removed (Hentai) ({v2Summary.hentai_removed?.length})
+						</h2>
+						<p class="text-sm text-muted-foreground">
+							Anime deleted this sweep because MAL reclassified them as Hentai. Their media
+							MAL ids were blacklisted so a later scrape can't re-add them. Titles are not
+							linked — the rows are gone from the catalog.
+						</p>
+					</Card.Header>
+					<Card.Content>
+						<div class="max-h-72 space-y-2 overflow-y-auto pr-1">
+							{#each v2Summary.hentai_removed ?? [] as removed (removed.anime_uuid)}
+								<div class="rounded-md border border-rose-500/40 bg-rose-500/5 p-3 text-sm">
+									<span class="font-medium text-card-foreground">
+										{resolveTitle(removed.title, removed.name_eng, removed.name_jap, nameLanguage)}
+									</span>
+									<p class="mt-1 text-xs text-muted-foreground">
+										Blacklisted mal_ids: {removed.mal_ids.join(', ')}
+									</p>
+								</div>
+							{/each}
+						</div>
+					</Card.Content>
+				</Card.Root>
+			{/if}
+
 			{#if v2Summary && (v2Summary.anime_umbrella_changes?.length ?? 0) > 0}
 				<Card.Root>
 					<Card.Header>

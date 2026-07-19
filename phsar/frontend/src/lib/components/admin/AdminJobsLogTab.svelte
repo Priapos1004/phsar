@@ -207,6 +207,25 @@
 		return num(counters?.probe_attached_media_count);
 	}
 
+	// v7+ sweeps report how many anime were deleted for flipping to Hentai — a
+	// notable destructive event, so it outranks the amber/blue tints (rose).
+	// Pre-v7 rows omit the counter → 0 → no tint.
+	function hentaiRemoved(row: AdminJobResponse): number {
+		const counters = row.result_summary?.counters as Record<string, unknown> | undefined;
+		return num(counters?.hentai_removed_count);
+	}
+
+	// Mutually-exclusive row tint in priority order: hentai-removal (rose,
+	// destructive) > unknown-genre-tags (amber, needs seeding) > probe-attach
+	// (blue, informational). The sublines below are additive (each renders
+	// independently); only the background tint is single-winner.
+	function rowTintClass(hentaiCount: number, unknownTagCount: number, probeMedia: number): string {
+		if (hentaiCount > 0) return 'bg-rose-500/15 border-l-2 border-l-rose-400';
+		if (unknownTagCount > 0) return 'bg-amber-500/15 border-l-2 border-l-amber-400';
+		if (probeMedia > 0) return 'bg-blue-500/10 border-l-2 border-l-blue-400';
+		return '';
+	}
+
 	function clickableNavProps(uuid: string) {
 		const go = () => void goto(`/admin/jobs/${uuid}`);
 		return {
@@ -339,12 +358,9 @@
 								{@const clickable = isClickableJob(row)}
 								{@const unknownTags = unknownGenreTags(row)}
 								{@const probeMedia = probeAttachedMedia(row)}
+								{@const hentaiCount = hentaiRemoved(row)}
 								<tr
-									class="border-b border-border/50 align-top {clickable ? 'cursor-pointer hover:bg-muted/20 transition-colors' : ''} {unknownTags.length > 0
-										? 'bg-amber-500/15 border-l-2 border-l-amber-400'
-										: probeMedia > 0
-											? 'bg-blue-500/10 border-l-2 border-l-blue-400'
-											: ''}"
+									class="border-b border-border/50 align-top {clickable ? 'cursor-pointer hover:bg-muted/20 transition-colors' : ''} {rowTintClass(hentaiCount, unknownTags.length, probeMedia)}"
 									{...(clickable ? clickableNavProps(row.uuid) : {})}
 								>
 									<td class="py-2 pr-2 w-6">
@@ -386,6 +402,11 @@
 											{#if probeMedia > 0}
 												<div class="mt-1 text-xs font-medium text-blue-300">
 													🔗 {probeMedia} media added via probing
+												</div>
+											{/if}
+											{#if hentaiCount > 0}
+												<div class="mt-1 text-xs font-medium text-rose-300">
+													🚫 {hentaiCount} anime removed (Hentai)
 												</div>
 											{/if}
 										{/if}

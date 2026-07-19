@@ -144,6 +144,23 @@ _SOURCE_MAP = {
 }
 
 
+# The translated age_rating string MAL assigns to Hentai (see _AGE_RATING_MAP).
+_AGE_RATING_HENTAI = _AGE_RATING_MAP["rx"]
+
+
+def is_hentai(anime_info: dict) -> bool:
+    """True when a MAL record is Hentai — either the explicit "Hentai" genre
+    tag or the Rx age rating. Operates on `extract_information` output (the
+    translated dict), so the fresh-scrape BFS skip and the nightly sweep's
+    removal path reject the same content identically. The age-rating signal
+    hardens against a record that carries the Rx rating but drops the genre
+    tag."""
+    genres = anime_info.get("genres") or []
+    if any(name.lower() == "hentai" for name in genres):
+        return True
+    return anime_info.get("age_rating") == _AGE_RATING_HENTAI
+
+
 def parse_mal_datetime(value: str | None) -> datetime | None:
     """Parse a full-ISO datetime string (as produced by `_mal_date_to_iso`
     and as stored in the catalog). None-safe. Kept as the shared parser the
@@ -744,14 +761,20 @@ class MalScraper:
                     )
                     continue
 
+                # Hentai skip checked BEFORE the media_type gate so a hentai
+                # record with a null media_type (rare, but MAL leaves the field
+                # empty on freshly-announced titles) is still blacklisted rather
+                # than falling through to the null-media_type anomaly branch.
+                # is_hentai also matches the Rx age rating, not just the genre.
+                if is_hentai(anime_info):
+                    logger.warning(f"Skipping anime hentai: {anime_info['title']}")
+                    unwanted_media.add((current_mal_id, anime_info["title"], "Hentai"))
+                    continue
+
                 if anime_info.get("media_type"):
                     if anime_info["media_type"].lower() in ["music", "pv", "cm"]:
                         logger.warning(f"Skipping anime {anime_info['media_type']}: {anime_info['title']}")
                         unwanted_media.add((current_mal_id, anime_info["title"], anime_info["media_type"]))
-                        continue
-                    elif any("hentai" == genre_name.lower() for genre_name in anime_info["genres"]):
-                        logger.warning(f"Skipping anime hentai: {anime_info['title']}")
-                        unwanted_media.add((current_mal_id, anime_info["title"], "Hentai"))
                         continue
 
                     all_info[current_mal_id] = anime_info
