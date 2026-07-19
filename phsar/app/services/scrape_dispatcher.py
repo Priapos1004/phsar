@@ -1360,8 +1360,11 @@ def _apply_media_diff(
         media.airing_status = new_airing_status
         changed = True
 
+    # None-guarded like every sibling volatile field: a transient MAL
+    # response that omits end_date on a finished media must not null a
+    # populated aired_to (and reset its stability counter).
     new_aired_to = parse_mal_datetime(payload.get("aired_to"))
-    if media.aired_to != new_aired_to:
+    if new_aired_to is not None and media.aired_to != new_aired_to:
         _capture("aired_to", media.aired_to, new_aired_to)
         media.aired_to = new_aired_to
         changed = True

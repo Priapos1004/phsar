@@ -286,6 +286,18 @@ def test_diff_refuses_to_clobber_score_with_omitted_field():
     assert media.scored_by == 5_000_000
 
 
+def test_diff_refuses_to_clobber_aired_to_with_none():
+    """A transient MAL response that omits end_date on a finished media
+    must not null a populated aired_to (nor reset the stability counter) —
+    the same None-guard every sibling volatile field carries."""
+    media = Media(**media_kwargs(anime_id=1, mal_id=1, score=7.5, scored_by=1000, episodes=12,
+        airing_status="Finished Airing",
+        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+    ))
+    assert _apply_media_diff(media, _payload(aired_to=None)) is False
+    assert media.aired_to == datetime(2020, 6, 30, tzinfo=timezone.utc)
+
+
 # ---------------------------------------------------------------------------
 # _apply_metadata_diff (mutates Media; embedding regen monkeypatched)
 # ---------------------------------------------------------------------------
