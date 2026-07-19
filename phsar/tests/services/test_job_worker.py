@@ -473,6 +473,35 @@ async def test_failure_stamps_upstream_outage_category_for_5xx(tracked_jobs):
 
 
 @pytest.mark.asyncio
+async def test_failure_stamps_upstream_outage_category_for_429(tracked_jobs):
+    """A 429 (throttle) is the official MAL API's most likely sustained
+    failure mode. It must classify as `upstream_outage` so the sweep
+    circuit breaker (which trips only on that category) can bound a
+    throttled run instead of grinding through the whole batch."""
+    import httpx
+
+    async def fake_dispatcher(session, job):
+        request = httpx.Request("GET", "https://api.myanimelist.net/v2/anime")
+        response = httpx.Response(429, request=request, content=b"too many requests")
+        raise httpx.HTTPStatusError("429 Too Many Requests", request=request, response=response)
+
+    worker = JobWorker()
+    worker.register_dispatcher(JobKind.user_scrape, fake_dispatcher)
+
+    job_id = await _enqueue(kind=JobKind.user_scrape)
+    tracked_jobs.append(job_id)
+
+    ran = await worker.dispatch_one()
+    assert ran is True
+
+    refreshed = await _get(job_id)
+    assert refreshed.status is JobStatus.failed
+    assert refreshed.result_summary is not None
+    assert refreshed.result_summary.get("error_category") == "upstream_outage"
+    assert refreshed.result_summary.get("retryable") is True
+
+
+@pytest.mark.asyncio
 async def test_failure_omits_category_for_non_upstream_errors(tracked_jobs):
     """A generic RuntimeError shouldn't categorize — bell falls through to
     the raw error_message instead of mislabeling it as an outage."""

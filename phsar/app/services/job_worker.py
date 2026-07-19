@@ -69,7 +69,14 @@ def classify_error(exc: BaseException) -> str | None:
     """Translate a dispatcher exception into a coarse error category for
     the bell. Returns None when the raw exception message is already
     user-friendly (custom domain errors carry their own copy)."""
-    if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code >= 500:
+    # 429 counts as an outage alongside 5xx: on the official MAL API a
+    # sustained 429 (throttle) is the most likely bulk-failure mode, and the
+    # update_sweep circuit breaker trips only on this category — without 429
+    # here a throttled sweep grinds through the whole batch holding the
+    # maintenance window, the exact hang the breaker exists to bound.
+    if isinstance(exc, httpx.HTTPStatusError) and (
+        exc.response.status_code == 429 or exc.response.status_code >= 500
+    ):
         return ERROR_CATEGORY_UPSTREAM_OUTAGE
     if isinstance(exc, (httpx.TimeoutException, httpx.NetworkError)):
         return ERROR_CATEGORY_UPSTREAM_OUTAGE
