@@ -192,6 +192,40 @@ def test_donghua_ona_anchors_when_no_tv_present():
     assert out[202] == "side_story"
 
 
+def test_short_ona_main_chain_survives_offchain_fulllength_side():
+    """Shi Wangzhe A? shape (real data): the main chain is all short-form ONA
+    seasons (~8 min, 13-14 eps) linked by sequel edges, plus OFF-CHAIN
+    full-length spin-off specials (~27 min, 4 eps). The specials must NOT
+    re-enforce the duration floor on the main seasons — the per-floor
+    relaxation is scoped to the MAIN CHAIN, so every sequel-linked season
+    stays `main`. Regression: previously the relaxation was computed over ALL
+    nodes, so the off-chain full-length specials cleared the duration floor
+    globally, flipping relax_duration off and demoting S2-S6 to side_story."""
+    nodes = {
+        1: _ona(episodes=14, duration_s=403, aired="2022-01-01"),  # S1 (anchor)
+        2: _ona(episodes=13, duration_s=520, aired="2022-07-01"),  # S2
+        3: _ona(episodes=13, duration_s=526, aired="2023-01-01"),  # S3
+        4: _ona(episodes=14, duration_s=540, aired="2023-07-01"),  # S4
+        # Off-chain full-length spin-off specials — they clear the duration
+        # floor but sit outside the sequel main chain.
+        90: _ona(episodes=4, duration_s=1612, aired="2022-06-01"),
+        91: _ona(episodes=4, duration_s=1720, aired="2023-06-01"),
+    }
+    edges = [
+        (1, 2, "sequel"), (2, 3, "sequel"), (3, 4, "sequel"),
+        (1, 90, "spin-off"), (90, 91, "sequel"),  # off-chain spin-off branch
+    ]
+    out, anchor = classify_anime_relations(nodes, edges)
+    assert anchor == 1
+    assert out[1] == "main"
+    assert out[2] == "main"
+    assert out[3] == "main"
+    assert out[4] == "main"
+    # The off-chain full-length specials stay side content.
+    assert out[90] == "side_story"
+    assert out[91] == "side_story"
+
+
 # --- Summary labels -----------------------------------------------------
 
 def test_summary_edge_classifies_as_summary():

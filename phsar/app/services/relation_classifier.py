@@ -391,18 +391,32 @@ def classify_anime_relations(
     # standalone weak-anime (e.g. the Overlord 2024 standalone Manner Movie)
     # gets absorbed and would otherwise inherit `main`.
     #
-    # Per-floor relaxation: a substance floor that NO aired media clears can't
-    # distinguish main from filler for this franchise, so relax it here.
-    # Episode-count discrimination survives even when every entry is short-
-    # duration (a 5-ep side-season still demotes next to 12-ep mains — the
-    # Hyakushou Kizoku shape). Computed over aired nodes only — a lone
-    # announced sequel doesn't prove the franchise clears a floor. The type
-    # gate is never relaxed. `relax_episodes=True` isolates the duration floor
-    # (and vice-versa), so this reuses `passes_substance` without duplicating
-    # the thresholds.
-    aired = [n for n in nodes.values() if not _is_metadata_pending(n)]
-    relax_duration = not any(passes_substance(n, relax_episodes=True) for n in aired)
-    relax_episodes = not any(passes_substance(n, relax_duration=True) for n in aired)
+    # Per-floor relaxation: a substance floor that NO aired MAIN-CHAIN media
+    # clears can't distinguish main from filler for this franchise, so relax
+    # it here. Episode-count discrimination survives even when every entry is
+    # short-duration (a 5-ep side-season still demotes next to 12-ep mains —
+    # the Hyakushou Kizoku shape). The type gate is never relaxed.
+    # `relax_episodes=True` isolates the duration floor (and vice-versa), so
+    # this reuses `passes_substance` without duplicating the thresholds.
+    #
+    # Scoped to the MAIN CHAIN — the exact set the demotion loop below filters,
+    # NOT all nodes. A full-length OFF-CHAIN side entry must not re-enforce the
+    # duration floor on genuinely-short main seasons: the floor's discriminating
+    # power should be judged only among the members it gates. (Shi Wangzhe A?:
+    # six ~8-min ONA main seasons were wrongly demoted to side_story because two
+    # off-chain ~27-min "Wangzhe Rongyao" spin-off specials cleared the duration
+    # floor globally.) When a full-length entry IS on the main chain — the
+    # Overlord Manner Movie / Dr. Stone TVSpecial-bridge shapes — the floor
+    # stays enforced and those weak mains still demote, unchanged.
+    #
+    # Aired-only — a lone announced sequel doesn't prove the franchise clears a
+    # floor (an unaired member's NULL runtime isn't "too thin").
+    main_aired = [
+        nodes[m] for m in main_chain
+        if not _is_metadata_pending(nodes[m])
+    ]
+    relax_duration = not any(passes_substance(n, relax_episodes=True) for n in main_aired)
+    relax_episodes = not any(passes_substance(n, relax_duration=True) for n in main_aired)
 
     # Recap demotion: a media that declares a `full_story` edge ("my full
     # story is elsewhere") is a condensed recap of content already in the
