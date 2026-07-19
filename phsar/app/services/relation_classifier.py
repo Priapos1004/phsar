@@ -74,6 +74,21 @@ SUBSTANCE_MIN_EPISODES = 8
 SUBSTANCE_MIN_TV_DURATION_S = 600    # 10 min
 SUBSTANCE_MIN_MOVIE_DURATION_S = 1800  # 30 min
 
+# Total-runtime floor that waives the per-episode TV/ONA duration floor: a
+# short-form entry (per-episode duration below SUBSTANCE_MIN_TV_DURATION_S)
+# still passes substance when its aggregate runtime (episodes × duration)
+# clears this — per-episode length is a poor substance proxy for a high-episode
+# short-form series (e.g. Saiki S1: 120 × 330s ≈ 11h). Waives ONLY the duration
+# floor; the episode floor still gates one-shots, so a 6-ep full-length ONA
+# stays side_story. Lives in the strict gate so it fixes anchor eligibility,
+# main-chain demotion, and umbrella title in one place.
+#
+# 7,600s (~2h) sits on the plateau [~7,200, ~7,900] that captures every clean
+# umbrella-title correction with no regressions: below ~7,200 a later short
+# season clears the floor while the shorter base season doesn't, stealing the
+# anchor onto S4/S5. Prod-validated; re-validate before retuning.
+SUBSTANCE_MIN_TV_TOTAL_S = 7600
+
 # Popularity waiver for the WEAK-ANCHOR KEEP DECISION ONLY (see
 # `would_be_dropped_as_weak_anchor`). A short-form entry (3-min episodes,
 # e.g. "Love is Like a Cocktail") fails the duration floor above and is
@@ -155,6 +170,11 @@ def passes_substance(
     `relax_*` flags skip a duration/episode floor that has no discriminating
     power for the franchise (see the per-floor relaxation in
     `classify_anime_relations`). Default flags reproduce the strict gate.
+
+    A TV/ONA entry below the per-episode duration floor still passes when its
+    aggregate runtime (episodes × duration) clears `SUBSTANCE_MIN_TV_TOTAL_S`
+    — the high-episode short-form waiver (see that constant for the rationale
+    + prod-validated threshold). The episode floor still applies.
     """
     media_type = _normalize_media_type(node.get("media_type"))
     duration = node.get("duration_seconds")
@@ -166,7 +186,23 @@ def passes_substance(
     metadata_pending = _is_metadata_pending(node)
     if media_type in _TV_LIKE_TYPES:
         if not relax_duration:
-            if duration is not None and duration < SUBSTANCE_MIN_TV_DURATION_S:
+            # Waive the per-episode duration floor when aggregate runtime is
+            # season-sized (see SUBSTANCE_MIN_TV_TOTAL_S). NULL duration/episodes
+            # can't form a total, so only a populated below-floor duration is
+            # rescued; the episode floor below still applies.
+            total_runtime = (
+                duration * episodes
+                if duration is not None and episodes is not None
+                else None
+            )
+            clears_total = (
+                total_runtime is not None and total_runtime >= SUBSTANCE_MIN_TV_TOTAL_S
+            )
+            if (
+                duration is not None
+                and duration < SUBSTANCE_MIN_TV_DURATION_S
+                and not clears_total
+            ):
                 return False
             if duration is None and not metadata_pending:
                 return False
