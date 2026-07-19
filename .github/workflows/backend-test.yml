@@ -13,7 +13,7 @@ jobs:
 
     services:
       postgres:
-        image: ankane/pgvector
+        image: pgvector/pgvector:pg17
         env:
           POSTGRES_USER: testuser
           POSTGRES_PASSWORD: testpassword
