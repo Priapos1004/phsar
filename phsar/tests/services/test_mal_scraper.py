@@ -119,16 +119,19 @@ async def test_search_title_records_cross_link_for_pre_excluded_relation(monkeyp
 
     async def fake_get(self, url: str, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            # 2 fresh sibling (keeps graph non-empty), 42 pre-excluded → cross-link.
-            return {"data": [{"node": _make_anime(
-                1, "Origin Anime",
-                related_anime=_related((2, "Sequel"), (42, "Sequel")),
-            )}]}
+            # Search omits related_anime — the root's relations ride in its
+            # DETAIL response below (mal_id=1).
+            return {"data": [{"node": {"id": 1, "title": "Origin Anime"}}]}
 
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
             detail_calls.append(mal_id)
-            rels = {2: [(1, "Prequel")]}.get(mal_id, [])
+            # Root (1): 2 fresh sibling (keeps graph non-empty), 42 pre-excluded
+            # → cross-link. 2 points back to 1 via prequel.
+            rels = {
+                1: [(2, "Sequel"), (42, "Sequel")],
+                2: [(1, "Prequel")],
+            }.get(mal_id, [])
             return _make_anime(mal_id, f"Anime {mal_id}", related_anime=_related(*rels))
 
         raise AssertionError(f"Unexpected URL: {url}")
@@ -160,11 +163,12 @@ async def test_search_title_does_not_blacklist_not_yet_aired_anime(monkeypatch):
     rediscovery once MAL fills the type."""
     async def fake_get(self, url: str, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [{"node": _make_anime(
-                1, "Origin Anime", related_anime=_related((2, "Sequel")),
-            )}]}
+            # Search omits related_anime — root's relation rides in its detail.
+            return {"data": [{"node": {"id": 1, "title": "Origin Anime"}}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
+            if mal_id == 1:
+                return _make_anime(1, "Origin Anime", related_anime=_related((2, "Sequel")))
             obj = _make_anime(mal_id, f"Anime {mal_id}")
             if mal_id == 2:
                 obj["media_type"] = "unknown"
@@ -231,12 +235,12 @@ async def test_search_title_seed_always_in_graph(monkeypatch):
     where the seed's only relation is `Other` and no node points back."""
     async def fake_get(self, url: str, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [{"node": _make_anime(
-                1, "Origin TV", related_anime=_related((2, "Other")),
-            )}]}
+            # Search omits related_anime — root's `Other`-only relation rides in
+            # its detail (mal_id=1), reproducing the Rilakkuma shape.
+            return {"data": [{"node": {"id": 1, "title": "Origin TV"}}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
-            rels = {2: [(3, "Other")]}.get(mal_id, [])
+            rels = {1: [(2, "Other")], 2: [(3, "Other")]}.get(mal_id, [])
             return _make_anime(
                 mal_id, f"Anime {mal_id}", media_type="ONA",
                 related_anime=_related(*rels),
@@ -271,10 +275,8 @@ async def test_search_title_skips_alternative_setting_relations(monkeypatch):
 
     async def fake_get(self, url: str, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [{"node": _make_anime(
-                1, "Origin Anime",
-                related_anime=_related((2, "Sequel"), (99, "Alternative Setting")),
-            )}]}
+            # Search omits related_anime — root's relations ride in its detail.
+            return {"data": [{"node": {"id": 1, "title": "Origin Anime"}}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
             detail_calls.append(mal_id)
@@ -282,7 +284,12 @@ async def test_search_title_skips_alternative_setting_relations(monkeypatch):
                 raise AssertionError(
                     f"Alternative-setting branch was walked into mal_id={mal_id}"
                 )
-            rels = {2: [(1, "Prequel")]}.get(mal_id, [])
+            # Root (1): Sequel → 2 (BFS walks) AND Alternative Setting → 99
+            # (parse_relation_edges drops it, so 99 is never queued/fetched).
+            rels = {
+                1: [(2, "Sequel"), (99, "Alternative Setting")],
+                2: [(1, "Prequel")],
+            }.get(mal_id, [])
             return _make_anime(mal_id, f"Anime {mal_id}", related_anime=_related(*rels))
         raise AssertionError(f"Unexpected URL: {url}")
 
@@ -379,6 +386,54 @@ async def test_search_title_captures_normalized_edges(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_search_title_fetches_root_detail_when_search_omits_relations(monkeypatch):
+    """v0.14.14 regression guard: MAL's /anime?q= SEARCH endpoint returns only
+    lightweight node data — it OMITS related_anime even when requested. So
+    search_title must fetch each root's DETAIL to capture its relations.
+    Without it the root captures zero edges, the BFS never walks the franchise,
+    and Clannad / After Story / Movie each save as an isolated single-media
+    anime with an empty relation sidecar (the fragmentation that caused the
+    spurious title_studio merge demotions).
+
+    The fixture's SEARCH response deliberately carries NO related_anime (unlike
+    the older tests, whose full-detail search nodes masked this bug)."""
+    detail_by_id = {
+        1: _make_anime(1, "Clannad", media_type="TV",
+                       related_anime=_related((2, "Sequel"), (3, "Alternative version"))),
+        2: _make_anime(2, "Clannad: After Story", media_type="TV",
+                       related_anime=_related((1, "Prequel"))),
+        3: _make_anime(3, "Clannad Movie", media_type="Movie",
+                       related_anime=_related((1, "Alternative version"))),
+    }
+
+    async def fake_get(self, url: str, params=None):
+        if url.endswith("/anime") and params is not None and params.get("q"):
+            # Real MAL search: lightweight node, id + title only, NO relations.
+            return {"data": [{"node": {"id": 1, "title": "Clannad"}}]}
+        if "/anime/" in url:
+            return detail_by_id[int(url.rsplit("/", 1)[-1])]
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
+
+    async with MalScraper() as scraper:
+        relations, all_info, _unwanted = await scraper.search_title(
+            title="Clannad", excluded_mal_ids=set(),
+        )
+
+    # ONE unified graph with the whole franchise — not three fragments.
+    assert len(relations) == 1
+    graph, edges, _cross = relations[0]
+    assert set(graph.keys()) == {1, 2, 3}
+    assert set(all_info.keys()) == {1, 2, 3}
+    # The ROOT's relations (from the detail fetch, not the relations-less
+    # search node) are captured — the deciding assertion.
+    edge_set = {(a, b, r) for a, b, r in edges}
+    assert (1, 2, "sequel") in edge_set
+    assert (1, 3, "alternative_version") in edge_set
+
+
+@pytest.mark.asyncio
 async def test_search_title_skips_null_title_pv_silently(monkeypatch):
     """MAL occasionally leaves `title=null` on entries it's still
     populating (romanization pending, brand-new PV stubs). Skip silently
@@ -393,11 +448,12 @@ async def test_search_title_skips_null_title_pv_silently(monkeypatch):
     """
     async def fake_get(self, url: str, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [{"node": _make_anime(
-                1, "Origin Anime", related_anime=_related((2, "Other")),
-            )}]}
+            # Search omits related_anime — root's relation rides in its detail.
+            return {"data": [{"node": {"id": 1, "title": "Origin Anime"}}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
+            if mal_id == 1:
+                return _make_anime(1, "Origin Anime", related_anime=_related((2, "Other")))
             obj = _make_anime(mal_id, f"Anime {mal_id}")
             if mal_id == 2:
                 # PV with no title at all — the exact production failure.
@@ -436,11 +492,12 @@ async def test_search_title_skips_null_title_unknown_anomaly_silently(monkeypatc
     surface as a 'why isn't this anime in the catalog?' bug forever."""
     async def fake_get(self, url: str, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [{"node": _make_anime(
-                1, "Origin Anime", related_anime=_related((2, "Other")),
-            )}]}
+            # Search omits related_anime — root's relation rides in its detail.
+            return {"data": [{"node": {"id": 1, "title": "Origin Anime"}}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
+            if mal_id == 1:
+                return _make_anime(1, "Origin Anime", related_anime=_related((2, "Other")))
             obj = _make_anime(mal_id, f"Anime {mal_id}")
             if mal_id == 2:
                 obj["title"] = None
@@ -470,11 +527,12 @@ async def test_search_title_blacklists_other_anomalous_no_media_type(monkeypatch
     Music/PV/CM/Hentai pattern intact for true outliers."""
     async def fake_get(self, url: str, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [{"node": _make_anime(
-                1, "Origin Anime", related_anime=_related((2, "Other")),
-            )}]}
+            # Search omits related_anime — root's relation rides in its detail.
+            return {"data": [{"node": {"id": 1, "title": "Origin Anime"}}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
+            if mal_id == 1:
+                return _make_anime(1, "Origin Anime", related_anime=_related((2, "Other")))
             obj = _make_anime(mal_id, f"Anime {mal_id}")
             if mal_id == 2:
                 obj["media_type"] = "unknown"
@@ -520,11 +578,12 @@ async def test_search_title_blacklists_hentai_with_null_media_type(monkeypatch):
     to the null-media_type 'Unknown' anomaly branch (v0.14.14 hardening)."""
     async def fake_get(self, url: str, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [{"node": _make_anime(
-                1, "Origin Anime", related_anime=_related((2, "Other")),
-            )}]}
+            # Search omits related_anime — root's relation rides in its detail.
+            return {"data": [{"node": {"id": 1, "title": "Origin Anime"}}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
+            if mal_id == 1:
+                return _make_anime(1, "Origin Anime", related_anime=_related((2, "Other")))
             obj = _make_anime(mal_id, f"Anime {mal_id}")
             if mal_id == 2:
                 obj["media_type"] = "unknown"  # None after translate
@@ -1236,9 +1295,9 @@ async def test_search_title_identity_preserving_relations_walk_through(
 
     async def fake_get(self, url, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [{"node": _make_anime(
-                1, "Root", related_anime=_related(*chain[1]),
-            )}]}
+            # Search omits related_anime — root's relations ride in its detail
+            # (chain[1], returned by the /anime/{id} handler below).
+            return {"data": [{"node": {"id": 1, "title": "Root"}}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
             detail_calls.append(mal_id)
@@ -1257,10 +1316,11 @@ async def test_search_title_identity_preserving_relations_walk_through(
     graph, edges, _ = relations[0]
     # Full chain walked.
     assert set(graph.keys()) == {1, 2, 3, 4}
-    # Every non-root node's detail fetched — proves WALK propagated through
-    # the whole chain (a TERMINAL break would have stopped the fetches).
-    # Root (1) comes from the search response, so it never hits detail.
-    assert set(detail_calls) == {2, 3, 4}
+    # Every node's detail fetched — proves WALK propagated through the whole
+    # chain (a TERMINAL break would have stopped the fetches). The root (1) now
+    # hits detail too: search omits related_anime, so search_title fetches each
+    # root's detail to capture its relations.
+    assert set(detail_calls) == {1, 2, 3, 4}
     # Normalized edge labels persisted.
     edge_set = {(a, b, r) for a, b, r in edges}
     assert (1, 2, rel_normalized) in edge_set

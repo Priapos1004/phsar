@@ -82,6 +82,17 @@ _DETAIL_FIELDS = ",".join(
     ]
 )
 
+# Lean field set for MAL's LIST-style discovery endpoints (the title
+# `/anime?q=` search + `/anime/season/{y}/{s}`). The q= SEARCH endpoint only
+# ever returns lightweight node data and silently DROPS detail-only fields
+# (most importantly `related_anime`) even when they're listed in `fields`, so
+# the search is used purely as fuzzy title → mal_id discovery; every root's
+# canonical data + relations come from a per-root detail fetch
+# (search_by_malid). Requesting the full field set on a list endpoint would be
+# misleading — it wouldn't come back. Seasonal discovery likewise needs only
+# id + title (the dispatcher hands the title to a child scrape).
+_SEARCH_FIELDS = "id,title"
+
 
 # ---------------------------------------------------------------------------
 # Value translation: MAL v2 emits snake_case / lowercase values where the
@@ -591,7 +602,7 @@ class MalScraper:
                     "sort": "anime_num_list_users",
                     "limit": limit,
                     "offset": offset,
-                    "fields": "id,title",
+                    "fields": _SEARCH_FIELDS,
                 },
             )
             entries = payload.get("data", []) or []
@@ -645,17 +656,42 @@ class MalScraper:
         else:
             if title is None:
                 raise ValueError("search_title requires either title or seed_mal_id")
+            # Search is fuzzy title → mal_id discovery ONLY — the endpoint omits
+            # related_anime (see _SEARCH_FIELDS), so we fetch each root's detail
+            # below to get its relations. WITHOUT the detail fetch every root's
+            # relation_cache stayed empty: the BFS captured no edges, never
+            # walked the franchise, and each root saved as an isolated
+            # single-media anime with an empty relation sidecar — the v0.14.14
+            # regression that fragmented the catalog (Clannad/After Story/Movie
+            # as 3 rows) and produced the spurious title_studio merge demotions.
             search = await self._get(
                 f"{self.base_url}/anime",
-                params={"q": title, "limit": initial_search_limit, "fields": _DETAIL_FIELDS},
+                params={"q": title, "limit": initial_search_limit, "fields": _SEARCH_FIELDS},
             )
-            results = [entry["node"] for entry in search.get("data", []) if entry.get("node")]
-            if not results:
+            candidate_ids = [
+                entry["node"]["id"]
+                for entry in search.get("data", [])
+                if entry.get("node")
+            ]
+            if not candidate_ids:
                 raise AnimeNotFoundError(title)
-            # Search returns full detail per root (incl. related_anime), so
-            # seed the cache — anchor discovery + the main BFS reuse it.
-            for result in results:
-                relation_cache.setdefault(result["id"], result.get("related_anime") or [])
+            # Fetch each root's full detail so its node data AND related_anime
+            # are complete and consistent with every WALKED node (which the BFS
+            # already fetches via search_by_malid). Populating relation_cache
+            # here feeds BOTH the anchor-discovery pre-pass and the main BFS.
+            results = []
+            for candidate_id in candidate_ids:
+                detail = await self.search_by_malid(candidate_id)
+                if detail:
+                    results.append(detail)
+                    relation_cache[detail["id"]] = detail.get("related_anime") or []
+            if not results:
+                # Search matched but every hit's detail came back empty — a
+                # transient MAL hiccup (a real 404 raises inside _get), not a
+                # genuine miss. Retryable, mirroring the seed path above.
+                raise TransientUpstreamError(
+                    f"q={title!r}: all {len(candidate_ids)} search hits returned empty detail",
+                )
             # excluded_ids = pre-existing in catalog (frozen for the run);
             # visited_ids = traversed in *this* run. Splitting them so we can
             # detect "BFS hit a media that already lives under a different anime
