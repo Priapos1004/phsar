@@ -50,7 +50,7 @@ Backend and frontend must run simultaneously in separate terminals.
 docker run --name anime-postgres \
   -e POSTGRES_USER=<DB_USER> -e POSTGRES_PASSWORD=<DB_PASSWORD> \
   -e POSTGRES_DB=<DB_NAME> -v pgdata:/var/lib/postgresql/data \
-  -p 5432:5432 -d ankane/pgvector
+  -p 5432:5432 -d pgvector/pgvector:pg17
 
 # Reset database
 rm phsar/alembic/versions/*.py
