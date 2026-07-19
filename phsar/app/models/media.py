@@ -36,22 +36,17 @@ class RelationType(str, enum.Enum):
 
 # Per-relation-type weights for the anime-level MAL "quality score" (the displayed
 # avg score/votes AND the "Top N%" pill/search ranking, which share these inputs).
-# An anime's score reflects its MAIN STORY: Main + AlternativeVersion (the same
-# anchor set the spoiler frontier treats as story-advancing — see spoiler_service
-# _ANCHOR_TYPES). Side stories and recaps (Summary) are excluded (weight 0).
-#
-# Ships {1,1,0,0} deliberately — validated against the prod catalog: all-media
-# averaging drags flagship anime down by up to 1.66 pts (Vinland 7.30→8.80, Odd
-# Taxi 6.97→8.63). A nonzero side weight buys ~nothing (Spearman 0.997 vs filter)
-# and can't tell a mislabeled-main from a minor OVA; recaps are redundant re-tellings
-# scoring below their main; and *canonical* films are already `Main` (Mugen Train,
-# Kimi no Na wa), so what stays `SideStory` Movie is genuinely tangential and drags
-# at every vote tier. Full rationale: compound-docs/2026-07-19-*.md.
+# An anime's score reflects its MAIN STORY: Main + AlternativeVersion (the spoiler
+# frontier's story-advancing anchor set — see spoiler_service._ANCHOR_TYPES); side
+# stories and recaps (Summary) are excluded (weight 0).
 #
 # This map is the SINGLE source of truth: the SQL twin (weighted_mean_*_expr in
 # daos/search_filters.py) and the Python twin (anime_search_service
-# ._compute_anime_aggregates) both read it, so changing a weight here is the whole
-# knob — e.g. giving side stories a small weight is a one-line edit.
+# ._compute_anime_aggregates) both read it, so changing a weight is the whole knob
+# — giving side stories a small weight is a one-line edit.
+#
+# Why {1,1,0,0} deliberately (prod-data study + rejected alternatives): see
+# compound-docs/2026-07-19-*.md.
 RELATION_SCORE_WEIGHTS = {
     RelationType.Main: 1.0,
     RelationType.AlternativeVersion: 1.0,

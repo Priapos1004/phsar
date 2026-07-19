@@ -67,8 +67,8 @@ def _relation_weighted_mean(value_col):
     scored = Media.score.is_not(None)
     num = func.sum(w * value_col).filter(scored)
     den = func.sum(w).filter(scored)
-    # cast to Numeric so it matches the old avg() type — Postgres two-arg
-    # log(10, x) in weighted_score_expr requires numeric, not double precision.
+    # Cast to Numeric: weighted_score_expr's two-arg log(10, x) requires
+    # numeric, but this division yields double precision.
     return cast(num / func.nullif(den, 0.0), Numeric)
 
 
