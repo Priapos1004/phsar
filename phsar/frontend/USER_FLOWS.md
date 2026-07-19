@@ -139,7 +139,7 @@ Filters appear in a collapsible panel below the search input. Filter options ada
 **Range filters** (dual-thumb sliders):
 - Episodes (integer, linear — aggregated sum for anime view)
 - Score (decimal, linear)
-- Scored By (logarithmic scale — average per media for anime view)
+- Scored By (logarithmic scale — average over main entries for anime view)
 - Average Duration per Episode (time display — hidden in anime view)
 - Total Watch Time (time display — aggregated sum for anime view)
 
@@ -188,8 +188,8 @@ Each anime search result card shows:
 - Same blurred cover background pattern as media detail
 - Title (English preferred), alternate titles, airing status badge: green (Currently Airing), yellow (Not yet aired), blue (upcoming content), grey (Finished Airing)
 - "Story Complete" badge (emerald, additive — shown alongside the airing badge when an admin marked the anime story-complete). Hovering shows a tooltip explaining it differs from "Finished Airing" (broadcast ended) — the *story* has concluded
-- Average MAL score with "ratings/media" label; hovering the score pill shows a tooltip clarifying it's the MyAnimeList community score, not Phsar users' ratings
-- A small "Top N%" chip after the rating-count text (always visible, color-ramped) showing where this anime ranks among all scored anime by its vote-weighted MAL score; hovering explains "higher than X% of the catalog" and the vote weighting. Hidden when the anime has no score
+- Average MAL score with "ratings/media" label, computed over the anime's main entries only (Main + AlternativeVersion; side stories and recaps excluded); hovering the score pill shows a tooltip clarifying it's the MyAnimeList community score across the main entries, not Phsar users' ratings
+- A small "Top N%" chip after the rating-count text (always visible, color-ramped) showing where this anime ranks among all scored anime by its vote-weighted MAL score (main entries only); hovering explains the top-N% standing and the vote weighting. Hidden when the anime has no scored main entries
 - Relation type badges with counts (e.g., "main: 5"), media type badges with counts (e.g., "TV: 3")
 - Age rating badge (max across media), genre badges (strict majority rule) — hovering a genre badge shows its description when one is seeded
 - Stats grid: total episodes, media count, season range, total watch time

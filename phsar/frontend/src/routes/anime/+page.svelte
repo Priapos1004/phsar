@@ -357,7 +357,7 @@
 					{#if anime.avg_score !== null}
 						<div class="flex items-center gap-3">
 							<Tooltip
-								text="Average MyAnimeList community score across this anime's media — not from Phsar users."
+								text="Average MyAnimeList community score across this anime's main entries — side stories and recaps are excluded — not from Phsar users."
 							>
 								<span class="flex items-center gap-1.5 bg-primary/10 rounded-full px-3 py-1.5">
 									<Star class="size-4 text-yellow-500" fill="currentColor" />

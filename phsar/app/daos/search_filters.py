@@ -1,10 +1,15 @@
 import logging
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import and_, case, cast, distinct, func, select, tuple_
+from sqlalchemy import Numeric, and_, case, cast, distinct, func, select, tuple_
 
 from app.models.genre import Genre
-from app.models.media import AGE_RATING_MAP, Media, SeasonType
+from app.models.media import (
+    AGE_RATING_MAP,
+    RELATION_SCORE_WEIGHTS,
+    Media,
+    SeasonType,
+)
 from app.models.media_genre import MediaGenre
 from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
@@ -31,13 +36,52 @@ def weighted_score_expr(score, scored_by):
     outrank a higher-scored niche one. Single source of truth for the SQL form,
     shared by media + anime search ranking and the `score_top_percent` percentile
     DAOs (the Python twin is `scrape_dispatcher._weighted_score`). `score` /
-    `scored_by` may be plain columns (per-media) or aggregates (per-anime avg).
+    `scored_by` may be plain columns (per-media, media DAOs) or the per-anime
+    weighted means (`weighted_mean_score_expr` / `weighted_mean_votes_expr`).
 
     The base is passed explicitly (`log(10, x)`) rather than relying on
     Postgres's single-arg `log()` defaulting to base 10, so the SQL stays
     numerically locked to the Python twin's `math.log10` even if the dialect
     changes — `test_weighted_score_matches_python_twin` guards the equivalence."""
     return score * func.log(10, scored_by + 1)
+
+
+def _score_weight_case():
+    """CASE mapping `Media.relation_type` → its `RELATION_SCORE_WEIGHTS` weight
+    (unknown/unmapped → 0). SQL twin of the Python weight lookup in
+    `anime_search_service._compute_anime_aggregates`."""
+    whens = [
+        (Media.relation_type == rt, float(w))
+        for rt, w in RELATION_SCORE_WEIGHTS.items()
+    ]
+    return case(*whens, else_=0.0)
+
+
+def _relation_weighted_mean(value_col):
+    """`Σ(w·value) / Σ(w)` over an anime's media that have a non-null score,
+    weighted by relation type (`RELATION_SCORE_WEIGHTS`). Aggregate expression —
+    use under a per-anime GROUP BY. NULL when the anime has no scored,
+    positively-weighted media (only side stories/recaps scored → the anime reads
+    as unscored, matching the display twin)."""
+    w = _score_weight_case()
+    scored = Media.score.is_not(None)
+    num = func.sum(w * value_col).filter(scored)
+    den = func.sum(w).filter(scored)
+    # cast to Numeric so it matches the old avg() type — Postgres two-arg
+    # log(10, x) in weighted_score_expr requires numeric, not double precision.
+    return cast(num / func.nullif(den, 0.0), Numeric)
+
+
+def weighted_mean_score_expr():
+    """Per-anime relation-weighted mean MAL score (`S_w`) — the displayed
+    `avg_score` and the score half of the ranking/pill metric."""
+    return _relation_weighted_mean(Media.score)
+
+
+def weighted_mean_votes_expr():
+    """Per-anime relation-weighted mean vote count (`V_w`) — the displayed
+    `avg_scored_by` and the confidence half of the ranking/pill metric."""
+    return _relation_weighted_mean(Media.scored_by)
 
 
 def _apply_studio_filter(stmt, studio_names: list[str]):

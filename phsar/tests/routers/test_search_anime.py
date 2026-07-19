@@ -45,7 +45,10 @@ async def anime_with_media(db_session):
     media_tv = Media(**media_kwargs(
         anime.id, 99101,
         title="Search Test S1",
-        scored_by=5000,
+        # Extreme vote count so the anime's weighted score always clears the
+        # limit-50 window in no-query filter tests, even against a populated dev
+        # DB (score 8.0 keeps it inside the 7.5–8.5 range filter).
+        scored_by=100_000_000,
         score=8.0, episodes=24, duration_seconds=1440,
         anime_season_name=SeasonType.Spring, anime_season_year=2020,
         age_rating="PG-13 - Teens 13 or older",
@@ -135,11 +138,11 @@ async def test_search_anime_aggregated_fields(client, user_auth_headers, anime_w
     assert anime_result is not None
 
     assert anime_result["media_count"] == 3
-    # avg score: (8.0 + 9.0 + 7.0) / 3 = 8.0
+    # avg score/votes are over Main entries only; the two SideStory media (Movie 9.0,
+    # OVA 7.0) are excluded, leaving just the Main TV.
     assert anime_result["avg_score"] == pytest.approx(8.0, abs=0.01)
-    # avg scored_by: (5000 + 3000 + 500) / 3 ≈ 2833
-    assert anime_result["avg_scored_by"] == pytest.approx(2833, abs=1)
-    # total episodes: 24 + 1 + 2 = 27
+    assert anime_result["avg_scored_by"] == pytest.approx(100_000_000, abs=1)
+    # total episodes still span ALL media: 24 + 1 + 2 = 27
     assert anime_result["total_episodes"] == 27
 
 

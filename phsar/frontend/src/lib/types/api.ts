@@ -263,6 +263,9 @@ export interface AnimeAggregatedBase {
 	name_eng: string | null;
 	name_jap: string | null;
 	cover_image: string | null;
+	/** MAL score/votes over the anime's main entries only (Main + AlternativeVersion);
+	 * side stories & recaps are excluded. total_episodes/watch_time/media_count below
+	 * still span all media. */
 	avg_score: number | null;
 	avg_scored_by: number;
 	total_episodes: number | null;
@@ -307,7 +310,9 @@ export interface AnimeDetail extends AnimeAggregatedBase {
 	other_names: string[];
 	description: string | null;
 	/** "Top N%" rank of this anime's confidence-weighted MAL score among all
-	 * scored anime in the catalog (null when unscored). */
+	 * scored anime in the catalog (null when unscored). The score is computed
+	 * over the anime's main entries only (Main + AlternativeVersion), matching
+	 * avg_score / avg_scored_by. */
 	score_top_percent: number | null;
 	media: AnimeMediaItem[];
 }

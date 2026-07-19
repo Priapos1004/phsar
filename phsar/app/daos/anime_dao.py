@@ -12,6 +12,8 @@ from app.daos.search_filters import (
     apply_anime_having_filters,
     apply_anime_pre_filters,
     apply_vector_ordering,
+    weighted_mean_score_expr,
+    weighted_mean_votes_expr,
     weighted_score_expr,
 )
 from app.models.anime import Anime
@@ -161,18 +163,20 @@ class AnimeDAO(MalIdDAO[Anime]):
         confidence-weighted MAL score, as a rank-based "top N%" (lower = better,
         worst-scored anime = 100).
 
-        Per-anime metric is `avg_score * log10(avg_scored_by + 1)` using the
-        same mean aggregates the detail card shows (avg over non-null scores /
-        avg over all media's vote counts), so the rank lines up with the
-        displayed pill. Returns None when the anime has no scored media or the
-        catalog has none."""
+        Per-anime metric is `S_w * log10(V_w + 1)` where `S_w`/`V_w` are the
+        relation-weighted means (`RELATION_SCORE_WEIGHTS` — Main + AlternativeVersion
+        only) the detail card shows as `avg_score` / `avg_scored_by`, so the rank
+        lines up with the displayed pill and both move together (higher in both →
+        higher rank). Returns None when the anime has no scored Main/Alt media or
+        the catalog has none scored."""
+        mean_score = weighted_mean_score_expr()
         per_anime = (
             select(
                 Media.anime_id.label("anime_id"),
-                weighted_score_expr(func.avg(Media.score), func.avg(Media.scored_by)).label("metric"),
+                weighted_score_expr(mean_score, weighted_mean_votes_expr()).label("metric"),
             )
             .group_by(Media.anime_id)
-            .having(func.avg(Media.score).is_not(None))
+            .having(mean_score.is_not(None))
             .cte("per_anime_score")
         )
         # Single pass over the per-anime metric set: rank() (ties share the lowest
@@ -430,8 +434,13 @@ class AnimeDAO(MalIdDAO[Anime]):
         ordered by search relevance or weighted score."""
 
         # --- Phase A: Aggregation query (for filtering + ordering only) ---
-        avg_score = func.avg(Media.score).label("avg_score")
-        avg_scored_by = func.avg(Media.scored_by).label("avg_scored_by")
+        # Score/votes are the relation-weighted means over Main+Alt media
+        # (RELATION_SCORE_WEIGHTS) — this scopes the default ordering AND the
+        # score/scored_by HAVING filters (via agg_columns) so they match the
+        # displayed avg (anime_search_service._compute_anime_aggregates). Episode
+        # /watch-time/genre-majority aggregates stay over ALL media.
+        avg_score = weighted_mean_score_expr().label("avg_score")
+        avg_scored_by = weighted_mean_votes_expr().label("avg_scored_by")
         total_episodes = func.sum(Media.episodes).label("total_episodes")
         total_watch_time = func.sum(Media.total_watch_time).label("total_watch_time")
         media_count = func.count(Media.id).label("media_count")
@@ -487,7 +496,7 @@ class AnimeDAO(MalIdDAO[Anime]):
                 stmt = stmt.add_columns(avg_distance)
                 stmt = stmt.order_by(avg_distance.asc().nullslast())
         else:
-            # Default ordering: weighted score = avg(score) * log10(avg(scored_by) + 1)
+            # Default ordering: weighted score = S_w * log10(V_w + 1) over Main+Alt
             weighted = weighted_score_expr(avg_score, avg_scored_by)
             stmt = stmt.order_by(weighted.desc().nullslast())
 
