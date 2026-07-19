@@ -6,7 +6,7 @@ to commit. Updates throttle to MIN_INTERVAL_SECONDS so a tight BFS or save
 loop doesn't open hundreds of sessions per second; stage-change updates
 pass force=True to bypass the throttle.
 
-Lives at the service layer (not inside scrape_dispatcher) so jikan_scraper
+Lives at the service layer (not inside scrape_dispatcher) so mal_scraper
 and save_service can import it without depending on the dispatcher module.
 """
 

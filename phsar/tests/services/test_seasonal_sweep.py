@@ -106,7 +106,7 @@ async def _seed_unwanted(mal_id: int) -> None:
 
 
 def _patch_scraper(monkeypatch, entries: list[dict]) -> None:
-    """Replace JikanScraper with a stub whose `fetch_current_season`
+    """Replace MalScraper with a stub whose `fetch_current_season`
     returns `entries`. No real MAL hit, no rate-limit sleep."""
 
     class _FakeScraper:
@@ -120,7 +120,7 @@ def _patch_scraper(monkeypatch, entries: list[dict]) -> None:
             return entries
 
     monkeypatch.setattr(
-        "app.services.seasonal_sweep_dispatcher.JikanScraper",
+        "app.services.seasonal_sweep_dispatcher.MalScraper",
         lambda: _FakeScraper(),
     )
 

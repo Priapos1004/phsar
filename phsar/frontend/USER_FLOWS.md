@@ -139,7 +139,7 @@ Filters appear in a collapsible panel below the search input. Filter options ada
 **Range filters** (dual-thumb sliders):
 - Episodes (integer, linear — aggregated sum for anime view)
 - Score (decimal, linear)
-- Scored By (logarithmic scale — average per media for anime view)
+- Scored By (logarithmic scale — average over main entries for anime view)
 - Average Duration per Episode (time display — hidden in anime view)
 - Total Watch Time (time display — aggregated sum for anime view)
 
@@ -188,8 +188,8 @@ Each anime search result card shows:
 - Same blurred cover background pattern as media detail
 - Title (English preferred), alternate titles, airing status badge: green (Currently Airing), yellow (Not yet aired), blue (upcoming content), grey (Finished Airing)
 - "Story Complete" badge (emerald, additive — shown alongside the airing badge when an admin marked the anime story-complete). Hovering shows a tooltip explaining it differs from "Finished Airing" (broadcast ended) — the *story* has concluded
-- Average MAL score with "ratings/media" label; hovering the score pill shows a tooltip clarifying it's the MyAnimeList community score, not Phsar users' ratings
-- A small "Top N%" chip after the rating-count text (always visible, color-ramped) showing where this anime ranks among all scored anime by its vote-weighted MAL score; hovering explains "higher than X% of the catalog" and the vote weighting. Hidden when the anime has no score
+- Average MAL score with "ratings/media" label, computed over the anime's main entries only (Main + AlternativeVersion; side stories and recaps excluded); hovering the score pill shows a tooltip clarifying it's the MyAnimeList community score across the main entries, not Phsar users' ratings
+- A small "Top N%" chip after the rating-count text (always visible, color-ramped) showing where this anime ranks among all scored anime by its vote-weighted MAL score (main entries only); hovering explains the top-N% standing and the vote weighting. Hidden when the anime has no scored main entries
 - Relation type badges with counts (e.g., "main: 5"), media type badges with counts (e.g., "TV: 3")
 - Age rating badge (max across media), genre badges (strict majority rule) — hovering a genre badge shows its description when one is seeded
 - Stats grid: total episodes, media count, season range, total watch time
@@ -216,7 +216,7 @@ Each anime search result card shows:
 ### 6.5 Ratings Overview ("Your Ratings")
 - Appears when the user has rated at least one media in the anime
 - **Stats gauge**: Average score displayed in a gauge chart (formatted to 1 decimal), a media-rated / total progress bar, and an episodes-watched stat crediting the actual episodes watched (every status). Its `/ total` denominator + bar appear only when every rated media has a known episode total; if a watched media has an unknown total (a still-airing series), the stat shows just the bare watched count to avoid a misleading ratio. On-hold count badge (amber) and dropped count badge (red)
-- **Rating Timeline**: Bar chart with one bar per media in release order, colored by relation type (Main Story = theme primary, Alt Version = yellow, Side Story = accent red, Summary = secondary green, Crossover = theme ring — a muted shade reserved for the rarest type). Dropped items at 50% opacity, on-hold at 70%. HTML legend showing active relation types. Tooltip shows title, media type, relation type, season, and score; dropped/on-hold entries get a "(Dropped)" / "(On Hold)" suffix.
+- **Rating Timeline**: Bar chart with one bar per media in release order, colored by relation type (Main Story = theme primary, Alt Version = yellow, Side Story = accent red, Summary = secondary green). Dropped items at 50% opacity, on-hold at 70%. HTML legend showing active relation types. Tooltip shows title, media type, relation type, season, and score; dropped/on-hold entries get a "(Dropped)" / "(On Hold)" suffix.
 - **Attribute Summary** (side-by-side on desktop, stacked on mobile):
   - *Quality Radar* (pentagon): 5 quality axes (animation quality, dialogue quality, character depth, story quality, ending quality) normalized to 0–1 scale with 3 split rings. Tooltip shows closest label per axis or "--" for no data. `ending_quality: not_applicable` is excluded from averaging.
   - *Descriptive Pills* (orbital): 6 descriptive attributes (pace, 3D animation, watched format, fan service, ending type, originality) displayed as tilted pills arranged in an elliptical orbit. Each shows "Label: Majority Value" or "--" for no data. Hover straightens and scales the pill. Click triggers a color-burst glow animation cycling through the chart palette.

@@ -40,7 +40,7 @@ export interface AnimeRatingRow {
 	statusBadge: 'dropped' | 'on_hold' | null;
 	ratedMediaCount: number;
 	/** Rated-media counts split into the main story (main + alternative_version
-	 * retellings) vs everything else (side stories, summaries, crossovers). */
+	 * retellings) vs everything else (side stories, summaries). */
 	mainCount: number;
 	sideCount: number;
 	/** Most recent modified_at across the rated media (drives the "date rated" sort). */
@@ -52,7 +52,7 @@ function mean(nums: number[]): number {
 }
 
 // "Main story" = the canonical chain plus alternative-version retellings; everything
-// else (side stories, summaries, crossovers) counts as side.
+// else (side stories, summaries) counts as side.
 const MAIN_RELATION_TYPES = new Set(['main', 'alternative_version']);
 
 /** "X main · Y side" rated-media breakdown for the card + table (a count of 0 is

@@ -36,7 +36,7 @@ from app.seeders.split_candidate_backfiller import (
     detect_split_candidates_for_anime,
 )
 from app.services.anime_relation_service import ReclassifyDiff, reclassify_anime
-from app.services.jikan_scraper import JikanScraper, parse_relation_edges
+from app.services.mal_scraper import MalScraper, parse_relation_edges
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ class BackfillSummary(TypedDict):
 
 
 async def _ensure_media_edges(
-    db: AsyncSession, scraper: JikanScraper, media: Media,
+    db: AsyncSession, scraper: MalScraper, media: Media,
 ) -> bool:
     """Populate `media.relation_edges.edges` lazily from MAL if the
     sidecar has never been fetched. Returns True if a MAL fetch
@@ -106,7 +106,7 @@ async def backfill_relations(
         "diffs": [],
     }
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         for anime in all_anime:
             if not anime.media:
                 continue

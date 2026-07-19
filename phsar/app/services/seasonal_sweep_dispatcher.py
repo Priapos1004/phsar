@@ -17,8 +17,8 @@ from app.daos.anime_dao import AnimeDAO
 from app.daos.media_dao import MediaDAO
 from app.daos.media_unwanted_dao import MediaUnwantedDAO
 from app.models.job import Job, JobKind, JobStatus
-from app.services.jikan_scraper import JikanScraper
 from app.services.job_worker import job_worker
+from app.services.mal_scraper import MalScraper
 from app.services.progress_reporter import ProgressReporter
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ async def seasonal_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     progress = ProgressReporter(job.id)
     await progress.update(stage="Fetching season", force=True)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         entries = await scraper.fetch_current_season()
 
     # Three sequential reads — SQLAlchemy's AsyncSession isn't safe for

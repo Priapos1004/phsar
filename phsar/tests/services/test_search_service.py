@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 def _patch_scraper(monkeypatch, relations, all_info, unwanted_media=None):
-    """Patch `search_service.JikanScraper` with a stub whose async-context
+    """Patch `search_service.MalScraper` with a stub whose async-context
     `search_title` returns the given `(relations, all_info, unwanted_media)`
     tuple — the one thing the integration tests below vary."""
 
@@ -24,7 +24,7 @@ def _patch_scraper(monkeypatch, relations, all_info, unwanted_media=None):
         async def search_title(self, **kwargs):
             return (relations, all_info, unwanted_media or set())
 
-    monkeypatch.setattr(search_service, "JikanScraper", lambda: _FakeScraper())
+    monkeypatch.setattr(search_service, "MalScraper", lambda: _FakeScraper())
 
 
 def test_get_first_main_relation():

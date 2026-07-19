@@ -92,11 +92,12 @@ async def test_anime_detail_aggregated_values(client, user_auth_headers, anime_f
     response = await client.get(f"/media/anime/{anime.uuid}", headers=user_auth_headers)
     data = response.json()
 
-    # avg score: (8.5 + 9.0 + 7.0) / 3 ≈ 8.17
-    assert data["avg_score"] == pytest.approx(8.17, abs=0.01)
-    # avg scored_by: (4000 + 3000 + 1000) / 3 ≈ 2667
-    assert data["avg_scored_by"] == pytest.approx(2667, abs=1)
-    # total episodes: 12 + 12 + 1 = 25
+    # avg score is over Main entries only (S1 + S2); the SideStory Movie (7.0) is
+    # excluded: (8.5 + 9.0) / 2 = 8.75
+    assert data["avg_score"] == pytest.approx(8.75, abs=0.01)
+    # avg scored_by over Main only: (4000 + 3000) / 2 = 3500
+    assert data["avg_scored_by"] == pytest.approx(3500, abs=1)
+    # total episodes still span ALL media: 12 + 12 + 1 = 25
     assert data["total_episodes"] == 25
 
 
@@ -135,6 +136,31 @@ async def test_anime_detail_season_range(client, user_auth_headers, anime_for_de
 
     assert data["season_start"] == "Spring 2020"
     assert data["season_end"] == "Fall 2021"
+
+
+async def test_anime_detail_avg_includes_alt_excludes_side(client, user_auth_headers, db_session):
+    """Displayed avg score/votes cover Main + AlternativeVersion; side stories are
+    excluded even when they carry the most votes."""
+    anime = Anime(mal_id=88500, title="AltDisplayAnime")
+    db_session.add(anime)
+    await db_session.flush()
+    db_session.add_all([
+        Media(**media_kwargs(anime.id, 88511, score=8.0, scored_by=1000)),  # Main (default)
+        Media(**media_kwargs(
+            anime.id, 88512, score=9.0, scored_by=3000,
+            relation_type=RelationType.AlternativeVersion,
+        )),
+        Media(**media_kwargs(
+            anime.id, 88513, score=5.0, scored_by=10000,
+            relation_type=RelationType.SideStory,
+        )),
+    ])
+    await db_session.flush()
+
+    data = (await client.get(f"/media/anime/{anime.uuid}", headers=user_auth_headers)).json()
+    # (8.0 + 9.0) / 2 — the high-vote SideStory (5.0) is excluded.
+    assert data["avg_score"] == pytest.approx(8.5, abs=0.01)
+    assert data["avg_scored_by"] == pytest.approx(2000, abs=1)
 
 
 async def test_anime_detail_score_top_percent(client, user_auth_headers, anime_for_detail):

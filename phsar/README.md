@@ -123,8 +123,8 @@ phsar/
 │       ├── completion_service.py
 │       ├── export_service.py
 │       ├── filter_service.py
-│       ├── jikan_scraper.py
 │       ├── job_worker.py
+│       ├── mal_scraper.py
 │       ├── media_linking_service.py
 │       ├── media_search_service.py
 │       ├── media_service.py
@@ -405,9 +405,9 @@ phsar/
         ├── test_backup_jobs.py
         ├── test_backup_service.py
         ├── test_backup_subprocess_failures.py
-        ├── test_jikan_scraper.py
         ├── test_job_dao.py
         ├── test_job_worker.py
+        ├── test_mal_scraper.py
         ├── test_merge_candidate_service.py
         ├── test_merge_detection.py
         ├── test_merge_preservation.py
@@ -441,6 +441,17 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=supersecretpassword
 SECRET_KEY=supersecretsecretkey
 SEARCH_SECRET_KEY=supersecretsearchsecretkey
+
+# --- MyAnimeList official API v2 (data source) ------------------------------
+# REQUIRED. Client ID from your MAL API panel (https://myanimelist.net/apiconfig).
+# Public data needs no OAuth — the scraper sends this as the X-MAL-CLIENT-ID
+# header on every request. Fails closed if unset.
+MY_ANIME_LIST_CLIENT_ID=your_mal_client_id_here
+# Optional overrides (defaults shown). Base URL + 1 req/s rate interval; only
+# change if MAL's policy changes or you front the API with a proxy.
+# MAL_BASE_URL=https://api.myanimelist.net/v2
+# MAL_MIN_REQUEST_INTERVAL_S=1.0
+
 # Optional: seeded guest account (restricted_user role, read-only)
 # GUEST_USERNAME=guest
 # GUEST_PASSWORD=guestpassword

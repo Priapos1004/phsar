@@ -1,171 +1,144 @@
+import re
+
 import pytest
 
-from app.services.jikan_scraper import JikanScraper
+from app.services.mal_scraper import (
+    MalScraper,
+    _mal_date_to_iso,
+    is_hentai,
+    parse_relation_edges,
+)
+
+# MAL v2 emits media_type lowercase/snake_case; the test builders keep the
+# Jikan-era display strings as their public keyword so callers don't churn,
+# and translate INTERNALLY to the MAL wire value here.
+_MEDIA_TYPE_DISPLAY_TO_MAL = {
+    "TV": "tv",
+    "Movie": "movie",
+    "OVA": "ova",
+    "ONA": "ona",
+    "Special": "special",
+    "TVSpecial": "tv_special",
+    "Music": "music",
+    "PV": "pv",
+    "CM": "cm",
+}
 
 
-def _relations_response(*pairs: tuple[int, str]) -> dict:
-    """Build a `/anime/{id}/relations` response from `(target_mal_id, relation_label)`
-    pairs. Groups same-label pairs into one block — matches MAL's wire shape
-    where a single "Side Story" block can carry multiple entries."""
-    by_relation: dict[str, list[int]] = {}
-    for target, rel in pairs:
-        by_relation.setdefault(rel, []).append(target)
-    return {
-        "data": [
-            {"relation": rel, "entry": [{"type": "anime", "mal_id": m} for m in mids]}
-            for rel, mids in by_relation.items()
-        ]
-    }
+def _media_type_to_mal(display: str | None) -> str:
+    """Display-case media_type → MAL v2 wire value. None/unknown → 'unknown'
+    (which extract_information maps back to None)."""
+    if display is None:
+        return "unknown"
+    return _MEDIA_TYPE_DISPLAY_TO_MAL.get(display, display.lower())
+
+
+def _duration_to_seconds(duration: str | None) -> int | None:
+    """Parse a Jikan-style duration string into seconds. MAL v2 has no such
+    string (it ships `average_episode_duration` as an int), so this now lives
+    in the test layer: it converts the builders' human `duration=` keyword
+    into the MAL `average_episode_duration` field. Signs and stray fragments
+    are ignored; a zero total collapses to None (Unknown)."""
+    if not duration:
+        return None
+    total = 0
+    for value, unit in re.findall(r"(\d+)\s*(hr|min|sec)", duration):
+        total += int(value) * {"hr": 3600, "min": 60, "sec": 1}[unit]
+    return total or None
+
+
+def _related(*pairs: tuple[int, str]) -> list[dict]:
+    """Build a MAL v2 `related_anime` list from `(target_mal_id, relation_label)`
+    pairs. Each entry is `{"node": {...}, "relation_type", "relation_type_formatted"}`
+    — the shape `parse_relation_edges` consumes. Replaces the Jikan-era
+    `_relations_response` (there is no `/relations` endpoint in v2; relations
+    ride inside the detail response)."""
+    return [
+        {
+            "node": {"id": target, "title": f"Anime {target}", "main_picture": {}},
+            "relation_type": normalize,
+            "relation_type_formatted": normalize,
+        }
+        for target, normalize in pairs
+    ]
 
 
 def _make_anime(
     mal_id: int,
-    title: str,
+    title: str | None,
     *,
     media_type: str = "TV",
     duration: str = "23 min per ep",
     episodes: int = 12,
     aired_from: str = "2020-04-01T00:00:00+00:00",
+    related_anime: list | None = None,
 ) -> dict:
-    """Minimum anime payload accepted by extract_information without nulls."""
+    """Minimum MAL v2 anime object accepted by extract_information without
+    nulls. Keeps the Jikan-era display keywords (media_type='TV',
+    duration='23 min per ep', full-ISO aired_from) and translates them to the
+    MAL wire shape internally. `related_anime` rides in the SAME object (v2
+    bundles relations into the detail response)."""
+    start_date = aired_from.split("T")[0] if aired_from else None
     return {
-        "mal_id": mal_id,
-        "url": f"https://example/{mal_id}",
+        "id": mal_id,
         "title": title,
-        "title_english": title,
-        "title_japanese": title,
-        "title_synonyms": [],
-        "type": media_type,
-        "genres": [{"name": "Action"}],
-        "explicit_genres": [],
-        "themes": [],
-        "demographics": [],
-        "studios": [{"name": "Studio Test"}],
-        "rating": "PG-13",
+        "alternative_titles": {"en": title, "ja": title, "synonyms": []},
+        "main_picture": {
+            "medium": "https://example/cover.jpg",
+            "large": "https://example/cover.jpg",
+        },
+        "start_date": start_date,
+        "end_date": "2020-06-30",
         "synopsis": "",
-        "source": "Original",
-        "images": {"jpg": {"large_image_url": "https://example/cover.jpg"}},
-        "score": 7.5,
-        "scored_by": 1000,
-        "episodes": episodes,
-        "season": "Spring",
-        "year": 2020,
-        "aired": {"from": aired_from, "to": "2020-06-30T00:00:00+00:00"},
-        "status": "Finished Airing",
-        "duration": duration,
+        "mean": 7.5,
+        "num_scoring_users": 1000,
+        "num_episodes": episodes,
+        "media_type": _media_type_to_mal(media_type),
+        "status": "finished_airing",
+        "genres": [{"id": 1, "name": "Action"}],
+        "source": "original",
+        "average_episode_duration": _duration_to_seconds(duration),
+        "rating": "pg_13",
+        "start_season": {"year": 2020, "season": "spring"},
+        "studios": [{"id": 1, "name": "Studio Test"}],
+        "related_anime": related_anime or [],
     }
-
-
-@pytest.mark.asyncio
-async def test_search_title_skips_relations_for_crossover_node(monkeypatch):
-    """A crossover relation is recorded in the graph but not BFS'd into.
-
-    Setup:
-    - Search returns one anime (id 1).
-    - Anime 1's relations include a Crossover to anime 99.
-    - Anime 99's `extract_information` works (TV/Movie), but if we ever
-      called fetch_relations(99) the test would record it and fail.
-    - Anime 1 also has a sequel (id 2) whose relations include anime 3,
-      so the BFS still runs for non-crossover branches — proving the
-      crossover skip is targeted, not a global suppression.
-    """
-    relations_calls: list[int] = []
-    by_id_calls: list[int] = []
-
-    async def fake_get(self, url: str, params=None):
-        # Search request — returns the entry anime.
-        if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [_make_anime(1, "Origin Anime")]}
-
-        # /anime/{id}/relations
-        if url.endswith("/relations"):
-            mal_id = int(url.rsplit("/", 2)[-2])
-            relations_calls.append(mal_id)
-            if mal_id == 1:
-                return {
-                    "data": [
-                        {"relation": "Crossover", "entry": [{"type": "anime", "mal_id": 99}]},
-                        {"relation": "Sequel", "entry": [{"type": "anime", "mal_id": 2}]},
-                    ]
-                }
-            if mal_id == 2:
-                return {"data": [{"relation": "Prequel", "entry": [{"type": "anime", "mal_id": 1}]}]}
-            # Anime 99's relations should NEVER be requested. Still answer
-            # so a bug doesn't crash the test before the assert.
-            return {"data": []}
-
-        # /anime/{id}
-        if "/anime/" in url:
-            mal_id = int(url.rsplit("/", 1)[-1])
-            by_id_calls.append(mal_id)
-            return {"data": _make_anime(mal_id, f"Anime {mal_id}")}
-
-        raise AssertionError(f"Unexpected URL: {url}")
-
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
-
-    async with JikanScraper() as scraper:
-        relations, _all_info, _unwanted = await scraper.search_title(
-            title="Origin", excluded_mal_ids=set(),
-        )
-
-    assert len(relations) == 1, "Expected exactly one relation graph from one search hit"
-    graph, edges, cross_link_mal_ids = relations[0]
-
-    # Crossover anime IS in the graph and the edge to it is recorded...
-    assert 99 in graph
-    assert (1, 99, "crossover") in edges
-    # ...but its relations were never fetched.
-    assert 99 not in relations_calls
-    # Non-crossover branch (sequel chain) still BFS'd: anime 2 was traversed.
-    assert 2 in graph
-    assert 2 in relations_calls
-    # Nothing was pre-excluded, so no cross-links were recorded.
-    assert cross_link_mal_ids == set()
 
 
 @pytest.mark.asyncio
 async def test_search_title_records_cross_link_for_pre_excluded_relation(monkeypatch):
     """When BFS would traverse to a media that's already in the catalog
-    via a non-crossover relation, that mal_id is surfaced as a cross-link
+    via a non-boundary relation, that mal_id is surfaced as a cross-link
     signal for the merge-candidate detector to use.
 
-    Setup needs at least one non-excluded sibling so the entry node gets
-    re-discovered organically (the BFS deliberately drops and re-finds the
-    first node when it has relations); without that we'd produce an empty
-    graph and lose the cross-link with it.
+    Setup needs at least one non-excluded sibling so the graph stays
+    non-empty; without that we'd produce an empty graph and lose the
+    cross-link with it.
     """
-    relations_calls: list[int] = []
+    detail_calls: list[int] = []
 
     async def fake_get(self, url: str, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [_make_anime(1, "Origin Anime")]}
-
-        if url.endswith("/relations"):
-            mal_id = int(url.rsplit("/", 2)[-2])
-            relations_calls.append(mal_id)
-            if mal_id == 1:
-                return {
-                    "data": [
-                        # Fresh sibling — keeps the graph non-empty.
-                        {"relation": "Sequel", "entry": [{"type": "anime", "mal_id": 2}]},
-                        # 42 is pre-excluded → cross-link signal.
-                        {"relation": "Sequel", "entry": [{"type": "anime", "mal_id": 42}]},
-                    ]
-                }
-            if mal_id == 2:
-                return {"data": [{"relation": "Prequel", "entry": [{"type": "anime", "mal_id": 1}]}]}
-            return {"data": []}
+            # Search omits related_anime — the root's relations ride in its
+            # DETAIL response below (mal_id=1).
+            return {"data": [{"node": {"id": 1, "title": "Origin Anime"}}]}
 
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
-            return {"data": _make_anime(mal_id, f"Anime {mal_id}")}
+            detail_calls.append(mal_id)
+            # Root (1): 2 fresh sibling (keeps graph non-empty), 42 pre-excluded
+            # → cross-link. 2 points back to 1 via prequel.
+            rels = {
+                1: [(2, "Sequel"), (42, "Sequel")],
+                2: [(1, "Prequel")],
+            }.get(mal_id, [])
+            return _make_anime(mal_id, f"Anime {mal_id}", related_anime=_related(*rels))
 
         raise AssertionError(f"Unexpected URL: {url}")
 
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         relations, _all_info, _unwanted = await scraper.search_title(
             title="Origin", excluded_mal_ids={42},
         )
@@ -175,52 +148,12 @@ async def test_search_title_records_cross_link_for_pre_excluded_relation(monkeyp
 
     # 42 was pre-excluded so it doesn't appear in the graph...
     assert 42 not in graph
-    # ...and we never fetched its relations (it was already known).
-    assert 42 not in relations_calls
+    # ...and we never fetched its detail (it was already known).
+    assert 42 not in detail_calls
     # ...but the cross-link signal captures it for the detector.
     assert cross_link_mal_ids == {42}
     # The non-excluded sibling is in the graph as expected.
     assert 1 in graph and 2 in graph
-
-
-@pytest.mark.asyncio
-async def test_search_title_no_cross_link_for_crossover_relation(monkeypatch):
-    """A pre-excluded media reached via a crossover relation is NOT a
-    cross-link — crossovers are explicit franchise boundaries, not duplicate
-    signals."""
-    async def fake_get(self, url: str, params=None):
-        if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [_make_anime(1, "Origin Anime")]}
-
-        if url.endswith("/relations"):
-            mal_id = int(url.rsplit("/", 2)[-2])
-            if mal_id == 1:
-                return {
-                    "data": [
-                        {"relation": "Sequel", "entry": [{"type": "anime", "mal_id": 2}]},
-                        # 99 is pre-excluded AND reached via Crossover.
-                        {"relation": "Crossover", "entry": [{"type": "anime", "mal_id": 99}]},
-                    ]
-                }
-            if mal_id == 2:
-                return {"data": [{"relation": "Prequel", "entry": [{"type": "anime", "mal_id": 1}]}]}
-            return {"data": []}
-
-        if "/anime/" in url:
-            mal_id = int(url.rsplit("/", 1)[-1])
-            return {"data": _make_anime(mal_id, f"Anime {mal_id}")}
-
-        raise AssertionError(f"Unexpected URL: {url}")
-
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
-
-    async with JikanScraper() as scraper:
-        relations, _all_info, _unwanted = await scraper.search_title(
-            title="Origin", excluded_mal_ids={99},
-        )
-
-    _graph, _edges, cross_link_mal_ids = relations[0]
-    assert cross_link_mal_ids == set()
 
 
 @pytest.mark.asyncio
@@ -230,25 +163,24 @@ async def test_search_title_does_not_blacklist_not_yet_aired_anime(monkeypatch):
     rediscovery once MAL fills the type."""
     async def fake_get(self, url: str, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [_make_anime(1, "Origin Anime")]}
-        if url.endswith("/relations"):
-            mal_id = int(url.rsplit("/", 2)[-2])
-            if mal_id == 1:
-                return {"data": [{"relation": "Sequel", "entry": [{"type": "anime", "mal_id": 2}]}]}
-            return {"data": []}
+            # Search omits related_anime — root's relation rides in its detail.
+            return {"data": [{"node": {"id": 1, "title": "Origin Anime"}}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
-            payload = _make_anime(mal_id, f"Anime {mal_id}")
+            if mal_id == 1:
+                return _make_anime(1, "Origin Anime", related_anime=_related((2, "Sequel")))
+            obj = _make_anime(mal_id, f"Anime {mal_id}")
             if mal_id == 2:
-                payload["type"] = None
-                payload["status"] = "Not yet aired"
-                payload["aired"] = {"from": None, "to": None}
-            return {"data": payload}
+                obj["media_type"] = "unknown"
+                obj["status"] = "not_yet_aired"
+                obj["start_date"] = None
+                obj["end_date"] = None
+            return obj
         raise AssertionError(f"Unexpected URL: {url}")
 
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         _relations, _all_info, unwanted = await scraper.search_title(
             title="Origin", excluded_mal_ids=set(),
         )
@@ -260,7 +192,7 @@ async def test_search_title_does_not_blacklist_not_yet_aired_anime(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_search_title_seed_empty_data_raises_transient_not_permanent(monkeypatch):
-    """When MAL returns 200 OK with empty `data` (observed in practice
+    """When MAL returns 200 OK with an empty body (observed in practice
     for legitimate mal_ids on transient hiccups), search_title must
     raise TransientUpstreamError — NOT AnimeNotFoundError. The
     difference matters downstream: TransientUpstreamError is not a
@@ -272,14 +204,16 @@ async def test_search_title_seed_empty_data_raises_transient_not_permanent(monke
 
     async def fake_get(self, url: str, params=None):
         # MAL responded with 200 OK but no payload — the exact transient
-        # case observed in production (job 2617 for mal_id=64060).
+        # case observed in production (job 2617 for mal_id=64060). In v2 the
+        # detail call returns the object directly (no `data` wrapper), so an
+        # empty body is an empty dict.
         if "/anime/" in url and url.rsplit("/", 1)[-1].isdigit():
-            return {"data": {}}
+            return {}
         raise AssertionError(f"Unexpected URL: {url}")
 
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         with pytest.raises(TransientUpstreamError) as exc_info:
             await scraper.search_title(
                 title="Re:Prism", excluded_mal_ids=set(), seed_mal_id=64060,
@@ -301,22 +235,21 @@ async def test_search_title_seed_always_in_graph(monkeypatch):
     where the seed's only relation is `Other` and no node points back."""
     async def fake_get(self, url: str, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [_make_anime(1, "Origin TV")]}
-        if url.endswith("/relations"):
-            mal_id = int(url.rsplit("/", 2)[-2])
-            if mal_id == 1:
-                return {"data": [{"relation": "Other", "entry": [{"type": "anime", "mal_id": 2}]}]}
-            if mal_id == 2:
-                return {"data": [{"relation": "Other", "entry": [{"type": "anime", "mal_id": 3}]}]}
-            return {"data": []}
+            # Search omits related_anime — root's `Other`-only relation rides in
+            # its detail (mal_id=1), reproducing the Rilakkuma shape.
+            return {"data": [{"node": {"id": 1, "title": "Origin TV"}}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
-            return {"data": _make_anime(mal_id, f"Anime {mal_id}", media_type="ONA")}
+            rels = {1: [(2, "Other")], 2: [(3, "Other")]}.get(mal_id, [])
+            return _make_anime(
+                mal_id, f"Anime {mal_id}", media_type="ONA",
+                related_anime=_related(*rels),
+            )
         raise AssertionError(f"Unexpected URL: {url}")
 
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         relations, all_info, _unwanted = await scraper.search_title(
             title="Origin", excluded_mal_ids={3},
         )
@@ -331,44 +264,38 @@ async def test_search_title_seed_always_in_graph(monkeypatch):
 async def test_search_title_skips_alternative_setting_relations(monkeypatch):
     """`alternative_setting` is a separate-franchise marker on MAL
     (e.g., Zhe Tian ↔ Wanmei Shijie, Madoka Magica ↔ Magia Record).
-    The BFS must NOT walk it — otherwise distinct donghua get
-    conflated into one Anime row and the merge detector fires
-    false positives on every sweep.
+    The BFS must NOT walk it — `parse_relation_edges` drops the edge
+    entirely — otherwise distinct donghua get conflated into one Anime
+    row and the merge detector fires false positives on every sweep.
 
     Setup: seed has Sequel → 2 (legit branch, BFS walks) AND
     Alternative Setting → 99 (separate franchise, BFS must NOT walk).
     If 99 ever gets fetched, the test fails."""
-    fetched_anime: list[int] = []
-    fetched_relations: list[int] = []
+    detail_calls: list[int] = []
 
     async def fake_get(self, url: str, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [_make_anime(1, "Origin Anime")]}
-        if url.endswith("/relations"):
-            mal_id = int(url.rsplit("/", 2)[-2])
-            fetched_relations.append(mal_id)
-            if mal_id == 1:
-                return {
-                    "data": [
-                        {"relation": "Sequel", "entry": [{"type": "anime", "mal_id": 2}]},
-                        {"relation": "Alternative Setting", "entry": [{"type": "anime", "mal_id": 99}]},
-                    ]
-                }
-            if mal_id == 2:
-                return {"data": [{"relation": "Prequel", "entry": [{"type": "anime", "mal_id": 1}]}]}
-            # mal_id == 99 should never be requested. If it is, test fails.
-            raise AssertionError(
-                f"Alternative-setting branch was walked into mal_id={mal_id}"
-            )
+            # Search omits related_anime — root's relations ride in its detail.
+            return {"data": [{"node": {"id": 1, "title": "Origin Anime"}}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
-            fetched_anime.append(mal_id)
-            return {"data": _make_anime(mal_id, f"Anime {mal_id}")}
+            detail_calls.append(mal_id)
+            if mal_id == 99:
+                raise AssertionError(
+                    f"Alternative-setting branch was walked into mal_id={mal_id}"
+                )
+            # Root (1): Sequel → 2 (BFS walks) AND Alternative Setting → 99
+            # (parse_relation_edges drops it, so 99 is never queued/fetched).
+            rels = {
+                1: [(2, "Sequel"), (99, "Alternative Setting")],
+                2: [(1, "Prequel")],
+            }.get(mal_id, [])
+            return _make_anime(mal_id, f"Anime {mal_id}", related_anime=_related(*rels))
         raise AssertionError(f"Unexpected URL: {url}")
 
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         relations, _all_info, _unwanted = await scraper.search_title(
             title="Origin", excluded_mal_ids=set(),
         )
@@ -378,16 +305,14 @@ async def test_search_title_skips_alternative_setting_relations(monkeypatch):
     # The sequel branch was walked; the alt-setting branch wasn't.
     assert 2 in graph
     assert 99 not in graph
-    assert 99 not in fetched_anime
-    assert 99 not in fetched_relations
+    assert 99 not in detail_calls
 
 
 @pytest.mark.asyncio
 async def test_search_title_captures_normalized_edges(monkeypatch):
     """BFS captures every edge with the normalized MAL relation string.
-    MAL emits multi-word relations title-cased (`"Side Story"`,
-    `"Parent story"`); `_normalize_relation` lowercases + underscores so
-    the classifier sees a stable taxonomy.
+    `normalize_relation` lowercases + underscores so the classifier sees
+    a stable taxonomy.
 
     Naruto-shaped fixture verifies the full franchise traverses and that
     all node outgoing edges land with their normalized labels. Movies
@@ -401,18 +326,11 @@ async def test_search_title_captures_normalized_edges(monkeypatch):
     are tested in test_relation_classifier.py.
     """
     relations_by_id = {
-        20: [
-            {"relation": "Sequel", "entry": [{"type": "anime", "mal_id": 1735}]},
-            {"relation": "Side Story", "entry": [{"type": "anime", "mal_id": 894}]},
-            {"relation": "Side Story", "entry": [{"type": "anime", "mal_id": 936}]},
-        ],
-        1735: [
-            {"relation": "Prequel", "entry": [{"type": "anime", "mal_id": 20}]},
-            {"relation": "Side Story", "entry": [{"type": "anime", "mal_id": 5085}]},
-        ],
-        894: [{"relation": "Parent story", "entry": [{"type": "anime", "mal_id": 20}]}],
-        936: [{"relation": "Parent story", "entry": [{"type": "anime", "mal_id": 20}]}],
-        5085: [{"relation": "Parent story", "entry": [{"type": "anime", "mal_id": 1735}]}],
+        20: [(1735, "Sequel"), (894, "Side Story"), (936, "Side Story")],
+        1735: [(20, "Prequel"), (5085, "Side Story")],
+        894: [(20, "Parent story")],
+        936: [(20, "Parent story")],
+        5085: [(1735, "Parent story")],
     }
     type_by_id = {20: "TV", 1735: "TV", 894: "Movie", 936: "OVA", 5085: "Movie"}
     title_by_id = {
@@ -423,20 +341,23 @@ async def test_search_title_captures_normalized_edges(monkeypatch):
         5085: "Naruto Shippuuden Movie 1",
     }
 
+    def _obj(mal_id: int) -> dict:
+        return _make_anime(
+            mal_id, title_by_id[mal_id], media_type=type_by_id[mal_id],
+            related_anime=_related(*relations_by_id[mal_id]),
+        )
+
     async def fake_get(self, url: str, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [_make_anime(20, "Naruto", media_type="TV")]}
-        if url.endswith("/relations"):
-            mal_id = int(url.rsplit("/", 2)[-2])
-            return {"data": relations_by_id.get(mal_id, [])}
+            return {"data": [{"node": _obj(20)}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
-            return {"data": _make_anime(mal_id, title_by_id[mal_id], media_type=type_by_id[mal_id])}
+            return _obj(mal_id)
         raise AssertionError(f"Unexpected URL: {url}")
 
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         relations, _all_info, _unwanted = await scraper.search_title(
             title="Naruto", excluded_mal_ids=set(),
         )
@@ -448,11 +369,9 @@ async def test_search_title_captures_normalized_edges(monkeypatch):
 
     # Every node's outgoing edges land as normalized edge labels — WALK
     # AND TERMINAL nodes both contribute. 20 (Naruto TV) and 1735
-    # (Shippuuden) walk; 894/936/5085 are TERMINAL but their /relations
-    # are fetched so the reverse parent_story edges back to TV ARE in
-    # the persisted list. The BFS just doesn't recurse from them — TV's
-    # sequels reached via those parent_story edges stay out of the graph
-    # unless WALK already covered them.
+    # (Shippuuden) walk; 894/936/5085 are TERMINAL but their detail is
+    # fetched so the reverse parent_story edges back to TV ARE in the
+    # persisted list. The BFS just doesn't recurse from them.
     edge_set = {(a, b, r) for a, b, r in edges}
     assert (20, 1735, "sequel") in edge_set
     assert (20, 894, "side_story") in edge_set
@@ -467,15 +386,61 @@ async def test_search_title_captures_normalized_edges(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_search_title_fetches_root_detail_when_search_omits_relations(monkeypatch):
+    """v0.14.14 regression guard: MAL's /anime?q= SEARCH endpoint returns only
+    lightweight node data — it OMITS related_anime even when requested. So
+    search_title must fetch each root's DETAIL to capture its relations.
+    Without it the root captures zero edges, the BFS never walks the franchise,
+    and Clannad / After Story / Movie each save as an isolated single-media
+    anime with an empty relation sidecar (the fragmentation that caused the
+    spurious title_studio merge demotions).
+
+    The fixture's SEARCH response deliberately carries NO related_anime (unlike
+    the older tests, whose full-detail search nodes masked this bug)."""
+    detail_by_id = {
+        1: _make_anime(1, "Clannad", media_type="TV",
+                       related_anime=_related((2, "Sequel"), (3, "Alternative version"))),
+        2: _make_anime(2, "Clannad: After Story", media_type="TV",
+                       related_anime=_related((1, "Prequel"))),
+        3: _make_anime(3, "Clannad Movie", media_type="Movie",
+                       related_anime=_related((1, "Alternative version"))),
+    }
+
+    async def fake_get(self, url: str, params=None):
+        if url.endswith("/anime") and params is not None and params.get("q"):
+            # Real MAL search: lightweight node, id + title only, NO relations.
+            return {"data": [{"node": {"id": 1, "title": "Clannad"}}]}
+        if "/anime/" in url:
+            return detail_by_id[int(url.rsplit("/", 1)[-1])]
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
+
+    async with MalScraper() as scraper:
+        relations, all_info, _unwanted = await scraper.search_title(
+            title="Clannad", excluded_mal_ids=set(),
+        )
+
+    # ONE unified graph with the whole franchise — not three fragments.
+    assert len(relations) == 1
+    graph, edges, _cross = relations[0]
+    assert set(graph.keys()) == {1, 2, 3}
+    assert set(all_info.keys()) == {1, 2, 3}
+    # The ROOT's relations (from the detail fetch, not the relations-less
+    # search node) are captured — the deciding assertion.
+    edge_set = {(a, b, r) for a, b, r in edges}
+    assert (1, 2, "sequel") in edge_set
+    assert (1, 3, "alternative_version") in edge_set
+
+
+@pytest.mark.asyncio
 async def test_search_title_skips_null_title_pv_silently(monkeypatch):
     """MAL occasionally leaves `title=null` on entries it's still
     populating (romanization pending, brand-new PV stubs). Skip silently
     rather than blacklisting — mirrors the Not-yet-aired pattern:
     next sweep that reaches the mal_id will re-fetch it and, once MAL
     has populated the title, normal Music/PV/CM classification produces
-    a MediaUnwanted row with the real name. Blacklisting now with a
-    placeholder would (a) block re-discovery and (b) pollute the
-    admin-only table with `<mal_id:NNNN>` strings.
+    a MediaUnwanted row with the real name.
 
     Test setup: mal_id=2 is a PV with `title=null`. It must NOT appear
     in unwanted_media — the BFS effectively treated it as a deferred
@@ -483,25 +448,23 @@ async def test_search_title_skips_null_title_pv_silently(monkeypatch):
     """
     async def fake_get(self, url: str, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [_make_anime(1, "Origin Anime")]}
-        if url.endswith("/relations"):
-            mal_id = int(url.rsplit("/", 2)[-2])
-            if mal_id == 1:
-                return {"data": [{"relation": "Other", "entry": [{"type": "anime", "mal_id": 2}]}]}
-            return {"data": []}
+            # Search omits related_anime — root's relation rides in its detail.
+            return {"data": [{"node": {"id": 1, "title": "Origin Anime"}}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
-            payload = _make_anime(mal_id, f"Anime {mal_id}")
+            if mal_id == 1:
+                return _make_anime(1, "Origin Anime", related_anime=_related((2, "Other")))
+            obj = _make_anime(mal_id, f"Anime {mal_id}")
             if mal_id == 2:
                 # PV with no title at all — the exact production failure.
-                payload["title"] = None
-                payload["type"] = "PV"
-            return {"data": payload}
+                obj["title"] = None
+                obj["media_type"] = "pv"
+            return obj
         raise AssertionError(f"Unexpected URL: {url}")
 
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         _relations, _all_info, unwanted = await scraper.search_title(
             title="Origin", excluded_mal_ids=set(),
         )
@@ -529,25 +492,23 @@ async def test_search_title_skips_null_title_unknown_anomaly_silently(monkeypatc
     surface as a 'why isn't this anime in the catalog?' bug forever."""
     async def fake_get(self, url: str, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [_make_anime(1, "Origin Anime")]}
-        if url.endswith("/relations"):
-            mal_id = int(url.rsplit("/", 2)[-2])
-            if mal_id == 1:
-                return {"data": [{"relation": "Other", "entry": [{"type": "anime", "mal_id": 2}]}]}
-            return {"data": []}
+            # Search omits related_anime — root's relation rides in its detail.
+            return {"data": [{"node": {"id": 1, "title": "Origin Anime"}}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
-            payload = _make_anime(mal_id, f"Anime {mal_id}")
+            if mal_id == 1:
+                return _make_anime(1, "Origin Anime", related_anime=_related((2, "Other")))
+            obj = _make_anime(mal_id, f"Anime {mal_id}")
             if mal_id == 2:
-                payload["title"] = None
-                payload["type"] = None  # would trigger Unknown branch if not for the title=null guard
-                payload["status"] = "Finished Airing"  # not Not-yet-aired
-            return {"data": payload}
+                obj["title"] = None
+                obj["media_type"] = "unknown"  # Unknown branch if not for title=null guard
+                obj["status"] = "finished_airing"  # not Not-yet-aired
+            return obj
         raise AssertionError(f"Unexpected URL: {url}")
 
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         _relations, _all_info, unwanted = await scraper.search_title(
             title="Origin", excluded_mal_ids=set(),
         )
@@ -566,30 +527,176 @@ async def test_search_title_blacklists_other_anomalous_no_media_type(monkeypatch
     Music/PV/CM/Hentai pattern intact for true outliers."""
     async def fake_get(self, url: str, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [_make_anime(1, "Origin Anime")]}
-        if url.endswith("/relations"):
-            mal_id = int(url.rsplit("/", 2)[-2])
-            if mal_id == 1:
-                return {"data": [{"relation": "Other", "entry": [{"type": "anime", "mal_id": 2}]}]}
-            return {"data": []}
+            # Search omits related_anime — root's relation rides in its detail.
+            return {"data": [{"node": {"id": 1, "title": "Origin Anime"}}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
-            payload = _make_anime(mal_id, f"Anime {mal_id}")
+            if mal_id == 1:
+                return _make_anime(1, "Origin Anime", related_anime=_related((2, "Other")))
+            obj = _make_anime(mal_id, f"Anime {mal_id}")
             if mal_id == 2:
-                payload["type"] = None
+                obj["media_type"] = "unknown"
                 # Status is set (not "Not yet aired") — anomalous.
-                payload["status"] = "Finished Airing"
-            return {"data": payload}
+                obj["status"] = "finished_airing"
+            return obj
         raise AssertionError(f"Unexpected URL: {url}")
 
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         _relations, _all_info, unwanted = await scraper.search_title(
             title="Origin", excluded_mal_ids=set(),
         )
 
     assert any(uw[0] == 2 and uw[2] == "Unknown" for uw in unwanted)
+
+
+# ---------------------------------------------------------------------------
+# is_hentai + hentai skip (v0.14.14)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "info, expected",
+    [
+        ({"genres": ["Action", "Hentai"]}, True),
+        ({"genres": ["hentai"]}, True),  # case-insensitive genre match
+        ({"genres": ["Action"], "age_rating": "Rx - Hentai"}, True),  # Rx signal
+        ({"genres": [], "age_rating": None}, False),
+        ({"genres": ["Ecchi"], "age_rating": "R+ - Mild Nudity"}, False),  # Ecchi/R+ ≠ hentai
+        ({}, False),  # missing keys are None-safe
+    ],
+)
+def test_is_hentai(info, expected):
+    assert is_hentai(info) is expected
+
+
+@pytest.mark.asyncio
+async def test_search_title_blacklists_hentai_with_null_media_type(monkeypatch):
+    """A hentai node with a null media_type is blacklisted as Hentai — the
+    check now runs BEFORE the media_type gate, so it no longer falls through
+    to the null-media_type 'Unknown' anomaly branch (v0.14.14 hardening)."""
+    async def fake_get(self, url: str, params=None):
+        if url.endswith("/anime") and params is not None and params.get("q"):
+            # Search omits related_anime — root's relation rides in its detail.
+            return {"data": [{"node": {"id": 1, "title": "Origin Anime"}}]}
+        if "/anime/" in url:
+            mal_id = int(url.rsplit("/", 1)[-1])
+            if mal_id == 1:
+                return _make_anime(1, "Origin Anime", related_anime=_related((2, "Other")))
+            obj = _make_anime(mal_id, f"Anime {mal_id}")
+            if mal_id == 2:
+                obj["media_type"] = "unknown"  # None after translate
+                obj["genres"] = [{"id": 12, "name": "Hentai"}]
+                obj["status"] = "finished_airing"
+            return obj
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
+
+    async with MalScraper() as scraper:
+        _relations, _all_info, unwanted = await scraper.search_title(
+            title="Origin", excluded_mal_ids=set(),
+        )
+
+    assert any(uw[0] == 2 and uw[2] == "Hentai" for uw in unwanted), (
+        "Null-media_type hentai node must be blacklisted as Hentai (checked "
+        "before the media_type gate), not the 'Unknown' anomaly branch"
+    )
+
+
+# ---------------------------------------------------------------------------
+# extract_information + value-translation unit tests (MAL v2 → catalog shape)
+# ---------------------------------------------------------------------------
+
+
+def test_extract_information_maps_mal_object_to_catalog_shape():
+    """A MAL v2 object round-trips through extract_information into the
+    Jikan-era catalog shape: display-case media_type, full-ISO aired
+    dates, the constructed mal_url, and the dropped duration string with
+    duration_seconds carried through from average_episode_duration."""
+    info = MalScraper().extract_information(_make_anime(1, "X"))
+
+    assert info["mal_id"] == 1
+    assert info["mal_url"] == "https://myanimelist.net/anime/1"
+    assert info["media_type"] == "TV"
+    assert info["age_rating"] == "PG-13 - Teens 13 or older"
+    assert info["original_source"] == "Original"
+    assert info["airing_status"] == "Finished Airing"
+    assert info["duration"] is None
+    assert info["duration_seconds"] == 23 * 60
+    assert info["aired_from"] == "2020-04-01T00:00:00+00:00"
+    assert info["aired_to"] == "2020-06-30T00:00:00+00:00"
+    assert info["cover_image"] == "https://example/cover.jpg"
+
+
+def test_extract_information_translates_mal_enums():
+    """The translation maps convert MAL's snake_case/lowercase enum values
+    back to the Jikan-era strings the catalog + filter surfaces store."""
+    obj = {
+        "id": 5,
+        "title": "X",
+        "alternative_titles": {"en": "X", "ja": "X", "synonyms": []},
+        "main_picture": {"large": "https://example/cover.jpg"},
+        "start_date": "2020-04-01",
+        "end_date": "2020-06-30",
+        "synopsis": "Plot.",
+        "mean": 7.5,
+        "num_scoring_users": 1000,
+        "num_episodes": 1,
+        "media_type": "tv_special",
+        "status": "currently_airing",
+        "genres": [{"id": 1, "name": "Action"}],
+        "source": "light_novel",
+        "average_episode_duration": 1380,
+        "rating": "r",
+        "start_season": {"year": 2020, "season": "spring"},
+        "studios": [{"id": 1, "name": "Studio Test"}],
+        "related_anime": [],
+    }
+    info = MalScraper().extract_information(obj)
+
+    assert info["media_type"] == "TVSpecial"
+    assert info["airing_status"] == "Currently Airing"
+    assert info["age_rating"] == "R - 17+ (violence & profanity)"
+    assert info["original_source"] == "Light novel"
+
+
+def test_mal_date_to_iso_handles_partial_dates():
+    """MAL emits partial dates (`YYYY`, `YYYY-MM`) for older/imprecise
+    records; the missing month/day fill with 01 at midnight UTC to
+    reproduce Jikan's normalization exactly."""
+    assert _mal_date_to_iso("2011") == "2011-01-01T00:00:00+00:00"
+    assert _mal_date_to_iso("2011-04") == "2011-04-01T00:00:00+00:00"
+    assert _mal_date_to_iso("2011-04-02") == "2011-04-02T00:00:00+00:00"
+    assert _mal_date_to_iso(None) is None
+
+
+def test_parse_relation_edges_aliases_spinoff_and_excludes_character():
+    """`parse_relation_edges` normalizes MAL relation labels: `spin_off`
+    aliases to the hyphenated catalog form, and `character` (the
+    cross-franchise collab route) is excluded from edge capture."""
+    related = [
+        {"node": {"id": 10}, "relation_type": "spin_off"},
+        {"node": {"id": 20}, "relation_type": "character"},
+        {"node": {"id": 30}, "relation_type": "sequel"},
+    ]
+    edges = parse_relation_edges(related)
+
+    assert (10, "spin-off") in edges
+    assert (30, "sequel") in edges
+    assert all(target != 20 for target, _rel in edges)
+
+
+@pytest.mark.asyncio
+async def test_client_follows_redirects():
+    """MAL v2 intermittently answers a valid `/anime/{id}` with a 307; httpx
+    defaults to NOT following redirects and `raise_for_status()` then treats
+    the 3xx as an error, so the client must be created with
+    follow_redirects=True (a live sweep surfaced ~1-2% step-1 failures without
+    it). Guards against a regression that drops the flag."""
+    async with MalScraper() as scraper:
+        assert scraper.client.follow_redirects is True
 
 
 DURATION_EXPECTED_PAIRS = [
@@ -628,7 +735,11 @@ DURATION_EXPECTED_PAIRS = [
 
 @pytest.mark.parametrize("duration_str, expected_seconds", DURATION_EXPECTED_PAIRS)
 def test_parse_duration_to_seconds_exact(duration_str, expected_seconds):
-    result = JikanScraper._parse_duration_to_seconds(duration_str)
+    # MAL v2 ships average_episode_duration as an int, so production no
+    # longer parses a duration string. The parser moved into the test
+    # builders (it converts the human `duration=` keyword into the MAL
+    # field); this exercises that helper directly.
+    result = _duration_to_seconds(duration_str)
     assert result == expected_seconds, f"For '{duration_str}', expected {expected_seconds} but got {result}"
 
 
@@ -658,24 +769,24 @@ SYNOPSIS_CLEAN_PAIRS = [
 
 @pytest.mark.parametrize("raw, expected", SYNOPSIS_CLEAN_PAIRS)
 def test_clean_synopsis(raw, expected):
-    assert JikanScraper._clean_synopsis(raw) == expected
+    assert MalScraper._clean_synopsis(raw) == expected
 
 
 @pytest.mark.asyncio
 async def test_rate_limiter_spaces_consecutive_requests(monkeypatch):
     """Two back-to-back calls must be spaced at least _MIN_REQUEST_INTERVAL_S
     apart. Without this, a 200-anime sweep would burst hundreds of
-    requests into Jikan as fast as TCP allows."""
+    requests into MAL as fast as TCP allows."""
     from time import monotonic
 
     # Override to a small value so the test stays fast but still proves
     # spacing — the production constant doesn't need to be exercised.
-    monkeypatch.setattr(JikanScraper, "_MIN_REQUEST_INTERVAL_S", 0.05)
-    JikanScraper._last_request_at = 0.0
+    monkeypatch.setattr(MalScraper, "_MIN_REQUEST_INTERVAL_S", 0.05)
+    MalScraper._last_request_at = 0.0
 
     t0 = monotonic()
-    await JikanScraper._wait_for_rate_limit()
-    await JikanScraper._wait_for_rate_limit()
+    await MalScraper._wait_for_rate_limit()
+    await MalScraper._wait_for_rate_limit()
     elapsed = monotonic() - t0
 
     assert elapsed >= 0.045  # 5% margin under the configured 50ms gap
@@ -688,7 +799,7 @@ async def test_get_does_not_retry_4xx(monkeypatch):
     mock must see exactly one request."""
     import httpx
 
-    monkeypatch.setattr(JikanScraper, "_MIN_REQUEST_INTERVAL_S", 0.0)
+    monkeypatch.setattr(MalScraper, "_MIN_REQUEST_INTERVAL_S", 0.0)
 
     call_count = 0
 
@@ -700,9 +811,9 @@ async def test_get_does_not_retry_4xx(monkeypatch):
 
     monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
-            await scraper._get("https://example/anime")
+            await scraper._get("https://api.myanimelist.net/v2/anime")
 
     assert call_count == 1
     assert exc_info.value.response.status_code == 404
@@ -722,11 +833,11 @@ async def test_get_retries_429_with_tighter_cap(monkeypatch):
     invariant. Wait is zeroed so the test isn't 30s long."""
     import httpx
 
-    monkeypatch.setattr(JikanScraper, "_MIN_REQUEST_INTERVAL_S", 0.0)
+    monkeypatch.setattr(MalScraper, "_MIN_REQUEST_INTERVAL_S", 0.0)
     # Zero out wait but DO NOT touch stop — we want to verify the
     # production stop_strategy enforces the 3-attempt cap for 429.
     from tenacity import wait_fixed
-    monkeypatch.setattr(JikanScraper._get.retry, "wait", wait_fixed(0))
+    monkeypatch.setattr(MalScraper._get.retry, "wait", wait_fixed(0))
 
     call_count = 0
 
@@ -738,9 +849,9 @@ async def test_get_retries_429_with_tighter_cap(monkeypatch):
 
     monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
-            await scraper._get("https://example/anime")
+            await scraper._get("https://api.myanimelist.net/v2/anime")
 
     # 1 initial + 2 retries = 3 total attempts for 429.
     assert call_count == 3
@@ -749,32 +860,37 @@ async def test_get_retries_429_with_tighter_cap(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fetch_current_season_paginates(monkeypatch):
-    """Jikan's /seasons/now is paginated. The loop must keep requesting
-    pages while `pagination.has_next_page` is true and concatenate every
-    page's data. The page=N query parameter advances per iteration."""
+    """MAL v2's /anime/season/{year}/{season} is offset-paginated. The
+    loop must keep requesting pages while `paging.next` is present and
+    concatenate every page's `data[].node` into `[{mal_id, title}]`. The
+    offset query parameter advances by `limit` per iteration."""
     calls: list[dict | None] = []
 
     async def fake_get(self, url, params=None):
-        assert url.endswith("/seasons/now")
+        assert "/anime/season/" in url
         calls.append(params)
-        page = (params or {}).get("page", 1)
-        if page == 1:
+        offset = (params or {}).get("offset", 0)
+        if offset == 0:
             return {
-                "data": [{"mal_id": 1, "title": "Show A"}, {"mal_id": 2, "title": "Show B"}],
-                "pagination": {"has_next_page": True, "current_page": 1},
+                "data": [
+                    {"node": {"id": 1, "title": "Show A"}},
+                    {"node": {"id": 2, "title": "Show B"}},
+                ],
+                "paging": {"next": "https://api.myanimelist.net/v2/anime/season/2020/spring?offset=100"},
             }
         return {
-            "data": [{"mal_id": 3, "title": "Show C"}],
-            "pagination": {"has_next_page": False, "current_page": 2},
+            "data": [{"node": {"id": 3, "title": "Show C"}}],
+            "paging": {},  # no `next` → last page
         }
 
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         entries = await scraper.fetch_current_season()
 
     assert [e["mal_id"] for e in entries] == [1, 2, 3]
-    assert [c.get("page") for c in calls] == [1, 2]
+    assert [e["title"] for e in entries] == ["Show A", "Show B", "Show C"]
+    assert [c.get("offset") for c in calls] == [0, 100]
 
 
 @pytest.mark.asyncio
@@ -786,11 +902,11 @@ async def test_fetch_current_season_empty(monkeypatch):
     async def fake_get(self, url, params=None):
         nonlocal call_count
         call_count += 1
-        return {"data": [], "pagination": {"has_next_page": False}}
+        return {"data": [], "paging": {}}
 
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         entries = await scraper.fetch_current_season()
 
     assert entries == []
@@ -806,9 +922,9 @@ async def test_get_retries_5xx_with_full_budget(monkeypatch):
     is left at the production _stop_strategy."""
     import httpx
 
-    monkeypatch.setattr(JikanScraper, "_MIN_REQUEST_INTERVAL_S", 0.0)
+    monkeypatch.setattr(MalScraper, "_MIN_REQUEST_INTERVAL_S", 0.0)
     from tenacity import wait_fixed
-    monkeypatch.setattr(JikanScraper._get.retry, "wait", wait_fixed(0))
+    monkeypatch.setattr(MalScraper._get.retry, "wait", wait_fixed(0))
 
     call_count = 0
 
@@ -820,9 +936,9 @@ async def test_get_retries_5xx_with_full_budget(monkeypatch):
 
     monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         with pytest.raises(httpx.HTTPStatusError):
-            await scraper._get("https://example/anime")
+            await scraper._get("https://api.myanimelist.net/v2/anime")
 
     assert call_count == 5  # 1 initial + 4 retries; strictly > 429's 3
 
@@ -835,11 +951,11 @@ async def test_get_retries_5xx_and_surfaces_underlying_error(monkeypatch):
     gets the human-readable upstream message, not `RetryError[<Future at 0x...>]`."""
     import httpx
 
-    monkeypatch.setattr(JikanScraper, "_MIN_REQUEST_INTERVAL_S", 0.0)
+    monkeypatch.setattr(MalScraper, "_MIN_REQUEST_INTERVAL_S", 0.0)
     # Tighten the backoff so the test isn't 31s long.
     from tenacity import stop_after_attempt, wait_fixed
-    monkeypatch.setattr(JikanScraper._get.retry, "stop", stop_after_attempt(3))
-    monkeypatch.setattr(JikanScraper._get.retry, "wait", wait_fixed(0))
+    monkeypatch.setattr(MalScraper._get.retry, "stop", stop_after_attempt(3))
+    monkeypatch.setattr(MalScraper._get.retry, "wait", wait_fixed(0))
 
     call_count = 0
 
@@ -851,9 +967,9 @@ async def test_get_retries_5xx_and_surfaces_underlying_error(monkeypatch):
 
     monkeypatch.setattr(httpx.AsyncClient, "get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         with pytest.raises(httpx.HTTPStatusError) as exc_info:
-            await scraper._get("https://example/anime")
+            await scraper._get("https://api.myanimelist.net/v2/anime")
 
     assert call_count == 3
     assert exc_info.value.response.status_code == 504
@@ -881,9 +997,9 @@ async def test_search_title_overlord_pleiades_x_kagejitsu_does_not_bridge_to_emi
     TERMINAL. TERMINAL nodes capture their outgoing edges in the persisted
     list (so split-detection can see e.g. Vigilante's sequel chain
     leaking out of BNHA's row) but the BFS does NOT recurse from them —
-    57034's anime info is never fetched, and 56842, 54595, 48316 stay out
-    of the graph entirely. Pleiades's `/relations` IS fetched (so its
-    outgoing `other` edge to 57034 is recorded), but 57034 onward are not.
+    57034's detail is never fetched, and 56842, 54595, 48316 stay out of
+    the graph entirely. Pleiades's detail IS fetched (so its outgoing
+    `other` edge to 57034 is recorded), but 57034 onward are not.
 
     Production observation that drove the strict (vs. one-hop) state
     machine: a direct Main(Eva) → other → Main(Ultraman) edge under one-hop
@@ -892,11 +1008,11 @@ async def test_search_title_overlord_pleiades_x_kagejitsu_does_not_bridge_to_emi
     surface that as a merge candidate without splitting a hundred sequels
     out manually.
     """
-    fetched_relations: list[int] = []
+    detail_calls: list[int] = []
 
     relations_by_id = {
         29803: [(31138, "Side Story")],
-        31138: [(57034, "Other")],   # Must never be fetched.
+        31138: [(57034, "Other")],   # Must never be walked past.
         57034: [(56842, "Other")],
         56842: [(54595, "Sequel")],
         54595: [(48316, "Prequel")],
@@ -913,19 +1029,21 @@ async def test_search_title_overlord_pleiades_x_kagejitsu_does_not_bridge_to_emi
 
     async def fake_get(self, url, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [_make_anime(29803, "Overlord")]}
-        if url.endswith("/relations"):
-            mal_id = int(url.rsplit("/", 2)[-2])
-            fetched_relations.append(mal_id)
-            return _relations_response(*relations_by_id[mal_id])
+            return {"data": [{"node": _make_anime(
+                29803, "Overlord", related_anime=_related(*relations_by_id[29803]),
+            )}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
-            return {"data": _make_anime(mal_id, title_by_id[mal_id])}
+            detail_calls.append(mal_id)
+            return _make_anime(
+                mal_id, title_by_id[mal_id],
+                related_anime=_related(*relations_by_id[mal_id]),
+            )
         raise AssertionError(f"Unexpected URL: {url}")
 
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         relations, _all_info, _unwanted = await scraper.search_title(
             title="Overlord", excluded_mal_ids=set(),
         )
@@ -943,16 +1061,16 @@ async def test_search_title_overlord_pleiades_x_kagejitsu_does_not_bridge_to_emi
         f"{bridge_and_eminence & graph.keys()}"
     )
 
-    # Pleiades's relations ARE fetched (TERMINAL captures outgoing edges
-    # so split-detection has the data), but the Eminence chain stays out:
+    # Pleiades's detail IS fetched (TERMINAL captures outgoing edges so
+    # split-detection has the data), but the Eminence chain stays out:
     # 57034 onward are never queued because Pleiades is TERMINAL and the
     # for-loop skips queuing its targets.
-    assert 31138 in fetched_relations, (
-        "Pleiades is TERMINAL — its /relations IS fetched for sidecar edges"
+    assert 31138 in detail_calls, (
+        "Pleiades is TERMINAL — its detail IS fetched for sidecar edges"
     )
     for mal_id in (57034, 56842, 54595, 48316):
-        assert mal_id not in fetched_relations, (
-            f"fetch_relations({mal_id}) was called — BFS crossed the boundary"
+        assert mal_id not in detail_calls, (
+            f"detail({mal_id}) was fetched — BFS crossed the boundary"
         )
 
     # Edge persistence: Overlord (WALK) → Pleiades + Pleiades (TERMINAL)
@@ -990,40 +1108,39 @@ async def test_search_title_identity_breaking_relation_makes_target_terminal(
     enter the graph.
 
     `parent_story` and `full_story` are NOT in this list — they're walked
-    by anchor discovery (target IS the canonical ancestor). See
-    `test_search_title_anchor_discovery_promotes_via_parent_story_and_full_story`
-    for that path.
+    by anchor discovery (target IS the canonical ancestor).
 
     This is the strict boundary the pre-v0.14.0 BFS enforced; v0.14.1's
     two-pass classifier doesn't need the deeper graph for correct
     classification, so we restore the tight membership and prevent
-    cross-franchise contamination — both the chained-bridge shape
-    (Overlord → Pleiades → other → Kagejitsu) and the direct
-    main → other → main shape (Eva → other → Ultraman's full sequel chain).
+    cross-franchise contamination.
     """
-    fetched_relations: list[int] = []
+    detail_calls: list[int] = []
+
+    relations_by_id = {
+        1: [(2, rel_label)],
+        2: [(3, "Sequel")],
+        3: [(4, "Sequel")],
+        4: [],
+    }
 
     async def fake_get(self, url, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [_make_anime(1, "Root")]}
-        if url.endswith("/relations"):
-            mal_id = int(url.rsplit("/", 2)[-2])
-            fetched_relations.append(mal_id)
-            if mal_id == 1:
-                return _relations_response((2, rel_label))
-            if mal_id == 2:
-                return _relations_response((3, "Sequel"))
-            if mal_id == 3:
-                return _relations_response((4, "Sequel"))
-            return {"data": []}
+            return {"data": [{"node": _make_anime(
+                1, "Root", related_anime=_related(*relations_by_id[1]),
+            )}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
-            return {"data": _make_anime(mal_id, f"Anime {mal_id}")}
+            detail_calls.append(mal_id)
+            return _make_anime(
+                mal_id, f"Anime {mal_id}",
+                related_anime=_related(*relations_by_id.get(mal_id, [])),
+            )
         raise AssertionError(f"Unexpected URL: {url}")
 
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         relations, _all_info, _unwanted = await scraper.search_title(
             title="Root", excluded_mal_ids=set(),
         )
@@ -1031,24 +1148,24 @@ async def test_search_title_identity_breaking_relation_makes_target_terminal(
     graph, edges, _ = relations[0]
 
     # Root walked normally and recorded the edge to A.
-    assert 1 in graph and 1 in fetched_relations
-    # A is in the graph (info recorded) AND its relations ARE fetched —
+    assert 1 in graph
+    # A is in the graph (info recorded) AND its detail IS fetched —
     # TERMINAL nodes capture outgoing edges for sidecar persistence so
     # split-detection can later see A's franchise chain. The boundary
     # holds at A's targets: the BFS does NOT queue them.
     assert 2 in graph, (
         f"A (queued via {rel_normalized}) must be in graph as TERMINAL"
     )
-    assert 2 in fetched_relations, (
-        "A's relations must be fetched — TERMINAL captures outgoing "
+    assert 2 in detail_calls, (
+        "A's detail must be fetched — TERMINAL captures outgoing "
         "edges for sidecar persistence, even though BFS doesn't recurse"
     )
     # Therefore B (A's sequel) and C (B's sequel) are unreachable — the
-    # BFS never queues them, never fetches their info or relations.
+    # BFS never queues them, never fetches their detail.
     assert 3 not in graph
     assert 4 not in graph
-    assert 3 not in fetched_relations
-    assert 4 not in fetched_relations
+    assert 3 not in detail_calls
+    assert 4 not in detail_calls
 
     # Edge data-shape: root's outgoing edge to A IS recorded AND A's
     # outgoing edge to B is recorded (TERMINAL captures edges). B's
@@ -1081,14 +1198,14 @@ async def test_search_title_terminal_captures_sequel_chain_for_split_detection(m
 
     Under the v0.14.2 split-candidates TERMINAL semantics:
     - Vigilante S1 IS in the graph.
-    - Vigilante S1's /relations IS fetched (so the (60593, 61942, "sequel")
+    - Vigilante S1's detail IS fetched (so the (60593, 61942, "sequel")
       edge lands in the persisted list).
     - Vigilante S2 is NOT in the graph (TERMINAL doesn't queue its targets).
-    - Vigilante S2's /relations is NEVER fetched.
+    - Vigilante S2's detail is NEVER fetched.
     - Split-detection downstream sees the sequel edge in the sidecar and
       flags the Vigilante cluster for admin review.
     """
-    fetched_relations: list[int] = []
+    detail_calls: list[int] = []
 
     relations_by_id = {
         31964: [(33486, "Sequel"), (60593, "Spin-off")],
@@ -1105,19 +1222,22 @@ async def test_search_title_terminal_captures_sequel_chain_for_split_detection(m
 
     async def fake_get(self, url, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [_make_anime(31964, "Boku no Hero Academia")]}
-        if url.endswith("/relations"):
-            mal_id = int(url.rsplit("/", 2)[-2])
-            fetched_relations.append(mal_id)
-            return _relations_response(*relations_by_id.get(mal_id, []))
+            return {"data": [{"node": _make_anime(
+                31964, "Boku no Hero Academia",
+                related_anime=_related(*relations_by_id[31964]),
+            )}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
-            return {"data": _make_anime(mal_id, title_by_id[mal_id])}
+            detail_calls.append(mal_id)
+            return _make_anime(
+                mal_id, title_by_id[mal_id],
+                related_anime=_related(*relations_by_id.get(mal_id, [])),
+            )
         raise AssertionError(f"Unexpected URL: {url}")
 
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         relations, _all_info, _unwanted = await scraper.search_title(
             title="Boku no Hero Academia", excluded_mal_ids=set(),
         )
@@ -1131,13 +1251,13 @@ async def test_search_title_terminal_captures_sequel_chain_for_split_detection(m
         "Vigilante S2 leaked into BNHA's anime — TERMINAL must not queue targets"
     )
 
-    # Vigilante S1's /relations IS fetched (TERMINAL captures outgoing
+    # Vigilante S1's detail IS fetched (TERMINAL captures outgoing
     # edges) but Vigilante S2's is NOT (never queued).
-    assert 60593 in fetched_relations, (
-        "Vigilante S1 is TERMINAL — its /relations must be fetched so the "
+    assert 60593 in detail_calls, (
+        "Vigilante S1 is TERMINAL — its detail must be fetched so the "
         "sequel edge to S2 lands in the persisted edge list for split-detection"
     )
-    assert 61942 not in fetched_relations
+    assert 61942 not in detail_calls
 
     # The bridge edge for split-detection: Vigilante S1 → S2 (sequel) is in
     # the persisted edges. This is what split-detection looks for: a
@@ -1170,25 +1290,25 @@ async def test_search_title_identity_preserving_relations_walk_through(
     depends on full closure through alt-version edges; demoting them would
     orphan downstream Rebuild Movies. See [relation_classifier.py:225-236].
     """
-    fetched_relations: list[int] = []
+    detail_calls: list[int] = []
+    chain = {1: [(2, rel_label)], 2: [(3, rel_label)], 3: [(4, rel_label)], 4: []}
 
     async def fake_get(self, url, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [_make_anime(1, "Root")]}
-        if url.endswith("/relations"):
-            mal_id = int(url.rsplit("/", 2)[-2])
-            fetched_relations.append(mal_id)
-            chain = {1: 2, 2: 3, 3: 4}
-            target = chain.get(mal_id)
-            return _relations_response((target, rel_label)) if target else {"data": []}
+            # Search omits related_anime — root's relations ride in its detail
+            # (chain[1], returned by the /anime/{id} handler below).
+            return {"data": [{"node": {"id": 1, "title": "Root"}}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
-            return {"data": _make_anime(mal_id, f"Anime {mal_id}")}
+            detail_calls.append(mal_id)
+            return _make_anime(
+                mal_id, f"Anime {mal_id}", related_anime=_related(*chain.get(mal_id, [])),
+            )
         raise AssertionError(f"Unexpected URL: {url}")
 
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         relations, _all_info, _unwanted = await scraper.search_title(
             title="Root", excluded_mal_ids=set(),
         )
@@ -1196,8 +1316,11 @@ async def test_search_title_identity_preserving_relations_walk_through(
     graph, edges, _ = relations[0]
     # Full chain walked.
     assert set(graph.keys()) == {1, 2, 3, 4}
-    # Every node fetched relations — proves WALK status all the way.
-    assert set(fetched_relations) == {1, 2, 3, 4}
+    # Every node's detail fetched — proves WALK propagated through the whole
+    # chain (a TERMINAL break would have stopped the fetches). The root (1) now
+    # hits detail too: search omits related_anime, so search_title fetches each
+    # root's detail to capture its relations.
+    assert set(detail_calls) == {1, 2, 3, 4}
     # Normalized edge labels persisted.
     edge_set = {(a, b, r) for a, b, r in edges}
     assert (1, 2, rel_normalized) in edge_set
@@ -1212,50 +1335,52 @@ async def test_search_title_status_promoted_when_two_edges_from_same_walker(monk
     status (WALK) wins.
 
     Setup:
-        root → Side Story → X     (would mark X as ONE_HOP)
+        root → Side Story → X     (would mark X as TERMINAL)
         root → Sequel → X         (marks X as WALK)
 
-    Result: X is WALK, X's relations are fetched, X's sequel Y is queued and
-    fetched (WALK). Without promotion, X stays ONE_HOP, Y is TERMINAL, and
-    Y's relations aren't fetched — caught by the assertion that Y IS fetched.
+    Result: X is WALK, X's detail is fetched, X's sequel Y is queued and
+    fetched (WALK). Without promotion, X stays TERMINAL, Y is never
+    reached — caught by the assertion that Y IS fetched.
     """
-    fetched_relations: list[int] = []
+    detail_calls: list[int] = []
+    relations_by_id = {
+        # X (2) reached via BOTH side_story AND sequel from root.
+        1: [(2, "Side Story"), (2, "Sequel")],
+        2: [(3, "Sequel")],
+        3: [(4, "Sequel")],
+        4: [],
+    }
 
     async def fake_get(self, url, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [_make_anime(1, "Root")]}
-        if url.endswith("/relations"):
-            mal_id = int(url.rsplit("/", 2)[-2])
-            fetched_relations.append(mal_id)
-            if mal_id == 1:
-                # X (2) reached via BOTH side_story AND sequel from root.
-                return _relations_response((2, "Side Story"), (2, "Sequel"))
-            if mal_id == 2:
-                return _relations_response((3, "Sequel"))
-            if mal_id == 3:
-                return _relations_response((4, "Sequel"))
-            return {"data": []}
+            return {"data": [{"node": _make_anime(
+                1, "Root", related_anime=_related(*relations_by_id[1]),
+            )}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
-            return {"data": _make_anime(mal_id, f"Anime {mal_id}")}
+            detail_calls.append(mal_id)
+            return _make_anime(
+                mal_id, f"Anime {mal_id}",
+                related_anime=_related(*relations_by_id.get(mal_id, [])),
+            )
         raise AssertionError(f"Unexpected URL: {url}")
 
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         relations, _all_info, _unwanted = await scraper.search_title(
             title="Root", excluded_mal_ids=set(),
         )
 
     graph, _, _ = relations[0]
-    # X (2) was promoted to WALK by the sequel edge → its relations fetched
-    # → its sequel target (3) is WALK → 3's relations fetched → 4 reached.
+    # X (2) was promoted to WALK by the sequel edge → its detail fetched
+    # → its sequel target (3) is WALK → 3's detail fetched → 4 reached.
     assert {1, 2, 3, 4}.issubset(set(graph.keys())), (
         "X must be WALK (promoted by sequel edge), so its sequel chain is walked"
     )
-    assert 2 in fetched_relations
-    assert 3 in fetched_relations
-    assert 4 in fetched_relations
+    assert 2 in detail_calls
+    assert 3 in detail_calls
+    assert 4 in detail_calls
 
 
 @pytest.mark.asyncio
@@ -1266,31 +1391,31 @@ async def test_search_title_no_cross_link_to_deep_other_chain_target(monkeypatch
 
     Codifies the cost-asymmetry tradeoff: a deep-chain catalog hit doesn't
     spam merge candidates. The merge-candidate detector sees ONLY direct
-    cross-links from WALK or ONE_HOP nodes, never from TERMINAL boundaries.
+    cross-links from WALK nodes, never from TERMINAL boundaries.
     """
     deep_catalog_id = 999
+    relations_by_id = {
+        1: [(2, "Side Story")],          # 2: TERMINAL (side_story)
+        2: [(3, "Other")],               # 3: never queued (2 is TERMINAL)
+        3: [(deep_catalog_id, "Sequel")],  # never fetched
+    }
 
     async def fake_get(self, url, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [_make_anime(1, "Root")]}
-        if url.endswith("/relations"):
-            mal_id = int(url.rsplit("/", 2)[-2])
-            if mal_id == 1:
-                return _relations_response((2, "Side Story"))  # 2: ONE_HOP
-            if mal_id == 2:
-                return _relations_response((3, "Other"))  # 3: TERMINAL
-            if mal_id == 3:
-                # Would point at a catalog member, but this is never fetched.
-                return _relations_response((deep_catalog_id, "Sequel"))
-            return {"data": []}
+            return {"data": [{"node": _make_anime(
+                1, "Root", related_anime=_related(*relations_by_id[1]),
+            )}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
-            return {"data": _make_anime(mal_id, f"Anime {mal_id}")}
+            return _make_anime(
+                mal_id, f"Anime {mal_id}",
+                related_anime=_related(*relations_by_id.get(mal_id, [])),
+            )
         raise AssertionError(f"Unexpected URL: {url}")
 
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         relations, _all_info, _unwanted = await scraper.search_title(
             title="Root", excluded_mal_ids={deep_catalog_id},
         )
@@ -1403,36 +1528,39 @@ def _overlord_relations_fixture() -> dict:
 def _make_fake_mal(fixture: dict, search_result_ids: list[int]):
     """Build a fake `_get` coroutine driven by `fixture` + a list of mal_ids
     that MAL's `/anime?q=...` search returns. Returns `(fake_get, state)`
-    where `state` exposes lists of mal_ids hit on each MAL endpoint for
-    assertions."""
+    where `state` exposes lists of mal_ids hit on each MAL detail path.
+
+    In MAL v2 both `search_by_malid` and `fetch_relations` hit the same
+    `/anime/{id}` detail endpoint; they differ only by the `fields` param.
+    `fetch_relations` requests `fields=id,related_anime`, so we split the
+    tracking on that: `fetched_relations` = fetch_relations calls (anchor
+    discovery + BFS fallback), `fetched_by_malid` = full-detail calls
+    (search_by_malid for anchors + non-root BFS nodes)."""
     state = {
         "fetched_relations": [],
-        "fetched_by_malid": [],  # /anime/{id}
+        "fetched_by_malid": [],
     }
+
+    def _obj(mal_id: int) -> dict:
+        entry = fixture.get(mal_id)
+        if entry is None:
+            return _make_anime(mal_id, f"Anime {mal_id}")
+        return _make_anime(
+            mal_id, entry["title"], media_type=entry["type"],
+            related_anime=_related(*entry.get("rels", [])),
+        )
 
     async def fake_get(self, url, params=None):
         if url.endswith("/anime") and params is not None and params.get("q"):
-            return {"data": [
-                _make_anime(
-                    mal_id, fixture[mal_id]["title"],
-                    media_type=fixture[mal_id]["type"],
-                )
-                for mal_id in search_result_ids
-            ]}
-        if url.endswith("/relations"):
-            mal_id = int(url.rsplit("/", 2)[-2])
-            state["fetched_relations"].append(mal_id)
-            rels = fixture.get(mal_id, {}).get("rels", [])
-            return _relations_response(*rels)
+            return {"data": [{"node": _obj(mal_id)} for mal_id in search_result_ids]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
-            state["fetched_by_malid"].append(mal_id)
-            entry = fixture.get(mal_id)
-            if entry is None:
-                return {"data": _make_anime(mal_id, f"Anime {mal_id}")}
-            return {"data": _make_anime(
-                mal_id, entry["title"], media_type=entry["type"],
-            )}
+            fields = (params or {}).get("fields", "")
+            if fields == "id,related_anime":
+                state["fetched_relations"].append(mal_id)
+            else:
+                state["fetched_by_malid"].append(mal_id)
+            return _obj(mal_id)
         raise AssertionError(f"Unexpected URL: {url}")
 
     return fake_get, state
@@ -1470,9 +1598,9 @@ async def test_search_title_overlord_entry_point_invariance(monkeypatch, search_
     """
     fixture = _overlord_relations_fixture()
     fake_get, _state = _make_fake_mal(fixture, search_result_ids)
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         relations, _all_info, _unwanted = await scraper.search_title(
             title="Overlord", excluded_mal_ids=set(),
         )
@@ -1508,9 +1636,9 @@ async def test_search_title_overlord_manner_movie_only_entry_stays_isolated(monk
     """
     fixture = _overlord_relations_fixture()
     fake_get, _ = _make_fake_mal(fixture, [61345])
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         relations, _all_info, _unwanted = await scraper.search_title(
             title="Manner Movie", excluded_mal_ids=set(),
         )
@@ -1563,9 +1691,9 @@ async def test_search_title_anchor_discovery_does_not_cross_other_franchise(
         ]},
     }
     fake_get, _ = _make_fake_mal(fixture, [search_root])
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         relations, _all_info, _unwanted = await scraper.search_title(
             title="X", excluded_mal_ids=set(),
         )
@@ -1591,9 +1719,9 @@ async def test_search_title_anchor_discovery_stops_at_catalog(monkeypatch):
     # Pretend S1 is already in catalog.
     excluded = {29803}
     fake_get, state = _make_fake_mal(fixture, [34161])
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         relations, _all_info, _unwanted = await scraper.search_title(
             title="Overlord Movie 1", excluded_mal_ids=excluded,
         )
@@ -1615,16 +1743,16 @@ async def test_search_title_anchor_discovery_stops_at_catalog(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_search_title_anchor_discovery_caches_relations(monkeypatch):
-    """The relation cache eliminates duplicate `/relations` fetches between
-    anchor discovery and the main BFS. Each upward-walked node is fetched
-    exactly once."""
+    """The relation cache eliminates duplicate `fetch_relations` fetches
+    between anchor discovery and the main BFS. Each upward-walked node is
+    fetched at most once."""
     fixture = _overlord_relations_fixture()
     # Search Movie 1 → anchor discovery walks full_story → 29803 → no upward.
     # Both 34161 and 29803 are touched by discovery AND main BFS.
     fake_get, state = _make_fake_mal(fixture, [34161])
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         await scraper.search_title(
             title="Overlord Movie 1", excluded_mal_ids=set(),
         )
@@ -1634,7 +1762,7 @@ async def test_search_title_anchor_discovery_caches_relations(monkeypatch):
         counts[mal_id] = counts.get(mal_id, 0) + 1
     for mal_id, n in counts.items():
         assert n == 1, (
-            f"mal_id={mal_id} /relations fetched {n} times — cache failed"
+            f"mal_id={mal_id} fetch_relations called {n} times — cache failed"
         )
 
 
@@ -1652,9 +1780,9 @@ async def test_search_title_anchor_discovery_respects_max_hops(monkeypatch):
         fixture[mal_id] = {"type": "TV", "title": f"Anime{mal_id}", "rels": rels}
 
     fake_get, state = _make_fake_mal(fixture, [1000])
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         relations, _all_info, _unwanted = await scraper.search_title(
             title="Deep", excluded_mal_ids=set(),
         )
@@ -1664,8 +1792,8 @@ async def test_search_title_anchor_discovery_respects_max_hops(monkeypatch):
     for graph, _edges, _cl in relations:
         all_mal_ids.update(graph.keys())
     assert 1000 in all_mal_ids
-    # Total /relations fetches bounded — generous upper bound for a 15-deep
-    # chain. (Each node fetched at most once thanks to the cache.)
+    # Total fetch_relations calls bounded — generous upper bound for a
+    # 15-deep chain. (Each node fetched at most once thanks to the cache.)
     assert len(state["fetched_relations"]) <= chain_length, (
         f"Too many fetches: {len(state['fetched_relations'])} — cache/loop bound failed"
     )
@@ -1730,9 +1858,9 @@ async def test_search_title_eva_chao_xianshi_first_does_not_lose_main_chain(monk
     # MAL returns the ONA first, then Special, then TV — the exact shape
     # the user observed in dev DB.
     fake_get, _state = _make_fake_mal(fixture, [63018, 53246, 30])
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         relations, _all_info, _unwanted = await scraper.search_title(
             title="Evangelion", excluded_mal_ids=set(),
         )
@@ -1774,8 +1902,6 @@ async def test_search_title_weak_anchor_root_releases_visited_ids(monkeypatch):
     Post-fix: S1's claim is rolled back when its graph is detected as
     weak-anchor-without-cross-link, letting S3's BFS include it.
     """
-    fetched_relations: list[int] = []
-
     relations_by_id = {
         38472: [],  # Isekai Quartet S1 — empty (real MAL behavior)
         39988: [(38472, "Prequel"), (41567, "Sequel")],
@@ -1790,6 +1916,7 @@ async def test_search_title_weak_anchor_root_releases_visited_ids(monkeypatch):
             duration="5 min per ep",
             episodes=12,
             aired_from=aired_from,
+            related_anime=_related(*relations_by_id[mal_id]),
         )
 
     def _movie(mal_id: int, title: str, aired_from: str) -> dict:
@@ -1799,6 +1926,7 @@ async def test_search_title_weak_anchor_root_releases_visited_ids(monkeypatch):
             duration="1 hr 40 min",
             episodes=1,
             aired_from=aired_from,
+            related_anime=_related(*relations_by_id[mal_id]),
         )
 
     anime_by_id = {
@@ -1813,20 +1941,15 @@ async def test_search_title_weak_anchor_root_releases_visited_ids(monkeypatch):
             # Search returns S1 + S3 (omit S2 + Movie to keep the test
             # focused on the S1-as-root weak-anchor case). Anchor-tier
             # sort puts S1 first (older TV beats newer TV; both tier 1).
-            return {"data": [anime_by_id[38472], anime_by_id[61851]]}
-        if url.endswith("/relations"):
-            mal_id = int(url.rsplit("/", 2)[-2])
-            fetched_relations.append(mal_id)
-            pairs = relations_by_id.get(mal_id, [])
-            return _relations_response(*pairs) if pairs else {"data": []}
+            return {"data": [{"node": anime_by_id[38472]}, {"node": anime_by_id[61851]}]}
         if "/anime/" in url:
             mal_id = int(url.rsplit("/", 1)[-1])
-            return {"data": anime_by_id[mal_id]}
+            return anime_by_id[mal_id]
         raise AssertionError(f"Unexpected URL: {url}")
 
-    monkeypatch.setattr(JikanScraper, "_get", fake_get)
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         relations, _all_info, _unwanted = await scraper.search_title(
             title="Isekai Quartet", excluded_mal_ids=set(),
         )

@@ -7,8 +7,9 @@ without waiting for the dispatcher's main transaction to commit.
 
 The update_sweep dispatcher refreshes existing catalog rows: tier-select the
 due *media* (v0.14.8 — media-level, not whole anime), group them by parent
-anime, re-fetch each due media via /anime/{id}/full, diff the volatile
-fields, and advance the per-media stability counter. Per-anime commit
+anime, re-fetch each due media via /anime/{id} (fields + bundled
+related_anime), diff the volatile fields, and advance the per-media
+stability counter. Per-anime commit
 boundary so a crash mid-sweep preserves the already-refreshed rows.
 
 The seasonal_sweep dispatcher lives in its own module
@@ -40,7 +41,7 @@ from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
 from app.models.genre import Genre
 from app.models.job import Job
-from app.models.media import Media, RelationType
+from app.models.media import Media, MediaType, RelationType, SeasonType
 from app.models.media_freshness import MediaFreshness
 from app.models.media_genre import MediaGenre
 from app.models.media_relation_edges import MediaRelationEdges
@@ -51,12 +52,13 @@ from app.services.anime_relation_service import (
     reclassify_anime,
     umbrella_diff_to_log_entry,
 )
-from app.services.jikan_scraper import (
-    JikanScraper,
+from app.services.job_worker import ERROR_CATEGORY_UPSTREAM_OUTAGE, classify_error
+from app.services.mal_scraper import (
+    MalScraper,
+    is_hentai,
     parse_mal_datetime,
     parse_relation_edges,
 )
-from app.services.job_worker import ERROR_CATEGORY_UPSTREAM_OUTAGE, classify_error
 from app.services.merge_detection_service import (
     detect_merge_candidates,
     find_cross_anime_relation_pairs,
@@ -124,6 +126,22 @@ class ProbeFailure(NamedTuple):
     name_jap: str | None
     error_category: str | None
     error_message: str
+
+
+class HentaiRemoval(NamedTuple):
+    """A sweep-refreshed anime whose MAL record now flags Hentai (genre tag or
+    Rx rating). The fresh-scrape BFS already blacklists hentai, but the sweep
+    path otherwise had no equivalent, so a title that flipped after it was
+    scraped lingered in the catalog (only logged as an unknown genre tag).
+    The sweep now deletes the whole anime (a hentai member means the franchise
+    is hentai) and blacklists every one of its media mal_ids so a later
+    probe/search can't re-add it. Surfaced (like Step1Failure) so the removal
+    lands in `result_summary.hentai_removed` for the admin to see."""
+    anime_uuid: str
+    title: str
+    name_eng: str | None
+    name_jap: str | None
+    mal_ids: list[int]
 
 
 # Diff classification for the genre/studio drift detector. Both kinds
@@ -324,6 +342,10 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     consecutive_upstream_failures = 0
     # Symmetric to step1_failures: anime whose step-2 probe raised.
     probe_failures: list[dict] = []
+    # Anime deleted mid-sweep because MAL flipped them to Hentai (genre or Rx
+    # rating). Each entry: {anime_uuid, title, name_eng, name_jap, mal_ids}.
+    # The mal_ids were blacklisted so they can't be re-added.
+    hentai_removed_log: list[dict] = []
     # Track which existing anime had new media attached so we can re-run
     # merge detection on them at sweep end — a tier-3 anime whose probe
     # pulled in a new sibling franchise (Vigilante-shape) may now bridge
@@ -357,11 +379,13 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     orphaned_studios_removed = 0
 
     def build_result_summary() -> dict:
-        """Assemble the v6 result_summary from the loop accumulators (read via
+        """Assemble the v7 result_summary from the loop accumulators (read via
         closure). Called at the normal end-of-sweep return AND at the circuit-
         breaker abort, so a failed sweep still carries the media_refreshed
         counters + the per-anime failure list the detail page renders instead
-        of only the header error banner."""
+        of only the header error banner. v7 (v0.14.14) adds `hentai_removed`
+        (+ `counters.hentai_removed_count`) for anime deleted mid-sweep on a
+        Hentai flip."""
         return {
             # v5 (v0.14.8): counters go media-grained. `media_refreshed` is the
             # headline workload (individual media touched); `anime_touched` is
@@ -382,6 +406,8 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
                 "probe_attached_media_count": probe_attached_media_count,
                 "orphaned_studios_removed": orphaned_studios_removed,
                 "step1_failed": step1_failed,
+                # v7 (v0.14.14): anime deleted for flipping to Hentai.
+                "hentai_removed_count": len(hentai_removed_log),
             },
             "media_changes": media_changes_log,
             "anime_umbrella_changes": anime_umbrella_changes_log,
@@ -395,6 +421,10 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
             "step1_failures": step1_failures,
             # Per-anime step-2 probe failures, same shape as step1_failures.
             "probe_failures": probe_failures,
+            # v7 (v0.14.14): anime removed this sweep for flipping to Hentai —
+            # {anime_uuid, title, name_eng, name_jap, mal_ids}. The detail page
+            # lists them; the Jobs Log surfaces the count.
+            "hentai_removed": hentai_removed_log,
             # Deduplicated across every media in this sweep. The Jobs Log
             # tints rows when this is non-empty so the admin can spot which
             # sweeps need a seeder update without drilling into details.
@@ -407,7 +437,7 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
             "cache_recompute_failed": cache_recompute_failed,
         }
 
-    async with JikanScraper() as scraper:
+    async with MalScraper() as scraper:
         for anime, media_to_refresh in by_anime.values():
             step1 = await _try_step1_refresh(
                 session, anime, media_to_refresh, scraper,
@@ -442,6 +472,16 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
                             "unavailable",
                             partial_summary=build_result_summary(),
                         )
+                continue
+
+            if isinstance(step1, HentaiRemoval):
+                # The anime was deleted + blacklisted + committed inside
+                # _try_step1_refresh. MAL was reachable (we read the payload),
+                # so reset the breaker; then just record it — no probe, no
+                # freshness advance, not counted as refreshed (the row is gone).
+                consecutive_upstream_failures = 0
+                hentai_removed_log.append(step1._asdict())
+                await progress.update(items_done=media_refreshed)
                 continue
 
             # A successful refresh means MAL is reachable — reset the breaker.
@@ -570,10 +610,12 @@ async def _try_step1_refresh(
     session: AsyncSession,
     anime: Anime,
     media_to_refresh: list[Media],
-    scraper: JikanScraper,
-) -> RefreshResult | Step1Failure:
+    scraper: MalScraper,
+) -> RefreshResult | HentaiRemoval | Step1Failure:
     """Step 1 wrapper: refresh the due media + commit, or rollback +
-    Step1Failure. Always commits durably so a worker crash later in the
+    Step1Failure. A hentai flip returns a HentaiRemoval marker (the anime is
+    deleted + blacklisted inside the savepoint, committed here alongside a
+    normal refresh). Always commits durably so a worker crash later in the
     sweep can't take the field-diff work down with it, and a single bad
     MAL response fails *that* anime only without aborting the loop.
     Returns a `Step1Failure` (not None) so the dispatcher can record which
@@ -628,7 +670,7 @@ async def _try_step2_probe(
     anime: Anime,
     raw_payloads: dict[int, dict],
     exclusions: set[int],
-    scraper: JikanScraper,
+    scraper: MalScraper,
 ) -> list[dict] | ProbeFailure:
     """Step 2 wrapper: relations probe + return the list of attached media
     ({"media_uuid", "title", "name_eng", "name_jap"} dicts; empty when none landed),
@@ -667,12 +709,37 @@ async def _try_step2_probe(
         )
 
 
+async def _remove_hentai_anime(session: AsyncSession, anime: Anime) -> HentaiRemoval:
+    """Delete a hentai anime + all its media and blacklist every media mal_id.
+    Blacklist BEFORE the delete so the mal_ids land in `media_unwanted` (no FK
+    to media, so it survives the cascade) and a later probe/search BFS skips
+    them via the excluded-ids gate. Uses a Core `delete(Anime)` (DB-level
+    ON DELETE CASCADE) rather than `session.delete(anime)`: the ORM cascade
+    would lazy-load each media's `lazy="raise"` children to delete them and
+    trip the guard — the same pattern `scripts/delete_anime_by_title` uses.
+    Snapshots the identifiers into the marker first (the delete expires the
+    ORM attrs)."""
+    removal = HentaiRemoval(
+        anime_uuid=str(anime.uuid),
+        title=anime.title,
+        name_eng=anime.name_eng,
+        name_jap=anime.name_jap,
+        mal_ids=[m.mal_id for m in anime.media],
+    )
+    await create_unwanted_media(
+        session,
+        {(m.mal_id, m.title, "Hentai") for m in anime.media},
+    )
+    await session.execute(delete(Anime).where(Anime.id == anime.id))
+    return removal
+
+
 async def _refresh_one_anime(
     session: AsyncSession,
     anime: Anime,
     media_to_refresh: list[Media],
-    scraper: JikanScraper,
-) -> RefreshResult:
+    scraper: MalScraper,
+) -> RefreshResult | HentaiRemoval:
     """Refresh only the individually-due media (`media_to_refresh`), not
     the whole umbrella — the v0.14.8 media-level conversion. Stable
     siblings keep their MediaFreshness untouched and pay no MAL call.
@@ -699,6 +766,16 @@ async def _refresh_one_anime(
         raw = await scraper.refresh_anime(media.mal_id)
         raw_payloads[media.mal_id] = raw
         payload = scraper.extract_information(raw)
+
+        # Hentai self-defense (v0.14.14): MAL reclassified this media as
+        # Hentai (genre or Rx rating) since it was scraped. The fresh-scrape
+        # BFS blacklists hentai on the way in; the sweep must do the same or a
+        # flipped title lingers in the catalog. Remove the WHOLE anime + its
+        # media from the catalog and blacklist every member so it can't be
+        # re-added, then bail — no point diffing/reclassifying a row we delete.
+        if is_hentai(payload):
+            return await _remove_hentai_anime(session, anime)
+
         dynamic: list[dict] = []
         static: list[dict] = []
         media_volatile_changed = _apply_media_diff(media, payload, diff_sink=dynamic)
@@ -745,7 +822,7 @@ async def _refresh_one_anime(
             now=now,
         )
 
-        # `/anime/{id}/full` bundles the relations block; refresh the
+        # The MAL v2 detail response bundles `related_anime`; refresh the
         # sidecar so bridge edges land for pre-v0.14.1 rows scraped
         # under the dangling-edge filter, and so MAL adding a new
         # sequel/alt-version flows into the catalog over the nightly
@@ -753,7 +830,7 @@ async def _refresh_one_anime(
         # volatile_changed — edge churn is structural metadata, not the
         # volatile canonical fields the stable counter tracks.
         fresh_edges: list[list[int | str]] = [
-            [t, r] for t, r in parse_relation_edges(raw.get("relations") or [])
+            [t, r] for t, r in parse_relation_edges(raw.get("related_anime") or [])
         ]
         if media.relation_edges is None:
             media.relation_edges = MediaRelationEdges(
@@ -868,10 +945,10 @@ async def _probe_relations_for_anime(
     anime: Anime,
     raw_payloads: dict[int, dict],
     exclusions: set[int],
-    scraper: JikanScraper,
+    scraper: MalScraper,
 ) -> list[dict]:
     """For each Main media on the parent anime, walk its MAL relation graph
-    via `JikanScraper.search_title` seeded by the media's mal_id (skipping
+    via `MalScraper.search_title` seeded by the media's mal_id (skipping
     the title-fuzzy `q=` step that would otherwise pull in unrelated top-3
     matches). Newly-discovered media land on the existing parent anime via
     `attach_search_result_to_anime`. Disjoint sub-graphs (e.g. Vigilante
@@ -946,7 +1023,28 @@ def _weighted_score(score: float | None, scored_by: int | None) -> float | None:
 _EMBEDDING_TEXT_FIELDS = ("title", "name_eng", "name_jap", "other_names", "description")
 
 # Fields refreshed but not part of any embedding — pure DB updates.
-_METADATA_NONTEXT_FIELDS = ("cover_image", "age_rating", "original_source")
+# Includes the v0.14.14 self-heal set: static columns set once at creation that
+# a sweep should be able to correct — an exact runtime (duration_seconds), a
+# season fix (from MAL), or `mal_url` (locally derived from mal_id, so this only
+# ever normalizes a Jikan-era slug URL `/anime/{id}/{slug}` to the canonical
+# `/anime/{id}` form — a no-op for MAL-era rows, never a MAL "correction").
+# Handled in the metadata bucket (NOT the volatile one) so a late correction
+# lands WITHOUT resetting the stability counter — a settled anime shouldn't drop
+# back to weekly polling over a duration typo. All None-guarded in the loop below
+# so a MAL omission never nulls a populated value. media_type, anime_season_name
+# and aired_from are self-healed too but need special handling (enum coercion /
+# datetime parse) so they live outside this tuple.
+_METADATA_NONTEXT_FIELDS = (
+    "cover_image", "age_rating", "original_source",
+    "duration_seconds", "anime_season_year", "mal_url",
+)
+
+# Valid enum values — the guards for the media_type / anime_season_name
+# self-heals so a freak music/cm/pv (which extract_information passes through
+# un-translated for the scrape-time skip rule) or a stray season string can't
+# crash the savepoint on an existing row.
+_VALID_MEDIA_TYPES = frozenset(mt.value for mt in MediaType)
+_VALID_SEASON_NAMES = frozenset(s.value for s in SeasonType)
 
 
 def _jsonable(value: object) -> object:
@@ -988,6 +1086,26 @@ async def _apply_metadata_diff(
         if diff_sink is not None:
             diff_sink.append({"field": field, "old": _jsonable(old), "new": _jsonable(new)})
 
+    def _heal_enum(field: str, enum_cls, valid_values: frozenset[str]) -> bool:
+        """Self-heal an Enum-typed column from the MAL payload, returning True
+        when a change landed. Coerce to the enum MEMBER, not the bare string:
+        SQLAlchemy only coerces an Enum column at flush, so a raw-string
+        assignment leaves the in-memory attribute a `str` — and
+        reclassify_anime (same savepoint, before commit) reads e.g.
+        `media.media_type.value`, which then blows up with "'str' object has
+        no attribute 'value'". The valid-values guard does double duty: it
+        rejects an untranslatable value (a freak music/cm/pv that
+        extract_information passes through un-translated for the scrape-time
+        skip rule) AND folds in the MAL-omitted (None) skip, so no separate
+        None guard is needed."""
+        new_val = payload.get(field)
+        current = getattr(media, field)
+        if new_val in valid_values and current != new_val:
+            _capture(field, current, new_val)
+            setattr(media, field, enum_cls(new_val))
+            return True
+        return False
+
     for field in _EMBEDDING_TEXT_FIELDS:
         new_val = payload.get(field)
         if field == "other_names":
@@ -1021,6 +1139,13 @@ async def _apply_metadata_diff(
             _capture(field, current, new_val)
             setattr(media, field, new_val)
             other_changed = True
+
+    # Enum-typed self-heals (v0.14.14): media_type (MAL reclassifies
+    # TV↔ONA↔Movie) and anime_season_name. Handled here rather than in the
+    # generic string loop above because Enum columns need coercion to a member
+    # (see _heal_enum). Feeds the reclassify step the sweep runs after the diffs.
+    other_changed |= _heal_enum("media_type", MediaType, _VALID_MEDIA_TYPES)
+    other_changed |= _heal_enum("anime_season_name", SeasonType, _VALID_SEASON_NAMES)
 
     if text_changed:
         # Same DELETE-then-INSERT discipline as anime-side regen: a new
@@ -1235,10 +1360,23 @@ def _apply_media_diff(
         media.airing_status = new_airing_status
         changed = True
 
+    # None-guarded like every sibling volatile field: a transient MAL
+    # response that omits end_date on a finished media must not null a
+    # populated aired_to (and reset its stability counter).
     new_aired_to = parse_mal_datetime(payload.get("aired_to"))
-    if media.aired_to != new_aired_to:
+    if new_aired_to is not None and media.aired_to != new_aired_to:
         _capture("aired_to", media.aired_to, new_aired_to)
         media.aired_to = new_aired_to
         changed = True
+
+    # aired_from self-heal (v0.14.14): the volatile bucket already refreshes
+    # aired_to; aired_from was asymmetric and never corrected. Write it too —
+    # but do NOT flip `changed`: a premiere-date correction is a rare
+    # structural fix, not the volatile churn the stability counter tracks.
+    # None-guarded so a MAL omission never nulls a populated premiere date.
+    new_aired_from = parse_mal_datetime(payload.get("aired_from"))
+    if new_aired_from is not None and media.aired_from != new_aired_from:
+        _capture("aired_from", media.aired_from, new_aired_from)
+        media.aired_from = new_aired_from
 
     return changed

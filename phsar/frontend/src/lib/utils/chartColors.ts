@@ -34,7 +34,7 @@ export function scoreColor(score: number): string {
 }
 
 /** Canonical display order for relation types. */
-export const RELATION_TYPE_ORDER = ['main', 'alternative_version', 'side_story', 'summary', 'crossover'] as const;
+export const RELATION_TYPE_ORDER = ['main', 'alternative_version', 'side_story', 'summary'] as const;
 
 /** User-friendly display labels for relation types. */
 export const RELATION_TYPE_LABELS: Record<string, string> = {
@@ -42,7 +42,6 @@ export const RELATION_TYPE_LABELS: Record<string, string> = {
 	alternative_version: 'Alternative Version',
 	side_story: 'Side Story',
 	summary: 'Summary',
-	crossover: 'Crossover',
 };
 
 /**
@@ -98,8 +97,7 @@ export function getThemedChartColorPalette(): string[] {
  * main / side_story / summary are the three most-common types and frequently
  * appear adjacent on the timeline, so they get the three highest-contrast
  * slots (primary, accent red, secondary green). alternative_version takes
- * the high-saturation yellow. crossover gets the muted ring slot — it's the
- * rarest type so its low contrast with primary almost never bites in practice.
+ * the high-saturation yellow.
  */
 export function getThemedRelationTypeColors(): Record<string, string> {
 	const palette = getThemedChartColorPalette();
@@ -108,6 +106,5 @@ export function getThemedRelationTypeColors(): Record<string, string> {
 		alternative_version: palette[2],
 		side_story: palette[3],
 		summary: palette[1],
-		crossover: palette[4],
 	};
 }

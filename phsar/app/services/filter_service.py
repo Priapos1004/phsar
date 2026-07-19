@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.genre_dao import GenreDAO
 from app.daos.media_dao import MediaDAO
+from app.daos.search_filters import weighted_mean_votes_expr
 from app.daos.studio_dao import StudioDAO
 from app.models.genre import Genre
 from app.models.media import Media
@@ -96,13 +97,15 @@ async def _get_anime_majority_genres(db: AsyncSession) -> list[str]:
 
 async def _get_anime_aggregated_ranges(db: AsyncSession) -> dict:
     """Get min/max of aggregated values across all anime for filter slider ranges."""
-    # Subquery: per-anime aggregates (avg scored_by to avoid bias toward anime with more entries)
+    # Subquery: per-anime aggregates. scored_by uses the relation-weighted mean
+    # (Main+Alt only) so the anime-view "scored by" slider max tracks the same
+    # value the cards show and the HAVING filter evaluates (search_anime_aggregated).
     anime_agg = (
         select(
             Media.anime_id,
             func.sum(Media.episodes).label("total_episodes"),
             func.sum(Media.total_watch_time).label("total_watch_time"),
-            func.avg(Media.scored_by).label("avg_scored_by"),
+            weighted_mean_votes_expr().label("avg_scored_by"),
         )
         .group_by(Media.anime_id)
     ).subquery()

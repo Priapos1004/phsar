@@ -13,7 +13,7 @@ jobs:
 
     services:
       postgres:
-        image: ankane/pgvector
+        image: pgvector/pgvector:pg17
         env:
           POSTGRES_USER: testuser
           POSTGRES_PASSWORD: testpassword
@@ -40,6 +40,7 @@ jobs:
       ADMIN_PASSWORD: adminpassword
       SECRET_KEY: ci-test-secret-key
       SEARCH_SECRET_KEY: ci-test-search-secret-key
+      MY_ANIME_LIST_CLIENT_ID: ci-test-mal-client-id
 
     steps:
     - name: Checkout code
@@ -61,6 +62,21 @@ jobs:
 
     - name: Install dependencies
       run: pip install -r requirements.txt
+
+    # The pg17 service container needs a matching pg17 client: ubuntu-latest
+    # ships postgresql-client-16, and pg_dump refuses to dump a newer server
+    # ("server version mismatch"). Install the v17 client from PGDG and put it
+    # first on PATH so the backup tests' bare `pg_dump`/`pg_restore` calls
+    # resolve to v17 — keeping CI's client + server aligned with prod (pg17).
+    - name: Install PostgreSQL 17 client
+      run: |
+        curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+          | sudo gpg --dearmor -o /usr/share/keyrings/pgdg.gpg
+        echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+          | sudo tee /etc/apt/sources.list.d/pgdg.list
+        sudo apt-get update
+        sudo apt-get install -y postgresql-client-17
+        echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
 
     - name: Create database schema and seed
       run: |

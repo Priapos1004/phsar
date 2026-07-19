@@ -34,7 +34,7 @@ docker run --name anime-postgres \
   -e POSTGRES_DB=anime_db \
   -v pgdata:/var/lib/postgresql/data \
   -p 5432:5432 \
-  -d ankane/pgvector
+  -d pgvector/pgvector:pg17
 ```
 
 *Change `animeuser` and `animepass`*

@@ -35,7 +35,7 @@ async def create_media(db: AsyncSession, media_in: MediaUnconnected, anime_id: i
 
 
 def media_unconnected_from_info(media_info: dict, relation_type: str) -> MediaUnconnected:
-    """Build a MediaUnconnected from a JikanScraper.extract_information dict.
+    """Build a MediaUnconnected from a MalScraper.extract_information dict.
     Used by both user_scrape (search_service) and the sweep probe
     (save_service.attach_search_result_to_anime) so both paths share
     identical schema-construction defaults."""

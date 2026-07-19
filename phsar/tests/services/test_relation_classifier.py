@@ -11,6 +11,7 @@ from app.services.relation_classifier import (
     SUBSTANCE_MIN_EPISODES,
     SUBSTANCE_MIN_MOVIE_DURATION_S,
     SUBSTANCE_MIN_TV_DURATION_S,
+    SUBSTANCE_MIN_TV_TOTAL_S,
     SUBSTANCE_POPULAR_WAIVER_SCORED_BY,
     classify_anime_relations,
     find_disjoint_franchises,
@@ -192,7 +193,100 @@ def test_donghua_ona_anchors_when_no_tv_present():
     assert out[202] == "side_story"
 
 
-# --- Summary / crossover labels -----------------------------------------
+def test_short_ona_main_chain_survives_offchain_fulllength_side():
+    """Shi Wangzhe A? shape (real data): the main chain is all short-form ONA
+    seasons (~8 min, 13-14 eps) linked by sequel edges, plus OFF-CHAIN
+    full-length spin-off specials (~27 min, 4 eps). The specials must NOT
+    re-enforce the duration floor on the main seasons — the per-floor
+    relaxation is scoped to the MAIN CHAIN, so every sequel-linked season
+    stays `main`. Regression: previously the relaxation was computed over ALL
+    nodes, so the off-chain full-length specials cleared the duration floor
+    globally, flipping relax_duration off and demoting S2-S6 to side_story."""
+    nodes = {
+        1: _ona(episodes=14, duration_s=403, aired="2022-01-01"),  # S1 (anchor)
+        2: _ona(episodes=13, duration_s=520, aired="2022-07-01"),  # S2
+        3: _ona(episodes=13, duration_s=526, aired="2023-01-01"),  # S3
+        4: _ona(episodes=14, duration_s=540, aired="2023-07-01"),  # S4
+        # Off-chain full-length spin-off specials — they clear the duration
+        # floor but sit outside the sequel main chain.
+        90: _ona(episodes=4, duration_s=1612, aired="2022-06-01"),
+        91: _ona(episodes=4, duration_s=1720, aired="2023-06-01"),
+    }
+    edges = [
+        (1, 2, "sequel"), (2, 3, "sequel"), (3, 4, "sequel"),
+        (1, 90, "spin-off"), (90, 91, "sequel"),  # off-chain spin-off branch
+    ]
+    out, anchor = classify_anime_relations(nodes, edges)
+    assert anchor == 1
+    assert out[1] == "main"
+    assert out[2] == "main"
+    assert out[3] == "main"
+    assert out[4] == "main"
+    # The off-chain full-length specials stay side content.
+    assert out[90] == "side_story"
+    assert out[91] == "side_story"
+
+
+# --- High-episode short-form total-runtime waiver -----------------------
+
+def test_saiki_short_form_first_season_is_main_and_anchors():
+    """Saiki Kusuo no Ψ-nan shape (real data). S1 is short-form (120 eps ×
+    330s ≈ 11h total) so it fails the 10-min per-episode duration floor, while
+    S2 (24 eps × 1440s) clears it. Before the total-runtime waiver, only S2
+    passed substance: it stole the anchor (umbrella titled "…Saiki K. 2") and
+    S1 was demoted to side_story despite being the flagship season. The waiver
+    admits S1 on aggregate runtime, so it anchors (TV-tier, oldest) and stays
+    main; the 1-ep special + 6-ep ONA sequel stay side content (episode floor).
+    """
+    nodes = {
+        19469: _ona(episodes=1, duration_s=983, aired="2013-08-04"),     # pilot ONA
+        33255: _tv(episodes=120, duration_s=330, aired="2016-07-04"),    # S1 short-form
+        53712: _movie(duration_s=150, aired="2016-11-27"),               # Manner Movie
+        34612: _tv(episodes=24, duration_s=1440, aired="2018-01-17"),    # S2 full-length
+        38249: _tvspecial(episodes=1, duration_s=2820, aired="2018-12-28"),  # Final Arc
+        40542: _ona(episodes=6, duration_s=1347, aired="2019-12-30"),    # Reawakened
+    }
+    edges = [
+        (19469, 33255, "other"),
+        (33255, 34612, "sequel"), (33255, 53712, "other"),
+        (34612, 38249, "sequel"),
+        (38249, 40542, "sequel"),
+    ]
+    out, anchor = classify_anime_relations(nodes, edges)
+    assert anchor == 33255                 # S1 anchors → correct umbrella title
+    assert out[33255] == "main"            # the fix: flagship short-form season
+    assert out[34612] == "main"            # full-length S2 stays main
+    # Episode floor still gates: 1-ep special + 6-ep ONA are not promoted.
+    assert out[38249] == "side_story"
+    assert out[40542] == "side_story"
+    assert out[19469] == "side_story"
+    assert out[53712] == "side_story"
+
+
+def test_total_runtime_waiver_boundary():
+    """A below-per-episode-floor TV/ONA entry passes exactly when its aggregate
+    runtime (episodes × duration) reaches SUBSTANCE_MIN_TV_TOTAL_S. Duration
+    stays under the 600s per-episode floor, so the total is the only mover.
+    """
+    dur = 400  # < SUBSTANCE_MIN_TV_DURATION_S; chosen to divide the floor evenly
+    at_floor = SUBSTANCE_MIN_TV_TOTAL_S // dur
+    assert at_floor * dur == SUBSTANCE_MIN_TV_TOTAL_S  # exact boundary; retune dur if this trips
+    assert passes_substance(_tv(episodes=at_floor, duration_s=dur))           # == floor
+    assert not passes_substance(_tv(episodes=at_floor - 1, duration_s=dur))   # below floor
+    assert passes_substance(_ona(episodes=at_floor, duration_s=dur))          # ONA shares branch
+
+
+def test_total_runtime_waiver_does_not_bypass_episode_floor():
+    """The waiver is scoped to the DURATION floor only. A full-length ONA that
+    fails purely on the episode floor (6 < 8) is NOT rescued — its per-episode
+    duration is above 600s, so the waiver branch never runs (Reawakened shape).
+    """
+    node = _ona(episodes=6, duration_s=1347)  # 8082s total, but dur >= 600
+    assert node["duration_seconds"] >= SUBSTANCE_MIN_TV_DURATION_S
+    assert not passes_substance(node)
+
+
+# --- Summary labels -----------------------------------------------------
 
 def test_summary_edge_classifies_as_summary():
     nodes = {
@@ -202,16 +296,6 @@ def test_summary_edge_classifies_as_summary():
     edges = [(300, 301, "summary")]
     out, _ = classify_anime_relations(nodes, edges)
     assert out[301] == "summary"
-
-
-def test_crossover_edge_classifies_as_crossover():
-    nodes = {
-        400: _tv(),
-        401: _movie(),
-    }
-    edges = [(400, 401, "crossover")]
-    out, _ = classify_anime_relations(nodes, edges)
-    assert out[401] == "crossover"
 
 
 def test_summary_outranks_side_story_when_node_has_both_edges():
@@ -423,7 +507,7 @@ def test_classifier_outputs_are_valid_relation_type_values():
     edges = [
         (1, 2, "alternative_version"),
         (1, 3, "summary"),
-        (1, 4, "crossover"),
+        (1, 4, "other"),
         (1, 5, "sequel"),
         (5, 1, "full_story"),
     ]

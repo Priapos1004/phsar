@@ -28,7 +28,7 @@ from app.exceptions import TransientUpstreamError
 from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
 from app.models.genre import Genre, GenreType
-from app.models.media import Media
+from app.models.media import Media, MediaType, SeasonType
 from app.models.media_freshness import MediaFreshness
 from app.models.media_genre import MediaGenre
 from app.models.media_relation_edges import MediaRelationEdges
@@ -36,6 +36,7 @@ from app.models.media_studio import MediaStudio
 from app.models.media_unwanted import MediaUnwanted
 from app.models.studio import Studio
 from app.services.scrape_dispatcher import (
+    HentaiRemoval,
     _advance_anime_freshness,
     _advance_media_freshness,
     _apply_genre_diff,
@@ -50,7 +51,7 @@ from tests._helpers import media_kwargs
 
 
 class _FakeScraper:
-    """Stand-in for JikanScraper in dispatcher tests.
+    """Stand-in for MalScraper in dispatcher tests.
 
     `extract_information` is the identity so tests cook payloads directly.
     `search_title` is implemented as a recorder that vends canned
@@ -285,6 +286,18 @@ def test_diff_refuses_to_clobber_score_with_omitted_field():
     assert media.scored_by == 5_000_000
 
 
+def test_diff_refuses_to_clobber_aired_to_with_none():
+    """A transient MAL response that omits end_date on a finished media
+    must not null a populated aired_to (nor reset the stability counter) —
+    the same None-guard every sibling volatile field carries."""
+    media = Media(**media_kwargs(anime_id=1, mal_id=1, score=7.5, scored_by=1000, episodes=12,
+        airing_status="Finished Airing",
+        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+    ))
+    assert _apply_media_diff(media, _payload(aired_to=None)) is False
+    assert media.aired_to == datetime(2020, 6, 30, tzinfo=timezone.utc)
+
+
 # ---------------------------------------------------------------------------
 # _apply_metadata_diff (mutates Media; embedding regen monkeypatched)
 # ---------------------------------------------------------------------------
@@ -449,6 +462,50 @@ async def test_metadata_diff_other_names_added_regenerates_embedding(monkeypatch
     assert media.other_names == ["alpha", "beta"]
     assert len(calls) == 1
     assert "beta" in calls[0]["title_texts"]
+
+
+@pytest.mark.asyncio
+async def test_metadata_diff_media_type_self_heal_writes_enum_member(monkeypatch):
+    """v0.14.14 regression guard (the "Demons' Crest" crash): the media_type
+    self-heal must assign a MediaType ENUM MEMBER, not the translated bare
+    string. SQLAlchemy only coerces the Enum column at flush, and the sweep
+    reads `media.media_type.value` in reclassify (same savepoint, pre-commit) —
+    a bare str there raised "'str' object has no attribute 'value'"."""
+    _patch_regen(monkeypatch)
+    media = _aligned_media(mal_id=1, media_type=MediaType.TV)
+    assert await _apply_metadata_diff(
+        None, media, _metadata_payload(media_type="ONA"),
+    ) is True
+    assert media.media_type is MediaType.ONA
+    # The exact access that crashed on a bare str.
+    assert media.media_type.value == "ONA"
+
+
+@pytest.mark.asyncio
+async def test_metadata_diff_media_type_skips_untranslatable_value(monkeypatch):
+    """A freak music/cm/pv (passed through un-translated for the scrape-time
+    skip rule) isn't a valid MediaType member — the guard skips it rather
+    than crash the savepoint on a row already in the catalog."""
+    _patch_regen(monkeypatch)
+    media = _aligned_media(mal_id=1, media_type=MediaType.TV)
+    assert await _apply_metadata_diff(
+        None, media, _metadata_payload(media_type="music"),
+    ) is False
+    assert media.media_type is MediaType.TV
+
+
+@pytest.mark.asyncio
+async def test_metadata_diff_season_name_self_heal_writes_enum_member(monkeypatch):
+    """anime_season_name is Enum(SeasonType) — same enum-coercion hazard as
+    media_type: a bare-string write breaks any later `.value` read before
+    flush, so the self-heal must assign the SeasonType member."""
+    _patch_regen(monkeypatch)
+    media = _aligned_media(mal_id=1, anime_season_name=SeasonType.Winter)
+    assert await _apply_metadata_diff(
+        None, media, _metadata_payload(anime_season_name="Spring"),
+    ) is True
+    assert media.anime_season_name is SeasonType.Spring
+    assert media.anime_season_name.value == "Spring"
 
 
 # ---------------------------------------------------------------------------
@@ -823,12 +880,12 @@ async def test_refresh_bumps_last_checked_even_when_unchanged(db_session):
 
 @pytest.mark.asyncio
 async def test_refresh_rewrites_relation_edges_from_full_payload(db_session):
-    """Step 1 of the sweep refreshes `MediaRelationEdges` from the
-    /anime/{id}/full payload's bundled `relations` block. No extra MAL
-    hit — the relations are already in the response that the dispatcher
-    uses for canonical-field diffing. Catches MAL changes (new sequels,
-    new alt-versions) over the nightly sweep cycle and surfaces bridge
-    edges retroactively for pre-v0.14.1 rows."""
+    """Step 1 of the sweep refreshes `MediaRelationEdges` from the MAL v2
+    detail payload's bundled `related_anime` block. No extra MAL hit — the
+    relations are already in the response that the dispatcher uses for
+    canonical-field diffing. Catches MAL changes (new sequels, new
+    alt-versions) over the nightly sweep cycle and surfaces bridge edges
+    retroactively for pre-v0.14.1 rows."""
     anime = await _build_anime_with_one_media(
         db_session, mal_id_a=-9010, mal_id_m=-9110,
         freshness=AnimeFreshness(last_checked_at=datetime.now(timezone.utc) - timedelta(days=1)),
@@ -836,8 +893,8 @@ async def test_refresh_rewrites_relation_edges_from_full_payload(db_session):
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
         aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
     )
-    # Seed an existing sidecar with one stale edge; the /full payload
-    # returns two relations, so the rewrite should replace this.
+    # Seed an existing sidecar with one stale edge; the detail payload
+    # returns two anime relations, so the rewrite should replace this.
     db_session.add(MediaRelationEdges(media_id=anime.media[0].id, edges=[[-1, "sequel"]]))
     await db_session.flush()
     await db_session.refresh(anime.media[0], ["relation_edges"])
@@ -845,17 +902,18 @@ async def test_refresh_rewrites_relation_edges_from_full_payload(db_session):
     media_mal_id = anime.media[0].mal_id
     raw_with_relations = {
         **_payload(),
-        "relations": [
-            {"relation": "Sequel", "entry": [{"type": "anime", "mal_id": 100}]},
-            {"relation": "Side Story", "entry": [{"type": "anime", "mal_id": 200}]},
-            {"relation": "Adaptation", "entry": [{"type": "manga", "mal_id": 999}]},
+        "related_anime": [
+            {"node": {"id": 100}, "relation_type": "sequel"},
+            {"node": {"id": 200}, "relation_type": "side_story"},
+            {"node": {"id": 999}, "relation_type": "adaptation"},
         ],
     }
     scraper = _FakeScraper({media_mal_id: raw_with_relations})
 
     await _refresh_one_anime(db_session, anime, anime.media, scraper)
 
-    # Adaptation filtered (cross-franchise), manga entry filtered (non-anime).
+    # Adaptation filtered (excluded relation type); related_anime carries
+    # anime only, so no per-entry media-type check is needed.
     assert anime.media[0].relation_edges.edges == [
         [100, "sequel"],
         [200, "side_story"],
@@ -885,6 +943,94 @@ async def test_refresh_creates_missing_sidecars_defensively(db_session):
 
     assert anime.freshness is not None
     assert anime.freshness.stable_check_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Hentai self-defense: sweep removal + blacklist (v0.14.14)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_refresh_hentai_genre_removes_anime_and_blacklists(db_session):
+    """A media that MAL flipped to the Hentai genre makes the sweep delete
+    the whole anime (cascade) and blacklist its media mal_ids, returning a
+    HentaiRemoval marker — mirroring the fresh-scrape BFS skip."""
+    anime = await _build_anime_with_one_media(
+        db_session, mal_id_a=-9310, mal_id_m=-9410,
+        score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
+        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+    )
+    media_mal_id = anime.media[0].mal_id
+    anime_uuid = str(anime.uuid)
+    scraper = _FakeScraper({media_mal_id: {"genres": ["Comedy", "Hentai"]}})
+
+    result = await _refresh_one_anime(db_session, anime, anime.media, scraper)
+
+    assert isinstance(result, HentaiRemoval)
+    assert result.anime_uuid == anime_uuid
+    assert result.mal_ids == [media_mal_id]
+    # Anime + its media are gone via the Core cascade delete.
+    assert (await db_session.execute(
+        select(Anime).where(Anime.mal_id == -9310)
+    )).scalars().first() is None
+    assert (await db_session.execute(
+        select(Media).where(Media.mal_id == media_mal_id)
+    )).scalars().first() is None
+    # Blacklisted so a later probe/search BFS can't re-add it.
+    unwanted = (await db_session.execute(
+        select(MediaUnwanted).where(MediaUnwanted.mal_id == media_mal_id)
+    )).scalars().first()
+    assert unwanted is not None
+    assert unwanted.reason == "Hentai"
+
+
+@pytest.mark.asyncio
+async def test_refresh_hentai_rx_rating_without_genre_tag_removes(db_session):
+    """The Rx age rating triggers removal even when the genre list omits the
+    Hentai tag — the hardening signal beyond the genre string."""
+    anime = await _build_anime_with_one_media(
+        db_session, mal_id_a=-9311, mal_id_m=-9411,
+        score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
+        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+    )
+    media_mal_id = anime.media[0].mal_id
+    scraper = _FakeScraper(
+        {media_mal_id: {"genres": ["Comedy"], "age_rating": "Rx - Hentai"}},
+    )
+
+    result = await _refresh_one_anime(db_session, anime, anime.media, scraper)
+
+    assert isinstance(result, HentaiRemoval)
+    assert (await db_session.execute(
+        select(Anime).where(Anime.mal_id == -9311)
+    )).scalars().first() is None
+    unwanted = (await db_session.execute(
+        select(MediaUnwanted).where(MediaUnwanted.mal_id == media_mal_id)
+    )).scalars().first()
+    assert unwanted is not None and unwanted.reason == "Hentai"
+
+
+@pytest.mark.asyncio
+async def test_refresh_non_hentai_is_not_removed(db_session):
+    """A normal refresh must not trip the hentai removal — the anime stays.
+    Query by PK, not mal_id: a clean refresh runs reclassify, which rewrites
+    the umbrella mal_id to the anchor media's."""
+    anime = await _build_anime_with_one_media(
+        db_session, mal_id_a=-9312, mal_id_m=-9412,
+        media_freshness=MediaFreshness(
+            last_checked_at=datetime.now(timezone.utc) - timedelta(days=1),
+        ),
+        score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
+        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+    )
+    anime_id = anime.id
+    media_mal_id = anime.media[0].mal_id
+    scraper = _FakeScraper({media_mal_id: {**_payload(), "genres": ["Action"]}})
+
+    result = await _refresh_one_anime(db_session, anime, anime.media, scraper)
+
+    assert not isinstance(result, HentaiRemoval)
+    assert await db_session.get(Anime, anime_id) is not None
 
 
 @pytest.mark.asyncio
@@ -1426,7 +1572,7 @@ async def _run_dispatcher_harness(
     job_id: int = 999,
 ):
     """Bundles the four monkeypatches the per-test dispatcher setup blocks
-    duplicate (JikanScraper factory, ProgressReporter, AnimeDAO selection,
+    duplicate (MalScraper factory, ProgressReporter, AnimeDAO selection,
     optional probe pipeline) and runs `update_sweep_dispatcher` against
     a fresh session with a synthetic FakeJob.
 
@@ -1435,7 +1581,7 @@ async def _run_dispatcher_harness(
     (None otherwise) so tests can assert on attach/recompute call counts.
     """
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.JikanScraper", lambda: fake_scraper,
+        "app.services.scrape_dispatcher.MalScraper", lambda: fake_scraper,
     )
     monkeypatch.setattr(
         "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
@@ -1501,7 +1647,7 @@ async def test_dispatcher_progress_is_media_grained(tracked_anime, monkeypatch):
     _RecordingProgressReporter.last_items_total = None
     _RecordingProgressReporter.last_items_done = None
     fake = _FakeScraper({m1: _payload(), m2: _payload()})
-    monkeypatch.setattr("app.services.scrape_dispatcher.JikanScraper", lambda: fake)
+    monkeypatch.setattr("app.services.scrape_dispatcher.MalScraper", lambda: fake)
     monkeypatch.setattr(
         "app.services.scrape_dispatcher.ProgressReporter", _RecordingProgressReporter,
     )
@@ -1594,9 +1740,9 @@ async def test_dispatcher_isolates_failures_per_anime(tracked_anime, monkeypatch
 
 
 def _http_504() -> httpx.HTTPStatusError:
-    """A 504 the same shape JikanScraper reraises on a sustained MAL outage
+    """A 504 the same shape MalScraper reraises on a sustained MAL outage
     (classify_error tags any httpx 5xx as `upstream_outage`)."""
-    request = httpx.Request("GET", "https://api.jikan.moe/v4/anime/1/full")
+    request = httpx.Request("GET", "https://api.myanimelist.net/v2/anime/1")
     response = httpx.Response(504, request=request)
     return httpx.HTTPStatusError("504 Gateway Timeout", request=request, response=response)
 
@@ -1822,7 +1968,7 @@ def test_gate_accepts_when_last_probe_stale():
 # ---------------------------------------------------------------------------
 # 7c — relations probe behaviour (full-dispatcher integration tests)
 #
-# The probe seeds JikanScraper.search_title with each Main media's mal_id and
+# The probe seeds MalScraper.search_title with each Main media's mal_id and
 # attaches discovered media to the existing parent anime via
 # `attach_search_result_to_anime`. Filter logic (Music/PV/CM/Hentai/Unknown,
 # excluded mal_ids, is_main_story) lives inside search_title and is covered
@@ -1978,21 +2124,21 @@ async def test_probe_seeds_search_title_with_each_main_mal_id(
         ))
         await s.commit()
 
-    # Sweep refreshes sidecars from each payload's `relations` block, so
+    # Sweep refreshes sidecars from each payload's `related_anime` block, so
     # the chain edges must round-trip through the payload too — otherwise
     # _refresh_one_anime clobbers the seeded edges with [] and the
     # in-sweep classifier demotes media2 to side_story before the probe.
     payloads = {
         first_main_mal_id: {
             **_payload(),
-            "relations": [
-                {"relation": "Sequel", "entry": [{"type": "anime", "mal_id": second_main_mal_id}]},
+            "related_anime": [
+                {"node": {"id": second_main_mal_id}, "relation_type": "sequel"},
             ],
         },
         second_main_mal_id: {
             **_payload(),
-            "relations": [
-                {"relation": "Prequel", "entry": [{"type": "anime", "mal_id": first_main_mal_id}]},
+            "related_anime": [
+                {"node": {"id": first_main_mal_id}, "relation_type": "prequel"},
             ],
         },
     }
@@ -2169,7 +2315,7 @@ async def test_probe_persists_unwanted_media_returned_by_search_title(
         search_title_returns={seed_mal_id: ([], {}, unwanted_set)},
     )
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.JikanScraper", lambda: fake_scraper,
+        "app.services.scrape_dispatcher.MalScraper", lambda: fake_scraper,
     )
     monkeypatch.setattr(
         "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
@@ -2215,7 +2361,7 @@ async def test_relations_probe_failure_preserves_field_diff_but_not_anime_freshn
         search_title_error_for_seed=seed_mal_id,
     )
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.JikanScraper", lambda: fake_scraper,
+        "app.services.scrape_dispatcher.MalScraper", lambda: fake_scraper,
     )
     monkeypatch.setattr(
         "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,

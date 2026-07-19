@@ -1,6 +1,6 @@
 """Two-pass relation classifier for anime media graphs.
 
-Pass 1 (in `jikan_scraper.py`) captures relation EDGES during BFS instead
+Pass 1 (in `mal_scraper.py`) captures relation EDGES during BFS instead
 of classifying nodes inline. Pass 2 (this module) picks a canonical
 anchor, builds the main chain via sequel/prequel transitive closure,
 classifies alt-version branches, then defaults the rest to side_story.
@@ -44,8 +44,8 @@ class DisjointFranchise(TypedDict):
 # Sentinel media.airing_status values MAL returns. Defined here (the
 # pure, DB-less module) so they live with the substance gate that
 # interprets them (see _METADATA_PENDING_STATUSES). Consumers import them
-# directly from here. They can't live in jikan_scraper: relation_classifier
-# would have to import them back, and jikan_scraper already imports from
+# directly from here. They can't live in mal_scraper: relation_classifier
+# would have to import them back, and mal_scraper already imports from
 # this module (that reverse import would cycle).
 AIRING_STATUS_CURRENTLY_AIRING = "Currently Airing"
 AIRING_STATUS_FINISHED_AIRING = "Finished Airing"
@@ -73,6 +73,21 @@ SUBSTANCE_MIN_EPISODES = 8
 # "Franchise"). See compound-docs/2026-05-18-v0.14.2-split-candidates.md.
 SUBSTANCE_MIN_TV_DURATION_S = 600    # 10 min
 SUBSTANCE_MIN_MOVIE_DURATION_S = 1800  # 30 min
+
+# Total-runtime floor that waives the per-episode TV/ONA duration floor: a
+# short-form entry (per-episode duration below SUBSTANCE_MIN_TV_DURATION_S)
+# still passes substance when its aggregate runtime (episodes × duration)
+# clears this — per-episode length is a poor substance proxy for a high-episode
+# short-form series (e.g. Saiki S1: 120 × 330s ≈ 11h). Waives ONLY the duration
+# floor; the episode floor still gates one-shots, so a 6-ep full-length ONA
+# stays side_story. Lives in the strict gate so it fixes anchor eligibility,
+# main-chain demotion, and umbrella title in one place.
+#
+# 7,600s (~2h) sits on the plateau [~7,200, ~7,900] that captures every clean
+# umbrella-title correction with no regressions: below ~7,200 a later short
+# season clears the floor while the shorter base season doesn't, stealing the
+# anchor onto S4/S5. Prod-validated; re-validate before retuning.
+SUBSTANCE_MIN_TV_TOTAL_S = 7600
 
 # Popularity waiver for the WEAK-ANCHOR KEEP DECISION ONLY (see
 # `would_be_dropped_as_weak_anchor`). A short-form entry (3-min episodes,
@@ -155,6 +170,11 @@ def passes_substance(
     `relax_*` flags skip a duration/episode floor that has no discriminating
     power for the franchise (see the per-floor relaxation in
     `classify_anime_relations`). Default flags reproduce the strict gate.
+
+    A TV/ONA entry below the per-episode duration floor still passes when its
+    aggregate runtime (episodes × duration) clears `SUBSTANCE_MIN_TV_TOTAL_S`
+    — the high-episode short-form waiver (see that constant for the rationale
+    + prod-validated threshold). The episode floor still applies.
     """
     media_type = _normalize_media_type(node.get("media_type"))
     duration = node.get("duration_seconds")
@@ -166,7 +186,23 @@ def passes_substance(
     metadata_pending = _is_metadata_pending(node)
     if media_type in _TV_LIKE_TYPES:
         if not relax_duration:
-            if duration is not None and duration < SUBSTANCE_MIN_TV_DURATION_S:
+            # Waive the per-episode duration floor when aggregate runtime is
+            # season-sized (see SUBSTANCE_MIN_TV_TOTAL_S). NULL duration/episodes
+            # can't form a total, so only a populated below-floor duration is
+            # rescued; the episode floor below still applies.
+            total_runtime = (
+                duration * episodes
+                if duration is not None and episodes is not None
+                else None
+            )
+            clears_total = (
+                total_runtime is not None and total_runtime >= SUBSTANCE_MIN_TV_TOTAL_S
+            )
+            if (
+                duration is not None
+                and duration < SUBSTANCE_MIN_TV_DURATION_S
+                and not clears_total
+            ):
                 return False
             if duration is None and not metadata_pending:
                 return False
@@ -342,14 +378,14 @@ def classify_anime_relations(
     edges: list[tuple[int, int, str]],
 ) -> tuple[dict[int, str], int | None]:
     """Classify every node in `nodes` as one of: main, alternative_version,
-    side_story, summary, crossover. Returns `(classifications, anchor)`
+    side_story, summary. Returns `(classifications, anchor)`
     where `anchor` is the mal_id picked by the substance-gate + tier
     sort (or `None` for empty input). Callers that need the anchor
     don't have to call `_pick_anchor` separately.
 
     `nodes` maps `mal_id` to a node dict (see ClassifierNode TypedDict).
     `edges` is a list of (a, b, normalized_relation) tuples where
-    `normalized_relation` matches `jikan_scraper.normalize_relation`
+    `normalized_relation` matches `mal_scraper.normalize_relation`
     output (lowercased, spaces → underscores).
     """
     if not nodes:
@@ -383,8 +419,6 @@ def classify_anime_relations(
         edge_types = {rel for n, rel in adj.get(mal_id, []) if n in anchored}
         if "summary" in edge_types:
             classifications[mal_id] = "summary"
-        elif "crossover" in edge_types:
-            classifications[mal_id] = "crossover"
         else:
             classifications[mal_id] = "side_story"
 
@@ -393,18 +427,32 @@ def classify_anime_relations(
     # standalone weak-anime (e.g. the Overlord 2024 standalone Manner Movie)
     # gets absorbed and would otherwise inherit `main`.
     #
-    # Per-floor relaxation: a substance floor that NO aired media clears can't
-    # distinguish main from filler for this franchise, so relax it here.
-    # Episode-count discrimination survives even when every entry is short-
-    # duration (a 5-ep side-season still demotes next to 12-ep mains — the
-    # Hyakushou Kizoku shape). Computed over aired nodes only — a lone
-    # announced sequel doesn't prove the franchise clears a floor. The type
-    # gate is never relaxed. `relax_episodes=True` isolates the duration floor
-    # (and vice-versa), so this reuses `passes_substance` without duplicating
-    # the thresholds.
-    aired = [n for n in nodes.values() if not _is_metadata_pending(n)]
-    relax_duration = not any(passes_substance(n, relax_episodes=True) for n in aired)
-    relax_episodes = not any(passes_substance(n, relax_duration=True) for n in aired)
+    # Per-floor relaxation: a substance floor that NO aired MAIN-CHAIN media
+    # clears can't distinguish main from filler for this franchise, so relax
+    # it here. Episode-count discrimination survives even when every entry is
+    # short-duration (a 5-ep side-season still demotes next to 12-ep mains —
+    # the Hyakushou Kizoku shape). The type gate is never relaxed.
+    # `relax_episodes=True` isolates the duration floor (and vice-versa), so
+    # this reuses `passes_substance` without duplicating the thresholds.
+    #
+    # Scoped to the MAIN CHAIN — the exact set the demotion loop below filters,
+    # NOT all nodes. A full-length OFF-CHAIN side entry must not re-enforce the
+    # duration floor on genuinely-short main seasons: the floor's discriminating
+    # power should be judged only among the members it gates. (Shi Wangzhe A?:
+    # six ~8-min ONA main seasons were wrongly demoted to side_story because two
+    # off-chain ~27-min "Wangzhe Rongyao" spin-off specials cleared the duration
+    # floor globally.) When a full-length entry IS on the main chain — the
+    # Overlord Manner Movie / Dr. Stone TVSpecial-bridge shapes — the floor
+    # stays enforced and those weak mains still demote, unchanged.
+    #
+    # Aired-only — a lone announced sequel doesn't prove the franchise clears a
+    # floor (an unaired member's NULL runtime isn't "too thin").
+    main_aired = [
+        nodes[m] for m in main_chain
+        if not _is_metadata_pending(nodes[m])
+    ]
+    relax_duration = not any(passes_substance(n, relax_episodes=True) for n in main_aired)
+    relax_episodes = not any(passes_substance(n, relax_duration=True) for n in main_aired)
 
     # Recap demotion: a media that declares a `full_story` edge ("my full
     # story is elsewhere") is a condensed recap of content already in the
@@ -485,7 +533,7 @@ def would_be_dropped_as_weak_anchor(
     AND fails both keep-waivers (popularity / feature-length ONA) AND
     there's no attach target (single cross-link) AND no seed.
 
-    Used by `jikan_scraper.search_title` to detect this case BEFORE
+    Used by `mal_scraper.search_title` to detect this case BEFORE
     appending the graph to `relations`, so the visited_ids claims for
     those mal_ids can be rolled back and subsequent roots' BFS can
     include them. Keeping the predicate in one place couples the

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.anime_dao import AnimeDAO
 from app.exceptions import AnimeNotFoundByUuidError
-from app.models.media import Media
+from app.models.media import RELATION_SCORE_WEIGHTS, Media
 from app.schemas.anime_schema import (
     AnimeDetail,
     AnimeMediaItem,
@@ -91,8 +91,13 @@ def _compute_anime_aggregates(media_list: list[Media]) -> AnimeAggregates:
     all_seasons: list[tuple[str, int]] = []
     relation_type_counts: Counter[str] = Counter()
     media_type_counts: Counter[str] = Counter()
-    scores: list[float] = []
-    scored_by_values: list[int] = []
+    # Relation-weighted score accumulators (RELATION_SCORE_WEIGHTS: Main+Alt only).
+    # Python twin of search_filters.weighted_mean_score_expr / _votes_expr, so the
+    # displayed avg matches the ranking/pill. Only scored, positively-weighted
+    # media contribute; empty → unscored.
+    score_wsum = 0.0
+    votes_wsum = 0.0
+    weight_sum = 0.0
     total_episodes = 0
     total_watch_time = 0
     max_age_rating: int | None = None
@@ -114,8 +119,11 @@ def _compute_anime_aggregates(media_list: list[Media]) -> AnimeAggregates:
         if m.anime_season_name and m.anime_season_year:
             all_seasons.append((m.anime_season_name.value, m.anime_season_year))
         if m.score is not None:
-            scores.append(m.score)
-        scored_by_values.append(m.scored_by)
+            w = RELATION_SCORE_WEIGHTS.get(m.relation_type, 0.0)
+            if w > 0:
+                score_wsum += w * m.score
+                votes_wsum += w * m.scored_by
+                weight_sum += w
         if m.episodes:
             total_episodes += m.episodes
         if m.total_watch_time:
@@ -131,8 +139,8 @@ def _compute_anime_aggregates(media_list: list[Media]) -> AnimeAggregates:
     season_start, season_end = _compute_season_range(all_seasons)
 
     return {
-        "avg_score": round(sum(scores) / len(scores), 2) if scores else None,
-        "avg_scored_by": round(sum(scored_by_values) / len(scored_by_values)) if scored_by_values else 0,
+        "avg_score": round(score_wsum / weight_sum, 2) if weight_sum else None,
+        "avg_scored_by": round(votes_wsum / weight_sum) if weight_sum else 0,
         "total_episodes": total_episodes or None,
         "total_watch_time": total_watch_time or None,
         "media_count": media_count,

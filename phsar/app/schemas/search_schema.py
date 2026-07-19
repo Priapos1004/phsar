@@ -8,8 +8,8 @@ class SearchResultDB(BaseModel):
     unconnected_media_list: list[MediaUnconnected]
     # mal_ids the BFS would have traversed but skipped because the media
     # already exists in our catalog under some other anime, reached via a
-    # non-crossover relation. Resolved to anime ids in save_service and
-    # turned into relation_link merge candidates.
+    # franchise-membership relation. Resolved to anime ids in save_service
+    # and turned into relation_link merge candidates.
     cross_link_mal_ids: set[int] = Field(default_factory=set)
     # Per-anime MAL relation edges as (source_mal_id, target_mal_id,
     # normalized_relation). save_service projects per-source for the

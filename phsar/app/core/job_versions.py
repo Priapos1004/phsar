@@ -53,7 +53,12 @@ JOB_KIND_VERSIONS: dict[JobKind, int] = {
     # v4 step1_failed bump — we bump so the frontend can tell a genuinely
     # empty v6 list from a pre-v6 row that never tracked it (the "Attached
     # via probe" card + Jobs Log blue tint gate on version >= 6).
-    JobKind.update_sweep: 6,
+    # v7 (v0.14.14) adds `counters.hentai_removed_count` + top-level
+    # `hentai_removed[]` (anime deleted mid-sweep because MAL flipped them to
+    # Hentai: {anime_uuid, title, name_eng, name_jap, mal_ids}). Net-new keys
+    # with safe defaults; bumped (like v4/v6) so the frontend renders a
+    # genuinely-empty v7 list distinctly from a pre-v7 row that never tracked it.
+    JobKind.update_sweep: 7,
     JobKind.seasonal_sweep: 1,
     JobKind.backup: 1,
     JobKind.restore: 1,
