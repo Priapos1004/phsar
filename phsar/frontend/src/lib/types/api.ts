@@ -402,6 +402,7 @@ export interface WatchlistItem {
 // in the tag's color everywhere it appears.
 export interface WatchlistMediaTag {
 	media_uuid: string;
+	anime_uuid: string;
 	tag_uuid: string;
 	tag_name: string;
 	tag_color: string;

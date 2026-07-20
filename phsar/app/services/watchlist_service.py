@@ -193,6 +193,9 @@ async def get_watchlisted_media_tags(db: AsyncSession, user_id: int) -> Watchlis
     (present/absent) AND the per-tag color the bookmark renders in."""
     rows = await watchlist_dao.get_watchlisted_media_tags(db, user_id)
     return WatchlistMediaTags(entries=[
-        WatchlistMediaTag(media_uuid=media_uuid, tag_uuid=tag_uuid, tag_name=tag_name, tag_color=tag_color)
-        for (media_uuid, tag_uuid, tag_name, tag_color) in rows
+        WatchlistMediaTag(
+            media_uuid=media_uuid, anime_uuid=anime_uuid,
+            tag_uuid=tag_uuid, tag_name=tag_name, tag_color=tag_color,
+        )
+        for (media_uuid, anime_uuid, tag_uuid, tag_name, tag_color) in rows
     ])

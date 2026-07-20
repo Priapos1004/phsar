@@ -1,22 +1,19 @@
 <script lang="ts">
-	// Presentational bookmark toggle used on the media + anime hero (and reusable for
-	// search cards). Filled + optionally tag-colored when on the watchlist.
+	// Interactive bookmark toggle used on the media + anime hero. Renders via the shared
+	// WatchlistBookmarkIcon (solid / gradient / outline by the tag colors passed in).
 	import Tooltip from '$lib/components/Tooltip.svelte';
-	import { Bookmark } from 'lucide-svelte';
+	import WatchlistBookmarkIcon from '$lib/components/WatchlistBookmarkIcon.svelte';
 
 	interface Props {
-		filled: boolean;
-		/** Tag color when filled; omit to fill with the theme primary (e.g. anime-level
-		 *  aggregate spanning multiple tags). */
-		color?: string;
+		/** Tag colors: [] = not on the list; one = solid; several = gradient. */
+		colors: string[];
 		tooltip: string;
 		ariaLabel: string;
 		onclick: () => void;
-		/** Icon size class (default size-6 for the hero; pass e.g. size-5 for cards). */
 		iconClass?: string;
 	}
 
-	let { filled, color, tooltip, ariaLabel, onclick, iconClass = 'size-6' }: Props = $props();
+	let { colors, tooltip, ariaLabel, onclick, iconClass = 'size-6' }: Props = $props();
 </script>
 
 <Tooltip text={tooltip} class="shrink-0">
@@ -27,11 +24,7 @@
 			{onclick}
 			aria-label={ariaLabel}
 		>
-			<Bookmark
-				class="{iconClass} {filled ? (color ? '' : 'text-primary') : 'text-muted-foreground'}"
-				style={filled && color ? `color:${color}` : ''}
-				fill={filled ? 'currentColor' : 'none'}
-			/>
+			<WatchlistBookmarkIcon {colors} {iconClass} />
 		</button>
 	{/snippet}
 </Tooltip>

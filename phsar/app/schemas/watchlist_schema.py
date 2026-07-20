@@ -96,8 +96,10 @@ class WatchlistBulkDelete(BulkMediaUuids):
 
 class WatchlistMediaTag(BaseModel):
     """One watchlisted media + the tag it's under — carries the tag so the bookmark
-    icon can render in the tag's color everywhere it appears."""
+    icon renders in the tag's color, and the anime_uuid so the frontend can aggregate
+    an anime's distinct tag colors (a gradient when it spans multiple tags)."""
     media_uuid: UUID
+    anime_uuid: UUID
     tag_uuid: UUID
     tag_name: str
     tag_color: str

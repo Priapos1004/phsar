@@ -9,7 +9,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { Star, Tv, Calendar, Film, Layers, X, ListChecks, BookmarkPlus, Trash2, CheckCircle2 } from 'lucide-svelte';
+	import { Star, Tv, Calendar, Film, Layers, X, ListChecks, BookmarkPlus, BookmarkX, Trash2, CheckCircle2 } from 'lucide-svelte';
 	import * as cls from '$lib/styles/classes';
 	import { userSettings } from '$lib/stores/userSettings';
 	import type { AnimeDetail, AnimeMediaItem, RatingOut } from '$lib/types/api';
@@ -24,10 +24,11 @@
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { refreshSpoilerVisibility } from '$lib/stores/spoilerVisibility';
 	import { computeVisibleMediaUuids } from '$lib/utils/spoilerFrontier';
-	import { watchlistTags, refreshWatchlist } from '$lib/stores/watchlist';
+	import { watchlistTags, watchlistAnimeColors, refreshWatchlist } from '$lib/stores/watchlist';
 	import { pushToast } from '$lib/stores/toast';
 	import BulkWatchlistDialog from '$lib/components/BulkWatchlistDialog.svelte';
 	import WatchlistBookmarkButton from '$lib/components/WatchlistBookmarkButton.svelte';
+	import WatchlistBookmarkIcon from '$lib/components/WatchlistBookmarkIcon.svelte';
 
 	const getUserRole = getContext<() => string | null>('userRole');
 	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
@@ -72,6 +73,9 @@
 	let showRateDialog = $state(false);
 	let showDeleteDialog = $state(false);
 	let showWatchlistDialog = $state(false);
+	let showWatchlistRemoveDialog = $state(false);
+	let watchlistRemoving = $state(false);
+	let watchlistRemoveError = $state('');
 
 	// --- Anime-hero watchlist (aggregate over the anime's media) ---
 	let heroAddOpen = $state(false);
@@ -94,6 +98,8 @@
 		(anime?.media ?? []).map((m) => m.uuid).filter((u) => $watchlistTags.has(u))
 	);
 	let heroWatchlisted = $derived(watchlistedInAnime.length > 0);
+	// Distinct tag colors across this anime's watchlisted media → solid or gradient fill.
+	let heroColors = $derived(anime ? ($watchlistAnimeColors.get(anime.uuid) ?? []) : []);
 
 	async function handleHeroRemove() {
 		heroRemoving = true;
@@ -124,6 +130,12 @@
 
 	let alreadyRatedCount = $derived(
 		[...ratableUuids].filter(uuid => userRatings.has(uuid)).length
+	);
+
+	// Selected media already on the watchlist — the bulk "Remove from watchlist" acts on
+	// exactly these (the hero remove-all only clears the whole anime, not a subset).
+	let selectedWatchlistedCount = $derived(
+		[...selectedUuids].filter(uuid => $watchlistTags.has(uuid)).length
 	);
 
 	// Watch-history footprint of the current selection, surfaced in the bulk-delete dialog
@@ -167,6 +179,32 @@
 
 		refreshUserRatings();
 		refreshSpoilerVisibility();
+	}
+
+	function handleWatchlistBulkSaved() {
+		// The dialog refreshes the watchlist store + closes itself; just exit select
+		// mode so the row bookmarks reflect the change.
+		selectMode = false;
+		selectedUuids = new Set();
+	}
+
+	async function handleWatchlistBulkRemove() {
+		watchlistRemoving = true;
+		watchlistRemoveError = '';
+		try {
+			// bulk-delete silently skips media not on the watchlist, so sending the whole
+			// selection removes exactly the watchlisted subset.
+			await api.post('/watchlist/bulk-delete', { media_uuids: [...selectedUuids] });
+			await refreshWatchlist();
+			pushToast('Removed from watchlist', 'success');
+			showWatchlistRemoveDialog = false;
+			selectMode = false;
+			selectedUuids = new Set();
+		} catch (err) {
+			watchlistRemoveError = err instanceof ApiError ? err.detail : 'Failed to remove from watchlist';
+		} finally {
+			watchlistRemoving = false;
+		}
 	}
 
 	async function handleBulkDelete() {
@@ -388,7 +426,7 @@
 						     anime's watchlisted media (guarded). Hidden for restricted users. -->
 						{#if !isRestricted}
 							<WatchlistBookmarkButton
-								filled={heroWatchlisted}
+								colors={heroColors}
 								tooltip={heroWatchlisted
 									? `${watchlistedInAnime.length} on your watchlist — click to remove`
 									: 'Add this anime to your watchlist'}
@@ -557,6 +595,16 @@
 								<BookmarkPlus class="size-3.5 mr-1.5" />
 								Watchlist
 							</Button>
+							{#if selectedWatchlistedCount > 0}
+								<Button
+									size="sm"
+									variant="destructive"
+									onclick={() => { watchlistRemoveError = ''; showWatchlistRemoveDialog = true; }}
+								>
+									<BookmarkX class="size-3.5 mr-1.5" />
+									Remove from Watchlist
+								</Button>
+							{/if}
 							{#if alreadyRatedCount > 0}
 								<Button
 									size="sm"
@@ -575,6 +623,7 @@
 				<div class="divide-y divide-border rounded-lg border border-border overflow-hidden">
 					{#each anime.media as item}
 						{@const isSelected = selectedUuids.has(item.uuid)}
+						{@const wlTag = $watchlistTags.get(item.uuid)}
 						<!-- svelte-ignore a11y_no_noninteractive_tabindex -- role is always interactive (link or checkbox) -->
 						<div
 							class="flex items-center gap-3 px-3 py-2 transition
@@ -627,6 +676,9 @@
 									{resolveTitle(item.title, item.name_eng, item.name_jap, nameLanguage)}
 								</p>
 								<div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
+									{#if wlTag}
+										<WatchlistBookmarkIcon colors={[wlTag.tag_color]} iconClass="size-3.5" />
+									{/if}
 									<Badge variant="secondary" class={`${cls.badgeRelationTypeColor} text-xs px-1.5 py-0`}>{formatRelationType(item.relation_type)}</Badge>
 									<Badge variant="secondary" class={`${cls.badgeMediaTypeColor} text-xs px-1.5 py-0`}>{formatMediaType(item.media_type)}</Badge>
 									{#if item.episodes}
@@ -717,16 +769,33 @@
 			</Dialog.Content>
 		</Dialog.Root>
 
-		<Dialog.Root bind:open={showWatchlistDialog}>
-			<Dialog.Content>
+		<!-- Media-table select-mode: bulk-add the selected media to a list -->
+		<BulkWatchlistDialog
+			bind:open={showWatchlistDialog}
+			title={`Add ${selectedUuids.size} to watchlist`}
+			mediaUuids={[...selectedUuids]}
+			onSaved={handleWatchlistBulkSaved}
+		/>
+
+		<!-- Media-table select-mode: remove the selected watchlisted media (count = media) -->
+		<Dialog.Root bind:open={showWatchlistRemoveDialog}>
+			<Dialog.Content class="sm:max-w-md">
 				<Dialog.Header>
-					<Dialog.Title>{selectMode && someSelected ? `Add ${selectedUuids.size} to Watchlist` : 'Add All to Watchlist'}</Dialog.Title>
+					<Dialog.Title>Remove from watchlist?</Dialog.Title>
 					<Dialog.Description>
-						Watchlist features will be available in a future update.
+						This removes {selectedWatchlistedCount} selected media from your watchlist.
 					</Dialog.Description>
 				</Dialog.Header>
+				{#if watchlistRemoveError}
+					<p class="text-destructive text-sm">{watchlistRemoveError}</p>
+				{/if}
 				<Dialog.Footer>
-					<Button onclick={() => { showWatchlistDialog = false; }}>OK</Button>
+					<Button variant="secondary" onclick={() => (showWatchlistRemoveDialog = false)} disabled={watchlistRemoving}>
+						Cancel
+					</Button>
+					<Button variant="destructive" onclick={handleWatchlistBulkRemove} disabled={watchlistRemoving}>
+						{watchlistRemoving ? 'Removing…' : `Remove ${selectedWatchlistedCount}`}
+					</Button>
 				</Dialog.Footer>
 			</Dialog.Content>
 		</Dialog.Root>

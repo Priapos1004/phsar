@@ -8,12 +8,28 @@ import type { WatchlistMediaTag, WatchlistMediaTags } from '$lib/types/api';
 // store; refreshed on login + after any watchlist mutation.
 export const watchlistTags = writable<Map<string, WatchlistMediaTag>>(new Map());
 
-/** `(mediaUuid) => WatchlistMediaTag | undefined` — the entry's tag, or undefined
- *  if the media isn't watchlisted. `!!` it for a boolean, read `.tag_color` to color. */
-export const watchlistTagFor = derived(
-	watchlistTags,
-	($map) => (mediaUuid: string) => $map.get(mediaUuid)
-);
+// anime UUID → its distinct watchlisted tag colors (dedup by tag, preserving first-seen
+// order). One color → a solid bookmark; several → a gradient. Drives the anime-level
+// bookmark on anime search cards + the anime hero (an anime can span multiple tags).
+export const watchlistAnimeColors = derived(watchlistTags, ($map) => {
+	const byAnime = new Map<string, string[]>();
+	const seenTag = new Map<string, Set<string>>();
+	for (const e of $map.values()) {
+		let colors = byAnime.get(e.anime_uuid);
+		let tags = seenTag.get(e.anime_uuid);
+		if (!colors) {
+			colors = [];
+			byAnime.set(e.anime_uuid, colors);
+			tags = new Set();
+			seenTag.set(e.anime_uuid, tags);
+		}
+		if (!tags!.has(e.tag_uuid)) {
+			tags!.add(e.tag_uuid);
+			colors.push(e.tag_color);
+		}
+	}
+	return byAnime;
+});
 
 /** Re-fetch the watchlisted-media→tag set. Call after any watchlist add/remove. */
 export async function refreshWatchlist(): Promise<void> {

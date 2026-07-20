@@ -94,6 +94,7 @@ async def test_media_tags_carry_tag_color(db_session):
     assert len(res.entries) == 1
     entry = res.entries[0]
     assert entry.media_uuid == media[0].uuid
+    assert entry.anime_uuid == media[0].anime.uuid
     assert entry.tag_uuid == custom.uuid
     assert entry.tag_name == "Films"
     assert entry.tag_color == "#123abc"

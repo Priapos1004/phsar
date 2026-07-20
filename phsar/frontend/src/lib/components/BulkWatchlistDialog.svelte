@@ -7,7 +7,7 @@
 	import { Bookmark } from 'lucide-svelte';
 	import { api, ApiError } from '$lib/api';
 	import { tags } from '$lib/stores/tags';
-	import { refreshWatchlist } from '$lib/stores/watchlist';
+	import { refreshWatchlist, watchlistTags } from '$lib/stores/watchlist';
 	import { pushToast } from '$lib/stores/toast';
 	import WatchlistTagSelect from '$lib/components/WatchlistTagSelect.svelte';
 	import PriorityPicker from '$lib/components/PriorityPicker.svelte';
@@ -45,6 +45,9 @@
 	let effectiveUuids = $derived(
 		includeOptional ? [...mediaUuids, ...optionalMediaUuids] : mediaUuids
 	);
+	// Media in the selection already on the watchlist — bulk add re-tags/re-prioritizes
+	// them, so warn (mirrors bulk rating's overwrite notice).
+	let alreadyOnCount = $derived(effectiveUuids.filter((u) => $watchlistTags.has(u)).length);
 
 	// Reset + preselect the default tag each time the dialog opens.
 	$effect(() => {
@@ -97,6 +100,12 @@
 		</Dialog.Header>
 
 		<div class="space-y-4 py-2">
+			{#if alreadyOnCount > 0}
+				<div class="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
+					This will overwrite {alreadyOnCount} existing watchlist {alreadyOnCount > 1 ? 'entries' : 'entry'}.
+				</div>
+			{/if}
+
 			{#if hasOptional}
 				<label class="flex items-center gap-2 text-sm text-card-foreground cursor-pointer">
 					<Checkbox bind:checked={includeOptional} />

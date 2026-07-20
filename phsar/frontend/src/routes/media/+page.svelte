@@ -207,8 +207,7 @@
 						     opens the add/edit dialog. Hidden for restricted (guest) users. -->
 						{#if !isRestricted}
 							<WatchlistBookmarkButton
-								filled={!!watchlistEntry}
-								color={watchlistEntry?.tag_color}
+								colors={watchlistEntry ? [watchlistEntry.tag_color] : []}
 								tooltip={watchlistEntry ? `On watchlist: ${watchlistEntry.tag_name}` : 'Add to watchlist'}
 								ariaLabel={watchlistEntry ? 'Edit watchlist entry' : 'Add to watchlist'}
 								onclick={() => (watchlistOpen = true)}

@@ -149,6 +149,7 @@ async def test_upsert_entry_and_media_tags(client, user_auth_headers, test_media
     assert len(tags["entries"]) == 1
     entry = tags["entries"][0]
     assert entry["media_uuid"] == str(test_media.uuid)
+    assert entry["anime_uuid"]  # anime-level color aggregation source
     assert entry["tag_uuid"] == tag_uuid
     assert entry["tag_name"] == "Watchlist"
     assert entry["tag_color"]  # colored bookmark source
