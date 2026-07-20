@@ -196,6 +196,7 @@ def create_app() -> FastAPI:
         search,
         seeder,
         users,
+        watchlist,
     )
 
     app.include_router(admin.router)
@@ -210,6 +211,7 @@ def create_app() -> FastAPI:
     app.include_router(search.router)
     app.include_router(seeder.router)
     app.include_router(users.router)
+    app.include_router(watchlist.router)
 
     @app.get("/")
     async def root():

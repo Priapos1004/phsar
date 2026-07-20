@@ -6,6 +6,7 @@ canonical version; new tests should import it instead of redeclaring.
 """
 
 from app.models.media import MediaType, RelationType
+from app.models.users import RoleType, Users
 
 
 def media_kwargs(anime_id: int, mal_id: int, **overrides) -> dict:
@@ -23,3 +24,12 @@ def media_kwargs(anime_id: int, mal_id: int, **overrides) -> dict:
     )
     base.update(overrides)
     return base
+
+
+async def make_user(db, username: str = "testuser", role: RoleType = RoleType.User) -> Users:
+    """Insert and flush a Users row (the inline `Users(...)` pattern repeated across
+    the service tests). Password hash is a placeholder — auth isn't exercised here."""
+    user = Users(username=username, hashed_password="x", role=role)
+    db.add(user)
+    await db.flush()
+    return user
