@@ -344,13 +344,13 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
   - **Anime**: one card/row per anime, aggregating its watchlisted media — most-urgent (min) priority, the distinct list colors (solid, or a gradient when the anime spans lists), a media count, and an "X main · Y side" subtitle.
   - **Media**: one card/row per entry — the media's own list color, relation-type label, and note indicator.
 - **View toggle** (grid / table pills):
-  - **Grid** (default): cards grouped under **priority bands** (High / Medium / Low), each band labeled + counted with a colored dot. An order arrow flips whether High or Low sits on top; within a band, cards are title-sorted. Each card shows the cover (media covers are spoiler-guarded; anime covers never are), a list-color dot (tooltip = list name, or "N lists"), and a note icon (tooltip = the note) when one exists.
-  - **Table**: sortable columns (list-color dot, title, priority, added date); clicking a header toggles the sort. Whole-row click navigates to the detail page (preserving new-tab / inner-link clicks).
+  - **Grid** (default): cards grouped under **priority bands** (High / Medium / Low), each band headed by a colored dot + the priority word + a per-grain count ("N anime" / "N media"). An order arrow flips whether High or Low sits on top; within a band, cards are title-sorted. Each card shows the cover (media covers are spoiler-guarded; anime covers never are), a list-color dot (tooltip = list name, or "N lists"), and a note indicator (media grain: the note text on hover; anime grain: a count of its media that have notes).
+  - **Table**: sortable columns (list-color dot, title, priority, **Note**, added date); clicking a header toggles the sort — the Note column sorts by note count (media grain: noted first; anime grain: most-noted first). Hovering a row highlights the title link. Whole-row click navigates to the detail page (preserving new-tab / inner-link clicks).
 - **List filter**: a multi-select **union** of lists ("show me these lists combined") — an empty selection = all. A deleted list is auto-pruned from the selection. "Clear all" resets it.
 - Cards/rows link to the media or anime detail page with `?from=watchlist` (→ "Back to watchlist").
 
 ### 9.3 Lists Tab (list/tag management)
-- **Create**: a name field (≤50 chars) + a color picker (a fixed palette; the default list's reserved orange is excluded so a custom list can't impersonate it) + "Add". Duplicate names are rejected ("You already have a list named …").
+- **Create**: a name field (≤50 chars) + a color picker (a color circle → a dialog with a hexagon color wheel + an editable hex field, so any color is reachable; the default list's reserved orange is blocked so a custom list can't impersonate it) + "Add". Duplicate names are rejected ("You already have a list named …").
 - **List of lists** (default first): each row shows a color swatch, name, a "Default" badge on the default list, and a count ("N anime · M media", or "empty").
 - **Edit** (non-default lists): inline pencil → name + color, Save/Cancel. The immutable default "Watchlist" list can't be edited or deleted.
 - **Delete** (non-default): confirm dialog. When the list has entries, an "Move its entries to the default list instead of deleting them" checkbox chooses reassign vs cascade-delete.

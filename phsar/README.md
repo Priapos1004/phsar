@@ -291,6 +291,7 @@ phsar/
 │   │   │       ├── chartColors.ts
 │   │   │       ├── chartTheme.ts
 │   │   │       ├── cn.ts
+│   │   │       ├── color.ts
 │   │   │       ├── formatString.ts
 │   │   │       ├── getSeason.ts
 │   │   │       ├── index.ts
@@ -300,6 +301,7 @@ phsar/
 │   │   │       ├── ratingAttributes.ts
 │   │   │       ├── ratingNeighbors.ts
 │   │   │       ├── ratingStats.ts
+│   │   │       ├── relations.ts
 │   │   │       ├── search.ts
 │   │   │       ├── sessionTimeout.ts
 │   │   │       ├── spoilerFrontier.ts
@@ -345,6 +347,7 @@ phsar/
 │   │       ├── api-download.test.ts
 │   │       ├── auth-store.test.ts
 │   │       ├── backups-card.test.ts
+│   │       ├── color.test.ts
 │   │       ├── completion-status-card.test.ts
 │   │       ├── format-string.test.ts
 │   │       ├── genre-badges.test.ts
