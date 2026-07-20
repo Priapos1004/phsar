@@ -83,7 +83,7 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 | `/anime?uuid=<uuid>` | Anime detail (aggregated metadata + media table) | Yes |
 | `/media?uuid=<uuid>` | Media detail + rating | Yes |
 | `/ratings?tab=ratings\|stats` | Your ratings: anime-level list (`ratings`, default) + ECharts statistics (`stats`) | Yes |
-| `/watchlist` | (placeholder) | Yes |
+| `/watchlist?tab=watchlists\|tags` | Your watchlist: entries view (`watchlists`, default) + list (tag) management (`tags`) | Yes (not available to restricted users) |
 | `/settings` | User preferences (theme, language, rating step, spoiler level, data export, account deletion) | Yes |
 | `/library/add` | Add anime via MAL query + recent additions panel | Yes (form disabled for restricted users) |
 | `/admin` | Admin sections behind a `?tab=` switcher (Overview / Jobs Log / Tokens / Curation / Completion / Backups) | Yes (admin) |
@@ -159,6 +159,7 @@ Each media search result card shows:
 - Title, score + scored-by count, anime season, airing status, age rating
 - Genre tags, media type tag, relation type tag
 - Total watch time
+- A colored bookmark icon when the media is on your watchlist (tinted to its list's color)
 - Clicking navigates to `/media?uuid=<uuid>` (with `&q=<token>` preserved for back navigation)
 
 ### 5.2 Anime Card (anime view)
@@ -172,6 +173,7 @@ Each anime search result card shows:
 - Relation type badges with counts (e.g., "Main Story: 5", "Side Story: 2")
 - Media type badges with counts (e.g., "TV: 3", "Movie: 1")
 - Total watch time (summed across media)
+- A colored bookmark icon when any of the anime's media is on your watchlist — solid for one list, a gradient when it spans several
 - Clicking navigates to `/anime?uuid=<uuid>` (with `&q=<token>` preserved)
 
 ---
@@ -194,23 +196,25 @@ Each anime search result card shows:
 - Age rating badge (max across media), genre badges (strict majority rule) — hovering a genre badge shows its description when one is seeded
 - Stats grid: total episodes, media count, season range, total watch time
 - Studio names — each is a button linking to an anime-view search filtered to that studio ("other anime from this studio")
-- Watchlist bookmark buttons (add all / remove all — stub dialogs, wired in v0.15.0)
+- **Watchlist bookmark** (hidden for restricted users): outline when none of the anime's media are listed, filled/gradient (colored by the lists in play) when some are. Clicking it when empty opens a bulk-add dialog (adds all **main** media — Main + AlternativeVersion — with an optional "Include side stories" checkbox); clicking it when populated opens a guarded "Remove from watchlist?" dialog that clears all of this anime's watchlisted media
 
 ### 6.3 Synopsis
 - Same collapsible description card as media detail (from anime description)
 
 ### 6.4 Media Table
 - Compact table with rows for each media in the anime
-- Each row: small cover thumbnail (40x56px, blurred when spoiler-protected), title + relation/media type badges, season, score, airing status dot
+- Each row: small cover thumbnail (40x56px, blurred when spoiler-protected), title (preceded by a small colored bookmark when the media is on your watchlist) + relation/media type badges, season, score, airing status dot
 - Clicking a row navigates to `/media?uuid=<uuid>` (origin params preserved — see 7.6)
 - **Select mode**: "Select" button in table header toggles select mode
   - Checkboxes appear on left of each row
   - Clicking rows toggles selection instead of navigating
   - Action bar slides in: "Select all/Deselect all", selected count, "Rate" button, "Watchlist" button
+  - "Remove from Watchlist" button appears when any selected media are on your watchlist
   - "Delete Ratings" button appears when any selected media have existing ratings
   - **Rate** opens BulkRateDialog: score circle + slider, note (applied to the chronologically-last main media — the order the media table shows, not click order), collapsible attributes grid (each attribute clearable via a ✕), and the same "How you rated similar titles" panel as the media page (bulk is anime-scoped, so neighbors come from other anime). Not-yet-aired media in the selection are excluded from the rating with a yellow warning (they stay selected, since the selection also feeds the future watchlist); if every selected media is not-yet-aired, Save is disabled. Overwrite warning shown if any selected media already rated. On save: exits select mode, shows "Note Added" info dialog naming which media received the note.
   - **Delete Ratings** opens a destructive confirmation dialog. When any selected media have recorded watches, the dialog offers an "Also delete watch history" checkbox showing how many have watches (and how many were watched more than once); kept by default. Submits `POST /ratings/bulk-delete?delete_watch_history=`
-  - **Watchlist** opens a stub dialog (wired in v0.15.0)
+  - **Watchlist** opens BulkWatchlistDialog: pick a list + priority + note (all applied to every selected media), with an overwrite warning when any selection is already listed. On save it exits select mode; the row bookmarks reflect the change
+  - **Remove from Watchlist** opens a guarded confirm dialog and removes exactly the selected media that were on the watchlist (the bulk-delete silently skips the rest)
   - "Cancel" exits select mode and clears selection
 
 ### 6.5 Ratings Overview ("Your Ratings")
@@ -249,7 +253,7 @@ Each anime search result card shows:
 - Genre badges (themed primary color) — hovering a genre badge shows its description when one is seeded
 - Stats grid: episodes, duration per episode, season, total watch time
 - Studio names — each is a button linking to an anime-view search filtered to that studio
-- Disabled bookmark button (placeholder for watchlist, wired in v0.15.0)
+- **Watchlist bookmark** (hidden for restricted users): outline when not listed, filled in the list's color when it is. Clicking opens the add/edit/remove dialog (list select + priority + note; "Update" enabled only when something changed; a "Remove" button on an existing entry)
 
 ### 7.3 Synopsis
 - Collapsible description card (4-line clamp by default)
@@ -278,7 +282,7 @@ Each anime search result card shows:
 ### 7.5 Related Media Carousel
 - Always shown — displays parent anime name as a clickable link to the anime detail page
 - If sibling media exist: horizontal scrollable row of compact cards (snap scrolling), **sorted chronologically via the shared `chronological_media_key()` helper** (`(season_year, season_quarter, mal_id)`) — same key as the anime page's media table and the spoiler frontier so the three surfaces never disagree on order
-  - Each card: cover image (with fallback; blurred when spoiler-protected), title, media type + relation type badges, season or episode count
+  - Each card: cover image (with fallback; blurred when spoiler-protected, and a colored bookmark overlaid top-right when the sibling is on your watchlist), title, media type + relation type badges, season or episode count
   - Clicking a sibling card navigates to that media's detail page (origin params preserved — see 7.6)
   - **"You are here" marker**: a thin primary-colored vertical divider with a small pill label slots into the row at the position the current media occupies in the chronological chain. Backend computes the index (`current_position`) so the frontend doesn't need to compare dates client-side. Position 0 = current is the oldest entry (marker leads the row); position == siblings.length = current is the newest (marker trails the row). On load the row auto-scrolls to center the marker, so a long chain opens at the current entry instead of the far left.
 - If no siblings: "No other media in this anime" message
@@ -291,9 +295,10 @@ Each anime search result card shows:
   - `?from=completion` → "Back to completion" (admin Completion tab's anime links → `/admin?tab=completion`)
   - `?from=curation` → "Back to curation" (Merge/Split candidate cards' anime links → `/admin?tab=curation`)
   - `?from=ratings-stats` → "Back to statistics" (a You-vs-MAL scatter point **or** an Activity score-trend point → `/ratings?tab=stats`, landing back on the section you came from)
+  - `?from=watchlist` → "Back to watchlist" (a `/watchlist` entry → its media/anime detail → `/watchlist`)
   - neither → no back button (direct-URL arrivals stay clean)
 - These flags propagate across the entire anime↔media jump chain (anime → media tile, media → anime link, related-media carousel) via `buildDetailHref`'s options bag, so a deep dive like curation → anime → media → sibling stays linkable back to the origin
-- Origin set is a closed `DetailOrigin` TS union (`'library' | 'job' | 'completion' | 'curation' | 'ratings-stats'`); extending it requires updating both `lib/utils/navigation.ts` AND `BackLink.svelte`'s switch — surfaces as a type error otherwise
+- Origin set is a closed `DetailOrigin` TS union (`'library' | 'job' | 'completion' | 'curation' | 'ratings' | 'ratings-stats' | 'watchlist'`); extending it requires updating both `lib/utils/navigation.ts` AND `BackLink.svelte`'s switch — surfaces as a type error otherwise
 
 ---
 
@@ -324,9 +329,39 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 
 ---
 
-## 9. Settings Page
+## 9. Watchlist Page
 
-### 9.1 Theme
+`/watchlist` is your plan-to-watch hub (v0.15.0). It's media-level under the hood but the UI groups entries by **lists** ("list" is the user-facing term for a tag). Restricted (guest) users see a "Watchlists aren't available for guest accounts" notice instead — they can't write watchlists.
+
+### 9.1 Tab Navigation
+- Two tabs via a `?tab=` query param: **Watchlists** (`watchlists`, default — your entries) and **Lists** (`tags` — list management). An unknown/missing value falls back to `watchlists`.
+- The Watchlists tab loads one `GET /watchlist/items` fetch (a wide per-entry projection) on mount; both grains and both views derive from it client-side. It stays mounted (scroll preserved); the Lists tab mounts on demand.
+- Leaving `/watchlist` resets the value filters; the view + grain choice survive a detail round-trip.
+- Page states: loading, an unauthenticated prompt (sign-in link), an error state with a retry, and an empty state ("Your watchlist is empty" → browse link).
+
+### 9.2 Watchlists Tab (entries)
+- **Grain toggle** (anime / media, default **anime**):
+  - **Anime**: one card/row per anime, aggregating its watchlisted media — most-urgent (min) priority, the distinct list colors (solid, or a gradient when the anime spans lists), a media count, and an "X main · Y side" subtitle.
+  - **Media**: one card/row per entry — the media's own list color, relation-type label, and note indicator.
+- **View toggle** (grid / table pills):
+  - **Grid** (default): cards grouped under **priority bands** (High / Medium / Low), each band labeled + counted with a colored dot. An order arrow flips whether High or Low sits on top; within a band, cards are title-sorted. Each card shows the cover (media covers are spoiler-guarded; anime covers never are), a list-color dot (tooltip = list name, or "N lists"), and a note icon (tooltip = the note) when one exists.
+  - **Table**: sortable columns (list-color dot, title, priority, added date); clicking a header toggles the sort. Whole-row click navigates to the detail page (preserving new-tab / inner-link clicks).
+- **List filter**: a multi-select **union** of lists ("show me these lists combined") — an empty selection = all. A deleted list is auto-pruned from the selection. "Clear all" resets it.
+- Cards/rows link to the media or anime detail page with `?from=watchlist` (→ "Back to watchlist").
+
+### 9.3 Lists Tab (list/tag management)
+- **Create**: a name field (≤50 chars) + a color picker (a fixed palette; the default list's reserved orange is excluded so a custom list can't impersonate it) + "Add". Duplicate names are rejected ("You already have a list named …").
+- **List of lists** (default first): each row shows a color swatch, name, a "Default" badge on the default list, and a count ("N anime · M media", or "empty").
+- **Edit** (non-default lists): inline pencil → name + color, Save/Cancel. The immutable default "Watchlist" list can't be edited or deleted.
+- **Delete** (non-default): confirm dialog. When the list has entries, an "Also move its entries to the Watchlist list instead of deleting them" checkbox chooses reassign vs cascade-delete.
+- **Empty**: the default list's only bulk action (it can't be deleted) — a confirm dialog clears all its entries but keeps the list. Available on any non-empty list.
+- Every mutation refreshes the bookmark colors app-wide and reloads the entries list.
+
+---
+
+## 10. Settings Page
+
+### 10.1 Theme
 - "Theme" card with "Design your lobby" subtitle
 - Horizontal scrollable row of theme cards (snap scrolling, `overflow-x-auto`)
 - Each card: landscape character pic (`aspect-video`), theme label below, `w-48 sm:w-56`
@@ -336,7 +371,7 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 - Four themes: Default (purple), Crimson (red), Ocean (blue), Forest (green)
 - Theme applied via CSS class on `<html>` with localStorage sync for FOUC prevention
 
-### 9.2 Spoiler Protection
+### 10.2 Spoiler Protection
 - Three-level dropdown: Off, Blur, Hide
 - **Off**: No spoiler protection
 - **Blur**: "Blur covers and descriptions to avoid spoilers" — media beyond the spoiler frontier are blurred with a "Click to reveal" overlay on covers and descriptions
@@ -347,7 +382,7 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 - Visibility data loaded on auth and refreshed after rating changes
 - **Restricted (guest) users**: the spoiler control is disabled and pinned to **Off** — guests can't rate, so a frontier would freeze at episode 1 of every anime and hide the catalogue (they're also excluded from the spoiler-visibility cache). The Rating Step and Data Export controls are likewise shown disabled rather than hidden. Enforced server-side (`PUT /users/settings` drops `spoiler_level` for restricted users)
 
-### 9.3 Account Deletion (Danger Zone)
+### 10.3 Account Deletion (Danger Zone)
 - Red-bordered "Danger Zone" card at the bottom of the settings page
 - Glass overlay covers the entire card; the "Danger Zone" title shows through the tinted glass
 - Lock icon and "Click to unlock" prompt centered on the glass
@@ -363,13 +398,13 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 
 ---
 
-## 10. Add to Library Page
+## 11. Add to Library Page
 
-### 10.1 Layout
+### 11.1 Layout
 - Two-column card: left is a "Search MAL" form (text input + submit button), right is a "Recently added" panel showing the most recent saved anime across all users (catalog is family-shared, so this is a global feed).
 - Restricted users see the page but the form is disabled (`POST /jobs/scrape` rejects them backend-side via `require_user_or_admin` regardless).
 
-### 10.2 Submitting a Scrape Job
+### 11.2 Submitting a Scrape Job
 - The query must be at least 4 chars (`minlength` attr + button stays disabled until 4 chars typed). MAL's top-3 search is too ambiguous on shorter queries.
 - Submitting POSTs `{ query }` to `/jobs/scrape`. Successful enqueue returns 202 with the new job uuid; the form clears and bumps `jobsRefresh` (in `lib/stores/jobs.ts`) so the navbar bell refetches in tens of milliseconds instead of waiting for the next 30s poll.
 - 409 dedupe: re-submitting the same normalized query within `JOBS_DEDUPE_HOURS` (default 24) returns "This query is already queued" — failed jobs don't count, so a transient MAL outage doesn't lock the user out for a day.
@@ -377,25 +412,25 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 - 429 daily cap: more than `JOBS_DAILY_LIMIT` (default 50) user_scrape submissions in any trailing 24h window — counts every status, including failed jobs, so a fast-failing client can't cycle through the limit — returns "You've hit your daily limit of 50 anime additions. Please try again tomorrow." Marked permanent so the bell hides retry.
 - The job's lifecycle is then surfaced by the navbar bell (see 2.1). Long-term history lives on this page's recent-additions panel rather than the bell, which is intentionally session-scoped.
 
-### 10.3 Recent Additions Panel
+### 11.3 Recent Additions Panel
 - Server-rendered list from `GET /library/recent` returning the most recent anime saved across the catalog (not just this user's scrapes). Each row links to the anime detail page with `?from=library` so the destination renders a "Back to library" button (see 7.6).
 - Carries `name_eng` + `name_jap` so the frontend can call `resolveTitle(...)` with the user's `name_language` setting — no second fetch.
 - Refreshes automatically when the bell observes a NEW `succeeded` `user_scrape` (bumps `librarySaved` in `lib/stores/jobs.ts`; this panel subscribes via `onBump`). No manual reload required.
 
 ---
 
-## 11. Admin Page
+## 12. Admin Page
 
-### 11.1 Access
+### 12.1 Access
 - Only accessible to users with `admin` role
 - Non-admin users are redirected to `/` on mount
 - NavBar dropdown shows "Admin" link only for admin users
 
-### 11.1a Tab navigation
+### 12.1a Tab navigation
 - Admin sections live behind a tab bar driven by the `?tab=` query param (`/admin?tab=overview`, `?tab=jobs`, `?tab=tokens`, `?tab=curation`, `?tab=completion`, `?tab=backups`). Default tab is `overview` if `?tab=` is absent or unknown — a stale bookmark to a retired tab key still lands the admin somewhere useful instead of a blank page.
 - The active tab is preserved across refresh and is bookmarkable. Tabs eager-render on first admin load and stay mounted across switches — visibility toggles via `class:hidden`, not conditional unmount. Admin sessions usually touch several tabs in a row, so the one-time parallel-fetch cost on first paint buys instant subsequent switches. No card polls, so keeping them mounted doesn't generate ongoing traffic.
 
-### 11.1b Overview tab (default)
+### 12.1b Overview tab (default)
 - Four stat cards sourced from `GET /admin/stats/overview`:
   - **Catalog**: total anime count, total media count, anime added in the last 7 days, media added in the last 7 days
   - **Job health (7d)**: per-kind succeeded/failed counts, parenthesized retryable-failed subset, and a colored success-rate percentage (theme-primary at ≥90%, amber at 75–89%, destructive red below 75%). Percent cell is fixed-width + `tabular-nums` so the column edge stays aligned. The `user_scrape` row counts user-initiated submissions only — seasonal-sweep children (system-attributed user_scrapes) are excluded so a Sunday burst of Music/PV-filtered shows doesn't drag the user-facing signal down. Retryable-failed counts ALSO drop system jobs (sweeps, cron backups) since the bell's retry button only fires on user-owned rows; counting cron retries would imply admin action is available when it isn't
@@ -405,7 +440,7 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 - All counts are aggregate. The Overview tab is leaderboard-free — per-user breakdowns are scoped to the Jobs Log tab where they're needed for debugging
 - Cache: none. Admin-only, queries are sub-150ms
 
-### 11.1c Jobs Log tab
+### 12.1c Jobs Log tab
 - Paginated all-jobs table sourced from `GET /admin/jobs` (50 rows per page, newest-first by `created_at`). Backed by `ix_jobs_created_at_desc` so the default unfiltered scan + COUNT stays cheap as the jobs table grows
 - **Clustering**: the default view hides rows whose `parent_job_id` is set, so the list isn't dominated by ~50 system user_scrape children that land after every Sunday's seasonal_sweep. Each `seasonal_sweep` row renders an expander chevron — clicking fetches `?parent_uuid=<UUID>&limit=500` and renders the children inline below the parent, indented with a left primary-tinted border. Re-collapse hides them without re-fetching (state cached per parent). If a sweep ever exceeds the 500-row cap, the expanded view surfaces an amber "Showing X of Y children — rest are older than the 500-row cap" notice rather than silently truncating
 - Filters: **Kind** dropdown (All / user_scrape / update_sweep / seasonal_sweep / backup / restore) and **Status** dropdown (All / queued / running / succeeded / failed). Changing either filter resets pagination to page 1 — keeping a stale offset against a narrower filter would strand the admin past the result tail. A monotonic request-id guards against a fast filter-then-page click letting an older response overwrite the newer state
@@ -417,12 +452,12 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
   - **Duration** — wall-clock seconds since `started_at` (or `started_at → finished_at`). Live-ticks every 1s while any row on the page is `running`; queued rows show `—`. The interval is gated by a `hasRunning` derived so a stable page doesn't keep the timer alive
   - **User** — `requested_by_username` (flattened server-side from the eager-loaded relationship) or `system` for cron + seasonal-sweep children
   - **Detail** — for failed rows, the `error_message` in destructive color; for succeeded rows the dispatcher's `result_summary` rendered per-kind: user_scrape → "+N anime · +M media", update_sweep v5 → "N media refreshed · X media w/ dynamic · Y media w/ static · Z umbrella · W new attached" (v2–v4 use the anime-grained "N touched · X anime w/ dynamic · …"; v1 rows fall back to the legacy "refreshed N anime · M changed · …" copy), seasonal_sweep → "N season entries · M new scrapes enqueued · K already known", backup/restore → filename
-- **Click-through to detail page**: rows of kind `update_sweep` with `version >= 2` are clickable (cursor-pointer, hover tint, keyboard-accessible via Enter) — they route to `/admin/jobs/[uuid]` (see 11.1d). Other kinds and pre-v0.14.5 update_sweep rows stay non-clickable since the detail page has nothing to add beyond what the row already shows
+- **Click-through to detail page**: rows of kind `update_sweep` with `version >= 2` are clickable (cursor-pointer, hover tint, keyboard-accessible via Enter) — they route to `/admin/jobs/[uuid]` (see 12.1d). Other kinds and pre-v0.14.5 update_sweep rows stay non-clickable since the detail page has nothing to add beyond what the row already shows
 - **Unknown-genre-tag highlight**: update_sweep v3 rows whose `result_summary.unknown_genre_tags` is non-empty get an amber tint + a left amber accent border + an inline subline under the payload summary listing the missing tag names ("⚠ New genre tags need seeding: Survival Game, Dark Fantasy"). The seeder is the deliberate source of truth for the user-facing genre taxonomy, so unknown tags don't auto-seed — they surface here for admin to add manually before the next sweep
 - Pagination footer: `"start–end of total"` range on the left, prev/next buttons + `"Page N of M"` on the right. Buttons disable at the boundaries. `total === 0` degrades to `"0 of 0"` and both buttons disabled
 - Tab eager-renders on first admin paint (visibility toggles via `class:hidden`, not unmount) — first paint pays one filtered COUNT + SELECT alongside the other tabs' fetches, subsequent tab switches are instant
 
-### 11.1d Job detail page (`/admin/jobs/[uuid]`)
+### 12.1d Job detail page (`/admin/jobs/[uuid]`)
 - Standalone route (not a tab — a separate SvelteKit page). Reached by clicking an `update_sweep v2+` row in the Jobs Log. Direct-URL access works too; admin role is enforced on mount (non-admin → `/`)
 - **Header card**: kind badge, color-coded status badge, version chip (`v3`), duration (live-ticks for running jobs), created / started / finished timestamps, requested_by username, parent-job link if `parent_job_uuid` is set, "← Jobs Log" back link. Failed jobs render the `error_message` in a destructive-tinted banner below the metadata grid — this is the actionable info, the page omits the "predates v0.14.5" notice for failed rows since their missing counters reflect a crashed run, not an old schema
 - **Counters grid** (v2+ jobs only): version-aware stats from `result_summary.counters`. v5 (v0.14.8, media-level) shows media refreshed, anime touched, media skipped (media belonging to touched anime not refreshed this run — tooltip), media w/ dynamic changes, media w/ static changes, umbrella reclassed, probes succeeded, probes failed, anime w/ new attach, orphaned studios removed, failed refresh. v2–v4 show the original anime-grained set (anime refreshed + anime w/ dynamic/static rollups instead of the media-level trio). The "Failed refresh" cell renders "—" for v<4 (not a misleading 0) and tints amber when > 0. Plus inline warning lines if `merge_detect_failed` or `cache_recompute_failed` fired (the catalog work still committed; only the post-sweep merge-detection / spoiler-cache recompute failed)
@@ -431,19 +466,19 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 - **Anime field changes section** (v2+ only) — heading "Anime field changes": for each anime whose 7 aggregate fields drifted, an `AnimeUmbrellaCard` shows the anime title (link to `/anime?uuid=<uuid>`, new tab), "anchor moved" / "embedding regen" badges when applicable, a Field/Was/Now table for the changed umbrella fields, and a list of per-media relation reclassifications (`mal_id=NNNN: old_rt → new_rt`)
 - **v1 fallback**: pre-v0.14.5 sweeps (job version 1) didn't capture per-media diffs. The page renders the header + a "predates v0.14.5's per-media diff capture" notice in place of the counters/diff sections. v1 rows are NOT clickable from the Jobs Log so this fallback is reached only via direct URL
 
-### 11.2 Create Registration Token (Tokens tab)
+### 12.2 Create Registration Token (Tokens tab)
 - Form with role selector (User / Restricted User) and expiry dropdown (1 day / 7 days / 30 days)
 - "Create" button POSTs to `/admin/registration-tokens`
 - On success: token string shown in a highlighted banner with copy button and toast feedback
 - Changing the role or expiry selector dismisses the success banner
 
-### 11.3 Token List
+### 12.3 Token List
 - Card title shows the live count: `Registration Tokens (N)`.
 - Displays all registration tokens with: truncated token (click to copy), status badge (active/used/expired), role badge, creation date, and either an expiry date (active/expired tokens) or a "Used &lt;date&gt; by &lt;username&gt;" line (used tokens — once consumed, the expiry date is no longer the useful piece of info, so it's replaced with the consumption date)
 - **Sort options** (dropdown): By Status (default: active → used → expired), Newest First, Expiring Soon (active tokens first by soonest expiry), Recently Used
 - **Delete**: trash icon on unused/expired tokens opens confirm/cancel inline buttons. Used tokens cannot be deleted. DELETE returns 204.
 
-### 11.4 Backups (Backups tab)
+### 12.4 Backups (Backups tab)
 - Card title shows the live count: `Backups (N)`.
 - **Create backup**: POST returns 202 with `{job_uuid}` instead of running pg_dump synchronously. The button shows a toast ("Backup queued. We'll let you know when it's ready.") and disables for 5 seconds to absorb double-clicks. The bell shows a queued row instantly (optimistic stub seeded from the returned uuid; see 2.1) and tracks the job through to completion. When the job succeeds the bell bumps `backupSaved`; this card subscribes via `onBump` and refetches the dump list, so the new row appears with a green `ok` integrity badge and a source badge (`Manual`, `Scheduled`, `Pre-restore`, or `Upload`) without any manual reload. Cron-triggered backups stay system jobs (invisible to every bell) — they appear in this list on the card's next mount or sort change.
 - **Upload**: file input accepts `.dump` files; `/admin/backups/upload` runs `pg_restore -f -` to validate + compute a content hash that ignores per-run timestamps and psql `\restrict` tokens. An upload whose DB state matches an existing dump returns 409 ("identical to `<filename>`"). Uploads never move the "Current" badge — uploaded bytes are external and the backend can't verify they match live DB.
@@ -455,7 +490,7 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 - **Restore**: rotate-back icon opens a destructive-confirm dialog that requires typing the admin's username. Disabled on `corrupt` rows. Backend auto-snapshots as a `pre-restore` dump *before* entering maintenance mode, then flips the maintenance flag, closes the SQLAlchemy pool, terminates any other DB sessions, and runs `pg_restore --clean --if-exists` (timeout configurable via `BACKUP_RESTORE_TIMEOUT_SECONDS`, default 10 min). After pg_restore returns, the backend warms the connection pool before lifting the maintenance gate so the first post-restore request doesn't flap the liveness probe. Result banner reports the pre-restore filename, and the "Current" badge now follows the restored dump. The pre-restore snapshot's `restored_to` is stamped to the restored dump, so the restored (now-current) row shows "Previous state saved as …" and the pre-restore tied to the current state is retention-pinned (kept until a later restore supersedes it). All non-admin users in the app are bounced to `/login` for the duration; the sticky global banner conveys the maintenance state (see 1.5).
 - **Delete**: trash icon opens inline confirm/cancel buttons. DELETE returns 204.
 
-### 11.5 Merge Candidates (Curation tab)
+### 12.5 Merge Candidates (Curation tab)
 - Card title shows the live count: `Merge Candidates (N)`.
 - Admin-only.
 - **List**: pending merge candidates flagged by the duplicate detector (running on every save covering new × new and new × existing pairs, at app startup covering existing × existing, and on admin demand via the Re-run detection button). Each row shows:
@@ -473,7 +508,7 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 - Already-resolved candidates (merged or dismissed) return 409 if the action is retried.
 - The detector itself is invisible to non-admin users; nothing about it surfaces outside this card.
 
-### 11.6 Split Candidates (Curation tab)
+### 12.6 Split Candidates (Curation tab)
 - Card title shows the live count: `Split Candidates (N)`.
 - Stacked below Merge Candidates on the same Curation tab. Admin-only.
 - **List**: pending split candidates flagged by `find_disjoint_franchises`, which finds substance-passing media inside one anime row that form their own connected sequel chain — the BNHA↔Vigilante, Toaru Index↔Railgun, Pretty Rhythm↔(PriPara/King of Prism/Pri☆chan/AiPri) shapes. Detection runs on every save (scrape-time), inside the relation-backfiller's per-anime loop (lifespan startup + admin re-trigger), AND after every merge survivor reclassify (so a merge that surfaces previously-dangling bridges gets flagged). Each row shows:
@@ -489,14 +524,14 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 - Already-resolved candidates (split or dismissed) return 409 if the action is retried.
 - **Stale-candidate fail-loud**: if the classifier on the cluster subset picks a different anchor than the candidate's `suggested_anchor_mal_id` at execute time (e.g., MAL added a sequel between detection and execution), the backend returns 409 SplitCandidateStaleError. Admin re-runs detection to refresh the payload.
 
-### 11.7 Dismissed decisions (both Curation cards)
+### 12.7 Dismissed decisions (both Curation cards)
 - Each card has a collapsible **"Dismissed decisions (N)"** section at the bottom (shared `DismissedDecisionsSection` component). Collapsed by default; the list is lazy-fetched (`GET /admin/{merge,split}-candidates/dismissed`) the first time it's expanded, so the common pending view never pays for the history.
 - Newest dismissal first. Merge rows show `A ↔ B` + detector + match %; split rows show the source anime + "would split off: <member titles>" per cluster. Each row shows when it was dismissed.
 - The counter and list stay fresh: dismissing a new candidate in the card above bumps `curationRefresh`, which the section subscribes to and re-fetches (if already expanded) — no stale `(N)`.
 - **Resurface**: each row has a "Resurface" button → a username-gated confirm dialog (type the admin username, mirroring backup restore). On confirm it `POST`s `/{uuid}/delete`, removes the row, then re-runs the card's detection so the freed candidate re-flags as pending immediately (rather than waiting for the nightly sweep). Only `dismissed` rows are deletable; merged rows no longer exist and deleting a split-status row wouldn't undo the split.
 - The detector itself is invisible to non-admin users; nothing about it surfaces outside this card.
 
-### 11.8 Completion tab (Story Completion)
+### 12.8 Completion tab (Story Completion)
 - Admin-only manual curation (no detector): mark an anime as story-complete when its narrative has concluded — distinct from "Finished Airing".
 - **Search to mark**: a debounced search box (reuses `/search/anime`, title search) with a clear-✕ button. Results list cover thumbnail + title; each row has a "Mark complete" button, or a "Marked" label if already complete. Marking (`POST /admin/finished-anime/{uuid}`) clears + closes the search so it reads as a committed selection.
 - **Marked list**: cover thumbnail + title (links to the anime page same-tab, "Back to completion") + "marked {date} by {admin}" audit line. Sort control: Newest marked (default) / Oldest marked / Title A–Z. Each row has an unmark (✕) button (`DELETE /admin/finished-anime/{uuid}`), guarded by a click-to-arm confirm: the first click arms the row (✕ → red check, "Click again to confirm removal", auto-disarms after ~3s), the second click within the window removes the flag — so a stray click can't silently un-mark.
@@ -504,7 +539,7 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 
 ---
 
-## 12. API Endpoints Used by Frontend
+## 13. API Endpoints Used by Frontend
 
 | Endpoint | Method | When |
 |----------|--------|------|
@@ -527,6 +562,18 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 | `/ratings/bulk-delete` | POST | Bulk delete ratings from anime detail |
 | `/ratings/{uuid}` | DELETE | Delete a rating |
 | `/ratings/spoiler-visibility` | GET | Layout auth (fetch visible media UUIDs for spoiler protection) |
+| `/watchlist/media-tags` | GET | Layout auth + after any watchlist mutation (bookmark icon-state + per-media list color) |
+| `/watchlist/tags` | GET | Layout auth + watchlist page + dialogs (the user's lists, default first) |
+| `/watchlist/tags` | POST | Watchlist Lists tab (create a list) |
+| `/watchlist/tags/{uuid}` | PATCH | Watchlist Lists tab (rename / recolor a list) |
+| `/watchlist/tags/{uuid}` | DELETE | Watchlist Lists tab (delete a non-default list; `?reassign_entries=` moves entries to the default list vs cascade) |
+| `/watchlist/tags/{uuid}/empty` | POST | Watchlist Lists tab (clear a list's entries, keep the list) |
+| `/watchlist/items` | GET | Watchlist page load (all entries, wide projection for the list + grid) |
+| `/watchlist/media/{media_uuid}` | GET | WatchlistDialog (load the existing entry, if any) |
+| `/watchlist/media/{media_uuid}` | PUT | Media page / dialog (create or update a watchlist entry) |
+| `/watchlist/media/{media_uuid}` | DELETE | Media page / dialog (remove a watchlist entry) |
+| `/watchlist/bulk` | PUT | Anime page bulk add (hero add-all + media-table select-mode) |
+| `/watchlist/bulk-delete` | POST | Anime page bulk remove (hero remove-all + media-table select-mode) |
 | `/users/settings` | GET | Layout auth (fetch user settings) |
 | `/users/settings` | PUT | Settings page (update preferences) |
 | `/users/export?format=json\|csv` | GET | Settings page (data export download — flat media-level rows, filename includes username + date) |
@@ -567,7 +614,7 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 
 ---
 
-## 13. Error States
+## 14. Error States
 
 | Scenario | Expected Behavior |
 |----------|-------------------|
