@@ -10,7 +10,6 @@ from app.models.media import Media
 from app.models.ratings import RATING_ATTRIBUTE_FIELDS, Ratings
 from app.models.user_settings import NameLanguage
 from app.models.watchlist import Watchlist
-from app.models.watchlist_tag import WatchlistTag
 
 watch_event_dao = WatchEventDAO()
 
@@ -93,11 +92,10 @@ _RATING_NULL = {
 
 
 def _watchlist_columns(w: Watchlist) -> dict:
-    tags = [wt.tag.name for wt in w.watchlist_tag]
     return {
         "watchlist_priority": w.priority,
         "watchlist_note": w.note,
-        "watchlist_tags": tags,
+        "watchlist_tag": w.tag.name,
         "watchlist_added_at": w.created_at.isoformat() if w.created_at else None,
     }
 
@@ -105,7 +103,7 @@ def _watchlist_columns(w: Watchlist) -> dict:
 _WATCHLIST_NULL = {
     "watchlist_priority": None,
     "watchlist_note": None,
-    "watchlist_tags": None,
+    "watchlist_tag": None,
     "watchlist_added_at": None,
 }
 
@@ -117,7 +115,7 @@ _COLUMN_ORDER = [
     "season", "season_year", "age_rating", "mal_score", "mal_scored_by",
     "rating", "watch_status", "watched_count", "episodes_watched", "rating_note", "rated_at", "rating_updated_at",
     *RATING_ATTRIBUTE_FIELDS,
-    "watchlist_priority", "watchlist_note", "watchlist_tags", "watchlist_added_at",
+    "watchlist_priority", "watchlist_note", "watchlist_tag", "watchlist_added_at",
 ]
 
 
@@ -141,7 +139,7 @@ async def fetch_export_data(
         .filter_by(user_id=user_id)
         .options(
             selectinload(Watchlist.media).selectinload(Media.anime),
-            selectinload(Watchlist.watchlist_tag).selectinload(WatchlistTag.tag),
+            selectinload(Watchlist.tag),
         )
     )
     watchlist_result = await db.execute(watchlist_stmt)
@@ -192,11 +190,7 @@ def serialize_csv(rows: list[dict]) -> str:
     """Serialize export rows to a CSV string."""
     output = io.StringIO()
     if rows:
-        csv_rows = [{**row} for row in rows]
-        for row in csv_rows:
-            tags = row.get("watchlist_tags")
-            row["watchlist_tags"] = ";".join(tags) if tags else None
-        writer = csv.DictWriter(output, fieldnames=_ordered_fieldnames(csv_rows))
+        writer = csv.DictWriter(output, fieldnames=_ordered_fieldnames(rows))
         writer.writeheader()
-        writer.writerows(csv_rows)
+        writer.writerows(rows)
     return output.getvalue()

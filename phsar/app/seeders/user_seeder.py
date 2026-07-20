@@ -6,10 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.security import get_password_hash
 from app.daos.user_dao import UserDAO
+from app.models.tag import Tag
 from app.models.user_settings import SpoilerLevel, UserSettings
 from app.models.user_visible_media import UserVisibleMedia
 from app.models.users import RoleType, Users
-from app.services import user_settings_service
+from app.services import tag_service, user_settings_service
 from app.services.spoiler_service import recompute_visibility_for_user
 
 logger = logging.getLogger(__name__)
@@ -36,9 +37,11 @@ async def _seed_user(
     await user_settings_service.create_default_settings(db, new_user.id)
     # Restricted users are pinned to spoiler=off and never read the cache,
     # so don't build one (it would also be re-seeded every startup by
-    # backfill_spoiler_visibility, which skips them too).
+    # backfill_spoiler_visibility, which skips them too). They also can't write
+    # watchlists, so they get no default tag.
     if role != RoleType.RestrictedUser:
         await recompute_visibility_for_user(db, new_user.id)
+        await tag_service.create_default_tag(db, new_user.id)
     await db.commit()
     logger.info(f"User '{username}' created with role '{role.value}'.")
 
@@ -142,3 +145,40 @@ async def backfill_user_settings(db: AsyncSession):
         await user_settings_service.create_default_settings(db, user_id)
     await db.commit()
     logger.info(f"Backfilled UserSettings for {len(user_ids)} user(s).")
+
+
+async def backfill_default_tags(db: AsyncSession):
+    """Create the immutable default 'Watchlist' tag for any non-restricted user
+    that lacks one — covers new deployments and users created before v0.15.0.
+
+    Restricted (guest) users can't write watchlists, so they're excluded (mirrors
+    the spoiler-cache exclusion). Idempotent: touches zero rows once every eligible
+    user has a default tag."""
+    stmt = (
+        select(Users.id)
+        .outerjoin(Tag, (Users.id == Tag.user_id) & Tag.is_default.is_(True))
+        .where(
+            Tag.id.is_(None),
+            Users.role != RoleType.RestrictedUser,
+        )
+    )
+    result = await db.execute(stmt)
+    user_ids = result.scalars().all()
+
+    if not user_ids:
+        return
+
+    # The query already filtered to users lacking a default tag, so insert directly
+    # in one batch rather than routing each through the idempotent create_default_tag
+    # (which would re-run a guaranteed-empty existence SELECT per user).
+    db.add_all([
+        Tag(
+            user_id=user_id,
+            name=tag_service.DEFAULT_TAG_NAME,
+            color=tag_service.DEFAULT_TAG_COLOR,
+            is_default=True,
+        )
+        for user_id in user_ids
+    ])
+    await db.commit()
+    logger.info(f"Backfilled default watchlist tag for {len(user_ids)} user(s).")

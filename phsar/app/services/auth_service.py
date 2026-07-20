@@ -23,7 +23,7 @@ from app.exceptions import (
 from app.models.registration_token import RegistrationToken
 from app.models.users import RoleType, Users
 from app.schemas.auth_schema import UserCreateWithToken
-from app.services import user_settings_service
+from app.services import tag_service, user_settings_service
 from app.services.spoiler_service import recompute_visibility_for_user
 
 logger = logging.getLogger(__name__)
@@ -56,9 +56,11 @@ async def register(user_data: UserCreateWithToken, db: AsyncSession):
     await user_settings_service.create_default_settings(db, new_user.id)
 
     # Restricted users are pinned to spoiler=off and never read the cache,
-    # so skip building one (see spoiler_service / user_seeder).
+    # so skip building one (see spoiler_service / user_seeder). They also can't
+    # write watchlists, so they get no default tag.
     if token_obj.role != RoleType.RestrictedUser:
         await recompute_visibility_for_user(db, new_user.id)
+        await tag_service.create_default_tag(db, new_user.id)
 
     token_obj.was_used_for_user_id = new_user.id
     token_obj.used_at = datetime.now(timezone.utc)
