@@ -126,6 +126,8 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 6. Results display as cards in a grid
 7. "Show More" button loads 20 more results per click
 8. If no results: "No results found :-("
+
+**No token** (`/search` with no `q` — the navbar link, or the "Browse anime" buttons on the ratings/watchlist empty states): the page runs an **empty search** (no query, no filters) in the user's default view, so it lands on a browsable, ranked list (the backend orders an empty query by weighted score) instead of a blank page. Typing a query / applying filters then navigates to a normal `?q=<token>` search.
 9. If no search performed yet: "Start searching!!!"
 
 **Title-query ranking:** Title search starts from embedding cosine similarity, then boosts results whose titles literally contain the query (`Lord of` → `Lord of Mysteries` first, not `Overlord`) and results that fuzzy-match via trigram similarity (typos like `lor of` still surface the intended show near the top). Description and rating-notes search rank by embedding only — those queries are semantic, not literal. Search is **case-insensitive** — the query and stored titles are case-folded before embedding, so capitalization (`Kurokos` vs `kurokos`) never changes the results.
