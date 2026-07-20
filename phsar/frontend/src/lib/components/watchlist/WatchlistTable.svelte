@@ -45,14 +45,14 @@
 		<tbody>
 			{#each rows as row (row.key)}
 				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-				<tr class="border-b border-border/60 last:border-0 hover:bg-muted/40 transition-colors cursor-pointer" onclick={(e) => rowClickNavigate(e, row.href)}>
+				<tr class="group border-b border-border/60 last:border-0 hover:bg-muted/40 transition-colors cursor-pointer" onclick={(e) => rowClickNavigate(e, row.href)}>
 					<td class="px-3 py-2">
 						<Tooltip text={row.tagLabel}>
 							<span class="block size-3.5 rounded-full" style="background:{tagGradient(row.colors)}"></span>
 						</Tooltip>
 					</td>
 					<td class="px-3 py-2">
-						<a href={row.href} class="text-card-foreground hover:text-primary font-medium">{row.title}</a>
+						<a href={row.href} class="text-card-foreground group-hover:text-primary font-medium">{row.title}</a>
 						<span class="ml-1.5 text-xs text-muted-foreground">{row.subtitle}</span>
 					</td>
 					<td class="px-3 py-2 text-center whitespace-nowrap font-medium {PRIORITY_ACCENT[row.priority].text}">
