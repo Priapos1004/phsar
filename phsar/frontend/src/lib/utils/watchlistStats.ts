@@ -10,7 +10,7 @@ import type { WatchlistItem } from '$lib/types/api';
 
 export type WatchlistView = 'grid' | 'table';
 export type WatchlistGrain = 'anime' | 'media';
-export type WatchlistSortKey = 'title' | 'priority' | 'date';
+export type WatchlistSortKey = 'title' | 'priority' | 'date' | 'note';
 export type NameLanguage = 'english' | 'japanese' | 'romaji';
 
 export interface WatchlistRow {
@@ -124,6 +124,9 @@ export function toAnimeRows(items: WatchlistItem[], lang: NameLanguage): Watchli
 	}));
 }
 
+/** Within-band order + the stable, direction-independent sort tiebreak: rows by title ascending. */
+const byTitle = (a: WatchlistRow, b: WatchlistRow) => a.title.localeCompare(b.title);
+
 /** Group rows into High/Medium/Low bands. `dir` flips which sits on top: 'desc' (default)
  *  = High first (most urgent), 'asc' = Low first. Within a band, rows are title-ordered. */
 export function toPriorityBands(rows: WatchlistRow[], dir: 'asc' | 'desc'): PriorityBand[] {
@@ -139,7 +142,7 @@ export function toPriorityBands(rows: WatchlistRow[], dir: 'asc' | 'desc'): Prio
 		.map((p) => ({
 			priority: p,
 			label: priorityLabel(p),
-			rows: byPriority.get(p)!.slice().sort((a, b) => a.title.localeCompare(b.title)),
+			rows: byPriority.get(p)!.slice().sort(byTitle),
 		}));
 }
 
@@ -148,10 +151,14 @@ export function sortRows(rows: WatchlistRow[], key: WatchlistSortKey, dir: 'asc'
 	const sign = dir === 'asc' ? 1 : -1;
 	return rows.slice().sort((a, b) => {
 		let cmp = 0;
-		if (key === 'title') cmp = a.title.localeCompare(b.title);
+		if (key === 'title') cmp = byTitle(a, b);
 		else if (key === 'priority') cmp = a.priority - b.priority;
 		else if (key === 'date') cmp = a.createdAt.localeCompare(b.createdAt);
-		if (cmp === 0) cmp = a.title.localeCompare(b.title); // stable tiebreak
-		return sign * cmp;
+		else if (key === 'note') cmp = a.noteCount - b.noteCount;
+		// Direction applies to the primary key only; the title tiebreak stays ascending so
+		// rows that tie on the primary keep a stable order when the direction flips (mirrors
+		// the ratings table's un-signed tiebreak).
+		if (cmp !== 0) return sign * cmp;
+		return byTitle(a, b);
 	});
 }

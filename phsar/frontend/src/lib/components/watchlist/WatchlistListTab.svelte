@@ -22,7 +22,8 @@
 	);
 	let tableRows = $derived(sortRows(rows, $watchlistFilter.sort, $watchlistFilter.sortDir));
 
-	const defaultDir = (key: WatchlistSortKey): 'asc' | 'desc' => (key === 'date' ? 'desc' : 'asc');
+	// date + note lead with the "most" (newest / most-noted) on first click; the rest ascend.
+	const defaultDir = (key: WatchlistSortKey): 'asc' | 'desc' => (key === 'date' || key === 'note' ? 'desc' : 'asc');
 	function onSort(key: WatchlistSortKey) {
 		watchlistFilter.update((f) =>
 			f.sort === key
@@ -39,5 +40,5 @@
 {:else if $watchlistFilter.view === 'table'}
 	<WatchlistTable rows={tableRows} sort={$watchlistFilter.sort} sortDir={$watchlistFilter.sortDir} {onSort} />
 {:else}
-	<WatchlistPriorityGrid {rows} bandDir={$watchlistFilter.bandDir} />
+	<WatchlistPriorityGrid {rows} bandDir={$watchlistFilter.bandDir} grain={$watchlistFilter.grain} />
 {/if}

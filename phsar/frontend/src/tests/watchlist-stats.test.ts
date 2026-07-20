@@ -137,4 +137,27 @@ describe('sortRows', () => {
 			'2024-01-01T00:00:00Z',
 		]);
 	});
+
+	it('sorts by note count (desc = most-noted first)', () => {
+		const noteRows = toAnimeRows(
+			[
+				item({ anime_uuid: 'x', anime_title: 'X', note: 'a' }),
+				item({ anime_uuid: 'x', anime_title: 'X', note: 'b' }),
+				item({ anime_uuid: 'y', anime_title: 'Y', note: 'a' }),
+				item({ anime_uuid: 'z', anime_title: 'Z', note: null }),
+			],
+			LANG,
+		);
+		expect(sortRows(noteRows, 'note', 'desc').map((r) => r.noteCount)).toEqual([2, 1, 0]);
+	});
+
+	it('keeps ties in a stable (title-ascending) order when the direction flips', () => {
+		const tied = toMediaRows(
+			[item({ media_title: 'Beta', priority: 2 }), item({ media_title: 'Alpha', priority: 2 })],
+			LANG,
+		);
+		// Same priority → title-ascending both ways (Alpha before Beta), not reversed by dir.
+		expect(sortRows(tied, 'priority', 'asc').map((r) => r.title)).toEqual(['Alpha', 'Beta']);
+		expect(sortRows(tied, 'priority', 'desc').map((r) => r.title)).toEqual(['Alpha', 'Beta']);
+	});
 });

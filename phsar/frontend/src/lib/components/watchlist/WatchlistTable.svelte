@@ -16,12 +16,14 @@
 
 	let { rows, sort, sortDir, onSort }: Props = $props();
 
-	// sortKey null = display-only column (Note) — the count/tick isn't a meaningful ordering.
-	const COLS: { key: string; label: string; align: 'left' | 'right' | 'center'; sortKey: WatchlistSortKey | null }[] = [
-		{ key: 'title', label: 'Title', align: 'left', sortKey: 'title' },
-		{ key: 'priority', label: 'Priority', align: 'center', sortKey: 'priority' },
-		{ key: 'note', label: 'Note', align: 'center', sortKey: null },
-		{ key: 'date', label: 'Added', align: 'right', sortKey: 'date' },
+	// Title takes the slack (w-full) so the fixed right-hand columns hold position when the
+	// grain toggles; Note is fixed-width for the same reason (its icon vs icon+count must not
+	// resize the column). Note sorts by noteCount (media: noted-first; anime: highest first).
+	const COLS: { key: WatchlistSortKey; label: string; align: 'left' | 'right' | 'center'; width?: string }[] = [
+		{ key: 'title', label: 'Title', align: 'left', width: 'w-full' },
+		{ key: 'priority', label: 'Priority', align: 'center' },
+		{ key: 'note', label: 'Note', align: 'center', width: 'w-16' },
+		{ key: 'date', label: 'Added', align: 'right' },
 	];
 	const alignClass = { left: 'text-left', right: 'text-right', center: 'text-center' } as const;
 
@@ -33,18 +35,13 @@
 			<tr class="text-muted-foreground border-b border-border bg-muted/30">
 				<th class="font-medium px-3 py-2.5 text-left w-8"></th>
 				{#each COLS as col (col.key)}
-					<th class="font-medium px-3 py-2.5 {alignClass[col.align]} {col.key === 'date' ? 'hidden sm:table-cell' : ''}">
-						{#if col.sortKey}
-							{@const sortKey = col.sortKey}
-							<button class="inline-flex items-center gap-1 hover:text-card-foreground transition-colors" onclick={() => onSort(sortKey)}>
-								{col.label}
-								{#if sort === sortKey}
-									{#if sortDir === 'asc'}<ArrowUp class="size-3" />{:else}<ArrowDown class="size-3" />{/if}
-								{/if}
-							</button>
-						{:else}
-							<span>{col.label}</span>
-						{/if}
+					<th class="font-medium px-3 py-2.5 {alignClass[col.align]} {col.width ?? ''} {col.key === 'date' ? 'hidden sm:table-cell' : ''}">
+						<button class="inline-flex items-center gap-1 hover:text-card-foreground transition-colors" onclick={() => onSort(col.key)}>
+							{col.label}
+							{#if sort === col.key}
+								{#if sortDir === 'asc'}<ArrowUp class="size-3" />{:else}<ArrowDown class="size-3" />{/if}
+							{/if}
+						</button>
 					</th>
 				{/each}
 			</tr>
