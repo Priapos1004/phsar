@@ -75,7 +75,7 @@
 			<Button
 				variant="ghost"
 				size="sm"
-				class="absolute top-2 right-2 z-10 text-destructive hover:text-destructive hover:bg-destructive/10"
+				class="absolute top-2 right-2 z-10 {cls.btnGhostDestructive}"
 				onclick={clearFilters}
 			>
 				Clear all

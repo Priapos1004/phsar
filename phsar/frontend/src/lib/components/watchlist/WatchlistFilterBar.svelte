@@ -61,7 +61,7 @@
 
 	<Card.Root class="{cls.cardGlass} overflow-visible relative">
 		{#if hasActiveFilters}
-			<Button variant="ghost" size="sm" class="absolute top-2 right-2 z-10 text-destructive hover:text-destructive hover:bg-destructive/10" onclick={clearFilters}>
+			<Button variant="ghost" size="sm" class="absolute top-2 right-2 z-10 {cls.btnGhostDestructive}" onclick={clearFilters}>
 				Clear all
 			</Button>
 		{/if}

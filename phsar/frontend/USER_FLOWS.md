@@ -353,7 +353,7 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 - **Create**: a name field (≤50 chars) + a color picker (a fixed palette; the default list's reserved orange is excluded so a custom list can't impersonate it) + "Add". Duplicate names are rejected ("You already have a list named …").
 - **List of lists** (default first): each row shows a color swatch, name, a "Default" badge on the default list, and a count ("N anime · M media", or "empty").
 - **Edit** (non-default lists): inline pencil → name + color, Save/Cancel. The immutable default "Watchlist" list can't be edited or deleted.
-- **Delete** (non-default): confirm dialog. When the list has entries, an "Also move its entries to the Watchlist list instead of deleting them" checkbox chooses reassign vs cascade-delete.
+- **Delete** (non-default): confirm dialog. When the list has entries, an "Move its entries to the default list instead of deleting them" checkbox chooses reassign vs cascade-delete.
 - **Empty**: the default list's only bulk action (it can't be deleted) — a confirm dialog clears all its entries but keeps the list. Available on any non-empty list.
 - Every mutation refreshes the bookmark colors app-wide and reloads the entries list.
 

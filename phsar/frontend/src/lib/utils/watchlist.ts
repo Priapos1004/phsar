@@ -1,4 +1,5 @@
 // Shared watchlist constants, used by the dialogs, the overview grid, and the Tags tab.
+import { buildColorWheel } from './color';
 
 export const PRIORITY_OPTIONS = [
 	{ value: 1, label: 'High' },
@@ -27,17 +28,11 @@ export const PRIORITY_ACCENT: Record<number, { text: string; dot: string }> = {
 	3: { text: 'text-sky-400', dot: 'bg-sky-500' },
 };
 
-// Preset palette offered when creating/editing a tag. The default tag's reserved orange
-// (#f97316) is deliberately NOT here, so a custom tag can't impersonate it.
-export const TAG_COLOR_PALETTE = [
-	'#ef4444', // red
-	'#ec4899', // pink
-	'#a855f7', // purple
-	'#6366f1', // indigo
-	'#3b82f6', // blue
-	'#06b6d4', // cyan
-	'#10b981', // emerald
-	'#84cc16', // lime
-	'#eab308', // yellow
-	'#78716c', // stone
-];
+// The color a new custom list starts on — taken straight from a wheel cell (a vivid blue)
+// so it's always pre-selected in the picker AND clickable again to restore. A hardcoded hex
+// outside the wheel couldn't be re-selected without refreshing the page.
+export const DEFAULT_NEW_TAG_COLOR = buildColorWheel()[2][1].hex;
+
+// The default "Watchlist" list's reserved orange (mirrors tag_service.DEFAULT_TAG_COLOR).
+// The color picker blocks a custom list from picking it, so the default stays visually unique.
+export const RESERVED_DEFAULT_TAG_COLOR = '#f97316';

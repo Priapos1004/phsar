@@ -46,3 +46,7 @@ export const cardGlass = 'bg-card/80 backdrop-blur';
 // relation type) — shared by the ratings + watchlist grid cards so they can't drift.
 // Layout margin (e.g. `mt-auto`) is composed at the call site.
 export const mutedPill = 'w-fit rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground';
+
+// Ghost/icon button tinted destructive (delete, clear-filters, discard) — the hover keeps the
+// destructive color and adds a faint destructive wash. Composed with any layout classes at the site.
+export const btnGhostDestructive = 'text-destructive hover:text-destructive hover:bg-destructive/10';

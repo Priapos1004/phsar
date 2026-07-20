@@ -12,7 +12,7 @@
 	import { tags, refreshTags } from '$lib/stores/tags';
 	import { refreshWatchlist } from '$lib/stores/watchlist';
 	import { pushToast } from '$lib/stores/toast';
-	import { TAG_COLOR_PALETTE } from '$lib/utils/watchlist';
+	import { DEFAULT_NEW_TAG_COLOR } from '$lib/utils/watchlist';
 	import * as cls from '$lib/styles/classes';
 	import type { Tag } from '$lib/types/api';
 
@@ -26,7 +26,7 @@
 
 	// Create
 	let newName = $state('');
-	let newColor = $state(TAG_COLOR_PALETTE[0]);
+	let newColor = $state(DEFAULT_NEW_TAG_COLOR);
 	let creating = $state(false);
 	let createError = $state('');
 
@@ -70,7 +70,7 @@
 			await refreshTags();
 			pushToast('List created', 'success');
 			newName = '';
-			newColor = TAG_COLOR_PALETTE[0];
+			newColor = DEFAULT_NEW_TAG_COLOR;
 		} catch (err) {
 			createError = errText(err, 'Failed to create list');
 		} finally {
@@ -86,6 +86,11 @@
 	}
 
 	async function handleSaveEdit(t: Tag) {
+		// Unchanged → close silently: no request, no toast (the Save button is also disabled when clean).
+		if (editName.trim() === t.name && editColor === t.color) {
+			editingUuid = null;
+			return;
+		}
 		savingEdit = true;
 		editError = '';
 		try {
@@ -158,18 +163,21 @@
 			{#each $tags as tag (tag.uuid)}
 				<div class="p-3">
 					{#if editingUuid === tag.uuid}
+						{@const dirty = editName.trim() !== tag.name || editColor !== tag.color}
 						<!-- Inline edit -->
-						<div class="space-y-3">
+						<div class="space-y-2">
+							<!-- Name + color + save/cancel on one row (color picker inline, not below). -->
 							<div class="flex items-center gap-2">
 								<Input bind:value={editName} maxlength={50} class="bg-card flex-grow" />
-								<Button size="sm" variant="secondary" onclick={() => handleSaveEdit(tag)} disabled={savingEdit || !editName.trim()}>
+								<TagColorPicker bind:value={editColor} />
+								<!-- Save enables + turns green only when something changed; Cancel turns red (it discards a change). -->
+								<Button size="sm" variant="secondary" class={dirty ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' : ''} onclick={() => handleSaveEdit(tag)} disabled={savingEdit || !editName.trim() || !dirty}>
 									<Check class="size-4" />
 								</Button>
-								<Button size="sm" variant="ghost" onclick={() => (editingUuid = null)} disabled={savingEdit}>
+								<Button size="sm" variant="ghost" class={dirty ? cls.btnGhostDestructive : ''} onclick={() => (editingUuid = null)} disabled={savingEdit}>
 									<X class="size-4" />
 								</Button>
 							</div>
-							<TagColorPicker bind:value={editColor} />
 							{#if editError}<p class="text-destructive text-sm">{editError}</p>{/if}
 						</div>
 					{:else}
@@ -188,7 +196,7 @@
 								<Button size="sm" variant="ghost" onclick={() => startEdit(tag)} aria-label="Edit list">
 									<Pencil class="size-4" />
 								</Button>
-								<Button size="sm" variant="ghost" class="text-destructive hover:text-destructive hover:bg-destructive/10" onclick={() => { dialogError = ''; deleteReassign = false; deleteTarget = tag; }} aria-label="Delete list">
+								<Button size="sm" variant="ghost" class={cls.btnGhostDestructive} onclick={() => { dialogError = ''; deleteReassign = false; deleteTarget = tag; }} aria-label="Delete list">
 									<Trash2 class="size-4" />
 								</Button>
 							{/if}
@@ -216,7 +224,7 @@
 		{#if deleteTarget && deleteTarget.entry_count > 0}
 			<label class="flex items-center gap-2 text-sm text-card-foreground cursor-pointer py-1">
 				<Checkbox bind:checked={deleteReassign} />
-				Move its entries to the Watchlist list instead of deleting them
+				Move its entries to the default list instead of deleting them
 			</label>
 		{/if}
 		{#if dialogError}<p class="text-destructive text-sm">{dialogError}</p>{/if}
