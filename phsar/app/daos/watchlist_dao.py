@@ -1,7 +1,11 @@
+from uuid import UUID
+
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.daos.base_dao import BaseDAO
+from app.models.anime import Anime
 from app.models.media import Media
 from app.models.watchlist import Watchlist
 
@@ -9,6 +13,104 @@ from app.models.watchlist import Watchlist
 class WatchlistDAO(BaseDAO[Watchlist]):
     def __init__(self):
         super().__init__(Watchlist)
+
+    def _eager_load_options(self):
+        return [
+            selectinload(Watchlist.media).selectinload(Media.anime),
+            selectinload(Watchlist.tag),
+        ]
+
+    # --- Entry lookups ---
+
+    async def get_by_uuid_and_user(self, db: AsyncSession, uuid: UUID, user_id: int) -> Watchlist | None:
+        stmt = (
+            select(Watchlist)
+            .filter_by(uuid=uuid, user_id=user_id)
+            .options(*self._eager_load_options())
+        )
+        return (await db.execute(stmt)).scalars().first()
+
+    async def get_by_user_and_media(self, db: AsyncSession, user_id: int, media_id: int) -> Watchlist | None:
+        """Lightweight upsert lookup (no eager load — the caller mutates or re-fetches)."""
+        return await self.get_by_field(db, user_id=user_id, media_id=media_id)
+
+    async def get_by_user_and_media_ids(
+        self, db: AsyncSession, user_id: int, media_ids: list[int]
+    ) -> list[Watchlist]:
+        """Lightweight batch upsert lookup (no eager load)."""
+        if not media_ids:
+            return []
+        stmt = select(Watchlist).where(
+            Watchlist.user_id == user_id, Watchlist.media_id.in_(media_ids)
+        )
+        return (await db.execute(stmt)).scalars().all()
+
+    async def get_by_media_uuid_and_user(self, db: AsyncSession, media_uuid: UUID, user_id: int) -> Watchlist | None:
+        stmt = (
+            select(Watchlist)
+            .join(Media)
+            .where(Media.uuid == media_uuid, Watchlist.user_id == user_id)
+            .options(*self._eager_load_options())
+        )
+        return (await db.execute(stmt)).scalars().first()
+
+    async def get_by_uuids_and_user(
+        self, db: AsyncSession, uuids: list[UUID], user_id: int
+    ) -> list[Watchlist]:
+        if not uuids:
+            return []
+        stmt = (
+            select(Watchlist)
+            .where(Watchlist.uuid.in_(uuids), Watchlist.user_id == user_id)
+            .options(*self._eager_load_options())
+        )
+        return (await db.execute(stmt)).scalars().all()
+
+    async def get_by_user_and_anime_uuid(
+        self, db: AsyncSession, user_id: int, anime_uuid: UUID
+    ) -> list[Watchlist]:
+        stmt = (
+            select(Watchlist)
+            .join(Media, Watchlist.media_id == Media.id)
+            .join(Anime, Media.anime_id == Anime.id)
+            .where(Anime.uuid == anime_uuid, Watchlist.user_id == user_id)
+            .options(*self._eager_load_options())
+        )
+        return (await db.execute(stmt)).scalars().all()
+
+    async def get_all_for_items(self, db: AsyncSession, user_id: int) -> list[Watchlist]:
+        """All of a user's watchlist entries with media → anime + tag eager-loaded,
+        for the overview page's one-fetch list + grid. Ordered modified_at desc."""
+        stmt = (
+            select(Watchlist)
+            .filter_by(user_id=user_id)
+            .options(*self._eager_load_options())
+            .order_by(Watchlist.modified_at.desc())
+        )
+        return (await db.execute(stmt)).scalars().all()
+
+    async def get_watchlisted_media_uuids(self, db: AsyncSession, user_id: int) -> list[UUID]:
+        """The media UUIDs currently on the user's watchlist — the icon-state set
+        (mirrors spoiler-visibility). Scalar projection, no ORM rows."""
+        stmt = (
+            select(Media.uuid)
+            .join(Watchlist, Watchlist.media_id == Media.id)
+            .where(Watchlist.user_id == user_id)
+        )
+        return (await db.execute(stmt)).scalars().all()
+
+    async def bulk_delete_by_user_and_media_ids(
+        self, db: AsyncSession, user_id: int, media_ids: list[int]
+    ) -> int:
+        """Single-statement bulk delete. Returns rows deleted."""
+        if not media_ids:
+            return 0
+        stmt = delete(Watchlist).where(
+            Watchlist.user_id == user_id, Watchlist.media_id.in_(media_ids)
+        )
+        result = await db.execute(stmt)
+        await db.flush()
+        return result.rowcount
 
     # --- Tag-scoped operations (back the Tags tab counts + delete/empty guards) ---
 

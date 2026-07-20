@@ -1,8 +1,40 @@
-"""Watchlist router — tag endpoints (v0.15.0).
+"""Watchlist router — tag + entry endpoints (v0.15.0)."""
 
-Entry endpoints (upsert / bulk / items / media-ids) are exercised in Block 3;
-this file covers the tag surface + the restricted-user gate.
-"""
+import pytest
+
+from app.models.anime import Anime
+from app.models.media import Media
+from tests._helpers import media_kwargs
+
+
+# NEGATIVE mal_ids so fixtures can't collide with the dev DB's real catalog on the
+# globally-unique media.mal_id (real MAL ids are always positive) — the suite-wide
+# convention documented in tests/seeders/test_relation_backfiller.py.
+@pytest.fixture
+async def test_media(db_session):
+    anime = Anime(mal_id=-61000, title="WL Test Anime")
+    db_session.add(anime)
+    await db_session.flush()
+    media = Media(**media_kwargs(anime.id, -61001, title="WL Test Media"))
+    db_session.add(media)
+    await db_session.flush()
+    return media
+
+
+@pytest.fixture
+async def test_media_list(db_session):
+    anime = Anime(mal_id=-62000, title="WL Bulk Anime")
+    db_session.add(anime)
+    await db_session.flush()
+    media = [Media(**media_kwargs(anime.id, -62001 - i, title=f"WL Bulk {i}")) for i in range(3)]
+    db_session.add_all(media)
+    await db_session.flush()
+    return media
+
+
+async def _default_tag_uuid(client, headers) -> str:
+    tags = (await client.get("/watchlist/tags", headers=headers)).json()
+    return next(t["uuid"] for t in tags if t["is_default"])
 
 
 async def test_registered_user_has_default_tag(client, user_auth_headers):
@@ -95,3 +127,93 @@ async def test_empty_endpoint_on_default_tag(client, user_auth_headers):
     )
     assert resp.status_code == 200
     assert resp.json() == {"removed": 0}
+
+
+# --- Entries ---
+
+async def test_upsert_entry_and_media_ids(client, user_auth_headers, test_media):
+    tag_uuid = await _default_tag_uuid(client, user_auth_headers)
+    resp = await client.put(
+        f"/watchlist/media/{test_media.uuid}",
+        json={"tag_uuid": tag_uuid, "priority": 1, "note": "soon"},
+        headers=user_auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["priority"] == 1
+    assert data["note"] == "soon"
+    assert data["tag"]["uuid"] == tag_uuid
+    assert data["media_uuid"] == str(test_media.uuid)
+
+    ids = (await client.get("/watchlist/media-ids", headers=user_auth_headers)).json()
+    assert ids["watchlisted_media_uuids"] == [str(test_media.uuid)]
+
+    items = (await client.get("/watchlist/items", headers=user_auth_headers)).json()
+    assert len(items) == 1
+    assert items[0]["tag_name"] == "Watchlist"
+
+
+async def test_upsert_defaults_priority(client, user_auth_headers, test_media):
+    tag_uuid = await _default_tag_uuid(client, user_auth_headers)
+    resp = await client.put(
+        f"/watchlist/media/{test_media.uuid}",
+        json={"tag_uuid": tag_uuid},
+        headers=user_auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["priority"] == 3
+
+
+async def test_delete_entry(client, user_auth_headers, test_media):
+    tag_uuid = await _default_tag_uuid(client, user_auth_headers)
+    await client.put(
+        f"/watchlist/media/{test_media.uuid}",
+        json={"tag_uuid": tag_uuid}, headers=user_auth_headers,
+    )
+    deleted = await client.delete(f"/watchlist/media/{test_media.uuid}", headers=user_auth_headers)
+    assert deleted.status_code == 204
+    ids = (await client.get("/watchlist/media-ids", headers=user_auth_headers)).json()
+    assert ids["watchlisted_media_uuids"] == []
+
+
+async def test_bulk_upsert_note_on_all(client, user_auth_headers, test_media_list):
+    tag_uuid = await _default_tag_uuid(client, user_auth_headers)
+    resp = await client.put(
+        "/watchlist/bulk",
+        json={
+            "media_uuids": [str(m.uuid) for m in test_media_list],
+            "tag_uuid": tag_uuid,
+            "priority": 2,
+            "note": "all",
+        },
+        headers=user_auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    out = resp.json()
+    assert len(out) == 3
+    assert all(o["note"] == "all" for o in out)
+
+
+async def test_bulk_delete_entries(client, user_auth_headers, test_media_list):
+    tag_uuid = await _default_tag_uuid(client, user_auth_headers)
+    await client.put(
+        "/watchlist/bulk",
+        json={"media_uuids": [str(m.uuid) for m in test_media_list], "tag_uuid": tag_uuid},
+        headers=user_auth_headers,
+    )
+    resp = await client.post(
+        "/watchlist/bulk-delete",
+        json={"media_uuids": [str(test_media_list[0].uuid), str(test_media_list[1].uuid)]},
+        headers=user_auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {"deleted": 2}
+
+
+async def test_restricted_user_cannot_upsert_entry(client, restricted_user_auth_headers, test_media):
+    resp = await client.put(
+        f"/watchlist/media/{test_media.uuid}",
+        json={"tag_uuid": "00000000-0000-0000-0000-000000000000"},
+        headers=restricted_user_auth_headers,
+    )
+    assert resp.status_code == 403

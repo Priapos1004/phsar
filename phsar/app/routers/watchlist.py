@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_db, require_user_or_admin
-from app.schemas import tag_schema
-from app.services import tag_service
+from app.schemas import tag_schema, watchlist_schema
+from app.services import tag_service, watchlist_service
 
 router = APIRouter(prefix="/watchlist", tags=["watchlist"])
 
@@ -65,3 +65,83 @@ async def empty_tag(
     """Remove all watchlist entries under a tag, keeping the tag. Returns entries removed."""
     removed = await tag_service.empty_tag(db, current_user.id, uuid)
     return {"removed": removed}
+
+
+# --- Entries ---
+
+@router.get("/items", response_model=list[watchlist_schema.WatchlistItem])
+async def get_watchlist_items(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_user_or_admin),
+):
+    """All of the user's watchlist entries in a wide shape — the overview page's
+    single fetch (list + grid derived client-side)."""
+    return await watchlist_service.get_watchlist_items(db, current_user.id)
+
+
+@router.get("/media-ids", response_model=watchlist_schema.WatchlistMediaIds)
+async def get_watchlisted_media_ids(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_user_or_admin),
+):
+    """The set of watchlisted media UUIDs — drives the bookmark icon states."""
+    return await watchlist_service.get_watchlisted_media_uuids(db, current_user.id)
+
+
+@router.put("/media/{media_uuid}", response_model=watchlist_schema.WatchlistOut)
+async def upsert_watchlist(
+    media_uuid: UUID,
+    data: watchlist_schema.WatchlistCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_user_or_admin),
+):
+    """Create or update the watchlist entry for a media (priority + tag + note)."""
+    return await watchlist_service.upsert_watchlist(db, current_user.id, media_uuid, data)
+
+
+@router.get("/media/{media_uuid}", response_model=watchlist_schema.WatchlistOut)
+async def get_watchlist_for_media(
+    media_uuid: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_user_or_admin),
+):
+    return await watchlist_service.get_watchlist_for_media(db, current_user.id, media_uuid)
+
+
+@router.delete("/media/{media_uuid}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_watchlist(
+    media_uuid: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_user_or_admin),
+):
+    await watchlist_service.delete_watchlist(db, current_user.id, media_uuid)
+
+
+@router.get("/anime/{anime_uuid}", response_model=list[watchlist_schema.WatchlistOut])
+async def get_watchlist_for_anime(
+    anime_uuid: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_user_or_admin),
+):
+    return await watchlist_service.get_watchlist_for_anime(db, current_user.id, anime_uuid)
+
+
+@router.put("/bulk", response_model=list[watchlist_schema.WatchlistOut])
+async def bulk_upsert_watchlist(
+    data: watchlist_schema.WatchlistBulkCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_user_or_admin),
+):
+    """Add/update watchlist entries for multiple media at once (note applies to all)."""
+    return await watchlist_service.bulk_upsert_watchlist(db, current_user.id, data)
+
+
+@router.post("/bulk-delete", status_code=status.HTTP_200_OK)
+async def bulk_delete_watchlist(
+    data: watchlist_schema.WatchlistBulkDelete,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_user_or_admin),
+):
+    """Remove watchlist entries for multiple media at once. Returns the count removed."""
+    count = await watchlist_service.bulk_delete_watchlist(db, current_user.id, data.media_uuids)
+    return {"deleted": count}

@@ -1,10 +1,11 @@
 import logging
 from datetime import datetime, timezone
+from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.media_dao import MediaDAO
-from app.exceptions import MalIdAlreadyExistsError
+from app.exceptions import MalIdAlreadyExistsError, MediaNotFoundError
 from app.models.media import Media
 from app.models.media_freshness import MediaFreshness
 from app.models.media_relation_edges import MediaRelationEdges
@@ -18,6 +19,18 @@ from app.services.vector_embedding_service import create_media_embedding
 logger = logging.getLogger(__name__)
 
 media_dao = MediaDAO()
+
+
+async def resolve_media_uuids(db: AsyncSession, media_uuids: list[UUID]) -> list[Media]:
+    """Batch-fetch media by UUIDs in input order. Raises MediaNotFoundError if any UUID
+    is missing. Shared media-identity resolver for the rating + watchlist services."""
+    all_media = await media_dao.get_all_by_field(db, "uuid", media_uuids)
+    media_by_uuid = {m.uuid: m for m in all_media}
+    missing = [u for u in media_uuids if u not in media_by_uuid]
+    if missing:
+        raise MediaNotFoundError(", ".join(str(u) for u in missing))
+    return [media_by_uuid[u] for u in media_uuids]
+
 
 async def create_media(db: AsyncSession, media_in: MediaUnconnected, anime_id: int) -> Media:
     logger.debug(f"DB session: {id(db)}")

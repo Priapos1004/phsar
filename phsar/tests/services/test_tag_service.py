@@ -21,6 +21,8 @@ from app.services import tag_service
 from tests._helpers import make_user, media_kwargs
 
 
+# Seeds are NEGATIVE so they can't collide with the dev DB's real catalog on the
+# globally-unique mal_id (real MAL ids are positive) — the suite-wide convention.
 async def _make_media(db, mal_seed: int, count: int = 1) -> list[Media]:
     anime = Anime(mal_id=mal_seed, title=f"A{mal_seed}")
     db.add(anime)
@@ -76,7 +78,7 @@ async def test_empty_default_tag_keeps_tag(db_session):
     """The default tag can't be deleted, but it CAN be emptied — its only bulk clear."""
     user = await make_user(db_session)
     default = await tag_service.create_default_tag(db_session, user.id)
-    media = await _make_media(db_session, 70100, count=2)
+    media = await _make_media(db_session, -70100, count=2)
     await _watchlist(db_session, user.id, default.id, media)
 
     removed = await tag_service.empty_tag(db_session, user.id, default.uuid)
@@ -93,8 +95,8 @@ async def test_create_tag_and_list_counts(db_session):
     custom = await tag_service.create_tag(db_session, user.id, TagCreate(name="Films", color="#123ABC"))
 
     # Two media under one anime + one under another → 3 entries, 2 anime.
-    a1 = await _make_media(db_session, 70200, count=2)
-    a2 = await _make_media(db_session, 70300, count=1)
+    a1 = await _make_media(db_session, -70200, count=2)
+    a2 = await _make_media(db_session, -70300, count=1)
     await _watchlist(db_session, user.id, await _tag_id(db_session, custom, user.id), a1 + a2)
 
     tags = await tag_service.list_tags(db_session, user.id)
@@ -157,7 +159,7 @@ async def test_delete_tag_cascade_removes_entries(db_session):
     user = await make_user(db_session)
     await tag_service.create_default_tag(db_session, user.id)
     tag = await tag_service.create_tag(db_session, user.id, TagCreate(name="Temp", color="#000000"))
-    media = await _make_media(db_session, 70400, count=2)
+    media = await _make_media(db_session, -70400, count=2)
     await _watchlist(db_session, user.id, await _tag_id(db_session, tag, user.id), media)
 
     affected = await tag_service.delete_tag(db_session, user.id, tag.uuid, reassign_entries=False)
@@ -171,7 +173,7 @@ async def test_delete_tag_reassign_moves_entries_to_default(db_session):
     user = await make_user(db_session)
     default = await tag_service.create_default_tag(db_session, user.id)
     tag = await tag_service.create_tag(db_session, user.id, TagCreate(name="Temp", color="#000000"))
-    media = await _make_media(db_session, 70500, count=2)
+    media = await _make_media(db_session, -70500, count=2)
     await _watchlist(db_session, user.id, await _tag_id(db_session, tag, user.id), media)
 
     affected = await tag_service.delete_tag(db_session, user.id, tag.uuid, reassign_entries=True)
