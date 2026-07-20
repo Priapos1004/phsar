@@ -9,7 +9,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import * as Dialog from '$lib/components/ui/dialog';
-	import { Bookmark, Star, Tv, Calendar, Film, Layers, X, ListChecks, BookmarkPlus, Trash2, CheckCircle2 } from 'lucide-svelte';
+	import { Star, Tv, Calendar, Film, Layers, X, ListChecks, BookmarkPlus, Trash2, CheckCircle2 } from 'lucide-svelte';
 	import * as cls from '$lib/styles/classes';
 	import { userSettings } from '$lib/stores/userSettings';
 	import type { AnimeDetail, AnimeMediaItem, RatingOut } from '$lib/types/api';
@@ -24,6 +24,10 @@
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { refreshSpoilerVisibility } from '$lib/stores/spoilerVisibility';
 	import { computeVisibleMediaUuids } from '$lib/utils/spoilerFrontier';
+	import { watchlistTags, refreshWatchlist } from '$lib/stores/watchlist';
+	import { pushToast } from '$lib/stores/toast';
+	import BulkWatchlistDialog from '$lib/components/BulkWatchlistDialog.svelte';
+	import WatchlistBookmarkButton from '$lib/components/WatchlistBookmarkButton.svelte';
 
 	const getUserRole = getContext<() => string | null>('userRole');
 	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
@@ -68,6 +72,43 @@
 	let showRateDialog = $state(false);
 	let showDeleteDialog = $state(false);
 	let showWatchlistDialog = $state(false);
+
+	// --- Anime-hero watchlist (aggregate over the anime's media) ---
+	let heroAddOpen = $state(false);
+	let heroRemoveOpen = $state(false);
+	let heroRemoving = $state(false);
+	let heroRemoveError = $state('');
+
+	// Main = Main + AlternativeVersion (the story spine); the rest are side stories/recaps.
+	let mainMediaUuids = $derived(
+		(anime?.media ?? [])
+			.filter((m) => m.relation_type === 'main' || m.relation_type === 'alternative_version')
+			.map((m) => m.uuid)
+	);
+	let sideMediaUuids = $derived(
+		(anime?.media ?? [])
+			.filter((m) => m.relation_type === 'side_story' || m.relation_type === 'summary')
+			.map((m) => m.uuid)
+	);
+	let watchlistedInAnime = $derived(
+		(anime?.media ?? []).map((m) => m.uuid).filter((u) => $watchlistTags.has(u))
+	);
+	let heroWatchlisted = $derived(watchlistedInAnime.length > 0);
+
+	async function handleHeroRemove() {
+		heroRemoving = true;
+		heroRemoveError = '';
+		try {
+			await api.post('/watchlist/bulk-delete', { media_uuids: watchlistedInAnime });
+			await refreshWatchlist();
+			pushToast('Removed from watchlist', 'success');
+			heroRemoveOpen = false;
+		} catch (err) {
+			heroRemoveError = err instanceof ApiError ? err.detail : 'Failed to remove from watchlist';
+		} finally {
+			heroRemoving = false;
+		}
+	}
 
 	let bulkDeleting = $state(false);
 	let bulkDeleteError = $state('');
@@ -341,17 +382,20 @@
 							{/each}
 						</div>
 
-						<!-- Watchlist bookmark placeholder (disabled → wrap in a span trigger
-						     so the tooltip still shows; disabled buttons swallow hover events) -->
-						<Tooltip text="Coming soon" class="shrink-0">
-							<button
-								class="p-2 rounded-lg opacity-50 cursor-not-allowed"
-								disabled
-								aria-label="Watchlist — coming soon"
-							>
-								<Bookmark class="size-6 text-muted-foreground" />
-							</button>
-						</Tooltip>
+						<!-- Anime-level watchlist bookmark — filled (theme primary, since an anime can
+						     span multiple tags) when ≥1 of this anime's media is on the list. Click
+						     adds all main media (optionally + side stories), or removes all of this
+						     anime's watchlisted media (guarded). Hidden for restricted users. -->
+						{#if !isRestricted}
+							<WatchlistBookmarkButton
+								filled={heroWatchlisted}
+								tooltip={heroWatchlisted
+									? `${watchlistedInAnime.length} on your watchlist — click to remove`
+									: 'Add this anime to your watchlist'}
+								ariaLabel={heroWatchlisted ? 'Remove anime from watchlist' : 'Add anime to watchlist'}
+								onclick={() => (heroWatchlisted ? (heroRemoveOpen = true) : (heroAddOpen = true))}
+							/>
+						{/if}
 					</div>
 
 					{#if anime.avg_score !== null}
@@ -640,6 +684,38 @@
 			studios={anime?.studios}
 			ageRatingNumeric={anime?.age_rating_numeric}
 		/>
+
+		<!-- Anime-hero: add all main media (optionally + side stories) to the watchlist -->
+		<BulkWatchlistDialog
+			bind:open={heroAddOpen}
+			title="Add to watchlist"
+			mediaUuids={mainMediaUuids}
+			optionalMediaUuids={sideMediaUuids}
+			optionalLabel="Include side stories"
+		/>
+
+		<!-- Anime-hero: remove-all guard (count = media of this anime on the watchlist) -->
+		<Dialog.Root bind:open={heroRemoveOpen}>
+			<Dialog.Content class="sm:max-w-md">
+				<Dialog.Header>
+					<Dialog.Title>Remove from watchlist?</Dialog.Title>
+					<Dialog.Description>
+						This removes all {watchlistedInAnime.length} media of this anime from your watchlist.
+					</Dialog.Description>
+				</Dialog.Header>
+				{#if heroRemoveError}
+					<p class="text-destructive text-sm">{heroRemoveError}</p>
+				{/if}
+				<Dialog.Footer>
+					<Button variant="secondary" onclick={() => (heroRemoveOpen = false)} disabled={heroRemoving}>
+						Cancel
+					</Button>
+					<Button variant="destructive" onclick={handleHeroRemove} disabled={heroRemoving}>
+						{heroRemoving ? 'Removing…' : `Remove ${watchlistedInAnime.length}`}
+					</Button>
+				</Dialog.Footer>
+			</Dialog.Content>
+		</Dialog.Root>
 
 		<Dialog.Root bind:open={showWatchlistDialog}>
 			<Dialog.Content>

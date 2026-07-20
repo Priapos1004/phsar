@@ -131,7 +131,7 @@ async def test_empty_endpoint_on_default_tag(client, user_auth_headers):
 
 # --- Entries ---
 
-async def test_upsert_entry_and_media_ids(client, user_auth_headers, test_media):
+async def test_upsert_entry_and_media_tags(client, user_auth_headers, test_media):
     tag_uuid = await _default_tag_uuid(client, user_auth_headers)
     resp = await client.put(
         f"/watchlist/media/{test_media.uuid}",
@@ -145,8 +145,13 @@ async def test_upsert_entry_and_media_ids(client, user_auth_headers, test_media)
     assert data["tag"]["uuid"] == tag_uuid
     assert data["media_uuid"] == str(test_media.uuid)
 
-    ids = (await client.get("/watchlist/media-ids", headers=user_auth_headers)).json()
-    assert ids["watchlisted_media_uuids"] == [str(test_media.uuid)]
+    tags = (await client.get("/watchlist/media-tags", headers=user_auth_headers)).json()
+    assert len(tags["entries"]) == 1
+    entry = tags["entries"][0]
+    assert entry["media_uuid"] == str(test_media.uuid)
+    assert entry["tag_uuid"] == tag_uuid
+    assert entry["tag_name"] == "Watchlist"
+    assert entry["tag_color"]  # colored bookmark source
 
     items = (await client.get("/watchlist/items", headers=user_auth_headers)).json()
     assert len(items) == 1
@@ -172,8 +177,8 @@ async def test_delete_entry(client, user_auth_headers, test_media):
     )
     deleted = await client.delete(f"/watchlist/media/{test_media.uuid}", headers=user_auth_headers)
     assert deleted.status_code == 204
-    ids = (await client.get("/watchlist/media-ids", headers=user_auth_headers)).json()
-    assert ids["watchlisted_media_uuids"] == []
+    tags = (await client.get("/watchlist/media-tags", headers=user_auth_headers)).json()
+    assert tags["entries"] == []
 
 
 async def test_bulk_upsert_note_on_all(client, user_auth_headers, test_media_list):

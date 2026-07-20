@@ -338,6 +338,79 @@ export interface SpoilerVisibility {
 	visible_media_uuids: string[];
 }
 
+// --- Watchlist (v0.15.0) ---
+
+export interface Tag {
+	uuid: string;
+	name: string;
+	color: string;
+	is_default: boolean;
+	entry_count: number; // watchlist entries under this tag (media)
+	anime_count: number; // distinct anime among them (drives the removal guard)
+	created_at: string;
+	modified_at: string;
+}
+
+export interface TagMini {
+	uuid: string;
+	name: string;
+	color: string;
+}
+
+export interface WatchlistOut {
+	uuid: string;
+	priority: number;
+	note: string | null;
+	tag: TagMini;
+	media_uuid: string;
+	media_title: string;
+	media_cover_image: string | null;
+	anime_uuid: string;
+	anime_title: string;
+	created_at: string;
+	modified_at: string;
+}
+
+// Wide projection (GET /watchlist/items) — the overview page's single fetch;
+// list + grid both derive from it client-side.
+export interface WatchlistItem {
+	uuid: string;
+	media_uuid: string;
+	anime_uuid: string;
+	media_title: string;
+	media_name_eng: string | null;
+	media_name_jap: string | null;
+	anime_title: string;
+	anime_name_eng: string | null;
+	anime_name_jap: string | null;
+	media_cover_image: string | null;
+	anime_cover_image: string | null;
+	priority: number;
+	note: string | null;
+	tag_uuid: string;
+	tag_name: string;
+	tag_color: string;
+	relation_type: string;
+	anime_season_name: string | null;
+	anime_season_year: number | null;
+	mal_id: number;
+	created_at: string;
+	modified_at: string;
+}
+
+// The icon-state set: every watchlisted media + its tag, so the bookmark can render
+// in the tag's color everywhere it appears.
+export interface WatchlistMediaTag {
+	media_uuid: string;
+	tag_uuid: string;
+	tag_name: string;
+	tag_color: string;
+}
+
+export interface WatchlistMediaTags {
+	entries: WatchlistMediaTag[];
+}
+
 // Admin — Story completion
 export interface FinishedAnimeItem {
 	uuid: string;

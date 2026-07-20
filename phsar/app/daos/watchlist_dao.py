@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 from app.daos.base_dao import BaseDAO
 from app.models.anime import Anime
 from app.models.media import Media
+from app.models.tag import Tag
 from app.models.watchlist import Watchlist
 
 
@@ -89,15 +90,17 @@ class WatchlistDAO(BaseDAO[Watchlist]):
         )
         return (await db.execute(stmt)).scalars().all()
 
-    async def get_watchlisted_media_uuids(self, db: AsyncSession, user_id: int) -> list[UUID]:
-        """The media UUIDs currently on the user's watchlist — the icon-state set
-        (mirrors spoiler-visibility). Scalar projection, no ORM rows."""
+    async def get_watchlisted_media_tags(self, db: AsyncSession, user_id: int) -> list:
+        """(media_uuid, tag_uuid, tag_name, tag_color) for every entry on the user's
+        watchlist — the icon-state set (mirrors spoiler-visibility), carrying the tag so
+        the bookmark can render in the tag's color everywhere. Projection, no ORM rows."""
         stmt = (
-            select(Media.uuid)
+            select(Media.uuid, Tag.uuid, Tag.name, Tag.color)
             .join(Watchlist, Watchlist.media_id == Media.id)
+            .join(Tag, Tag.id == Watchlist.tag_id)
             .where(Watchlist.user_id == user_id)
         )
-        return (await db.execute(stmt)).scalars().all()
+        return (await db.execute(stmt)).all()
 
     async def bulk_delete_by_user_and_media_ids(
         self, db: AsyncSession, user_id: int, media_ids: list[int]

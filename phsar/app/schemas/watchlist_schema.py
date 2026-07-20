@@ -94,6 +94,16 @@ class WatchlistBulkDelete(BulkMediaUuids):
     pass
 
 
-class WatchlistMediaIds(BaseModel):
-    """Media UUIDs currently on the user's watchlist — the icon-state set."""
-    watchlisted_media_uuids: list[UUID]
+class WatchlistMediaTag(BaseModel):
+    """One watchlisted media + the tag it's under — carries the tag so the bookmark
+    icon can render in the tag's color everywhere it appears."""
+    media_uuid: UUID
+    tag_uuid: UUID
+    tag_name: str
+    tag_color: str
+
+
+class WatchlistMediaTags(BaseModel):
+    """The icon-state set: every watchlisted media with its tag (mirrors the
+    spoiler-visibility set, plus the tag for coloring)."""
+    entries: list[WatchlistMediaTag]

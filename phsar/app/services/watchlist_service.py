@@ -13,7 +13,8 @@ from app.schemas.watchlist_schema import (
     WatchlistBulkCreate,
     WatchlistCreate,
     WatchlistItem,
-    WatchlistMediaIds,
+    WatchlistMediaTag,
+    WatchlistMediaTags,
     WatchlistOut,
 )
 from app.services import media_service
@@ -187,7 +188,11 @@ async def get_watchlist_items(db: AsyncSession, user_id: int) -> list[WatchlistI
     return [_to_item(e) for e in entries]
 
 
-async def get_watchlisted_media_uuids(db: AsyncSession, user_id: int) -> WatchlistMediaIds:
-    """The set of watchlisted media UUIDs — drives the bookmark icon states."""
-    uuids = await watchlist_dao.get_watchlisted_media_uuids(db, user_id)
-    return WatchlistMediaIds(watchlisted_media_uuids=uuids)
+async def get_watchlisted_media_tags(db: AsyncSession, user_id: int) -> WatchlistMediaTags:
+    """The set of watchlisted media + their tags — drives the bookmark icon states
+    (present/absent) AND the per-tag color the bookmark renders in."""
+    rows = await watchlist_dao.get_watchlisted_media_tags(db, user_id)
+    return WatchlistMediaTags(entries=[
+        WatchlistMediaTag(media_uuid=media_uuid, tag_uuid=tag_uuid, tag_name=tag_name, tag_color=tag_color)
+        for (media_uuid, tag_uuid, tag_name, tag_color) in rows
+    ])

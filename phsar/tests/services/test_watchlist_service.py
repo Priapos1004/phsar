@@ -2,7 +2,8 @@
 
 Pins: one entry per (user, media); tag + priority required; bulk note applies to
 ALL selected media (unlike bulk rating); bulk delete; the wide items projection;
-the media-ids icon set; and that a watchlist write never touches the spoiler cache.
+the media-tags icon set (carries the tag color); and that a watchlist write never
+touches the spoiler cache.
 """
 
 import uuid as uuidlib
@@ -17,6 +18,11 @@ from app.schemas.tag_schema import TagCreate
 from app.schemas.watchlist_schema import WatchlistBulkCreate, WatchlistCreate
 from app.services import tag_service, watchlist_service
 from tests._helpers import make_user, media_kwargs
+
+
+async def _watchlisted_uuids(db, user_id) -> set:
+    res = await watchlist_service.get_watchlisted_media_tags(db, user_id)
+    return {e.media_uuid for e in res.entries}
 
 
 async def _setup(db, media_count=1, mal_seed=-80000):
@@ -65,8 +71,7 @@ async def test_upsert_updates_in_place(db_session):
     assert updated.priority == 1
     assert updated.note == "moved"
     assert updated.tag.uuid == custom.uuid
-    ids = await watchlist_service.get_watchlisted_media_uuids(db_session, user.id)
-    assert ids.watchlisted_media_uuids == [media[0].uuid]
+    assert await _watchlisted_uuids(db_session, user.id) == {media[0].uuid}
 
 
 async def test_upsert_defaults_priority_to_3(db_session):
@@ -75,6 +80,23 @@ async def test_upsert_defaults_priority_to_3(db_session):
         db_session, user.id, media[0].uuid, WatchlistCreate(tag_uuid=default.uuid),
     )
     assert out.priority == 3
+
+
+async def test_media_tags_carry_tag_color(db_session):
+    """The icon-state set carries the entry's tag (uuid/name/color) so the bookmark
+    can render in the tag's color everywhere."""
+    user, _default, media = await _setup(db_session)
+    custom = await tag_service.create_tag(db_session, user.id, TagCreate(name="Films", color="#123ABC"))
+    await watchlist_service.upsert_watchlist(
+        db_session, user.id, media[0].uuid, WatchlistCreate(tag_uuid=custom.uuid),
+    )
+    res = await watchlist_service.get_watchlisted_media_tags(db_session, user.id)
+    assert len(res.entries) == 1
+    entry = res.entries[0]
+    assert entry.media_uuid == media[0].uuid
+    assert entry.tag_uuid == custom.uuid
+    assert entry.tag_name == "Films"
+    assert entry.tag_color == "#123abc"
 
 
 async def test_upsert_unknown_tag_raises(db_session):
@@ -120,8 +142,7 @@ async def test_delete_watchlist(db_session):
         db_session, user.id, media[0].uuid, WatchlistCreate(tag_uuid=default.uuid),
     )
     await watchlist_service.delete_watchlist(db_session, user.id, media[0].uuid)
-    ids = await watchlist_service.get_watchlisted_media_uuids(db_session, user.id)
-    assert ids.watchlisted_media_uuids == []
+    assert await _watchlisted_uuids(db_session, user.id) == set()
 
 
 async def test_delete_absent_raises(db_session):
@@ -168,8 +189,7 @@ async def test_bulk_upsert_updates_existing(db_session):
     )
     assert len(out) == 2
     assert all(o.priority == 3 for o in out)  # existing one updated too
-    ids = await watchlist_service.get_watchlisted_media_uuids(db_session, user.id)
-    assert set(ids.watchlisted_media_uuids) == {m.uuid for m in media}
+    assert await _watchlisted_uuids(db_session, user.id) == {m.uuid for m in media}
 
 
 async def test_bulk_delete(db_session):
@@ -182,8 +202,7 @@ async def test_bulk_delete(db_session):
         db_session, user.id, [media[0].uuid, media[1].uuid],
     )
     assert removed == 2
-    ids = await watchlist_service.get_watchlisted_media_uuids(db_session, user.id)
-    assert ids.watchlisted_media_uuids == [media[2].uuid]
+    assert await _watchlisted_uuids(db_session, user.id) == {media[2].uuid}
 
 
 # --- Items projection ---

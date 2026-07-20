@@ -79,13 +79,14 @@ async def get_watchlist_items(
     return await watchlist_service.get_watchlist_items(db, current_user.id)
 
 
-@router.get("/media-ids", response_model=watchlist_schema.WatchlistMediaIds)
-async def get_watchlisted_media_ids(
+@router.get("/media-tags", response_model=watchlist_schema.WatchlistMediaTags)
+async def get_watchlisted_media_tags(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_user_or_admin),
 ):
-    """The set of watchlisted media UUIDs — drives the bookmark icon states."""
-    return await watchlist_service.get_watchlisted_media_uuids(db, current_user.id)
+    """Every watchlisted media + its tag — drives the bookmark icon state (present/
+    absent) and the per-tag color the bookmark renders in."""
+    return await watchlist_service.get_watchlisted_media_tags(db, current_user.id)
 
 
 @router.put("/media/{media_uuid}", response_model=watchlist_schema.WatchlistOut)

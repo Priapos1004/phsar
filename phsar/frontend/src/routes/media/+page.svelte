@@ -9,16 +9,19 @@
 	import { Button } from '$lib/components/ui/button';
 	import RelatedMediaCarousel from '$lib/components/RelatedMediaCarousel.svelte';
 	import RatingCard from '$lib/components/RatingCard.svelte';
+	import WatchlistDialog from '$lib/components/WatchlistDialog.svelte';
+	import WatchlistBookmarkButton from '$lib/components/WatchlistBookmarkButton.svelte';
 	import BackLink from '$lib/components/BackLink.svelte';
 	import StudioLinks from '$lib/components/StudioLinks.svelte';
 	import GenreBadges from '$lib/components/GenreBadges.svelte';
 	import ScorePercentile from '$lib/components/ScorePercentile.svelte';
 	import Tooltip from '$lib/components/Tooltip.svelte';
-	import { Bookmark, Star, Tv, Clock, Calendar, Film } from 'lucide-svelte';
+	import { Star, Tv, Clock, Calendar, Film } from 'lucide-svelte';
 	import * as cls from '$lib/styles/classes';
 	import { userSettings } from '$lib/stores/userSettings';
 	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
 	import { visibleMediaSet, refreshSpoilerVisibility } from '$lib/stores/spoilerVisibility';
+	import { watchlistTags } from '$lib/stores/watchlist';
 	import type { MediaDetail, RatingOut } from '$lib/types/api';
 
 	const getUserRole = getContext<() => string | null>('userRole');
@@ -26,6 +29,8 @@
 
 	let media = $state<MediaDetail | null>(null);
 	let userRating = $state<RatingOut | null>(null);
+	let watchlistOpen = $state(false);
+	let watchlistEntry = $derived(media ? $watchlistTags.get(media.uuid) : undefined);
 	let loading = $state(true);
 	let error = $state('');
 	let descriptionExpanded = $state(false);
@@ -198,17 +203,17 @@
 							{/each}
 						</div>
 
-						<!-- Watchlist bookmark placeholder (disabled → span trigger so the
-						     tooltip still shows; disabled buttons swallow hover events) -->
-						<Tooltip text="Coming soon" class="shrink-0">
-							<button
-								class="p-2 rounded-lg opacity-50 cursor-not-allowed"
-								disabled
-								aria-label="Watchlist — coming soon"
-							>
-								<Bookmark class="size-6 text-muted-foreground" />
-							</button>
-						</Tooltip>
+						<!-- Watchlist bookmark — filled + tag-colored when on the list; click
+						     opens the add/edit dialog. Hidden for restricted (guest) users. -->
+						{#if !isRestricted}
+							<WatchlistBookmarkButton
+								filled={!!watchlistEntry}
+								color={watchlistEntry?.tag_color}
+								tooltip={watchlistEntry ? `On watchlist: ${watchlistEntry.tag_name}` : 'Add to watchlist'}
+								ariaLabel={watchlistEntry ? 'Edit watchlist entry' : 'Add to watchlist'}
+								onclick={() => (watchlistOpen = true)}
+							/>
+						{/if}
 					</div>
 
 					{#if media.score !== null}
@@ -307,6 +312,11 @@
 				studios={media.studio}
 				ageRatingNumeric={media.age_rating_numeric}
 				airingStatus={media.airing_status}
+			/>
+			<WatchlistDialog
+				bind:open={watchlistOpen}
+				mediaUuid={media.uuid}
+				mediaTitle={resolveTitle(media.title, media.name_eng, media.name_jap, nameLanguage)}
 			/>
 		{:else}
 			<Card.Root class={cls.cardGlass}>
