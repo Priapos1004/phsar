@@ -290,31 +290,32 @@ class TagNotFoundError(PhsarBaseError):
 
 
 class DuplicateTagNameError(PermanentPhsarError):
-    """Raised when creating/renaming a tag to a name the user already uses.
-    Tag names are unique per user."""
+    """Raised when creating/renaming a list to a name the user already uses.
+    List names are unique per user. (User-facing copy says "list"; the domain
+    term is "tag".)"""
     status_code = 409
 
     def __init__(self, name: str):
-        message = f"You already have a tag named '{name}'."
+        message = f"You already have a list named '{name}'."
         super().__init__(message)
 
 
 class DefaultTagImmutableError(PermanentPhsarError):
     """Raised when renaming, recoloring, or deleting the immutable default
-    'Watchlist' tag. It's empty-able but never editable or deletable, so the
+    'Watchlist' list. It's empty-able but never editable or deletable, so the
     UI always has a stable default and there's always a reassign target."""
     status_code = 403
 
     def __init__(self):
-        super().__init__("The default Watchlist tag can't be renamed or deleted.")
+        super().__init__("The default Watchlist list can't be renamed or deleted.")
 
 
 class TagLimitError(PermanentPhsarError):
-    """Raised when a user tries to create more than TAGS_PER_USER_LIMIT tags."""
+    """Raised when a user tries to create more than TAGS_PER_USER_LIMIT lists."""
     status_code = 409
 
     def __init__(self, limit: int):
-        message = f"You can have at most {limit} tags."
+        message = f"You can have at most {limit} lists."
         super().__init__(message)
 
 

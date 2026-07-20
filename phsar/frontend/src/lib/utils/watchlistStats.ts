@@ -1,0 +1,152 @@
+// Pure helpers for the /watchlist overview list tab. Watchlist entries are per-media,
+// but the overview can show them at MEDIA grain (one card per entry) or ANIME grain (one
+// card per anime, aggregating its watchlisted media — gradient bookmark when it spans
+// tags). Both grains normalize to a `WatchlistRow` so one grid/card/table serves both.
+import { buildDetailHref } from '$lib/utils/navigation';
+import { formatRelationType, resolveTitle } from '$lib/utils/formatString';
+import { priorityLabel } from '$lib/utils/watchlist';
+import type { WatchlistItem } from '$lib/types/api';
+
+// The story spine (matches the anime-hero add split + backend RELATION_SCORE_WEIGHTS).
+const MAIN_RELATIONS = new Set(['main', 'alternative_version']);
+
+/** "X main · Y side" — a 0 count is omitted (mirrors the ratings card). */
+function mainSideLabel(main: number, side: number): string {
+	return [main ? `${main} main` : null, side ? `${side} side` : null].filter(Boolean).join(' · ');
+}
+
+export type WatchlistView = 'grid' | 'table';
+export type WatchlistGrain = 'anime' | 'media';
+export type WatchlistSortKey = 'title' | 'priority' | 'date';
+export type NameLanguage = 'english' | 'japanese' | 'romaji';
+
+export interface WatchlistRow {
+	key: string;
+	href: string;
+	coverImage: string | null;
+	/** media grain → SpoilerGuard the cover by this uuid; anime grain → null (anime
+	 *  covers are never spoiler-protected). */
+	spoilerMediaUuid: string | null;
+	title: string;
+	subtitle: string; // anime title (media grain) or "X main · Y side" (anime grain)
+	relationLabel: string | null; // media grain: this media's relation type; anime grain: null
+	colors: string[]; // distinct tag colors: 1 = solid, several = gradient
+	tagLabel: string; // tag name (media) or "N lists" (anime) — the color tooltip
+	priority: number; // media priority, or the anime's most-urgent (min) media priority
+	note: string | null; // media grain only
+	mediaCount: number;
+	createdAt: string;
+}
+
+export interface PriorityBand {
+	priority: number;
+	label: string;
+	rows: WatchlistRow[];
+}
+
+/** Keep only entries whose tag is in the selected set. Empty selection = all (the tag
+ *  filter is a union — "show me these lists combined"). */
+export function filterByTags(items: WatchlistItem[], tagUuids: string[]): WatchlistItem[] {
+	if (tagUuids.length === 0) return items;
+	const set = new Set(tagUuids);
+	return items.filter((i) => set.has(i.tag_uuid));
+}
+
+/** One row per media entry. */
+export function toMediaRows(items: WatchlistItem[], lang: NameLanguage): WatchlistRow[] {
+	return items.map((i) => ({
+		key: i.uuid,
+		href: buildDetailHref('media', i.media_uuid, { from: 'watchlist' }),
+		coverImage: i.media_cover_image,
+		spoilerMediaUuid: i.media_uuid,
+		title: resolveTitle(i.media_title, i.media_name_eng, i.media_name_jap, lang),
+		subtitle: resolveTitle(i.anime_title, i.anime_name_eng, i.anime_name_jap, lang),
+		relationLabel: formatRelationType(i.relation_type),
+		colors: [i.tag_color],
+		tagLabel: i.tag_name,
+		priority: i.priority,
+		note: i.note,
+		mediaCount: 1,
+		createdAt: i.created_at,
+	}));
+}
+
+/** One row per anime, aggregating its watchlisted media: most-urgent (min) priority,
+ *  distinct tag colors (→ gradient when >1), and the media count. */
+export function toAnimeRows(items: WatchlistItem[], lang: NameLanguage): WatchlistRow[] {
+	interface Acc {
+		item: WatchlistItem;
+		priority: number;
+		colors: string[];
+		seenTags: Set<string>;
+		count: number;
+		main: number;
+		side: number;
+		earliest: string;
+	}
+	const byAnime = new Map<string, Acc>();
+	for (const i of items) {
+		let a = byAnime.get(i.anime_uuid);
+		if (!a) {
+			a = { item: i, priority: i.priority, colors: [], seenTags: new Set(), count: 0, main: 0, side: 0, earliest: i.created_at };
+			byAnime.set(i.anime_uuid, a);
+		}
+		a.priority = Math.min(a.priority, i.priority);
+		if (!a.seenTags.has(i.tag_uuid)) {
+			a.seenTags.add(i.tag_uuid);
+			a.colors.push(i.tag_color);
+		}
+		a.count++;
+		if (MAIN_RELATIONS.has(i.relation_type)) a.main++;
+		else a.side++;
+		if (i.created_at < a.earliest) a.earliest = i.created_at;
+	}
+	return [...byAnime.values()].map(({ item: i, priority, colors, count, main, side, earliest }) => ({
+		key: i.anime_uuid,
+		href: buildDetailHref('anime', i.anime_uuid, { from: 'watchlist' }),
+		coverImage: i.anime_cover_image,
+		spoilerMediaUuid: null,
+		title: resolveTitle(i.anime_title, i.anime_name_eng, i.anime_name_jap, lang),
+		subtitle: mainSideLabel(main, side),
+		relationLabel: null,
+		colors,
+		// colors.length === distinct tag count (one color pushed per new tag_uuid).
+		tagLabel: colors.length === 1 ? i.tag_name : `${colors.length} lists`,
+		priority,
+		note: null,
+		mediaCount: count,
+		createdAt: earliest,
+	}));
+}
+
+/** Group rows into High/Medium/Low bands. `dir` flips which sits on top: 'desc' (default)
+ *  = High first (most urgent), 'asc' = Low first. Within a band, rows are title-ordered. */
+export function toPriorityBands(rows: WatchlistRow[], dir: 'asc' | 'desc'): PriorityBand[] {
+	const byPriority = new Map<number, WatchlistRow[]>();
+	for (const r of rows) {
+		const bucket = byPriority.get(r.priority);
+		if (bucket) bucket.push(r);
+		else byPriority.set(r.priority, [r]);
+	}
+	const order = dir === 'desc' ? [1, 2, 3] : [3, 2, 1];
+	return order
+		.filter((p) => byPriority.has(p))
+		.map((p) => ({
+			priority: p,
+			label: priorityLabel(p),
+			rows: byPriority.get(p)!.slice().sort((a, b) => a.title.localeCompare(b.title)),
+		}));
+}
+
+/** Flat sort for the table view. */
+export function sortRows(rows: WatchlistRow[], key: WatchlistSortKey, dir: 'asc' | 'desc'): WatchlistRow[] {
+	const sign = dir === 'asc' ? 1 : -1;
+	return rows.slice().sort((a, b) => {
+		let cmp = 0;
+		if (key === 'title') cmp = a.title.localeCompare(b.title);
+		else if (key === 'priority') cmp = a.priority - b.priority;
+		else if (key === 'date') cmp = a.createdAt.localeCompare(b.createdAt);
+		if (cmp === 0) cmp = a.title.localeCompare(b.title); // stable tiebreak
+		return sign * cmp;
+	});
+}

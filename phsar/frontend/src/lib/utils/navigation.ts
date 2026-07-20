@@ -4,10 +4,19 @@ import { api, ApiError } from '$lib/api';
 import type { SearchTokenResponse } from '$lib/types/api';
 import { token } from '$lib/stores/auth';
 
+/** Whole-row click → navigate, shared by the ratings + watchlist tables. Preserves
+ * native new-tab (modifier / middle click) and lets a real `<a>` inside the row handle
+ * its own clicks (keyboard focus + open-in-new-tab). */
+export function rowClickNavigate(e: MouseEvent, href: string): void {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    if ((e.target as HTMLElement).closest('a')) return;
+    goto(href);
+}
+
 /** Closed set of non-search origin markers that detail pages handle.
  * Extend this union (and BackLink.svelte's `target` switch) when a new
  * entry point needs a labeled back button. */
-export type DetailOrigin = 'library' | 'job' | 'completion' | 'curation' | 'ratings' | 'ratings-stats';
+export type DetailOrigin = 'library' | 'job' | 'completion' | 'curation' | 'ratings' | 'ratings-stats' | 'watchlist';
 
 export interface DetailHrefOptions {
     /** Search token to propagate so the detail page renders "Back to search". */

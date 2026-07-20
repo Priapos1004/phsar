@@ -1,10 +1,9 @@
 <script lang="ts">
 	import { ArrowUp, ArrowDown } from 'lucide-svelte';
-	import { goto } from '$app/navigation';
 	import { Badge } from '$lib/components/ui/badge';
 	import { scoreColor } from '$lib/utils/chartColors';
 	import { formatDecimalDigits, formatShortDate, resolveTitle } from '$lib/utils/formatString';
-	import { buildDetailHref } from '$lib/utils/navigation';
+	import { buildDetailHref, rowClickNavigate } from '$lib/utils/navigation';
 	import * as cls from '$lib/styles/classes';
 	import { mainSideLabel, type AnimeRatingRow, type SortKey } from '$lib/utils/ratingStats';
 
@@ -29,14 +28,6 @@
 		{ key: 'date', label: 'Rated', align: 'right', hide: 'hidden sm:table-cell' },
 	];
 	const alignClass = { left: 'text-left', right: 'text-right', center: 'text-center' } as const;
-
-	// Whole-row navigation; preserve native new-tab (modifier/middle clicks) and let the
-	// title's real <a> handle its own clicks (keyboard focus + open-in-new-tab).
-	function go(e: MouseEvent, href: string) {
-		if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
-		if ((e.target as HTMLElement).closest('a')) return;
-		goto(href);
-	}
 </script>
 
 <!-- Table lives on a light card surface, so all text is card/muted-foreground (never white). -->
@@ -64,7 +55,7 @@
 				{@const title = resolveTitle(row.title, row.name_eng, row.name_jap, nameLanguage)}
 				{@const href = buildDetailHref('anime', row.anime_uuid, { from: 'ratings' })}
 				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-				<tr class="border-b border-border/60 last:border-0 hover:bg-muted/40 transition-colors cursor-pointer" onclick={(e) => go(e, href)}>
+				<tr class="border-b border-border/60 last:border-0 hover:bg-muted/40 transition-colors cursor-pointer" onclick={(e) => rowClickNavigate(e, href)}>
 					<td class="px-3 py-2">
 						<a {href} class="text-card-foreground hover:text-primary font-medium">{title}</a>
 						<span class="ml-1.5 text-xs text-muted-foreground">({mainSideLabel(row)})</span>

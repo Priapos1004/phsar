@@ -9,7 +9,7 @@
 	import AdminJobsLogTab from '$lib/components/admin/AdminJobsLogTab.svelte';
 	import AdminOverviewTab from '$lib/components/admin/AdminOverviewTab.svelte';
 	import RegistrationTokensCard from '$lib/components/admin/RegistrationTokensCard.svelte';
-	import AdminTabNav from '$lib/components/admin/AdminTabNav.svelte';
+	import TabNav from '$lib/components/TabNav.svelte';
 	import type { AdminTabKey } from '$lib/components/admin/types';
 
 	const getUserRole = getContext<() => string | null>('userRole');
@@ -45,7 +45,7 @@
 <div class="mx-auto max-w-3xl space-y-6">
 	<h1 class="text-2xl font-bold text-white">Admin</h1>
 
-	<AdminTabNav tabs={TABS} defaultTab={DEFAULT_TAB} />
+	<TabNav tabs={TABS} defaultTab={DEFAULT_TAB} basePath="/admin" ariaLabel="Admin sections" />
 
 	<!-- Tabs eager-render and stay mounted; visibility toggles via class:hidden.
 		 Admin sessions usually touch several tabs in a row (tokens → curation →

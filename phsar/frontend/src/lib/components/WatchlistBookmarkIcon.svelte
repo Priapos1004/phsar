@@ -6,6 +6,7 @@
 	// The gradient uses a CSS mask of the bookmark silhouette, so there are no SVG
 	// gradient-id collisions across the many bookmarks on a page.
 	import { Bookmark } from 'lucide-svelte';
+	import { tagGradient } from '$lib/utils/watchlist';
 
 	interface Props {
 		colors: string[];
@@ -20,7 +21,7 @@
 	const MASK =
 		"url(data:image/svg+xml,%3Csvg%20xmlns=%27http://www.w3.org/2000/svg%27%20viewBox=%270%200%2024%2024%27%3E%3Cpath%20d=%27m19%2021-7-4-7%204V5a2%202%200%200%201%202-2h10a2%202%200%200%201%202%202z%27%20fill=%27black%27/%3E%3C/svg%3E) center/contain no-repeat";
 
-	let gradient = $derived(`linear-gradient(135deg, ${colors.join(', ')})`);
+	let gradient = $derived(tagGradient(colors));
 </script>
 
 {#if colors.length === 0}
