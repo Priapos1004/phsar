@@ -2,6 +2,7 @@
 	import EChart from '$lib/components/EChart.svelte';
 	import { scoreColor } from '$lib/utils/chartColors';
 	import { scoreHistogram, SCORE_HISTOGRAM_WIDTH } from '$lib/utils/ratingStats';
+	import { mainSideLabel } from '$lib/utils/relations';
 	import { chartTooltipStyle } from '$lib/utils/chartTheme';
 	import { formatDecimalDigits } from '$lib/utils/formatString';
 	import type { RatingScoreItem } from '$lib/types/api';
@@ -32,10 +33,8 @@
 				const lo = Math.max(0, b.center - HALF + STEP);
 				const hi = Math.min(10, b.center + HALF);
 				const range = `${formatDecimalDigits(lo, 2)}–${formatDecimalDigits(hi, 2)}`;
-				const parts: string[] = [];
-				if (b.main) parts.push(`${b.main} main`);
-				if (b.side) parts.push(`${b.side} side`);
-				const sub = parts.length ? `<br/>${parts.join(' · ')}` : '';
+				const label = mainSideLabel(b.main, b.side);
+				const sub = label ? `<br/>${label}` : '';
 				return `${range}<br/>${b.count} total${sub}`;
 			},
 		},

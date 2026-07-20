@@ -50,8 +50,16 @@ describe('toMediaRows', () => {
 		expect(rows).toHaveLength(1);
 		expect(rows[0].title).toBe('X');
 		expect(rows[0].subtitle).toBe('Anime');
+		expect(rows[0].mainSide).toBeNull(); // main/side is an anime-grain concept
 		expect(rows[0].colors).toEqual(['#111']);
 		expect(rows[0].spoilerMediaUuid).not.toBeNull();
+	});
+
+	it('flags note presence per media (noteCount 0/1)', () => {
+		const rows = toMediaRows([item({ note: 'watch dubbed' }), item({ note: null })], LANG);
+		expect(rows[0].note).toBe('watch dubbed');
+		expect(rows[0].noteCount).toBe(1);
+		expect(rows[1].noteCount).toBe(0);
 	});
 });
 
@@ -62,12 +70,24 @@ describe('toAnimeRows', () => {
 		item({ anime_uuid: 'a2', anime_title: 'Two', priority: 2, tag_uuid: 't1', tag_color: '#111' }),
 	];
 
-	it('aggregates media into one row per anime with a main/side subtitle', () => {
+	it('aggregates media into one row per anime with a main/side breakdown', () => {
 		const rows = toAnimeRows(items, LANG);
 		expect(rows).toHaveLength(2);
 		const a1 = rows.find((r) => r.key === 'a1')!;
 		expect(a1.mediaCount).toBe(2);
-		expect(a1.subtitle).toBe('1 main · 1 side');
+		expect(a1.subtitle).toBeNull(); // anime grain uses mainSide, not subtitle
+		expect(a1.mainSide).toBe('1 main · 1 side');
+	});
+
+	it("counts how many of an anime's media carry a note", () => {
+		const withNotes = [
+			item({ anime_uuid: 'x', note: 'a' }),
+			item({ anime_uuid: 'x', note: null }),
+			item({ anime_uuid: 'x', note: 'b' }),
+		];
+		const x = toAnimeRows(withNotes, LANG).find((r) => r.key === 'x')!;
+		expect(x.noteCount).toBe(2);
+		expect(x.note).toBeNull(); // the text isn't carried at anime grain
 	});
 
 	it('uses the most-urgent (min) priority and distinct tag colors (gradient source)', () => {

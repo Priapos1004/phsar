@@ -51,14 +51,24 @@
 						</span>
 					</Tooltip>
 				</div>
+			{:else if row.noteCount > 0}
+				<!-- Anime grain: how many of its watchlisted media carry a note -->
+				<div class="absolute top-1.5 right-1.5">
+					<Tooltip text={`${row.noteCount} media with notes`}>
+						<span class="flex items-center gap-0.5 rounded-md bg-black/45 px-1.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">
+							<StickyNote class="size-3" />{row.noteCount}
+						</span>
+					</Tooltip>
+				</div>
 			{/if}
 		</div>
 
-		<div class="p-2.5 flex flex-col gap-1 flex-grow">
+		<div class="p-2.5 flex flex-col gap-1.5 flex-grow">
 			<h3 class="text-sm font-medium text-card-foreground line-clamp-2 leading-snug" title={row.title}>{row.title}</h3>
-			<span class="text-xs text-muted-foreground line-clamp-1" title={row.subtitle}>{row.subtitle}</span>
-			{#if row.relationLabel}
-				<span class="mt-auto w-fit rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{row.relationLabel}</span>
+			{#if row.subtitle}<span class="text-xs text-muted-foreground line-clamp-1" title={row.subtitle}>{row.subtitle}</span>{/if}
+			<!-- Anime grain shows the main/side breakdown; media grain the relation type (mutually exclusive). -->
+			{#if row.mainSide || row.relationLabel}
+				<span class="mt-auto {cls.mutedPill}">{row.mainSide ?? row.relationLabel}</span>
 			{/if}
 		</div>
 	</div>

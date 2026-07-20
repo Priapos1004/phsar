@@ -5,7 +5,8 @@
 	import { formatDecimalDigits, formatShortDate, resolveTitle } from '$lib/utils/formatString';
 	import { buildDetailHref, rowClickNavigate } from '$lib/utils/navigation';
 	import * as cls from '$lib/styles/classes';
-	import { mainSideLabel, type AnimeRatingRow, type SortKey } from '$lib/utils/ratingStats';
+	import { mainSideLabel } from '$lib/utils/relations';
+	import { type AnimeRatingRow, type SortKey } from '$lib/utils/ratingStats';
 
 	interface Props {
 		rows: AnimeRatingRow[];
@@ -58,7 +59,7 @@
 				<tr class="group border-b border-border/60 last:border-0 hover:bg-muted/40 transition-colors cursor-pointer" onclick={(e) => rowClickNavigate(e, href)}>
 					<td class="px-3 py-2">
 						<a {href} class="text-card-foreground group-hover:text-primary font-medium">{title}</a>
-						<span class="ml-1.5 text-xs text-muted-foreground">({mainSideLabel(row)})</span>
+						<span class="ml-1.5 text-xs text-muted-foreground">({mainSideLabel(row.mainCount, row.sideCount)})</span>
 					</td>
 					<td class="px-3 py-2 text-right font-bold" style="color: {scoreColor(row.userScore)}">
 						{formatDecimalDigits(row.userScore, scoreDecimals)}

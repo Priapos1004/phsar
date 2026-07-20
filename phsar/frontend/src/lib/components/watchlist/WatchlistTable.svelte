@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ArrowUp, ArrowDown } from 'lucide-svelte';
+	import { ArrowUp, ArrowDown, StickyNote } from 'lucide-svelte';
 	import { formatShortDate } from '$lib/utils/formatString';
 	import { rowClickNavigate } from '$lib/utils/navigation';
 	import { priorityLabel, PRIORITY_ACCENT, tagGradient } from '$lib/utils/watchlist';
@@ -16,10 +16,12 @@
 
 	let { rows, sort, sortDir, onSort }: Props = $props();
 
-	const COLS: { key: WatchlistSortKey; label: string; align: 'left' | 'right' | 'center' }[] = [
-		{ key: 'title', label: 'Title', align: 'left' },
-		{ key: 'priority', label: 'Priority', align: 'center' },
-		{ key: 'date', label: 'Added', align: 'right' },
+	// sortKey null = display-only column (Note) — the count/tick isn't a meaningful ordering.
+	const COLS: { key: string; label: string; align: 'left' | 'right' | 'center'; sortKey: WatchlistSortKey | null }[] = [
+		{ key: 'title', label: 'Title', align: 'left', sortKey: 'title' },
+		{ key: 'priority', label: 'Priority', align: 'center', sortKey: 'priority' },
+		{ key: 'note', label: 'Note', align: 'center', sortKey: null },
+		{ key: 'date', label: 'Added', align: 'right', sortKey: 'date' },
 	];
 	const alignClass = { left: 'text-left', right: 'text-right', center: 'text-center' } as const;
 
@@ -32,12 +34,17 @@
 				<th class="font-medium px-3 py-2.5 text-left w-8"></th>
 				{#each COLS as col (col.key)}
 					<th class="font-medium px-3 py-2.5 {alignClass[col.align]} {col.key === 'date' ? 'hidden sm:table-cell' : ''}">
-						<button class="inline-flex items-center gap-1 hover:text-card-foreground transition-colors" onclick={() => onSort(col.key)}>
-							{col.label}
-							{#if sort === col.key}
-								{#if sortDir === 'asc'}<ArrowUp class="size-3" />{:else}<ArrowDown class="size-3" />{/if}
-							{/if}
-						</button>
+						{#if col.sortKey}
+							{@const sortKey = col.sortKey}
+							<button class="inline-flex items-center gap-1 hover:text-card-foreground transition-colors" onclick={() => onSort(sortKey)}>
+								{col.label}
+								{#if sort === sortKey}
+									{#if sortDir === 'asc'}<ArrowUp class="size-3" />{:else}<ArrowDown class="size-3" />{/if}
+								{/if}
+							</button>
+						{:else}
+							<span>{col.label}</span>
+						{/if}
 					</th>
 				{/each}
 			</tr>
@@ -53,10 +60,24 @@
 					</td>
 					<td class="px-3 py-2">
 						<a href={row.href} class="text-card-foreground group-hover:text-primary font-medium">{row.title}</a>
-						<span class="ml-1.5 text-xs text-muted-foreground">{row.subtitle}</span>
+						{#if row.subtitle}<span class="ml-1.5 text-xs text-muted-foreground">{row.subtitle}</span>{/if}
+						{#if row.mainSide}<span class="ml-1.5 text-xs text-muted-foreground">({row.mainSide})</span>{/if}
 					</td>
 					<td class="px-3 py-2 text-center whitespace-nowrap font-medium {PRIORITY_ACCENT[row.priority].text}">
 						{priorityLabel(row.priority)}
+					</td>
+					<td class="px-3 py-2 text-center">
+						{#if row.note}
+							<Tooltip text={row.note}>
+								<StickyNote class="size-4 text-muted-foreground inline-block" />
+							</Tooltip>
+						{:else if row.noteCount > 0}
+							<Tooltip text={`${row.noteCount} media with notes`}>
+								<span class="inline-flex items-center gap-1 text-xs text-muted-foreground"><StickyNote class="size-3.5" />{row.noteCount}</span>
+							</Tooltip>
+						{:else}
+							<span class="text-muted-foreground/40">–</span>
+						{/if}
 					</td>
 					<td class="px-3 py-2 text-right text-muted-foreground hidden sm:table-cell whitespace-nowrap">
 						{formatShortDate(row.createdAt)}

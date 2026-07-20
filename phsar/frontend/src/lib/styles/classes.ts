@@ -41,3 +41,8 @@ export const badgeAgeRating = `${badgeAgeRatingColor} ${badgeSize}`;
 
 // Card glass effect
 export const cardGlass = 'bg-card/80 backdrop-blur';
+
+// Small muted "pill" for a secondary label under a card title (main/side breakdown,
+// relation type) — shared by the ratings + watchlist grid cards so they can't drift.
+// Layout margin (e.g. `mt-auto`) is composed at the call site.
+export const mutedPill = 'w-fit rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground';
