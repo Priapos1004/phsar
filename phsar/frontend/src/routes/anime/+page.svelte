@@ -24,6 +24,7 @@
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { refreshSpoilerVisibility } from '$lib/stores/spoilerVisibility';
 	import { computeVisibleMediaUuids } from '$lib/utils/spoilerFrontier';
+	import { MAIN_RELATIONS } from '$lib/utils/relations';
 	import { watchlistTags, watchlistAnimeColors, refreshWatchlist } from '$lib/stores/watchlist';
 	import { pushToast } from '$lib/stores/toast';
 	import BulkWatchlistDialog from '$lib/components/BulkWatchlistDialog.svelte';
@@ -83,15 +84,19 @@
 	let heroRemoving = $state(false);
 	let heroRemoveError = $state('');
 
-	// Main = Main + AlternativeVersion (the story spine); the rest are side stories/recaps.
+	// Main = Main + AlternativeVersion (the story spine) — the app-wide MAIN_RELATIONS set.
 	let mainMediaUuids = $derived(
 		(anime?.media ?? [])
-			.filter((m) => m.relation_type === 'main' || m.relation_type === 'alternative_version')
+			.filter((m) => MAIN_RELATIONS.has(m.relation_type))
 			.map((m) => m.uuid)
 	);
+	// The hero "include side stories" set is side stories ONLY — summaries/recaps aren't
+	// relevant to a want-to-watch list (they retread what the main entries already cover),
+	// so they belong to neither set and the bulk hero add never pulls them in. Summaries
+	// stay individually addable via each media's own bookmark.
 	let sideMediaUuids = $derived(
 		(anime?.media ?? [])
-			.filter((m) => m.relation_type === 'side_story' || m.relation_type === 'summary')
+			.filter((m) => m.relation_type === 'side_story')
 			.map((m) => m.uuid)
 	);
 	let watchlistedInAnime = $derived(
