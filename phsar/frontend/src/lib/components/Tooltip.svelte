@@ -11,6 +11,9 @@
 		side?: Side;
 		/** Extra classes for the default span trigger (children mode only). */
 		class?: string;
+		/** Extra classes for the tooltip content bubble (e.g. `whitespace-nowrap` for a
+		 *  short label that shouldn't wrap when placed near a screen edge). */
+		contentClass?: string;
 		/**
 		 * Simple mode — wraps this content in a `cursor-help` span trigger.
 		 * Use for non-interactive labels (status dots, table cells, icons, text).
@@ -24,7 +27,7 @@
 		trigger?: Snippet<[Record<string, unknown>]>;
 	}
 
-	let { text, side = 'top', class: className, children, trigger }: Props = $props();
+	let { text, side = 'top', class: className, contentClass, children, trigger }: Props = $props();
 </script>
 
 <!-- Self-contained Provider so the component works anywhere (incl. isolated
@@ -40,6 +43,6 @@
 			{/if}
 		{/snippet}
 	</TooltipPrimitive.Trigger>
-	<TooltipPrimitive.Content {side}>{text}</TooltipPrimitive.Content>
+	<TooltipPrimitive.Content {side} class={contentClass}>{text}</TooltipPrimitive.Content>
 </TooltipPrimitive.Root>
 </TooltipPrimitive.Provider>

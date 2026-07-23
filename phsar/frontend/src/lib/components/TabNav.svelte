@@ -1,35 +1,34 @@
 <script lang="ts">
+	// Generic `?tab=` section nav shared by the admin, ratings, and watchlist pages
+	// (previously three byte-identical copies). The active tab reads from the URL.
 	import { page } from '$app/state';
-	import type { RatingsTabKey } from './types';
 
 	interface Tab {
-		key: RatingsTabKey;
+		key: string;
 		label: string;
 	}
 
 	interface Props {
 		tabs: Tab[];
-		defaultTab: RatingsTabKey;
+		defaultTab: string;
+		/** e.g. "/watchlist" — hrefs are `${basePath}?tab=${key}`. */
+		basePath: string;
+		ariaLabel: string;
 	}
 
-	let { tabs, defaultTab }: Props = $props();
+	let { tabs, defaultTab, basePath, ariaLabel }: Props = $props();
 
 	let active = $derived.by(() => {
 		const raw = page.url.searchParams.get('tab');
-		const known = tabs.some((t) => t.key === raw);
-		return known ? (raw as RatingsTabKey) : defaultTab;
+		return tabs.some((t) => t.key === raw) ? raw! : defaultTab;
 	});
-
-	function tabHref(key: RatingsTabKey): string {
-		return `/ratings?tab=${key}`;
-	}
 </script>
 
-<nav class="flex flex-wrap gap-1 border-b border-white/10" aria-label="Ratings sections">
+<nav class="flex flex-wrap gap-1 border-b border-white/10" aria-label={ariaLabel}>
 	{#each tabs as tab}
 		{@const isActive = active === tab.key}
 		<a
-			href={tabHref(tab.key)}
+			href={`${basePath}?tab=${tab.key}`}
 			class="px-4 py-2 -mb-px text-sm font-medium transition border-b-2 {isActive
 				? 'text-primary border-primary'
 				: 'text-white/60 border-transparent hover:text-white'}"

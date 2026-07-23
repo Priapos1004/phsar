@@ -112,6 +112,9 @@ FastAPI endpoint definitions. Each router maps to an API prefix.
   - `GET /jobs/mine` lists the current user's active + recently-finished jobs
   - `GET /jobs/{uuid}` single-job poll for owner or admin
 - **`/library`** — `GET /library/recent` for the `/library/add` page's recent-additions panel
+- **`/watchlist`** — per-user watchlist + lists (`require_user_or_admin`, so guests 403). "List" is the UI term for a tag; one tag per entry, one entry per (user, media)
+  - Lists (tags): `GET`/`POST /watchlist/tags`, `PATCH`/`DELETE /watchlist/tags/{uuid}` (delete takes `?reassign_entries=` — move to the default list vs cascade-delete), `POST /watchlist/tags/{uuid}/empty` (clears entries, keeps the list — the default list's only bulk action since it can't be deleted)
+  - Entries: `PUT`/`GET`/`DELETE /watchlist/media/{media_uuid}` (keyed on media_uuid so the bookmark toggle can call it with what it has), `GET /watchlist/anime/{uuid}`, `PUT /watchlist/bulk` (priority + list apply to all; note goes on the first main media), `POST /watchlist/bulk-delete`, `GET /watchlist/items` (wide one-fetch projection for the overview page), `GET /watchlist/media-tags` (bookmark icon-state set + per-media tag color)
 - **`/maintenance`** — public `GET /maintenance/status` returning `{active, scheduled_at}` for the frontend's pre-warning banner; allowlisted in the maintenance HTTP middleware so it keeps returning truthful state mid-window
 
 #### services/
@@ -138,6 +141,8 @@ Modules:
 - `anime_summary.py` — shared `summarize_anime(anime, rating_count)` helper for the merge + split admin cards
 - `completion_service.py` — admin story-complete mark/unmark + the marked list (with cover + marked-by audit) for the Completion tab
 - `rating_service.py` — rating CRUD + note search; logs watch events (first completion + rewatches) and derives `watched_count`. `get_rating_score_items` backs `GET /ratings/scores` — one wide projection consumed by both the RatingCard consistency helper (v0.14.11) and the `/ratings` page list + statistics (v0.14.12); the field list + wide-DTO trade-off live in the services CLAUDE.md + the `RatingScoreItem` docstring
+- `tag_service.py` — watchlist "list" (tag) CRUD (v0.15.0). Immutable per-user default tag (`DEFAULT_TAG_NAME` "Watchlist", reserved `DEFAULT_TAG_COLOR` kept out of the user palette, `TAGS_PER_USER_LIMIT`); `create_default_tag` (idempotent), `list_tags` (with entry + anime counts), `create_tag`/`update_tag` (blocks the default), `delete_tag` (reassign-to-default vs cascade), `empty_tag` (any list, incl. default). Unique names enforced at DB + service pre-check + IntegrityError backstop for the double-click race
+- `watchlist_service.py` — watchlist entry CRUD (v0.15.0): upsert/get/delete by media_uuid, `get_watchlist_for_anime`, `bulk_upsert`/`bulk_delete`, `get_watchlist_items` (overview projection), `get_watchlisted_media_tags` (bookmark icon-state set). No spoiler-frontier recompute (want-to-watch ≠ watched; see Key Patterns). Shares `media_service.resolve_media_uuids` with rating_service
 - `spoiler_service.py` — frontier algorithm + `user_visible_media` cache
 - `export_service.py` — flat media-level export
 - `backup_service.py` — pg_dump/pg_restore orchestration; retention pools; `.current_db.json` pointer
@@ -147,7 +152,9 @@ Modules:
 Data access layer.
 
 - **`BaseDAO`** — generic async CRUD
-- **Specialized DAOs** (media, anime, anime_completion, genre, studio, user, user_settings, registration_token, rating, watch_event, job, merge_candidate, split_candidate) — domain-specific queries with vector similarity, filtering, aggregation
+- **Specialized DAOs** (media, anime, anime_completion, genre, studio, user, user_settings, registration_token, rating, watch_event, job, merge_candidate, split_candidate, tag, watchlist) — domain-specific queries with vector similarity, filtering, aggregation
+  - **`TagDAO`** — per-user tag lookups (default first) + `count_by_user` for the cap
+  - **`WatchlistDAO`** — entry lookups (by uuid / media / anime, batch), `get_all_for_items` (overview one-fetch, eager media→anime + tag, ordered by `ix_watchlist_user_modified`), `get_watchlisted_media_tags` (bookmark projection carrying anime_uuid + tag color), per-tag `counts_by_tag`, and the tag-scoped `reassign_tag` / `delete_all_by_user_and_tag_id` backing the list delete/empty paths
 - **`AnimeDAO`**:
   - `search_anime_aggregated` — two-phase query: SQL GROUP BY with HAVING for filtering/ordering, then detail fetch
   - `select_due_media_for_sweep` — **media-level** four-tier sweep selection (v0.14.8): each atom is a direct predicate on the media row + its `MediaFreshness` sidecar (airing now / still stabilizing `stable_check_count < SWEEP_STABILIZE_THRESHOLD` / weekly recent main / `SWEEP_LONG_TAIL_DAYS` long tail), so a still-airing umbrella's stable members are no longer dragged through a refresh every night. Returns `Media` rows with the parent `Anime` + its full media set eager-loaded (the dispatcher groups by `anime.id`). `LIMIT` bounds MAL calls = media (the real 1 req/s cost unit). Replaced the anime-grained `select_due_for_sweep`. Backed by:
@@ -173,6 +180,8 @@ SQLAlchemy ORM models mapped to PostgreSQL tables.
 - **`rating_search.py`** — note embeddings for rating note search
 - **`ratings.py`** — `watch_status` enum (`completed`/`on_hold`/`dropped`, replaced the legacy `dropped` boolean in v0.14.10) + 11 optional attribute enums; one row per (user, media)
 - **`watch_event.py`** — append-only watch/rewatch log keyed to (user_id, media_id), NOT to a rating row (so history survives a rating delete + re-add). `watched_count` is derived `COUNT(events)`, never stored. Both FKs `ON DELETE CASCADE`; no ORM back-relationships (read only via grouped count queries in `WatchEventDAO`). `watched_at` (distinct from `created_at`) is the watch moment, for future time-series analysis
+- **`tag.py`** — per-user watchlist "list" (UI term for a tag): `name` (unique per user via `unique_user_tag`) + hex `color` + `is_default`. The immutable per-user default "Watchlist" tag is guarded by the partial unique index `uq_tag_one_default_per_user` (at most one default per user); its immutability + always-present rationale live in Key Patterns
+- **`watchlist.py`** — one entry per (user, media) (`unique_user_media_watchlist`). v0.15.0 reworked it to **one tag per entry**: a required `tag_id` FK (`ON DELETE CASCADE` — deleting a list removes its entries unless the service reassigns first) replaced the dropped `WatchlistTag` many-to-many join. `priority` is NOT NULL (server_default 3, `CheckConstraint` 1–3). `ix_watchlist_user_modified` backs the overview's `WHERE user_id ORDER BY modified_at DESC` listing. Migration `b7f3a1c9d2e5`
 - **`user_settings.py`** — per-user preferences (1:1 with Users) with enums for theme, name language, search view, rating step, spoiler level
 - **`user_visible_media.py`** — precomputed spoiler-visibility cache per user, updated on rating changes
 - **`merge_candidate.py`** — admin-reviewable duplicate pairs
@@ -198,7 +207,7 @@ SQLAlchemy ORM models mapped to PostgreSQL tables.
 
 #### Other backend modules
 
-- **schemas/** — Pydantic request/response DTOs
+- **schemas/** — Pydantic request/response DTOs. `common_schema.py` holds the shared `BulkMediaUuids` base (validates a 1..50 media_uuids list) now used by **both** the rating and watchlist bulk schemas
 - **core/** — cross-cutting infrastructure:
   - `config.py` — loads settings from `.env`
   - `db.py` — database engine
@@ -209,6 +218,7 @@ SQLAlchemy ORM models mapped to PostgreSQL tables.
 - **seeders/** — run at app startup via lifespan
   - Seed genres, admin user, and optional guest user (`restricted_user` role)
   - `backfill_user_settings` — ensures all users have a UserSettings row
+  - `backfill_default_tags` (v0.15.0) — creates the immutable default "Watchlist" tag for any non-restricted user lacking one (new deployments + pre-v0.15.0 users). `auth.register` + `user_seeder._seed_user` also call `tag_service.create_default_tag` on user creation. Restricted (guest) users are excluded — they can't write watchlists (mirrors the spoiler-cache exclusion)
   - `backfill_spoiler_visibility` — computes visible media for users with **zero** cache rows (new deployments, pre-feature users); does **not** mop up partial-cache drift on existing users
   - `anime_title_backfiller.backfill_anime_title_suffixes` — strips season suffixes ("Season I", "第2期", "Part 2", " II"…) from `Anime.title`/`name_eng`/`name_jap` on rows scraped before the normalisation landed; regenerates the anime embedding for changed rows. Idempotent; subsequent restarts touch zero rows. `anime_service.create_anime_from_media` applies the same strip on new scrapes so the umbrella row reads like the franchise name, not the per-season identity
   - `embedding_backfiller.py` — `backfill_embeddings` detects and regenerates **missing** anime/media/rating embeddings (enables seamless embedding model swaps via Alembic migration + restart). `reembed_all_embeddings` regenerates **every** embedding in place (delete+insert per row, batched commits) — the one-time re-normalization path after a `generate_embedding` change (e.g. the query/document case-fold); gated by `EMBEDDING_REEMBED_ON_STARTUP`, fired post-yield so a ~5-9 min catalog re-encode can't block /health
@@ -225,6 +235,7 @@ SQLAlchemy ORM models mapped to PostgreSQL tables.
   - `TransientUpstreamError` — outside the permanent branch; raised when MAL returns 200 OK with empty data on a valid mal_id
     - Bell keeps retry button; `classify_error` tags as `upstream_outage` for friendly copy
   - `AnimeFilteredOutError` (sibling to `AnimeNotFoundError` under permanent) — surfaces when seeded BFS returns nothing AND seed mal_id is in `media_unwanted`; admin sees `"'X' was filtered out as Music"` instead of misleading "not found"
+  - Watchlist/tag errors (v0.15.0): `WatchlistNotFoundError` (404), `TagNotFoundError` (404); and under `PermanentPhsarError` `DuplicateTagNameError` (409, list names unique per user), `DefaultTagImmutableError` (403, the default "Watchlist" list can't be renamed/deleted), `TagLimitError` (409, `TAGS_PER_USER_LIMIT`). User-facing copy says "list" (the UI term) though the domain term is "tag"
 - **main.py** — app factory + lifespan
   - Startup sequence: seeders → embedding backfill → `JobDAO.reap_orphans` → `job_worker.register_dispatcher` (for each of `user_scrape`, `update_sweep`, `seasonal_sweep`, `backup`) → `job_worker.start()` → yield → post-yield backfills (optional one-shot full re-embed when `EMBEDDING_REEMBED_ON_STARTUP` → relation-backfiller → merge-candidate backfill → split-candidate backfill). Post-yield backfills run in `asyncio.create_task` so /health responds during the ~14-min relation cold start; split detection runs LAST so it sees relation-backfiller's TERMINAL sidecars and merge-backfiller's collapsed pairs
   - Shutdown: `job_worker.stop()`
@@ -290,6 +301,7 @@ Quick map:
   - Detail pages compute frontier locally for fresher data
   - `hide` mode in media search uses `WHERE media.id IN (...)` from the cache
   - Anime covers/descriptions are never spoiler-protected
+- **Watchlist** (v0.15.0): per-user, media-level, grouped by "lists" (the UI term for tags). **One tag per entry** (a required `tag_id` FK, not a many-to-many), **one entry per (user, media)**. Each user has an **immutable default "Watchlist" list** (can't be renamed/recolored/deleted — always a stable preselect + reassign target). Watchlist writes **never touch the spoiler frontier** — an entry is "want to watch", not "watched". Restricted (guest) users can't watchlist (router 403s them; excluded from the default-tag seeders). Bookmarks render everywhere a media/anime shows, colored by the list's color (an anime spanning several lists gets a gradient bookmark)
 - **Background jobs**: single asyncio FIFO worker (`job_worker.py`) drains the `jobs` table
   - JobKinds: `user_scrape`, `update_sweep` + `seasonal_sweep` (bracket maintenance), `backup` (does NOT bracket)
   - **Per-kind result_summary versioning**: `JOB_KIND_VERSIONS` registry in `app/core/job_versions.py` + `make_job()` helper at every Job-construction site. Frontend reads `job.version` to dispatch the parser. Bump the integer per kind when the shape changes — see `models/job.py` for the column rationale

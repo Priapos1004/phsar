@@ -1,12 +1,14 @@
 <script lang="ts">
 	import { formatNumber, formatAiringStatus, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
-	import { Bookmark, CheckCircle2 } from 'lucide-svelte';
+	import { CheckCircle2 } from 'lucide-svelte';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as cls from '$lib/styles/classes';
 	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
+	import WatchlistBookmarkIcon from '$lib/components/WatchlistBookmarkIcon.svelte';
 	import { visibleMediaSet } from '$lib/stores/spoilerVisibility';
+	import { watchlistTags, watchlistAnimeColors } from '$lib/stores/watchlist';
 	import type { RelationTypeSummary, MediaTypeSummary } from '$lib/types/api';
 
 	interface Props {
@@ -26,7 +28,6 @@
 		relation_types?: RelationTypeSummary[] | null;
 		watchtime?: string | null;
 		imageUrl?: string | null;
-		on_watchlist?: boolean;
 		media_uuid: string;
 		searchToken?: string | null;
 		fromParam?: DetailOrigin | null;
@@ -40,7 +41,7 @@
 		has_upcoming = false, age_rating_numeric = null,
 		genres = null, media_type = null, media_types = null,
 		relation_type = null, relation_types = null, watchtime = null,
-		imageUrl = null, on_watchlist = false, media_uuid,
+		imageUrl = null, media_uuid,
 		searchToken = null, fromParam = null, is_finished = false,
 	}: Props = $props();
 
@@ -52,6 +53,14 @@
 	let displayStatus = $derived(formatAiringStatus(airing_status, has_upcoming));
 	// Spoiler: anime cards are always visible; media cards check the frontier store
 	let isCoverVisible = $derived(info_type === 'anime' || $visibleMediaSet.has(media_uuid));
+	// Watchlist indicator colors: a media card maps to its single tag; an anime card
+	// aggregates its watchlisted media's distinct tag colors (solid, or a gradient when
+	// it spans tags). Empty → no bookmark.
+	let watchlistColors = $derived(
+		info_type === 'media'
+			? ($watchlistTags.get(media_uuid) ? [$watchlistTags.get(media_uuid)!.tag_color] : [])
+			: ($watchlistAnimeColors.get(media_uuid) ?? [])
+	);
 </script>
 
 <a
@@ -105,8 +114,8 @@
 							</p>
 						{/if}
 					</div>
-					{#if on_watchlist}
-						<Bookmark class="w-5 h-5 text-primary" fill="currentColor" />
+					{#if watchlistColors.length}
+						<WatchlistBookmarkIcon colors={watchlistColors} iconClass="w-5 h-5" />
 					{/if}
 				</div>
 

@@ -14,7 +14,7 @@ Once all features are discussed, this becomes the basis for GitHub issues and mi
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `rating` | Float 0-10 | yes | Two decimal precision in DB, UI step controlled by user settings |
-| `dropped` | Boolean | yes | default False, explicit intent flag |
+| `watch_status` | Enum | yes | completed / on_hold / dropped — replaced the `dropped` boolean in v0.14.10; first-completion + rewatches log to `watch_event`, `watched_count` derived |
 | `episodes_watched` | Integer | no | Auto-filled on "completed" if total known; nullable for unknown ep counts; backfilled by data update pipeline |
 | `note` | String | no | Anime-wide notes go on one media (first/last selected) |
 | `pace` | Enum | no | slow / normal / fast |
@@ -36,7 +36,7 @@ Once all features are discussed, this becomes the basis for GitHub issues and mi
 - Ratings always live at media level — no anime-level rating table
 - "Rate whole anime" = UI/service convenience: select multiple media, write one Rating row per media with same score
 - Note attached to first/last selected media when bulk-rating
-- `dropped` kept as explicit boolean (not derived from episodes_watched vs total) because media.episodes can be NULL, can change, and intent matters
+- Watch status is an explicit `watch_status` enum (completed / on_hold / dropped — replaced the `dropped` boolean in v0.14.10), not derived from episodes_watched vs total, because media.episodes can be NULL, can change, and intent matters
 - `episodes_watched` nullable — data update pipeline backfills when episode counts become available
 - All attributes are scales (not positive-only flags) for richer filtering and analysis
 - Attributes are personal per-user opinions, but designed so cross-user aggregation works later
@@ -299,7 +299,7 @@ Foundation for any destructive/long-running periodic job. Consumed by both the d
 - The dispatcher calls `refresh_spoiler_cache_for_all_users` once at the end if any new media landed — coalesced because the probe path saves through `save_service.attach_search_result_to_anime` (which never recomputes) instead of `save_search_results` (which always does), so a 200-anime sweep with 50 new media triggers exactly one cache recompute instead of 50.
 - **Bonus fix surfaced by end-to-end testing:** `JikanScraper.search_title` was inserting `media_type=None` anime into `media_unwanted` as "Unknown" even when `airing_status="Not yet aired"` — just-announced sequels got permanently blacklisted before MAL had classified them, and never got picked up once they aired. Now skipped silently; `media_unwanted` only catches true MAL anomalies. Alembic migration `2f1a8e3c4d5b` clears the existing Unknown backlog so previously-trapped anime can be rediscovered by the next sweep.
 
-**Frequency**: Coolify cron daily. Tier query LIMITs at `JOBS_SWEEP_MAX_PER_RUN=200` so a fully-saturated catalog still completes within a maintenance window.
+**Frequency**: Coolify cron daily. Tier query LIMITs at `JOBS_SWEEP_MAX_PER_RUN` (default 500) so a fully-saturated catalog still completes within a maintenance window.
 
 **What 7d shipped (post-review hardening):** Seven commits stacked on the v0.14.0-update-sweep branch addressing reviewer findings before PR merge.
 
@@ -325,38 +325,42 @@ Foundation for any destructive/long-running periodic job. Consumed by both the d
 
 ---
 
-## Feature 5: Watchlist
+## Feature 5: Watchlist ✓ shipped (v0.15.0)
 
-### DB Design (already exists, no changes needed)
+### DB Design (as shipped)
 
-**Watchlist table** (per user, per media):
+The original design (a `WatchlistTag` many-to-many junction, tags and entries as independent dimensions) was **reworked to one tag per entry** during implementation — a simpler mental model ("which list is this on?") and a cheaper query surface than multi-tag membership. Migration `b7f3a1c9d2e5` dropped the `watchlist_tag` join table.
+
+**Watchlist table** (per user, per media — one entry per `(user, media)`):
+
+| Field | Type | Notes |
+|---|---|---|
+| `user_id` | FK → users.id | ON DELETE CASCADE |
+| `media_id` | FK → media.id | ON DELETE CASCADE |
+| `tag_id` | FK → tag.id | **required**, ON DELETE CASCADE — exactly one tag (list) per entry |
+| `note` | String(1000) | optional |
+| `priority` | Integer 1-3 | NOT NULL, server_default 3 (1=high … 3=low; the UI defaults to 3) |
+
+**Tag table** ("list" is the UI term; per user):
 
 | Field | Type | Notes |
 |---|---|---|
 | `user_id` | FK → users.id | |
-| `media_id` | FK → media.id | |
-| `note` | String | optional |
-| `priority` | Integer 1-3 | 1=low, 3=high |
+| `name` | String(50) | free-text, unique per user (`unique_user_tag`) |
+| `color` | String(7) | hex color |
+| `is_default` | Boolean | the immutable per-user default "Watchlist" list; at most one per user (partial unique index `uq_tag_one_default_per_user`) |
 
-**Tag table** (per user):
+### Key Design (as shipped)
+- **One tag per entry** (a required `tag_id` FK, not a junction) — one list per media, one entry per (user, media). Priority is an independent 1–3 dimension.
+- **Immutable default "Watchlist" list**: every non-restricted user gets one (seeded on registration + a startup backfill); it can't be renamed/recolored/deleted, so there's always a stable preselect and a reassign target when another list is deleted. Its reserved color is kept out of the user palette. Deleting a list offers reassign-to-default vs cascade; the default's only bulk action is "empty".
+- Storage at media level; the overview page toggles between **anime grain** (default — aggregates a franchise's watchlisted media, most-urgent priority + gradient bookmark when it spans lists) and **media grain** (one card per entry).
+- **Colored bookmarks everywhere** a media/anime appears (search cards, hero, media table, related-media carousel), tinted to the list's color — a hard-stop gradient when an anime spans several lists.
+- **No spoiler-frontier interaction** — a watchlist entry is "want to watch", not "watched", so watchlist writes deliberately never recompute spoiler visibility (unlike ratings). The "rating a watchlisted anime → popup asks to remove it" coupling (Feature 1 key decision) is **deferred to v0.15.1** — v0.15.0 keeps ratings and watchlist fully independent.
+- Restricted (guest) users can't watchlist (router 403s; excluded from the default-tag seeders).
 
-| Field | Type | Notes |
-|---|---|---|
-| `user_id` | FK → users.id | |
-| `name` | String | free-text, e.g. "Overpowered MC", "recommendation from Lewis", "Good for lunch" |
-| `color` | String | hex color |
-
-**WatchlistTag** junction table links tags to watchlist entries.
-
-### Key Design
-- Tags and priority are **independent dimensions** — can be combined freely but not nested
-- Storage at media level, UI groups by parent anime
-- Watchlist icons visible in search results (already added indicator + quick-add button)
-- Rating an anime on watchlist → popup asks if it should be removed
-
-### Watchlist Page UI
-- Standard view: covers + titles with filtering by tags, priority
-- Link to browse page for deeper exploration
+### Watchlist Page UI (as shipped)
+- `/watchlist` with a `?tab=` switcher: **Watchlists** (entries — grid priority-band grid or sortable table, anime/media grain toggle, multi-select list-union filter) + **Lists** (create/edit/delete/empty lists).
+- Deferred to later versions: the "In watchlist" search filter (v0.16.1) and the browse-page "Only my watchlist" toggle (v0.16.0).
 
 ---
 
@@ -454,8 +458,8 @@ Eye-catching landing page — light version of browse, serves new and returning 
 
 ### Contents per row
 - **Anime/media catalog**: anime_title, (anime_name), title, (name), anime_mal_id, mal_id, type, relation, episodes, episode_duration_seconds, season, season_year, age_rating, mal_score, mal_scored_by
-- **Rating data** (null if only watchlisted): rating, dropped, episodes_watched, rating_note, rated_at, rating_updated_at, + 11 attribute enums
-- **Watchlist data** (null if only rated): watchlist_priority, watchlist_note, watchlist_tags, watchlist_added_at
+- **Rating data** (null if only watchlisted): rating, watch_status, watched_count, episodes_watched, rating_note, rated_at, rating_updated_at, + 11 attribute enums
+- **Watchlist data** (null if only rated): watchlist_priority, watchlist_note, watchlist_tag, watchlist_added_at
 - **Conditional name columns**: `anime_name` and `name` only included when user's `name_language` setting is not romaji and at least one resolved name differs from the romaji title
 
 ### Key Decisions
@@ -573,11 +577,12 @@ Eye-catching landing page — light version of browse, serves new and returning 
 | **v0.14.10** | ✓ Ratings quality-of-life upgrades | `WatchStatus` enum (completed / on-hold / dropped) replacing the `dropped` boolean — on-hold distinguished for a future "continue watching" surface. Rewatch tracking: per-event watch log keyed to (user, media) + derived `watched_count`, opt-in delete cascade. Admin story-complete flag (1:1 `anime_completion` sidecar) on a new admin Completion tab + emerald "Story Complete" badge on the anime page. |
 | **v0.14.11** | ✓ Final detail/ratings QoL upgrades | Curation candidate cards open the anime page same-tab (+ "Back to curation"); story-completion unmark guarded by a click-to-arm confirm. Studio badges link to a studio-filtered search; genre badges gain DB-description tooltips. Vote-weighted MAL-score "Top N%" percentile chip (`score_top_percent`) on the anime/media pages. Rating-consistency helper in RatingCard — a live 2-above/2-below "how you rated similar titles" panel (`GET /ratings/scores`). |
 | **v0.14.12** | ✓ Ratings page (anime-level list + statistics) | New `/ratings` page (replaces the `/statistics` nav placeholder). Anime-level ratings list: score-band cover grid (default) + sortable table, with genre/season/age filters. ECharts statistics: score histogram, You-vs-MAL alignment (weighted fit + R²/Spearman), one configurable genre/studio breakdown, attribute quality-correlation vs categorical-effect split, score trend + cumulative watch time. All client-side off one wide `GET /ratings/scores` projection — no per-user stats endpoint, no scipy. `SegmentedControl` extracted as a shared on-card toggle. |
-| **v0.14.13** | Ratings & reliability bug-fixes | Rating UX: shared `AttributeSelect`/`RatingNeighbors` across single + bulk, actual-watch-time stats for every status (`episodes_watched` + `duration_seconds` replace `total_watch_time`), and guards for not-yet-aired / no-episode-total media. Search: case-insensitive (case-folded embeddings), mobile-tappable search bar, scraper waivers for popular short-form shows + feature-length ONAs. Reliability & UX: `update_sweep` aborts on a total MAL outage instead of holding maintenance for hours (circuit breaker); admin Jobs Log live-refreshes; ratings charts fix score precision, clickable Activity points, and cumulative-to-now; curation titles honour the name-language setting; job bell gains clickable rows + completion toasts. |
+| **v0.14.13** | ✓ Ratings & reliability bug-fixes | Rating UX: shared `AttributeSelect`/`RatingNeighbors` across single + bulk, actual-watch-time stats for every status (`episodes_watched` + `duration_seconds` replace `total_watch_time`), and guards for not-yet-aired / no-episode-total media. Search: case-insensitive (case-folded embeddings), mobile-tappable search bar, scraper waivers for popular short-form shows + feature-length ONAs. Reliability & UX: `update_sweep` aborts on a total MAL outage instead of holding maintenance for hours (circuit breaker); admin Jobs Log live-refreshes; ratings charts fix score precision, clickable Activity points, and cumulative-to-now; curation titles honour the name-language setting; job bell gains clickable rows + completion toasts. |
 | **v0.14.14** | ✓ Scrape API migration: Jikan → official MyAnimeList API v2 | `jikan_scraper`→`mal_scraper` on `api.myanimelist.net/v2`: header auth, one call per node, value-translation layer keeping DB enums/indexes/filters stable, self-healing sweep (deletes/blacklists Hentai flips), `Crossover` dropped. Post-migration fixes: search roots re-fetched via detail (MAL `q=` omits `related_anime`, fragmenting franchises); enum-coercion self-heal crash; substance-gate main-chain scoping + high-episode short-form waiver (flagship short-form seasons like Saiki K. S1 anchor as Main). Anime MAL score (avg + "Top N%" + ordering/filters) now over the main story only (Main + AlternativeVersion, `RELATION_SCORE_WEIGHTS`) not all media — all-media averaging dragged flagships down up to 1.66 pts. |
-| **v0.15.0** | Watchlist backend + UI | Watchlist CRUD, tags, priority. Watchlist page with filtering. Watchlist icons in search results. |
-| **v0.15.1** | Search enhancements + design polish | "In watchlist"/"already watched" search filters. Search filter QoL improvements. Component design polish. Note: consider enlarging the watchlist bookmark icon on the media detail page for better tap target and visual presence. |
+| **v0.15.0** | ✓ Watchlist backend + UI | Per-user watchlist reworked to **one list (tag) per entry** (the `WatchlistTag` junction dropped, migration `b7f3a1c9d2e5`) + an immutable per-user default "Watchlist" list + 1–3 priority. New `/watchlist` page: entries view (anime/media grain toggle, priority-band cover grid + sortable table, multi-select list-union filter) + list management (create/edit/delete-with-reassign-or-cascade/empty). Colored bookmarks everywhere a media/anime shows — solid, or a hard-stop gradient when an anime spans lists. Generic `TabNav` extracted (replaced the byte-identical admin/ratings/watchlist copies); `rowClickNavigate` + `BulkMediaUuids` shared with ratings. Watchlist deliberately does NOT touch the spoiler frontier (want-to-watch ≠ watched). Guests excluded. |
+| **v0.15.1** | Ratings ↔ watchlist coupling + ratings-overview grain toggle | Rating a watchlisted anime → prompt to remove it from the watchlist (the Feature 1 coupling deferred from v0.15.0, same for rewatch). Anime/media grain toggle on the `/ratings` overview (mirrors the watchlist overview's toggle). |
 | **v0.16.0** | Browse page + home page redesign | Crunchyroll-style horizontal card rows. Browse sections with algo selector. Home page as light version. Get-started page. |
+| **v0.16.1** | Search enhancements + design polish | "In watchlist"/"already watched" search filters. Search filter QoL improvements. Component design polish. Note: consider enlarging the watchlist bookmark icon on the media detail page for better tap target and visual presence. |
 | **v0.17.0** | Advanced analytics (v2) | Heavy/precomputed analytics that go beyond v0.14.12's client-side stats: embedding/taste clustering (HDBSCAN), production-company deep-dives, monthly pre-computed reports, and a true watch-history time series from the `watch_event` table (actual watch moments + rewatches, vs v0.14.12's `created_at` proxy). The standard graphs (score histogram, genre distribution, watch-time) already shipped client-side in **v0.14.12**. |
 | **v0.18.0+** | Advanced recommendations, achievements, advanced analytics | HDBSCAN clustering, pattern prediction, "love it or hate it", achievements system with titles. Iterative. |
 

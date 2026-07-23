@@ -21,6 +21,7 @@ from app.seeders.genre_seeder import seed_genres
 from app.seeders.relation_backfiller import backfill_relations
 from app.seeders.split_candidate_backfiller import backfill_split_candidates
 from app.seeders.user_seeder import (
+    backfill_default_tags,
     backfill_spoiler_visibility,
     backfill_user_settings,
     purge_restricted_user_spoiler_cache,
@@ -113,6 +114,7 @@ async def lifespan(app: FastAPI):
         await seed_admin_user(session)
         await seed_guest_user(session)
         await backfill_user_settings(session)
+        await backfill_default_tags(session)
         await backfill_spoiler_visibility(session)
         await purge_restricted_user_spoiler_cache(session)
         # Title-suffix stripper runs BEFORE the embedding backfiller so a
@@ -194,6 +196,7 @@ def create_app() -> FastAPI:
         search,
         seeder,
         users,
+        watchlist,
     )
 
     app.include_router(admin.router)
@@ -208,6 +211,7 @@ def create_app() -> FastAPI:
     app.include_router(search.router)
     app.include_router(seeder.router)
     app.include_router(users.router)
+    app.include_router(watchlist.router)
 
     @app.get("/")
     async def root():

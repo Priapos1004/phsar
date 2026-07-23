@@ -6,6 +6,7 @@
 
 import { RATING_ATTRIBUTE_OPTIONS, isAttrRated, getRatingAttr, type RatingScoreItem, type WatchStatus } from '$lib/types/api';
 import { formatSeason } from '$lib/utils/formatString';
+import { MAIN_RELATIONS } from '$lib/utils/relations';
 
 /** Display + match key for a media's season, e.g. "Spring 2021"; null when undated. */
 export function seasonLabel(it: RatingScoreItem): string | null {
@@ -51,18 +52,6 @@ function mean(nums: number[]): number {
 	return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : 0;
 }
 
-// "Main story" = the canonical chain plus alternative-version retellings; everything
-// else (side stories, summaries) counts as side.
-const MAIN_RELATION_TYPES = new Set(['main', 'alternative_version']);
-
-/** "X main · Y side" rated-media breakdown for the card + table (a count of 0 is
- * omitted, so a side-story-only anime reads "1 side"). */
-export function mainSideLabel(row: AnimeRatingRow): string {
-	return [row.mainCount ? `${row.mainCount} main` : null, row.sideCount ? `${row.sideCount} side` : null]
-		.filter(Boolean)
-		.join(' · ');
-}
-
 export function groupByAnime(items: RatingScoreItem[]): AnimeRatingRow[] {
 	const groups = new Map<string, RatingScoreItem[]>();
 	for (const it of items) {
@@ -96,7 +85,7 @@ export function groupByAnime(items: RatingScoreItem[]): AnimeRatingRow[] {
 				? 'on_hold'
 				: null;
 
-		const mainCount = members.filter((m) => MAIN_RELATION_TYPES.has(m.relation_type)).length;
+		const mainCount = members.filter((m) => MAIN_RELATIONS.has(m.relation_type)).length;
 
 		// Anime cover, falling back to the first member's media cover when absent.
 		const cover_image =
@@ -295,7 +284,7 @@ export function scoreHistogram(items: RatingScoreItem[]): HistogramBucket[] {
 	for (const it of items) {
 		const b = buckets[Math.round((snap(it.rating) - loCenter) / w)];
 		b.count++;
-		if (MAIN_RELATION_TYPES.has(it.relation_type)) b.main++;
+		if (MAIN_RELATIONS.has(it.relation_type)) b.main++;
 		else b.side++;
 	}
 	return buckets;

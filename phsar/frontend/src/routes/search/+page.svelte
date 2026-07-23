@@ -44,10 +44,28 @@
 		if (tokenParam) {
 			loadSearchParamsFromToken(tokenParam);
 		} else {
-			mediaResults = [];
-			animeResults = [];
+			// No search token → browse: run an empty (no query, no filters) search in the default
+			// view so the page shows ranked results instead of a blank state. Reading defaultView
+			// re-runs this once settings resolve (e.g. a media-default user).
+			loadDefaultBrowse(defaultView);
 		}
 	});
+
+	async function loadDefaultBrowse(view: 'anime' | 'media') {
+		const thisRequest = ++loadRequestId;
+		isLoading = true;
+		error = '';
+		mediaResults = [];
+		animeResults = [];
+		viewType = view;
+		const params: MediaSearchFilters = { query: '', search_type: 'title', view_type: view };
+		decodedParams = params;
+		try {
+			await loadSearchResults(params, thisRequest);
+		} finally {
+			if (thisRequest === loadRequestId) isLoading = false;
+		}
+	}
 
 	async function loadSearchParamsFromToken(token: string) {
 		const thisRequest = ++loadRequestId;

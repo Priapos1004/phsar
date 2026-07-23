@@ -5,7 +5,9 @@
 	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
 	import { userSettings } from '$lib/stores/userSettings';
 	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
+	import WatchlistBookmarkIcon from '$lib/components/WatchlistBookmarkIcon.svelte';
 	import { visibleMediaSet } from '$lib/stores/spoilerVisibility';
+	import { watchlistTags } from '$lib/stores/watchlist';
 	import * as cls from '$lib/styles/classes';
 	import type { MediaSibling } from '$lib/types/api';
 
@@ -62,21 +64,30 @@
 		>
 			<Card.Root class="h-full {cls.cardGlass}">
 				<Card.Content class="p-3 space-y-2">
-					<SpoilerGuard visible={$visibleMediaSet.has(sibling.uuid)} mode="image">
-						{#if sibling.cover_image && !imgFailed[sibling.uuid]}
-							<img
-								src={sibling.cover_image}
-								alt={`Cover of ${sibling.title}`}
-								class="w-full h-24 object-cover rounded"
-								loading="lazy"
-								onerror={() => { imgFailed[sibling.uuid] = true; }}
-							/>
-						{:else}
-							<div class="w-full h-24 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs italic">
-								No image
+					<div class="relative">
+						<SpoilerGuard visible={$visibleMediaSet.has(sibling.uuid)} mode="image">
+							{#if sibling.cover_image && !imgFailed[sibling.uuid]}
+								<img
+									src={sibling.cover_image}
+									alt={`Cover of ${sibling.title}`}
+									class="w-full h-24 object-cover rounded"
+									loading="lazy"
+									onerror={() => { imgFailed[sibling.uuid] = true; }}
+								/>
+							{:else}
+								<div class="w-full h-24 bg-muted rounded flex items-center justify-center text-muted-foreground text-xs italic">
+									No image
+								</div>
+							{/if}
+						</SpoilerGuard>
+						{#if $watchlistTags.get(sibling.uuid)}
+							<!-- Overlaid top-right so it doesn't shift the title alignment below.
+							     Fixed square + flex-center so the inline SVG sits dead-centre. -->
+							<div class="absolute top-1 right-1 flex size-6 items-center justify-center rounded-md bg-black/45 backdrop-blur-sm">
+								<WatchlistBookmarkIcon colors={[$watchlistTags.get(sibling.uuid)!.tag_color]} iconClass="size-3.5 block" />
 							</div>
 						{/if}
-					</SpoilerGuard>
+					</div>
 
 					<p class="text-xs font-semibold text-card-foreground line-clamp-2 leading-tight">
 						{resolveTitle(sibling.title, sibling.name_eng, sibling.name_jap, nameLanguage)}

@@ -271,6 +271,54 @@ class AnimeNotFoundByUuidError(PhsarBaseError):
         super().__init__(message)
 
 
+class WatchlistNotFoundError(PhsarBaseError):
+    """Raised when a watchlist entry is not found or not owned by the user."""
+    status_code = 404
+
+    def __init__(self, identifier: str):
+        message = f"Watchlist entry not found: '{identifier}'."
+        super().__init__(message)
+
+
+class TagNotFoundError(PhsarBaseError):
+    """Raised when a tag UUID does not resolve to a tag owned by the user."""
+    status_code = 404
+
+    def __init__(self, identifier: str):
+        message = f"Tag not found: '{identifier}'."
+        super().__init__(message)
+
+
+class DuplicateTagNameError(PermanentPhsarError):
+    """Raised when creating/renaming a list to a name the user already uses.
+    List names are unique per user. (User-facing copy says "list"; the domain
+    term is "tag".)"""
+    status_code = 409
+
+    def __init__(self, name: str):
+        message = f"You already have a list named '{name}'."
+        super().__init__(message)
+
+
+class DefaultTagImmutableError(PermanentPhsarError):
+    """Raised when renaming, recoloring, or deleting the immutable default
+    'Watchlist' list. It's empty-able but never editable or deletable, so the
+    UI always has a stable default and there's always a reassign target."""
+    status_code = 403
+
+    def __init__(self):
+        super().__init__("The default Watchlist list can't be renamed or deleted.")
+
+
+class TagLimitError(PermanentPhsarError):
+    """Raised when a user tries to create more than TAGS_PER_USER_LIMIT lists."""
+    status_code = 409
+
+    def __init__(self, limit: int):
+        message = f"You can have at most {limit} lists."
+        super().__init__(message)
+
+
 class UserSettingsNotFoundError(PhsarBaseError):
     """Raised when user settings are not found (should not happen if seeding is correct)."""
     status_code = 404

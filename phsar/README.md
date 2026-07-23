@@ -38,9 +38,11 @@ phsar/
 │   │   ├── search_filters.py
 │   │   ├── split_candidate_dao.py
 │   │   ├── studio_dao.py
+│   │   ├── tag_dao.py
 │   │   ├── user_dao.py
 │   │   ├── user_settings_dao.py
-│   │   └── watch_event_dao.py
+│   │   ├── watch_event_dao.py
+│   │   └── watchlist_dao.py
 │   ├── exceptions.py
 │   ├── main.py
 │   ├── models/
@@ -69,8 +71,7 @@ phsar/
 │   │   ├── user_visible_media.py
 │   │   ├── users.py
 │   │   ├── watch_event.py
-│   │   ├── watchlist.py
-│   │   └── watchlist_tag.py
+│   │   └── watchlist.py
 │   ├── routers/
 │   │   ├── admin.py
 │   │   ├── admin_completion.py
@@ -87,12 +88,14 @@ phsar/
 │   │   ├── save.py
 │   │   ├── search.py
 │   │   ├── seeder.py
-│   │   └── users.py
+│   │   ├── users.py
+│   │   └── watchlist.py
 │   ├── schemas/
 │   │   ├── admin_schema.py
 │   │   ├── anime_schema.py
 │   │   ├── auth_schema.py
 │   │   ├── backup_schema.py
+│   │   ├── common_schema.py
 │   │   ├── genre_schema.py
 │   │   ├── job_schema.py
 │   │   ├── maintenance_schema.py
@@ -100,7 +103,9 @@ phsar/
 │   │   ├── media_schema.py
 │   │   ├── rating_schema.py
 │   │   ├── search_schema.py
-│   │   └── user_settings_schema.py
+│   │   ├── tag_schema.py
+│   │   ├── user_settings_schema.py
+│   │   └── watchlist_schema.py
 │   ├── seeders/
 │   │   ├── anime_title_backfiller.py
 │   │   ├── embedding_backfiller.py
@@ -139,10 +144,12 @@ phsar/
 │       ├── search_service.py
 │       ├── spoiler_service.py
 │       ├── split_candidate_service.py
+│       ├── tag_service.py
 │       ├── token_service.py
 │       ├── unwanted_media_service.py
 │       ├── user_settings_service.py
-│       └── vector_embedding_service.py
+│       ├── vector_embedding_service.py
+│       └── watchlist_service.py
 ├── frontend/
 │   ├── .dockerignore
 │   ├── Dockerfile
@@ -168,7 +175,6 @@ phsar/
 │   │   │   │   ├── admin/
 │   │   │   │   │   ├── AdminJobsLogTab.svelte
 │   │   │   │   │   ├── AdminOverviewTab.svelte
-│   │   │   │   │   ├── AdminTabNav.svelte
 │   │   │   │   │   ├── AnimeUmbrellaCard.svelte
 │   │   │   │   │   ├── CompletionStatusCard.svelte
 │   │   │   │   │   ├── DismissedDecisionsSection.svelte
@@ -180,6 +186,7 @@ phsar/
 │   │   │   │   │   └── types.ts
 │   │   │   │   ├── AttributeSelect.svelte
 │   │   │   │   ├── BulkRateDialog.svelte
+│   │   │   │   ├── BulkWatchlistDialog.svelte
 │   │   │   │   ├── DangerZone.svelte
 │   │   │   │   ├── DeleteWatchHistoryToggle.svelte
 │   │   │   │   ├── DoubleRangeSlider.svelte
@@ -193,6 +200,7 @@ phsar/
 │   │   │   │   ├── MergeCandidatesCard.svelte
 │   │   │   │   ├── NavBar.svelte
 │   │   │   │   ├── Notice.svelte
+│   │   │   │   ├── PriorityPicker.svelte
 │   │   │   │   ├── RatingCard.svelte
 │   │   │   │   ├── RatingNeighbors.svelte
 │   │   │   │   ├── RatingsOverview.svelte
@@ -210,7 +218,6 @@ phsar/
 │   │   │   │   │   ├── RatingsListTab.svelte
 │   │   │   │   │   ├── RatingsScoreHistogram.svelte
 │   │   │   │   │   ├── RatingsStatsTab.svelte
-│   │   │   │   │   ├── RatingsTabNav.svelte
 │   │   │   │   │   ├── RatingsTable.svelte
 │   │   │   │   │   ├── RatingsTagChart.svelte
 │   │   │   │   │   └── types.ts
@@ -225,12 +232,25 @@ phsar/
 │   │   │   │   ├── SkeletonMediaInfo.svelte
 │   │   │   │   ├── SplitCandidatesCard.svelte
 │   │   │   │   ├── StudioLinks.svelte
+│   │   │   │   ├── TabNav.svelte
 │   │   │   │   ├── TagSelect.svelte
 │   │   │   │   ├── Toast.svelte
 │   │   │   │   ├── ToastHost.svelte
 │   │   │   │   ├── TokenExpiryDialog.svelte
 │   │   │   │   ├── Tooltip.svelte
 │   │   │   │   ├── VersionFooter.svelte
+│   │   │   │   ├── WatchlistBookmarkButton.svelte
+│   │   │   │   ├── WatchlistBookmarkIcon.svelte
+│   │   │   │   ├── WatchlistDialog.svelte
+│   │   │   │   ├── WatchlistTagSelect.svelte
+│   │   │   │   ├── watchlist/       # /watchlist page (list + tag management)
+│   │   │   │   │   ├── TagColorPicker.svelte
+│   │   │   │   │   ├── WatchlistCard.svelte
+│   │   │   │   │   ├── WatchlistFilterBar.svelte
+│   │   │   │   │   ├── WatchlistListTab.svelte
+│   │   │   │   │   ├── WatchlistPriorityGrid.svelte
+│   │   │   │   │   ├── WatchlistTable.svelte
+│   │   │   │   │   └── WatchlistTagsTab.svelte
 │   │   │   │   └── ui/           # shadcn-svelte components
 │   │   │   │       ├── badge/
 │   │   │   │       ├── button/
@@ -258,8 +278,11 @@ phsar/
 │   │   │   │   ├── maintenance.ts
 │   │   │   │   ├── ratingsFilter.ts
 │   │   │   │   ├── spoilerVisibility.ts
+│   │   │   │   ├── tags.ts
 │   │   │   │   ├── toast.ts
-│   │   │   │   └── userSettings.ts
+│   │   │   │   ├── userSettings.ts
+│   │   │   │   ├── watchlist.ts
+│   │   │   │   └── watchlistFilter.ts
 │   │   │   ├── styles/
 │   │   │   │   └── classes.ts
 │   │   │   ├── types/
@@ -268,6 +291,7 @@ phsar/
 │   │   │       ├── chartColors.ts
 │   │   │       ├── chartTheme.ts
 │   │   │       ├── cn.ts
+│   │   │       ├── color.ts
 │   │   │       ├── formatString.ts
 │   │   │       ├── getSeason.ts
 │   │   │       ├── index.ts
@@ -277,9 +301,12 @@ phsar/
 │   │   │       ├── ratingAttributes.ts
 │   │   │       ├── ratingNeighbors.ts
 │   │   │       ├── ratingStats.ts
+│   │   │       ├── relations.ts
 │   │   │       ├── search.ts
 │   │   │       ├── sessionTimeout.ts
-│   │   │       └── spoilerFrontier.ts
+│   │   │       ├── spoilerFrontier.ts
+│   │   │       ├── watchlist.ts
+│   │   │       └── watchlistStats.ts
 │   │   ├── routes/
 │   │   │   ├── +layout.svelte
 │   │   │   ├── +layout.ts
@@ -308,7 +335,10 @@ phsar/
 │   │   │   │   └── +page.svelte
 │   │   │   ├── search/
 │   │   │   │   └── +page.svelte
-│   │   │   └── settings/
+│   │   │   ├── settings/
+│   │   │   │   └── +page.svelte
+│   │   │   └── watchlist/
+│   │   │       ├── +layout.svelte
 │   │   │       └── +page.svelte
 │   │   └── tests/
 │   │       ├── setup.ts
@@ -317,6 +347,7 @@ phsar/
 │   │       ├── api-download.test.ts
 │   │       ├── auth-store.test.ts
 │   │       ├── backups-card.test.ts
+│   │       ├── color.test.ts
 │   │       ├── completion-status-card.test.ts
 │   │       ├── format-string.test.ts
 │   │       ├── genre-badges.test.ts
@@ -336,10 +367,12 @@ phsar/
 │   │       ├── rating-stats.test.ts
 │   │       ├── searchbar.test.ts
 │   │       ├── segmented-control.test.ts
+│   │       ├── session-timeout.test.ts
 │   │       ├── spoiler-frontier.test.ts
 │   │       ├── spoiler-guard.test.ts
 │   │       ├── studio-links.test.ts
-│   │       └── toast.test.ts
+│   │       ├── toast.test.ts
+│   │       └── watchlist-stats.test.ts
 │   ├── static/
 │   │   ├── apple-touch-icon.png
 │   │   ├── favicon-192x192.png
@@ -396,7 +429,8 @@ phsar/
     │   ├── test_search_media.py
     │   ├── test_search_ranking.py
     │   ├── test_search_ratings.py
-    │   └── test_user_settings.py
+    │   ├── test_user_settings.py
+    │   └── test_watchlist.py
     ├── seeders/
     │   ├── test_embedding_backfiller.py
     │   └── test_relation_backfiller.py
@@ -420,8 +454,10 @@ phsar/
         ├── test_spoiler_cache_db.py
         ├── test_spoiler_service.py
         ├── test_split_candidate_service.py
+        ├── test_tag_service.py
         ├── test_update_sweep.py
-        └── test_vector_embedding_service.py
+        ├── test_vector_embedding_service.py
+        └── test_watchlist_service.py
 ```
 </details>
 
@@ -469,7 +505,7 @@ MY_ANIME_LIST_CLIENT_ID=your_mal_client_id_here
 # Empty disables every cron endpoint (they fail closed).
 # JOBS_CRON_TOKEN=supersecretcrontoken
 # Max queued+running scrape jobs per user (bounds queue DEPTH, not parallelism
-# — the worker is sequential because of MAL's ~3 req/s rate limit).
+# — the worker is sequential because of MAL's ~1 req/s rate limit).
 # JOBS_PER_USER_LIMIT=4
 # Max user_scrape submissions per user in any trailing 24h window. Counts
 # every status (succeeded/failed too) so transient MAL failures can't grant
@@ -478,7 +514,7 @@ MY_ANIME_LIST_CLIENT_ID=your_mal_client_id_here
 # Dedupe window for /jobs/scrape. Failed jobs don't count.
 # JOBS_DEDUPE_HOURS=24
 # Bounds the nightly update_sweep batch size.
-# JOBS_SWEEP_MAX_PER_RUN=200
+# JOBS_SWEEP_MAX_PER_RUN=500
 # Circuit breaker: abort update_sweep after this many CONSECUTIVE upstream
 # (MAL 5xx/timeout) failures so a total outage can't hold the maintenance
 # window (503 on login) for hours. Job fails retryable; maintenance clears

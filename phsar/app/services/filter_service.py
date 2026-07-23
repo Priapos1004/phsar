@@ -41,6 +41,26 @@ def chronological_media_key(
     )
 
 
+def select_note_target_index(media_list: list[Media], *, latest: bool) -> int:
+    """Index of the media a bulk note attaches to: the chronologically FIRST
+    (`latest=False`) or LAST (`latest=True`) 'main' media, falling back to the first/last
+    media overall when the selection has none. Ordered by `chronological_media_key`
+    (intrinsic media order, not request/click order), so it's invariant to how the media
+    were selected. Shared by bulk watchlist (first — "start here") + bulk rating (last —
+    "my take on the latest season") so the two can't drift on how the target is picked.
+    Passes the raw `anime_season_name` enum straight through (the str-enum hashes to its
+    value), matching `anime_search_service`/`media_search_service`."""
+    mains = [(i, m) for i, m in enumerate(media_list) if m.relation_type.value == "main"]
+    pool = mains or list(enumerate(media_list))
+    pick = max if latest else min
+    return pick(
+        pool,
+        key=lambda im: chronological_media_key(
+            im[1].anime_season_year, im[1].anime_season_name, im[1].mal_id
+        ),
+    )[0]
+
+
 def sort_seasons(seasons: list[str]) -> list[str]:
     def season_sort_key(item):
         parts = item.split()

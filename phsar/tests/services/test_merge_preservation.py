@@ -28,6 +28,7 @@ from app.models.media_studio import MediaStudio
 from app.models.merge_candidate import MergeCandidate, MergeCandidateStatus
 from app.models.ratings import Ratings, WatchStatus
 from app.models.studio import Studio
+from app.models.tag import Tag
 from app.models.users import RoleType, Users
 from app.models.watchlist import Watchlist
 from app.services.merge_candidate_service import merge
@@ -150,10 +151,13 @@ async def test_merge_preserves_watchlist_on_b_media(db_session):
     user = Users(username="watch-keeper", hashed_password="x", role=RoleType.User)
     db_session.add(user)
     await db_session.flush()
+    tag = Tag(user_id=user.id, name="Watchlist", is_default=True)
+    db_session.add(tag)
+    await db_session.flush()
 
     target = seed["media_b_list"][0]
     db_session.add(Watchlist(
-        media_id=target.id, user_id=user.id, note="queued", priority=2,
+        media_id=target.id, user_id=user.id, tag_id=tag.id, note="queued", priority=2,
     ))
     await db_session.flush()
     target_id = target.id

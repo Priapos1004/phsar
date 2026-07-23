@@ -12,6 +12,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import type { MediaSearchFilters } from '$lib/utils/search';
 	import { formatDecimalDigits, formatDuration, formatNumber } from '$lib/utils/formatString';
+	import * as cls from '$lib/styles/classes';
 
 	interface Props {
 		viewType?: 'anime' | 'media';
@@ -291,7 +292,7 @@
 						<Button
 							variant="ghost"
 							size="sm"
-							class="text-destructive hover:text-destructive hover:bg-destructive/10"
+							class={cls.btnGhostDestructive}
 							onclick={clearFilters}
 						>
 							Clear all

@@ -4,7 +4,8 @@
 	import { formatDecimalDigits, resolveTitle } from '$lib/utils/formatString';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import * as cls from '$lib/styles/classes';
-	import { mainSideLabel, type AnimeRatingRow } from '$lib/utils/ratingStats';
+	import { mainSideLabel } from '$lib/utils/relations';
+	import { type AnimeRatingRow } from '$lib/utils/ratingStats';
 
 	interface Props {
 		row: AnimeRatingRow;
@@ -59,8 +60,8 @@
 			<h3 class="text-sm font-medium text-card-foreground line-clamp-2 leading-snug" title={title}>
 				{title}
 			</h3>
-			<span class="mt-auto w-fit rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">
-				{mainSideLabel(row)}
+			<span class="mt-auto {cls.mutedPill}">
+				{mainSideLabel(row.mainCount, row.sideCount)}
 			</span>
 		</div>
 	</div>

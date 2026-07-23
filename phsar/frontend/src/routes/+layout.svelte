@@ -4,6 +4,8 @@
     import { token } from '$lib/stores/auth';
     import { userSettings } from '$lib/stores/userSettings';
     import { spoilerVisibility, refreshSpoilerVisibility } from '$lib/stores/spoilerVisibility';
+    import { refreshWatchlist, clearWatchlist } from '$lib/stores/watchlist';
+    import { refreshTags, clearTags } from '$lib/stores/tags';
     import { onMount, setContext } from 'svelte';
     import { jwtDecode } from 'jwt-decode';
     import { api } from '$lib/api';
@@ -51,15 +53,30 @@
             // login / user switch (sub changed) or after a prior failed load,
             // not on every slide, to avoid redundant traffic + a theme flicker.
             const needsUserLoad = decoded.sub !== username || get(userSettings) === null;
+            // A real user switch (A → B) can happen without a null-token transition
+            // (login page sets the new token directly), so clear per-user stores here
+            // rather than only on logout — else B could inherit A's bookmarks if a
+            // refresh is skipped (restricted B) or fails silently.
+            const isUserSwitch = username !== null && decoded.sub !== username;
             userRole = decoded.role;
             username = decoded.sub;
 
             if (needsUserLoad) {
-              // Fetch settings and spoiler visibility in parallel to avoid serial latency
+              if (isUserSwitch) {
+                clearWatchlist();
+                clearTags();
+              }
+              // Fetch settings + spoiler visibility (+ watchlist/tags for non-guests)
+              // in parallel to avoid serial latency. Restricted users can't watchlist,
+              // so skip those fetches (they'd 403).
+              const userLoads: Promise<unknown>[] = [refreshSpoilerVisibility()];
+              if (decoded.role !== 'restricted_user') {
+                userLoads.push(refreshWatchlist(), refreshTags());
+              }
               try {
                 const [settings] = await Promise.all([
                   api.get<UserSettings>('/users/settings'),
-                  refreshSpoilerVisibility(),
+                  ...userLoads,
                 ]);
                 userSettings.set(settings);
                 // Clear visibility store if spoiler protection is off
@@ -77,12 +94,16 @@
             username = null;
             userSettings.set(null);
             spoilerVisibility.set(null);
+            clearWatchlist();
+            clearTags();
           }
         } else {
           userRole = null;
           username = null;
           userSettings.set(null);
           spoilerVisibility.set(null);
+          clearWatchlist();
+          clearTags();
         }
         loading = false;
       });

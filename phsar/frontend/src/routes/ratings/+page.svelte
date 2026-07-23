@@ -5,7 +5,7 @@
 	import { userSettings } from '$lib/stores/userSettings';
 	import type { RatingScoreItem } from '$lib/types/api';
 	import type { RatingsTabKey } from '$lib/components/ratings/types';
-	import RatingsTabNav from '$lib/components/ratings/RatingsTabNav.svelte';
+	import TabNav from '$lib/components/TabNav.svelte';
 	import RatingsListTab from '$lib/components/ratings/RatingsListTab.svelte';
 	import RatingsStatsTab from '$lib/components/ratings/RatingsStatsTab.svelte';
 	import Notice from '$lib/components/Notice.svelte';
@@ -58,7 +58,7 @@
 <div class="mx-auto max-w-5xl space-y-6">
 	<h1 class="text-2xl font-bold text-white">Ratings</h1>
 
-	<RatingsTabNav tabs={TABS} defaultTab={DEFAULT_TAB} />
+	<TabNav tabs={TABS} defaultTab={DEFAULT_TAB} basePath="/ratings" ariaLabel="Ratings sections" />
 
 	{#if loading}
 		<div class="text-white/60 py-12 text-center">Loading your ratings…</div>

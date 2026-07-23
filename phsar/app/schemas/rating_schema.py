@@ -18,6 +18,7 @@ from app.models.ratings import (
     WatchedFormat,
     WatchStatus,
 )
+from app.schemas.common_schema import BulkMediaUuids
 from app.schemas.media_filter_schema import MediaSearchFilters
 from app.schemas.media_schema import MediaConnected
 
@@ -154,26 +155,12 @@ class RatingScoreItem(RatingAttributes):
     modified_at: datetime
 
 
-class _BulkMediaUuids(BaseModel):
-    """Shared base for bulk operations: validates the media_uuids list."""
-    media_uuids: list[UUID]
-
-    @field_validator("media_uuids")
-    @classmethod
-    def validate_media_uuids(cls, v: list[UUID]) -> list[UUID]:
-        if len(v) > 50:
-            raise ValueError("Cannot bulk-operate on more than 50 media at once")
-        if not v:
-            raise ValueError("At least one media UUID is required")
-        return v
-
-
-class RatingBulkCreate(RatingBase, _BulkMediaUuids):
+class RatingBulkCreate(RatingBase, BulkMediaUuids):
     # Note is attached to the last main media; earlier media get note cleared
     note: Optional[str] = None
 
 
-class RatingBulkDelete(_BulkMediaUuids):
+class RatingBulkDelete(BulkMediaUuids):
     pass
 
 

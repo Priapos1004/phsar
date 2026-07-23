@@ -3,12 +3,10 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.daos.media_dao import MediaDAO
 from app.daos.rating_dao import RatingDAO
 from app.daos.watch_event_dao import WatchEventDAO
 from app.exceptions import (
     CannotRateUnairedError,
-    MediaNotFoundError,
     RatingNotFoundError,
     RewatchNotAllowedError,
 )
@@ -24,7 +22,8 @@ from app.schemas.rating_schema import (
     RatingScoreItem,
     RatingSearchFilters,
 )
-from app.services.filter_service import chronological_media_key
+from app.services import media_service
+from app.services.filter_service import select_note_target_index
 from app.services.media_search_service import media_to_dict
 from app.services.relation_classifier import AIRING_STATUS_NOT_YET_AIRED
 from app.services.spoiler_service import recompute_visibility_for_anime
@@ -36,7 +35,6 @@ from app.services.vector_embedding_service import (
 logger = logging.getLogger(__name__)
 
 rating_dao = RatingDAO()
-media_dao = MediaDAO()
 watch_event_dao = WatchEventDAO()
 
 _EXCLUDE_BULK = {"media_uuids"}
@@ -74,18 +72,6 @@ async def _ratings_to_out(db: AsyncSession, user_id: int, ratings: list[Ratings]
         db, user_id, [r.media_id for r in ratings]
     )
     return [_rating_to_out(r, counts.get(r.media_id, 0)) for r in ratings]
-
-
-async def _resolve_media_uuids(db: AsyncSession, media_uuids: list[UUID]) -> list[Media]:
-    """Batch-fetch media by UUIDs in input order. Raises MediaNotFoundError if any UUID is missing."""
-    all_media = await media_dao.get_all_by_field(db, "uuid", media_uuids)
-    media_by_uuid = {m.uuid: m for m in all_media}
-
-    missing_uuids = [uuid for uuid in media_uuids if uuid not in media_by_uuid]
-    if missing_uuids:
-        raise MediaNotFoundError(", ".join(str(u) for u in missing_uuids))
-
-    return [media_by_uuid[uuid] for uuid in media_uuids]
 
 
 async def _upsert_note_embedding(db: AsyncSession, rating: Ratings, note: str | None):
@@ -186,7 +172,7 @@ async def upsert_rating(
     user confirms the prior completions no longer apply."""
     logger.debug(f"DB session: {id(db)}")
 
-    media = (await _resolve_media_uuids(db, [media_uuid]))[0]
+    media = (await media_service.resolve_media_uuids(db, [media_uuid]))[0]
     existing = await rating_dao.get_by_user_and_media(db, user_id, media.id)
     # The not-yet-aired guard lives in the shared `_upsert_single_rating` so the single and
     # bulk paths reject a fresh rating on an unaired media identically.
@@ -298,7 +284,7 @@ async def bulk_delete_ratings(
     """Delete ratings for multiple media at once. Returns the number of ratings deleted.
     Silently skips media that have no rating (not an error). Watch history is kept unless
     `delete_watch_history` is set (same opt-in cascade as the single delete)."""
-    media_list = await _resolve_media_uuids(db, media_uuids)
+    media_list = await media_service.resolve_media_uuids(db, media_uuids)
     media_ids = [m.id for m in media_list]
     if delete_watch_history:
         # Scope the opt-in history wipe to media that actually have a rating here, so a
@@ -382,7 +368,7 @@ async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCr
     contract can't produce inconsistent data like a dropped rating claiming the full run."""
     logger.debug(f"DB session: {id(db)}")
 
-    media_list = await _resolve_media_uuids(db, data.media_uuids)
+    media_list = await media_service.resolve_media_uuids(db, data.media_uuids)
 
     # Batch-fetch existing ratings to avoid N+1 queries in the upsert loop
     media_ids = [m.id for m in media_list]
@@ -394,18 +380,10 @@ async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCr
         await watch_event_dao.counts_for_user_media_ids(db, user_id, media_ids)
     )
 
-    # Note goes on the chronologically-last "main" media; falls back to the last media
-    # overall if none are main. Ordered by the project-wide `chronological_media_key`
-    # (the same key the anime media table + carousel use), NOT request/selection order —
-    # so the note lands on the most recent season the user sees last in the table,
-    # regardless of the order media were clicked.
-    def _chrono_note_key(m: Media):
-        season = m.anime_season_name.value if m.anime_season_name else None
-        return chronological_media_key(m.anime_season_year, season, m.mal_id)
-
-    mains = [(i, m) for i, m in enumerate(media_list) if m.relation_type.value == "main"]
-    pool = mains or list(enumerate(media_list))
-    note_index = max(pool, key=lambda im: _chrono_note_key(im[1]))[0]
+    # Note goes on the chronologically-LAST "main" media (bulk watchlist uses the first) —
+    # the most recent season, the row the user sees last in the media table; falls back to
+    # the last media overall if none are main. Intrinsic media order, not click order.
+    note_index = select_note_target_index(media_list, latest=True)
     # note is attached to one media only (below); watch_status + episodes_watched aren't on
     # RatingBulkCreate — both are pinned per-media to completed / full-run (see docstring).
     shared_fields = data.model_dump(exclude=_EXCLUDE_BULK | {"note"})
