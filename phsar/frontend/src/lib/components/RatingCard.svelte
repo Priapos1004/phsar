@@ -17,6 +17,8 @@
 	import { attributeBadges } from '$lib/utils/ratingAttributes';
 	import { formatDecimalDigits, clampAndSnapScore, decimalPlaces, roundScore } from '$lib/utils/formatString';
 	import { userSettings } from '$lib/stores/userSettings';
+	import { watchlistTags, refreshWatchlist } from '$lib/stores/watchlist';
+	import { pushToast } from '$lib/stores/toast';
 	import * as cls from '$lib/styles/classes';
 	import { ChevronDown, ChevronUp, Star, Pencil, Trash2, RotateCcw } from 'lucide-svelte';
 
@@ -80,6 +82,12 @@
 	let loggingRewatch = $state(false);
 	let rewatchOpen = $state(false);
 	let downgradeOpen = $state(false);
+	// After rating/rewatching a media that's on the watchlist, offer to take it off
+	// (rating it means you've started/finished it, so it's no longer "want to watch").
+	let removeWatchlistOpen = $state(false);
+	let removingWatchlist = $state(false);
+	let watchlistTagName = $state('');
+	let watchlistPromptFromRewatch = $state(false); // tailors the prompt copy (rate vs rewatch)
 	let error = $state('');
 	let attributes = $state<Record<string, string | null>>({});
 
@@ -224,10 +232,35 @@
 			onSaved(result);
 			editing = false;
 			downgradeOpen = false;
+			maybePromptWatchlistRemoval();
 		} catch (err) {
 			error = err instanceof ApiError ? err.detail : 'Failed to save rating';
 		} finally {
 			saving = false;
+		}
+	}
+
+	/** If this media is on the watchlist, open the "remove it?" prompt (see removeWatchlistOpen). */
+	function maybePromptWatchlistRemoval(fromRewatch = false) {
+		const entry = $watchlistTags.get(mediaUuid);
+		if (entry) {
+			watchlistTagName = entry.tag_name;
+			watchlistPromptFromRewatch = fromRewatch;
+			removeWatchlistOpen = true;
+		}
+	}
+
+	async function handleRemoveFromWatchlist() {
+		removingWatchlist = true;
+		try {
+			await api.del(`/watchlist/media/${mediaUuid}`);
+			await refreshWatchlist();
+			pushToast('Removed from watchlist', 'success');
+			removeWatchlistOpen = false;
+		} catch (err) {
+			pushToast(err instanceof ApiError ? err.detail : 'Failed to remove from watchlist', 'error');
+		} finally {
+			removingWatchlist = false;
 		}
 	}
 
@@ -263,6 +296,7 @@
 			const updated = await api.post<RatingOut>(`/ratings/${existingRating.uuid}/rewatch`, {});
 			onSaved(updated);
 			rewatchOpen = false;
+			maybePromptWatchlistRemoval(true);
 		} catch (err) {
 			error = err instanceof ApiError ? err.detail : 'Failed to log rewatch';
 		} finally {
@@ -498,6 +532,32 @@
 			</Button>
 			<Button onclick={handleRewatch} disabled={loggingRewatch}>
 				{loggingRewatch ? 'Logging...' : 'Log rewatch'}
+			</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>
+
+<!-- Offer to remove from the watchlist after a rating/rewatch (rated ⇒ no longer "want to watch") -->
+<Dialog.Root bind:open={removeWatchlistOpen}>
+	<Dialog.Content class="sm:max-w-md">
+		<Dialog.Header>
+			<Dialog.Title>Remove from your “{watchlistTagName}” list?</Dialog.Title>
+			<Dialog.Description class="text-muted-foreground">
+				{#if watchlistPromptFromRewatch}
+					You just logged a rewatch, so you've already seen this — it's probably not something
+					you're still planning to watch. Take it off your watchlist?
+				{:else}
+					You just rated this, so it's probably no longer something you're planning to watch.
+					Take it off your watchlist?
+				{/if}
+			</Dialog.Description>
+		</Dialog.Header>
+		<Dialog.Footer>
+			<Button variant="secondary" onclick={() => (removeWatchlistOpen = false)} disabled={removingWatchlist}>
+				Keep
+			</Button>
+			<Button variant="destructive" onclick={handleRemoveFromWatchlist} disabled={removingWatchlist}>
+				{removingWatchlist ? 'Removing…' : 'Remove'}
 			</Button>
 		</Dialog.Footer>
 	</Dialog.Content>

@@ -204,15 +204,15 @@
 						</div>
 
 						<!-- Watchlist bookmark — filled + tag-colored when on the list; click
-						     opens the add/edit dialog. Hidden for restricted (guest) users. -->
-						{#if !isRestricted}
-							<WatchlistBookmarkButton
-								colors={watchlistEntry ? [watchlistEntry.tag_color] : []}
-								tooltip={watchlistEntry ? `On watchlist: ${watchlistEntry.tag_name}` : 'Add to watchlist'}
-								ariaLabel={watchlistEntry ? 'Edit watchlist entry' : 'Add to watchlist'}
-								onclick={() => (watchlistOpen = true)}
-							/>
-						{/if}
+						     opens the add/edit dialog. Restricted (guest) users see it disabled
+						     (visible-but-inert), so they see what their own account could do. -->
+						<WatchlistBookmarkButton
+							colors={watchlistEntry ? [watchlistEntry.tag_color] : []}
+							tooltip={isRestricted ? "Guest accounts can't use the watchlist" : watchlistEntry ? `On watchlist: ${watchlistEntry.tag_name}` : 'Add to watchlist'}
+							ariaLabel={watchlistEntry ? 'Edit watchlist entry' : 'Add to watchlist'}
+							onclick={() => (watchlistOpen = true)}
+							disabled={isRestricted}
+						/>
 					</div>
 
 					{#if media.score !== null}
@@ -324,7 +324,7 @@
 						<h2 class="text-lg font-semibold text-card-foreground">Your Rating</h2>
 						<Button disabled>Rate This</Button>
 					</div>
-					<p class="text-muted-foreground mt-1">You don't have permission to rate media</p>
+					<p class="text-muted-foreground mt-1">Guest accounts can't rate anime. Sign in with your own account to rate and track what you watch.</p>
 				</Card.Content>
 			</Card.Root>
 		{/if}

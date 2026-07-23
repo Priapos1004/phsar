@@ -65,11 +65,27 @@
 <div class="mx-auto max-w-5xl space-y-6">
 	<h1 class="text-2xl font-bold text-white">Watchlist</h1>
 
-	{#if isRestricted}
-		<Notice>Watchlists aren't available for guest accounts.</Notice>
-	{:else}
-		<TabNav tabs={TABS} defaultTab={DEFAULT_TAB} basePath="/watchlist" ariaLabel="Watchlist sections" />
+	<!-- Subtabs stay visible for guests too (like the ratings page) so they see what their
+	     own account would offer; the writes are gated server-side, so each tab explains that
+	     rather than the page dead-ending on a single "not available" notice. -->
+	<TabNav tabs={TABS} defaultTab={DEFAULT_TAB} basePath="/watchlist" ariaLabel="Watchlist sections" />
 
+	{#if isRestricted}
+		<!-- Soft muted empty-state (not the yellow Notice) — matches the watchlist/ratings
+		     empty states; a guest browsing isn't an error condition. -->
+		{#if active === 'tags'}
+			<div class="py-12 text-center space-y-3">
+				<p class="text-white/70">Guest accounts can't create lists.</p>
+				<p class="text-white/50 text-sm">Sign in with your own account to organize your watchlists.</p>
+			</div>
+		{:else}
+			<div class="py-12 text-center space-y-3">
+				<p class="text-white/70">Guest accounts can't save to a watchlist.</p>
+				<p class="text-white/50 text-sm">Sign in with your own account to bookmark anime and plan what to watch next.</p>
+				<Button href="/search">Browse anime</Button>
+			</div>
+		{/if}
+	{:else}
 		<!-- Watchlists (list) tab stays mounted to preserve scroll; Lists (tags) mounts on
 		     demand. -->
 		<div class:hidden={active !== 'watchlists'}>
