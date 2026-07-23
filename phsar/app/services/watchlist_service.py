@@ -48,6 +48,9 @@ def _to_out(w: Watchlist) -> WatchlistOut:
 
 
 def _to_item(w: Watchlist) -> WatchlistItem:
+    # Requires the WIDE loader: reads m.media_genre/media_studio (both lazy="raise"), which
+    # only WatchlistDAO.get_all_for_items eager-loads — the lighter lookup loaders would
+    # MissingGreenlet-crash here. Its sole caller (get_watchlist_items) uses that loader.
     m = w.media
     a = m.anime
     return WatchlistItem(
@@ -71,6 +74,10 @@ def _to_item(w: Watchlist) -> WatchlistItem:
         anime_season_name=m.anime_season_name.value if m.anime_season_name else None,
         anime_season_year=m.anime_season_year,
         mal_id=m.mal_id,
+        genres=[mg.genre.name for mg in m.media_genre],
+        studios=[ms.studio.name for ms in m.media_studio],
+        episodes=m.episodes,
+        duration_seconds=m.duration_seconds,
         created_at=w.created_at,
         modified_at=w.modified_at,
     )

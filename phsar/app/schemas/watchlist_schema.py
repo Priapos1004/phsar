@@ -80,6 +80,14 @@ class WatchlistItem(BaseModel):
     anime_season_name: Optional[str]
     anime_season_year: Optional[int]
     mal_id: int
+    # Per-media genres + studios (eager-loaded by get_all_for_items) so the Statistics
+    # subtab can tally top genres/studios client-side off this one fetch.
+    genres: list[str]
+    studios: list[str]
+    # For the Statistics "queued time" figure: full runtime = episodes × duration_seconds
+    # (watchlist media are unwatched, so it's the time queued up, not watched).
+    episodes: Optional[int]
+    duration_seconds: Optional[int]
     created_at: datetime
     modified_at: datetime
 

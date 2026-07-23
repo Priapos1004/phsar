@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { WatchlistItem } from '$lib/types/api';
-import { filterByPriority, filterByTags, sortRows, toAnimeRows, toMediaRows, toPriorityBands } from '$lib/utils/watchlistStats';
+import { filterByPriority, filterByTags, sortRows, toAnimeRows, toMediaRows, toPriorityBands, watchlistSummary } from '$lib/utils/watchlistStats';
 
 function item(overrides: Partial<WatchlistItem>): WatchlistItem {
 	return {
@@ -24,6 +24,10 @@ function item(overrides: Partial<WatchlistItem>): WatchlistItem {
 		anime_season_name: null,
 		anime_season_year: null,
 		mal_id: overrides.mal_id ?? 1,
+		genres: overrides.genres ?? [],
+		studios: overrides.studios ?? [],
+		episodes: overrides.episodes ?? null,
+		duration_seconds: overrides.duration_seconds ?? null,
 		created_at: overrides.created_at ?? '2024-01-01T00:00:00Z',
 		modified_at: '2024-01-01T00:00:00Z',
 		...overrides,
@@ -187,5 +191,60 @@ describe('sortRows', () => {
 		// Same priority → title-ascending both ways (Alpha before Beta), not reversed by dir.
 		expect(sortRows(tied, 'priority', 'asc').map((r) => r.title)).toEqual(['Alpha', 'Beta']);
 		expect(sortRows(tied, 'priority', 'desc').map((r) => r.title)).toEqual(['Alpha', 'Beta']);
+	});
+});
+
+describe('watchlistSummary', () => {
+	const items = [
+		item({ media_uuid: 'm1', anime_uuid: 'A', genres: ['Action'], studios: ['X'] }),
+		item({ media_uuid: 'm2', anime_uuid: 'A', genres: ['Action', 'Drama'], studios: ['X'] }),
+		item({ media_uuid: 'm3', anime_uuid: 'B', genres: ['Comedy'], studios: ['Y'] }),
+	];
+	const rated = [
+		{ media_uuid: 'm1', anime_uuid: 'A' }, // on watchlist AND rated
+		{ media_uuid: 'm9', anime_uuid: 'A' }, // NOT on watchlist, but rated under A
+		{ media_uuid: 'm3', anime_uuid: 'B' }, // on watchlist AND rated
+	];
+
+	it('counts totals, already-rated, and continuations', () => {
+		const s = watchlistSummary(items, rated);
+		expect(s.totalMedia).toBe(3);
+		expect(s.totalAnime).toBe(2);
+		expect(s.alreadyRated).toBe(2); // m1, m3
+		// m1 + m2 (anime A has the other rated media m9); m3 is NOT (B's only rated is m3 itself).
+		expect(s.continuations).toBe(2);
+	});
+
+	it('counts genres/studios per distinct anime (a franchise counted once), ties by name', () => {
+		const s = watchlistSummary(items, rated);
+		// Action appears on m1 + m2 but both are anime A → count 1 (anime), main=2 media.
+		expect(s.topGenres.find((g) => g.name === 'Action')).toEqual({ name: 'Action', count: 1, main: 2, side: 0, seconds: 0 });
+		expect(s.topGenres.map((g) => g.name)).toEqual(['Action', 'Comedy', 'Drama']);
+		expect(s.topStudios.map((g) => g.name)).toEqual(['X', 'Y']);
+	});
+
+	it('sums queued runtime (episodes × duration) overall and per tag', () => {
+		const s = watchlistSummary(
+			[
+				item({ media_uuid: 'a', anime_uuid: 'A', genres: ['Action'], episodes: 12, duration_seconds: 1440 }), // 17280s
+				item({ media_uuid: 'b', anime_uuid: 'B', genres: ['Action'], episodes: 6, duration_seconds: 1200 }), // 7200s
+				item({ media_uuid: 'c', anime_uuid: 'C', genres: ['Comedy'], episodes: null, duration_seconds: 1440 }), // unknown → 0
+			],
+			[],
+		);
+		expect(s.totalQueuedSeconds).toBe(17280 + 7200);
+		expect(s.topGenres.find((g) => g.name === 'Action')?.seconds).toBe(17280 + 7200);
+		expect(s.topGenres.find((g) => g.name === 'Comedy')?.seconds).toBe(0);
+	});
+
+	it('respects the top-N limits', () => {
+		const many = ['g1', 'g2', 'g3', 'g4', 'g5', 'g6'].map((g, i) =>
+			item({ media_uuid: `x${i}`, anime_uuid: `AN${i}`, genres: [g], studios: [`s${i}`] }),
+		);
+		const s = watchlistSummary(many, []);
+		expect(s.topGenres).toHaveLength(5);
+		expect(s.topStudios).toHaveLength(3);
+		expect(s.alreadyRated).toBe(0);
+		expect(s.continuations).toBe(0);
 	});
 });

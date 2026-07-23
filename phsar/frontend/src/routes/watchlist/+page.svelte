@@ -9,11 +9,13 @@
 	import TabNav from '$lib/components/TabNav.svelte';
 	import WatchlistListTab from '$lib/components/watchlist/WatchlistListTab.svelte';
 	import WatchlistTagsTab from '$lib/components/watchlist/WatchlistTagsTab.svelte';
+	import WatchlistStatsTab from '$lib/components/watchlist/WatchlistStatsTab.svelte';
 	import Notice from '$lib/components/Notice.svelte';
 	import { Button } from '$lib/components/ui/button';
 
 	const TABS: { key: WatchlistTabKey; label: string }[] = [
 		{ key: 'watchlists', label: 'Watchlists' },
+		{ key: 'stats', label: 'Statistics' },
 		{ key: 'tags', label: 'Lists' },
 	];
 	const DEFAULT_TAB: WatchlistTabKey = 'watchlists';
@@ -78,6 +80,11 @@
 				<p class="text-white/70">Guest accounts can't create lists.</p>
 				<p class="text-white/50 text-sm">Sign in with your own account to organize your watchlists.</p>
 			</div>
+		{:else if active === 'stats'}
+			<div class="py-12 text-center space-y-3">
+				<p class="text-white/70">Guest accounts don't have watchlist statistics.</p>
+				<p class="text-white/50 text-sm">Sign in with your own account to track your watchlist.</p>
+			</div>
 		{:else}
 			<div class="py-12 text-center space-y-3">
 				<p class="text-white/70">Guest accounts can't save to a watchlist.</p>
@@ -111,6 +118,18 @@
 
 		{#if active === 'tags'}
 			<WatchlistTagsTab onEntriesChanged={load} />
+		{/if}
+
+		<!-- Statistics mounts on demand (like the ratings stats tab) so its lazy
+		     /ratings/scores fetch only fires when opened. -->
+		{#if active === 'stats'}
+			{#if loading}
+				<div class="text-white/60 py-12 text-center">Loading your watchlist…</div>
+			{:else if error}
+				<Notice>{error} <button class="underline" onclick={load}>Try again</button></Notice>
+			{:else if items}
+				<WatchlistStatsTab {items} />
+			{/if}
 		{/if}
 	{/if}
 </div>

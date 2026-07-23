@@ -1,7 +1,7 @@
 import { writable } from 'svelte/store';
 import type { WatchlistGrain, WatchlistSortKey, WatchlistView } from '$lib/utils/watchlistStats';
 
-export type WatchlistTabKey = 'watchlists' | 'tags';
+export type WatchlistTabKey = 'watchlists' | 'tags' | 'stats';
 
 export interface WatchlistFilterState {
 	view: WatchlistView;

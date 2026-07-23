@@ -7,6 +7,8 @@ from sqlalchemy.orm import selectinload
 from app.daos.base_dao import BaseDAO
 from app.models.anime import Anime
 from app.models.media import Media
+from app.models.media_genre import MediaGenre
+from app.models.media_studio import MediaStudio
 from app.models.tag import Tag
 from app.models.watchlist import Watchlist
 
@@ -81,14 +83,40 @@ class WatchlistDAO(BaseDAO[Watchlist]):
 
     async def get_all_for_items(self, db: AsyncSession, user_id: int) -> list[Watchlist]:
         """All of a user's watchlist entries with media → anime + tag eager-loaded,
-        for the overview page's one-fetch list + grid. Ordered modified_at desc."""
+        for the overview page's one-fetch list + grid. Ordered modified_at desc.
+        Also eager-loads genres + studios (only here, not the shared loader used by the
+        lookup methods) so the Statistics subtab derives top genres/studios off the same
+        fetch — mirrors RatingDAO.get_all_for_score_items."""
         stmt = (
             select(Watchlist)
             .filter_by(user_id=user_id)
-            .options(*self._eager_load_options())
+            .options(
+                *self._eager_load_options(),  # media→anime + tag (shared with the lookups)
+                selectinload(Watchlist.media).selectinload(Media.media_genre).selectinload(MediaGenre.genre),
+                selectinload(Watchlist.media).selectinload(Media.media_studio).selectinload(MediaStudio.studio),
+            )
             .order_by(Watchlist.modified_at.desc())
         )
         return (await db.execute(stmt)).scalars().all()
+
+    # --- All-users aggregates (admin Overview; no per-user breakdown) ---
+
+    async def count_total(self, db: AsyncSession) -> int:
+        """Total watchlist entries (media) across all users."""
+        return (await db.execute(select(func.count(Watchlist.id)))).scalar_one()
+
+    async def count_distinct_anime(self, db: AsyncSession) -> int:
+        """Distinct anime represented on any user's watchlist."""
+        stmt = select(func.count(func.distinct(Media.anime_id))).select_from(Watchlist).join(
+            Media, Watchlist.media_id == Media.id
+        )
+        return (await db.execute(stmt)).scalar_one()
+
+    async def count_distinct_users(self, db: AsyncSession) -> int:
+        """Users with at least one watchlist entry."""
+        return (
+            await db.execute(select(func.count(func.distinct(Watchlist.user_id))))
+        ).scalar_one()
 
     async def get_watchlisted_media_tags(self, db: AsyncSession, user_id: int) -> list:
         """(media_uuid, anime_uuid, tag_uuid, tag_name, tag_color) for every entry on the

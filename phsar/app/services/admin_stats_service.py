@@ -16,6 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.daos.anime_dao import AnimeDAO
 from app.daos.merge_candidate_dao import MergeCandidateDAO
 from app.daos.split_candidate_dao import SplitCandidateDAO
+from app.daos.tag_dao import TagDAO
+from app.daos.watchlist_dao import WatchlistDAO
 from app.models.anime import Anime
 from app.models.job import Job, JobKind, JobStatus
 from app.models.media import Media
@@ -28,11 +30,14 @@ from app.schemas.admin_schema import (
     JobKindStats,
     JobsStats,
     SweepTierBreakdown,
+    WatchlistStats,
 )
 
 anime_dao = AnimeDAO()
 merge_candidate_dao = MergeCandidateDAO()
 split_candidate_dao = SplitCandidateDAO()
+watchlist_dao = WatchlistDAO()
+tag_dao = TagDAO()
 
 
 async def _catalog_stats(db: AsyncSession, cutoff: datetime) -> CatalogStats:
@@ -152,6 +157,24 @@ async def _media_sweep_tier_breakdown(db: AsyncSession) -> SweepTierBreakdown:
     return SweepTierBreakdown(**counts)
 
 
+async def _watchlist_stats(db: AsyncSession) -> WatchlistStats:
+    total_entries = await watchlist_dao.count_total(db)
+    total_anime = await watchlist_dao.count_distinct_anime(db)
+    users_with_entries = await watchlist_dao.count_distinct_users(db)
+    total_custom_lists = await tag_dao.count_custom_total(db)
+    # Averages over active watchlist users only (0 when nobody has one), rounded to 1 dp.
+    # The `if users_with_entries` guard is the div-by-zero protection, so the division
+    # runs only when the denominator is non-zero.
+    return WatchlistStats(
+        total_entries=total_entries,
+        total_anime=total_anime,
+        users_with_entries=users_with_entries,
+        avg_entries_per_user=round(total_entries / users_with_entries, 1) if users_with_entries else 0.0,
+        total_custom_lists=total_custom_lists,
+        avg_custom_lists_per_user=round(total_custom_lists / users_with_entries, 1) if users_with_entries else 0.0,
+    )
+
+
 async def get_overview_stats(db: AsyncSession) -> AdminOverviewStats:
     cutoff = datetime.now(timezone.utc) - timedelta(days=7)
     # Sequential awaits — AsyncSession can't multiplex.
@@ -159,6 +182,7 @@ async def get_overview_stats(db: AsyncSession) -> AdminOverviewStats:
         catalog=await _catalog_stats(db, cutoff),
         jobs_7d=await _jobs_stats(db, cutoff),
         activity_7d=await _activity_stats(db, cutoff),
+        watchlist=await _watchlist_stats(db),
         sweep_tiers=await _sweep_tier_breakdown(db),
         media_sweep_tiers=await _media_sweep_tier_breakdown(db),
     )

@@ -3,14 +3,14 @@
 	import { ArrowDown, ArrowUp } from 'lucide-svelte';
 	import EChart from '$lib/components/EChart.svelte';
 	import Tooltip from '$lib/components/Tooltip.svelte';
+	import TagBarLabel from '$lib/components/TagBarLabel.svelte';
 	import SegmentedControl from '$lib/components/SegmentedControl.svelte';
 	import * as Select from '$lib/components/ui/select';
 	import { scoreColor, getThemedChartColorPalette } from '$lib/utils/chartColors';
 	import { tagMetrics, type TagDim, type TagMetric } from '$lib/utils/ratingStats';
 	import { chartTooltipStyle } from '$lib/utils/chartTheme';
-	import { searchByStudio } from '$lib/utils/navigation';
 	import { formatDecimalDigits, formatDuration, escapeHtml } from '$lib/utils/formatString';
-	import { genreDescriptions, ensureGenresLoaded } from '$lib/stores/genres';
+	import { ensureGenresLoaded } from '$lib/stores/genres';
 	import type { RatingScoreItem } from '$lib/types/api';
 
 	interface Props {
@@ -174,17 +174,7 @@
 			<div class="shrink-0 w-36" style="padding-top:{TOP_PAD}px;padding-bottom:{AXIS_PAD}px">
 				{#each labels as t (t.tag)}
 					<div class="flex items-center justify-end min-w-0 text-xs" style="height:{ROW}px">
-						{#if dim === 'studios'}
-							<button
-								onclick={() => searchByStudio(t.tag)}
-								class="truncate min-w-0 text-card-foreground hover:text-primary hover:underline transition-colors"
-								title={t.tag}
-							>{t.tag}</button>
-						{:else if $genreDescriptions.get(t.tag.toLowerCase())}
-							<Tooltip text={$genreDescriptions.get(t.tag.toLowerCase()) ?? ''} class="truncate min-w-0 text-card-foreground">{t.tag}</Tooltip>
-						{:else}
-							<span class="truncate min-w-0 text-card-foreground" title={t.tag}>{t.tag}</span>
-						{/if}
+						<TagBarLabel name={t.tag} kind={dim === 'studios' ? 'studio' : 'genre'} />
 					</div>
 				{/each}
 			</div>

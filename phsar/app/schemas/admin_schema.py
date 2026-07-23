@@ -238,10 +238,25 @@ class SweepTierBreakdown(BaseModel):
     long_cycle: int
 
 
+class WatchlistStats(BaseModel):
+    """All-users watchlist aggregates for the Overview tab. Aggregate only — no
+    per-user breakdown (same privacy posture as the rest of the tab). Averages are
+    over `users_with_entries` (people who actually use the watchlist), not the whole
+    user base, so they read as "per active watchlist user"; 0 when nobody has one.
+    `total_custom_lists` excludes the immutable default list."""
+    total_entries: int
+    total_anime: int
+    users_with_entries: int
+    avg_entries_per_user: float
+    total_custom_lists: int
+    avg_custom_lists_per_user: float
+
+
 class AdminOverviewStats(BaseModel):
     catalog: CatalogStats
     jobs_7d: JobsStats
     activity_7d: ActivityStats
+    watchlist: WatchlistStats
     # `sweep_tiers` is the anime-membership breakdown (every anime's cycle
     # position); `media_sweep_tiers` is the same cascade at media grain
     # (v0.14.8 — refresh selection is now media-level). The Overview card

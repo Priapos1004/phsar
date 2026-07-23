@@ -394,6 +394,10 @@ export interface WatchlistItem {
 	anime_season_name: string | null;
 	anime_season_year: number | null;
 	mal_id: number;
+	genres: string[];
+	studios: string[];
+	episodes: number | null;
+	duration_seconds: number | null;
 	created_at: string;
 	modified_at: string;
 }
@@ -773,6 +777,17 @@ export interface AdminActivityStats {
 	scrapes_submitted: number;
 }
 
+// All-users watchlist aggregates (no per-user breakdown). Averages are over
+// users_with_entries ("per active watchlist user"), 0 when nobody has one.
+export interface AdminWatchlistStats {
+	total_entries: number;
+	total_anime: number;
+	users_with_entries: number;
+	avg_entries_per_user: number;
+	total_custom_lists: number;
+	avg_custom_lists_per_user: number;
+}
+
 // Mutually-exclusive cycle-membership bucket counts in priority cascade
 // — sum equals total anime count, so the card can render each bucket as a
 // share. Membership (not due-ness): counts stay stable across sweeps.
@@ -790,6 +805,7 @@ export interface AdminOverviewStats {
 	catalog: AdminCatalogStats;
 	jobs_7d: AdminJobsStats;
 	activity_7d: AdminActivityStats;
+	watchlist: AdminWatchlistStats;
 	// `sweep_tiers` = anime cycle-membership; `media_sweep_tiers` = the same
 	// cascade at media grain (v0.14.8, refresh selection is media-level).
 	// The Overview SweepTiersCard toggles between them.
