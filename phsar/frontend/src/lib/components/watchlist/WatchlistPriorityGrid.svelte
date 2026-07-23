@@ -5,13 +5,14 @@
 
 	interface Props {
 		rows: WatchlistRow[];
-		bandDir: 'asc' | 'desc';
 		grain: WatchlistGrain; // labels the per-band count ("N anime" vs "N media")
 	}
 
-	let { rows, bandDir, grain }: Props = $props();
+	let { rows, grain }: Props = $props();
 
-	let bands = $derived(toPriorityBands(rows, bandDir));
+	// Bands always run most-urgent first (High on top); priority is now a filter, not an
+	// order toggle (see WatchlistFilterBar).
+	let bands = $derived(toPriorityBands(rows, 'desc'));
 </script>
 
 <div class="space-y-8">

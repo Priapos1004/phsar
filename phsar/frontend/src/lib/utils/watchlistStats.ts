@@ -154,6 +154,15 @@ function byChronoKey(
 	return a.mal_id - b.mal_id;
 }
 
+/** Keep only rows whose priority band is in the selected set. Empty = all (a union,
+ *  mirroring the list filter). Applied AFTER row normalization so it matches the band
+ *  each row displays in — the anime grain filters on the anime's most-urgent priority. */
+export function filterByPriority(rows: WatchlistRow[], priorities: number[]): WatchlistRow[] {
+	if (priorities.length === 0) return rows;
+	const set = new Set(priorities);
+	return rows.filter((r) => set.has(r.priority));
+}
+
 /** Within-band order + the stable, direction-independent sort tiebreak: rows by title ascending. */
 const byTitle = (a: WatchlistRow, b: WatchlistRow) => a.title.localeCompare(b.title);
 

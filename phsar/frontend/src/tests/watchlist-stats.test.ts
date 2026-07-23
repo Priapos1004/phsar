@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { WatchlistItem } from '$lib/types/api';
-import { filterByTags, sortRows, toAnimeRows, toMediaRows, toPriorityBands } from '$lib/utils/watchlistStats';
+import { filterByPriority, filterByTags, sortRows, toAnimeRows, toMediaRows, toPriorityBands } from '$lib/utils/watchlistStats';
 
 function item(overrides: Partial<WatchlistItem>): WatchlistItem {
 	return {
@@ -41,6 +41,18 @@ describe('filterByTags', () => {
 
 	it('returns the union of selected tags', () => {
 		expect(filterByTags(items, ['a', 'c']).map((i) => i.tag_uuid).sort()).toEqual(['a', 'c']);
+	});
+});
+
+describe('filterByPriority', () => {
+	const rows = toMediaRows([item({ priority: 1 }), item({ priority: 2 }), item({ priority: 3 })], LANG);
+
+	it('returns all when no priorities selected', () => {
+		expect(filterByPriority(rows, [])).toHaveLength(3);
+	});
+
+	it('returns the union of selected priority bands', () => {
+		expect(filterByPriority(rows, [1, 3]).map((r) => r.priority).sort()).toEqual([1, 3]);
 	});
 });
 
