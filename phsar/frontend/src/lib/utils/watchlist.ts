@@ -11,6 +11,13 @@ export function priorityLabel(p: number): string {
 	return PRIORITY_OPTIONS.find((o) => o.value === p)?.label ?? 'Low';
 }
 
+// Join an anime's per-media notes for the grid/table hover tooltip: one note per line with a
+// divider rule between them. Single-sourced so the grid card + table render the same tooltip
+// (both pair it with `contentClass="whitespace-pre-line"` so the newlines actually break).
+export function joinNoteTexts(texts: string[]): string {
+	return texts.join('\n──────────\n');
+}
+
 // A `background` value for a set of tag colors: a single solid color, or — for an anime
 // spanning several lists — a HARD-STOP gradient (crisp equal bands, not a fuzzy blend) so
 // each list's color stays identifiable.

@@ -6,6 +6,7 @@ import { buildDetailHref } from '$lib/utils/navigation';
 import { formatRelationType, resolveTitle } from '$lib/utils/formatString';
 import { priorityLabel } from '$lib/utils/watchlist';
 import { MAIN_RELATIONS, mainSideLabel } from '$lib/utils/relations';
+import { SEASON_ORDER } from '$lib/utils/getSeason';
 import type { WatchlistItem } from '$lib/types/api';
 
 export type WatchlistView = 'grid' | 'table';
@@ -30,6 +31,10 @@ export interface WatchlistRow {
 	tagLabel: string; // tag name (media) or "N lists" (anime) — the color tooltip
 	priority: number; // media priority, or the anime's most-urgent (min) media priority
 	note: string | null; // the note text — media grain only
+	/** Notes of the anime's watchlisted media, in the anime-page media-table order
+	 *  (chronological). Anime grain only (media grain: []) — the hover tooltip on the
+	 *  grid card + table Note column shows these instead of a bare count. */
+	noteTexts: string[];
 	/** Count of watchlisted media carrying a note in this row's scope: 0/1 for a media
 	 *  row, the anime's tally for an anime row. Drives the table's Note column. */
 	noteCount: number;
@@ -66,6 +71,7 @@ export function toMediaRows(items: WatchlistItem[], lang: NameLanguage): Watchli
 		tagLabel: i.tag_name,
 		priority: i.priority,
 		note: i.note,
+		noteTexts: [], // media grain uses `note`; noteTexts is the anime-grain aggregate
 		noteCount: i.note ? 1 : 0,
 		mediaCount: 1,
 		createdAt: i.created_at,
@@ -75,6 +81,14 @@ export function toMediaRows(items: WatchlistItem[], lang: NameLanguage): Watchli
 /** One row per anime, aggregating its watchlisted media: most-urgent (min) priority,
  *  distinct tag colors (→ gradient when >1), and the media count. */
 export function toAnimeRows(items: WatchlistItem[], lang: NameLanguage): WatchlistRow[] {
+	// A noted media, carrying the fields the anime-page media table sorts by so the
+	// tooltip lists notes in the same (chronological) order the user sees them there.
+	interface NotedMedia {
+		note: string;
+		year: number | null;
+		season: string | null;
+		mal_id: number;
+	}
 	interface Acc {
 		item: WatchlistItem;
 		priority: number;
@@ -83,14 +97,14 @@ export function toAnimeRows(items: WatchlistItem[], lang: NameLanguage): Watchli
 		count: number;
 		main: number;
 		side: number;
-		notes: number;
+		noted: NotedMedia[];
 		earliest: string;
 	}
 	const byAnime = new Map<string, Acc>();
 	for (const i of items) {
 		let a = byAnime.get(i.anime_uuid);
 		if (!a) {
-			a = { item: i, priority: i.priority, colors: [], seenTags: new Set(), count: 0, main: 0, side: 0, notes: 0, earliest: i.created_at };
+			a = { item: i, priority: i.priority, colors: [], seenTags: new Set(), count: 0, main: 0, side: 0, noted: [], earliest: i.created_at };
 			byAnime.set(i.anime_uuid, a);
 		}
 		a.priority = Math.min(a.priority, i.priority);
@@ -101,10 +115,10 @@ export function toAnimeRows(items: WatchlistItem[], lang: NameLanguage): Watchli
 		a.count++;
 		if (MAIN_RELATIONS.has(i.relation_type)) a.main++;
 		else a.side++;
-		if (i.note) a.notes++;
+		if (i.note) a.noted.push({ note: i.note, year: i.anime_season_year, season: i.anime_season_name, mal_id: i.mal_id });
 		if (i.created_at < a.earliest) a.earliest = i.created_at;
 	}
-	return [...byAnime.values()].map(({ item: i, priority, colors, count, main, side, notes, earliest }) => ({
+	return [...byAnime.values()].map(({ item: i, priority, colors, count, main, side, noted, earliest }) => ({
 		key: i.anime_uuid,
 		href: buildDetailHref('anime', i.anime_uuid, { from: 'watchlist' }),
 		coverImage: i.anime_cover_image,
@@ -118,10 +132,26 @@ export function toAnimeRows(items: WatchlistItem[], lang: NameLanguage): Watchli
 		tagLabel: colors.length === 1 ? i.tag_name : `${colors.length} lists`,
 		priority,
 		note: null,
-		noteCount: notes,
+		noteTexts: noted.slice().sort(byChronoKey).map((n) => n.note),
+		noteCount: noted.length,
 		mediaCount: count,
 		createdAt: earliest,
 	}));
+}
+
+/** Order noted media the way the anime-page media table does: (year, season, mal_id) —
+ *  the client mirror of the backend `chronological_media_key`. */
+function byChronoKey(
+	a: { year: number | null; season: string | null; mal_id: number },
+	b: { year: number | null; season: string | null; mal_id: number }
+): number {
+	const ay = a.year ?? 9999,
+		by = b.year ?? 9999;
+	if (ay !== by) return ay - by;
+	const as = SEASON_ORDER[a.season ?? ''] ?? 0,
+		bs = SEASON_ORDER[b.season ?? ''] ?? 0;
+	if (as !== bs) return as - bs;
+	return a.mal_id - b.mal_id;
 }
 
 /** Within-band order + the stable, direction-independent sort tiebreak: rows by title ascending. */

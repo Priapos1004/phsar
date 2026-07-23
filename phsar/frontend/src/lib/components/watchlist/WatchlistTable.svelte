@@ -2,7 +2,7 @@
 	import { ArrowUp, ArrowDown, StickyNote } from 'lucide-svelte';
 	import { formatShortDate } from '$lib/utils/formatString';
 	import { rowClickNavigate } from '$lib/utils/navigation';
-	import { priorityLabel, PRIORITY_ACCENT, tagGradient } from '$lib/utils/watchlist';
+	import { priorityLabel, PRIORITY_ACCENT, tagGradient, joinNoteTexts } from '$lib/utils/watchlist';
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import * as cls from '$lib/styles/classes';
 	import type { WatchlistRow, WatchlistSortKey } from '$lib/utils/watchlistStats';
@@ -69,7 +69,7 @@
 								<StickyNote class="size-4 text-muted-foreground inline-block" />
 							</Tooltip>
 						{:else if row.noteCount > 0}
-							<Tooltip text={`${row.noteCount} media with notes`}>
+							<Tooltip text={joinNoteTexts(row.noteTexts)} contentClass="whitespace-pre-line">
 								<span class="inline-flex items-center gap-1 text-xs text-muted-foreground"><StickyNote class="size-3.5" />{row.noteCount}</span>
 							</Tooltip>
 						{:else}

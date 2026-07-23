@@ -4,7 +4,7 @@
 	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
 	import { StickyNote } from 'lucide-svelte';
 	import { visibleMediaSet } from '$lib/stores/spoilerVisibility';
-	import { tagGradient } from '$lib/utils/watchlist';
+	import { tagGradient, joinNoteTexts } from '$lib/utils/watchlist';
 	import type { WatchlistRow } from '$lib/utils/watchlistStats';
 
 	interface Props {
@@ -52,9 +52,9 @@
 					</Tooltip>
 				</div>
 			{:else if row.noteCount > 0}
-				<!-- Anime grain: how many of its watchlisted media carry a note -->
+				<!-- Anime grain: hover shows each noted media's note (media-table order) -->
 				<div class="absolute top-1.5 right-1.5">
-					<Tooltip text={`${row.noteCount} media with notes`}>
+					<Tooltip text={joinNoteTexts(row.noteTexts)} contentClass="whitespace-pre-line">
 						<span class="flex items-center gap-0.5 rounded-md bg-black/45 px-1.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">
 							<StickyNote class="size-3" />{row.noteCount}
 						</span>

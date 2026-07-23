@@ -79,7 +79,7 @@ describe('toAnimeRows', () => {
 		expect(a1.mainSide).toBe('1 main · 1 side');
 	});
 
-	it("counts how many of an anime's media carry a note", () => {
+	it("counts how many of an anime's media carry a note and carries their texts", () => {
 		const withNotes = [
 			item({ anime_uuid: 'x', note: 'a' }),
 			item({ anime_uuid: 'x', note: null }),
@@ -87,7 +87,23 @@ describe('toAnimeRows', () => {
 		];
 		const x = toAnimeRows(withNotes, LANG).find((r) => r.key === 'x')!;
 		expect(x.noteCount).toBe(2);
-		expect(x.note).toBeNull(); // the text isn't carried at anime grain
+		expect(x.note).toBeNull(); // the single-note field isn't used at anime grain
+		expect(x.noteTexts).toEqual(['a', 'b']); // texts are carried for the tooltip
+	});
+
+	it('orders noteTexts chronologically (year, season, mal_id) like the media table', () => {
+		const notes = [
+			item({ anime_uuid: 'x', note: 'fall-2021', anime_season_name: 'Fall', anime_season_year: 2021, mal_id: 5 }),
+			item({ anime_uuid: 'x', note: 'winter-2020', anime_season_name: 'Winter', anime_season_year: 2020, mal_id: 9 }),
+			item({ anime_uuid: 'x', note: 'spring-2020', anime_season_name: 'Spring', anime_season_year: 2020, mal_id: 3 }),
+		];
+		const x = toAnimeRows(notes, LANG).find((r) => r.key === 'x')!;
+		expect(x.noteTexts).toEqual(['winter-2020', 'spring-2020', 'fall-2021']);
+	});
+
+	it('media grain leaves noteTexts empty (uses the note field instead)', () => {
+		const rows = toMediaRows([item({ note: 'x' })], LANG);
+		expect(rows[0].noteTexts).toEqual([]);
 	});
 
 	it('uses the most-urgent (min) priority and distinct tag colors (gradient source)', () => {
