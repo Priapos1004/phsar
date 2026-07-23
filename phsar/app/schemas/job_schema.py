@@ -18,7 +18,10 @@ class ScrapeJobRequest(BaseModel):
     `mal_id` is opt-in: when set, the BFS skips the fuzzy q= lookup and
     seeds directly from the given mal_id. The seasonal sweep uses this
     so children don't pull unrelated top-3 matches into the catalog;
-    user-facing callers can still submit `{query}` only.
+    user-facing callers can still submit `{query}` only. A bare 5–6 digit
+    `query` is also treated as a direct mal_id at the router (MAL's fuzzy
+    search can't surface some shows by title) — see `_MAL_ID_QUERY` in the
+    /jobs router.
     """
     query: str = Field(..., min_length=4, max_length=200)
     mal_id: int | None = Field(default=None, gt=0)

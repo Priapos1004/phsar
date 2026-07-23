@@ -10,6 +10,7 @@ doesn't trip on data left over from prior runs of the real app against
 this DB.
 """
 
+import random
 import uuid
 from uuid import UUID
 
@@ -217,6 +218,53 @@ async def test_enqueue_scrape_rejects_non_positive_mal_id(client, user_auth_head
         headers=user_auth_headers,
     )
     assert resp.status_code == 422
+
+
+async def test_enqueue_scrape_numeric_query_routes_to_seed_path(client, user_auth_headers):
+    """A bare 5-digit query is a direct MAL id — MAL's fuzzy search can't
+    surface some shows by ANY title (e.g. Zenshu, id 58502) — so the router
+    injects mal_id and the dispatcher takes the seed path."""
+    mal_id = random.randint(10000, 99999)
+    query = str(mal_id)
+    resp = await client.post("/jobs/scrape", json={"query": query}, headers=user_auth_headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["payload"] == {"query": query, "mal_id": mal_id}
+
+
+async def test_enqueue_scrape_six_digit_query_routes_to_seed_path(client, user_auth_headers):
+    """6 digits too — future-proofs past MAL id 99999."""
+    mal_id = random.randint(100000, 999999)
+    query = str(mal_id)
+    resp = await client.post("/jobs/scrape", json={"query": query}, headers=user_auth_headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["payload"] == {"query": query, "mal_id": mal_id}
+
+
+async def test_enqueue_scrape_text_query_stays_title_search(client, user_auth_headers):
+    """A normal title query is NOT treated as an id — no mal_id injected."""
+    query = _q()
+    resp = await client.post("/jobs/scrape", json={"query": query}, headers=user_auth_headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["payload"] == {"query": query}
+
+
+async def test_enqueue_scrape_four_digit_query_stays_title_search(client, user_auth_headers):
+    """4 digits is below the id window: no anime is titled a pure number, but
+    older ids are reliably found by title search, so it stays a title query."""
+    query = str(random.randint(1000, 9999))
+    resp = await client.post("/jobs/scrape", json={"query": query}, headers=user_auth_headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["payload"] == {"query": query}
+
+
+async def test_enqueue_scrape_explicit_mal_id_overrides_numeric_query(client, user_auth_headers):
+    """An explicit client mal_id wins over the numeric-query inference."""
+    query = str(random.randint(10000, 99999))
+    resp = await client.post(
+        "/jobs/scrape", json={"query": query, "mal_id": 12345}, headers=user_auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["payload"] == {"query": query, "mal_id": 12345}
 
 
 async def test_list_my_jobs_returns_only_my_jobs(client, user_auth_headers):

@@ -108,7 +108,7 @@ FastAPI endpoint definitions. Each router maps to an API prefix.
 - **`/media`** — `/media/{uuid}` and `/media/anime/{uuid}`
 - **`/users`** — settings CRUD, data export, and account deletion
 - **`/jobs`** — user-triggered background work
-  - `POST /jobs/scrape` enqueues a `user_scrape` job
+  - `POST /jobs/scrape` enqueues a `user_scrape` job. A bare 5–6 digit `query` is treated as a direct MAL id and routed to the seed path (`payload["mal_id"]`, the same machinery the seasonal sweep uses) — MAL's fuzzy `q=` search can't surface some shows by any title (e.g. "Zenshu"/58502), and no anime is titled a pure number; see `_MAL_ID_QUERY` in the /jobs router
   - `GET /jobs/mine` lists the current user's active + recently-finished jobs
   - `GET /jobs/{uuid}` single-job poll for owner or admin
 - **`/library`** — `GET /library/recent` for the `/library/add` page's recent-additions panel
