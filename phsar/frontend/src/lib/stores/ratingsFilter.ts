@@ -3,9 +3,11 @@ import type { SortKey } from '$lib/utils/ratingStats';
 import type { StatsSection } from '$lib/components/ratings/types';
 
 export type RatingsView = 'grid' | 'table';
+export type RatingsGrain = 'anime' | 'media';
 
 export interface RatingsFilterState {
 	view: RatingsView;
+	grain: RatingsGrain; // list rows: one per anime (default) or one per rated media
 	sort: SortKey; // table column sort
 	sortDir: 'asc' | 'desc';
 	bandDir: 'asc' | 'desc'; // grid score-band section order (desc = 10 on top)
@@ -18,6 +20,7 @@ export interface RatingsFilterState {
 
 export const DEFAULT_RATINGS_FILTER: RatingsFilterState = {
 	view: 'grid',
+	grain: 'anime',
 	sort: 'score',
 	sortDir: 'desc',
 	bandDir: 'desc',
@@ -39,5 +42,5 @@ export const ratingsFilter = writable<RatingsFilterState>({ ...DEFAULT_RATINGS_F
 // on the same grid/table view and the same stats section the user was browsing. (The
 // module store survives the route round-trip; a hard refresh re-initialises to default.)
 export function clearRatingsFilter(): void {
-	ratingsFilter.update((f) => ({ ...DEFAULT_RATINGS_FILTER, view: f.view, statsSection: f.statsSection }));
+	ratingsFilter.update((f) => ({ ...DEFAULT_RATINGS_FILTER, view: f.view, grain: f.grain, statsSection: f.statsSection }));
 }

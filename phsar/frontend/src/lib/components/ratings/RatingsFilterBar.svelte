@@ -6,6 +6,7 @@
 	import TagSelect from '$lib/components/TagSelect.svelte';
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import SegmentedControl from '$lib/components/SegmentedControl.svelte';
+	import GrainToggle from '$lib/components/GrainToggle.svelte';
 	import { ratingsFilter } from '$lib/stores/ratingsFilter';
 	import { AGE_RATING_LABELS } from '$lib/utils/formatString';
 	import * as cls from '$lib/styles/classes';
@@ -48,8 +49,8 @@
      which creates its own stacking context via backdrop-blur and would otherwise
      paint over the dropdown. -->
 <div class="space-y-3 mb-4 relative z-20">
-	<!-- View selection -->
-	<div class="flex gap-2">
+	<!-- View selection (left) + grain toggle (right), mirroring the watchlist bar. -->
+	<div class="flex flex-wrap items-center gap-2">
 		<button
 			class="px-3.5 py-1.5 rounded-full text-sm border transition-colors inline-flex items-center gap-1.5 {$ratingsFilter.view === 'grid' ? VIEW_ON : VIEW_OFF}"
 			onclick={() => ratingsFilter.update((f) => ({ ...f, view: 'grid' }))}
@@ -62,6 +63,11 @@
 		>
 			<TableIcon class="size-3.5" /> Table
 		</button>
+
+		<div class="flex-grow"></div>
+
+		<!-- Grain: aggregate by anime (default) or show every rated media entry. -->
+		<GrainToggle grain={$ratingsFilter.grain} onSelect={(g) => ratingsFilter.update((f) => ({ ...f, grain: g }))} />
 	</div>
 
 	<!-- Filter / order card. overflow-visible so the genre/season dropdowns can extend

@@ -52,14 +52,16 @@
 			</tr>
 		</thead>
 		<tbody>
-			{#each rows as row (row.anime_uuid)}
+			{#each rows as row (row.media_uuid ?? row.anime_uuid)}
 				{@const title = resolveTitle(row.title, row.name_eng, row.name_jap, nameLanguage)}
-				{@const href = buildDetailHref('anime', row.anime_uuid, { from: 'ratings' })}
+				{@const href = row.media_uuid
+					? buildDetailHref('media', row.media_uuid, { from: 'ratings' })
+					: buildDetailHref('anime', row.anime_uuid, { from: 'ratings' })}
 				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 				<tr class="group border-b border-border/60 last:border-0 hover:bg-muted/40 transition-colors cursor-pointer" onclick={(e) => rowClickNavigate(e, href)}>
 					<td class="px-3 py-2">
 						<a {href} class="text-card-foreground group-hover:text-primary font-medium">{title}</a>
-						<span class="ml-1.5 text-xs text-muted-foreground">({mainSideLabel(row.mainCount, row.sideCount)})</span>
+						<span class="ml-1.5 text-xs text-muted-foreground">({row.relationLabel ?? mainSideLabel(row.mainCount, row.sideCount)})</span>
 					</td>
 					<td class="px-3 py-2 text-right font-bold" style="color: {scoreColor(row.userScore)}">
 						{formatDecimalDigits(row.userScore, scoreDecimals)}

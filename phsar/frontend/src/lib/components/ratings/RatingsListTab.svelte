@@ -5,7 +5,7 @@
 	import { ratingsFilter } from '$lib/stores/ratingsFilter';
 	import { decimalPlaces } from '$lib/utils/formatString';
 	import { SEASON_ORDER } from '$lib/utils/getSeason';
-	import { filterItems, groupByAnime, sortAnimeRows, seasonLabel, type SortKey } from '$lib/utils/ratingStats';
+	import { filterItems, groupByAnime, toMediaRows, sortAnimeRows, seasonLabel, type SortKey } from '$lib/utils/ratingStats';
 	import type { RatingScoreItem } from '$lib/types/api';
 
 	interface Props {
@@ -35,16 +35,18 @@
 
 	let scoreDecimals = $derived(Math.max(1, decimalPlaces(ratingStep)));
 
-	let grouped = $derived(
-		groupByAnime(
-			filterItems(items, {
-				genres: $ratingsFilter.genres,
-				genreMode: $ratingsFilter.genreMode,
-				ageRatings: $ratingsFilter.ageRatings,
-				seasons: $ratingsFilter.seasons,
-			}),
-		),
+	let filtered = $derived(
+		filterItems(items, {
+			genres: $ratingsFilter.genres,
+			genreMode: $ratingsFilter.genreMode,
+			ageRatings: $ratingsFilter.ageRatings,
+			seasons: $ratingsFilter.seasons,
+		}),
 	);
+	// Anime grain (default) aggregates each anime's rated media into one row;
+	// media grain shows one row per rated media. Same row shape, so the grid /
+	// table / card render both unchanged (see toMediaRows).
+	let grouped = $derived($ratingsFilter.grain === 'media' ? toMediaRows(filtered) : groupByAnime(filtered));
 	// The table sorts by the active column; the grid's within-band order is fixed
 	// (rating desc, then title asc — the stable tiebreak in sortAnimeRows), and the
 	// band-direction arrow only flips the section order (see RatingsBandGrid). Only the
@@ -70,5 +72,5 @@
 {:else if $ratingsFilter.view === 'table'}
 	<RatingsTable {rows} {nameLanguage} {scoreDecimals} sort={$ratingsFilter.sort} sortDir={$ratingsFilter.sortDir} {onSort} />
 {:else}
-	<RatingsBandGrid {rows} {nameLanguage} {scoreDecimals} bandDir={$ratingsFilter.bandDir} />
+	<RatingsBandGrid {rows} {nameLanguage} {scoreDecimals} bandDir={$ratingsFilter.bandDir} grain={$ratingsFilter.grain} />
 {/if}
