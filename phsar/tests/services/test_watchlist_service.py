@@ -211,6 +211,25 @@ async def test_bulk_upsert_note_on_first_main_invariant_to_order(db_session):
     assert by_uuid[earlier_side.uuid].note is None
 
 
+async def test_bulk_upsert_dedupes_duplicate_media(db_session):
+    """A media_uuid repeated within one bulk request yields a single entry, not a
+    unique_user_media violation (the schema validator counts length, it doesn't de-dupe)."""
+    user, default, media = await _setup(db_session)
+    out = await watchlist_service.bulk_upsert_watchlist(
+        db_session, user.id,
+        WatchlistBulkCreate(
+            media_uuids=[media[0].uuid, media[0].uuid], tag_uuid=default.uuid, priority=2,
+        ),
+    )
+    assert len(out) == 1
+    assert out[0].media_uuid == media[0].uuid
+    assert await _watchlisted_uuids(db_session, user.id) == {media[0].uuid}
+    # NOTE: the cross-request concurrent-insert recovery branch (rollback → re-apply as
+    # update) isn't unit-tested — the single-session fixture joins one transaction, so a
+    # service-level rollback unwinds the whole test. Same limitation leaves tag_service's
+    # _commit_or_raise_duplicate IntegrityError backstop untested; both are verified by review.
+
+
 async def test_bulk_upsert_updates_existing(db_session):
     user, default, media = await _setup(db_session, media_count=2)
     await watchlist_service.upsert_watchlist(
