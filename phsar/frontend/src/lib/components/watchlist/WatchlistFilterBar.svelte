@@ -6,6 +6,7 @@
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { watchlistFilter } from '$lib/stores/watchlistFilter';
 	import { tags } from '$lib/stores/tags';
+	import { contrastText } from '$lib/utils/color';
 	import * as cls from '$lib/styles/classes';
 
 	// Prune deleted tags from the selection so a filter that pointed at a now-deleted
@@ -90,12 +91,15 @@
 				<div class="bg-card/80 backdrop-blur border border-input rounded-xl px-2 min-h-[48px] flex flex-wrap items-center gap-1.5 py-1.5">
 					{#each $tags as tag (tag.uuid)}
 						{@const on = $watchlistFilter.tagUuids.includes(tag.uuid)}
+						{@const contrast = contrastText(tag.color)}
 						<button
-							class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-1.5 border {on ? 'text-white shadow-sm' : 'bg-muted text-card-foreground/70 border-transparent hover:bg-muted/70'}"
-							style={on ? `background:${tag.color}; border-color:${tag.color}` : ''}
+							class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-1.5 border {on ? 'shadow-sm' : 'bg-muted text-card-foreground/70 border-transparent hover:bg-muted/70'}"
+							style={on ? `background:${tag.color}; border-color:${tag.color}; color:${contrast}` : ''}
 							onclick={() => toggleTag(tag.uuid)}
 						>
-							<span class="size-2.5 rounded-full {on ? 'bg-white/80' : ''}" style={on ? '' : `background:${tag.color}`}></span>
+							<!-- Selected: dot uses the pill's contrast color so a white/yellow list stays
+								 visible; unselected: the list color with a faint border. -->
+							<span class="size-2.5 rounded-full {on ? '' : 'border border-border'}" style="background:{on ? contrast : tag.color}"></span>
 							{tag.name}
 						</button>
 					{/each}

@@ -182,7 +182,7 @@
 						</div>
 					{:else}
 						<div class="flex items-center gap-3">
-							<span class="size-4 rounded-full shrink-0" style="background:{tag.color}"></span>
+							<span class="size-4 rounded-full shrink-0 border border-border" style="background:{tag.color}"></span>
 							<span class="font-medium text-card-foreground">{tag.name}</span>
 							{#if tag.is_default}<Badge variant="secondary" class="text-[10px]">Default</Badge>{/if}
 							<span class="text-xs text-muted-foreground">{countLabel(tag)}</span>

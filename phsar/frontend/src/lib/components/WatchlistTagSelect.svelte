@@ -18,18 +18,20 @@
 	<Select.Trigger class="w-full bg-card">
 		{#if selectedTag}
 			<span class="flex items-center gap-2">
-				<span class="size-3 rounded-full" style="background:{selectedTag.color}"></span>
+				<!-- Faint border so a white/light list color stays visible on the card. -->
+				<span class="size-3 rounded-full border border-border" style="background:{selectedTag.color}"></span>
 				{selectedTag.name}
 			</span>
 		{:else}
 			<span class="text-muted-foreground">Select a list</span>
 		{/if}
 	</Select.Trigger>
-	<Select.Content>
+	<!-- Cap at ~5 rows and scroll the rest (the primitive already sets overflow-y-auto). -->
+	<Select.Content class="max-h-48">
 		{#each $tags as tag}
 			<Select.Item value={tag.uuid}>
 				<span class="flex items-center gap-2">
-					<span class="size-3 rounded-full" style="background:{tag.color}"></span>
+					<span class="size-3 rounded-full border border-border" style="background:{tag.color}"></span>
 					{tag.name}
 				</span>
 			</Select.Item>
