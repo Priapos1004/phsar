@@ -95,7 +95,7 @@
 		<Dialog.Header>
 			<Dialog.Title>{title}</Dialog.Title>
 			<Dialog.Description class="text-muted-foreground">
-				Applied to all {effectiveUuids.length} selected media.
+				List &amp; priority apply to all {effectiveUuids.length} selected; the note goes on the first season.
 			</Dialog.Description>
 		</Dialog.Header>
 
@@ -125,13 +125,13 @@
 				<PriorityPicker bind:value={priority} />
 			</div>
 
-			<!-- Note (applied to ALL selected media) -->
+			<!-- Note — attached to the first main season only (mirrors bulk rating's last-main note) -->
 			<div class="space-y-1">
 				<Label class="text-card-foreground">
 					Note <span class="text-muted-foreground font-normal">({note.length}/1000)</span>
 				</Label>
 				<Textarea bind:value={note} maxlength={1000} rows={3} placeholder="Optional note…" class="bg-card" />
-				<p class="text-xs text-muted-foreground">Applied to every selected media.</p>
+				<p class="text-xs text-muted-foreground">Added to the first main story media only.</p>
 			</div>
 
 			{#if error}

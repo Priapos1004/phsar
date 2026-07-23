@@ -18,6 +18,7 @@ from app.schemas.watchlist_schema import (
     WatchlistOut,
 )
 from app.services import media_service
+from app.services.filter_service import select_note_target_index
 
 logger = logging.getLogger(__name__)
 
@@ -142,22 +143,32 @@ async def delete_watchlist(db: AsyncSession, user_id: int, media_uuid: UUID) -> 
 async def bulk_upsert_watchlist(
     db: AsyncSession, user_id: int, data: WatchlistBulkCreate
 ) -> list[WatchlistOut]:
-    """Add/update watchlist entries for multiple media at once. Priority + tag + note
-    apply to every selected media (the note goes on ALL, unlike bulk rating)."""
+    """Add/update watchlist entries for multiple media at once. Priority + tag apply to
+    every selected media; the note goes on the chronologically-FIRST 'main' media only
+    (by the shared `chronological_media_key`), falling back to the first media overall if
+    none are main. The mirror of bulk rating, which places its note on the *last* main —
+    a watchlist note ("start here / heads up") belongs on the earliest season, a rating
+    note ("my take") on the latest. Ordered by intrinsic media order, so it's invariant to
+    request/click order. Every other entry has its note cleared to None."""
     media_list = await media_service.resolve_media_uuids(db, data.media_uuids)
     tag = await _resolve_tag(db, user_id, data.tag_uuid)
 
     existing = await watchlist_dao.get_by_user_and_media_ids(db, user_id, [m.id for m in media_list])
     existing_by_media = {e.media_id: e for e in existing}
 
+    # Note target: the chronologically-FIRST main media (bulk rating uses the last).
+    note_index = select_note_target_index(media_list, latest=False)
+
     entries_in_order: list[Watchlist] = []
-    for media in media_list:
+    for i, media in enumerate(media_list):
         entry = existing_by_media.get(media.id)
         if entry:
             _apply_fields(entry, data, tag.id)
         else:
             entry = _new_entry(user_id, media.id, tag.id, data)
             db.add(entry)
+        # _apply_fields set note = data.note; override so only the first main keeps it.
+        entry.note = data.note if i == note_index else None
         entries_in_order.append(entry)
 
     # One flush for the whole batch (uuid is a Python-side default, populated on flush);

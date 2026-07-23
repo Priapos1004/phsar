@@ -85,8 +85,9 @@ class WatchlistItem(BaseModel):
 
 
 class WatchlistBulkCreate(WatchlistBase, BulkMediaUuids):
-    """Bulk add/update. The note applies to ALL selected media — deliberately unlike
-    RatingBulkCreate (which places it on one main media)."""
+    """Bulk add/update. Priority + list apply to every selected media; the note goes on
+    the chronologically-first main media only — the mirror of RatingBulkCreate, which
+    places its note on the last main."""
     pass
 
 

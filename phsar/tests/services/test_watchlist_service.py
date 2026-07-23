@@ -1,9 +1,9 @@
 """Watchlist service — the v0.15.0 entry layer.
 
-Pins: one entry per (user, media); tag + priority required; bulk note applies to
-ALL selected media (unlike bulk rating); bulk delete; the wide items projection;
-the media-tags icon set (carries the tag color); and that a watchlist write never
-touches the spoiler cache.
+Pins: one entry per (user, media); tag + priority required; bulk note lands on the
+chronologically-first main media only (the mirror of bulk rating's last-main note);
+bulk delete; the wide items projection; the media-tags icon set (carries the tag
+color); and that a watchlist write never touches the spoiler cache.
 """
 
 import uuid as uuidlib
@@ -12,7 +12,7 @@ import pytest
 
 from app.exceptions import MediaNotFoundError, TagNotFoundError, WatchlistNotFoundError
 from app.models.anime import Anime
-from app.models.media import Media
+from app.models.media import Media, RelationType, SeasonType
 from app.models.user_visible_media import UserVisibleMedia
 from app.schemas.tag_schema import TagCreate
 from app.schemas.watchlist_schema import WatchlistBulkCreate, WatchlistCreate
@@ -165,18 +165,50 @@ async def test_get_for_anime(db_session):
 
 # --- Bulk ---
 
-async def test_bulk_upsert_note_applies_to_all(db_session):
-    """Bulk note goes on EVERY selected media (diverges from bulk rating)."""
-    user, default, media = await _setup(db_session, media_count=3)
+async def test_bulk_upsert_note_on_first_main_invariant_to_order(db_session):
+    """Bulk note lands on the chronologically-FIRST main media (mirror of bulk rating's
+    last-main), invariant to request order; priority still applies to every entry, and
+    every non-target entry's note is cleared."""
+    user = await make_user(db_session)
+    default = await tag_service.create_default_tag(db_session, user.id)
+    anime = Anime(mal_id=-80100, title="A-80100")
+    db_session.add(anime)
+    await db_session.flush()
+
+    # winner = the earliest-season main; a later main + an earlier-season side story
+    # (which must NOT win — it isn't main) bracket it.
+    winner = Media(**media_kwargs(
+        anime.id, -80101, title="Earliest Main",
+        relation_type=RelationType.Main,
+        anime_season_name=SeasonType.Winter, anime_season_year=2020,
+    ))
+    later_main = Media(**media_kwargs(
+        anime.id, -80102, title="Later Main",
+        relation_type=RelationType.Main,
+        anime_season_name=SeasonType.Spring, anime_season_year=2022,
+    ))
+    earlier_side = Media(**media_kwargs(
+        anime.id, -80103, title="Earlier Side Story",
+        relation_type=RelationType.SideStory,
+        anime_season_name=SeasonType.Fall, anime_season_year=2019,
+    ))
+    db_session.add_all([winner, later_main, earlier_side])
+    await db_session.flush()
+
+    # Scramble the order so the target can't coincide with "first submitted".
+    submit = [later_main, earlier_side, winner]
     out = await watchlist_service.bulk_upsert_watchlist(
         db_session, user.id,
         WatchlistBulkCreate(
-            media_uuids=[m.uuid for m in media], tag_uuid=default.uuid, priority=2, note="all of these",
+            media_uuids=[m.uuid for m in submit], tag_uuid=default.uuid, priority=2, note="start here",
         ),
     )
     assert len(out) == 3
-    assert all(o.note == "all of these" for o in out)
-    assert all(o.priority == 2 for o in out)
+    assert all(o.priority == 2 for o in out)  # priority applies to all
+    by_uuid = {o.media_uuid: o for o in out}
+    assert by_uuid[winner.uuid].note == "start here"
+    assert by_uuid[later_main.uuid].note is None
+    assert by_uuid[earlier_side.uuid].note is None
 
 
 async def test_bulk_upsert_updates_existing(db_session):

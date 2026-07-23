@@ -23,7 +23,7 @@ from app.schemas.rating_schema import (
     RatingSearchFilters,
 )
 from app.services import media_service
-from app.services.filter_service import chronological_media_key
+from app.services.filter_service import select_note_target_index
 from app.services.media_search_service import media_to_dict
 from app.services.relation_classifier import AIRING_STATUS_NOT_YET_AIRED
 from app.services.spoiler_service import recompute_visibility_for_anime
@@ -380,18 +380,10 @@ async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCr
         await watch_event_dao.counts_for_user_media_ids(db, user_id, media_ids)
     )
 
-    # Note goes on the chronologically-last "main" media; falls back to the last media
-    # overall if none are main. Ordered by the project-wide `chronological_media_key`
-    # (the same key the anime media table + carousel use), NOT request/selection order —
-    # so the note lands on the most recent season the user sees last in the table,
-    # regardless of the order media were clicked.
-    def _chrono_note_key(m: Media):
-        season = m.anime_season_name.value if m.anime_season_name else None
-        return chronological_media_key(m.anime_season_year, season, m.mal_id)
-
-    mains = [(i, m) for i, m in enumerate(media_list) if m.relation_type.value == "main"]
-    pool = mains or list(enumerate(media_list))
-    note_index = max(pool, key=lambda im: _chrono_note_key(im[1]))[0]
+    # Note goes on the chronologically-LAST "main" media (bulk watchlist uses the first) —
+    # the most recent season, the row the user sees last in the media table; falls back to
+    # the last media overall if none are main. Intrinsic media order, not click order.
+    note_index = select_note_target_index(media_list, latest=True)
     # note is attached to one media only (below); watch_status + episodes_watched aren't on
     # RatingBulkCreate — both are pinned per-media to completed / full-run (see docstring).
     shared_fields = data.model_dump(exclude=_EXCLUDE_BULK | {"note"})

@@ -133,7 +133,8 @@ async def bulk_upsert_watchlist(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_user_or_admin),
 ):
-    """Add/update watchlist entries for multiple media at once (note applies to all)."""
+    """Add/update watchlist entries for multiple media at once (priority + list apply to
+    all; the note goes on the first main media only)."""
     return await watchlist_service.bulk_upsert_watchlist(db, current_user.id, data)
 
 

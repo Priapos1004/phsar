@@ -3,7 +3,7 @@
 import pytest
 
 from app.models.anime import Anime
-from app.models.media import Media
+from app.models.media import Media, RelationType, SeasonType
 from tests._helpers import media_kwargs
 
 
@@ -182,22 +182,46 @@ async def test_delete_entry(client, user_auth_headers, test_media):
     assert tags["entries"] == []
 
 
-async def test_bulk_upsert_note_on_all(client, user_auth_headers, test_media_list):
+async def test_bulk_upsert_note_on_first_main(client, user_auth_headers, db_session):
+    """Bulk note lands on the chronologically-first main media only; priority applies to
+    all. Invariant to request order (scrambled submission)."""
+    anime = Anime(mal_id=-63000, title="WL Mixed Anime")
+    db_session.add(anime)
+    await db_session.flush()
+    winner = Media(**media_kwargs(
+        anime.id, -63001, title="Earliest Main",
+        relation_type=RelationType.Main, anime_season_name=SeasonType.Winter, anime_season_year=2020,
+    ))
+    later_main = Media(**media_kwargs(
+        anime.id, -63002, title="Later Main",
+        relation_type=RelationType.Main, anime_season_name=SeasonType.Spring, anime_season_year=2022,
+    ))
+    earlier_side = Media(**media_kwargs(
+        anime.id, -63003, title="Earlier Side",
+        relation_type=RelationType.SideStory, anime_season_name=SeasonType.Fall, anime_season_year=2019,
+    ))
+    db_session.add_all([winner, later_main, earlier_side])
+    await db_session.flush()
+
     tag_uuid = await _default_tag_uuid(client, user_auth_headers)
     resp = await client.put(
         "/watchlist/bulk",
         json={
-            "media_uuids": [str(m.uuid) for m in test_media_list],
+            "media_uuids": [str(m.uuid) for m in (later_main, earlier_side, winner)],
             "tag_uuid": tag_uuid,
             "priority": 2,
-            "note": "all",
+            "note": "start here",
         },
         headers=user_auth_headers,
     )
     assert resp.status_code == 200, resp.text
     out = resp.json()
     assert len(out) == 3
-    assert all(o["note"] == "all" for o in out)
+    assert all(o["priority"] == 2 for o in out)
+    by_uuid = {o["media_uuid"]: o for o in out}
+    assert by_uuid[str(winner.uuid)]["note"] == "start here"
+    assert by_uuid[str(later_main.uuid)]["note"] is None
+    assert by_uuid[str(earlier_side.uuid)]["note"] is None
 
 
 async def test_bulk_delete_entries(client, user_auth_headers, test_media_list):
