@@ -315,6 +315,7 @@ phsar/
 │   │   │       ├── relations.ts
 │   │   │       ├── search.ts
 │   │   │       ├── sessionTimeout.ts
+│   │   │       ├── shareContent.ts
 │   │   │       ├── shareImage.ts
 │   │   │       ├── spoilerFrontier.ts
 │   │   │       ├── watchlist.ts
@@ -381,6 +382,7 @@ phsar/
 │   │       ├── segmented-control.test.ts
 │   │       ├── session-timeout.test.ts
 │   │       ├── share-card.test.ts
+│   │       ├── share-content.test.ts
 │   │       ├── share-image.test.ts
 │   │       ├── spoiler-frontier.test.ts
 │   │       ├── spoiler-guard.test.ts

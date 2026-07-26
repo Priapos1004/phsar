@@ -565,6 +565,9 @@ Let a user show a friend how they rated an anime, over whatever messenger they a
 - **Frontend-only.** No endpoint, no migration, no stored state. MAL's CDN serves `Access-Control-Allow-Origin: *`, which was the open question — it means a cover can be inlined into the capture without tainting the canvas, so the image proxy this would otherwise have needed doesn't exist. Everything else the card shows is already in page state.
 - **Save + native share sheet; no clipboard copy.** On mobile the OS picker hands the PNG straight to WhatsApp/Signal/Telegram, which is the actual goal; download is the universal fallback. Clipboard copy was considered and dropped as redundant.
 - **Notes are never on the card.** A rating note is the most personal field and can carry spoilers — sharing a score and attribute profile is a different act from publishing your write-up.
+- **A one-entry anime is shown as that entry.** For a film or single-season show, its own type and runtime say more than a "1/1 main media" breakdown, so the anime card borrows the media-grain wording. "One entry" counts only *aired* media, so an announced sequel can't flip a film into the franchise shape.
+- **Not-yet-aired media are invisible to the card.** They can't be rated, so counting an announced sequel in the breakdown would make a fully-watched franchise read as unfinished.
+- **The card shows the whole attribute profile, marking what's unrated** (greyed pills, a bare radar web) rather than omitting it — an image travels without the app around it, so a missing axis would be indistinguishable from an axis that doesn't exist. This is the one place the card deliberately diverges from the page, which hides an empty Attribute Summary entirely.
 
 ---
 
