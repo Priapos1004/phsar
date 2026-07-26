@@ -223,6 +223,7 @@ phsar/
 │   │   │   │   │   ├── RatingsTagChart.svelte
 │   │   │   │   │   └── types.ts
 │   │   │   │   ├── RelatedMediaCarousel.svelte
+│   │   │   │   ├── RemoveFromWatchlistToggle.svelte
 │   │   │   │   ├── ScoreDial.svelte
 │   │   │   │   ├── ScorePercentile.svelte
 │   │   │   │   ├── ScrollableCard.svelte
