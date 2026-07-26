@@ -253,9 +253,9 @@ Quick map:
 - `routes/` — pages + `GET /health` for Coolify liveness. The `/ratings` page (v0.14.12 — anime-level list + ECharts statistics, both client-side off the one `GET /ratings/scores` fetch) consolidated the old `/statistics` nav placeholder, which is gone
 - `lib/api.ts` — centralized API client with maintenance-503 handler
 - `lib/stores/` — auth, settings, spoiler visibility, bell session, cross-component bumps (`jobs.ts`, `maintenance.ts`, `bell-session.ts`), global toast (`toast.ts`)
-- `lib/utils/` — formatters, search params, chart colors, client-side spoiler frontier
+- `lib/utils/` — formatters, search params, chart colors, client-side spoiler frontier, share-card PNG export
 - `lib/themes.ts` + `src/app.css` — centralized theme system (CSS custom props + `.theme-*` overrides)
-- `lib/components/` — MaintenanceBanner, JobBell, BackupsCard, MergeCandidatesCard, SplitCandidatesCard, RatingsOverview, Toast/ToastHost (global toast host in the layout), attribute viz, etc.
+- `lib/components/` — MaintenanceBanner, JobBell, BackupsCard, MergeCandidatesCard, SplitCandidatesCard, RatingsOverview, Toast/ToastHost (global toast host in the layout), attribute viz, ShareCard/ShareRatingDialog, etc.
 - `lib/components/ui/` — shadcn-svelte base components
 - `tests/` — Vitest + @testing-library/svelte
 
@@ -304,6 +304,7 @@ Quick map:
   - `hide` mode in media search uses `WHERE media.id IN (...)` from the cache
   - Anime covers/descriptions are never spoiler-protected
 - **Watchlist** (v0.15.0): per-user, media-level, grouped by "lists" (the UI term for tags). **One tag per entry** (a required `tag_id` FK, not a many-to-many), **one entry per (user, media)**. Each user has an **immutable default "Watchlist" list** (can't be renamed/recolored/deleted — always a stable preselect + reassign target). Watchlist writes **never touch the spoiler frontier** — an entry is "want to watch", not "watched". Restricted (guest) users can't watchlist (router 403s them; excluded from the default-tag seeders). Bookmarks render everywhere a media/anime shows, colored by the list's color (an anime spanning several lists gets a gradient bookmark)
+- **Rating sharing** (v0.15.2): a share icon beside the watchlist bookmark on the anime + media heroes exports the user's rating as a **PNG** (cover, title, score, the 5-axis quality radar and the 6 descriptive pills, on the active theme's gradient). Deliberately an image, not a hosted share link: a link would either expire or become a scrapeable endpoint exposing users' ratings, whereas a PNG the user owns is permanent and works in every messenger. **Entirely frontend** — no endpoint, no stored state, and no image proxy (MAL's CDN serves `Access-Control-Allow-Origin: *`, so a cover can be inlined without tainting the canvas). Everything the card shows is already in page state; the one network read is re-fetching the cover bytes to inline them. See the frontend CLAUDE.md for the capture pipeline
 - **Background jobs**: single asyncio FIFO worker (`job_worker.py`) drains the `jobs` table
   - JobKinds: `user_scrape`, `update_sweep` + `seasonal_sweep` + `upcoming_sweep` (bracket maintenance), `backup` (does NOT bracket)
   - **Per-kind result_summary versioning**: `JOB_KIND_VERSIONS` registry in `app/core/job_versions.py` + `make_job()` helper at every Job-construction site. Frontend reads `job.version` to dispatch the parser. Bump the integer per kind when the shape changes — see `models/job.py` for the column rationale

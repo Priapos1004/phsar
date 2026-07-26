@@ -167,6 +167,7 @@ phsar/
 │   │   │   ├── themes.ts
 │   │   │   ├── utils.ts
 │   │   │   ├── components/
+│   │   │   │   ├── AnimeShareRating.svelte
 │   │   │   │   ├── AttributeBadges.svelte
 │   │   │   │   ├── AttributeDetailBars.svelte
 │   │   │   │   ├── AttributeRadar.svelte
@@ -193,11 +194,13 @@ phsar/
 │   │   │   │   ├── EChart.svelte
 │   │   │   │   ├── GenreBadges.svelte
 │   │   │   │   ├── GrainToggle.svelte
+│   │   │   │   ├── HeroIconButton.svelte
 │   │   │   │   ├── InfoDiashow.svelte
 │   │   │   │   ├── JobBell.svelte
 │   │   │   │   ├── LoadingScreen.svelte
 │   │   │   │   ├── MaintenanceBanner.svelte
 │   │   │   │   ├── MediaInfo.svelte
+│   │   │   │   ├── MediaShareRating.svelte
 │   │   │   │   ├── MergeCandidatesCard.svelte
 │   │   │   │   ├── NavBar.svelte
 │   │   │   │   ├── Notice.svelte
@@ -229,6 +232,9 @@ phsar/
 │   │   │   │   ├── ScrollableCard.svelte
 │   │   │   │   ├── SegmentedControl.svelte
 │   │   │   │   ├── SessionTimeoutBanner.svelte
+│   │   │   │   ├── ShareCard.svelte
+│   │   │   │   ├── ShareRatingButton.svelte
+│   │   │   │   ├── ShareRatingDialog.svelte
 │   │   │   │   ├── SpoilerGuard.svelte
 │   │   │   │   ├── SearchBar.svelte
 │   │   │   │   ├── SkeletonMediaInfo.svelte
@@ -296,6 +302,7 @@ phsar/
 │   │   │       ├── chartTheme.ts
 │   │   │       ├── cn.ts
 │   │   │       ├── color.ts
+│   │   │       ├── download.ts
 │   │   │       ├── formatString.ts
 │   │   │       ├── getSeason.ts
 │   │   │       ├── index.ts
@@ -308,6 +315,7 @@ phsar/
 │   │   │       ├── relations.ts
 │   │   │       ├── search.ts
 │   │   │       ├── sessionTimeout.ts
+│   │   │       ├── shareImage.ts
 │   │   │       ├── spoilerFrontier.ts
 │   │   │       ├── watchlist.ts
 │   │   │       └── watchlistStats.ts
@@ -372,6 +380,8 @@ phsar/
 │   │       ├── searchbar.test.ts
 │   │       ├── segmented-control.test.ts
 │   │       ├── session-timeout.test.ts
+│   │       ├── share-card.test.ts
+│   │       ├── share-image.test.ts
 │   │       ├── spoiler-frontier.test.ts
 │   │       ├── spoiler-guard.test.ts
 │   │       ├── studio-links.test.ts

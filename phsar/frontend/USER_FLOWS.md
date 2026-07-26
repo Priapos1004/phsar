@@ -198,7 +198,8 @@ Each anime search result card shows:
 - Age rating badge (max across media), genre badges (strict majority rule) — hovering a genre badge shows its description when one is seeded
 - Stats grid: total episodes, media count, season range, total watch time
 - Studio names — each is a button linking to an anime-view search filtered to that studio ("other anime from this studio")
-- **Watchlist bookmark** (hidden for restricted users): outline when none of the anime's media are listed, filled/gradient (colored by the lists in play) when some are. Clicking it when empty opens a bulk-add dialog (adds all **main** media — Main + AlternativeVersion — with an optional "Include side stories" checkbox that offers side stories only, not summaries/recaps); clicking it when populated opens a guarded "Remove from watchlist?" dialog that clears all of this anime's watchlisted media
+- **Watchlist bookmark** (disabled, not hidden, for restricted users): outline when none of the anime's media are listed, filled/gradient (colored by the lists in play) when some are. Clicking it when empty opens a bulk-add dialog (adds all **main** media — Main + AlternativeVersion — with an optional "Include side stories" checkbox that offers side stories only, not summaries/recaps); clicking it when populated opens a guarded "Remove from watchlist?" dialog that clears all of this anime's watchlisted media
+- **Share rating** icon, immediately left of the bookmark: opens the share dialog (see 6.7) with this anime's aggregated rating. Disabled (not hidden) when you haven't rated any of this anime's media, or for restricted users — the tooltip says which
 
 ### 6.3 Synopsis
 - Same collapsible description card as media detail (from anime description)
@@ -233,6 +234,16 @@ Each anime search result card shows:
 - "Back to search" link appears when `q` search token is present in URL
 - Restores the correct anime/media toggle and filters on the search page
 
+### 6.7 Share Rating Dialog (anime + media)
+- Reached from the share icon on either hero (6.2, 7.2). Same dialog and same card shape on both — only the data differs: the anime grain aggregates across the anime's rated media, the media grain shows that one rating
+- On open it builds a **1080×1350 portrait PNG** and shows the generated image itself as the preview (not a live preview), so what you send is exactly what you saw. While building: "Building your image…"
+- The card carries: PHSAR wordmark, cover image, title in your name-language setting, a secondary title (the parent anime name at media grain), a catalog line (type · season · episodes), your score at your rating-step precision, a status line (`N of M rated`, or watch status + episodes + rewatch count), the 5-axis quality radar, the 6 descriptive pills, and the site host + today's date. It uses your **active theme's** gradient and accent colour
+- **No attributes rated** → the radar and pills are omitted entirely rather than leaving an empty band. A rating whose only attribute is the auto-set `not_applicable` ending counts as unrated
+- **Cover unavailable** (missing, or the fetch fails) → the card falls back to the "No image" placeholder; the export still succeeds
+- Actions: **Save image** downloads `phsar-<slug>-rating.png` (always available), and **Share** appears only on devices whose native share sheet accepts files (mobile) and hands the PNG straight to the OS picker — WhatsApp, Signal, Telegram etc. Dismissing the native sheet is not an error
+- On failure: a red "Couldn't build the image." with a **Try again** button (the underlying cause is logged to the console)
+- Closing the dialog abandons any in-flight build and releases the preview; nothing is uploaded or published at any point
+
 ---
 
 ## 7. Media Detail Page
@@ -255,7 +266,8 @@ Each anime search result card shows:
 - Genre badges (themed primary color) — hovering a genre badge shows its description when one is seeded
 - Stats grid: episodes, duration per episode, season, total watch time
 - Studio names — each is a button linking to an anime-view search filtered to that studio
-- **Watchlist bookmark** (hidden for restricted users): outline when not listed, filled in the list's color when it is. Clicking opens the add/edit/remove dialog (list select + priority + note; "Update" enabled only when something changed; a "Remove" button on an existing entry)
+- **Watchlist bookmark** (disabled, not hidden, for restricted users): outline when not listed, filled in the list's color when it is. Clicking opens the add/edit/remove dialog (list select + priority + note; "Update" enabled only when something changed; a "Remove" button on an existing entry)
+- **Share rating** icon, immediately left of the bookmark: opens the share dialog (see 6.7) for this media's own rating — the card shows one score, this media's attributes, and the parent anime name as the subtitle. Disabled (not hidden) when this media isn't rated, or for restricted users
 
 ### 7.3 Synopsis
 - Collapsible description card (4-line clamp by default)
