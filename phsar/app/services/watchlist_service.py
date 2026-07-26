@@ -76,8 +76,7 @@ def _to_item(w: Watchlist) -> WatchlistItem:
         mal_id=m.mal_id,
         genres=[mg.genre.name for mg in m.media_genre],
         studios=[ms.studio.name for ms in m.media_studio],
-        episodes=m.episodes,
-        duration_seconds=m.duration_seconds,
+        total_watch_time=m.total_watch_time,
         created_at=w.created_at,
         modified_at=w.modified_at,
     )

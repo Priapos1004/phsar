@@ -26,8 +26,7 @@ function item(overrides: Partial<WatchlistItem>): WatchlistItem {
 		mal_id: overrides.mal_id ?? 1,
 		genres: overrides.genres ?? [],
 		studios: overrides.studios ?? [],
-		episodes: overrides.episodes ?? null,
-		duration_seconds: overrides.duration_seconds ?? null,
+		total_watch_time: overrides.total_watch_time ?? null,
 		created_at: overrides.created_at ?? '2024-01-01T00:00:00Z',
 		modified_at: '2024-01-01T00:00:00Z',
 		...overrides,
@@ -211,8 +210,9 @@ describe('watchlistSummary', () => {
 		expect(s.totalMedia).toBe(3);
 		expect(s.totalAnime).toBe(2);
 		expect(s.alreadyRated).toBe(2); // m1, m3
-		// m1 + m2 (anime A has the other rated media m9); m3 is NOT (B's only rated is m3 itself).
-		expect(s.continuations).toBe(2);
+		// Only m2: unrated, and anime A has another rated media (m1/m9). m1 + m3 are themselves
+		// rated → rewatches, not continuations. m3's anime B has no OTHER rated media anyway.
+		expect(s.continuations).toBe(1);
 	});
 
 	it('counts genres/studios per distinct anime (a franchise counted once), ties by name', () => {
@@ -223,12 +223,12 @@ describe('watchlistSummary', () => {
 		expect(s.topStudios.map((g) => g.name)).toEqual(['X', 'Y']);
 	});
 
-	it('sums queued runtime (episodes × duration) overall and per tag', () => {
+	it('sums queued runtime (total_watch_time) overall and per tag', () => {
 		const s = watchlistSummary(
 			[
-				item({ media_uuid: 'a', anime_uuid: 'A', genres: ['Action'], episodes: 12, duration_seconds: 1440 }), // 17280s
-				item({ media_uuid: 'b', anime_uuid: 'B', genres: ['Action'], episodes: 6, duration_seconds: 1200 }), // 7200s
-				item({ media_uuid: 'c', anime_uuid: 'C', genres: ['Comedy'], episodes: null, duration_seconds: 1440 }), // unknown → 0
+				item({ media_uuid: 'a', anime_uuid: 'A', genres: ['Action'], total_watch_time: 17280 }),
+				item({ media_uuid: 'b', anime_uuid: 'B', genres: ['Action'], total_watch_time: 7200 }),
+				item({ media_uuid: 'c', anime_uuid: 'C', genres: ['Comedy'], total_watch_time: null }), // unknown → 0
 			],
 			[],
 		);

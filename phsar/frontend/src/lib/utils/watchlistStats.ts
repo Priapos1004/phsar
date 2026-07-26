@@ -211,13 +211,14 @@ export interface TagCount {
 	count: number; // distinct watchlisted anime carrying this genre/studio (the bar metric)
 	main: number; // watchlisted MAIN media in this genre/studio (for the bar hover)
 	side: number; // watchlisted SIDE media
-	seconds: number; // queued runtime (Σ episodes × duration) of this tag's media
+	seconds: number; // queued runtime (Σ total_watch_time) of this tag's media
 }
 
-/** Full queued runtime of a watchlist media: episodes × per-episode duration (0 when
- *  either is unknown — watchlist media are unwatched, so this is time queued up). */
+/** Full queued runtime of a watchlist media — the backend Media.total_watch_time hybrid
+ *  (episodes × per-episode duration), null when either factor is unknown. Watchlist media
+ *  are unwatched with no partial-watch status, so the full runtime IS the queued time. */
 function queuedSeconds(it: WatchlistItem): number {
-	return it.episodes && it.duration_seconds ? it.episodes * it.duration_seconds : 0;
+	return it.total_watch_time ?? 0;
 }
 
 export interface WatchlistSummary {
@@ -225,7 +226,7 @@ export interface WatchlistSummary {
 	totalMedia: number; // watchlist entries (one per media)
 	totalQueuedSeconds: number; // Σ full runtime of watchlist media (time queued up)
 	alreadyRated: number; // watchlist media you've already rated
-	continuations: number; // watchlist media whose anime has ANOTHER rated media
+	continuations: number; // UNRATED watchlist media whose anime has another rated media
 	topGenres: TagCount[];
 	topStudios: TagCount[];
 }
@@ -280,12 +281,15 @@ export function watchlistSummary(
 	let alreadyRated = 0;
 	let continuations = 0;
 	for (const it of items) {
-		if (ratedMedia.has(it.media_uuid)) alreadyRated++;
-		// A "continuation": some OTHER media under this anime is rated (you've started the
-		// franchise but not this entry). Independent of whether this entry itself is rated.
-		// A rated media under this anime OTHER than this entry itself (no Set spread).
+		if (ratedMedia.has(it.media_uuid)) {
+			alreadyRated++;
+			// This entry is itself rated → it's a rewatch, not a continuation. Skip it.
+			continue;
+		}
+		// A "continuation": this (unrated) entry's anime has some OTHER rated media — you've
+		// started the franchise but not this entry yet.
 		const animeRated = ratedByAnime.get(it.anime_uuid);
-		if (animeRated && (animeRated.size > 1 || !animeRated.has(it.media_uuid))) continuations++;
+		if (animeRated && animeRated.size > 0) continuations++;
 	}
 
 	return {

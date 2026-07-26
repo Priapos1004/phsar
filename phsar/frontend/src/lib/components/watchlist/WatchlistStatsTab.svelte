@@ -4,49 +4,35 @@
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import TagBarLabel from '$lib/components/TagBarLabel.svelte';
 	import { Film, Layers, Clock, Star, TrendingUp } from 'lucide-svelte';
-	import { api } from '$lib/api';
-	import type { WatchlistItem, RatingScoreItem } from '$lib/types/api';
-	import { watchlistSummary, type TagCount, type WatchlistSummary } from '$lib/utils/watchlistStats';
+	import type { TagCount, WatchlistSummary } from '$lib/utils/watchlistStats';
 	import { getThemedChartColorPalette } from '$lib/utils/chartColors';
 	import { formatDurationCompact } from '$lib/utils/formatString';
 	import { mainSideLabel } from '$lib/utils/relations';
 	import { ensureGenresLoaded } from '$lib/stores/genres';
 	import * as cls from '$lib/styles/classes';
 
+	// Presentational — the /watchlist page owns the /ratings/scores fetch and computes the
+	// summary once (so grid <-> stats toggling doesn't refetch/recompute). This tab just
+	// renders it; mounting on demand replays the bar grow-in.
 	interface Props {
-		items: WatchlistItem[];
+		summary: WatchlistSummary | null;
+		loading: boolean;
+		hasItems: boolean;
 	}
 
-	let { items }: Props = $props();
+	let { summary, loading, hasItems }: Props = $props();
 
-	// The overview page owns the /watchlist/items fetch; the ratings fetch is only needed
-	// here, and this tab mounts on demand, so fetch it lazily on first open (mirrors the
-	// ratings page owning one /ratings/scores fetch for its whole stats tab).
-	let rated = $state<{ media_uuid: string; anime_uuid: string }[] | null>(null);
-	let loading = $state(true);
-	let grown = $state(false); // flips true post-mount so the bars grow in from 0
+	let grown = $state(false); // flips true once the summary is in so the bars grow in from 0
 
 	onMount(() => {
 		ensureGenresLoaded(); // genre descriptions for the label tooltips
-		(async () => {
-			try {
-				const scores = await api.get<RatingScoreItem[]>('/ratings/scores');
-				rated = scores.map((s) => ({ media_uuid: s.media_uuid, anime_uuid: s.anime_uuid }));
-			} catch {
-				// The rated/continuation figures need ratings; on failure just show 0 for
-				// them (rated = []) — the rest of the summary derives from the watchlist alone.
-				rated = [];
-			} finally {
-				loading = false;
-				requestAnimationFrame(() => (grown = true));
-			}
-		})();
 	});
 
-	// Symmetric top-5 for both genres and studios.
-	let summary = $derived<WatchlistSummary | null>(
-		rated ? watchlistSummary(items, rated, { genreLimit: 5, studioLimit: 5 }) : null,
-	);
+	// Flip `grown` one frame after the summary first appears so the width transition plays
+	// 0 -> pct (works whether the summary is already present at mount or arrives later).
+	$effect(() => {
+		if (summary && !grown) requestAnimationFrame(() => (grown = true));
+	});
 
 	const palette = getThemedChartColorPalette();
 	const barPct = (c: TagCount, max: number) => (max > 0 ? (c.count / max) * 100 : 0);
@@ -71,7 +57,7 @@
 	);
 </script>
 
-{#if items.length === 0}
+{#if !hasItems}
 	<div class="py-12 text-center space-y-2">
 		<p class="text-white/70">Nothing on your watchlist yet.</p>
 		<p class="text-white/50 text-sm">Bookmark anime and media to see your watchlist stats here.</p>

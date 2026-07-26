@@ -396,8 +396,7 @@ export interface WatchlistItem {
 	mal_id: number;
 	genres: string[];
 	studios: string[];
-	episodes: number | null;
-	duration_seconds: number | null;
+	total_watch_time: number | null;
 	created_at: string;
 	modified_at: string;
 }

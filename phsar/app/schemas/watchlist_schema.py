@@ -83,10 +83,11 @@ class WatchlistItem(BaseModel):
     # subtab can tally top genres/studios client-side off this one fetch.
     genres: list[str]
     studios: list[str]
-    # For the Statistics "queued time" figure: full runtime = episodes × duration_seconds
-    # (watchlist media are unwatched, so it's the time queued up, not watched).
-    episodes: int | None
-    duration_seconds: int | None
+    # For the Statistics "queued time" figure: the Media.total_watch_time hybrid
+    # (episodes × duration_seconds). Watchlist media are unwatched and have no
+    # hold/dropped partials, so the full runtime IS the queued time — reuse the
+    # canonical property instead of shipping the two factors for the client to multiply.
+    total_watch_time: int | None
     created_at: datetime
     modified_at: datetime
 
