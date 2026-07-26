@@ -43,6 +43,12 @@ export function formatEpisodeCount(episodes: number): string {
 	return `${episodes} ep${episodes === 1 ? '' : 's'}`;
 }
 
+/** "5/24 eps" — watched-of-total, dropping the denominator when the catalog total is
+ *  unknown (a still-airing show). */
+export function episodesWatchedLabel(watched: number, total: number | null): string {
+	return total ? `${watched}/${total} eps` : formatEpisodeCount(watched);
+}
+
 /** Formats a raw watch_status value to its user-facing label. */
 export function watchStatusLabel(status: WatchStatus | string): string {
 	return WATCH_STATUS_OPTIONS.find((o) => o.value === status)?.label ?? status;
@@ -187,8 +193,16 @@ export function formatSeason(name: string | null, year: number | null): string |
  */
 export function formatSeasonRange(start: string | null, end: string | null): string | null {
 	if (!start) return null;
-	if (!end) return start;
+	if (!end || end === start) return start;
 	return `${start} - ${end}`;
+}
+
+/** True when start/end describe a genuine multi-season run, not one season repeated —
+ *  i.e. when `formatSeasonRange` renders two seasons rather than one. Layout hangs off this
+ *  (a range plus the length facts overflows one line), so it lives beside the formatter it
+ *  has to agree with. */
+export function isSeasonRange(start: string | null, end: string | null): boolean {
+	return !!start && !!end && start !== end;
 }
 
 /**

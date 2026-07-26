@@ -14,7 +14,8 @@
 	import { totalWatchTime } from '$lib/utils/ratingStats';
 	import { ratingsFilter } from '$lib/stores/ratingsFilter';
 	import type { StatsSection } from './types';
-	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr, isAttrRated, type RatingScoreItem } from '$lib/types/api';
+	import type { RatingScoreItem } from '$lib/types/api';
+	import { hasAnyAttribute } from '$lib/utils/ratingAttributes';
 
 	interface Props {
 		items: RatingScoreItem[];
@@ -33,8 +34,7 @@
 
 	let gaugeOption = $derived(scoreGaugeOption(avgScore));
 
-	const ATTR_KEYS = Object.keys(RATING_ATTRIBUTE_OPTIONS);
-	let hasAttributes = $derived(items.some((r) => ATTR_KEYS.some((k) => isAttrRated(getRatingAttr(r, k)))));
+	let hasAttributes = $derived(hasAnyAttribute(items));
 
 	// ── Inner tabs: only the active section mounts, so its charts animate in on
 	// switch (ECharts plays its entrance animation on a fresh init) and we never

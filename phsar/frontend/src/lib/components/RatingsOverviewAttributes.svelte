@@ -14,7 +14,8 @@
 	let detailsExpanded = $state(false);
 </script>
 
-<!-- Parent (RatingsOverview) gates on hasAttributes — this component only mounts when attributes exist -->
+<!-- Parent (RatingsOverview) gates on hasAttributes — this only mounts when attributes
+     exist, and the radar always draws, so the pills never appear on their own. -->
 <div>
 	<h3 class="text-sm font-medium text-muted-foreground mb-2">Attribute Summary</h3>
 

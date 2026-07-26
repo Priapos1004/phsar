@@ -225,8 +225,12 @@ export function getRatingAttr(obj: RatingOut | RatingCreate | RatingScoreItem, k
  * reached). Single source of truth for "count this attribute as rated" — used by
  * the per-rating card display, the distribution bars, and the overview gate so the
  * radar/bars/badges all agree.
+ *
+ * A type predicate, so a guarded branch also gets the value narrowed to `string`. Only the
+ * TRUE branch narrows soundly — a false result does NOT mean `null`, since the
+ * `not_applicable` sentinel is a string too.
  */
-export function isAttrRated(value: string | null): boolean {
+export function isAttrRated(value: string | null): value is string {
 	return value !== null && value !== 'not_applicable';
 }
 

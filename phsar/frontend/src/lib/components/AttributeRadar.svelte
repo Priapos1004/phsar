@@ -10,11 +10,9 @@
 		// which both RatingOut and the /ratings page's RatingScoreItem carry.
 		ratings: RatingOut[] | RatingScoreItem[];
 		/**
-		 * Fires once this component has rendered whatever it is going to render — for the
-		 * share-card capture. Passing it also turns the entrance animation OFF: a capture
-		 * has no reason to wait out a grow-in it will never show. It also fires when there
-		 * is no radar to draw (no quality attribute rated), so "ready" is total and the
-		 * caller's timeout stays a pure hang guard instead of a routine wait.
+		 * Fires once the radar has painted — for the share-card capture. Passing it also
+		 * turns the entrance animation OFF: a capture has no reason to wait out a grow-in it
+		 * will never show.
 		 */
 		onReady?: () => void;
 	}
@@ -79,19 +77,6 @@
 		return { avgs, closestLabels, hasData };
 	});
 
-	// Both readiness paths funnel through here so a consumer only ever sees one signal.
-	let painted = false;
-	function notifyPainted() {
-		if (painted) return;
-		painted = true;
-		onReady?.();
-	}
-
-	// Nothing to draw → no EChart mounts → no `finished` event, so report ready here.
-	$effect(() => {
-		if (!radarData.hasData) notifyPainted();
-	});
-
 	let radarOption = $derived.by(() => {
 		const primaryColor = getThemedChartColorPalette()[0];
 		return {
@@ -101,7 +86,9 @@
 				splitNumber: 3,
 				shape: 'polygon' as const,
 				axisName: {
-					color: 'rgba(0,0,0,0.7)',
+					// Muted when there's nothing plotted, so an empty web reads as "not rated"
+					// rather than as a chart that failed to draw.
+					color: radarData.hasData ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.35)',
 					fontSize: 12,
 				},
 				splitArea: {
@@ -116,7 +103,7 @@
 					data: [
 						{
 							name: 'Your Profile',
-							value: radarData.avgs,
+							value: radarData.hasData ? radarData.avgs : [],
 							areaStyle: { color: primaryColor, opacity: 0.2 },
 							lineStyle: { color: primaryColor, width: 2 },
 							itemStyle: { color: primaryColor },
@@ -139,6 +126,7 @@
 	});
 </script>
 
-{#if radarData.hasData}
-	<EChart option={radarOption} height="224px" onReady={notifyPainted} />
-{/if}
+<!-- Always rendered, even with nothing to plot: the bare web with muted labels reads as
+     "not rated yet", and it keeps the radar and the pills beside it appearing together
+     instead of the pills showing alone whenever no *quality* attribute was set. -->
+<EChart option={radarOption} height="224px" {onReady} />

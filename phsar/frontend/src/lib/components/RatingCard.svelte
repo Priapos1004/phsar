@@ -16,7 +16,7 @@
 	import ScoreDial from '$lib/components/ScoreDial.svelte';
 	import Notice from '$lib/components/Notice.svelte';
 	import { attributeBadges } from '$lib/utils/ratingAttributes';
-	import { formatDecimalDigits, clampAndSnapScore, decimalPlaces, roundScore, watchStatusLabel } from '$lib/utils/formatString';
+	import { formatDecimalDigits, clampAndSnapScore, decimalPlaces, episodesWatchedLabel, roundScore, watchStatusLabel } from '$lib/utils/formatString';
 	import { userSettings } from '$lib/stores/userSettings';
 	import { watchlistTags, refreshWatchlist } from '$lib/stores/watchlist';
 	import { pushToast } from '$lib/stores/toast';
@@ -361,7 +361,7 @@
 							{/if}
 							{#if existingRating.episodes_watched !== null}
 								<span class="text-muted-foreground">
-									· {existingRating.episodes_watched}{totalEpisodes ? `/${totalEpisodes}` : ''} eps
+									· {episodesWatchedLabel(existingRating.episodes_watched, totalEpisodes)}
 								</span>
 							{/if}
 							{#if existingRating.watched_count > 1}
