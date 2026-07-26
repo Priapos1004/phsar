@@ -8,6 +8,9 @@
 		selectedItems?: string[];
 		onAdd: (item: string) => void;
 		onRemove: (item: string) => void;
+		// Optional display mapping: the raw option/value stays in state + onAdd/onRemove
+		// (so the backend still receives e.g. `side_story`), only the shown label changes.
+		labelFor?: (value: string) => string;
 	}
 
 	let {
@@ -16,7 +19,10 @@
 		selectedItems = [],
 		onAdd,
 		onRemove,
+		labelFor,
 	}: Props = $props();
+
+	const displayLabel = (value: string) => (labelFor ? labelFor(value) : value);
 
 	let inputValue = $state('');
 	let isFocused = $state(false);
@@ -34,9 +40,13 @@
 
 	let isAtLimit = $derived(selectedItems.length >= MAX_ITEMS);
 	let filteredOptions = $derived(
-		options.filter(
-			(opt) => opt.toLowerCase().includes(inputValue.toLowerCase()) && !selectedItems.includes(opt)
-		)
+		options.filter((opt) => {
+			const q = inputValue.toLowerCase();
+			// Match against the raw value AND the display label so a user can type the
+			// human-readable form ("alternative version") for a mapped list.
+			const matches = opt.toLowerCase().includes(q) || displayLabel(opt).toLowerCase().includes(q);
+			return matches && !selectedItems.includes(opt);
+		})
 	);
 
 	function handleSelect(option: string) {
@@ -64,7 +74,7 @@
 	>
 		{#each selectedItems as item}
 			<Badge variant="default" class="gap-1 text-sm h-6">
-				{item}
+				{displayLabel(item)}
 				<button
 					type="button"
 					class="ml-1 hover:opacity-70"
@@ -102,7 +112,7 @@
 					class="w-full text-left px-4 py-2 text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground"
 					onmousedown={() => handleSelect(option)}
 				>
-					{option}
+					{displayLabel(option)}
 				</button>
 			{/each}
 		</div>
