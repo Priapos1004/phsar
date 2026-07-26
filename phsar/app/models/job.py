@@ -22,6 +22,10 @@ class JobKind(str, enum.Enum):
     user_scrape = "user_scrape"
     update_sweep = "update_sweep"
     seasonal_sweep = "seasonal_sweep"
+    # Same discovery machinery as seasonal_sweep, but targets the NEXT season
+    # so users can pre-add next-quarter shows to their watchlists. Scheduled on
+    # Wednesdays in the last month of the quarter (see schedule-nightly).
+    upcoming_sweep = "upcoming_sweep"
     backup = "backup"
     # `restore` rows are inserted synchronously by restore_backup AFTER the
     # operation completes — terminal-state on creation. status=succeeded

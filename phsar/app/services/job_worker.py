@@ -53,7 +53,7 @@ _MAINTENANCE_POLL_SECONDS = 2.0
 # except the allowlist for the duration. user_scrape jobs are concurrent-safe
 # with normal traffic and don't need the bracket.
 _MAINTENANCE_KINDS: frozenset[JobKind] = frozenset(
-    {JobKind.update_sweep, JobKind.seasonal_sweep}
+    {JobKind.update_sweep, JobKind.seasonal_sweep, JobKind.upcoming_sweep}
 )
 
 # Error categories stamped on result_summary["error_category"] for the

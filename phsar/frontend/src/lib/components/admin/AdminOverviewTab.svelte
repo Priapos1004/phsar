@@ -145,7 +145,7 @@
 				<h2 class="text-lg font-semibold text-card-foreground">User activity (7d)</h2>
 			</Card.Header>
 			<Card.Content>
-				<div class="grid grid-cols-3 gap-4">
+				<div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
 					<div>
 						<div class="text-2xl font-bold text-card-foreground">{formatNumber(stats.activity_7d.active_users)}</div>
 						<div class="text-xs text-muted-foreground">Active users</div>
@@ -157,6 +157,10 @@
 					<div>
 						<div class="text-2xl font-bold text-card-foreground">{formatNumber(stats.activity_7d.scrapes_submitted)}</div>
 						<div class="text-xs text-muted-foreground">Scrapes submitted</div>
+					</div>
+					<div>
+						<div class="text-2xl font-bold text-card-foreground">{formatNumber(stats.activity_7d.watchlist_modifications)}</div>
+						<div class="text-xs text-muted-foreground">Watchlist edits</div>
 					</div>
 				</div>
 			</Card.Content>

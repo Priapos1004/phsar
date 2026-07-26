@@ -516,7 +516,7 @@ export interface RegistrationTokenListItem {
 }
 
 // Jobs (content pipeline)
-export type JobKind = 'user_scrape' | 'update_sweep' | 'seasonal_sweep' | 'backup' | 'restore';
+export type JobKind = 'user_scrape' | 'update_sweep' | 'seasonal_sweep' | 'upcoming_sweep' | 'backup' | 'restore';
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 
 // Mirrors backend `job_worker.ERROR_CATEGORY_*`. Keep both sides in sync —
@@ -774,6 +774,7 @@ export interface AdminActivityStats {
 	active_users: number;
 	new_ratings: number;
 	scrapes_submitted: number;
+	watchlist_modifications: number;
 }
 
 // All-users watchlist aggregates (no per-user breakdown). Averages are over

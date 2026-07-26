@@ -171,12 +171,14 @@ class JobEnqueuedResponse(BaseModel):
 class NightlyScheduleResponse(BaseModel):
     """Returned by POST /admin/jobs/schedule-nightly. The combined cron
     endpoint enqueues a backup (immediate), an update_sweep (delayed so the
-    banner can warm up), and — only on Sundays UTC — a seasonal_sweep with
-    the same delay. `seasonal_sweep_uuid` is null on weekdays so callers can
+    banner can warm up), a seasonal_sweep (Sundays UTC only), and an
+    upcoming_sweep (Wednesdays UTC in the last month of the quarter). The two
+    optional sweep uuids are null on days they don't run so callers can
     distinguish 'didn't run today' from 'failed to enqueue'."""
     backup_uuid: UUID
     update_sweep_uuid: UUID
     seasonal_sweep_uuid: UUID | None = None
+    upcoming_sweep_uuid: UUID | None = None
     scheduled_at: datetime
 
 
@@ -210,11 +212,14 @@ class JobsStats(BaseModel):
 
 class ActivityStats(BaseModel):
     """User activity counters over the last 7 days. `active_users` is
-    distinct users with at least one rating change or scrape submission
-    in the window — system jobs (requested_by_user_id IS NULL) excluded."""
+    distinct users with at least one rating change, scrape submission, OR
+    watchlist add/edit in the window — system jobs (requested_by_user_id
+    IS NULL) excluded. `watchlist_modifications` counts entries added or
+    updated (modified_at) in the window."""
     active_users: int
     new_ratings: int
     scrapes_submitted: int
+    watchlist_modifications: int
 
 
 class SweepTierBreakdown(BaseModel):

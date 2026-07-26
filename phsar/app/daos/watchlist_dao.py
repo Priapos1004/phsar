@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import delete, func, select, update
@@ -116,6 +117,17 @@ class WatchlistDAO(BaseDAO[Watchlist]):
         """Users with at least one watchlist entry."""
         return (
             await db.execute(select(func.count(func.distinct(Watchlist.user_id))))
+        ).scalar_one()
+
+    async def count_modified_since(self, db: AsyncSession, cutoff: datetime) -> int:
+        """Watchlist entries added OR updated since `cutoff` — the 7d
+        "watchlist modifications" activity counter. `modified_at` (server
+        `onupdate=now()`) covers both an add (sets created_at + modified_at)
+        and a priority/tag/note edit (bumps modified_at only)."""
+        return (
+            await db.execute(
+                select(func.count(Watchlist.id)).where(Watchlist.modified_at >= cutoff)
+            )
         ).scalar_one()
 
     async def get_watchlisted_media_tags(self, db: AsyncSession, user_id: int) -> list:

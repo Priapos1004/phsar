@@ -518,7 +518,7 @@ async def test_stats_overview_returns_shape(client, admin_auth_headers):
         "anime_count", "media_count", "anime_added_7d", "media_added_7d",
     }
     assert set(data["activity_7d"].keys()) == {
-        "active_users", "new_ratings", "scrapes_submitted",
+        "active_users", "new_ratings", "scrapes_submitted", "watchlist_modifications",
     }
     assert set(data["watchlist"].keys()) == {
         "total_entries", "total_anime", "users_with_entries",

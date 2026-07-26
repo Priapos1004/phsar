@@ -229,6 +229,39 @@ async def test_search_title_seed_empty_data_raises_transient_not_permanent(monke
 
 
 @pytest.mark.asyncio
+async def test_search_title_seed_404_raises_mal_id_not_found(monkeypatch):
+    """A direct-id scrape for an id MAL doesn't have (e.g. 999999) makes the
+    seed detail fetch return 404. search_title must translate that into the
+    permanent, user-friendly MalIdNotFoundError — NOT leak the raw
+    httpx.HTTPStatusError, which is uncategorized + retryable, so the bell
+    would show a raw '404 Not Found for url ...' with a retry button that can
+    never succeed. Contrast with the 200-OK-empty case above (transient)."""
+    import httpx
+
+    from app.exceptions import MalIdNotFoundError, PermanentPhsarError
+
+    async def fake_get(self, url: str, params=None):
+        # A real MAL 404 — search_by_malid → _get → raise_for_status raises this.
+        if "/anime/" in url and url.rsplit("/", 1)[-1].isdigit():
+            request = httpx.Request("GET", url)
+            httpx.Response(404, request=request, content=b'{"detail": "not found"}').raise_for_status()
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    monkeypatch.setattr(MalScraper, "_get", fake_get)
+
+    async with MalScraper() as scraper:
+        with pytest.raises(MalIdNotFoundError) as exc_info:
+            await scraper.search_title(
+                title="999999", excluded_mal_ids=set(), seed_mal_id=999999,
+            )
+
+    assert exc_info.value.mal_id == 999999
+    assert "999999" in str(exc_info.value)
+    # Permanent → the worker stamps retryable=False and the bell hides retry.
+    assert isinstance(exc_info.value, PermanentPhsarError)
+
+
+@pytest.mark.asyncio
 async def test_search_title_seed_always_in_graph(monkeypatch):
     """Seed always appears in the graph from t=0 — no drop, no
     post-loop recovery. Works even for Rilakkuma-shaped franchises
@@ -858,16 +891,31 @@ async def test_get_retries_429_with_tighter_cap(monkeypatch):
     assert exc_info.value.response.status_code == 429
 
 
+def test_next_season_rollover():
+    """The upcoming sweep targets next_season(*current_season()). Within a
+    year the season just advances; past fall it rolls to winter of the next
+    year (the only wrap that matters)."""
+    from app.services.mal_scraper import next_season
+
+    assert next_season(2026, "winter") == (2026, "spring")
+    assert next_season(2026, "spring") == (2026, "summer")
+    assert next_season(2026, "summer") == (2026, "fall")
+    assert next_season(2026, "fall") == (2027, "winter")
+
+
 @pytest.mark.asyncio
-async def test_fetch_current_season_paginates(monkeypatch):
+async def test_fetch_season_paginates(monkeypatch):
     """MAL v2's /anime/season/{year}/{season} is offset-paginated. The
     loop must keep requesting pages while `paging.next` is present and
     concatenate every page's `data[].node` into `[{mal_id, title}]`. The
-    offset query parameter advances by `limit` per iteration."""
+    offset query parameter advances by `limit` per iteration, and the URL
+    carries the requested year/season."""
     calls: list[dict | None] = []
+    urls: list[str] = []
 
     async def fake_get(self, url, params=None):
-        assert "/anime/season/" in url
+        assert "/anime/season/2020/spring" in url
+        urls.append(url)
         calls.append(params)
         offset = (params or {}).get("offset", 0)
         if offset == 0:
@@ -886,7 +934,7 @@ async def test_fetch_current_season_paginates(monkeypatch):
     monkeypatch.setattr(MalScraper, "_get", fake_get)
 
     async with MalScraper() as scraper:
-        entries = await scraper.fetch_current_season()
+        entries = await scraper.fetch_season(2020, "spring")
 
     assert [e["mal_id"] for e in entries] == [1, 2, 3]
     assert [e["title"] for e in entries] == ["Show A", "Show B", "Show C"]
@@ -894,7 +942,7 @@ async def test_fetch_current_season_paginates(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_fetch_current_season_empty(monkeypatch):
+async def test_fetch_season_empty(monkeypatch):
     """An empty season (off-week between cycles, or test against a fresh
     DB) returns no entries without crashing. Single page, no follow-up."""
     call_count = 0
@@ -907,7 +955,7 @@ async def test_fetch_current_season_empty(monkeypatch):
     monkeypatch.setattr(MalScraper, "_get", fake_get)
 
     async with MalScraper() as scraper:
-        entries = await scraper.fetch_current_season()
+        entries = await scraper.fetch_season(2020, "winter")
 
     assert entries == []
     assert call_count == 1

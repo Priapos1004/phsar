@@ -22,6 +22,7 @@ from app.models.anime import Anime
 from app.models.job import Job, JobKind, JobStatus
 from app.models.media import Media
 from app.models.ratings import Ratings
+from app.models.watchlist import Watchlist
 from app.schemas.admin_schema import (
     ActivityStats,
     AdminOverviewStats,
@@ -126,24 +127,29 @@ async def _activity_stats(db: AsyncSession, cutoff: datetime) -> ActivityStats:
             .where(Job.requested_by_user_id.is_not(None))
         )
     ).scalar_one()
-    # Active users = distinct user_ids touching ratings OR user-attributed
-    # jobs in the window. UNION (not UNION ALL) deduplicates across the
-    # two selects, so users who rated AND scraped count once.
+    watchlist_modifications = await watchlist_dao.count_modified_since(db, cutoff)
+    # Active users = distinct user_ids touching ratings OR user-attributed jobs
+    # OR the watchlist in the window. UNION (not UNION ALL) deduplicates across
+    # the selects, so a user who rated AND scraped AND watchlisted counts once.
     rating_users = select(Ratings.user_id).where(Ratings.created_at >= cutoff)
     job_users = (
         select(Job.requested_by_user_id)
         .where(Job.created_at >= cutoff)
         .where(Job.requested_by_user_id.is_not(None))
     )
+    watchlist_users = select(Watchlist.user_id).where(Watchlist.modified_at >= cutoff)
     active_users = (
         await db.execute(
-            select(func.count()).select_from(rating_users.union(job_users).subquery())
+            select(func.count()).select_from(
+                rating_users.union(job_users, watchlist_users).subquery()
+            )
         )
     ).scalar_one()
     return ActivityStats(
         active_users=active_users,
         new_ratings=new_ratings,
         scrapes_submitted=scrapes_submitted,
+        watchlist_modifications=watchlist_modifications,
     )
 
 

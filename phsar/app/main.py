@@ -135,6 +135,8 @@ async def lifespan(app: FastAPI):
     job_worker.register_dispatcher(JobKind.user_scrape, user_scrape_dispatcher)
     job_worker.register_dispatcher(JobKind.update_sweep, update_sweep_dispatcher)
     job_worker.register_dispatcher(JobKind.seasonal_sweep, seasonal_sweep_dispatcher)
+    # Same dispatcher — it targets the current vs next season off job.kind.
+    job_worker.register_dispatcher(JobKind.upcoming_sweep, seasonal_sweep_dispatcher)
     job_worker.register_dispatcher(JobKind.backup, backup_dispatcher)
     await job_worker.start()
 
