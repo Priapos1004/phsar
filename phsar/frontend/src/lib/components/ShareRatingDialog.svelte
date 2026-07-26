@@ -13,6 +13,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Download, RefreshCw, Share2 } from 'lucide-svelte';
 	import ShareCard from '$lib/components/ShareCard.svelte';
+	import { getEcharts } from '$lib/echarts';
 	import { triggerBlobDownload } from '$lib/utils/download';
 	import {
 		canShareFiles,
@@ -29,7 +30,8 @@
 		title: string;
 		subtitle: string | null;
 		coverUrl: string | null;
-		meta: string;
+		/** Catalog facts, one entry per rendered line (the caller decides where to break). */
+		metaLines: string[];
 		score: number | null;
 		ratingStep: number;
 		statusLine: string | null;
@@ -41,15 +43,20 @@
 		title,
 		subtitle,
 		coverUrl,
-		meta,
+		metaLines,
 		score,
 		ratingStep,
 		statusLine,
 		ratings,
 	}: Props = $props();
 
-	/** Hang guard only: `ShareCard.onReady` is total, so this should never fire. */
-	const CARD_READY_TIMEOUT_MS = 5000;
+	/**
+	 * Ceiling on waiting for the card to paint. Reachable, not just a hang guard: the radar
+	 * always renders, so the first share from a page with no other chart cold-loads the
+	 * ECharts chunk here. Generous enough that a slow link finishes rather than capturing a
+	 * half-drawn radar; if it does fire, the rest of the card is still correct.
+	 */
+	const CARD_READY_TIMEOUT_MS = 15000;
 
 	let cardEl = $state<HTMLDivElement | null>(null);
 	let coverDataUri = $state<string | null>(null);
@@ -105,9 +112,10 @@
 		let timer: ReturnType<typeof setTimeout> | undefined;
 
 		try {
-			// Start the cover read, then mount straight away rather than awaiting it: the
-			// card's chart pulls a large chunk on first use, and the two have nothing to say
-			// to each other. The cover only has to be in the DOM by capture time.
+			// Warm the chart bundle and read the cover concurrently, then mount without
+			// awaiting either: the ECharts chunk is the long pole on a first share, and none of
+			// the three needs the others. The cover only has to be in the DOM by capture time.
+			void getEcharts();
 			const cover = coverUrl ? fetchImageAsDataUri(coverUrl) : Promise.resolve(null);
 
 			const cardReady = new Promise<void>((resolve) => {
@@ -218,7 +226,7 @@
 				{title}
 				{subtitle}
 				{coverDataUri}
-				{meta}
+				{metaLines}
 				{score}
 				{ratingStep}
 				{statusLine}

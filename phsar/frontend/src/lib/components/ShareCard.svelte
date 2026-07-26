@@ -17,7 +17,6 @@
 	import AttributeRadar from '$lib/components/AttributeRadar.svelte';
 	import AttributeBadges from '$lib/components/AttributeBadges.svelte';
 	import * as cls from '$lib/styles/classes';
-	import { hasAnyAttribute } from '$lib/utils/ratingAttributes';
 	import { formatScoreWithStep, formatShortDate } from '$lib/utils/formatString';
 	import { SHARE_CARD_HEIGHT, SHARE_CARD_WIDTH } from '$lib/utils/shareImage';
 	import type { RatingOut } from '$lib/types/api';
@@ -29,22 +28,23 @@
 		subtitle: string | null;
 		/** Cover as a data URI — a remote URL would leave the capture doing network I/O. */
 		coverDataUri: string | null;
-		/** Catalog line, e.g. "TV · Fall 2019 · 24 eps". */
-		meta: string;
+		/**
+		 * Catalog facts, one entry per rendered line. Split by the caller rather than wrapped
+		 * here, because only it knows when a line has grown too long (an anime spanning
+		 * several seasons carries a full "Fall 2020 - Winter 2026" range).
+		 */
+		metaLines: string[];
 		score: number | null;
 		ratingStep: number;
-		/** Watch context, e.g. "Completed · watched 2×" or "3 of 4 entries rated". */
+		/** Watch context beside the score, e.g. "Completed · watched 2×" or the
+		 *  anime grain's rated-per-relation breakdown. */
 		statusLine: string | null;
 		/** N ratings at anime grain, exactly one at media grain — feeds radar + pills. */
 		ratings: RatingOut[];
 		/** The site's host — a prop rather than read here, so the card stays pure. */
 		host: string;
-		/**
-		 * Fires once the card has drawn everything it is going to draw — the signal the
-		 * capture waits on. Total by construction: forwarded from the radar when there is
-		 * one, fired directly when the attribute block is omitted entirely, so the caller's
-		 * timeout stays a hang guard rather than a routine wait.
-		 */
+		/** Fires once the card has drawn everything it will draw — the signal the capture
+		 *  waits on. Forwarded from the radar, which always renders here. */
 		onReady?: () => void;
 	}
 
@@ -52,7 +52,7 @@
 		title,
 		subtitle,
 		coverDataUri,
-		meta,
+		metaLines,
 		score,
 		ratingStep,
 		statusLine,
@@ -61,15 +61,9 @@
 		onReady,
 	}: Props = $props();
 
-	let showAttributes = $derived(hasAnyAttribute(ratings));
 	// Long titles step down a size rather than losing a whole word to the 2-line clamp.
 	let titleSize = $derived(title.length > 44 ? 'text-lg' : 'text-xl');
 	const dateLabel = formatShortDate(new Date().toISOString());
-
-	$effect(() => {
-		// No attribute block → no radar to wait on, so the card is already done.
-		if (!showAttributes) onReady?.();
-	});
 </script>
 
 <div
@@ -115,7 +109,11 @@
 				{#if subtitle}
 					<p class="truncate text-sm text-muted-foreground">{subtitle}</p>
 				{/if}
-				<p class="mt-1 text-sm text-muted-foreground">{meta}</p>
+				<div class="mt-1 text-sm text-muted-foreground">
+					{#each metaLines as line}
+						<p>{line}</p>
+					{/each}
+				</div>
 
 				<div class="mt-auto flex items-center gap-3">
 					{#if score !== null}
@@ -132,12 +130,13 @@
 			</div>
 		</div>
 
-		{#if showAttributes}
-			<div class="flex flex-1 flex-col justify-center gap-2">
-				<AttributeRadar {ratings} {onReady} />
-				<AttributeBadges {ratings} layout="wrap" />
-			</div>
-		{/if}
+		<!-- No gate, unlike the page's Attribute Summary: an image travels without the app
+		     around it, so a missing axis would be indistinguishable from one that doesn't
+		     exist. Unrated axes and pills render greyed. -->
+		<div class="flex flex-1 flex-col justify-center gap-2">
+			<AttributeRadar {ratings} {onReady} />
+			<AttributeBadges {ratings} layout="wrap" />
+		</div>
 	</div>
 
 	<div class="flex items-center justify-between px-6 py-3 text-sm text-white/60">
