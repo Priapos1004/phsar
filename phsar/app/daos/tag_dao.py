@@ -35,3 +35,12 @@ class TagDAO(BaseDAO[Tag]):
             select(func.count()).select_from(Tag).where(Tag.user_id == user_id)
         )
         return result.scalar_one()
+
+    async def count_custom_total(self, db: AsyncSession) -> int:
+        """Non-default lists across all users (admin Overview aggregate). Excludes the
+        immutable per-user default "Watchlist" tag — every user has one, so counting it
+        would just re-count users, not measure list usage."""
+        result = await db.execute(
+            select(func.count()).select_from(Tag).where(Tag.is_default.is_(False))
+        )
+        return result.scalar_one()

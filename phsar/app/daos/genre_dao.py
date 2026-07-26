@@ -19,8 +19,7 @@ class GenreDAO(BaseDAO[Genre]):
             .order_by(Genre.name)
         )
         result = await db.execute(stmt)
-        distinct_genres = [row[0] for row in result.fetchall()]
-        return distinct_genres
+        return [row[0] for row in result.fetchall()]
 
     async def get_name_descriptions(self, db: AsyncSession) -> list[tuple[str, str | None]]:
         """Every genre's (name, description) for the frontend tooltip lookup.

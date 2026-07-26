@@ -3,7 +3,7 @@
 	import WatchlistPriorityGrid from './WatchlistPriorityGrid.svelte';
 	import WatchlistTable from './WatchlistTable.svelte';
 	import { watchlistFilter } from '$lib/stores/watchlistFilter';
-	import { filterByTags, sortRows, toAnimeRows, toMediaRows, type WatchlistSortKey } from '$lib/utils/watchlistStats';
+	import { filterByPriority, filterByTags, sortRows, toAnimeRows, toMediaRows, type WatchlistSortKey } from '$lib/utils/watchlistStats';
 	import type { WatchlistItem } from '$lib/types/api';
 
 	interface Props {
@@ -13,12 +13,17 @@
 
 	let { items, nameLanguage }: Props = $props();
 
-	// Filter (union of selected lists) first, then normalize to rows at the chosen grain.
+	// Filter (union of selected lists) first, normalize to rows at the chosen grain,
+	// then filter by the selected priority bands (on the row's displayed priority — for
+	// the anime grain that's the anime's most-urgent media priority).
 	let filtered = $derived(filterByTags(items, $watchlistFilter.tagUuids));
 	let rows = $derived(
-		$watchlistFilter.grain === 'anime'
-			? toAnimeRows(filtered, nameLanguage)
-			: toMediaRows(filtered, nameLanguage),
+		filterByPriority(
+			$watchlistFilter.grain === 'anime'
+				? toAnimeRows(filtered, nameLanguage)
+				: toMediaRows(filtered, nameLanguage),
+			$watchlistFilter.priorities,
+		),
 	);
 	let tableRows = $derived(sortRows(rows, $watchlistFilter.sort, $watchlistFilter.sortDir));
 
@@ -40,5 +45,5 @@
 {:else if $watchlistFilter.view === 'table'}
 	<WatchlistTable rows={tableRows} sort={$watchlistFilter.sort} sortDir={$watchlistFilter.sortDir} {onSort} />
 {:else}
-	<WatchlistPriorityGrid {rows} bandDir={$watchlistFilter.bandDir} grain={$watchlistFilter.grain} />
+	<WatchlistPriorityGrid {rows} grain={$watchlistFilter.grain} />
 {/if}

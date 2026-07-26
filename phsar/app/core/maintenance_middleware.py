@@ -34,6 +34,7 @@ class MaintenanceGateMiddleware:
             "/maintenance/status",
             "/admin/jobs/schedule-sweep",
             "/admin/jobs/schedule-seasonal",
+            "/admin/jobs/schedule-upcoming",
             "/admin/jobs/schedule-nightly",
         }
     )

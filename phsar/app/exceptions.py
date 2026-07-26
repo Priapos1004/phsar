@@ -45,6 +45,21 @@ class AnimeNotFoundError(PermanentPhsarError):
         super().__init__(message)
 
 
+class MalIdNotFoundError(PermanentPhsarError):
+    """Raised when a direct-MAL-id scrape targets an id MAL doesn't have —
+    the seed fetch (`/anime/{id}`) comes back 404. Distinct from a fuzzy
+    `q=` miss (AnimeNotFoundError): a bare id is exact, so "no anime with
+    that id" is definitive, not hedged. Permanent so the bell hides retry
+    (999999 stays 999999); the message is user-facing and already friendly,
+    so classify_error leaves it uncategorized and the bell shows it verbatim."""
+    status_code = 404
+
+    def __init__(self, mal_id: int):
+        self.mal_id = mal_id
+        message = f"No anime on MyAnimeList has id {mal_id}."
+        super().__init__(message)
+
+
 class TransientUpstreamError(PhsarBaseError):
     """Raised when MAL returns a successful HTTP response but with empty
     or malformed data — distinct from a real 404 (which would surface as

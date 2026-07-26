@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_db, require_roles
-from app.models.users import RoleType
+from app.core.dependencies import get_db, require_user_or_admin
 from app.schemas.search_schema import SearchResultDB
 from app.services.save_service import save_search_results
 
@@ -12,7 +11,7 @@ router = APIRouter(prefix="/save", tags=["save"])
 async def save_search_results_endpoint(
     search_results: list[SearchResultDB],
     db: AsyncSession = Depends(get_db),
-    current_user = Depends(require_roles([RoleType.User, RoleType.Admin]))
+    current_user = Depends(require_user_or_admin)
 ):
     await save_search_results(db, search_results)
     return {"status": "success"}

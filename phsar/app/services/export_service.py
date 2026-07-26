@@ -87,7 +87,7 @@ _RATING_NULL = {
     "rating_note": None,
     "rated_at": None,
     "rating_updated_at": None,
-    **{attr: None for attr in RATING_ATTRIBUTE_FIELDS},
+    **dict.fromkeys(RATING_ATTRIBUTE_FIELDS),
 }
 
 

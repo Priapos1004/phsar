@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -25,17 +24,17 @@ from app.schemas.media_schema import MediaConnected
 
 class RatingAttributes(BaseModel):
     """Shared optional rating attribute fields used across all rating schemas."""
-    pace: Optional[Pace] = None
-    animation_quality: Optional[AnimationQuality] = None
-    has_3d_animation: Optional[ThreeDAnimation] = None
-    watched_format: Optional[WatchedFormat] = None
-    fan_service: Optional[FanService] = None
-    dialogue_quality: Optional[DialogueQuality] = None
-    character_depth: Optional[CharacterDepth] = None
-    ending_type: Optional[EndingType] = None
-    ending_quality: Optional[EndingQuality] = None
-    story_quality: Optional[StoryQuality] = None
-    originality: Optional[Originality] = None
+    pace: Pace | None = None
+    animation_quality: AnimationQuality | None = None
+    has_3d_animation: ThreeDAnimation | None = None
+    watched_format: WatchedFormat | None = None
+    fan_service: FanService | None = None
+    dialogue_quality: DialogueQuality | None = None
+    character_depth: CharacterDepth | None = None
+    ending_type: EndingType | None = None
+    ending_quality: EndingQuality | None = None
+    story_quality: StoryQuality | None = None
+    originality: Originality | None = None
 
 
 class RatingBase(RatingAttributes):
@@ -47,7 +46,7 @@ class RatingBase(RatingAttributes):
     full-run in the service, so exposing them on the bulk payload would advertise inputs
     the endpoint ignores."""
     rating: float
-    note: Optional[str] = None
+    note: str | None = None
 
     @field_validator("rating")
     @classmethod
@@ -58,7 +57,7 @@ class RatingBase(RatingAttributes):
 
     @field_validator("note")
     @classmethod
-    def note_max_length(cls, v: Optional[str]) -> Optional[str]:
+    def note_max_length(cls, v: str | None) -> str | None:
         if v is not None and len(v) > 1000:
             raise ValueError("Note must be at most 1000 characters")
         return v
@@ -67,11 +66,11 @@ class RatingBase(RatingAttributes):
 class RatingCreate(RatingBase):
     # Per-media watch state — single-rating only (bulk pins completed / full-run itself).
     watch_status: WatchStatus = WatchStatus.completed
-    episodes_watched: Optional[int] = None
+    episodes_watched: int | None = None
 
     @field_validator("episodes_watched")
     @classmethod
-    def episodes_watched_non_negative(cls, v: Optional[int]) -> Optional[int]:
+    def episodes_watched_non_negative(cls, v: int | None) -> int | None:
         if v is not None and v < 0:
             raise ValueError("Episodes watched must be non-negative")
         return v
@@ -82,11 +81,11 @@ class RatingOut(RatingAttributes):
     rating: float
     watch_status: WatchStatus
     watched_count: int
-    episodes_watched: Optional[int]
-    note: Optional[str]
+    episodes_watched: int | None
+    note: str | None
     media_uuid: UUID
     media_title: str
-    media_cover_image: Optional[str]
+    media_cover_image: str | None
     anime_uuid: UUID
     anime_title: str
     created_at: datetime
@@ -117,23 +116,23 @@ class RatingScoreItem(RatingAttributes):
     media_uuid: UUID
     anime_uuid: UUID
     media_title: str
-    media_name_eng: Optional[str]
-    media_name_jap: Optional[str]
+    media_name_eng: str | None
+    media_name_jap: str | None
     anime_title: str
-    anime_name_eng: Optional[str]
-    anime_name_jap: Optional[str]
-    media_cover_image: Optional[str]
-    anime_cover_image: Optional[str]
+    anime_name_eng: str | None
+    anime_name_jap: str | None
+    media_cover_image: str | None
+    anime_cover_image: str | None
     rating: float
     watch_status: WatchStatus
-    episodes_watched: Optional[int]
-    age_rating_numeric: Optional[int]
+    episodes_watched: int | None
+    age_rating_numeric: int | None
     genres: list[str] = []
     studios: list[str] = []
     # MAL score + vote count power the You-vs-MAL alignment scatter (point weight =
     # log10(scored_by + 1), the shared confidence weight). mal_score is None when
     # MAL has no score; scored_by is never None (0 when no votes).
-    mal_score: Optional[float]
+    mal_score: float | None
     scored_by: int
     # Watch-time stats: episodes is the catalog total, duration_seconds the per-episode
     # runtime. Actual watched time = episodes_watched × duration_seconds (credited for
@@ -141,10 +140,10 @@ class RatingScoreItem(RatingAttributes):
     # directly instead of the full-series total_watch_time so the stat still works for a
     # currently-airing show with no episode total (One Piece). anime_season_name + _year
     # feed the season filter (and the by-year breakdown); both are null together.
-    episodes: Optional[int]
-    duration_seconds: Optional[int]
-    anime_season_name: Optional[str]
-    anime_season_year: Optional[int]
+    episodes: int | None
+    duration_seconds: int | None
+    anime_season_name: str | None
+    anime_season_year: int | None
     # Per-media relation type (main / alternative_version / side_story / …) → the
     # anime card's "X main · Y side" breakdown.
     relation_type: str
@@ -157,7 +156,7 @@ class RatingScoreItem(RatingAttributes):
 
 class RatingBulkCreate(RatingBase, BulkMediaUuids):
     # Note is attached to the last main media; earlier media get note cleared
-    note: Optional[str] = None
+    note: str | None = None
 
 
 class RatingBulkDelete(BulkMediaUuids):
@@ -166,20 +165,20 @@ class RatingBulkDelete(BulkMediaUuids):
 
 class RatingSearchFilters(MediaSearchFilters):
     """Extends media filters with rating-specific filters for searching within a user's ratings."""
-    user_rating_min: Optional[float] = None
-    user_rating_max: Optional[float] = None
-    watch_status: Optional[list[WatchStatus]] = None
-    pace: Optional[list[Pace]] = None
-    animation_quality: Optional[list[AnimationQuality]] = None
-    has_3d_animation: Optional[list[ThreeDAnimation]] = None
-    watched_format: Optional[list[WatchedFormat]] = None
-    fan_service: Optional[list[FanService]] = None
-    dialogue_quality: Optional[list[DialogueQuality]] = None
-    character_depth: Optional[list[CharacterDepth]] = None
-    ending_type: Optional[list[EndingType]] = None
-    ending_quality: Optional[list[EndingQuality]] = None
-    story_quality: Optional[list[StoryQuality]] = None
-    originality: Optional[list[Originality]] = None
+    user_rating_min: float | None = None
+    user_rating_max: float | None = None
+    watch_status: list[WatchStatus] | None = None
+    pace: list[Pace] | None = None
+    animation_quality: list[AnimationQuality] | None = None
+    has_3d_animation: list[ThreeDAnimation] | None = None
+    watched_format: list[WatchedFormat] | None = None
+    fan_service: list[FanService] | None = None
+    dialogue_quality: list[DialogueQuality] | None = None
+    character_depth: list[CharacterDepth] | None = None
+    ending_type: list[EndingType] | None = None
+    ending_quality: list[EndingQuality] | None = None
+    story_quality: list[StoryQuality] | None = None
+    originality: list[Originality] | None = None
 
 
 class SpoilerVisibility(BaseModel):
@@ -194,7 +193,7 @@ class RatedMediaResult(MediaConnected, RatingAttributes):
     user_rating: float
     watch_status: WatchStatus
     watched_count: int
-    episodes_watched: Optional[int] = None
-    note: Optional[str] = None
+    episodes_watched: int | None = None
+    note: str | None = None
     rating_created_at: datetime
     rating_modified_at: datetime

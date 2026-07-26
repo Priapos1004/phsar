@@ -512,13 +512,17 @@ async def test_stats_overview_returns_shape(client, admin_auth_headers):
     data = resp.json()
 
     assert set(data.keys()) == {
-        "catalog", "jobs_7d", "activity_7d", "sweep_tiers", "media_sweep_tiers",
+        "catalog", "jobs_7d", "activity_7d", "watchlist", "sweep_tiers", "media_sweep_tiers",
     }
     assert set(data["catalog"].keys()) == {
         "anime_count", "media_count", "anime_added_7d", "media_added_7d",
     }
     assert set(data["activity_7d"].keys()) == {
-        "active_users", "new_ratings", "scrapes_submitted",
+        "active_users", "new_ratings", "scrapes_submitted", "watchlist_modifications",
+    }
+    assert set(data["watchlist"].keys()) == {
+        "total_entries", "total_anime", "users_with_entries",
+        "avg_entries_per_user", "total_custom_lists", "avg_custom_lists_per_user",
     }
     int_buckets = ("airing_now", "stabilizing", "weekly_cycle", "long_cycle")
     bucket_keys = {*int_buckets, "stabilizing_by_check"}

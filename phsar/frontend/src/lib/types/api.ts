@@ -394,6 +394,9 @@ export interface WatchlistItem {
 	anime_season_name: string | null;
 	anime_season_year: number | null;
 	mal_id: number;
+	genres: string[];
+	studios: string[];
+	total_watch_time: number | null;
 	created_at: string;
 	modified_at: string;
 }
@@ -513,7 +516,7 @@ export interface RegistrationTokenListItem {
 }
 
 // Jobs (content pipeline)
-export type JobKind = 'user_scrape' | 'update_sweep' | 'seasonal_sweep' | 'backup' | 'restore';
+export type JobKind = 'user_scrape' | 'update_sweep' | 'seasonal_sweep' | 'upcoming_sweep' | 'backup' | 'restore';
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 
 // Mirrors backend `job_worker.ERROR_CATEGORY_*`. Keep both sides in sync —
@@ -771,6 +774,18 @@ export interface AdminActivityStats {
 	active_users: number;
 	new_ratings: number;
 	scrapes_submitted: number;
+	watchlist_modifications: number;
+}
+
+// All-users watchlist aggregates (no per-user breakdown). Averages are over
+// users_with_entries ("per active watchlist user"), 0 when nobody has one.
+export interface AdminWatchlistStats {
+	total_entries: number;
+	total_anime: number;
+	users_with_entries: number;
+	avg_entries_per_user: number;
+	total_custom_lists: number;
+	avg_custom_lists_per_user: number;
 }
 
 // Mutually-exclusive cycle-membership bucket counts in priority cascade
@@ -790,6 +805,7 @@ export interface AdminOverviewStats {
 	catalog: AdminCatalogStats;
 	jobs_7d: AdminJobsStats;
 	activity_7d: AdminActivityStats;
+	watchlist: AdminWatchlistStats;
 	// `sweep_tiers` = anime cycle-membership; `media_sweep_tiers` = the same
 	// cascade at media grain (v0.14.8, refresh selection is media-level).
 	// The Overview SweepTiersCard toggles between them.

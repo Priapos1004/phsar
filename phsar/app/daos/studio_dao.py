@@ -30,5 +30,4 @@ class StudioDAO(BaseDAO[Studio]):
             .order_by(Studio.name)
         )
         result = await db.execute(stmt)
-        distinct_genres = [row[0] for row in result.fetchall()]
-        return distinct_genres
+        return [row[0] for row in result.fetchall()]

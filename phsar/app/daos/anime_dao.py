@@ -339,8 +339,8 @@ class AnimeDAO(MalIdDAO[Anime]):
         SWEEP_STABILIZE_THRESHOLD keys (0..threshold-1, zero-filled) — the
         SweepTiersCard derives the pipeline depth from the key count, so keep
         the breakdown dense even when a check bucket is empty."""
-        counts: dict[str, Any] = {b: 0 for b in self._TIER_BUCKETS}
-        by_check = {n: 0 for n in range(SWEEP_STABILIZE_THRESHOLD)}
+        counts: dict[str, Any] = dict.fromkeys(self._TIER_BUCKETS, 0)
+        by_check = dict.fromkeys(range(SWEEP_STABILIZE_THRESHOLD), 0)
         for bucket_name, count in (await db.execute(stmt)).all():
             if bucket_name.startswith("stabilizing_"):
                 by_check[int(bucket_name.removeprefix("stabilizing_"))] = count

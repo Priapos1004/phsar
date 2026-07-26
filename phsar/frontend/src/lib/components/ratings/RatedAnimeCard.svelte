@@ -18,7 +18,12 @@
 	let title = $derived(resolveTitle(row.title, row.name_eng, row.name_jap, nameLanguage));
 	let imgFailed = $state(false);
 	// Anime covers are never spoiler-protected (per the spoiler rules), so no SpoilerGuard.
-	let href = $derived(buildDetailHref('anime', row.anime_uuid, { from: 'ratings' }));
+	// Media grain → link to the media page; anime grain → the anime page.
+	let href = $derived(
+		row.media_uuid
+			? buildDetailHref('media', row.media_uuid, { from: 'ratings' })
+			: buildDetailHref('anime', row.anime_uuid, { from: 'ratings' }),
+	);
 </script>
 
 <a {href} class="group block transition duration-200 hover:-translate-y-0.5">
@@ -60,8 +65,10 @@
 			<h3 class="text-sm font-medium text-card-foreground line-clamp-2 leading-snug" title={title}>
 				{title}
 			</h3>
+			<!-- Anime grain shows the main/side breakdown; media grain the media's relation
+			     type (mutually exclusive) — mirrors WatchlistCard. -->
 			<span class="mt-auto {cls.mutedPill}">
-				{mainSideLabel(row.mainCount, row.sideCount)}
+				{row.relationLabel ?? mainSideLabel(row.mainCount, row.sideCount)}
 			</span>
 		</div>
 	</div>

@@ -1,12 +1,13 @@
 <script lang="ts">
-	import { LayoutGrid, Table as TableIcon, ArrowDown, ArrowUp } from 'lucide-svelte';
+	import { LayoutGrid, Table as TableIcon } from 'lucide-svelte';
 	import * as Card from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
-	import Tooltip from '$lib/components/Tooltip.svelte';
+	import GrainToggle from '$lib/components/GrainToggle.svelte';
 	import { watchlistFilter } from '$lib/stores/watchlistFilter';
 	import { tags } from '$lib/stores/tags';
 	import { contrastText } from '$lib/utils/color';
+	import { PRIORITY_ACCENT, PRIORITY_OPTIONS } from '$lib/utils/watchlist';
 	import * as cls from '$lib/styles/classes';
 
 	// Prune deleted tags from the selection so a filter that pointed at a now-deleted
@@ -26,9 +27,16 @@
 		}));
 	}
 
-	let hasActiveFilters = $derived($watchlistFilter.tagUuids.length > 0);
+	function togglePriority(p: number) {
+		watchlistFilter.update((f) => ({
+			...f,
+			priorities: f.priorities.includes(p) ? f.priorities.filter((x) => x !== p) : [...f.priorities, p],
+		}));
+	}
+
+	let hasActiveFilters = $derived($watchlistFilter.tagUuids.length > 0 || $watchlistFilter.priorities.length > 0);
 	function clearFilters() {
-		watchlistFilter.update((f) => ({ ...f, tagUuids: [] }));
+		watchlistFilter.update((f) => ({ ...f, tagUuids: [], priorities: [] }));
 	}
 
 	const PILL_ON = 'border-primary bg-primary/15 text-primary font-medium';
@@ -50,14 +58,7 @@
 		<div class="flex-grow"></div>
 
 		<!-- Grain: group by anime (default) or show every media entry -->
-		<div class="inline-flex rounded-full border border-white/15 overflow-hidden">
-			<button class="px-3 py-1.5 text-sm transition-colors {$watchlistFilter.grain === 'anime' ? 'bg-primary/15 text-primary font-medium' : 'text-white/60 hover:text-white'}" onclick={() => watchlistFilter.update((f) => ({ ...f, grain: 'anime' }))}>
-				Anime
-			</button>
-			<button class="px-3 py-1.5 text-sm transition-colors border-l border-white/15 {$watchlistFilter.grain === 'media' ? 'bg-primary/15 text-primary font-medium' : 'text-white/60 hover:text-white'}" onclick={() => watchlistFilter.update((f) => ({ ...f, grain: 'media' }))}>
-				Media
-			</button>
-		</div>
+		<GrainToggle grain={$watchlistFilter.grain} onSelect={(g) => watchlistFilter.update((f) => ({ ...f, grain: g }))} />
 	</div>
 
 	<Card.Root class="{cls.cardGlass} overflow-visible relative">
@@ -67,23 +68,27 @@
 			</Button>
 		{/if}
 		<Card.Content class="flex flex-wrap items-start gap-x-6 gap-y-4 py-4">
-			{#if $watchlistFilter.view === 'grid'}
-				<div class="space-y-1.5">
-					<div class="flex h-7 items-center"><Label class={labelCls}>Order</Label></div>
-					<Tooltip text={$watchlistFilter.bandDir === 'desc' ? 'High priority first (click for low)' : 'Low priority first (click for high)'}>
-						{#snippet trigger(props)}
-							<button
-								{...props}
-								class="size-12 rounded-xl bg-card/80 backdrop-blur border border-input flex items-center justify-center text-card-foreground hover:bg-muted transition-colors"
-								aria-label="Toggle priority order"
-								onclick={() => watchlistFilter.update((f) => ({ ...f, bandDir: f.bandDir === 'desc' ? 'asc' : 'desc' }))}
-							>
-								{#if $watchlistFilter.bandDir === 'desc'}<ArrowDown class="size-4" />{:else}<ArrowUp class="size-4" />{/if}
-							</button>
-						{/snippet}
-					</Tooltip>
+			<!-- Priority: multi-select union filter (replaces the old band-order arrow — filtering
+			     to the bands you care about is more useful than flipping their order). Selected chip
+			     takes the band's accent color so it matches the grid band headers. -->
+			<div class="space-y-1.5">
+				<div class="flex h-7 items-center"><Label class={labelCls}>Priority</Label></div>
+				<div class="bg-card/80 backdrop-blur border border-input rounded-xl px-2 min-h-[48px] flex flex-wrap items-center gap-1.5 py-1.5">
+					{#each PRIORITY_OPTIONS as opt (opt.value)}
+						{@const on = $watchlistFilter.priorities.includes(opt.value)}
+						{@const acc = PRIORITY_ACCENT[opt.value]}
+						<button
+							class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-1.5 border border-transparent {on ? `${acc.dot} text-white shadow-sm` : 'bg-muted text-card-foreground/70 hover:bg-muted/70'}"
+							onclick={() => togglePriority(opt.value)}
+						>
+							<!-- Dot stays visible and switches color (white on the selected accent-filled
+							     chip, the accent color when unselected) — mirrors the Lists filter chips. -->
+							<span class="size-2.5 rounded-full {on ? 'bg-white' : acc.dot}"></span>
+							{opt.label}
+						</button>
+					{/each}
 				</div>
-			{/if}
+			</div>
 
 			<!-- Lists (tags): multi-select union — pick several to see them combined. -->
 			<div class="space-y-1.5 flex-grow min-w-[14rem]">

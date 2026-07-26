@@ -104,6 +104,18 @@ SUBSTANCE_MIN_TV_TOTAL_S = 7600
 # worth keeping?", never "what is this within a franchise?".
 SUBSTANCE_POPULAR_WAIVER_SCORED_BY = 10_000
 
+# Relaxed episode floor the popularity waiver applies to a short-RUN but
+# full-length show (a genuine short-cour TV series, e.g. "Takopi's Original
+# Sin" — 6 full-length episodes). The strict episode floor of 8 rejects it,
+# but a widely-scored full-length series with this many episodes is a real
+# catalog addition, not a one-shot. Only reached inside the popularity waiver
+# (so keep still requires SUBSTANCE_POPULAR_WAIVER_SCORED_BY scorers) AND only
+# when the per-episode DURATION floor is met — a short-form show below the
+# duration floor stays on the strict >= 8 path (the existing relax_duration
+# branch). Not a separate waiver: the trip-wire below caps keep-decision waiver
+# FUNCTIONS at two, and this is a second shape inside the popularity one.
+SUBSTANCE_SHORT_RUN_MIN_EPISODES = 6
+
 # Feature-length-ONA waiver for the WEAK-ANCHOR KEEP DECISION ONLY (see
 # `would_be_dropped_as_weak_anchor`). MAL labels a fair number of theatrical
 # / Netflix-original films as ONA rather than Movie (e.g. "Bubble", mal_id
@@ -243,10 +255,7 @@ def _anchor_sort_key(mal_id: int, node: ClassifierNode) -> tuple:
     scored_by = node.get("scored_by") or 0
     # Bucket nulls last within a tier so a typed-but-undated entry never
     # beats one with a real date. Within non-nulls, oldest wins.
-    if aired is None:
-        aired_sort = (1, "")
-    else:
-        aired_sort = (0, aired)
+    aired_sort = (1, "") if aired is None else (0, aired)
     return (tier, aired_sort, -scored_by, mal_id)
 
 
@@ -488,20 +497,42 @@ def classify_anime_relations(
 
 
 def passes_popularity_waiver(node: ClassifierNode) -> bool:
-    """Whether a substance-failing node clears the popularity waiver: a
-    short-duration entry that still passes the type + episode gates AND
-    has at least `SUBSTANCE_POPULAR_WAIVER_SCORED_BY` MAL scorers. Reuses
-    `passes_substance(relax_duration=True)` so the type gate (Music/PV
-    never qualify) and the episode floor are enforced identically — only
-    the duration floor is waived.
+    """Whether a substance-failing node clears the popularity waiver — a
+    widely-scored show (>= `SUBSTANCE_POPULAR_WAIVER_SCORED_BY` MAL scorers)
+    that is a real catalog addition despite failing the strict gate. Covers
+    two shapes, both keeping the type gate (Music/PV never qualify):
+
+    1. **Short-duration** — passes the type + episode floors but sits below the
+       per-episode duration floor (`passes_substance(relax_duration=True)`; the
+       "Love is Like a Cocktail" case).
+    2. **Short-run full-length** — a full-length TV/ONA series (per-episode
+       duration floor MET) that has fewer than the strict 8 episodes but at
+       least `SUBSTANCE_SHORT_RUN_MIN_EPISODES` — a genuine short-cour series
+       (the "Takopi's Original Sin" case, 6 full-length episodes).
 
     Scoped to the weak-anchor keep decision (see
-    `would_be_dropped_as_weak_anchor` and the module constant); not part
+    `would_be_dropped_as_weak_anchor` and the module constants); not part
     of the substance gate that ranks relation types.
     """
     if (node.get("scored_by") or 0) < SUBSTANCE_POPULAR_WAIVER_SCORED_BY:
         return False
-    return passes_substance(node, relax_duration=True)
+    if passes_substance(node, relax_duration=True):
+        return True
+    # Short-run full-length: relax the episode floor to
+    # SUBSTANCE_SHORT_RUN_MIN_EPISODES, but only when the DURATION floor is met
+    # (a real full-length series, not a short-form one that belongs on the
+    # relax_duration path above).
+    media_type = _normalize_media_type(node.get("media_type"))
+    if media_type not in _TV_LIKE_TYPES:
+        return False
+    episodes = node.get("episodes")
+    duration = node.get("duration_seconds")
+    return (
+        episodes is not None
+        and episodes >= SUBSTANCE_SHORT_RUN_MIN_EPISODES
+        and duration is not None
+        and duration >= SUBSTANCE_MIN_TV_DURATION_S
+    )
 
 
 def passes_feature_length_ona_waiver(node: ClassifierNode) -> bool:
@@ -559,9 +590,7 @@ def would_be_dropped_as_weak_anchor(
         return False
     if seed_mal_id is not None:
         return False
-    if len(cross_link_mal_ids) == 1:
-        return False
-    return True
+    return len(cross_link_mal_ids) != 1
 
 
 # Edge labels that, when present on the bridge between an orphan cluster

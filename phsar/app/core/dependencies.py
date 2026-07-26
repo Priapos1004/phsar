@@ -1,5 +1,5 @@
 import secrets
-from typing import AsyncGenerator, Union
+from collections.abc import AsyncGenerator
 
 from fastapi import Depends, Header
 from fastapi.security import OAuth2PasswordBearer
@@ -38,13 +38,13 @@ async def get_current_user(
         if username is None:
             raise CouldNotValidateCredentialsError()
     except JWTError:
-        raise CouldNotValidateCredentialsError()
+        raise CouldNotValidateCredentialsError() from None
     user = await user_dao.get_by_username(db, username)
     if user is None:
         raise CouldNotValidateCredentialsError()
     return user
 
-def require_roles(allowed_roles: Union[RoleType, list[RoleType]]):
+def require_roles(allowed_roles: RoleType | list[RoleType]):
     if isinstance(allowed_roles, RoleType):
         allowed_roles = [allowed_roles]
 
@@ -105,4 +105,4 @@ def verify_url_token(token: str) -> dict:
         return decompress_and_decode(compressed_data)
 
     except JWTError:
-        raise MalformedTokenError()
+        raise MalformedTokenError() from None

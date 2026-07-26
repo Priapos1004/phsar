@@ -171,12 +171,14 @@ class JobEnqueuedResponse(BaseModel):
 class NightlyScheduleResponse(BaseModel):
     """Returned by POST /admin/jobs/schedule-nightly. The combined cron
     endpoint enqueues a backup (immediate), an update_sweep (delayed so the
-    banner can warm up), and — only on Sundays UTC — a seasonal_sweep with
-    the same delay. `seasonal_sweep_uuid` is null on weekdays so callers can
+    banner can warm up), a seasonal_sweep (Sundays UTC only), and an
+    upcoming_sweep (Wednesdays UTC in the last month of the quarter). The two
+    optional sweep uuids are null on days they don't run so callers can
     distinguish 'didn't run today' from 'failed to enqueue'."""
     backup_uuid: UUID
     update_sweep_uuid: UUID
     seasonal_sweep_uuid: UUID | None = None
+    upcoming_sweep_uuid: UUID | None = None
     scheduled_at: datetime
 
 
@@ -210,11 +212,14 @@ class JobsStats(BaseModel):
 
 class ActivityStats(BaseModel):
     """User activity counters over the last 7 days. `active_users` is
-    distinct users with at least one rating change or scrape submission
-    in the window — system jobs (requested_by_user_id IS NULL) excluded."""
+    distinct users with at least one rating change, scrape submission, OR
+    watchlist add/edit in the window — system jobs (requested_by_user_id
+    IS NULL) excluded. `watchlist_modifications` counts entries added or
+    updated (modified_at) in the window."""
     active_users: int
     new_ratings: int
     scrapes_submitted: int
+    watchlist_modifications: int
 
 
 class SweepTierBreakdown(BaseModel):
@@ -238,10 +243,28 @@ class SweepTierBreakdown(BaseModel):
     long_cycle: int
 
 
+class WatchlistStats(BaseModel):
+    """All-users watchlist aggregates for the Overview tab. Aggregate only — no
+    per-user breakdown (same privacy posture as the rest of the tab). The two
+    averages use different denominators on purpose: `avg_entries_per_user` is over
+    `users_with_entries` (people who actually use the watchlist — "per active
+    watchlist user"), while `avg_custom_lists_per_user` is over the whole eligible
+    user base (non-restricted users) so it reads as list ADOPTION — how many custom
+    lists the average user has, counting the ones who made none. Both are 0 when the
+    denominator is 0. `total_custom_lists` excludes the immutable default list."""
+    total_entries: int
+    total_anime: int
+    users_with_entries: int
+    avg_entries_per_user: float
+    total_custom_lists: int
+    avg_custom_lists_per_user: float
+
+
 class AdminOverviewStats(BaseModel):
     catalog: CatalogStats
     jobs_7d: JobsStats
     activity_7d: ActivityStats
+    watchlist: WatchlistStats
     # `sweep_tiers` is the anime-membership breakdown (every anime's cycle
     # position); `media_sweep_tiers` is the same cascade at media grain
     # (v0.14.8 — refresh selection is now media-level). The Overview card

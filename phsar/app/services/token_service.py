@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 def generate_search_token(filters: ExtendedMediaSearchFilters) -> TokenPayload:
     # Enforce item count limit on all list fields
-    for field_name in ExtendedMediaSearchFilters.model_fields.keys():
+    for field_name in ExtendedMediaSearchFilters.model_fields:
         value = getattr(filters, field_name, None)
 
         if value is None:

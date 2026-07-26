@@ -1,4 +1,4 @@
-from typing import Generic, Type, TypeVar
+from typing import Generic, TypeVar
 
 from sqlalchemy import delete, distinct, func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +10,7 @@ from app.exceptions import FieldDoesNotExistError, NonNumericFieldError
 T = TypeVar("T", bound=DeclarativeMeta)  # any SQLAlchemy model
 
 class BaseDAO(Generic[T]):
-    def __init__(self, model: Type[T]):
+    def __init__(self, model: type[T]):
         self.model = model
 
     async def get_by_id(self, db: AsyncSession, id: int) -> T | None:

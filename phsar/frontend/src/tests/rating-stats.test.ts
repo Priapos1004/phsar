@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { RATING_ATTRIBUTE_OPTIONS, type RatingScoreItem, type WatchStatus } from '$lib/types/api';
 import {
 	groupByAnime,
+	toMediaRows,
 	filterItems,
 	sortAnimeRows,
 	toScoreBands,
@@ -98,6 +99,37 @@ describe('groupByAnime', () => {
 		expect(r.statusBadge).toBe('dropped');
 		expect(r.malScore).toBeNull();
 		expect(r.malDelta).toBeNull();
+	});
+});
+
+describe('toMediaRows', () => {
+	it('emits one row per media carrying media identity + the grain marker', () => {
+		const rows = toMediaRows([
+			item({ media_uuid: 'm1', anime_uuid: 'A', rating: 8, media_title: 'S1', mal_score: 7, scored_by: 100, relation_type: 'main' }),
+			item({ media_uuid: 'm2', anime_uuid: 'A', rating: 6, media_title: 'S2', mal_score: null, relation_type: 'side_story', watch_status: 'dropped' }),
+		]);
+		expect(rows).toHaveLength(2);
+		const [r1, r2] = rows;
+		expect(r1.media_uuid).toBe('m1');
+		expect(r1.title).toBe('S1');
+		expect(r1.userScore).toBe(8);
+		expect(r1.malDelta).toBe(1); // 8 − 7
+		expect(r1.ratedMediaCount).toBe(1);
+		expect(r1.mainCount).toBe(1);
+		expect(r1.sideCount).toBe(0);
+		expect(r1.relationLabel).toBeTruthy(); // media grain shows the relation type, not "1 main"
+		expect(r2.media_uuid).toBe('m2');
+		expect(r2.malScore).toBeNull();
+		expect(r2.malDelta).toBeNull();
+		expect(r2.statusBadge).toBe('dropped');
+		expect(r2.sideCount).toBe(1);
+	});
+
+	it('falls back to the anime cover when the media has none', () => {
+		const [r] = toMediaRows([
+			item({ media_uuid: 'm1', anime_uuid: 'A', rating: 8, media_cover_image: null, anime_cover_image: 'a.jpg' }),
+		]);
+		expect(r.cover_image).toBe('a.jpg');
 	});
 });
 

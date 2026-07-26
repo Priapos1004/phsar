@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -15,19 +14,19 @@ class AnimeRecentItem(BaseModel):
 
     uuid: UUID
     title: str
-    name_eng: Optional[str] = None
-    name_jap: Optional[str] = None
-    cover_image: Optional[str] = None
+    name_eng: str | None = None
+    name_jap: str | None = None
+    cover_image: str | None = None
     created_at: datetime
 
 
 class AnimeBase(BaseModel):
     title: str
-    name_eng: Optional[str]
-    name_jap: Optional[str]
+    name_eng: str | None
+    name_jap: str | None
     other_names: list[str] = []
-    description: Optional[str]
-    cover_image: Optional[str]
+    description: str | None
+    cover_image: str | None
 
 class AnimeCreate(AnimeBase):
     pass
@@ -53,14 +52,14 @@ class AnimeAggregatedBase(BaseModel):
     """Shared aggregated fields for anime search results and detail views."""
     uuid: UUID
     title: str
-    name_eng: Optional[str] = None
-    name_jap: Optional[str] = None
-    cover_image: Optional[str] = None
+    name_eng: str | None = None
+    name_jap: str | None = None
+    cover_image: str | None = None
     # Aggregated fields
-    avg_score: Optional[float] = None
+    avg_score: float | None = None
     avg_scored_by: int = 0
-    total_episodes: Optional[int] = None
-    total_watch_time: Optional[int] = None
+    total_episodes: int | None = None
+    total_watch_time: int | None = None
     media_count: int = 0
     # Breakdown badges
     relation_types: list[RelationTypeSummary] = []
@@ -69,13 +68,13 @@ class AnimeAggregatedBase(BaseModel):
     genres: list[str] = []
     studios: list[str] = []
     # Season range
-    season_start: Optional[str] = None
-    season_end: Optional[str] = None
+    season_start: str | None = None
+    season_end: str | None = None
     # Airing status
     airing_status: str = "Finished Airing"
     has_upcoming: bool = False
     # Age rating (max across media)
-    age_rating_numeric: Optional[int] = None
+    age_rating_numeric: int | None = None
     # Admin-set story-complete flag (presence of an anime_completion row)
     is_finished: bool = False
 
@@ -91,29 +90,29 @@ class AnimeMediaItem(BaseModel):
     """Media item within an anime detail view."""
     uuid: UUID
     title: str
-    name_eng: Optional[str] = None
-    name_jap: Optional[str] = None
-    cover_image: Optional[str] = None
+    name_eng: str | None = None
+    name_jap: str | None = None
+    cover_image: str | None = None
     media_type: str
     relation_type: str
-    score: Optional[float] = None
+    score: float | None = None
     scored_by: int = 0
-    episodes: Optional[int] = None
+    episodes: int | None = None
     airing_status: str
-    anime_season_name: Optional[str] = None
-    anime_season_year: Optional[int] = None
-    total_watch_time: Optional[int] = None
-    age_rating_numeric: Optional[int] = None
+    anime_season_name: str | None = None
+    anime_season_year: int | None = None
+    total_watch_time: int | None = None
+    age_rating_numeric: int | None = None
     genres: list[str] = []
     studios: list[str] = []
 
 class AnimeDetail(AnimeAggregatedBase):
     """Full anime detail with all media and aggregated metadata."""
     other_names: list[str] = []
-    description: Optional[str] = None
+    description: str | None = None
     # "Top N%" rank of this anime's confidence-weighted MAL score among all
     # scored anime in the catalog (None when unscored). Detail-only — not on
     # the search cards.
-    score_top_percent: Optional[int] = None
+    score_top_percent: int | None = None
     # All media in this anime
     media: list[AnimeMediaItem] = []

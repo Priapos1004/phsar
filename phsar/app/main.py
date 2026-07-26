@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 from contextlib import asynccontextmanager
 
@@ -134,6 +135,8 @@ async def lifespan(app: FastAPI):
     job_worker.register_dispatcher(JobKind.user_scrape, user_scrape_dispatcher)
     job_worker.register_dispatcher(JobKind.update_sweep, update_sweep_dispatcher)
     job_worker.register_dispatcher(JobKind.seasonal_sweep, seasonal_sweep_dispatcher)
+    # Same dispatcher — it targets the current vs next season off job.kind.
+    job_worker.register_dispatcher(JobKind.upcoming_sweep, seasonal_sweep_dispatcher)
     job_worker.register_dispatcher(JobKind.backup, backup_dispatcher)
     await job_worker.start()
 
@@ -142,10 +145,8 @@ async def lifespan(app: FastAPI):
     yield  # Startup complete — /health responds even while backfill runs
 
     backfill_task.cancel()
-    try:
+    with contextlib.suppress(asyncio.CancelledError):
         await backfill_task
-    except asyncio.CancelledError:
-        pass
     # Any non-cancellation exception was already logged by the task's
     # own except clause; letting it propagate here would just abort
     # shutdown after job_worker.stop() never ran, so we trust the task

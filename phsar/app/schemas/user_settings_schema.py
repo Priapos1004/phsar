@@ -1,4 +1,3 @@
-from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -22,8 +21,8 @@ class UserSettingsOut(BaseModel):
 
 
 class UserSettingsUpdate(BaseModel):
-    theme: Optional[Theme] = None
-    name_language: Optional[NameLanguage] = None
-    default_search_view: Optional[DefaultSearchView] = None
-    rating_step: Optional[RatingStep] = None
-    spoiler_level: Optional[SpoilerLevel] = None
+    theme: Theme | None = None
+    name_language: NameLanguage | None = None
+    default_search_view: DefaultSearchView | None = None
+    rating_step: RatingStep | None = None
+    spoiler_level: SpoilerLevel | None = None

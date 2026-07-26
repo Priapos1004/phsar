@@ -1,11 +1,15 @@
-"""Weekly seasonal sweep — paginates /seasons/now and enqueues child
+"""Season discovery sweeps — paginate one anime season and enqueue child
 user_scrape jobs for any mal_id the catalog doesn't already know about.
 
+Handles BOTH the `seasonal_sweep` (current season, weekly) and the
+`upcoming_sweep` (next season, so users can pre-add next-quarter shows to
+their watchlists) JobKinds off the same machinery — the only difference is
+which season is targeted, chosen by `job.kind`.
+
 Lives in its own module rather than alongside user_scrape / update_sweep
-because it shares no helpers with them: the seasonal sweep does no
-per-anime field diff, no relations BFS, no stability accounting. It is
-purely a discovery pass that hands off work to the existing user_scrape
-pipeline.
+because it shares no helpers with them: a season sweep does no per-anime
+field diff, no relations BFS, no stability accounting. It is purely a
+discovery pass that hands off work to the existing user_scrape pipeline.
 """
 
 import logging
@@ -18,22 +22,22 @@ from app.daos.media_dao import MediaDAO
 from app.daos.media_unwanted_dao import MediaUnwantedDAO
 from app.models.job import Job, JobKind, JobStatus
 from app.services.job_worker import job_worker
-from app.services.mal_scraper import MalScraper
+from app.services.mal_scraper import MalScraper, next_season
 from app.services.progress_reporter import ProgressReporter
 
 logger = logging.getLogger(__name__)
 
 
 async def seasonal_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
-    """Weekly: paginate /seasons/now, dedupe against the catalog
+    """Paginate a single anime season, dedupe against the catalog
     (`Anime.mal_id ∪ Media.mal_id ∪ MediaUnwanted.mal_id`), and enqueue
-    one `user_scrape` job per new mal_id. Children carry the seed mal_id
-    so the BFS skips the fuzzy q= lookup that would otherwise pull
-    unrelated top-3 matches into the catalog.
+    one `user_scrape` job per new mal_id. The target season is chosen by
+    `job.kind`: `seasonal_sweep` → the current season; `upcoming_sweep` →
+    the next season (so users can pre-add next-quarter releases). Children
+    carry the seed mal_id so the BFS skips the fuzzy q= lookup that would
+    otherwise pull unrelated top-3 matches into the catalog.
 
-    Per-row commit mirrors update_sweep's per-anime pattern from 7b: if
-    the loop dies mid-batch, already-enqueued children survive. Children
-    are `requested_by_user_id=None` (system jobs) — they skip the
+    Children are `requested_by_user_id=None` (system jobs) — they skip the
     per-user submission cap and don't surface in any user's bell. The
     dispatcher itself completes in seconds (single MAL fetch + N row
     inserts); the long tail of child user_scrapes runs after the
@@ -44,7 +48,10 @@ async def seasonal_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     await progress.update(stage="Fetching season", force=True)
 
     async with MalScraper() as scraper:
-        entries = await scraper.fetch_current_season()
+        year, season = scraper.current_season()
+        if job.kind == JobKind.upcoming_sweep:
+            year, season = next_season(year, season)
+        entries = await scraper.fetch_season(year, season)
 
     # Three sequential reads — SQLAlchemy's AsyncSession isn't safe for
     # concurrent operations on a single session, so asyncio.gather() here

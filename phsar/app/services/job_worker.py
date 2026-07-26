@@ -12,9 +12,10 @@ Subsequent commits add user_scrape, update_sweep, seasonal_sweep dispatchers.
 """
 
 import asyncio
+import contextlib
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
-from typing import Awaitable, Callable
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,7 +53,7 @@ _MAINTENANCE_POLL_SECONDS = 2.0
 # except the allowlist for the duration. user_scrape jobs are concurrent-safe
 # with normal traffic and don't need the bracket.
 _MAINTENANCE_KINDS: frozenset[JobKind] = frozenset(
-    {JobKind.update_sweep, JobKind.seasonal_sweep}
+    {JobKind.update_sweep, JobKind.seasonal_sweep, JobKind.upcoming_sweep}
 )
 
 # Error categories stamped on result_summary["error_category"] for the
@@ -140,10 +141,8 @@ class JobWorker:
                 "JobWorker stop() exceeded 10s; cancelling in-flight job"
             )
             self._task.cancel()
-            try:
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await self._task
-            except (asyncio.CancelledError, Exception):
-                pass
         except asyncio.CancelledError:
             pass
         except Exception:
@@ -168,10 +167,8 @@ class JobWorker:
                 _MAINTENANCE_POLL_SECONDS if is_maintenance_active()
                 else _FALLBACK_POLL_SECONDS
             )
-            try:
+            with contextlib.suppress(asyncio.TimeoutError):
                 await asyncio.wait_for(self._wakeup.wait(), timeout=timeout)
-            except asyncio.TimeoutError:
-                pass
 
     async def dispatch_one(self) -> bool:
         """Claim and run one job. Returns True if a job was processed.

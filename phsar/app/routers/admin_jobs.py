@@ -1,7 +1,8 @@
 """Cron-authed scheduler endpoints (sweeps + auto-backup).
 
-All four endpoints share `JOBS_CRON_TOKEN` via `require_jobs_cron_token`
-and are mounted under `/admin` by the parent admin router. They sit on a
+All five endpoints (schedule-sweep, -seasonal, -upcoming, -nightly, and
+backups/auto) share `JOBS_CRON_TOKEN` via `require_jobs_cron_token` and are
+mounted under `/admin` by the parent admin router. They sit on a
 separate router (no router-level admin dep) so the cron token is the only
 auth they require — the JWT admin chain doesn't apply to machine-only
 endpoints.
@@ -121,6 +122,22 @@ async def schedule_seasonal(
     return await _enqueue_scheduled_sweep(db, JobKind.seasonal_sweep, delay_minutes)
 
 
+# The next-season sweep — same dispatcher as seasonal, targeting next season so
+# users can pre-add next-quarter shows to their watchlists. Kept as a standalone
+# endpoint (mirrors schedule-seasonal) for ad-hoc triggers + end-to-end testing;
+# schedule-nightly fires it automatically on the right days.
+@router.post(
+    "/jobs/schedule-upcoming",
+    response_model=admin_schema.ScheduledSweepResponse,
+    dependencies=[Depends(require_jobs_cron_token)],
+)
+async def schedule_upcoming(
+    delay_minutes: int = Query(20, ge=0, le=1440),
+    db: AsyncSession = Depends(get_db),
+):
+    return await _enqueue_scheduled_sweep(db, JobKind.upcoming_sweep, delay_minutes)
+
+
 # Combined daily cron entry — one Coolify scheduled task hits this and the
 # endpoint decides which jobs to enqueue. Routes through the same per-kind
 # helpers as the individual schedulers so the post-commit ceremony
@@ -135,23 +152,36 @@ async def schedule_nightly(
     db: AsyncSession = Depends(get_db),
 ):
     """Backup (immediate) + update_sweep (delayed) + seasonal_sweep
-    (delayed, Sundays UTC only). The seasonal piggybacks on the same
-    `not_before_at` as update_sweep so the weekly catalog pickup shares
-    the daily maintenance window instead of opening its own."""
+    (delayed, Sundays UTC only) + upcoming_sweep (delayed, Wednesdays UTC in
+    the last month of the quarter). The sweeps piggyback on the same
+    `not_before_at` as update_sweep so the maintenance windows coincide.
+
+    Seasonal (Sun) and upcoming (Wed) run on different weekdays by design, so
+    they never share a nightly run — a Wednesday-in-March never overloads the
+    window with two season sweeps. Upcoming fires only in the LAST month of
+    each quarter (`month % 3 == 0` → Mar/Jun/Sep/Dec) so next-quarter shows
+    surface roughly a month before the season starts, not the whole quarter."""
+    now = datetime.now(timezone.utc)
     backup = await enqueue_backup_job(
         db, backup_schema.BackupSource.cron, label=None, requested_by_user_id=None,
     )
     sweep = await _enqueue_scheduled_sweep(db, JobKind.update_sweep, delay_minutes)
     seasonal: admin_schema.ScheduledSweepResponse | None = None
-    if datetime.now(timezone.utc).weekday() == calendar.SUNDAY:
+    if now.weekday() == calendar.SUNDAY:
         seasonal = await _enqueue_scheduled_sweep(
             db, JobKind.seasonal_sweep, delay_minutes,
+        )
+    upcoming: admin_schema.ScheduledSweepResponse | None = None
+    if now.weekday() == calendar.WEDNESDAY and now.month % 3 == 0:
+        upcoming = await _enqueue_scheduled_sweep(
+            db, JobKind.upcoming_sweep, delay_minutes,
         )
 
     return admin_schema.NightlyScheduleResponse(
         backup_uuid=backup.job_uuid,
         update_sweep_uuid=sweep.job_uuid,
         seasonal_sweep_uuid=seasonal.job_uuid if seasonal is not None else None,
+        upcoming_sweep_uuid=upcoming.job_uuid if upcoming is not None else None,
         scheduled_at=sweep.scheduled_at,
     )
 

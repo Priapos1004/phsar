@@ -8,6 +8,8 @@
 	import { bumpJobsRefresh, librarySaved, onBump } from '$lib/stores/jobs';
 	import { pushToast } from '$lib/stores/toast';
 	import { userSettings } from '$lib/stores/userSettings';
+	import { watchlistAnimeColors } from '$lib/stores/watchlist';
+	import WatchlistBookmarkIcon from '$lib/components/WatchlistBookmarkIcon.svelte';
 	import { formatShortDate, resolveTitle } from '$lib/utils/formatString';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import type { Job } from '$lib/types/api';
@@ -149,11 +151,12 @@
 						anime.name_jap,
 						nameLanguage,
 					)}
+					{@const bookmarkColors = $watchlistAnimeColors.get(anime.uuid) ?? []}
 					<a
 						href={buildDetailHref('anime', anime.uuid, { from: 'library' })}
 						class="group flex flex-col gap-2 hover:opacity-90 transition"
 					>
-						<div class="aspect-[2/3] bg-muted rounded overflow-hidden">
+						<div class="relative aspect-[2/3] bg-muted rounded overflow-hidden">
 							{#if anime.cover_image}
 								<img
 									src={anime.cover_image}
@@ -166,6 +169,13 @@
 									class="w-full h-full flex items-center justify-center text-xs text-muted-foreground"
 								>
 									No cover
+								</div>
+							{/if}
+							{#if bookmarkColors.length > 0}
+								<!-- Watchlist state overlaid on the cover (matches RelatedMediaCarousel).
+								     Anime-level cards → aggregate list colors (gradient when several). -->
+								<div class="absolute top-1 right-1 flex size-6 items-center justify-center rounded-md bg-black/45 backdrop-blur-sm">
+									<WatchlistBookmarkIcon colors={bookmarkColors} iconClass="size-3.5 block" />
 								</div>
 							{/if}
 						</div>

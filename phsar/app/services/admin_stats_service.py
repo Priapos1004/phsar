@@ -16,10 +16,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.daos.anime_dao import AnimeDAO
 from app.daos.merge_candidate_dao import MergeCandidateDAO
 from app.daos.split_candidate_dao import SplitCandidateDAO
+from app.daos.tag_dao import TagDAO
+from app.daos.user_dao import UserDAO
+from app.daos.watchlist_dao import WatchlistDAO
 from app.models.anime import Anime
 from app.models.job import Job, JobKind, JobStatus
 from app.models.media import Media
 from app.models.ratings import Ratings
+from app.models.watchlist import Watchlist
 from app.schemas.admin_schema import (
     ActivityStats,
     AdminOverviewStats,
@@ -28,11 +32,15 @@ from app.schemas.admin_schema import (
     JobKindStats,
     JobsStats,
     SweepTierBreakdown,
+    WatchlistStats,
 )
 
 anime_dao = AnimeDAO()
 merge_candidate_dao = MergeCandidateDAO()
 split_candidate_dao = SplitCandidateDAO()
+watchlist_dao = WatchlistDAO()
+tag_dao = TagDAO()
+user_dao = UserDAO()
 
 
 async def _catalog_stats(db: AsyncSession, cutoff: datetime) -> CatalogStats:
@@ -121,24 +129,29 @@ async def _activity_stats(db: AsyncSession, cutoff: datetime) -> ActivityStats:
             .where(Job.requested_by_user_id.is_not(None))
         )
     ).scalar_one()
-    # Active users = distinct user_ids touching ratings OR user-attributed
-    # jobs in the window. UNION (not UNION ALL) deduplicates across the
-    # two selects, so users who rated AND scraped count once.
+    watchlist_modifications = await watchlist_dao.count_modified_since(db, cutoff)
+    # Active users = distinct user_ids touching ratings OR user-attributed jobs
+    # OR the watchlist in the window. UNION (not UNION ALL) deduplicates across
+    # the selects, so a user who rated AND scraped AND watchlisted counts once.
     rating_users = select(Ratings.user_id).where(Ratings.created_at >= cutoff)
     job_users = (
         select(Job.requested_by_user_id)
         .where(Job.created_at >= cutoff)
         .where(Job.requested_by_user_id.is_not(None))
     )
+    watchlist_users = select(Watchlist.user_id).where(Watchlist.modified_at >= cutoff)
     active_users = (
         await db.execute(
-            select(func.count()).select_from(rating_users.union(job_users).subquery())
+            select(func.count()).select_from(
+                rating_users.union(job_users, watchlist_users).subquery()
+            )
         )
     ).scalar_one()
     return ActivityStats(
         active_users=active_users,
         new_ratings=new_ratings,
         scrapes_submitted=scrapes_submitted,
+        watchlist_modifications=watchlist_modifications,
     )
 
 
@@ -152,6 +165,26 @@ async def _media_sweep_tier_breakdown(db: AsyncSession) -> SweepTierBreakdown:
     return SweepTierBreakdown(**counts)
 
 
+async def _watchlist_stats(db: AsyncSession) -> WatchlistStats:
+    total_entries = await watchlist_dao.count_total(db)
+    total_anime = await watchlist_dao.count_distinct_anime(db)
+    users_with_entries = await watchlist_dao.count_distinct_users(db)
+    total_custom_lists = await tag_dao.count_custom_total(db)
+    eligible_users = await user_dao.count_non_restricted(db)
+    # Two denominators on purpose (see WatchlistStats docstring): entries average over
+    # active watchlist users; the custom-list average is ADOPTION, over the whole eligible
+    # base (so users who made no list count against it). The `if <denom>` guards protect
+    # against div-by-zero, so each division runs only when its denominator is non-zero.
+    return WatchlistStats(
+        total_entries=total_entries,
+        total_anime=total_anime,
+        users_with_entries=users_with_entries,
+        avg_entries_per_user=round(total_entries / users_with_entries, 1) if users_with_entries else 0.0,
+        total_custom_lists=total_custom_lists,
+        avg_custom_lists_per_user=round(total_custom_lists / eligible_users, 1) if eligible_users else 0.0,
+    )
+
+
 async def get_overview_stats(db: AsyncSession) -> AdminOverviewStats:
     cutoff = datetime.now(timezone.utc) - timedelta(days=7)
     # Sequential awaits — AsyncSession can't multiplex.
@@ -159,6 +192,7 @@ async def get_overview_stats(db: AsyncSession) -> AdminOverviewStats:
         catalog=await _catalog_stats(db, cutoff),
         jobs_7d=await _jobs_stats(db, cutoff),
         activity_7d=await _activity_stats(db, cutoff),
+        watchlist=await _watchlist_stats(db),
         sweep_tiers=await _sweep_tier_breakdown(db),
         media_sweep_tiers=await _media_sweep_tier_breakdown(db),
     )

@@ -13,6 +13,7 @@ from app.services.relation_classifier import (
     SUBSTANCE_MIN_TV_DURATION_S,
     SUBSTANCE_MIN_TV_TOTAL_S,
     SUBSTANCE_POPULAR_WAIVER_SCORED_BY,
+    SUBSTANCE_SHORT_RUN_MIN_EPISODES,
     classify_anime_relations,
     find_disjoint_franchises,
     passes_feature_length_ona_waiver,
@@ -821,6 +822,78 @@ def test_popularity_waiver_does_not_affect_relation_ranking():
         2: _tv(episodes=13, duration_s=180, aired="2005-01-01", scored_by=500_000),
     }
     edges = [(1, 2, "sequel")]
+    out, anchor = classify_anime_relations(nodes, edges)
+    assert anchor == 1
+    assert out[1] == "main"
+    assert out[2] == "side_story"
+
+
+# --- short-run full-length popular waiver (v0.15.1) --------------------
+#
+# The strict episode floor of 8 rejects a genuine short-cour TV series like
+# "Takopi's Original Sin" (6 full-length episodes). The popularity waiver
+# relaxes the episode floor to SUBSTANCE_SHORT_RUN_MIN_EPISODES when the show
+# is widely scored AND its per-episode DURATION floor is met, so it saves as
+# its own anime on a plain unseeded title search. Scoped to the keep decision
+# only — like the other waivers, it must not touch anchor selection or
+# relation-type ranking.
+
+
+def test_short_run_full_length_popular_kept_as_weak_anchor():
+    # Takopi's Original Sin shape: TV, 6 full-length (~23 min) episodes,
+    # over the scorer floor. Standalone (no cross-link), unseeded title search.
+    nodes = {58939: _tv(episodes=SUBSTANCE_SHORT_RUN_MIN_EPISODES, duration_s=1380,
+                        scored_by=SUBSTANCE_POPULAR_WAIVER_SCORED_BY)}
+    assert not passes_substance(nodes[58939])  # strict gate fails (< 8 eps)
+    assert passes_popularity_waiver(nodes[58939])
+    assert not would_be_dropped_as_weak_anchor(
+        nodes, 58939, seed_mal_id=None, cross_link_mal_ids=set(),
+    )
+
+
+def test_short_run_full_length_below_scorer_floor_dropped():
+    # Same 6-ep full-length shape, just under the scorer floor → no waiver.
+    nodes = {58940: _tv(episodes=SUBSTANCE_SHORT_RUN_MIN_EPISODES, duration_s=1380,
+                        scored_by=SUBSTANCE_POPULAR_WAIVER_SCORED_BY - 1)}
+    assert not passes_popularity_waiver(nodes[58940])
+    assert would_be_dropped_as_weak_anchor(
+        nodes, 58940, seed_mal_id=None, cross_link_mal_ids=set(),
+    )
+
+
+def test_short_run_below_relaxed_episode_floor_dropped():
+    # A popular full-length TV under SUBSTANCE_SHORT_RUN_MIN_EPISODES (a 5-ep
+    # mini-series) stays below even the relaxed floor → dropped.
+    nodes = {58941: _tv(episodes=SUBSTANCE_SHORT_RUN_MIN_EPISODES - 1,
+                        duration_s=1380, scored_by=500_000)}
+    assert not passes_popularity_waiver(nodes[58941])
+    assert would_be_dropped_as_weak_anchor(
+        nodes, 58941, seed_mal_id=None, cross_link_mal_ids=set(),
+    )
+
+
+def test_short_run_requires_duration_floor():
+    # A popular 6-ep SHORT-FORM show (below the duration floor) is NOT rescued
+    # by the short-run branch — it must use the strict relax_duration path,
+    # which enforces the >= 8 episode floor it fails → dropped.
+    nodes = {58942: _tv(episodes=SUBSTANCE_SHORT_RUN_MIN_EPISODES, duration_s=180,
+                        scored_by=500_000)}
+    assert not passes_popularity_waiver(nodes[58942])
+    assert would_be_dropped_as_weak_anchor(
+        nodes, 58942, seed_mal_id=None, cross_link_mal_ids=set(),
+    )
+
+
+def test_short_run_popular_waiver_does_not_affect_relation_ranking():
+    # The waiver must NOT leak into classify_anime_relations: a popular 6-ep
+    # full-length side story of a longer TV main stays side_story; the long
+    # TV keeps the anchor.
+    nodes = {
+        1: _tv(episodes=26, duration_s=1440, aired="2000-01-01", scored_by=50_000),
+        2: _tv(episodes=SUBSTANCE_SHORT_RUN_MIN_EPISODES, duration_s=1380,
+               aired="2005-01-01", scored_by=500_000),
+    }
+    edges = [(1, 2, "side_story")]
     out, anchor = classify_anime_relations(nodes, edges)
     assert anchor == 1
     assert out[1] == "main"

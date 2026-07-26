@@ -154,6 +154,15 @@ function byChronoKey(
 	return a.mal_id - b.mal_id;
 }
 
+/** Keep only rows whose priority band is in the selected set. Empty = all (a union,
+ *  mirroring the list filter). Applied AFTER row normalization so it matches the band
+ *  each row displays in — the anime grain filters on the anime's most-urgent priority. */
+export function filterByPriority(rows: WatchlistRow[], priorities: number[]): WatchlistRow[] {
+	if (priorities.length === 0) return rows;
+	const set = new Set(priorities);
+	return rows.filter((r) => set.has(r.priority));
+}
+
 /** Within-band order + the stable, direction-independent sort tiebreak: rows by title ascending. */
 const byTitle = (a: WatchlistRow, b: WatchlistRow) => a.title.localeCompare(b.title);
 
@@ -191,4 +200,105 @@ export function sortRows(rows: WatchlistRow[], key: WatchlistSortKey, dir: 'asc'
 		if (cmp !== 0) return sign * cmp;
 		return byTitle(a, b);
 	});
+}
+
+// ── Statistics subtab (v0.15.1) ──────────────────────────────────────────────
+// Pure summary derived from the wide /watchlist/items fetch + the /ratings/scores
+// fetch, mirroring the ratings-page "one fetch, all math client-side" pattern.
+
+export interface TagCount {
+	name: string;
+	count: number; // distinct watchlisted anime carrying this genre/studio (the bar metric)
+	main: number; // watchlisted MAIN media in this genre/studio (for the bar hover)
+	side: number; // watchlisted SIDE media
+	seconds: number; // queued runtime (Σ total_watch_time) of this tag's media
+}
+
+/** Full queued runtime of a watchlist media — the backend Media.total_watch_time hybrid
+ *  (episodes × per-episode duration), null when either factor is unknown. Watchlist media
+ *  are unwatched with no partial-watch status, so the full runtime IS the queued time. */
+function queuedSeconds(it: WatchlistItem): number {
+	return it.total_watch_time ?? 0;
+}
+
+export interface WatchlistSummary {
+	totalAnime: number; // distinct anime on the watchlist
+	totalMedia: number; // watchlist entries (one per media)
+	totalQueuedSeconds: number; // Σ full runtime of watchlist media (time queued up)
+	alreadyRated: number; // watchlist media you've already rated
+	continuations: number; // UNRATED watchlist media whose anime has another rated media
+	topGenres: TagCount[];
+	topStudios: TagCount[];
+}
+
+/** Minimal shape needed from a rating for the summary (media + its anime). */
+export type RatedRef = { media_uuid: string; anime_uuid: string };
+
+/** Count distinct watchlisted anime per tag value (genre/studio) — anime-level so a
+ *  multi-season franchise isn't over-counted — top `limit`, ties broken by name. Also
+ *  tallies the watchlisted main/side MEDIA per tag (the bar's hover breakdown). */
+function topTags(items: WatchlistItem[], dim: 'genres' | 'studios', limit: number): TagCount[] {
+	const byTag = new Map<string, { anime: Set<string>; main: number; side: number; seconds: number }>();
+	for (const it of items) {
+		const isMain = MAIN_RELATIONS.has(it.relation_type);
+		const secs = queuedSeconds(it);
+		for (const name of it[dim]) {
+			let acc = byTag.get(name);
+			if (!acc) {
+				acc = { anime: new Set(), main: 0, side: 0, seconds: 0 };
+				byTag.set(name, acc);
+			}
+			acc.anime.add(it.anime_uuid);
+			if (isMain) acc.main++;
+			else acc.side++;
+			acc.seconds += secs;
+		}
+	}
+	return [...byTag.entries()]
+		.map(([name, acc]) => ({ name, count: acc.anime.size, main: acc.main, side: acc.side, seconds: acc.seconds }))
+		.sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
+		.slice(0, limit);
+}
+
+export function watchlistSummary(
+	items: WatchlistItem[],
+	rated: RatedRef[],
+	opts: { genreLimit?: number; studioLimit?: number } = {},
+): WatchlistSummary {
+	const { genreLimit = 5, studioLimit = 3 } = opts;
+
+	const ratedMedia = new Set(rated.map((r) => r.media_uuid));
+	const ratedByAnime = new Map<string, Set<string>>();
+	for (const r of rated) {
+		let s = ratedByAnime.get(r.anime_uuid);
+		if (!s) {
+			s = new Set();
+			ratedByAnime.set(r.anime_uuid, s);
+		}
+		s.add(r.media_uuid);
+	}
+
+	let alreadyRated = 0;
+	let continuations = 0;
+	for (const it of items) {
+		if (ratedMedia.has(it.media_uuid)) {
+			alreadyRated++;
+			// This entry is itself rated → it's a rewatch, not a continuation. Skip it.
+			continue;
+		}
+		// A "continuation": this (unrated) entry's anime has some OTHER rated media — you've
+		// started the franchise but not this entry yet.
+		const animeRated = ratedByAnime.get(it.anime_uuid);
+		if (animeRated && animeRated.size > 0) continuations++;
+	}
+
+	return {
+		totalAnime: new Set(items.map((i) => i.anime_uuid)).size,
+		totalMedia: items.length,
+		totalQueuedSeconds: items.reduce((sum, it) => sum + queuedSeconds(it), 0),
+		alreadyRated,
+		continuations,
+		topGenres: topTags(items, 'genres', genreLimit),
+		topStudios: topTags(items, 'studios', studioLimit),
+	};
 }

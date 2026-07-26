@@ -16,7 +16,11 @@ from tenacity import (
 )
 
 from app.core.config import settings
-from app.exceptions import AnimeNotFoundError, TransientUpstreamError
+from app.exceptions import (
+    AnimeNotFoundError,
+    MalIdNotFoundError,
+    TransientUpstreamError,
+)
 from app.services.relation_classifier import (
     AIRING_STATUS_NOT_YET_AIRED,
     anchor_tier,
@@ -224,6 +228,20 @@ def _month_to_season(month: int) -> str:
     if month <= 9:
         return "summer"
     return "fall"
+
+
+# Season order for the +1 rollover the upcoming sweep needs (fall → winter of
+# the next year). Lowercase to match `_month_to_season` / the URL segment.
+_SEASON_ORDER = ("winter", "spring", "summer", "fall")
+
+
+def next_season(year: int, season: str) -> tuple[int, str]:
+    """The season after `(year, season)`, rolling the year forward past fall.
+    e.g. (2026, "summer") → (2026, "fall"); (2026, "fall") → (2027, "winter")."""
+    idx = _SEASON_ORDER.index(season)
+    if idx == len(_SEASON_ORDER) - 1:
+        return year + 1, _SEASON_ORDER[0]
+    return year, _SEASON_ORDER[idx + 1]
 
 
 # Relation labels MAL applies to identity-breaking derivatives. `spin_off` is
@@ -579,25 +597,29 @@ class MalScraper:
         step-2 probe can reuse the payload's relations without a second hit."""
         return await self.search_by_malid(mal_id)
 
-    async def fetch_current_season(self) -> list[dict]:
-        """Paginate the current season and return `[{"mal_id", "title"}, ...]`.
-
-        MAL v2 has no `/seasons/now`; the current year+season is computed from
-        the clock and passed to `/anime/season/{year}/{season}` sorted by
-        popularity. Response shape: `{"data": [{"node": {...}}], "paging": {
-        "next": <url|absent>}}`. The dispatcher only needs `mal_id` + `title`
-        per entry — no `extract_information` here, the seasonal sweep just
-        hands the title down to a child `user_scrape` job.
-        """
+    def current_season(self) -> tuple[int, str]:
+        """(year, season) for right now — MAL v2 has no `/seasons/now`, so it's
+        derived from the clock. The seasonal sweep scrapes this; the upcoming
+        sweep scrapes `next_season(*current_season())`."""
         now = datetime.now(timezone.utc)
-        season = _month_to_season(now.month)
+        return now.year, _month_to_season(now.month)
 
+    async def fetch_season(self, year: int, season: str) -> list[dict]:
+        """Paginate one anime season and return `[{"mal_id", "title"}, ...]`.
+
+        Hits `/anime/season/{year}/{season}` sorted by popularity. Response
+        shape: `{"data": [{"node": {...}}], "paging": {"next": <url|absent>}}`.
+        The caller only needs `mal_id` + `title` per entry — no
+        `extract_information` here, the sweep just hands the title down to a
+        child `user_scrape` job. Shared by the seasonal (current season) and
+        upcoming (next season) sweeps.
+        """
         results: list[dict] = []
         offset = 0
         limit = 100
         while True:
             payload = await self._get(
-                f"{self.base_url}/anime/season/{now.year}/{season}",
+                f"{self.base_url}/anime/season/{year}/{season}",
                 params={
                     "sort": "anime_num_list_users",
                     "limit": limit,
@@ -639,7 +661,19 @@ class MalScraper:
             # candidate. Subtract the seed from excluded_ids so the BFS
             # actually processes it instead of short-circuiting on
             # "already in catalog".
-            seed_data = seed_payload or await self.search_by_malid(seed_mal_id)
+            if seed_payload is not None:
+                seed_data = seed_payload
+            else:
+                try:
+                    seed_data = await self.search_by_malid(seed_mal_id)
+                except httpx.HTTPStatusError as e:
+                    # A bare id is exact, so a 404 is a definitive "no such anime"
+                    # (e.g. a user scraping 999999) — a permanent error the bell
+                    # shows without a retry button, not the retryable transient
+                    # below (that one is for a 200-OK-but-empty MAL hiccup).
+                    if e.response.status_code == 404:
+                        raise MalIdNotFoundError(seed_mal_id) from None
+                    raise
             if not seed_data:
                 # MAL returned 200 OK but an empty body — a real 404 would
                 # have raised HTTPStatusError inside `_get`. This is a

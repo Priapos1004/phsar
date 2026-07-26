@@ -1,13 +1,13 @@
 import { writable } from 'svelte/store';
 import type { WatchlistGrain, WatchlistSortKey, WatchlistView } from '$lib/utils/watchlistStats';
 
-export type WatchlistTabKey = 'watchlists' | 'tags';
+export type WatchlistTabKey = 'watchlists' | 'tags' | 'stats';
 
 export interface WatchlistFilterState {
 	view: WatchlistView;
 	grain: WatchlistGrain; // anime (default, aggregated) vs media (one card per entry)
 	tagUuids: string[]; // multi-select union — [] = all tags
-	bandDir: 'asc' | 'desc'; // grid priority-band order; 'desc' = High on top
+	priorities: number[]; // multi-select union of priority bands — [] = all
 	sort: WatchlistSortKey; // table column sort
 	sortDir: 'asc' | 'desc';
 }
@@ -16,7 +16,7 @@ export const DEFAULT_WATCHLIST_FILTER: WatchlistFilterState = {
 	view: 'grid',
 	grain: 'anime',
 	tagUuids: [],
-	bandDir: 'desc',
+	priorities: [],
 	sort: 'priority',
 	sortDir: 'asc',
 };

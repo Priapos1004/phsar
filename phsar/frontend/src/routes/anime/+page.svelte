@@ -136,6 +136,12 @@
 	let alreadyRatedCount = $derived(
 		[...ratableUuids].filter(uuid => userRatings.has(uuid)).length
 	);
+	// Watchlisted media within the ratable subset — the bulk-rate dialog offers to remove
+	// exactly these (rating a media ⇒ no longer "want to watch"). Scoped to ratable so a
+	// not-yet-aired watchlisted member (excluded from the rating) isn't silently removed.
+	let ratableWatchlistedCount = $derived(
+		[...ratableUuids].filter(uuid => $watchlistTags.has(uuid)).length
+	);
 
 	// Selected media already on the watchlist — the bulk "Remove from watchlist" acts on
 	// exactly these (the hero remove-all only clears the whole anime, not a subset).
@@ -428,17 +434,19 @@
 						<!-- Anime-level watchlist bookmark — filled (theme primary, since an anime can
 						     span multiple tags) when ≥1 of this anime's media is on the list. Click
 						     adds all main media (optionally + side stories), or removes all of this
-						     anime's watchlisted media (guarded). Hidden for restricted users. -->
-						{#if !isRestricted}
-							<WatchlistBookmarkButton
-								colors={heroColors}
-								tooltip={heroWatchlisted
+						     anime's watchlisted media (guarded). Restricted (guest) users see it
+						     disabled (visible-but-inert) so they see what their own account could do. -->
+						<WatchlistBookmarkButton
+							colors={heroColors}
+							tooltip={isRestricted
+								? "Guest accounts can't use the watchlist"
+								: heroWatchlisted
 									? `${watchlistedInAnime.length} on your watchlist — click to remove`
 									: 'Add this anime to your watchlist'}
-								ariaLabel={heroWatchlisted ? 'Remove anime from watchlist' : 'Add anime to watchlist'}
-								onclick={() => (heroWatchlisted ? (heroRemoveOpen = true) : (heroAddOpen = true))}
-							/>
-						{/if}
+							ariaLabel={heroWatchlisted ? 'Remove anime from watchlist' : 'Add anime to watchlist'}
+							onclick={() => (heroWatchlisted ? (heroRemoveOpen = true) : (heroAddOpen = true))}
+							disabled={isRestricted}
+						/>
 					</div>
 
 					{#if anime.avg_score !== null}
@@ -735,6 +743,7 @@
 			selectedUuids={ratableUuids}
 			excludedNotYetAiredCount={excludedNotYetAired}
 			{alreadyRatedCount}
+			watchlistedCount={ratableWatchlistedCount}
 			onSaved={handleBulkRateSaved}
 			animeUuid={anime?.uuid}
 			genres={anime?.genres}

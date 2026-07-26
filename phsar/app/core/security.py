@@ -37,7 +37,7 @@ def decompress_and_decode(encoded: str) -> dict:
         compressed = base64.urlsafe_b64decode(encoded.encode("utf-8"))
         return json.loads(zlib.decompress(compressed).decode("utf-8"))
     except Exception:
-        raise DecompressionError()
+        raise DecompressionError() from None
 
 def create_token(data: dict, secret_key: str, extra_info: dict | None = None) -> str:
     to_encode = data.copy()

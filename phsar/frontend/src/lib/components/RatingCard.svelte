@@ -6,6 +6,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
 	import { Badge } from '$lib/components/ui/badge';
+	import RemoveFromWatchlistToggle from '$lib/components/RemoveFromWatchlistToggle.svelte';
 	import { api, ApiError } from '$lib/api';
 	import { RATING_ATTRIBUTE_OPTIONS, WATCH_STATUS_OPTIONS, getRatingAttr } from '$lib/types/api';
 	import type { RatingOut, RatingCreate, WatchStatus } from '$lib/types/api';
@@ -17,6 +18,8 @@
 	import { attributeBadges } from '$lib/utils/ratingAttributes';
 	import { formatDecimalDigits, clampAndSnapScore, decimalPlaces, roundScore } from '$lib/utils/formatString';
 	import { userSettings } from '$lib/stores/userSettings';
+	import { watchlistTags, refreshWatchlist } from '$lib/stores/watchlist';
+	import { pushToast } from '$lib/stores/toast';
 	import * as cls from '$lib/styles/classes';
 	import { ChevronDown, ChevronUp, Star, Pencil, Trash2, RotateCcw } from 'lucide-svelte';
 
@@ -80,6 +83,11 @@
 	let loggingRewatch = $state(false);
 	let rewatchOpen = $state(false);
 	let downgradeOpen = $state(false);
+	// A first rating or a rewatch means a fresh watch, so this media is probably no longer
+	// "want to watch" — offer to take it off the watchlist via an auto-checked inline box
+	// (only when it's actually listed). Default checked; mirrors BulkRateDialog's yellow block.
+	let alsoRemoveWatchlist = $state(true);
+	let watchlistEntry = $derived($watchlistTags.get(mediaUuid));
 	let error = $state('');
 	let attributes = $state<Record<string, string | null>>({});
 
@@ -204,6 +212,10 @@
 	async function doSave(deleteWatchHistory: boolean) {
 		saving = true;
 		error = '';
+		// Captured before onSaved flips the prop: only a FIRST rating implies a fresh watch
+		// that ends the "want to watch" intent. Editing an existing rating never touches the
+		// watchlist (that choice was made when the rating was first created).
+		const wasNewRating = existingRating === null;
 
 		const attrFields: Record<string, string | null> = {};
 		for (const key of Object.keys(RATING_ATTRIBUTE_OPTIONS)) {
@@ -224,10 +236,27 @@
 			onSaved(result);
 			editing = false;
 			downgradeOpen = false;
+			// A first rating on a watchlisted media, with the inline box left checked, takes
+			// it off the watchlist (the checkbox only renders for new ratings, so an edit
+			// never reaches here with wasNewRating true).
+			if (wasNewRating && alsoRemoveWatchlist && watchlistEntry) {
+				await removeFromWatchlist();
+			}
 		} catch (err) {
 			error = err instanceof ApiError ? err.detail : 'Failed to save rating';
 		} finally {
 			saving = false;
+		}
+	}
+
+	/** Take this media off the watchlist (rated/rewatched ⇒ no longer "want to watch"). */
+	async function removeFromWatchlist() {
+		try {
+			await api.del(`/watchlist/media/${mediaUuid}`);
+			await refreshWatchlist();
+			pushToast('Removed from watchlist', 'success');
+		} catch (err) {
+			pushToast(err instanceof ApiError ? err.detail : 'Failed to remove from watchlist', 'error');
 		}
 	}
 
@@ -263,6 +292,10 @@
 			const updated = await api.post<RatingOut>(`/ratings/${existingRating.uuid}/rewatch`, {});
 			onSaved(updated);
 			rewatchOpen = false;
+			// A rewatch is always a fresh watch — honor the dialog's inline box (default on).
+			if (alsoRemoveWatchlist && watchlistEntry) {
+				await removeFromWatchlist();
+			}
 		} catch (err) {
 			error = err instanceof ApiError ? err.detail : 'Failed to log rewatch';
 		} finally {
@@ -301,7 +334,7 @@
 							<Pencil class="size-3.5 mr-1" /> Edit
 						</Button>
 						{#if existingRating.watch_status === 'completed'}
-							<Button variant="secondary" size="sm" onclick={() => (rewatchOpen = true)}>
+							<Button variant="secondary" size="sm" onclick={() => { alsoRemoveWatchlist = true; rewatchOpen = true; }}>
 								<RotateCcw class="size-3.5 mr-1" /> Rewatch
 							</Button>
 						{/if}
@@ -462,6 +495,16 @@
 				     anime, so the user can keep their scale consistent. -->
 				<RatingNeighbors score={snappedScore} {animeUuid} {genres} {studios} {ageRatingNumeric} currentAttributes={attributes} />
 
+				{#if !existingRating && watchlistEntry}
+					<!-- New rating on a watchlisted media: rating it usually means it's no longer
+					     "want to watch", so offer to remove it inline (auto-checked). -->
+					<RemoveFromWatchlistToggle
+						bind:checked={alsoRemoveWatchlist}
+						label={`Also remove from your “${watchlistEntry.tag_name}” list`}
+						detail="Rating a title usually means it's no longer something you're planning to watch."
+					/>
+				{/if}
+
 				{#if error}
 					<p class="text-destructive">{error}</p>
 				{/if}
@@ -491,6 +534,15 @@
 				It feeds your watch history and future recommendations, and can't be easily undone.
 			</Dialog.Description>
 		</Dialog.Header>
+		{#if watchlistEntry}
+			<!-- Single dialog, not a second popup: a rewatch means you've seen this again, so
+			     offer to take it off the watchlist right here (auto-checked). -->
+			<RemoveFromWatchlistToggle
+				bind:checked={alsoRemoveWatchlist}
+				label={`Also remove from your “${watchlistEntry.tag_name}” list`}
+				detail="You've seen this again, so it's probably no longer something you're planning to watch."
+			/>
+		{/if}
 		{#if error}<p class="text-destructive text-sm">{error}</p>{/if}
 		<Dialog.Footer>
 			<Button variant="secondary" onclick={() => (rewatchOpen = false)} disabled={loggingRewatch}>

@@ -42,15 +42,18 @@ export const JOB_KIND_LABELS: Record<JobKind, string> = {
 	user_scrape: 'User scrape',
 	update_sweep: 'Update sweep',
 	seasonal_sweep: 'Seasonal sweep',
+	upcoming_sweep: 'Upcoming-season sweep',
 	backup: 'Backup',
 	restore: 'Restore',
 };
 
-/** Today only seasonal_sweep enqueues parented system children; a future
- * kind doing the same joins this set and the Jobs Log expander Just Works.
- * Backend allows `?parent_uuid=` for any kind — this is purely the
- * frontend's "row deserves a chevron" guard. */
-export const PARENTING_KINDS: ReadonlySet<JobKind> = new Set<JobKind>(['seasonal_sweep']);
+/** Both season sweeps enqueue parented system children (same dispatcher), so
+ * both get the Jobs Log expander chevron. Backend allows `?parent_uuid=` for
+ * any kind — this is purely the frontend's "row deserves a chevron" guard. */
+export const PARENTING_KINDS: ReadonlySet<JobKind> = new Set<JobKind>([
+	'seasonal_sweep',
+	'upcoming_sweep',
+]);
 
 /** Where a *succeeded* job of each kind navigates when its bell row is clicked.
  * Per-kind static metadata (kept here next to JOB_KIND_LABELS rather than as an

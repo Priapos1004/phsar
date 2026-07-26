@@ -11,17 +11,21 @@
 		ariaLabel: string;
 		onclick: () => void;
 		iconClass?: string;
+		/** Render visible-but-inert (restricted/guest users): the affordance shows so
+		 *  they "see what's available", but clicking does nothing. */
+		disabled?: boolean;
 	}
 
-	let { colors, tooltip, ariaLabel, onclick, iconClass = 'size-6' }: Props = $props();
+	let { colors, tooltip, ariaLabel, onclick, iconClass = 'size-6', disabled = false }: Props = $props();
 </script>
 
 <Tooltip text={tooltip} class="shrink-0">
 	{#snippet trigger(props)}
 		<button
 			{...props}
-			class="p-2 rounded-lg hover:bg-primary/10 transition"
-			{onclick}
+			class="p-2 rounded-lg transition {disabled ? 'opacity-50 cursor-not-allowed' : 'hover:bg-primary/10'}"
+			onclick={disabled ? undefined : onclick}
+			{disabled}
 			aria-label={ariaLabel}
 		>
 			<WatchlistBookmarkIcon {colors} {iconClass} />

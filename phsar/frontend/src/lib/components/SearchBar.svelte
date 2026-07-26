@@ -11,7 +11,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Card from '$lib/components/ui/card';
 	import type { MediaSearchFilters } from '$lib/utils/search';
-	import { formatDecimalDigits, formatDuration, formatNumber } from '$lib/utils/formatString';
+	import { formatDecimalDigits, formatDuration, formatNumber, formatRelationType } from '$lib/utils/formatString';
 	import * as cls from '$lib/styles/classes';
 
 	interface Props {
@@ -317,6 +317,7 @@
 							placeholder={config.placeholder}
 							options={listFilterOptions[config.key] ?? []}
 							selectedItems={listFilters[config.key] ?? []}
+							labelFor={config.key === 'relation_type' ? formatRelationType : undefined}
 							onAdd={(item) => (listFilters[config.key] = [...(listFilters[config.key] ?? []), item])}
 							onRemove={(item) => (listFilters[config.key] = (listFilters[config.key] ?? []).filter((i) => i !== item))}
 						/>

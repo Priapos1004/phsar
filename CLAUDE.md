@@ -76,7 +76,7 @@ Layered architecture with strict dependency flow: **routers → services → DAO
 FastAPI endpoint definitions. Each router maps to an API prefix.
 
 - **`/admin`** — admin-only operations
-  - `GET /admin/stats/overview` — aggregate stats for the admin Overview tab (catalog totals, 7d job health by kind with retryable-failed subset, 7d activity counters, plus `sweep_tiers` + `media_sweep_tiers` cycle-membership breakdowns powering the SweepTiersCard anime/media toggle). Aggregate only — no per-user breakdowns; the Jobs Log surfaces those where they're needed for debugging
+  - `GET /admin/stats/overview` — aggregate stats for the admin Overview tab (catalog totals, 7d job health by kind with retryable-failed subset, 7d activity counters — active users (v0.15.1 counts a 7d watchlist add/edit alongside ratings + scrapes), new ratings, scrapes submitted, and a `watchlist_modifications` count (entries added/updated in the window) — a `watchlist` all-users aggregate (v0.15.1 — total media/anime on watchlists, active watchlist users, avg media/user + custom-list total & avg, default list excluded), plus `sweep_tiers` + `media_sweep_tiers` cycle-membership breakdowns powering the SweepTiersCard anime/media toggle). Aggregate only — no per-user breakdowns; the Jobs Log surfaces those where they're needed for debugging
   - `GET /admin/jobs` — paginated all-jobs listing for the Jobs Log tab. Filters by status/kind/user_id/created_after/created_before; returns `AdminJobResponse` rows with `requested_by_username` flattened from the eager-loaded relationship and `parent_job_uuid` for clustered children. Backed by `ix_jobs_created_at_desc` (newest-first scan + matching COUNT). Default hides children (filters `parent_job_id IS NULL`); `?parent_uuid=<UUID>` expands a single seasonal_sweep's flock via the partial `ix_jobs_parent_job_id` index. `limit` capped at 500 so a sweep with hundreds of children can be expanded without paging
   - `GET /admin/jobs/{uuid}` — admin-only single-job detail fetch backing the `/admin/jobs/[uuid]` page. Returns the same `AdminJobResponse` shape the list emits (eager-loads `requested_by` + `parent` via the shared `_ADMIN_LOAD_OPTIONS` tuple in `JobDAO` so the list + detail paths can't drift)
   - `GET /admin/curation/pending-counts` — `{merge: int, split: int}` for the navbar bell's pinned admin reminder. Bell polls this on every tick when admin is logged in; cheap COUNTs on the status-filtered candidate tables. Sequential awaits per the AsyncSession-no-gather rule
@@ -95,26 +95,27 @@ FastAPI endpoint definitions. Each router maps to an API prefix.
   - Story-completion curation (v0.14.10) — a **manual** flag (no detector): admin marks an anime as story-complete (narrative concluded), distinct from MAL's broadcast `airing_status`. Backed by the `anime_completion` 1:1 sidecar (row-presence = finished)
     - `GET /admin/finished-anime` lists marked anime (cover + who/when audit) for the Completion tab; `POST`/`DELETE /admin/finished-anime/{anime_uuid}` mark/unmark (mark is idempotent). The tab's anime search reuses the public `/search/anime` — no admin-specific search query
     - Surfaced read-side as `AnimeDetail.is_finished` + `AnimeSearchResult.is_finished` (both via `selectinload(Anime.completion)`); the frontend renders a "Story Complete" badge on the anime page + anime search cards
-  - Three cron-token-authed sweep schedulers:
+  - Four cron-token-authed sweep schedulers:
     - `POST /admin/jobs/schedule-sweep?delay_minutes=N` — enqueues an `update_sweep` job (nightly catalog refresh + relations probe)
     - `POST /admin/jobs/schedule-seasonal?delay_minutes=N` — enqueues a `seasonal_sweep` job (weekly current-season scrape)
-    - `POST /admin/jobs/schedule-nightly?delay_minutes=N` — combined daily entry: backup (immediate, no banner needed since pg_dump is MVCC-snapshot), update_sweep (delayed), and — when `datetime.now(timezone.utc).weekday() == 6` (Sunday UTC) — a seasonal_sweep with the same delay so the weekly pickup piggybacks on the daily maintenance window
-  - All three sweep schedulers set `core/maintenance.set_scheduled_at(...)` so the banner countdown shows
-  - All three are bound to `Query(20, ge=0, le=1440)` on `delay_minutes`
-  - All three are allowlisted in the maintenance gate so a cron retry while a sweep is running can't 503 the cron itself
-  - All four cron-authed endpoints (including `/backups/auto`) share `JOBS_CRON_TOKEN` — one bearer for the whole machine-only surface
+    - `POST /admin/jobs/schedule-upcoming?delay_minutes=N` — enqueues an `upcoming_sweep` job (next-season scrape so users can pre-add next-quarter shows; same dispatcher as seasonal, season chosen by `job.kind`)
+    - `POST /admin/jobs/schedule-nightly?delay_minutes=N` — combined daily entry: backup (immediate, no banner needed since pg_dump is MVCC-snapshot), update_sweep (delayed), a `seasonal_sweep` when `weekday() == 6` (Sunday UTC), and an `upcoming_sweep` when `weekday() == 2 AND month % 3 == 0` (Wednesday UTC in the last month of the quarter — Mar/Jun/Sep/Dec); the sweeps share update_sweep's delay so their maintenance windows coincide, and seasonal (Sun) / upcoming (Wed) fall on different weekdays so they never stack in one run
+  - All four sweep schedulers set `core/maintenance.set_scheduled_at(...)` so the banner countdown shows
+  - All four are bound to `Query(20, ge=0, le=1440)` on `delay_minutes`
+  - All four are allowlisted in the maintenance gate so a cron retry while a sweep is running can't 503 the cron itself
+  - All five cron-authed endpoints (including `/backups/auto`) share `JOBS_CRON_TOKEN` — one bearer for the whole machine-only surface
 - **`/auth`** — `POST /auth/login` + `POST /auth/register` issue a JWT (`sub`, `role`, `exp`); `GET /auth/validate` checks one. `POST /auth/refresh` re-issues a fresh full-lifetime token to any **still-valid** token (an expired token 401s, same as `/validate`) — the sliding-session re-issue the frontend calls on activity (see Sliding session under Key Patterns). Bare `get_current_user` (not role-gated) so restricted/guest users keep their sessions alive too; role is re-read from the DB user
 - **`/search`** — `/search/media` (per-media) and `/search/anime` (aggregated by anime)
 - **`/media`** — `/media/{uuid}` and `/media/anime/{uuid}`
 - **`/users`** — settings CRUD, data export, and account deletion
 - **`/jobs`** — user-triggered background work
-  - `POST /jobs/scrape` enqueues a `user_scrape` job
+  - `POST /jobs/scrape` enqueues a `user_scrape` job. A bare 5–6 digit `query` is treated as a direct MAL id and routed to the seed path (`payload["mal_id"]`, the same machinery the seasonal sweep uses) — MAL's fuzzy `q=` search can't surface some shows by any title (e.g. "Zenshu"/58502), and no anime is titled a pure number; see `_MAL_ID_QUERY` in the /jobs router
   - `GET /jobs/mine` lists the current user's active + recently-finished jobs
   - `GET /jobs/{uuid}` single-job poll for owner or admin
 - **`/library`** — `GET /library/recent` for the `/library/add` page's recent-additions panel
 - **`/watchlist`** — per-user watchlist + lists (`require_user_or_admin`, so guests 403). "List" is the UI term for a tag; one tag per entry, one entry per (user, media)
   - Lists (tags): `GET`/`POST /watchlist/tags`, `PATCH`/`DELETE /watchlist/tags/{uuid}` (delete takes `?reassign_entries=` — move to the default list vs cascade-delete), `POST /watchlist/tags/{uuid}/empty` (clears entries, keeps the list — the default list's only bulk action since it can't be deleted)
-  - Entries: `PUT`/`GET`/`DELETE /watchlist/media/{media_uuid}` (keyed on media_uuid so the bookmark toggle can call it with what it has), `GET /watchlist/anime/{uuid}`, `PUT /watchlist/bulk` (priority + list apply to all; note goes on the first main media), `POST /watchlist/bulk-delete`, `GET /watchlist/items` (wide one-fetch projection for the overview page), `GET /watchlist/media-tags` (bookmark icon-state set + per-media tag color)
+  - Entries: `PUT`/`GET`/`DELETE /watchlist/media/{media_uuid}` (keyed on media_uuid so the bookmark toggle can call it with what it has), `GET /watchlist/anime/{uuid}`, `PUT /watchlist/bulk` (priority + list apply to all; note goes on the first main media), `POST /watchlist/bulk-delete`, `GET /watchlist/items` (wide one-fetch projection for the overview page — v0.15.1 widened it with genres/studios + `total_watch_time` (the canonical `Media` hybrid, reused instead of shipping the raw episodes/duration factors) so the Statistics subtab derives top genres/studios + queued watch-time off the same fetch), `GET /watchlist/media-tags` (bookmark icon-state set + per-media tag color)
 - **`/maintenance`** — public `GET /maintenance/status` returning `{active, scheduled_at}` for the frontend's pre-warning banner; allowlisted in the maintenance HTTP middleware so it keeps returning truthful state mid-window
 
 #### services/
@@ -125,7 +126,7 @@ Modules:
 - `mal_scraper.py` — official **MyAnimeList API v2** client. Header auth (`X-MAL-CLIENT-ID` on every request — no OAuth for public data), retry + 1 req/s rate limiter (`MAL_MIN_REQUEST_INTERVAL_S`), BFS in `search_title` (supports `seed_mal_id` for sweep probes). **One MAL call per node**: `/anime/{id}?fields=…` returns the record AND its `related_anime` in one response, so a BFS/sweep node costs a single request. The `/anime?q=` **search** endpoint is the exception — it omits `related_anime` (detail-only), so `search_title` treats search as fuzzy title→mal_id discovery and re-fetches each *root* via its detail call (search discovers, detail supplies node data + relations); without the re-fetch every root captured zero edges and franchises fragmented into single-media rows (v0.14.14 regression fix). A shared `is_hentai(info)` predicate (genre or Rx rating) gates both the fresh-scrape skip and the sweep's removal. A **value-translation layer** in `extract_information` maps MAL's snake_case/lowercase `media_type`/`status`/`rating`/`source` to the catalog's stored title-cased strings, so the DB enums, the `ix_media_airing_now` index, `age_rating_numeric`, the classifier sentinels, and filter facets stay stable; partial MAL dates (`YYYY`/`YYYY-MM`) normalize to full midnight-UTC ISO
 - `job_worker.py` — single asyncio FIFO worker; `with_for_update(skip_locked=True)`; maintenance-aware
 - `scrape_dispatcher.py` — handlers for `user_scrape` + `update_sweep`. v0.14.8 made `update_sweep` **media-level**: it selects the due *media* via `AnimeDAO.select_due_media_for_sweep`, groups them by parent anime, and refreshes only those media (`_refresh_one_anime(media_to_refresh)`) — `MediaFreshness` is the per-media refresh clock, `AnimeFreshness` the per-anime probe clock (probe gated by a 7-day floor). Writes a **v7** `result_summary` (media-grained counters `media_refreshed`/`anime_touched`/`media_skipped_fresh`, the `anime_with_*` pair dropped; per-media field diffs + per-anime umbrella diffs + aggregated `unknown_genre_tags` + per-anime `step1_failures` + symmetric `probe_failures[]` + v6 `probe_attached_anime[]` + v7 `hentai_removed[]`). v0.14.5 relaxed the drift apply policy so genre + studio additions AND removals apply, with unknown genre tags surfaced for seeder review; v0.14.7 added `step1_failed`/`step1_failures[]`. v0.14.14 made the sweep **self-healing** — it now also refreshes columns previously frozen at creation (`duration_seconds`, `aired_from`, `media_type`, `anime_season_name`/`anime_season_year`, `mal_url`), all None-guarded and non-stability-resetting (`media_type` + `anime_season_name` are coerced to their `Enum` member on write, not a bare string — a raw-string write left the attr a `str` and crashed the post-diff `reclassify_anime`'s `.value` read; expected one-time churn: the first sweep rewrites `duration_seconds` for ~1400 media as MAL supplies exact per-episode seconds where the values were previously whole-minute-rounded). v0.14.14 also made the sweep **self-defend against Hentai** — a media MAL flips to Hentai (genre or Rx rating) deletes the whole anime + blacklists its media mal_ids (mirrors the fresh-scrape skip, which the sweep otherwise lacked), surfaced in the v7 `hentai_removed[]` + a "Removed (Hentai)" detail card
-- `seasonal_sweep_dispatcher.py` — `seasonal_sweep` handler (separate; pure discovery pass)
+- `seasonal_sweep_dispatcher.py` — `seasonal_sweep` AND `upcoming_sweep` handler (separate; pure discovery pass). One function serves both kinds: it scrapes the current season for `seasonal_sweep` and the next season (`mal_scraper.next_season`) for `upcoming_sweep`, chosen by `job.kind`. Registered for both kinds in the lifespan
 - `backup_dispatcher.py` — `backup` JobKind handler (no maintenance bracket — pg_dump is MVCC-snapshot)
 - `progress_reporter.py` — throttled autocommit-tx progress writer
 - `search_service.py` — BFS output → save/attach/merge decisions
@@ -194,11 +195,11 @@ SQLAlchemy ORM models mapped to PostgreSQL tables.
   - FK cascade on `anime_id` — deleting or merging the source anime cleans up the row
   - One-pending-per-anime convention enforced by DAO: `upsert_pending` supersedes the existing pending row when the cluster signature changes (cheaper than partial-unique-constraint migration on enum-status predicates)
 - **`job.py`** — background job queue
-  - `JobKind` enum: `user_scrape`, `update_sweep`, `seasonal_sweep`, `backup`, `restore`
+  - `JobKind` enum: `user_scrape`, `update_sweep`, `seasonal_sweep`, `upcoming_sweep`, `backup`, `restore` (`upcoming_sweep` added v0.15.1 via migration `d9e4a1c7b3f2`)
   - `JobStatus` enum: `queued`/`running`/`succeeded`/`failed`
   - JSONB `payload`, progress fields (`stage`, `items_done`, `items_total`), `not_before_at` for scheduled-delay jobs
   - `result_summary` JSONB carries `retryable: bool` for the bell
-  - `version: int NOT NULL DEFAULT 1` — per-kind schema version for `result_summary`. Runtime source of truth is the `JOB_KIND_VERSIONS` registry in `app/core/job_versions.py`; every Job-construction site goes through the `make_job(kind, **kw)` helper which stamps the current registry value. Frontend dispatches on `(kind, version)` so historical rows render with the correct schema. Bump the integer per kind when its result_summary shape changes (current: `update_sweep` at v7 after v0.14.14 added `hentai_removed[]` + `counters.hentai_removed_count`; v6 added `probe_attached_anime[]` + `counters.probe_attached_media_count`; all others at v1)
+  - `version: int NOT NULL DEFAULT 1` — per-kind schema version for `result_summary`. Runtime source of truth is the `JOB_KIND_VERSIONS` registry in `app/core/job_versions.py`; every Job-construction site goes through the `make_job(kind, **kw)` helper which stamps the current registry value. Frontend dispatches on `(kind, version)` so historical rows render with the correct schema. Bump the integer per kind when its result_summary shape changes (current: `update_sweep` at v7 after v0.14.14 added `hentai_removed[]` + `counters.hentai_removed_count`; v6 added `probe_attached_anime[]` + `counters.probe_attached_media_count`; all others at v1 — `upcoming_sweep` shares `seasonal_sweep`'s v1 shape since it's the same dispatcher)
   - Partial composite index on `(created_at) WHERE status='queued'` keeps the worker's FIFO claim cheap regardless of finished-row volume
 - **`anime_completion.py`** — 1:1 sidecar (`unique=True` on FK) for the admin story-complete flag (v0.14.10). **Row-presence = finished** (no boolean): marking inserts, unmarking deletes. `marked_by_user_id` (FK `SET NULL`) + `created_at` are the who/when audit. Sidecar so the admin flag can't leak into the anime Pydantic schemas; surfaced explicitly as `is_finished` on detail + search results
 - **`anime_freshness.py`** / **`media_freshness.py`** — 1:1 sidecars (`unique=True` on FK) for the nightly update sweep
@@ -230,14 +231,15 @@ SQLAlchemy ORM models mapped to PostgreSQL tables.
 - **exceptions.py** — custom exception hierarchy rooted at `PhsarBaseError` with `status_code` attribute
   - Single exception handler in `main.py` reads the status code from each class
   - `PermanentPhsarError` — marker subclass for non-retryable failures:
-    - `AnimeNotFoundError`, `MainMediaNotFoundError`, `MalIdAlreadyExistsError`, `AnimeFilteredOutError`
+    - `AnimeNotFoundError`, `MainMediaNotFoundError`, `MalIdAlreadyExistsError`, `AnimeFilteredOutError`, `MalIdNotFoundError`
     - `JobWorker` reads via `isinstance` and stamps `result_summary.retryable = False`
   - `TransientUpstreamError` — outside the permanent branch; raised when MAL returns 200 OK with empty data on a valid mal_id
     - Bell keeps retry button; `classify_error` tags as `upstream_outage` for friendly copy
   - `AnimeFilteredOutError` (sibling to `AnimeNotFoundError` under permanent) — surfaces when seeded BFS returns nothing AND seed mal_id is in `media_unwanted`; admin sees `"'X' was filtered out as Music"` instead of misleading "not found"
+  - `MalIdNotFoundError` (permanent, 404) — a direct-MAL-id scrape (bare 5–6 digit query → seed path) whose `/anime/{id}` seed fetch 404s. `mal_scraper.search_title` translates the raw `httpx.HTTPStatusError` into this so 999999 shows a friendly "No anime on MyAnimeList has id N" with no retry button, instead of a raw, retryable 404 string. Distinct from the 200-OK-empty case (still `TransientUpstreamError`, retryable)
   - Watchlist/tag errors (v0.15.0): `WatchlistNotFoundError` (404), `TagNotFoundError` (404); and under `PermanentPhsarError` `DuplicateTagNameError` (409, list names unique per user), `DefaultTagImmutableError` (403, the default "Watchlist" list can't be renamed/deleted), `TagLimitError` (409, `TAGS_PER_USER_LIMIT`). User-facing copy says "list" (the UI term) though the domain term is "tag"
 - **main.py** — app factory + lifespan
-  - Startup sequence: seeders → embedding backfill → `JobDAO.reap_orphans` → `job_worker.register_dispatcher` (for each of `user_scrape`, `update_sweep`, `seasonal_sweep`, `backup`) → `job_worker.start()` → yield → post-yield backfills (optional one-shot full re-embed when `EMBEDDING_REEMBED_ON_STARTUP` → relation-backfiller → merge-candidate backfill → split-candidate backfill). Post-yield backfills run in `asyncio.create_task` so /health responds during the ~14-min relation cold start; split detection runs LAST so it sees relation-backfiller's TERMINAL sidecars and merge-backfiller's collapsed pairs
+  - Startup sequence: seeders → embedding backfill → `JobDAO.reap_orphans` → `job_worker.register_dispatcher` (for each of `user_scrape`, `update_sweep`, `seasonal_sweep`, `upcoming_sweep` (same fn as seasonal), `backup`) → `job_worker.start()` → yield → post-yield backfills (optional one-shot full re-embed when `EMBEDDING_REEMBED_ON_STARTUP` → relation-backfiller → merge-candidate backfill → split-candidate backfill). Post-yield backfills run in `asyncio.create_task` so /health responds during the ~14-min relation cold start; split detection runs LAST so it sees relation-backfiller's TERMINAL sidecars and merge-backfiller's collapsed pairs
   - Shutdown: `job_worker.stop()`
   - Direct endpoints: `GET /` and `GET /health`
     - Health returns `{status, version, db}` and pings DB with 2s `asyncio.wait_for` so transient unavailability produces a fast 503 instead of riding asyncpg's 60s connect timeout into a Coolify liveness flap
@@ -303,7 +305,7 @@ Quick map:
   - Anime covers/descriptions are never spoiler-protected
 - **Watchlist** (v0.15.0): per-user, media-level, grouped by "lists" (the UI term for tags). **One tag per entry** (a required `tag_id` FK, not a many-to-many), **one entry per (user, media)**. Each user has an **immutable default "Watchlist" list** (can't be renamed/recolored/deleted — always a stable preselect + reassign target). Watchlist writes **never touch the spoiler frontier** — an entry is "want to watch", not "watched". Restricted (guest) users can't watchlist (router 403s them; excluded from the default-tag seeders). Bookmarks render everywhere a media/anime shows, colored by the list's color (an anime spanning several lists gets a gradient bookmark)
 - **Background jobs**: single asyncio FIFO worker (`job_worker.py`) drains the `jobs` table
-  - JobKinds: `user_scrape`, `update_sweep` + `seasonal_sweep` (bracket maintenance), `backup` (does NOT bracket)
+  - JobKinds: `user_scrape`, `update_sweep` + `seasonal_sweep` + `upcoming_sweep` (bracket maintenance), `backup` (does NOT bracket)
   - **Per-kind result_summary versioning**: `JOB_KIND_VERSIONS` registry in `app/core/job_versions.py` + `make_job()` helper at every Job-construction site. Frontend reads `job.version` to dispatch the parser. Bump the integer per kind when the shape changes — see `models/job.py` for the column rationale
   - **Hardened failure path** (v0.14.5): three guards keep `dispatch_one` from stranding a job in `running` after a downstream crash — (1) `str(job.uuid)` pre-captured immediately after claim so the failure logger never reads ORM attrs on a poisoned session, (2) the `work_session.rollback()` is wrapped in try/except so a PendingRollback cleanup failure doesn't escape, (3) an outer catch-all around the work-session block routes unexpected plumbing bugs through `mark_failed` instead of letting them propagate to the `_run` loop. The fail-session write is also wrapped — worst case it logs the failure and leaves the row for `reap_orphans` on next startup
   - Per-user concurrent cap: `JOBS_PER_USER_LIMIT=4` enforced at submission time (bounds queue depth, not concurrency — worker stays sequential because MAL's rate limit means parallel jobs just fragment bandwidth)
@@ -319,9 +321,9 @@ Quick map:
   - Bell completion toasts (v0.14.13): on an active→finished transition the bell fires a green/red global toast (`pushToast`) for `user_scrape` + `backup`; opening the bell now also acknowledges still-running jobs so the badge is dismissible mid-fetch, and succeeded scrape/backup rows are clickable (→ `/library/add` / `/admin?tab=backups`). Frontend-only — see `frontend/CLAUDE.md`
   - Parent-child clustering: `seasonal_sweep_dispatcher` stamps `parent_job_id=parent.id` on every enqueued `user_scrape` child (self-referential FK with `ON DELETE SET NULL` so deleting the parent doesn't cascade-delete audit history). Backs the admin Jobs Log expander — default list hides children (`parent_job_id IS NULL`), `?parent_uuid=<UUID>` returns the flock under that sweep. Historical pre-FK rows can be retro-clustered via `scripts/backfill_seasonal_sweep_parents.py` (safe because the dispatcher is the only production source of NULL-user user_scrapes)
 - **Maintenance mode**: destructive ops flip `core/maintenance.py`'s `_active` flag
-  - Triggers: backup restore (synchronous, request-scoped), `update_sweep`/`seasonal_sweep` (worker brackets in try/finally)
+  - Triggers: backup restore (synchronous, request-scoped), `update_sweep`/`seasonal_sweep`/`upcoming_sweep` (worker brackets in try/finally)
   - `MaintenanceGateMiddleware` (pure ASGI class in `core/maintenance_middleware.py`) returns 503 `{maintenance: true}` for non-allowlisted requests
-    - Allowlist: `/`, `/health`, `/maintenance/status`, `/admin/jobs/schedule-sweep`, `/admin/jobs/schedule-seasonal`, `/admin/jobs/schedule-nightly`
+    - Allowlist: `/`, `/health`, `/maintenance/status`, `/admin/jobs/schedule-sweep`, `/admin/jobs/schedule-seasonal`, `/admin/jobs/schedule-upcoming`, `/admin/jobs/schedule-nightly`
   - **Critical middleware ordering invariant**: `app.add_middleware()` *prepends* (`insert(0, ...)`), so LAST registered = OUTERMOST
     - Register `MaintenanceGateMiddleware` FIRST, then `CORSMiddleware` — CORS wraps maintenance, 503 gets `Access-Control-Allow-Origin`
     - Wrong order → 503 has no CORS headers → browser blocks → `fetch()` throws TypeError → generic error instead of maintenance banner
@@ -407,7 +409,7 @@ Tag any commit with `v*` (stable `v0.13.0` or preview `v0.13.0-rc1`) and push. `
 
 Every cron-authed endpoint shares `JOBS_CRON_TOKEN` (in Coolify backend env — empty disables all, fail closed).
 
-- Sweep schedulers (`schedule-sweep`, `schedule-seasonal`, `schedule-nightly`) are allowlisted through maintenance gate so a cron retry mid-sweep authenticates instead of 503'ing
+- Sweep schedulers (`schedule-sweep`, `schedule-seasonal`, `schedule-upcoming`, `schedule-nightly`) are allowlisted through maintenance gate so a cron retry mid-sweep authenticates instead of 503'ing
 - `/admin/backups/auto` is *not* allowlisted — backups don't bracket maintenance, a sweep-window 503 is a benign no-op (worker short-circuits on maintenance flag anyway)
 - `delay_minutes` bound to `Query(20, ge=0, le=1440)` on every sweep endpoint
 
@@ -422,14 +424,16 @@ curl -fsS -X POST -H "Authorization: Bearer $JOBS_CRON_TOKEN" \
 1. `backup` job (no delay — pg_dump is MVCC-snapshot, no banner needed)
 2. `update_sweep` job with `not_before_at = now + delay_minutes`
 3. `seasonal_sweep` job (same delay) — **only on Sundays** (`weekday() == 6`) so weekly pickup piggybacks on daily maintenance window
+4. `upcoming_sweep` job (same delay) — **only on Wednesdays in the last month of the quarter** (`weekday() == 2 AND month % 3 == 0`, i.e. Mar/Jun/Sep/Dec) so next-quarter shows surface ~a month before the season starts. Wednesday (vs Sunday's seasonal) keeps the two season sweeps on different weekdays so a single nightly run never fires both
 
-The two sweep jobs share `not_before_at` — worker drains backup first, then picks whichever sweep is next by FIFO. Ordering between sweeps is undefined but immaterial: both run inside the maintenance window with a sub-second flag bounce.
+The sweep jobs share `not_before_at` — worker drains backup first, then picks whichever sweep is next by FIFO. Ordering between sweeps is undefined but immaterial: all run inside the maintenance window with a sub-second flag bounce.
 
 **Individual endpoints — kept for ad-hoc triggers:**
 
 - `POST /admin/backups/auto` — backup only
 - `POST /admin/jobs/schedule-sweep?delay_minutes=N` — `update_sweep` only
 - `POST /admin/jobs/schedule-seasonal?delay_minutes=N` — `seasonal_sweep` only
+- `POST /admin/jobs/schedule-upcoming?delay_minutes=N` — `upcoming_sweep` only
 
 ## CI
 

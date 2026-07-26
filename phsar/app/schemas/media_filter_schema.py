@@ -1,5 +1,4 @@
 from enum import Enum
-from typing import Optional
 
 from pydantic import BaseModel
 
@@ -18,24 +17,24 @@ class ViewType(str, Enum):
 
 
 class MediaSearchFilters(BaseModel):
-    relation_type: Optional[list[RelationType]] = None
-    media_type: Optional[list[MediaType]] = None
-    age_rating: Optional[list[str]] = None
-    airing_status: Optional[list[str]] = None
-    anime_season: Optional[list[str]] = None
-    genre_name: Optional[list[str]] = None
-    studio_name: Optional[list[str]] = None
+    relation_type: list[RelationType] | None = None
+    media_type: list[MediaType] | None = None
+    age_rating: list[str] | None = None
+    airing_status: list[str] | None = None
+    anime_season: list[str] | None = None
+    genre_name: list[str] | None = None
+    studio_name: list[str] | None = None
 
-    score_min: Optional[float] = None
-    score_max: Optional[float] = None
-    scored_by_min: Optional[int] = None
-    scored_by_max: Optional[int] = None
-    episodes_min: Optional[int] = None
-    episodes_max: Optional[int] = None
-    duration_per_episode_min: Optional[int] = None
-    duration_per_episode_max: Optional[int] = None
-    total_watch_time_min: Optional[int] = None
-    total_watch_time_max: Optional[int] = None
+    score_min: float | None = None
+    score_max: float | None = None
+    scored_by_min: int | None = None
+    scored_by_max: int | None = None
+    episodes_min: int | None = None
+    episodes_max: int | None = None
+    duration_per_episode_min: int | None = None
+    duration_per_episode_max: int | None = None
+    total_watch_time_min: int | None = None
+    total_watch_time_max: int | None = None
 
 class ExtendedMediaSearchFilters(MediaSearchFilters):
     query: str = ""
@@ -53,13 +52,13 @@ class MediaFilterValues(BaseModel):
     studio_name: list[str]
 
     # Numerical limits
-    score_min: Optional[float]
-    score_max: Optional[float]
-    scored_by_min: Optional[int]
-    scored_by_max: Optional[int]
-    episodes_min: Optional[int]
-    episodes_max: Optional[int]
-    duration_per_episode_min: Optional[int]
-    duration_per_episode_max: Optional[int]
-    total_watch_time_min: Optional[int]
-    total_watch_time_max: Optional[int]
+    score_min: float | None
+    score_max: float | None
+    scored_by_min: int | None
+    scored_by_max: int | None
+    episodes_min: int | None
+    episodes_max: int | None
+    duration_per_episode_min: int | None
+    duration_per_episode_max: int | None
+    total_watch_time_min: int | None
+    total_watch_time_max: int | None

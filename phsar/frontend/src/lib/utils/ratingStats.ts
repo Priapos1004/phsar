@@ -5,7 +5,7 @@
 // stats endpoint, no scipy (the regression + correlation are closed-form below).
 
 import { RATING_ATTRIBUTE_OPTIONS, isAttrRated, getRatingAttr, type RatingScoreItem, type WatchStatus } from '$lib/types/api';
-import { formatSeason } from '$lib/utils/formatString';
+import { formatRelationType, formatSeason } from '$lib/utils/formatString';
 import { MAIN_RELATIONS } from '$lib/utils/relations';
 
 /** Display + match key for a media's season, e.g. "Spring 2021"; null when undated. */
@@ -21,6 +21,10 @@ type NameLanguage = 'english' | 'japanese' | 'romaji';
 
 export interface AnimeRatingRow {
 	anime_uuid: string;
+	/** Set in the MEDIA grain (one row per rated media) — the list card/table
+	 * then links to the media detail page and keys on this. Absent in the anime
+	 * grain (one aggregated row per anime). */
+	media_uuid?: string;
 	title: string;
 	name_eng: string | null;
 	name_jap: string | null;
@@ -44,6 +48,10 @@ export interface AnimeRatingRow {
 	 * retellings) vs everything else (side stories, summaries). */
 	mainCount: number;
 	sideCount: number;
+	/** Media grain only: the single media's formatted relation type ("Main story",
+	 * "Side story", …) shown in place of the main/side count. null in the anime grain
+	 * (which shows the mainCount/sideCount breakdown instead). Mirrors WatchlistRow. */
+	relationLabel: string | null;
 	/** Most recent modified_at across the rated media (drives the "date rated" sort). */
 	modifiedAt: string;
 }
@@ -110,10 +118,42 @@ export function groupByAnime(items: RatingScoreItem[]): AnimeRatingRow[] {
 			ratedMediaCount: members.length,
 			mainCount,
 			sideCount: members.length - mainCount,
+			relationLabel: null,
 			modifiedAt: members.reduce((a, m) => (m.modified_at > a ? m.modified_at : a), first.modified_at),
 		});
 	}
 	return rows;
+}
+
+/** Media grain: one row per rated media (not aggregated by anime). Same row
+ * shape as `groupByAnime` so the grid/table/card render both unchanged — the
+ * `media_uuid` marks it as a media row (grain-aware detail link + list key). */
+export function toMediaRows(items: RatingScoreItem[]): AnimeRatingRow[] {
+	return items.map((m) => {
+		const isMain = MAIN_RELATIONS.has(m.relation_type);
+		const statusBadge: 'dropped' | 'on_hold' | null =
+			m.watch_status === 'dropped' ? 'dropped' : m.watch_status === 'on_hold' ? 'on_hold' : null;
+		return {
+			anime_uuid: m.anime_uuid,
+			media_uuid: m.media_uuid,
+			title: m.media_title,
+			name_eng: m.media_name_eng,
+			name_jap: m.media_name_jap,
+			cover_image: m.media_cover_image ?? m.anime_cover_image,
+			userScore: m.rating,
+			malScore: m.mal_score,
+			malDelta: m.mal_score != null ? m.rating - m.mal_score : null,
+			scoredBy: m.scored_by,
+			genres: m.genres,
+			statuses: [m.watch_status],
+			statusBadge,
+			ratedMediaCount: 1,
+			mainCount: isMain ? 1 : 0,
+			sideCount: isMain ? 0 : 1,
+			relationLabel: formatRelationType(m.relation_type),
+			modifiedAt: m.modified_at,
+		};
+	});
 }
 
 // ── List filtering / sorting / banding ──────────────────────────────────────

@@ -60,6 +60,9 @@ JOB_KIND_VERSIONS: dict[JobKind, int] = {
     # genuinely-empty v7 list distinctly from a pre-v7 row that never tracked it.
     JobKind.update_sweep: 7,
     JobKind.seasonal_sweep: 1,
+    # upcoming_sweep shares seasonal_sweep's result_summary shape
+    # ({season_entries, new_entries_enqueued, dedup_skipped}) — same dispatcher.
+    JobKind.upcoming_sweep: 1,
     JobKind.backup: 1,
     JobKind.restore: 1,
 }

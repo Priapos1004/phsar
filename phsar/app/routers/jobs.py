@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -24,6 +25,17 @@ from app.services.job_worker import job_worker
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 dao = JobDAO()
+
+# A bare 5–6 digit query is a direct MAL id, not a title. MAL's fuzzy `q=`
+# search fails to surface some shows by ANY title string (e.g. "Zenshu",
+# id 58502 — its search index returns only unrelated "…Zenshuu" anthologies),
+# and no anime is titled a pure 5–6 digit number, so such a query is
+# unambiguously an id. 5–6 digits covers every current + near-future MAL id
+# (they're ~60k now); shorter/older ids are reliably findable by title search.
+# The leading digit must be non-zero: it keeps a leading-zero string ("00001")
+# from collapsing to an old low id we mean to exclude, and rules out the all-zero
+# "00000" → mal_id=0 that would otherwise slip past the schema's gt=0 guard.
+_MAL_ID_QUERY = re.compile(r"[1-9]\d{4,5}")
 
 
 @router.post("/scrape", response_model=JobResponse)
@@ -59,8 +71,15 @@ async def enqueue_scrape(
         )
 
     payload: dict = {"query": request.query}
-    if request.mal_id is not None:
-        payload["mal_id"] = request.mal_id
+    # An explicit client mal_id wins; otherwise a bare 5–6 digit query is
+    # treated as a direct MAL id and routed through the seed path (same
+    # machinery the seasonal sweep uses) — see _MAL_ID_QUERY.
+    seed_mal_id = request.mal_id
+    stripped_query = request.query.strip()
+    if seed_mal_id is None and _MAL_ID_QUERY.fullmatch(stripped_query):
+        seed_mal_id = int(stripped_query)
+    if seed_mal_id is not None:
+        payload["mal_id"] = seed_mal_id
     job = make_job(
         JobKind.user_scrape,
         status=JobStatus.queued,

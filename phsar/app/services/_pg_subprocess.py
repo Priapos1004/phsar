@@ -7,7 +7,7 @@ tests monkeypatch it to a fake that returns canned process objects.
 """
 
 import asyncio
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 SubprocessRunner = Callable[..., Awaitable[asyncio.subprocess.Process]]
 

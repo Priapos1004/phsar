@@ -1,4 +1,3 @@
-from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,23 +36,23 @@ router = APIRouter(prefix="/search", tags=["search"])
 
 
 def get_media_filters(
-    relation_type: Optional[list[RelationType]] = Query(default=None),
-    media_type: Optional[list[MediaType]] = Query(default=None),
-    age_rating: Optional[list[str]] = Query(default=None),
-    airing_status: Optional[list[str]] = Query(default=None),
-    anime_season: Optional[list[str]] = Query(default=None),
-    genre_name: Optional[list[str]] = Query(default=None),
-    studio_name: Optional[list[str]] = Query(default=None),
-    score_min: Optional[float] = None,
-    score_max: Optional[float] = None,
-    scored_by_min: Optional[int] = None,
-    scored_by_max: Optional[int] = None,
-    episodes_min: Optional[int] = None,
-    episodes_max: Optional[int] = None,
-    duration_per_episode_min: Optional[int] = None,
-    duration_per_episode_max: Optional[int] = None,
-    total_watch_time_min: Optional[int] = None,
-    total_watch_time_max: Optional[int] = None,
+    relation_type: list[RelationType] | None = Query(default=None),
+    media_type: list[MediaType] | None = Query(default=None),
+    age_rating: list[str] | None = Query(default=None),
+    airing_status: list[str] | None = Query(default=None),
+    anime_season: list[str] | None = Query(default=None),
+    genre_name: list[str] | None = Query(default=None),
+    studio_name: list[str] | None = Query(default=None),
+    score_min: float | None = None,
+    score_max: float | None = None,
+    scored_by_min: int | None = None,
+    scored_by_max: int | None = None,
+    episodes_min: int | None = None,
+    episodes_max: int | None = None,
+    duration_per_episode_min: int | None = None,
+    duration_per_episode_max: int | None = None,
+    total_watch_time_min: int | None = None,
+    total_watch_time_max: int | None = None,
 ) -> MediaSearchFilters:
     return MediaSearchFilters(
         relation_type=relation_type,
@@ -78,20 +77,20 @@ def get_media_filters(
 
 def get_rating_filters(
     media_filters: MediaSearchFilters = Depends(get_media_filters),
-    user_rating_min: Optional[float] = None,
-    user_rating_max: Optional[float] = None,
-    watch_status: Optional[list[WatchStatus]] = Query(default=None),
-    pace: Optional[list[Pace]] = Query(default=None),
-    animation_quality: Optional[list[AnimationQuality]] = Query(default=None),
-    has_3d_animation: Optional[list[ThreeDAnimation]] = Query(default=None),
-    watched_format: Optional[list[WatchedFormat]] = Query(default=None),
-    fan_service: Optional[list[FanService]] = Query(default=None),
-    dialogue_quality: Optional[list[DialogueQuality]] = Query(default=None),
-    character_depth: Optional[list[CharacterDepth]] = Query(default=None),
-    ending_type: Optional[list[EndingType]] = Query(default=None),
-    ending_quality: Optional[list[EndingQuality]] = Query(default=None),
-    story_quality: Optional[list[StoryQuality]] = Query(default=None),
-    originality: Optional[list[Originality]] = Query(default=None),
+    user_rating_min: float | None = None,
+    user_rating_max: float | None = None,
+    watch_status: list[WatchStatus] | None = Query(default=None),
+    pace: list[Pace] | None = Query(default=None),
+    animation_quality: list[AnimationQuality] | None = Query(default=None),
+    has_3d_animation: list[ThreeDAnimation] | None = Query(default=None),
+    watched_format: list[WatchedFormat] | None = Query(default=None),
+    fan_service: list[FanService] | None = Query(default=None),
+    dialogue_quality: list[DialogueQuality] | None = Query(default=None),
+    character_depth: list[CharacterDepth] | None = Query(default=None),
+    ending_type: list[EndingType] | None = Query(default=None),
+    ending_quality: list[EndingQuality] | None = Query(default=None),
+    story_quality: list[StoryQuality] | None = Query(default=None),
+    originality: list[Originality] | None = Query(default=None),
 ) -> RatingSearchFilters:
     return RatingSearchFilters(
         **media_filters.model_dump(),

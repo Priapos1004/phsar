@@ -192,6 +192,7 @@ phsar/
 │   │   │   │   ├── DoubleRangeSlider.svelte
 │   │   │   │   ├── EChart.svelte
 │   │   │   │   ├── GenreBadges.svelte
+│   │   │   │   ├── GrainToggle.svelte
 │   │   │   │   ├── InfoDiashow.svelte
 │   │   │   │   ├── JobBell.svelte
 │   │   │   │   ├── LoadingScreen.svelte
@@ -222,6 +223,7 @@ phsar/
 │   │   │   │   │   ├── RatingsTagChart.svelte
 │   │   │   │   │   └── types.ts
 │   │   │   │   ├── RelatedMediaCarousel.svelte
+│   │   │   │   ├── RemoveFromWatchlistToggle.svelte
 │   │   │   │   ├── ScoreDial.svelte
 │   │   │   │   ├── ScorePercentile.svelte
 │   │   │   │   ├── ScrollableCard.svelte
@@ -233,6 +235,7 @@ phsar/
 │   │   │   │   ├── SplitCandidatesCard.svelte
 │   │   │   │   ├── StudioLinks.svelte
 │   │   │   │   ├── TabNav.svelte
+│   │   │   │   ├── TagBarLabel.svelte
 │   │   │   │   ├── TagSelect.svelte
 │   │   │   │   ├── Toast.svelte
 │   │   │   │   ├── ToastHost.svelte
@@ -249,6 +252,7 @@ phsar/
 │   │   │   │   │   ├── WatchlistFilterBar.svelte
 │   │   │   │   │   ├── WatchlistListTab.svelte
 │   │   │   │   │   ├── WatchlistPriorityGrid.svelte
+│   │   │   │   │   ├── WatchlistStatsTab.svelte
 │   │   │   │   │   ├── WatchlistTable.svelte
 │   │   │   │   │   └── WatchlistTagsTab.svelte
 │   │   │   │   └── ui/           # shadcn-svelte components

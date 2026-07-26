@@ -82,7 +82,7 @@ async def cleanup_seasonal_children():
         )
         await s.execute(
             delete(Job)
-            .where(Job.kind == JobKind.seasonal_sweep)
+            .where(Job.kind.in_([JobKind.seasonal_sweep, JobKind.upcoming_sweep]))
             .where(Job.created_at >= started_at)
         )
         await s.commit()
@@ -105,9 +105,14 @@ async def _seed_unwanted(mal_id: int) -> None:
         await s.commit()
 
 
-def _patch_scraper(monkeypatch, entries: list[dict]) -> None:
-    """Replace MalScraper with a stub whose `fetch_current_season`
-    returns `entries`. No real MAL hit, no rate-limit sleep."""
+def _patch_scraper(
+    monkeypatch, entries: list[dict], current: tuple[int, str] = (2026, "summer"),
+) -> list[tuple[int, str]]:
+    """Replace MalScraper with a stub whose `fetch_season` returns `entries`
+    and `current_season` returns `current`. No real MAL hit, no rate-limit
+    sleep. Returns the list the stub records `(year, season)` fetches into, so
+    a test can assert WHICH season the dispatcher targeted."""
+    fetched: list[tuple[int, str]] = []
 
     class _FakeScraper:
         async def __aenter__(self):
@@ -116,13 +121,18 @@ def _patch_scraper(monkeypatch, entries: list[dict]) -> None:
         async def __aexit__(self, *_):
             return False
 
-        async def fetch_current_season(self):
+        def current_season(self):
+            return current
+
+        async def fetch_season(self, year: int, season: str):
+            fetched.append((year, season))
             return entries
 
     monkeypatch.setattr(
         "app.services.seasonal_sweep_dispatcher.MalScraper",
         lambda: _FakeScraper(),
     )
+    return fetched
 
 
 class _NoopProgressReporter:
@@ -140,14 +150,14 @@ def _patch_progress(monkeypatch) -> None:
     )
 
 
-async def _run_dispatcher() -> dict:
-    """Insert a real seasonal_sweep row so the dispatcher's children can
-    set parent_job_id=<row.id> without tripping the FK. Pre-FK tests
-    passed a synthetic id via a fake-object shim; that no longer works.
+async def _run_dispatcher(kind: JobKind = JobKind.seasonal_sweep) -> dict:
+    """Insert a real sweep row (seasonal or upcoming) so the dispatcher's
+    children can set parent_job_id=<row.id> without tripping the FK. Pre-FK
+    tests passed a synthetic id via a fake-object shim; that no longer works.
     `cleanup_seasonal_children` removes both the parent and the spawned
     children by created_at window."""
     async with async_session_maker() as session:
-        parent = Job(kind=JobKind.seasonal_sweep, status=JobStatus.running)
+        parent = Job(kind=kind, status=JobStatus.running)
         session.add(parent)
         await session.commit()
         await session.refresh(parent)
@@ -218,6 +228,26 @@ async def test_dispatcher_enqueues_only_new_mal_ids(
         assert child.requested_by_user_id is None
         assert "query" in child.payload
         assert "mal_id" in child.payload
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_targets_season_by_kind(
+    cleanup_seasonal_children, monkeypatch,
+):
+    """The same dispatcher scrapes the CURRENT season for seasonal_sweep and
+    the NEXT season for upcoming_sweep. With the clock at summer 2026, the
+    seasonal run fetches (2026, summer) and the upcoming run fetches
+    (2026, fall) — the whole point of the upcoming sweep."""
+    monkeypatch.setattr("app.services.seasonal_sweep_dispatcher.job_worker.notify", lambda: None)
+    _patch_progress(monkeypatch)
+
+    seasonal_fetched = _patch_scraper(monkeypatch, [], current=(2026, "summer"))
+    await _run_dispatcher(JobKind.seasonal_sweep)
+    assert seasonal_fetched == [(2026, "summer")]
+
+    upcoming_fetched = _patch_scraper(monkeypatch, [], current=(2026, "summer"))
+    await _run_dispatcher(JobKind.upcoming_sweep)
+    assert upcoming_fetched == [(2026, "fall")]
 
 
 @pytest.mark.asyncio

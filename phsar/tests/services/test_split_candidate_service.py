@@ -87,7 +87,7 @@ async def test_execute_split_creates_new_anime_and_reparents_media(db_session):
     Vigilante, the two Vigilante Media rows re-parent under it, and the
     source anime loses those 2 from its media list."""
     bnha, media, candidate_uuid = await _make_bnha_with_vigilante_candidate(db_session)
-    bnha_s1, vig_s1, vig_s2 = media
+    _bnha_s1, _vig_s1, _vig_s2 = media
     original_bnha_uuid = str(bnha.uuid)
 
     surviving_uuid, new_anime_uuids = await execute_split(db_session, candidate_uuid)
@@ -149,7 +149,7 @@ async def test_execute_split_preserves_media_uuids(db_session):
 async def test_dismiss_leaves_db_untouched(db_session):
     """Dismiss just flips status. No anime created, no media re-parented."""
     bnha, media, candidate_uuid = await _make_bnha_with_vigilante_candidate(db_session)
-    bnha_s1, vig_s1, vig_s2 = media
+    _bnha_s1, _vig_s1, _vig_s2 = media
 
     await dismiss(db_session, candidate_uuid)
 
@@ -258,7 +258,7 @@ async def test_execute_split_raises_on_substance_collapse(db_session):
     detection instead of landing a 1-media anime row that contradicts
     the rule."""
     _, media, candidate_uuid = await _make_bnha_with_vigilante_candidate(db_session)
-    _, vig_s1, vig_s2 = media
+    _, _vig_s1, vig_s2 = media
 
     # Collapse one Vigilante below the TV substance gate (episodes<8
     # AND duration<10min). The cluster now has only S1 passing

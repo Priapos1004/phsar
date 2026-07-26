@@ -1328,9 +1328,12 @@ def _apply_media_diff(
             # First votes coming in (score=None → 8.0, or scored_by 0 → N) is
             # a structural transition, not noise.
             changed = True
-        elif old_weighted is not None and new_weighted is not None:
-            if abs(new_weighted - old_weighted) >= _SCORE_STABILITY_THRESHOLD:
-                changed = True
+        elif (
+            old_weighted is not None
+            and new_weighted is not None
+            and abs(new_weighted - old_weighted) >= _SCORE_STABILITY_THRESHOLD
+        ):
+            changed = True
 
     new_episodes = payload.get("episodes")
     # Skip when MAL omitted the field on a populated row — mirrors the
