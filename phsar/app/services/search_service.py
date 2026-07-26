@@ -140,7 +140,7 @@ async def search_mal_api(
                 all_info[mal_id], relation_type=relation_info["relation_type"],
             )
             if mal_id == anime_mal_id:
-                unconnected_media_list = [media] + unconnected_media_list
+                unconnected_media_list = [media, *unconnected_media_list]
             else:
                 unconnected_media_list.append(media)
 

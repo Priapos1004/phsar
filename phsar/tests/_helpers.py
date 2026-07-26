@@ -12,16 +12,16 @@ from app.models.users import RoleType, Users
 def media_kwargs(anime_id: int, mal_id: int, **overrides) -> dict:
     """Return a dict suitable for `Media(**...)` with all NOT-NULL columns
     populated. Pass keyword overrides to customize specific fields."""
-    base = dict(
-        anime_id=anime_id,
-        mal_id=mal_id,
-        mal_url=f"https://example/{mal_id}",
-        title=f"M{mal_id}",
-        media_type=MediaType.TV,
-        relation_type=RelationType.Main,
-        scored_by=0,
-        airing_status="Finished Airing",
-    )
+    base = {
+        "anime_id": anime_id,
+        "mal_id": mal_id,
+        "mal_url": f"https://example/{mal_id}",
+        "title": f"M{mal_id}",
+        "media_type": MediaType.TV,
+        "relation_type": RelationType.Main,
+        "scored_by": 0,
+        "airing_status": "Finished Airing",
+    }
     base.update(overrides)
     return base
 

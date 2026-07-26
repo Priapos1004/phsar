@@ -48,4 +48,4 @@ class WatchEventDAO(BaseDAO[WatchEvent]):
             .group_by(WatchEvent.media_id)
         )
         result = await db.execute(stmt)
-        return {media_id: count for media_id, count in result.all()}
+        return dict(result.all())

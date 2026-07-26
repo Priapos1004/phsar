@@ -255,10 +255,7 @@ def _anchor_sort_key(mal_id: int, node: ClassifierNode) -> tuple:
     scored_by = node.get("scored_by") or 0
     # Bucket nulls last within a tier so a typed-but-undated entry never
     # beats one with a real date. Within non-nulls, oldest wins.
-    if aired is None:
-        aired_sort = (1, "")
-    else:
-        aired_sort = (0, aired)
+    aired_sort = (1, "") if aired is None else (0, aired)
     return (tier, aired_sort, -scored_by, mal_id)
 
 
@@ -593,9 +590,7 @@ def would_be_dropped_as_weak_anchor(
         return False
     if seed_mal_id is not None:
         return False
-    if len(cross_link_mal_ids) == 1:
-        return False
-    return True
+    return len(cross_link_mal_ids) != 1
 
 
 # Edge labels that, when present on the bridge between an orphan cluster

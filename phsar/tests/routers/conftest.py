@@ -32,7 +32,7 @@ async def client(db_session):
 
 @pytest.fixture
 async def get_admin_token(client):
-    async def _get_token(username: str = None, password: str = None):
+    async def _get_token(username: str | None = None, password: str | None = None):
         username = username or settings.ADMIN_USERNAME
         password = password or settings.ADMIN_PASSWORD
 

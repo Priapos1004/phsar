@@ -117,5 +117,4 @@ class MediaDAO(MalIdDAO[Media]):
 
         stmt = stmt.limit(limit)
 
-        results = (await db.execute(stmt)).scalars().all()
-        return results
+        return (await db.execute(stmt)).scalars().all()

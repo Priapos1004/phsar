@@ -477,7 +477,7 @@ async def test_search_title_skips_null_title_pv_silently(monkeypatch):
     # And critically: every tuple in unwanted_media is fully-typed
     # (no None on title or reason) so SearchResultDBExtended validation
     # passes downstream.
-    for uw_mal_id, uw_title, uw_reason in unwanted:
+    for _uw_mal_id, uw_title, uw_reason in unwanted:
         assert uw_title is not None
         assert uw_reason is not None
 

@@ -60,7 +60,9 @@ async def audit():
 
             media_by_mal = {m.mal_id: m for m in anime.media}
 
-            def _label(mal_id: int) -> str:
+            # Bind the loop-scoped maps as defaults so the closure captures this
+            # iteration's values (it's consumed within the same iteration anyway).
+            def _label(mal_id: int, media_by_mal=media_by_mal, classifications=classifications) -> str:
                 m = media_by_mal.get(mal_id)
                 if m is None:
                     return f"<external mal_id={mal_id}>"

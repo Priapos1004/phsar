@@ -133,7 +133,7 @@ def _build_summary(
     ]
 
     # --- umbrella ("Anime changes") drift: 3 entries ---
-    umb_pool = [a for a in fail_pool[13:16]]
+    umb_pool = list(fail_pool[13:16])
     anime_umbrella_changes = []
     field_sets = [
         [{"field": "cover_image", "old": "https://cdn.myanimelist.net/images/anime/old.jpg",
@@ -142,7 +142,7 @@ def _build_summary(
         [{"field": "title", "old": "Old Romaji Title", "new": "New Romaji Title"},
          {"field": "name_eng", "old": "Old English", "new": "New English"}],
     ]
-    for a, fields in zip(umb_pool, field_sets):
+    for a, fields in zip(umb_pool, field_sets, strict=False):
         title_change = any(f["field"] in {"title", "name_eng", "name_jap"} for f in fields)
         anime_umbrella_changes.append({
             "anime_id": a.id,

@@ -190,7 +190,7 @@ async def test_sweep_kind_brackets_maintenance_flag(tracked_jobs):
 
     async def fake_sweep(session, job):
         captured_active.append(maintenance.is_maintenance_active())
-        return None
+        return
 
     worker = JobWorker()
     worker.register_dispatcher(JobKind.update_sweep, fake_sweep)
@@ -323,7 +323,7 @@ async def test_sweep_finally_preserves_future_scheduled_at(tracked_jobs):
         # Simulate the cron-retry race: a freshly-set future timestamp
         # appears while *this* sweep is still running.
         maintenance.set_scheduled_at(next_window)
-        return None
+        return
 
     worker = JobWorker()
     worker.register_dispatcher(JobKind.update_sweep, fake_sweep)
@@ -347,7 +347,7 @@ async def test_dispatch_one_skips_claim_when_maintenance_active(tracked_jobs):
 
     async def fake_dispatcher(session, job):
         captured.append(job.id)
-        return None
+        return
 
     worker = JobWorker()
     worker.register_dispatcher(JobKind.user_scrape, fake_dispatcher)
@@ -396,7 +396,7 @@ async def test_run_loop_picks_up_job_quickly_after_maintenance_lift(
     async def fake_dispatcher(session, job):
         captured.append(job.id)
         claimed.set()
-        return None
+        return
 
     worker = JobWorker()
     worker.register_dispatcher(JobKind.user_scrape, fake_dispatcher)
@@ -429,7 +429,7 @@ async def test_user_scrape_does_not_flip_maintenance_flag(tracked_jobs):
 
     async def fake_dispatcher(session, job):
         captured_active.append(maintenance.is_maintenance_active())
-        return None
+        return
 
     worker = JobWorker()
     worker.register_dispatcher(JobKind.user_scrape, fake_dispatcher)
@@ -532,7 +532,7 @@ async def test_notify_wakes_idle_worker(tracked_jobs):
 
     async def fake_dispatcher(session, job):
         captured.set()
-        return None
+        return
 
     worker = JobWorker()
     worker.register_dispatcher(JobKind.user_scrape, fake_dispatcher)

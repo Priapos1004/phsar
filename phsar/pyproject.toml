@@ -4,4 +4,30 @@ exclude = [
     "alembic/versions",
     "**/__init__.py"
 ]
-lint.extend-select = ["I"]
+
+[tool.ruff.lint]
+# Curated rule set (NOT ruff's full default): pycodestyle errors + Pyflakes, plus import
+# sorting and the high-value modern-convention categories. We deliberately omit the
+# categories that fight this project's deliberate patterns — pylint complexity limits (large
+# service functions), blind-except (the job worker's hardened catch-alls), and bandit noise.
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "SIM", "C4", "RUF", "RET", "ASYNC"]
+# RUF00{1,2,3} flag em-dashes / typographic quotes in prose as "ambiguous unicode"; this
+# project uses them intentionally throughout docstrings + comments. ASYNC240 flags
+# pathlib methods in async functions — the backup/restore worker does deliberate
+# synchronous filesystem ops off the request path (pg_dump/pg_restore dominate).
+ignore = ["RUF001", "RUF002", "RUF003", "ASYNC240"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection + parameter helpers are called in argument defaults by
+# design; treat them as immutable so B008 stays useful for genuinely-mutable defaults.
+extend-immutable-calls = [
+    "fastapi.Depends",
+    "fastapi.Query",
+    "fastapi.Path",
+    "fastapi.Body",
+    "fastapi.Header",
+    "fastapi.Cookie",
+    "fastapi.Form",
+    "fastapi.File",
+    "fastapi.Security",
+]

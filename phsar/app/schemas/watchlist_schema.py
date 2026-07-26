@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -11,7 +10,7 @@ class WatchlistBase(BaseModel):
     """Shared core watchlist fields. priority + tag are non-optional (the UI defaults
     priority to 3 and preselects the default tag), so a value is always stored."""
     priority: int = 3
-    note: Optional[str] = None
+    note: str | None = None
     tag_uuid: UUID
 
     @field_validator("priority")
@@ -23,7 +22,7 @@ class WatchlistBase(BaseModel):
 
     @field_validator("note")
     @classmethod
-    def note_max_length(cls, v: Optional[str]) -> Optional[str]:
+    def note_max_length(cls, v: str | None) -> str | None:
         if v is not None and len(v) > 1000:
             raise ValueError("Note must be at most 1000 characters")
         return v
@@ -45,11 +44,11 @@ class TagMini(BaseModel):
 class WatchlistOut(BaseModel):
     uuid: UUID
     priority: int
-    note: Optional[str]
+    note: str | None
     tag: TagMini
     media_uuid: UUID
     media_title: str
-    media_cover_image: Optional[str]
+    media_cover_image: str | None
     anime_uuid: UUID
     anime_title: str
     created_at: datetime
@@ -64,21 +63,21 @@ class WatchlistItem(BaseModel):
     media_uuid: UUID
     anime_uuid: UUID
     media_title: str
-    media_name_eng: Optional[str]
-    media_name_jap: Optional[str]
+    media_name_eng: str | None
+    media_name_jap: str | None
     anime_title: str
-    anime_name_eng: Optional[str]
-    anime_name_jap: Optional[str]
-    media_cover_image: Optional[str]
-    anime_cover_image: Optional[str]
+    anime_name_eng: str | None
+    anime_name_jap: str | None
+    media_cover_image: str | None
+    anime_cover_image: str | None
     priority: int
-    note: Optional[str]
+    note: str | None
     tag_uuid: UUID
     tag_name: str
     tag_color: str
     relation_type: str
-    anime_season_name: Optional[str]
-    anime_season_year: Optional[int]
+    anime_season_name: str | None
+    anime_season_year: int | None
     mal_id: int
     # Per-media genres + studios (eager-loaded by get_all_for_items) so the Statistics
     # subtab can tally top genres/studios client-side off this one fetch.
@@ -86,8 +85,8 @@ class WatchlistItem(BaseModel):
     studios: list[str]
     # For the Statistics "queued time" figure: full runtime = episodes × duration_seconds
     # (watchlist media are unwatched, so it's the time queued up, not watched).
-    episodes: Optional[int]
-    duration_seconds: Optional[int]
+    episodes: int | None
+    duration_seconds: int | None
     created_at: datetime
     modified_at: datetime
 

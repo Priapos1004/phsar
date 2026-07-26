@@ -19,7 +19,7 @@ async def rated_media(client, user_auth_headers, db_session):
     await db_session.flush()
 
     media_items = []
-    for i, (title, rating, pace) in enumerate(_RATED_MEDIA_DATA):
+    for i, (title, _rating, _pace) in enumerate(_RATED_MEDIA_DATA):
         media = Media(**media_kwargs(
             anime.id, 77770 + i,
             title=title,
@@ -30,7 +30,7 @@ async def rated_media(client, user_auth_headers, db_session):
         media_items.append(media)
     await db_session.flush()
 
-    for media, (_, rating, pace) in zip(media_items, _RATED_MEDIA_DATA):
+    for media, (_, rating, pace) in zip(media_items, _RATED_MEDIA_DATA, strict=False):
         body = {"rating": rating}
         if pace:
             body["pace"] = pace

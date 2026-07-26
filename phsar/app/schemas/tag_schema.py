@@ -1,6 +1,5 @@
 import re
 from datetime import datetime
-from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -41,17 +40,17 @@ class TagCreate(BaseModel):
 class TagUpdate(BaseModel):
     """Partial update — only the provided fields change. Blocked entirely for the
     default tag in the service."""
-    name: Optional[str] = None
-    color: Optional[str] = None
+    name: str | None = None
+    color: str | None = None
 
     @field_validator("name")
     @classmethod
-    def check_name(cls, v: Optional[str]) -> Optional[str]:
+    def check_name(cls, v: str | None) -> str | None:
         return _validate_name(v) if v is not None else v
 
     @field_validator("color")
     @classmethod
-    def check_color(cls, v: Optional[str]) -> Optional[str]:
+    def check_color(cls, v: str | None) -> str | None:
         return _validate_color(v) if v is not None else v
 
 
