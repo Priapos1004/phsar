@@ -9,9 +9,17 @@
 		// Accepts either shape — only the 11 attribute keys are read (via getRatingAttr),
 		// which both RatingOut and the /ratings page's RatingScoreItem carry.
 		ratings: RatingOut[] | RatingScoreItem[];
+		/**
+		 * Fires once this component has rendered whatever it is going to render — for the
+		 * share-card capture. Passing it also turns the entrance animation OFF: a capture
+		 * has no reason to wait out a grow-in it will never show. It also fires when there
+		 * is no radar to draw (no quality attribute rated), so "ready" is total and the
+		 * caller's timeout stays a pure hang guard instead of a routine wait.
+		 */
+		onReady?: () => void;
 	}
 
-	let { ratings }: Props = $props();
+	let { ratings, onReady }: Props = $props();
 
 	// Quality attributes with a clear "bad to good" scale for radar visualization.
 	// ending_quality deliberately excludes "not_applicable" — those ratings are
@@ -71,9 +79,23 @@
 		return { avgs, closestLabels, hasData };
 	});
 
+	// Both readiness paths funnel through here so a consumer only ever sees one signal.
+	let painted = false;
+	function notifyPainted() {
+		if (painted) return;
+		painted = true;
+		onReady?.();
+	}
+
+	// Nothing to draw → no EChart mounts → no `finished` event, so report ready here.
+	$effect(() => {
+		if (!radarData.hasData) notifyPainted();
+	});
+
 	let radarOption = $derived.by(() => {
 		const primaryColor = getThemedChartColorPalette()[0];
 		return {
+			animation: !onReady,
 			radar: {
 				indicator: RADAR_LABELS.map((name) => ({ name, max: 1 })),
 				splitNumber: 3,
@@ -118,5 +140,5 @@
 </script>
 
 {#if radarData.hasData}
-	<EChart option={radarOption} height="224px" />
+	<EChart option={radarOption} height="224px" onReady={notifyPainted} />
 {/if}

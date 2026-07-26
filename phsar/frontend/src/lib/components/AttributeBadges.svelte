@@ -5,9 +5,21 @@
 
 	interface Props {
 		ratings: RatingOut[];
+		/**
+		 * `responsive` (default) picks the wrap on mobile and the orbit on desktop.
+		 * `wrap` pins the wrap at every width — what the fixed-size share card needs:
+		 * the orbit's pills overhang their 240px box by ~50px a side (fine inside a
+		 * half-width page column, but a fixed-width card has no slack to absorb it),
+		 * and a viewport-dependent layout would make the same rating export differently
+		 * from a phone than from a desktop.
+		 */
+		layout?: 'responsive' | 'wrap';
 	}
 
-	let { ratings }: Props = $props();
+	let { ratings, layout = 'responsive' }: Props = $props();
+
+	// One decision, derived once — two independent conditions could render both layouts.
+	let showOrbit = $derived(layout === 'responsive');
 
 	const BADGE_KEYS = [
 		'pace',
@@ -93,14 +105,15 @@
 	</span>
 {/snippet}
 
-<!-- Mobile: scattered flex wrap -->
-<div class="flex flex-wrap justify-center gap-2 md:hidden">
+<!-- Mobile (and every width when pinned to `wrap`): scattered flex wrap -->
+<div class="flex flex-wrap justify-center gap-2 {showOrbit ? 'md:hidden' : ''}">
 	{#each pills as p, i}
 		{@render pill(p, i, 'inline-block', `transform: rotate(${PILL_STYLES[i].rotation}deg);`)}
 	{/each}
 </div>
 
 <!-- Desktop: orbital ellipse arrangement -->
+{#if showOrbit}
 <div class="hidden md:block relative" style="width: 240px; height: 200px;">
 	{#each pills as p, i}
 		{@const angle = PILL_STYLES[i].angle}
@@ -116,6 +129,7 @@
 		)}
 	{/each}
 </div>
+{/if}
 
 <style>
 	@keyframes pill-burst {

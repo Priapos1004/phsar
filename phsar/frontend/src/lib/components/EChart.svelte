@@ -16,9 +16,16 @@
 		 * the caller stays in data terms (e.g. snap x to the nearest category) and never
 		 * touches zrender / convertFromPixel. Single-grid charts only. */
 		onGridClick?: (coord: [number, number]) => void;
+		/** Fires once the canvas actually holds its finished pixels. There's no
+		 * DOM-observable moment for that — the first setOption waits on an async
+		 * ResizeObserver measurement (see below) and then animates — so a consumer needing
+		 * painted pixels (the share-card PNG capture) can't just wait a frame. Backed by
+		 * ECharts' own `finished` event, so it stays truthful whether the chart animates
+		 * or not. */
+		onReady?: () => void;
 	}
 
-	let { option, width = '100%', height = '200px', onClick, onGridClick }: Props = $props();
+	let { option, width = '100%', height = '200px', onClick, onGridClick, onReady }: Props = $props();
 
 	let container: HTMLDivElement;
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -35,6 +42,16 @@
 
 			// Read `onClick` live so a reactive change is honoured without re-init.
 			instance.on('click', (params: unknown) => onClick?.(params));
+			// `finished` re-fires on every later render; latch so consumers see one signal.
+			// Registered here (not in the option $effect) so the callback prop stays out of
+			// that effect's dependency set — an inline arrow would otherwise re-trigger a
+			// full notMerge setOption on every parent update.
+			let notified = false;
+			instance.on('finished', () => {
+				if (notified) return;
+				notified = true;
+				onReady?.();
+			});
 			// Plot-area clicks need zrender (ECharts' own 'click' only fires on data
 			// items). Wire it only when a consumer wants it, so other charts don't pay
 			// the containPixel/convertFromPixel cost on every click. Hand back DATA
