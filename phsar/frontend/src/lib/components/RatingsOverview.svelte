@@ -7,9 +7,10 @@
 	import RatingsOverviewNotes from '$lib/components/RatingsOverviewNotes.svelte';
 	import RatingsOverviewAttributes from '$lib/components/RatingsOverviewAttributes.svelte';
 	import { resolveTitle } from '$lib/utils/formatString';
-	import { episodesWatchedOf } from '$lib/utils/ratingStats';
+	import { episodesWatchedOf, meanScore } from '$lib/utils/ratingStats';
 	import { userSettings } from '$lib/stores/userSettings';
-	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr, isAttrRated, type AnimeMediaItem, type RatingOut } from '$lib/types/api';
+	import { hasAnyAttribute } from '$lib/utils/ratingAttributes';
+	import type { AnimeMediaItem, RatingOut } from '$lib/types/api';
 
 	interface Props {
 		ratings: RatingOut[];
@@ -29,9 +30,7 @@
 		})),
 	);
 
-	let avgScore = $derived(
-		ratings.length > 0 ? ratings.reduce((sum, r) => sum + r.rating, 0) / ratings.length : 0,
-	);
+	let avgScore = $derived(meanScore(ratings));
 	let droppedCount = $derived(ratings.filter((r) => r.watch_status === 'dropped').length);
 	let onHoldCount = $derived(ratings.filter((r) => r.watch_status === 'on_hold').length);
 
@@ -68,12 +67,7 @@
 			})),
 	);
 
-	const ATTR_KEYS = Object.keys(RATING_ATTRIBUTE_OPTIONS);
-	// A rating carrying only the auto-set not_applicable ending doesn't count as
-	// having attributes, so it can't trigger an empty Attribute Summary section.
-	let hasAttributes = $derived(
-		ratings.some((r) => ATTR_KEYS.some((k) => isAttrRated(getRatingAttr(r, k)))),
-	);
+	let hasAttributes = $derived(hasAnyAttribute(ratings));
 </script>
 
 <Card.Root class={cls.cardGlass}>

@@ -1,5 +1,5 @@
 import { RELATION_TYPE_LABELS } from '$lib/utils/chartColors';
-import type { JobKind } from '$lib/types/api';
+import { WATCH_STATUS_OPTIONS, type JobKind, type WatchStatus } from '$lib/types/api';
 
 /** Labels for the numeric age-rating buckets (mirrors the backend AGE_RATING_MAP:
  * G=0, PG=6, PG-13=13, R=17, R+=18). */
@@ -36,6 +36,16 @@ const MEDIA_TYPE_LABELS: Record<string, string> = {
 /** Formats a raw media_type value to a user-friendly label. */
 export function formatMediaType(type: string): string {
 	return MEDIA_TYPE_LABELS[type] ?? type;
+}
+
+/** "1 ep" / "24 eps" — the pluralization every episode-count display shares. */
+export function formatEpisodeCount(episodes: number): string {
+	return `${episodes} ep${episodes === 1 ? '' : 's'}`;
+}
+
+/** Formats a raw watch_status value to its user-facing label. */
+export function watchStatusLabel(status: WatchStatus | string): string {
+	return WATCH_STATUS_OPTIONS.find((o) => o.value === status)?.label ?? status;
 }
 
 export const JOB_KIND_LABELS: Record<JobKind, string> = {

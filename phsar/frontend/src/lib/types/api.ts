@@ -323,9 +323,12 @@ export interface SearchTokenResponse {
 }
 
 // User Settings
+/** Preferred title language — the input to `resolveTitle`/`resolveSubtitles`. */
+export type NameLanguage = 'english' | 'japanese' | 'romaji';
+
 export interface UserSettings {
 	theme: ThemeKey;
-	name_language: 'english' | 'japanese' | 'romaji';
+	name_language: NameLanguage;
 	default_search_view: 'anime' | 'media';
 	rating_step: '0.5' | '0.25' | '0.1' | '0.01';
 	spoiler_level: 'off' | 'blur' | 'hide';

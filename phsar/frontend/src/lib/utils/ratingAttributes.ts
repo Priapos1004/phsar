@@ -19,6 +19,14 @@ export function attributeBadges(item: RatingOut | RatingScoreItem): { key: strin
 		}));
 }
 
+const ATTR_KEYS = Object.keys(RATING_ATTRIBUTE_OPTIONS);
+
+/** True when some rating carries a real attribute value — the auto-set `not_applicable`
+ * doesn't count, so an empty attribute section can never render. */
+export function hasAnyAttribute(ratings: (RatingOut | RatingScoreItem)[]): boolean {
+	return ratings.some((r) => ATTR_KEYS.some((k) => isAttrRated(getRatingAttr(r, k))));
+}
+
 // The 5 attributes with a clear better/worse order — compared by ordinal position
 // (higher/lower) in the neighbor color-coding. The other 6 are categorical (differ/match).
 export const QUALITY_ATTR_KEYS = new Set([
