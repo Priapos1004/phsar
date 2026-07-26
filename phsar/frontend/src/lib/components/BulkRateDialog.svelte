@@ -6,7 +6,7 @@
 	import AttributeSelect from '$lib/components/AttributeSelect.svelte';
 	import RatingNeighbors from '$lib/components/RatingNeighbors.svelte';
 	import ScoreDial from '$lib/components/ScoreDial.svelte';
-	import { Checkbox } from '$lib/components/ui/checkbox';
+	import RemoveFromWatchlistToggle from '$lib/components/RemoveFromWatchlistToggle.svelte';
 	import { ChevronDown, ChevronUp } from 'lucide-svelte';
 	import { clampAndSnapScore, decimalPlaces } from '$lib/utils/formatString';
 	import { RATING_ATTRIBUTE_OPTIONS } from '$lib/types/api';
@@ -193,15 +193,11 @@
 			<RatingNeighbors score={snappedScore} {animeUuid} {genres} {studios} {ageRatingNumeric} currentAttributes={attributes} />
 
 			{#if watchlistedCount > 0}
-				<!-- Yellow attention block (matches the overwrite warning above): removing from the
-				     watchlist is a side effect worth noticing, so it's not a plain checkbox. -->
-				<div class="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 space-y-1">
-					<label class="flex items-center gap-2 text-sm font-medium text-yellow-800 cursor-pointer">
-						<Checkbox bind:checked={alsoRemoveWatchlist} />
-						Also remove {watchlistedCount} media from your watchlist
-					</label>
-					<p class="text-xs text-neutral-600 pl-6">Rating a title usually means it's no longer something you're planning to watch.</p>
-				</div>
+				<RemoveFromWatchlistToggle
+					bind:checked={alsoRemoveWatchlist}
+					label={`Also remove ${watchlistedCount} media from your watchlist`}
+					detail="Rating a title usually means it's no longer something you're planning to watch."
+				/>
 			{/if}
 
 			{#if error}
