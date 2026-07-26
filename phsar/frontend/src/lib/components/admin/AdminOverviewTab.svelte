@@ -101,8 +101,10 @@
 			</Card.Header>
 			<Card.Content>
 				<!-- All-users aggregate (no leaderboard). Grid pairs each total above its
-				     related figure: media/avg-media, anime/users, lists/avg-lists. Averages are
-				     "per active watchlist user" — over the users who actually have an entry. -->
+				     related figure: media/avg-media, anime/users, lists/avg-lists. The two
+				     averages use different denominators on purpose: avg media is "per active
+				     watchlist user" (users with an entry); avg lists is ADOPTION, over the whole
+				     eligible (non-guest) base so users who made no list count against it. -->
 				<div class="grid grid-cols-3 gap-4">
 					<div>
 						<div class="text-2xl font-bold text-card-foreground">{formatNumber(stats.watchlist.total_entries)}</div>
@@ -132,7 +134,7 @@
 					</div>
 					<div>
 						<div class="text-2xl font-bold text-primary">{stats.watchlist.avg_custom_lists_per_user}</div>
-						<Tooltip text="Custom lists per active watchlist user. Excludes the default &quot;Watchlist&quot; list.">
+						<Tooltip text="Custom lists per account, across every non-guest user — an adoption measure that counts users who made none. Excludes the default &quot;Watchlist&quot; list.">
 							<span class="text-xs text-muted-foreground cursor-help border-b border-dotted border-muted-foreground/40">Avg lists / user</span>
 						</Tooltip>
 					</div>

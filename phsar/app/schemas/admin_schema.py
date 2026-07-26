@@ -245,10 +245,13 @@ class SweepTierBreakdown(BaseModel):
 
 class WatchlistStats(BaseModel):
     """All-users watchlist aggregates for the Overview tab. Aggregate only — no
-    per-user breakdown (same privacy posture as the rest of the tab). Averages are
-    over `users_with_entries` (people who actually use the watchlist), not the whole
-    user base, so they read as "per active watchlist user"; 0 when nobody has one.
-    `total_custom_lists` excludes the immutable default list."""
+    per-user breakdown (same privacy posture as the rest of the tab). The two
+    averages use different denominators on purpose: `avg_entries_per_user` is over
+    `users_with_entries` (people who actually use the watchlist — "per active
+    watchlist user"), while `avg_custom_lists_per_user` is over the whole eligible
+    user base (non-restricted users) so it reads as list ADOPTION — how many custom
+    lists the average user has, counting the ones who made none. Both are 0 when the
+    denominator is 0. `total_custom_lists` excludes the immutable default list."""
     total_entries: int
     total_anime: int
     users_with_entries: int

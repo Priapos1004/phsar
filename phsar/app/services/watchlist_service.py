@@ -49,8 +49,9 @@ def _to_out(w: Watchlist) -> WatchlistOut:
 
 def _to_item(w: Watchlist) -> WatchlistItem:
     # Requires the WIDE loader: reads m.media_genre/media_studio (both lazy="raise"), which
-    # only WatchlistDAO.get_all_for_items eager-loads — the lighter lookup loaders would
-    # MissingGreenlet-crash here. Its sole caller (get_watchlist_items) uses that loader.
+    # only WatchlistDAO.get_all_for_items eager-loads — under a lighter lookup loader the
+    # lazy="raise" guard raises InvalidRequestError here. Its sole caller (get_watchlist_items)
+    # uses that loader.
     m = w.media
     a = m.anime
     return WatchlistItem(

@@ -32,7 +32,10 @@ dao = JobDAO()
 # and no anime is titled a pure 5–6 digit number, so such a query is
 # unambiguously an id. 5–6 digits covers every current + near-future MAL id
 # (they're ~60k now); shorter/older ids are reliably findable by title search.
-_MAL_ID_QUERY = re.compile(r"\d{5,6}")
+# The leading digit must be non-zero: it keeps a leading-zero string ("00001")
+# from collapsing to an old low id we mean to exclude, and rules out the all-zero
+# "00000" → mal_id=0 that would otherwise slip past the schema's gt=0 guard.
+_MAL_ID_QUERY = re.compile(r"[1-9]\d{4,5}")
 
 
 @router.post("/scrape", response_model=JobResponse)

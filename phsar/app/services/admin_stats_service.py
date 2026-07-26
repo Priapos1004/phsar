@@ -17,6 +17,7 @@ from app.daos.anime_dao import AnimeDAO
 from app.daos.merge_candidate_dao import MergeCandidateDAO
 from app.daos.split_candidate_dao import SplitCandidateDAO
 from app.daos.tag_dao import TagDAO
+from app.daos.user_dao import UserDAO
 from app.daos.watchlist_dao import WatchlistDAO
 from app.models.anime import Anime
 from app.models.job import Job, JobKind, JobStatus
@@ -39,6 +40,7 @@ merge_candidate_dao = MergeCandidateDAO()
 split_candidate_dao = SplitCandidateDAO()
 watchlist_dao = WatchlistDAO()
 tag_dao = TagDAO()
+user_dao = UserDAO()
 
 
 async def _catalog_stats(db: AsyncSession, cutoff: datetime) -> CatalogStats:
@@ -168,16 +170,18 @@ async def _watchlist_stats(db: AsyncSession) -> WatchlistStats:
     total_anime = await watchlist_dao.count_distinct_anime(db)
     users_with_entries = await watchlist_dao.count_distinct_users(db)
     total_custom_lists = await tag_dao.count_custom_total(db)
-    # Averages over active watchlist users only (0 when nobody has one), rounded to 1 dp.
-    # The `if users_with_entries` guard is the div-by-zero protection, so the division
-    # runs only when the denominator is non-zero.
+    eligible_users = await user_dao.count_non_restricted(db)
+    # Two denominators on purpose (see WatchlistStats docstring): entries average over
+    # active watchlist users; the custom-list average is ADOPTION, over the whole eligible
+    # base (so users who made no list count against it). The `if <denom>` guards protect
+    # against div-by-zero, so each division runs only when its denominator is non-zero.
     return WatchlistStats(
         total_entries=total_entries,
         total_anime=total_anime,
         users_with_entries=users_with_entries,
         avg_entries_per_user=round(total_entries / users_with_entries, 1) if users_with_entries else 0.0,
         total_custom_lists=total_custom_lists,
-        avg_custom_lists_per_user=round(total_custom_lists / users_with_entries, 1) if users_with_entries else 0.0,
+        avg_custom_lists_per_user=round(total_custom_lists / eligible_users, 1) if eligible_users else 0.0,
     )
 
 

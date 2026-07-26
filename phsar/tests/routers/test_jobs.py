@@ -14,6 +14,8 @@ import random
 import uuid
 from uuid import UUID
 
+import pytest
+
 from app.core.config import settings
 from app.core.job_versions import JOB_KIND_VERSIONS
 from app.daos.job_dao import JobDAO
@@ -252,6 +254,19 @@ async def test_enqueue_scrape_four_digit_query_stays_title_search(client, user_a
     """4 digits is below the id window: no anime is titled a pure number, but
     older ids are reliably found by title search, so it stays a title query."""
     query = str(random.randint(1000, 9999))
+    resp = await client.post("/jobs/scrape", json={"query": query}, headers=user_auth_headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["payload"] == {"query": query}
+
+
+@pytest.mark.parametrize("query", ["00000", "00001", "012345"])
+async def test_enqueue_scrape_leading_zero_query_stays_title_search(
+    client, user_auth_headers, query,
+):
+    """A leading-zero numeric string is NOT a MAL id: it would collapse to an old
+    low id we mean to exclude, and "00000" -> mal_id=0 would slip past the schema's
+    gt=0 guard. The regex requires a non-zero leading digit, so these stay title
+    queries — no mal_id injected."""
     resp = await client.post("/jobs/scrape", json={"query": query}, headers=user_auth_headers)
     assert resp.status_code == 200, resp.text
     assert resp.json()["payload"] == {"query": query}
