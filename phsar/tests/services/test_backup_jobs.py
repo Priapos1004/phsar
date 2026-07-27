@@ -15,14 +15,23 @@ test_backup_subprocess_failures.py uses, so no real Postgres install is
 required.
 """
 
+from datetime import datetime, timezone
+
 import pytest
 from pydantic import ValidationError
+from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.db import async_session_maker
 from app.daos.job_dao import JobDAO
 from app.exceptions import BackupDiskSpaceError
 from app.models.job import Job, JobKind, JobStatus
+from app.schemas.backup_schema import (
+    BackupIntegrity,
+    BackupMetadata,
+    BackupSource,
+    BackupStatus,
+)
 from app.services import _pg_subprocess, backup_dispatcher, backup_service
 from app.services.job_worker import JobWorker
 
@@ -319,10 +328,8 @@ async def test_worker_does_not_bracket_maintenance_for_backup(
     user writes during a dump window. The worker's _MAINTENANCE_KINDS
     must NOT include `backup`, or every backup would 503 every
     concurrent user request for the duration of the dump."""
-    from datetime import datetime, timezone
 
     from app.core import maintenance
-    from app.schemas.backup_schema import BackupIntegrity, BackupMetadata
 
     _patch_progress(monkeypatch)
 
@@ -356,3 +363,101 @@ async def test_worker_does_not_bracket_maintenance_for_backup(
     assert captured_active == [False]
     refreshed = await _get_job(job_id)
     assert refreshed.status is JobStatus.succeeded
+
+
+# ---------------------------------------------------------------------------
+# Startup self-heal (`backup_service.ensure_up_to_date_backup`)
+#
+# The predicate, not the dump: `list_backups` is stubbed so these stay fast and
+# don't shell out to pg_dump. Rows are committed, so `tracked_jobs` cleans up.
+# ---------------------------------------------------------------------------
+
+
+def _listed(status: BackupStatus, **over) -> BackupMetadata:
+    """A minimal listing row. `status` is the server-derived composite the
+    self-heal reads — the same field the Backups card renders."""
+    return BackupMetadata(
+        filename=over.pop("filename", "phsar-19700101-000000-cron.dump"),
+        size_bytes=1,
+        created_at=datetime(1970, 1, 1, tzinfo=timezone.utc),
+        integrity=over.pop("integrity", BackupIntegrity.ok),
+        source=over.pop("source", BackupSource.cron),
+        status=status,
+        **over,
+    )
+
+
+@pytest.fixture
+def stub_listing(monkeypatch):
+    """Install a fake dump listing + live revision and silence the worker ping."""
+    def _install(*rows: BackupMetadata, db_revision: str = "new"):
+        async def _fake_list():
+            return list(rows)
+
+        async def _rev():
+            return db_revision
+
+        monkeypatch.setattr(backup_service, "list_backups", _fake_list)
+        monkeypatch.setattr(backup_service, "read_db_revision", _rev)
+        monkeypatch.setattr(backup_service.job_worker, "notify", lambda: None)
+
+    return _install
+
+
+async def _count_queued_backups() -> int:
+    async with async_session_maker() as s:
+        return await dao.count_active_by_kind(s, JobKind.backup)
+
+
+async def _latest_queued_backup() -> Job:
+    async with async_session_maker() as s:
+        return (await s.execute(
+            select(Job)
+            .where(Job.kind == JobKind.backup, Job.status == JobStatus.queued)
+            .order_by(Job.id.desc())
+            .limit(1)
+        )).scalar_one()
+
+
+@pytest.mark.asyncio
+async def test_startup_skips_when_a_restorable_backup_exists(stub_listing):
+    stub_listing(_listed(BackupStatus.ok))
+    before = await _count_queued_backups()
+    await backup_service.ensure_up_to_date_backup()
+    assert await _count_queued_backups() == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "status",
+    [BackupStatus.outdated, BackupStatus.unknown, BackupStatus.corrupt],
+    ids=["schema-stale", "schema-unverifiable", "corrupt-file"],
+)
+async def test_startup_enqueues_when_nothing_on_disk_is_restorable(
+    status, tracked_jobs, stub_listing,
+):
+    """Only `ok` counts. `unknown` is the one worth spelling out: a dump we can't
+    vouch for must not satisfy the predicate, and the card agrees with this now
+    because both read the same server-derived `status`."""
+    stub_listing(_listed(status, alembic_revision="old"))
+    before = await _count_queued_backups()
+
+    await backup_service.ensure_up_to_date_backup()
+
+    assert await _count_queued_backups() == before + 1
+    job = await _latest_queued_backup()
+    tracked_jobs.append(job.id)
+    assert job.requested_by_user_id is None  # system job — invisible to every bell
+    assert job.payload == {"source": BackupSource.cron.value}
+
+
+@pytest.mark.asyncio
+async def test_startup_does_not_stack_a_second_backup(tracked_jobs, stub_listing):
+    """A restart landing while a dump is still queued must not enqueue another —
+    the listing can't see an in-flight job, so the kind-scoped active count is
+    what stops the pile-up across rapid restarts."""
+    stub_listing(_listed(BackupStatus.outdated))
+    tracked_jobs.append(await _enqueue_backup_job({"source": "cron"}))
+    before = await _count_queued_backups()
+    await backup_service.ensure_up_to_date_backup()
+    assert await _count_queued_backups() == before

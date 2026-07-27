@@ -29,6 +29,7 @@ from app.seeders.user_seeder import (
     seed_admin_user,
     seed_guest_user,
 )
+from app.services import backup_service
 from app.services.backup_dispatcher import backup_dispatcher
 from app.services.job_worker import job_worker
 from app.services.merge_detection_service import backfill_merge_candidates
@@ -41,8 +42,14 @@ from app.services.seasonal_sweep_dispatcher import seasonal_sweep_dispatcher
 setup_logging()
 logger = logging.getLogger(__name__)
 
+
 async def _post_yield_backfills() -> None:
     """Long-running catalog backfills that must not block /health.
+
+    Also where the backup self-heal runs (`backup_service.ensure_up_to_date_backup`,
+    first): `list_backups()` may shell out `pg_restore --list` once per sidecar-less
+    dump, which is precisely the /health-starvation hazard this escape hatch exists
+    for. The policy lives in `backup_service`; only the ORDERING belongs here.
 
     On the first v0.14.1 deploy against an existing v0.14.0 DB the
     relation backfiller lazy-fetches missing MediaRelationEdges from MAL
@@ -69,6 +76,18 @@ async def _post_yield_backfills() -> None:
     path, gated OFF by default.
     """
     try:
+        # FIRST, ahead of every backfill below. All three are idempotent
+        # derived-data repairs that re-run on each boot, so a dump taken before
+        # them loses nothing recoverable — restore it, restart, and they
+        # re-derive. A dump taken after them could not recover from a backfill
+        # that damaged data. It also gets a dump on disk seconds after a
+        # migration rather than ~14-23 min later. (Since the worker runs
+        # concurrently this is "starts first", not a barrier: pg_dump's MVCC
+        # snapshot is taken within ~1s while the relation backfiller is still
+        # awaiting its first MAL round-trip, so in practice it captures a
+        # pre-backfill state, and the same idempotency makes any early commits
+        # it does catch harmless.)
+        await backup_service.ensure_up_to_date_backup()
         # One-shot catalog re-encode (case-folding fix). Its own session so
         # the ~1k-row scan's identity map is dropped before the relation
         # backfill loads the whole catalog again. Gated OFF by default; see

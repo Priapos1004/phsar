@@ -143,9 +143,14 @@ async def get_job_for_admin(
 backups_router = APIRouter(prefix="/backups", dependencies=[Depends(require_admin)])
 
 
-@backups_router.get("", response_model=list[backup_schema.BackupMetadata])
+@backups_router.get("", response_model=backup_schema.BackupListResponse)
 async def list_backups():
-    return await backup_service.list_backups()
+    """The dump list + the live schema revision every row's `status` was judged
+    against — see `BackupListResponse` for why that ships from here."""
+    return backup_schema.BackupListResponse(
+        db_revision=await backup_service.read_db_revision(),
+        backups=await backup_service.list_backups(),
+    )
 
 
 @backups_router.post(

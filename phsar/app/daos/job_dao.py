@@ -59,13 +59,31 @@ class JobDAO(BaseDAO[Job]):
         await db.flush()
         return job
 
+    # "Active" = not yet terminal. Defined once so the two count methods below
+    # can't drift if a third status ever counts as in-flight.
+    _ACTIVE_STATUSES = (JobStatus.queued, JobStatus.running)
+
     async def count_active_for_user(self, db: AsyncSession, user_id: int) -> int:
         """Counts queued + running jobs for a user, used to enforce the
         per-user submission cap before enqueueing."""
         stmt = (
             select(func.count(Job.id))
             .where(Job.requested_by_user_id == user_id)
-            .where(Job.status.in_((JobStatus.queued, JobStatus.running)))
+            .where(Job.status.in_(self._ACTIVE_STATUSES))
+        )
+        return (await db.execute(stmt)).scalar_one()
+
+    async def count_active_by_kind(self, db: AsyncSession, kind: JobKind) -> int:
+        """Counts queued + running jobs of one kind, regardless of requester.
+
+        The kind-scoped sibling of `count_active_for_user` — used by the startup
+        backup self-heal to avoid stacking a second dump when a restart lands
+        while one is still queued or running (system jobs have no user to scope
+        by, so the per-user cap doesn't cover them)."""
+        stmt = (
+            select(func.count(Job.id))
+            .where(Job.kind == kind)
+            .where(Job.status.in_(self._ACTIVE_STATUSES))
         )
         return (await db.execute(stmt)).scalar_one()
 

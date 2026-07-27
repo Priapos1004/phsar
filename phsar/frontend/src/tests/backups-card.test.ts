@@ -17,6 +17,11 @@ function jsonResponse(body: unknown, status = 200): Response {
 	} as Response;
 }
 
+// The list endpoint returns an envelope: the live schema revision + the rows.
+function backupList(rows: BackupMetadata[], dbRevision: string | null = null) {
+	return { db_revision: dbRevision, backups: rows };
+}
+
 function makeBackup(overrides: Partial<BackupMetadata> = {}): BackupMetadata {
 	return {
 		filename: 'phsar-2026-05-09T10-00-00Z.dump',
@@ -26,6 +31,7 @@ function makeBackup(overrides: Partial<BackupMetadata> = {}): BackupMetadata {
 		source: 'manual',
 		content_hash: 'abc123',
 		is_current: false,
+		status: 'ok',
 		...overrides,
 	};
 }
@@ -55,7 +61,7 @@ describe('BackupsCard', () => {
 				return jsonResponse({ job_uuid: '11111111-1111-1111-1111-111111111111' }, 202);
 			}
 			if (String(url).endsWith('/admin/backups')) {
-				return jsonResponse([makeBackup()]);
+				return jsonResponse(backupList([makeBackup()]));
 			}
 			return jsonResponse({});
 		});
@@ -100,7 +106,7 @@ describe('BackupsCard', () => {
 			if (String(url).endsWith('/admin/backups') && method === 'POST') {
 				return jsonResponse({ job_uuid: '22222222-2222-2222-2222-222222222222' }, 202);
 			}
-			return jsonResponse([]);
+			return jsonResponse(backupList([]));
 		});
 		globalThis.fetch = fetchMock as typeof fetch;
 
@@ -139,7 +145,7 @@ describe('BackupsCard', () => {
 			if (String(url).endsWith('/admin/backups') && method === 'POST') {
 				return jsonResponse({ job_uuid: '33333333-3333-3333-3333-333333333333' }, 202);
 			}
-			return jsonResponse([]);
+			return jsonResponse(backupList([]));
 		});
 		globalThis.fetch = fetchMock as typeof fetch;
 
@@ -181,7 +187,7 @@ describe('BackupsCard', () => {
 		});
 
 		globalThis.fetch = vi.fn(async () =>
-			jsonResponse([newest, middle, older]),
+			jsonResponse(backupList([newest, middle, older])),
 		) as typeof fetch;
 
 		render(BackupsCard, { props: { currentUsername: 'admin' } });
@@ -214,7 +220,7 @@ describe('BackupsCard', () => {
 		});
 
 		globalThis.fetch = vi.fn(async () =>
-			jsonResponse([newest, older]),
+			jsonResponse(backupList([newest, older])),
 		) as typeof fetch;
 
 		render(BackupsCard, { props: { currentUsername: 'admin' } });
@@ -227,13 +233,59 @@ describe('BackupsCard', () => {
 		expect(filenames).toEqual([newest.filename, older.filename]);
 	});
 
+	// "ok" claims restorable-right-now, so it needs an intact file AND the live
+	// schema. These pin the three-way outcome — a legacy dump with no recorded
+	// revision must not be accused of being stale.
+	async function renderWithBackups(rows: BackupMetadata[], dbRevision: string | null = null) {
+		globalThis.fetch = vi.fn(async (url: string) =>
+			String(url).endsWith('/admin/backups')
+				? jsonResponse(backupList(rows, dbRevision))
+				: jsonResponse({}),
+		) as unknown as typeof fetch;
+		render(BackupsCard, { props: { currentUsername: 'admin' } });
+		await vi.waitFor(() => expect(screen.getByText(rows[0].filename)).toBeInTheDocument());
+	}
+
+	it('shows "ok" for an intact dump on the live schema', async () => {
+		await renderWithBackups(
+			[makeBackup({ alembic_revision: 'd9e4a1c7b3f2', schema_current: true, status: 'ok' })],
+			'd9e4a1c7b3f2',
+		);
+		expect(screen.getByText('ok')).toBeInTheDocument();
+		expect(screen.queryByText('schema outdated')).not.toBeInTheDocument();
+		// Twice: once on the row (beside its size) and once as the header's
+		// live-schema reference, which now comes from the response envelope.
+		expect(screen.getAllByText('d9e4a1c7')).toHaveLength(2);
+	});
+
+	it('reports the live schema as unknown when no dump records it', async () => {
+		await renderWithBackups([makeBackup({ schema_current: null })]);
+		expect(screen.getByText('unknown')).toBeInTheDocument();
+	});
+
+
+	it('replaces "ok" with "schema outdated" on a revision mismatch', async () => {
+		await renderWithBackups(
+			[makeBackup({ alembic_revision: 'b7f3a1c9d2e5', schema_current: false, status: 'outdated' })],
+			'd9e4a1c7b3f2',
+		);
+		expect(screen.getByText('schema outdated')).toBeInTheDocument();
+		expect(screen.queryByText('ok')).not.toBeInTheDocument();
+	});
+
+	it('keeps "ok" when the schema verdict is unknown (pre-feature dump)', async () => {
+		await renderWithBackups([makeBackup({ schema_current: null })]);
+		expect(screen.getByText('ok')).toBeInTheDocument();
+		expect(screen.queryByText('schema outdated')).not.toBeInTheDocument();
+	});
+
 	it('refreshes the dump list when backupSaved is bumped', async () => {
 		let getCount = 0;
 		const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
 			const method = (init?.method ?? 'GET').toUpperCase();
 			if (String(url).endsWith('/admin/backups') && method === 'GET') {
 				getCount += 1;
-				return jsonResponse(getCount === 1 ? [] : [makeBackup()]);
+				return jsonResponse(backupList(getCount === 1 ? [] : [makeBackup()]));
 			}
 			return jsonResponse({});
 		});
