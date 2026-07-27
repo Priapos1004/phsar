@@ -740,11 +740,32 @@ export interface Job {
 
 // Admin — Backups
 export type BackupIntegrity = 'ok' | 'corrupt' | 'unknown';
+// `integrity` composed with `schema_current` — "is this restorable right now".
+// Derived server-side so the card, the sort and the startup self-heal can't reach
+// different conclusions; see app/schemas/backup_schema.py::BackupStatus.
+export type BackupStatus = 'corrupt' | 'outdated' | 'unknown' | 'ok';
 export type BackupSource = 'manual' | 'cron' | 'pre_restore' | 'upload';
+
+/** GET /admin/backups — the rows plus the live schema revision each row's
+ * `status` was judged against. An envelope because `db_revision` is one
+ * process-global fact, not a per-dump one. */
+export interface BackupListResponse {
+	db_revision: string | null;
+	backups: BackupMetadata[];
+}
 
 export interface BackupMetadata {
 	filename: string;
 	size_bytes: number;
+	// The Alembic revision the DUMP carries (read from its own alembic_version
+	// table). null for dumps predating the feature, or a rebuilt sidecar.
+	alembic_revision?: string | null;
+	// Whether that revision matches the live DB's. Derived server-side per
+	// listing. null = unknown — deliberately distinct from false, which means
+	// restoring this dump would roll the schema back.
+	schema_current?: boolean | null;
+	// The composite verdict to render and sort by. Server-derived.
+	status: BackupStatus;
 	created_at: string;
 	integrity: BackupIntegrity;
 	source: BackupSource;
@@ -806,6 +827,7 @@ export interface AdminSweepTierBreakdown {
 	stabilizing_by_check: Record<string, number>;
 	weekly_cycle: number;
 	long_cycle: number;
+	archival_cycle: number;
 }
 
 export interface AdminOverviewStats {

@@ -1231,26 +1231,66 @@ async def test_tier_old_main_excluded_from_weekly(db_session):
 
 @pytest.mark.asyncio
 async def test_tier_long_tail_selected(db_session):
-    """Long-tail net is now 90 days: a media 100d stale (just over) is due,
-    while one 80d stale (just under, no other tier) is not."""
+    """Long-tail net is 90 days for anything inside the archival age: a media
+    100d stale (just over) is due, while one 80d stale (just under, no other
+    tier) is not. Dated 2y back so both sit in the 90-day cohort — the undated
+    and archival cohorts have their own tests."""
+    now = datetime.now(timezone.utc)
+    two_years = now - timedelta(days=730)
     due = await _seed_anime(
         db_session, mal_id=-7006, stable_check_count=10,
-        last_checked_at=datetime.now(timezone.utc) - timedelta(days=100),
+        last_checked_at=now - timedelta(days=100), aired_from=two_years,
     )
     not_yet = await _seed_anime(
         db_session, mal_id=-7016, stable_check_count=10,
-        last_checked_at=datetime.now(timezone.utc) - timedelta(days=80),
+        last_checked_at=now - timedelta(days=80), aired_from=two_years,
     )
     ids = await _select_due_ids(db_session)
     assert due.id in ids
     assert not_yet.id not in ids
 
 
+@pytest.mark.asyncio
+async def test_tier_archival_waits_for_the_180_day_net(db_session):
+    """A media that premiered over SWEEP_ARCHIVAL_AGE_YEARS ago is compared
+    against the 180-day window, not the 90-day one — so a 100d-stale archival
+    row is NOT due while a 200d-stale one is."""
+    now = datetime.now(timezone.utc)
+    twelve_years = now - timedelta(days=365 * 12)
+    not_yet = await _seed_anime(
+        db_session, mal_id=-7020, stable_check_count=10,
+        last_checked_at=now - timedelta(days=100), aired_from=twelve_years,
+    )
+    due = await _seed_anime(
+        db_session, mal_id=-7021, stable_check_count=10,
+        last_checked_at=now - timedelta(days=200), aired_from=twelve_years,
+    )
+    ids = await _select_due_ids(db_session)
+    assert not_yet.id not in ids
+    assert due.id in ids
+
+
+@pytest.mark.asyncio
+async def test_tier_undated_media_stays_on_ninety_day_net(db_session):
+    """A media with no `aired_from` must keep the 90-day cadence. Regression
+    guard for the SQL three-valued-logic trap: tier 4 is narrowed by
+    `not_(archival)`, and a bare `aired_from < cutoff` would be NULL here — so
+    NOT NULL is NULL and the row would fall out of BOTH long-tail tiers and
+    never be refreshed again."""
+    undated = await _seed_anime(
+        db_session, mal_id=-7022, stable_check_count=10,
+        last_checked_at=datetime.now(timezone.utc) - timedelta(days=100),
+        aired_from=None,
+    )
+    assert undated.id in await _select_due_ids(db_session)
+
+
 # Tier-count cards now return the 4 int totals + a nested `stabilizing_by_check`
 # breakdown, so the old `{k: after[k] - baseline[k] for k in after}` /
 # `sum(after.values())` shortcuts no longer work. These helpers isolate the
 # int buckets and diff the breakdown separately.
-_TIER_BUCKETS = ("airing_now", "stabilizing", "weekly_cycle", "long_cycle")
+# The DAO's own tuple — a hand-copied literal here is how a 6th tier gets missed.
+_TIER_BUCKETS = AnimeDAO._TIER_BUCKETS
 
 
 def _tier_total(counts: dict) -> int:
@@ -1264,10 +1304,10 @@ def _breakdown_delta(after: dict, baseline: dict) -> dict[int, int]:
 
 @pytest.mark.asyncio
 async def test_count_by_sweep_tier_priority_buckets_each_anime_once(db_session):
-    """4 mutually-exclusive cycle-MEMBERSHIP buckets in priority cascade:
-    airing_now > stabilizing > weekly_cycle > long_cycle. An airing anime
-    that is also stabilizing counts under `airing_now`. Sum equals total
-    anime count.
+    """5 mutually-exclusive cycle-MEMBERSHIP buckets in priority cascade:
+    airing_now > stabilizing > weekly_cycle > archival_cycle > long_cycle. An
+    airing anime that is also stabilizing counts under `airing_now`. Sum equals
+    total anime count.
 
     Delta-based assertions (baseline → after) isolate the seeded rows
     from any pre-existing anime in the test DB so the bucket attribution
@@ -1310,6 +1350,11 @@ async def test_count_by_sweep_tier_priority_buckets_each_anime_once(db_session):
         db_session, mal_id=-7106, stable_check_count=10,
         last_checked_at=now - timedelta(days=200),
     )
+    await _seed_anime(  # every media premiered 12y ago -> archival_cycle
+        db_session, mal_id=-7107, stable_check_count=10,
+        last_checked_at=now - timedelta(hours=1),
+        aired_from=now - timedelta(days=365 * 12),
+    )
     await db_session.flush()
 
     after = await AnimeDAO().count_by_sweep_tier_priority(db_session)
@@ -1319,6 +1364,7 @@ async def test_count_by_sweep_tier_priority_buckets_each_anime_once(db_session):
         "stabilizing": 1,
         "weekly_cycle": 2,   # both recent-main rows, incl. the recently-swept one
         "long_cycle": 2,
+        "archival_cycle": 1,
     }
     # -7102 (stable=2, not airing) is the only new stabilizing anime, so the
     # per-check breakdown attributes it to check-count 2 (its lone member).
@@ -1357,7 +1403,10 @@ async def test_anime_tier_is_media_rollup_not_anime_probe_counter(db_session):
 
     after = await AnimeDAO().count_by_sweep_tier_priority(db_session)
     delta = {k: after[k] - baseline.get(k, 0) for k in _TIER_BUCKETS}
-    assert delta == {"airing_now": 0, "stabilizing": 1, "weekly_cycle": 0, "long_cycle": 0}
+    assert delta == {
+        "airing_now": 0, "stabilizing": 1, "weekly_cycle": 0,
+        "long_cycle": 0, "archival_cycle": 0,
+    }
     # The lone media sits at stable_check_count=0 → breakdown attributes the
     # anime to check-count 0 (its least-settled — and only — member).
     assert _breakdown_delta(after, baseline) == {0: 1, 1: 0, 2: 0}
@@ -1379,8 +1428,9 @@ async def test_tier_handles_missing_sidecar(db_session):
 @pytest.mark.asyncio
 async def test_count_media_by_sweep_tier_priority_buckets_each_media_once(db_session):
     """Media-level membership cascade: airing_now > stabilizing (stable<3) >
-    weekly_cycle (recent main) > long_cycle. Sum equals total media count.
-    Delta-based so pre-existing rows don't skew bucket attribution."""
+    weekly_cycle (recent main) > archival_cycle (premiered >10y ago) >
+    long_cycle. Sum equals total media count. Delta-based so pre-existing rows
+    don't skew bucket attribution."""
     from app.models.media import RelationType
     now = datetime.now(timezone.utc)
     baseline = await AnimeDAO().count_media_by_sweep_tier_priority(db_session)
@@ -1397,8 +1447,12 @@ async def test_count_media_by_sweep_tier_priority_buckets_each_media_once(db_ses
         last_checked_at=now - timedelta(hours=1),
         relation_type=RelationType.Main, aired_from=now - timedelta(days=365),
     )
-    await _seed_anime(  # no recent main, stable -> long_cycle
+    await _seed_anime(  # no recent main, stable, undated -> long_cycle
         db_session, mal_id=-7204, stable_check_count=10, last_checked_at=now,
+    )
+    await _seed_anime(  # premiered 12y ago -> archival_cycle
+        db_session, mal_id=-7205, stable_check_count=10, last_checked_at=now,
+        aired_from=now - timedelta(days=365 * 12),
     )
     await db_session.flush()
 
@@ -1409,6 +1463,7 @@ async def test_count_media_by_sweep_tier_priority_buckets_each_media_once(db_ses
         "stabilizing": 1,
         "weekly_cycle": 1,
         "long_cycle": 1,
+        "archival_cycle": 1,
     }
     # The lone stabilizing media (-7202) sits at stable_check_count=2.
     assert _breakdown_delta(after, baseline) == {0: 0, 1: 0, 2: 1}
