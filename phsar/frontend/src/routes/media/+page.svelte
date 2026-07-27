@@ -11,7 +11,7 @@
 	import RatingCard from '$lib/components/RatingCard.svelte';
 	import WatchlistDialog from '$lib/components/WatchlistDialog.svelte';
 	import WatchlistBookmarkButton from '$lib/components/WatchlistBookmarkButton.svelte';
-	import MediaShareRating from '$lib/components/MediaShareRating.svelte';
+	import MediaShare from '$lib/components/MediaShare.svelte';
 	import BackLink from '$lib/components/BackLink.svelte';
 	import StudioLinks from '$lib/components/StudioLinks.svelte';
 	import GenreBadges from '$lib/components/GenreBadges.svelte';
@@ -206,14 +206,9 @@
 						</div>
 
 						<div class="flex shrink-0 items-start">
-							<!-- Export this rating as an image to send in any messenger -->
-							<MediaShareRating
-								{media}
-								rating={userRating}
-								{ratingStep}
-								{nameLanguage}
-								restricted={isRestricted}
-							/>
+							<!-- Export this entry as an image to send in any messenger — your rating when
+							     you have one, otherwise a plain info card. -->
+							<MediaShare {media} rating={userRating} {ratingStep} {nameLanguage} />
 
 							<!-- Watchlist bookmark — filled + tag-colored when on the list; click
 							     opens the add/edit dialog. Restricted (guest) users see it disabled

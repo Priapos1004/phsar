@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { animeShareContent, mediaShareContent } from '$lib/utils/shareContent';
+import {
+	animeInfoCard,
+	animeShareContent,
+	mediaInfoCard,
+	mediaShareContent,
+	SHARE_SYNOPSIS_MAX_CHARS,
+	shareSynopsis,
+} from '$lib/utils/shareContent';
 import type { AnimeDetail, AnimeMediaItem, MediaDetail, RatingOut } from '$lib/types/api';
 
 // Only the catalog/rating fields the builders read are populated, so the fixtures stay
@@ -12,6 +19,11 @@ function media(o: Partial<MediaDetail> = {}): MediaDetail {
 		episodes: 24,
 		total_watch_time: 34560, // 9h 36m
 		cover_image: 'https://cdn.example/media.jpg',
+		airing_status: 'Finished Airing',
+		genres: [],
+		studio: [],
+		age_rating_numeric: null,
+		description: null,
 		...o,
 	} as MediaDetail;
 }
@@ -39,6 +51,13 @@ function anime(o: Partial<AnimeDetail> = {}): AnimeDetail {
 		total_episodes: 64,
 		total_watch_time: 93600, // 1d 2h
 		media: [member()],
+		airing_status: 'Finished Airing',
+		has_upcoming: false,
+		is_finished: false,
+		genres: [],
+		studios: [],
+		age_rating_numeric: null,
+		description: null,
 		...o,
 	} as AnimeDetail;
 }
@@ -146,7 +165,8 @@ describe('animeShareContent — franchise', () => {
 			]),
 			[rating({ media_uuid: 'a' }), rating({ media_uuid: 'd' })],
 		);
-		expect(c.statusLine).toBe('1/2 main media · 0/1 side media · 1/1 recaps');
+		// "recap", not "recaps" — the label singularizes on the displayed total.
+		expect(c.statusLine).toBe('1/2 main media · 0/1 side media · 1/1 recap');
 	});
 
 	// A franchise without recaps shouldn't advertise "0/0 recaps".
@@ -202,5 +222,122 @@ describe('animeShareContent — franchise', () => {
 			[rating({ media_uuid: 'a' })],
 		);
 		expect(c.metaLines).toEqual([]);
+	});
+});
+
+describe('mediaInfoCard', () => {
+	it('carries the episode count up into the meta line', () => {
+		// With no status line to hold it, the count belongs on the catalog line.
+		expect(mediaInfoCard(media()).metaLines).toEqual(['TV · Fall 2020 · 24 eps · 9h 36m']);
+	});
+
+	it('shows a missing fact as missing rather than dropping it', () => {
+		const c = mediaInfoCard(
+			media({ episodes: null, genres: [], studio: [], age_rating_numeric: null }),
+		);
+		expect(c.metaLines[0]).toContain('-- eps');
+		expect(c.body).toMatchObject({ genres: ['--'], ageRating: '--', studios: ['--'] });
+	});
+
+	it('reports the airing status, and never a story-complete badge', () => {
+		const c = mediaInfoCard(media({ airing_status: 'Currently Airing' }));
+		expect(c.badges).toEqual([{ label: 'Currently Airing', tone: 'airing' }]);
+	});
+
+	it('passes the catalog facts through', () => {
+		const c = mediaInfoCard(
+			media({ genres: ['Action'], studio: ['Bones'], age_rating_numeric: 17, description: 'Hi.' }),
+		);
+		expect(c.body).toMatchObject({
+			kind: 'info',
+			genres: ['Action'],
+			ageRating: '17+',
+			studios: ['Bones'],
+			synopsis: 'Hi.',
+		});
+	});
+});
+
+describe('animeInfoCard', () => {
+	it('counts the franchise without a numerator, on its own line under the length facts', () => {
+		const c = animeInfoCard(
+			anime({
+				media: [
+					member({ uuid: 'a', relation_type: 'main' }),
+					member({ uuid: 'b', relation_type: 'main' }),
+					member({ uuid: 'c', relation_type: 'summary' }),
+				],
+			}),
+		);
+		// Season + length first, then the shape of the franchise — "2 main media", not "0/2".
+		expect(c.metaLines).toEqual(['Fall 2020 · 64 eps · 1d 2h', '2 main media · 1 recap']);
+	});
+
+	it('borrows the media wording for a one-entry anime, with no rating needed', () => {
+		const c = animeInfoCard(anime({ media: [member()] }));
+		expect(c.metaLines).toEqual(['Movie · Summer 2016 · 1 ep · 1h 46m']);
+		expect(c.coverUrl).toBe('https://cdn.example/member.jpg');
+	});
+
+	it('excludes not-yet-aired media from the counts, as the rating card does', () => {
+		const c = animeInfoCard(
+			anime({
+				media: [
+					member({ uuid: 'a' }),
+					member({ uuid: 'b', airing_status: 'Not yet aired' }),
+					member({ uuid: 'c' }),
+				],
+			}),
+		);
+		expect(c.metaLines[1]).toBe('2 main media');
+	});
+
+	it('badges an upcoming, story-complete anime', () => {
+		const c = animeInfoCard(anime({ airing_status: 'Finished Airing', has_upcoming: true, is_finished: true }));
+		expect(c.badges).toEqual([
+			{ label: 'upcoming content', tone: 'upcoming' },
+			{ label: 'Story Complete', tone: 'complete' },
+		]);
+	});
+
+	it('caps the chip lists and absorbs the remainder into a +N', () => {
+		const c = animeInfoCard(
+			anime({
+				genres: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'],
+				studios: ['one', 'two', 'three'],
+			}),
+		);
+		expect(c.body).toMatchObject({
+			genres: ['a', 'b', 'c', 'd', 'e', 'f', '+2'],
+			studios: ['one', 'two', '+1'],
+		});
+	});
+});
+
+describe('shareSynopsis', () => {
+	it('strips MAL attribution and leaves a short synopsis alone', () => {
+		expect(shareSynopsis('A short one. [Written by MAL Rewrite]')).toBe('A short one.');
+	});
+
+	it('is null when there is nothing left after cleaning', () => {
+		expect(shareSynopsis(null)).toBeNull();
+		expect(shareSynopsis('[Written by MAL Rewrite]')).toBeNull();
+	});
+
+	// The card also line-clamps, but the clamp is a backstop the rasterizer may not honour —
+	// so the cut has to be real, and it has to land between words.
+	it('cuts an over-long synopsis on a word boundary', () => {
+		const long = `${'word '.repeat(200)}end`;
+		const cut = shareSynopsis(long)!;
+		expect(cut.length).toBeLessThanOrEqual(SHARE_SYNOPSIS_MAX_CHARS + 1);
+		expect(cut.endsWith('…')).toBe(true);
+		expect(cut).not.toContain('wor…');
+	});
+
+	// A CJK synopsis has no spaces to break on; a boundary search would otherwise cut it to
+	// a fraction of its allowance, so it falls back to the hard cut.
+	it('still fills the budget when there are no word boundaries', () => {
+		const cut = shareSynopsis('あ'.repeat(SHARE_SYNOPSIS_MAX_CHARS + 400))!;
+		expect(cut.length).toBe(SHARE_SYNOPSIS_MAX_CHARS + 1); // + the ellipsis
 	});
 });

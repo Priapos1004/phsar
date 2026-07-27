@@ -19,8 +19,13 @@ export const SHARE_PNG_HEIGHT = 1350;
 export const SHARE_CARD_WIDTH = SHARE_PNG_WIDTH / 2;
 export const SHARE_CARD_HEIGHT = SHARE_PNG_HEIGHT / 2;
 
-/** `phsar-<slug>-rating.png`, falling back when a title romanizes to nothing (CJK-only). */
-export function shareFileName(title: string): string {
+/**
+ * `phsar-<slug>-rating.png` for a rating card, `phsar-<slug>.png` for a plain info card —
+ * the filename shouldn't promise a score the image doesn't carry. Falls back to the bare
+ * stem when a title romanizes to nothing (CJK-only).
+ */
+export function shareFileName(title: string, kind: 'rating' | 'info' = 'rating'): string {
+	const suffix = kind === 'rating' ? '-rating' : '';
 	const slug = title
 		.toLowerCase()
 		.normalize('NFKD')
@@ -29,7 +34,7 @@ export function shareFileName(title: string): string {
 		.replace(/^-+|-+$/g, '')
 		.slice(0, 60)
 		.replace(/-+$/, ''); // slice may have cut mid-separator
-	return slug ? `phsar-${slug}-rating.png` : 'phsar-rating.png';
+	return slug ? `phsar-${slug}${suffix}.png` : `phsar${suffix || '-card'}.png`;
 }
 
 /**

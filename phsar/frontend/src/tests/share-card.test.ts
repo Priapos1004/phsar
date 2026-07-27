@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import ShareCard from '$lib/components/ShareCard.svelte';
+import type { ShareCardBody } from '$lib/utils/shareContent';
 import type { RatingOut } from '$lib/types/api';
 
 // The card always mounts a radar, and jsdom has neither canvas nor ResizeObserver — so the
@@ -42,19 +43,40 @@ function rating(o: Partial<RatingOut> = {}): RatingOut {
 	};
 }
 
-const baseProps = {
+function ratingBody(o: Partial<Extract<ShareCardBody, { kind: 'rating' }>> = {}): ShareCardBody {
+	return {
+		kind: 'rating',
+		score: 8.5,
+		ratingStep: 0.5,
+		statusLine: '3 of 4 rated',
+		ratings: [rating()],
+		...o,
+	};
+}
+
+function infoBody(o: Partial<Extract<ShareCardBody, { kind: 'info' }>> = {}): ShareCardBody {
+	return {
+		kind: 'info',
+		genres: ['Action', 'Drama'],
+		ageRating: '17+',
+		studios: ['Wit Studio'],
+		synopsis: 'Humanity fights for survival behind three walls.',
+		...o,
+	};
+}
+
+const shellProps = {
 	title: 'Attack on Titan',
 	subtitle: '進撃の巨人',
 	coverDataUri: null,
 	metaLines: ['TV · Spring 2013 · 25 eps'],
-	score: 8.5,
-	ratingStep: 0.5,
-	statusLine: '3 of 4 rated',
-	ratings: [rating()],
 	host: 'phsar.example',
 };
 
-describe('ShareCard', () => {
+const baseProps = { ...shellProps, headerLabel: 'My rating', body: ratingBody() };
+const infoProps = { ...shellProps, headerLabel: 'Check this out', body: infoBody() };
+
+describe('ShareCard — the shared shell', () => {
 	it('renders the title, meta, status and host', () => {
 		render(ShareCard, { props: baseProps });
 
@@ -63,13 +85,6 @@ describe('ShareCard', () => {
 		expect(screen.getByText('TV · Spring 2013 · 25 eps')).toBeInTheDocument();
 		expect(screen.getByText('3 of 4 rated')).toBeInTheDocument();
 		expect(screen.getByText('phsar.example')).toBeInTheDocument();
-	});
-
-	// Proves the card threads ratingStep into the formatter (the rule itself is covered in
-	// format-string.test.ts): a 0.5-step user must read "8.0", not "8".
-	it('shows the score at the viewer’s step precision', () => {
-		render(ShareCard, { props: { ...baseProps, score: 8, ratingStep: 0.5 } });
-		expect(screen.getByText('8.0')).toBeInTheDocument();
 	});
 
 	it('falls back to a placeholder when the cover could not be inlined', () => {
@@ -83,6 +98,34 @@ describe('ShareCard', () => {
 		});
 		expect(screen.getByText('Fall 2020 - Winter 2026')).toBeInTheDocument();
 		expect(screen.getByText('64 eps · 1d 2h')).toBeInTheDocument();
+	});
+
+	it('labels the header per variant', () => {
+		render(ShareCard, { props: infoProps });
+		expect(screen.getByText('Check this out')).toBeInTheDocument();
+	});
+
+	it('renders the airing badges under the title', () => {
+		render(ShareCard, {
+			props: {
+				...infoProps,
+				badges: [
+					{ label: 'Currently Airing', tone: 'airing' as const },
+					{ label: 'Story Complete', tone: 'complete' as const },
+				],
+			},
+		});
+		expect(screen.getByText('Currently Airing')).toBeInTheDocument();
+		expect(screen.getByText('Story Complete')).toBeInTheDocument();
+	});
+});
+
+describe('ShareCard — rating variant', () => {
+	// Proves the card threads ratingStep into the formatter (the rule itself is covered in
+	// format-string.test.ts): a 0.5-step user must read "8.0", not "8".
+	it('shows the score at the viewer’s step precision', () => {
+		render(ShareCard, { props: { ...baseProps, body: ratingBody({ score: 8, ratingStep: 0.5 }) } });
+		expect(screen.getByText('8.0')).toBeInTheDocument();
 	});
 
 	// Unlike the page's Attribute Summary, the card keeps the whole profile and marks the
@@ -101,7 +144,7 @@ describe('ShareCard', () => {
 		render(ShareCard, {
 			props: {
 				...baseProps,
-				ratings: [rating({ pace: 'fast', ending_type: 'not_applicable' })],
+				body: ratingBody({ ratings: [rating({ pace: 'fast', ending_type: 'not_applicable' })] }),
 			},
 		});
 		expect(screen.getByText('Fast')).toBeInTheDocument();
@@ -109,9 +152,46 @@ describe('ShareCard', () => {
 		expect(screen.getAllByText('--')).toHaveLength(5);
 	});
 
-	it('omits the score circle when there is no score', () => {
-		render(ShareCard, { props: { ...baseProps, score: null, statusLine: null } });
+	it('drops the status line when there is none, keeping the score', () => {
+		render(ShareCard, { props: { ...baseProps, body: ratingBody({ statusLine: null }) } });
+		expect(screen.queryByText('3 of 4 rated')).not.toBeInTheDocument();
+		expect(screen.getByText('8.5')).toBeInTheDocument();
+	});
+});
+
+describe('ShareCard — info variant', () => {
+	it('renders the genre chips, age chip, studios and synopsis', () => {
+		render(ShareCard, { props: infoProps });
+
+		expect(screen.getByText('Action')).toBeInTheDocument();
+		expect(screen.getByText('Drama')).toBeInTheDocument();
+		expect(screen.getByText('17+')).toBeInTheDocument();
+		expect(screen.getByText('Studio')).toBeInTheDocument();
+		expect(screen.getByText('Wit Studio')).toBeInTheDocument();
+		expect(
+			screen.getByText('Humanity fights for survival behind three walls.'),
+		).toBeInTheDocument();
+	});
+
+	// The whole point of the second variant: no score, no radar, no attribute pills.
+	it('shows none of the rating furniture', () => {
+		render(ShareCard, { props: infoProps });
 		expect(screen.queryByText('8.5')).not.toBeInTheDocument();
-		expect(screen.getByText('Attack on Titan')).toBeInTheDocument();
+		expect(screen.queryByText(/^Pace:/)).not.toBeInTheDocument();
+	});
+
+	// A missing fact must read as missing rather than vanish — an image travels without the
+	// app around it, so a dropped studio row is indistinguishable from a rendering bug.
+	it('keeps a row for each fact the catalog is missing', () => {
+		render(ShareCard, {
+			props: { ...infoProps, body: infoBody({ genres: ['--'], ageRating: '--', studios: ['--'] }) },
+		});
+		expect(screen.getAllByText('--')).toHaveLength(3);
+		expect(screen.getByText('Studio')).toBeInTheDocument();
+	});
+
+	it('says so when there is no synopsis at all', () => {
+		render(ShareCard, { props: { ...infoProps, body: infoBody({ synopsis: null }) } });
+		expect(screen.getByText('No synopsis on record.')).toBeInTheDocument();
 	});
 });

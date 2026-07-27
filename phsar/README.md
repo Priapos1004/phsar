@@ -167,7 +167,7 @@ phsar/
 │   │   │   ├── themes.ts
 │   │   │   ├── utils.ts
 │   │   │   ├── components/
-│   │   │   │   ├── AnimeShareRating.svelte
+│   │   │   │   ├── AnimeShare.svelte
 │   │   │   │   ├── AttributeBadges.svelte
 │   │   │   │   ├── AttributeDetailBars.svelte
 │   │   │   │   ├── AttributeRadar.svelte
@@ -200,7 +200,7 @@ phsar/
 │   │   │   │   ├── LoadingScreen.svelte
 │   │   │   │   ├── MaintenanceBanner.svelte
 │   │   │   │   ├── MediaInfo.svelte
-│   │   │   │   ├── MediaShareRating.svelte
+│   │   │   │   ├── MediaShare.svelte
 │   │   │   │   ├── MergeCandidatesCard.svelte
 │   │   │   │   ├── NavBar.svelte
 │   │   │   │   ├── Notice.svelte
@@ -232,9 +232,9 @@ phsar/
 │   │   │   │   ├── ScrollableCard.svelte
 │   │   │   │   ├── SegmentedControl.svelte
 │   │   │   │   ├── SessionTimeoutBanner.svelte
+│   │   │   │   ├── ShareButton.svelte
 │   │   │   │   ├── ShareCard.svelte
-│   │   │   │   ├── ShareRatingButton.svelte
-│   │   │   │   ├── ShareRatingDialog.svelte
+│   │   │   │   ├── ShareDialog.svelte
 │   │   │   │   ├── SpoilerGuard.svelte
 │   │   │   │   ├── SearchBar.svelte
 │   │   │   │   ├── SkeletonMediaInfo.svelte

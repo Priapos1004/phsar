@@ -30,7 +30,7 @@
 	import BulkWatchlistDialog from '$lib/components/BulkWatchlistDialog.svelte';
 	import WatchlistBookmarkButton from '$lib/components/WatchlistBookmarkButton.svelte';
 	import WatchlistBookmarkIcon from '$lib/components/WatchlistBookmarkIcon.svelte';
-	import AnimeShareRating from '$lib/components/AnimeShareRating.svelte';
+	import AnimeShare from '$lib/components/AnimeShare.svelte';
 
 	const getUserRole = getContext<() => string | null>('userRole');
 	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
@@ -433,14 +433,10 @@
 						</div>
 
 						<div class="flex shrink-0 items-start">
-							<!-- Export the aggregated rating as an image to send in any messenger -->
-							<AnimeShareRating
-								{anime}
-								ratings={userRatingsList}
-								{ratingStep}
-								{nameLanguage}
-								restricted={isRestricted}
-							/>
+							<!-- Export this anime as an image to send in any messenger — your rating when
+							     you have one, otherwise a plain info card, so an unrated anime (and every
+							     guest, who can never rate) still has something to share. -->
+							<AnimeShare {anime} ratings={userRatingsList} {ratingStep} {nameLanguage} />
 
 							<!-- Anime-level watchlist bookmark — filled (theme primary, since an anime can
 							     span multiple tags) when ≥1 of this anime's media is on the list. Click
