@@ -3,6 +3,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import TagBarLabel from '$lib/components/TagBarLabel.svelte';
+	import { searchByStudio } from '$lib/utils/navigation';
 	import { Film, Layers, Clock, Star, TrendingUp } from 'lucide-svelte';
 	import type { TagCount, WatchlistSummary } from '$lib/utils/watchlistStats';
 	import { getThemedChartColorPalette } from '$lib/utils/chartColors';
@@ -116,7 +117,11 @@
 					{#each tags as t, i (t.name)}
 						<div class="flex items-center gap-3">
 							<div class="w-32 shrink-0 min-w-0 flex items-center justify-start text-sm">
-								<TagBarLabel name={t.name} {kind} />
+								<TagBarLabel
+									name={t.name}
+									describeGenre={kind === 'genre'}
+									onClick={kind === 'studio' ? () => searchByStudio(t.name) : undefined}
+								/>
 							</div>
 							<!-- Themed app Tooltip (the intentional-hint path — matches the genre label
 							     tooltip in the same row): the media main/side split + queued runtime

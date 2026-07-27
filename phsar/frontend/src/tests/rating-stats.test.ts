@@ -380,6 +380,36 @@ describe('tagMetrics (genre + studio)', () => {
 	});
 });
 
+describe('tagMetrics (season + age rating)', () => {
+	const items = [
+		item({ media_uuid: 'a', anime_uuid: 'A', rating: 9, anime_season_name: 'Fall', anime_season_year: 2025, age_rating_numeric: 17 }),
+		// Same anime, same season → one bucket entry, counted once at the anime grain.
+		item({ media_uuid: 'b', anime_uuid: 'A', rating: 5, anime_season_name: 'Fall', anime_season_year: 2025, age_rating_numeric: 17 }),
+		item({ media_uuid: 'c', anime_uuid: 'B', rating: 8, anime_season_name: 'Spring', anime_season_year: 2024, age_rating_numeric: 13 }),
+		// Undated + unrated-age media must be SKIPPED, not bucketed under a "null" tag.
+		item({ media_uuid: 'd', anime_uuid: 'C', rating: 6 }),
+	];
+
+	it('buckets by the composed season label and skips undated media', () => {
+		const s = tagMetrics(items, 'seasons');
+		expect(s.map((t) => t.tag).sort()).toEqual(['Fall 2025', 'Spring 2024']);
+		expect(s.find((t) => t.tag === 'Fall 2025')).toMatchObject({ avg: 7, count: 1 });
+	});
+
+	it('keys age ratings on the raw numeric so the click-through can filter by it', () => {
+		const a = tagMetrics(items, 'ageRatings');
+		// "17"/"13", not "R-17+"/"PG-13" — display formatting is the chart's job.
+		expect(a.map((t) => t.tag).sort()).toEqual(['13', '17']);
+		expect(a.find((t) => t.tag === '17')).toMatchObject({ avg: 7, count: 1 });
+	});
+
+	it('returns no buckets when nothing carries a value', () => {
+		const bare = [item({ media_uuid: 'x', anime_uuid: 'X', rating: 7 })];
+		expect(tagMetrics(bare, 'seasons')).toEqual([]);
+		expect(tagMetrics(bare, 'ageRatings')).toEqual([]);
+	});
+});
+
 describe('attributeCorrelations', () => {
 	it('ranks ordinal attributes by how strongly their level tracks the score', () => {
 		// animation_quality rises with score; story_quality is flat.
@@ -482,10 +512,52 @@ describe('cumulativeWatchTime', () => {
 			{ date: '2026-02-01T00:00:00Z', seconds: 160 }, // dropped partial included
 			{ date: '2026-03-01T00:00:00Z', seconds: 210 },
 		]);
-		// window clips x but keeps absolute y
+		// The window clips x but keeps absolute y — AND opens at the cutoff carrying the
+		// total as of the last rating before it (160), so the line is flat from the left
+		// edge to the first in-window rating instead of starting mid-window.
 		expect(cumulativeWatchTime(items, '2026-02-15T00:00:00Z')).toEqual([
+			{ date: '2026-02-15T00:00:00Z', seconds: 160 },
 			{ date: '2026-03-01T00:00:00Z', seconds: 210 },
 		]);
+	});
+
+	it('carries the lifetime total as a flat plateau when the window has no ratings', () => {
+		const items = [
+			item({ media_uuid: 'a', anime_uuid: 'A', rating: 8, episodes: 1, duration_seconds: 100, created_at: '2026-01-01T00:00:00Z' }),
+			item({ media_uuid: 'b', anime_uuid: 'B', rating: 7, episodes: 1, duration_seconds: 50, created_at: '2026-02-01T00:00:00Z' }),
+		];
+		// Rated nothing this month → one baseline point; the caller extends it to `now`,
+		// so the chart shows a truthful plateau rather than drawing nothing at all.
+		expect(cumulativeWatchTime(items, '2026-06-01T00:00:00Z')).toEqual([
+			{ date: '2026-06-01T00:00:00Z', seconds: 150 },
+		]);
+	});
+
+	it('baselines at 0 when the window contains the very first rating', () => {
+		const items = [
+			item({ media_uuid: 'a', anime_uuid: 'A', rating: 8, episodes: 1, duration_seconds: 100, created_at: '2026-03-05T00:00:00Z' }),
+		];
+		expect(cumulativeWatchTime(items, '2026-03-01T00:00:00Z')).toEqual([
+			{ date: '2026-03-01T00:00:00Z', seconds: 0 },
+			{ date: '2026-03-05T00:00:00Z', seconds: 100 },
+		]);
+	});
+
+	it('omits the baseline when a rating lands exactly on the cutoff', () => {
+		const items = [
+			item({ media_uuid: 'a', anime_uuid: 'A', rating: 8, episodes: 1, duration_seconds: 100, created_at: '2026-01-01T00:00:00Z' }),
+			item({ media_uuid: 'b', anime_uuid: 'B', rating: 7, episodes: 1, duration_seconds: 50, created_at: '2026-02-01T00:00:00Z' }),
+		];
+		// That rating already IS the window-start total; a duplicate x would draw a
+		// spurious vertical stub at the left edge under `step: 'end'`.
+		expect(cumulativeWatchTime(items, '2026-02-01T00:00:00Z')).toEqual([
+			{ date: '2026-02-01T00:00:00Z', seconds: 150 },
+		]);
+	});
+
+	it('returns nothing for an empty library, window or not', () => {
+		expect(cumulativeWatchTime([])).toEqual([]);
+		expect(cumulativeWatchTime([], '2026-06-01T00:00:00Z')).toEqual([]);
 	});
 
 	it('collapses ratings made at the exact same instant (bulk rating) to one point', () => {

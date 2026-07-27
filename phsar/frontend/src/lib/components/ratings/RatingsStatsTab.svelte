@@ -42,7 +42,9 @@
 	const SECTIONS: { key: StatsSection; label: string }[] = [
 		{ key: 'overview', label: 'Overview' },
 		{ key: 'alignment', label: 'You vs MAL' },
-		{ key: 'tags', label: 'Genres & Studios' },
+		// Key stays `tags` (the persisted store value + the StatsSection type) while the
+		// label generalized — the section covers four dimensions since v0.15.3.
+		{ key: 'tags', label: 'Categories' },
 		{ key: 'attributes', label: 'Attributes' },
 		{ key: 'activity', label: 'Activity' },
 	];
