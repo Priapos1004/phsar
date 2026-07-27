@@ -251,14 +251,19 @@
 
 <Dialog.Root bind:open>
 	<Dialog.Content class="sm:max-w-md">
-		<Dialog.Header>
+		<!-- min-w-0: Dialog.Content's auto grid column is floored by its widest item's min-content
+		     width, so a long nowrap title widens the track and drags every sibling out past the
+		     panel with it. `truncate` can't stand in — overflow:hidden zeroes that floor only on
+		     a grid or flex item, which the Description is not. -->
+		<Dialog.Header class="min-w-0">
 			<Dialog.Title>
 				{variant === 'rating' ? 'Share your rating' : `Share this ${noun}`}
 			</Dialog.Title>
 			<Dialog.Description class="truncate text-muted-foreground">{title}</Dialog.Description>
 		</Dialog.Header>
 
-		<div class="space-y-4 py-2">
+		<!-- min-w-0 again, the floor here being the preview img's aspect ratio (see below). -->
+		<div class="min-w-0 space-y-4 py-2">
 			<!-- Offered only when there is a rating to choose between: without one the info card
 			     isn't an alternative, it's the only card. -->
 			{#if rating}
@@ -278,10 +283,14 @@
 
 			<div class="flex min-h-[280px] items-center justify-center rounded-xl bg-muted/40 p-2">
 				{#if preview}
+					<!-- An img transfers max-height through its aspect ratio into a min-content
+					     width, so on a tall window the 55vh alone outgrows the dialog. max-w-full
+					     can't fix that by itself — a percentage max-width is indefinite during
+					     intrinsic sizing, and only shrinks the img once the track is settled. -->
 					<img
 						src={preview.url}
 						alt="Preview of the shareable card"
-						class="max-h-[55vh] w-auto rounded-lg shadow-lg"
+						class="max-h-[55vh] w-auto max-w-full rounded-lg shadow-lg"
 					/>
 				{:else if generating}
 					<span class="animate-pulse text-sm text-muted-foreground">Building your image…</span>
