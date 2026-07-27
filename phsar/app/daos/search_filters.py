@@ -3,6 +3,7 @@ import logging
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import Numeric, and_, case, cast, distinct, func, select, tuple_
 
+from app.models.anime import Anime
 from app.models.genre import Genre
 from app.models.media import (
     AGE_RATING_MAP,
@@ -84,14 +85,15 @@ def weighted_mean_votes_expr():
     return _relation_weighted_mean(Media.scored_by)
 
 
-def _apply_studio_filter(stmt, studio_names: list[str]):
-    """Subquery-based studio filter to avoid duplicate rows from multiple matching studios."""
-    studio_subquery = (
+def _studio_condition(studio_names: list[str]):
+    """The media is credited to at least one of `studio_names`. Membership test rather
+    than a join so a media matching several of the selected studios doesn't fan out
+    into duplicate rows."""
+    return Media.id.in_(
         select(MediaStudio.media_id)
         .join(MediaStudio.studio)
         .where(Studio.name.in_(studio_names))
-    ).subquery()
-    return stmt.where(Media.id.in_(select(studio_subquery.c.media_id)))
+    )
 
 
 def _parse_season_filters(anime_season: list[str]) -> list[tuple]:
@@ -168,7 +170,7 @@ def apply_media_filters(stmt, filters: MediaSearchFilters):
         stmt = stmt.where(Media.id.in_(select(subquery.c.id)))
 
     if filters.studio_name:
-        stmt = _apply_studio_filter(stmt, filters.studio_name)
+        stmt = stmt.where(_studio_condition(filters.studio_name))
 
     conditions = _build_categorical_conditions(filters)
 
@@ -208,28 +210,35 @@ def apply_media_filters(stmt, filters: MediaSearchFilters):
 
 
 def apply_anime_pre_filters(stmt, filters: MediaSearchFilters):
-    """Apply WHERE-clause filters with 'any' semantics for anime-level search.
-    These narrow which media rows enter the GROUP BY. Genre, range, age_rating,
-    and airing_status filters are excluded — they use HAVING aggregations that
-    mirror the anime card's derived display values instead."""
+    """Select WHICH ANIME qualify, with 'any media matches' semantics — an anime is
+    by studio X / of type TV when at least one of its media is. Genre, range,
+    age_rating and airing_status filters are excluded; they use HAVING aggregations
+    that mirror the anime card's derived display values instead.
 
-    if filters.studio_name:
-        stmt = _apply_studio_filter(stmt, filters.studio_name)
+    All conditions sit in one subquery, so they must hold for the SAME media row
+    (studio X + type TV means one media is a TV by X), matching media-level semantics.
 
+    Selecting anime rather than filtering the grouped media rows keeps the aggregates
+    (`avg_score`/`avg_scored_by`/`total_episodes`/`media_count` and every HAVING
+    filter) over the anime's full media set, so the shown score and the ordering
+    derived from it are filter-independent — see
+    compound-docs/2026-07-19-anime-score-main-only.md.
+    """
     conditions = _build_categorical_conditions(filters, for_anime=True)
+    if filters.studio_name:
+        conditions.append(_studio_condition(filters.studio_name))
 
-    if conditions:
-        stmt = stmt.where(and_(*conditions))
+    if not conditions:
+        return stmt
 
-    return stmt
+    return stmt.where(
+        Anime.id.in_(select(Media.anime_id).where(and_(*conditions)))
+    )
 
 
 def apply_anime_having_filters(stmt, filters: MediaSearchFilters, agg_columns: dict):
     """Apply HAVING-clause filters on aggregated values for anime-level search.
     agg_columns maps field names to SQLAlchemy aggregate column expressions."""
-    # Deferred import to avoid circular dependency: search_filters <- anime_dao <- search_filters
-    from app.models.anime import Anime
-
     conditions = []
 
     if filters.score_min is not None:

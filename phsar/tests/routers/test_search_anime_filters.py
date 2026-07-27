@@ -23,7 +23,9 @@ search returned.
 import pytest
 
 from app.models.anime import Anime
-from app.models.media import Media, MediaType
+from app.models.genre import Genre, GenreType
+from app.models.media import Media, MediaType, RelationType
+from app.models.media_genre import MediaGenre
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
 from app.services.anime_search_service import anime_title_texts
@@ -367,3 +369,126 @@ async def test_age_rating_and_airing_status_stacked(client, user_auth_headers, c
     assert resp.status_code == 200
     seen = {a["title"] for a in resp.json()} & _COMBO_FIXTURE_TITLES
     assert seen == {f"{_COMBO_FIXTURE_QUERY} RCurrently Anime"}
+
+
+# ---------------------------------------------------------------------------
+# Filter-independence of the score — a filter selects WHICH ANIME, never which
+# media feed the aggregates. When the filter narrowed the grouped media rows,
+# `avg_score`/`avg_scored_by` (and thus the no-query weighted-score ordering)
+# were computed over the filter-matched media while the CARD showed the mean
+# over all of the anime's main media, so results came back out of order:
+#   - side-story-only credit → weight 0 → NULL metric → sorted last
+#   - partial main credit    → metric drifted off the shown score
+# See compound-docs/2026-07-19-anime-score-main-only.md.
+# ---------------------------------------------------------------------------
+
+_SCOPE_STUDIO = "Scope Independence Studio"
+
+
+@pytest.fixture
+async def scope_independence_set(db_session):
+    """Two anime credited to one studio through media that are NOT their whole
+    main story, so the filter-matched subset and the main-story set disagree:
+
+    - SideStoryCredited: studio only on a SideStory (weight 0) — the matched
+      subset holds no scored main at all, so a narrowed aggregate is NULL.
+    - PartiallyCredited: studio on one of two mains — the matched subset's mean
+      (6.0) is lower than the card's mean over both (7.0).
+
+    Card scores order them 9.0 > 7.0; both narrowed aggregates invert that
+    (NULL sorts last, 6.0 outranks nothing).
+    """
+    studio = Studio(name=_SCOPE_STUDIO)
+    db_session.add(studio)
+    await db_session.flush()
+
+    side_credited = await _make_anime(
+        db_session, mal_id=85501, title="ScopeTest SideStoryCredited Anime",
+    )
+    await _add_media(db_session, side_credited, 855011, score=9.0, scored_by=1_000)
+    side_story = await _add_media(
+        db_session, side_credited, 855012,
+        relation_type=RelationType.SideStory, score=5.0, scored_by=1_000,
+    )
+    db_session.add(MediaStudio(media_id=side_story.id, studio_id=studio.id))
+
+    partially_credited = await _make_anime(
+        db_session, mal_id=85502, title="ScopeTest PartiallyCredited Anime",
+    )
+    credited_main = await _add_media(
+        db_session, partially_credited, 855021, score=6.0, scored_by=1_000,
+    )
+    db_session.add(MediaStudio(media_id=credited_main.id, studio_id=studio.id))
+    await _add_media(db_session, partially_credited, 855022, score=8.0, scored_by=1_000)
+    await db_session.flush()
+
+
+async def test_studio_filter_does_not_rescope_score_or_ordering(
+    client, user_auth_headers, scope_independence_set,
+):
+    """No query → ordering is the weighted score, and it must be the score the
+    card shows: the filter picks anime, not the media the score averages.
+
+    The unique studio name scopes the result set to exactly the fixtures, so the
+    whole response is asserted (no limit-50 window to clear).
+    """
+    resp = await client.get(
+        ANIME_SEARCH_URL,
+        params={"studio_name": _SCOPE_STUDIO},
+        headers=user_auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+
+    assert [
+        (a["title"], a["avg_score"], a["avg_scored_by"]) for a in resp.json()
+    ] == [
+        ("ScopeTest SideStoryCredited Anime", 9.0, 1_000),
+        ("ScopeTest PartiallyCredited Anime", 7.0, 1_000),
+    ]
+
+
+_MAJORITY_STUDIO = "Majority Scope Studio"
+_MAJORITY_GENRE = "ScopeTestGenre"
+
+
+@pytest.fixture
+async def genre_majority_with_prefilter_set(db_session):
+    """One anime, 3 media, the genre on only 1 of them — a minority, so the card
+    does not list it and the genre filter must not match. The studio is credited
+    to that single genre-carrying media, which is what makes the pairing sharp:
+    `media_count` is the denominator of the `count * 2 > media_count` majority
+    check, so a filter that narrowed the grouped rows to the one credited media
+    would compare 1 against 1 and let the minority genre pass.
+    """
+    studio = Studio(name=_MAJORITY_STUDIO)
+    genre = Genre(
+        name=_MAJORITY_GENRE, genre_type=GenreType.Genres, description="scope test",
+    )
+    db_session.add_all([studio, genre])
+    await db_session.flush()
+
+    anime = await _make_anime(
+        db_session, mal_id=85601, title="ScopeTest MinorityGenre Anime",
+    )
+    credited = await _add_media(db_session, anime, 856011, score=8.0, scored_by=1_000)
+    await _add_media(db_session, anime, 856012, score=8.0, scored_by=1_000)
+    await _add_media(db_session, anime, 856013, score=8.0, scored_by=1_000)
+
+    db_session.add(MediaStudio(media_id=credited.id, studio_id=studio.id))
+    db_session.add(MediaGenre(media_id=credited.id, genre_id=genre.id))
+    await db_session.flush()
+
+
+async def test_genre_majority_denominator_survives_a_pre_filter(
+    client, user_auth_headers, genre_majority_with_prefilter_set,
+):
+    """The genre-majority HAVING counts over all of the anime's media, so its
+    `media_count` denominator has to as well — a stacked studio filter must not
+    shrink it into agreeing that a 1-of-3 genre is a majority."""
+    resp = await client.get(
+        ANIME_SEARCH_URL,
+        params=[("studio_name", _MAJORITY_STUDIO), ("genre_name", _MAJORITY_GENRE)],
+        headers=user_auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == []
