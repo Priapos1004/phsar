@@ -50,7 +50,7 @@ export function episodesWatchedLabel(watched: number, total: number | null): str
 }
 
 /** Formats a raw watch_status value to its user-facing label. */
-export function watchStatusLabel(status: WatchStatus | string): string {
+export function watchStatusLabel(status: WatchStatus): string {
 	return WATCH_STATUS_OPTIONS.find((o) => o.value === status)?.label ?? status;
 }
 

@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { getContext } from 'svelte';
 	import { api, ApiError } from '$lib/api';
-	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, formatAiringStatus, formatEpisodeCount, resolveTitle, resolveSubtitles, decimalPlaces, roundScore, formatRelationType, formatMediaType } from '$lib/utils/formatString';
+	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, formatAiringStatus, formatEpisodeCount, isSeasonRange, resolveTitle, resolveSubtitles, decimalPlaces, roundScore, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -503,7 +503,7 @@
 							<span>{anime.media.length} media</span>
 						</div>
 						{#if anime.season_start}
-							{@const isRange = anime.season_end && anime.season_end !== anime.season_start}
+							{@const isRange = isSeasonRange(anime.season_start, anime.season_end)}
 							<div class="flex items-start gap-2 text-card-foreground">
 								<Calendar class="size-4 text-primary shrink-0 {isRange ? 'mt-0.5' : ''}" />
 								{#if isRange}

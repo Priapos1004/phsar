@@ -35,8 +35,8 @@
 		/** Already resolved to the viewer's name-language setting. */
 		title: string;
 		subtitle: string | null;
-		/** What this title is called in the dialog heading — "anime" or "entry". */
-		noun: string;
+		/** What this title is called in the dialog heading. */
+		noun: 'anime' | 'entry';
 		/** `null` when the viewer hasn't rated this, which is also when there is nothing to
 		 *  toggle between. Guests are simply the case that is always null. */
 		rating: ShareVariantContent | null;
@@ -161,7 +161,9 @@
 			const source = contentFor(v);
 			const needsChart = v === 'rating';
 			// Warm the chart bundle without awaiting it: it's the long pole on a first share.
-			if (needsChart) void getEcharts();
+			// The catch keeps a failed chunk load (deploy skew) from surfacing as an unhandled
+			// rejection — the radar's own path already rides it out via the card-ready timeout.
+			if (needsChart) void getEcharts().catch(() => {});
 
 			// A fresh card instance per build. Both readiness signals fire once per mount — the
 			// radar's paint event, and the info card's own — so re-rendering the existing
@@ -235,7 +237,11 @@
 		try {
 			await shareFile(preview.file, title);
 		} catch {
-			error = "Couldn't open the share sheet — save the image instead.";
+			// On iOS the Save button is collapsed into this one, so "save instead" would
+			// point at a button that doesn't exist there.
+			error = sheetOnly
+				? "Couldn't open the share sheet — try again."
+				: "Couldn't open the share sheet — save the image instead.";
 		} finally {
 			sharing = false;
 		}

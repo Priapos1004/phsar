@@ -103,12 +103,19 @@
 	 */
 	onMount(() => {
 		if (body.kind !== 'info') return; // the radar owns the signal for the rating variant
+		let cancelled = false;
 		void (async () => {
 			await tick(); // Svelte's DOM writes are flushed
 			await coverImg?.decode().catch(() => {}); // a corrupt cover must not hang the capture
 			await new Promise(requestAnimationFrame); // style + layout have run
-			onReady?.();
+			// A card unmounted mid-chain (rapid variant toggling) must stay silent: the
+			// dialog's resolver may already belong to the next build, and resolving it early
+			// captures a half-painted card. The radar path gets this for free from dispose.
+			if (!cancelled) onReady?.();
 		})();
+		return () => {
+			cancelled = true;
+		};
 	});
 </script>
 

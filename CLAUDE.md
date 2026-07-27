@@ -255,7 +255,7 @@ Quick map:
 - `lib/stores/` — auth, settings, spoiler visibility, bell session, cross-component bumps (`jobs.ts`, `maintenance.ts`, `bell-session.ts`), global toast (`toast.ts`)
 - `lib/utils/` — formatters, search params, chart colors, client-side spoiler frontier, share-card PNG export
 - `lib/themes.ts` + `src/app.css` — centralized theme system (CSS custom props + `.theme-*` overrides)
-- `lib/components/` — MaintenanceBanner, JobBell, BackupsCard, MergeCandidatesCard, SplitCandidatesCard, RatingsOverview, Toast/ToastHost (global toast host in the layout), attribute viz, ShareCard/ShareRatingDialog, etc.
+- `lib/components/` — MaintenanceBanner, JobBell, BackupsCard, MergeCandidatesCard, SplitCandidatesCard, RatingsOverview, Toast/ToastHost (global toast host in the layout), attribute viz, ShareCard/ShareDialog, etc.
 - `lib/components/ui/` — shadcn-svelte base components
 - `tests/` — Vitest + @testing-library/svelte
 

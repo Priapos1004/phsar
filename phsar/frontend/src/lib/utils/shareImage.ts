@@ -8,8 +8,8 @@
  */
 
 /** Exported pixel size — portrait 4:5, the shape messengers show without cropping. */
-export const SHARE_PNG_WIDTH = 1080;
-export const SHARE_PNG_HEIGHT = 1350;
+const SHARE_PNG_WIDTH = 1080;
+const SHARE_PNG_HEIGHT = 1350;
 
 /**
  * CSS size the card is laid out at; the capture scales it up to the pixel size above.
@@ -37,6 +37,9 @@ export function shareFileName(title: string, kind: 'rating' | 'info' = 'rating')
 	return slug ? `phsar-${slug}${suffix}.png` : `phsar${suffix || '-card'}.png`;
 }
 
+/** Generous for a CDN image on a slow link, short enough that a share never feels hung. */
+const COVER_FETCH_TIMEOUT_MS = 8000;
+
 /**
  * Read an image URL into a data URI, or `null` if it can't be read.
  *
@@ -48,7 +51,10 @@ export function shareFileName(title: string, kind: 'rating' | 'info' = 'rating')
  */
 export async function fetchImageAsDataUri(url: string): Promise<string | null> {
 	try {
-		const res = await fetch(url);
+		// Bounded: this await sits before card-ready, so the 15s capture ceiling never covers
+		// it — a stalled CDN response would otherwise hang the build with no feedback. A
+		// timeout lands in the catch below and degrades to the placeholder like any failure.
+		const res = await fetch(url, { signal: AbortSignal.timeout(COVER_FETCH_TIMEOUT_MS) });
 		if (!res.ok) return null;
 		const blob = await res.blob();
 		return await new Promise<string | null>((resolve) => {

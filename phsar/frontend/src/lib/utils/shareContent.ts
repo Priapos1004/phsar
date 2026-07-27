@@ -398,7 +398,7 @@ export function animeRatingCard(
 ): ShareVariantContent {
 	const { coverUrl, metaLines, statusLine } = animeShareContent(anime, ratings);
 	return {
-		headerLabel: 'My rating',
+		headerLabel: RATING_LABEL,
 		coverUrl,
 		metaLines,
 		body: { kind: 'rating', score: meanScore(ratings), ratingStep, statusLine, ratings },
