@@ -19,6 +19,7 @@
 		canShareFiles,
 		captureCardPng,
 		fetchImageAsDataUri,
+		isIosLike,
 		shareFile,
 		shareFileName,
 	} from '$lib/utils/shareImage';
@@ -64,6 +65,9 @@
 	/** File and object URL are one fact — kept together so no condition can see them half-set. */
 	let preview = $state<{ file: File; url: string } | null>(null);
 	let generating = $state(false);
+	/** A share sheet is open. The sheet is an OS surface with no cancellation path, so the
+	 *  only honest thing a second click can do is nothing — this is what makes it inert. */
+	let sharing = $state(false);
 	let error = $state('');
 
 	let cardReadyResolve: (() => void) | null = null;
@@ -74,6 +78,9 @@
 
 	let canShare = $derived(preview !== null && canShareFiles(preview.file));
 	let captureFailed = $derived(!!error && preview === null);
+	// On iOS the download path reaches Files, never Photos — so there is no second button to
+	// offer, only the sheet. Elsewhere the two actions are genuinely different.
+	let sheetOnly = $derived(canShare && isIosLike());
 
 	// `untrack` so this depends on `open` ALONE. generate()/reset() both read and write
 	// `preview`, which without it makes the effect re-trigger on its own output — an
@@ -102,6 +109,9 @@
 		cardMounted = false;
 		coverDataUri = null;
 		error = '';
+		// Cleared here too: a platform that never settles its share promise would otherwise
+		// leave the button inert for good.
+		sharing = false;
 	}
 
 	async function generate() {
@@ -158,11 +168,15 @@
 	}
 
 	async function handleShare() {
-		if (!preview) return;
+		if (!preview || sharing) return; // what a second click while the sheet is up lands on
+		sharing = true;
+		error = '';
 		try {
 			await shareFile(preview.file, title);
 		} catch {
 			error = "Couldn't open the share sheet — save the image instead.";
+		} finally {
+			sharing = false;
 		}
 	}
 </script>
@@ -196,20 +210,33 @@
 					<Button class="flex-1" onclick={() => generate()}>
 						<RefreshCw class="mr-1.5 size-4" /> Try again
 					</Button>
+				{:else if sheetOnly}
+					<!-- One button, because on iOS both outcomes live behind the same sheet:
+					     "Save Image" reaches Photos, any app entry sends it. -->
+					<Button class="flex-1" onclick={handleShare} disabled={sharing}>
+						<Share2 class="mr-1.5 size-4" /> {sharing ? 'Sharing…' : 'Save or share'}
+					</Button>
 				{:else}
 					<Button class="flex-1" onclick={handleDownload} disabled={!preview}>
 						<Download class="mr-1.5 size-4" /> Save image
 					</Button>
 					{#if canShare}
-						<Button variant="secondary" onclick={handleShare}>
-							<Share2 class="mr-1.5 size-4" /> Share
+						<Button variant="secondary" onclick={handleShare} disabled={sharing}>
+							<Share2 class="mr-1.5 size-4" /> {sharing ? 'Sharing…' : 'Share'}
 						</Button>
 					{/if}
 				{/if}
 			</div>
 
+			<!-- Only the how-to-save sentence is platform-specific; the privacy promise is a
+			     standing line with one home, so a reword can't land in just one branch. -->
 			<p class="text-sm text-muted-foreground">
-				Saved as a picture, so you can send it in any messenger. Nothing is published online.
+				{#if sheetOnly}
+					Pick "Save Image" to add it to your Photos, or an app to send it straight away.
+				{:else}
+					Saved as a picture, so you can send it in any messenger.
+				{/if}
+				Nothing is published online.
 			</p>
 		</div>
 	</Dialog.Content>

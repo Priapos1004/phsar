@@ -96,14 +96,39 @@ export function canShareFiles(file: File): boolean {
 }
 
 /**
- * Open the native share sheet with the PNG attached. Dismissing the sheet rejects with
- * `AbortError` — that's the user declining, not a failure, so it's swallowed.
+ * True on iPhone/iPad, where a saved image has to travel through the share sheet.
+ *
+ * A UA check because no feature detection exists for the thing that actually matters: an
+ * `<a download>` on iOS Safari lands in Files, and only the share sheet's "Save Image"
+ * reaches the photo library. iPadOS reports itself as a Mac, so it's caught by the one
+ * signal that separates it from a desktop — a touch screen.
+ */
+export function isIosLike(): boolean {
+	if (typeof navigator === 'undefined') return false;
+	const ua = navigator.userAgent ?? '';
+	if (/iPad|iPhone|iPod/.test(ua)) return true;
+	return /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+}
+
+/**
+ * Open the native share sheet with the PNG attached.
+ *
+ * Two rejections are the sheet behaving normally rather than failing, so both are
+ * swallowed: `AbortError` is the user dismissing it, and `InvalidStateError` means a sheet
+ * is already open. The caller guards against the second with its own in-flight flag; this
+ * is the backstop for platforms that settle the previous share's promise late (or never),
+ * where that flag can be clear while the browser still disagrees.
+ *
+ * There is no third option of closing the sheet ourselves — it's an OS surface, and the
+ * Web Share API has no cancellation path.
  */
 export async function shareFile(file: File, title: string): Promise<void> {
 	try {
 		await navigator.share({ files: [file], title });
 	} catch (err) {
-		if (err instanceof DOMException && err.name === 'AbortError') return;
+		if (err instanceof DOMException) {
+			if (err.name === 'AbortError' || err.name === 'InvalidStateError') return;
+		}
 		throw err;
 	}
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { canShareFiles, fetchImageAsDataUri, shareFileName } from '$lib/utils/shareImage';
+import { canShareFiles, fetchImageAsDataUri, isIosLike, shareFileName } from '$lib/utils/shareImage';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -68,5 +68,36 @@ describe('canShareFiles', () => {
 	it('is true when the platform accepts the PNG', () => {
 		vi.stubGlobal('navigator', { share: vi.fn(), canShare: vi.fn().mockReturnValue(true) });
 		expect(canShareFiles(png)).toBe(true);
+	});
+});
+
+describe('isIosLike', () => {
+	const IPHONE =
+		'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+	const MAC =
+		'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Safari/605.1.15';
+
+	it('detects an iPhone', () => {
+		vi.stubGlobal('navigator', { userAgent: IPHONE, maxTouchPoints: 5 });
+		expect(isIosLike()).toBe(true);
+	});
+
+	// iPadOS ships the desktop UA string, so the touch screen is the only thing left to go on.
+	it('detects an iPad masquerading as a Mac', () => {
+		vi.stubGlobal('navigator', { userAgent: MAC, maxTouchPoints: 5 });
+		expect(isIosLike()).toBe(true);
+	});
+
+	it('is false on a real Mac', () => {
+		vi.stubGlobal('navigator', { userAgent: MAC, maxTouchPoints: 0 });
+		expect(isIosLike()).toBe(false);
+	});
+
+	it('is false on Android, where a download already reaches the gallery', () => {
+		vi.stubGlobal('navigator', {
+			userAgent: 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/126 Mobile',
+			maxTouchPoints: 5,
+		});
+		expect(isIosLike()).toBe(false);
 	});
 });

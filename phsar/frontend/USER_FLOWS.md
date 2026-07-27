@@ -245,7 +245,9 @@ Each anime search result card shows:
 - **A one-entry anime uses the media wording**: a film or single-season show shows `type · season · runtime` and its own watch status, not `1/1 main media`. Measured over the aired entries, so an announced sequel doesn't change the shape
 - **Attributes are always shown**, unlike the page's Attribute Summary: unrated radar axes leave the web bare with muted labels, and unrated pills read `--` in grey. A standalone image should show what wasn't rated rather than silently drop it. The auto-set `not_applicable` ending (on an on-hold/dropped watch) counts as unrated — on the card **and** on the anime page
 - **Cover unavailable** (missing, or the fetch fails) → the card falls back to the "No image" placeholder; the export still succeeds
-- Actions: **Save image** downloads `phsar-<slug>-rating.png` (always available), and **Share** appears only on devices whose native share sheet accepts files (mobile) and hands the PNG straight to the OS picker — WhatsApp, Signal, Telegram etc. Dismissing the native sheet is not an error
+- Actions: **Save image** downloads `phsar-<slug>-rating.png`, and **Share** appears only on devices whose native share sheet accepts files (mobile) and hands the PNG straight to the OS picker — WhatsApp, Signal, Telegram etc. Dismissing the native sheet is not an error
+- **On iPhone/iPad the two collapse into one "Save or share" button** that opens the sheet: a download there lands in Files, and only the sheet's "Save Image" reaches Photos — so both outcomes are behind the same picker and a second button would be a duplicate
+- While a share sheet is open the button reads **"Sharing…"** and is inert. A second click does nothing rather than reporting a failure — the sheet belongs to the OS and the page has no way to close it
 - On failure: a red "Couldn't build the image." with a **Try again** button (the underlying cause is logged to the console)
 - Closing the dialog abandons any in-flight build and releases the preview; nothing is uploaded or published at any point
 
