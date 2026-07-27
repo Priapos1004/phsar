@@ -299,6 +299,7 @@ phsar/
 │   │   │   │   └── api.ts
 │   │   │   └── utils/
 │   │   │       ├── chartColors.ts
+│   │   │       ├── backupStatus.ts
 │   │   │       ├── chartTheme.ts
 │   │   │       ├── cn.ts
 │   │   │       ├── color.ts
@@ -360,6 +361,7 @@ phsar/
 │   │       ├── admin-jobs-filter.test.ts
 │   │       ├── api-download.test.ts
 │   │       ├── auth-store.test.ts
+│   │       ├── backup-status.test.ts
 │   │       ├── backups-card.test.ts
 │   │       ├── chart-theme.test.ts
 │   │       ├── color.test.ts
