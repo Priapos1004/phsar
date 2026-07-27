@@ -726,3 +726,10 @@ export function totalWatchTime(items: RatingScoreItem[]): number {
 	return items.reduce((a, it) => a + watchedSeconds(it), 0);
 }
 
+/** An anime's headline "your score": the plain mean of a rating set, 0 when empty
+ * (callers gate on emptiness). Single-sourced so the page and the exported share PNG
+ * can't show different numbers. */
+export function meanScore(ratings: { rating: number }[]): number {
+	return mean(ratings.map((r) => r.rating));
+}
+

@@ -1,5 +1,36 @@
 import { describe, it, expect } from 'vitest';
-import { compareAttribute, QUALITY_ATTR_KEYS } from '$lib/utils/ratingAttributes';
+import { compareAttribute, hasAnyAttribute, QUALITY_ATTR_KEYS } from '$lib/utils/ratingAttributes';
+import type { RatingOut } from '$lib/types/api';
+
+// Only the attribute keys are read, so a partial cast keeps the fixtures readable.
+const withAttrs = (o: Partial<RatingOut>) => [o as RatingOut];
+
+describe('hasAnyAttribute', () => {
+	it('is false for a rating with no attributes set', () => {
+		expect(hasAnyAttribute(withAttrs({ pace: null, story_quality: null }))).toBe(false);
+	});
+
+	it('is true when any single attribute carries a real value', () => {
+		expect(hasAnyAttribute(withAttrs({ pace: 'fast' }))).toBe(true);
+		expect(hasAnyAttribute(withAttrs({ story_quality: 'good' }))).toBe(true);
+	});
+
+	// The sentinel is auto-set on on-hold/dropped ratings, never chosen — so a rating
+	// carrying only it must not open an otherwise-empty attribute section.
+	it('does not count the auto-set not_applicable sentinel', () => {
+		expect(
+			hasAnyAttribute(withAttrs({ ending_type: 'not_applicable', ending_quality: 'not_applicable' })),
+		).toBe(false);
+	});
+
+	it('is true when any rating in the set has one, not only the first', () => {
+		expect(hasAnyAttribute([{} as RatingOut, { pace: 'slow' } as RatingOut])).toBe(true);
+	});
+
+	it('is false for an empty set', () => {
+		expect(hasAnyAttribute([])).toBe(false);
+	});
+});
 
 describe('compareAttribute', () => {
 	it('returns neutral when the user has not set the attribute', () => {

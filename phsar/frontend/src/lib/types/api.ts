@@ -225,8 +225,12 @@ export function getRatingAttr(obj: RatingOut | RatingCreate | RatingScoreItem, k
  * reached). Single source of truth for "count this attribute as rated" — used by
  * the per-rating card display, the distribution bars, and the overview gate so the
  * radar/bars/badges all agree.
+ *
+ * A type predicate, so a guarded branch also gets the value narrowed to `string`. Only the
+ * TRUE branch narrows soundly — a false result does NOT mean `null`, since the
+ * `not_applicable` sentinel is a string too.
  */
-export function isAttrRated(value: string | null): boolean {
+export function isAttrRated(value: string | null): value is string {
 	return value !== null && value !== 'not_applicable';
 }
 
@@ -323,9 +327,12 @@ export interface SearchTokenResponse {
 }
 
 // User Settings
+/** Preferred title language — the input to `resolveTitle`/`resolveSubtitles`. */
+export type NameLanguage = 'english' | 'japanese' | 'romaji';
+
 export interface UserSettings {
 	theme: ThemeKey;
-	name_language: 'english' | 'japanese' | 'romaji';
+	name_language: NameLanguage;
 	default_search_view: 'anime' | 'media';
 	rating_step: '0.5' | '0.25' | '0.1' | '0.01';
 	spoiler_level: 'off' | 'blur' | 'hide';

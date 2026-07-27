@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { getContext } from 'svelte';
 	import { api, ApiError } from '$lib/api';
-	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, formatAiringStatus, resolveTitle, resolveSubtitles, decimalPlaces, roundScore, formatRelationType, formatMediaType } from '$lib/utils/formatString';
+	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, formatAiringStatus, formatEpisodeCount, isSeasonRange, resolveTitle, resolveSubtitles, decimalPlaces, roundScore, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -30,6 +30,7 @@
 	import BulkWatchlistDialog from '$lib/components/BulkWatchlistDialog.svelte';
 	import WatchlistBookmarkButton from '$lib/components/WatchlistBookmarkButton.svelte';
 	import WatchlistBookmarkIcon from '$lib/components/WatchlistBookmarkIcon.svelte';
+	import AnimeShare from '$lib/components/AnimeShare.svelte';
 
 	const getUserRole = getContext<() => string | null>('userRole');
 	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
@@ -431,22 +432,29 @@
 							{/each}
 						</div>
 
-						<!-- Anime-level watchlist bookmark — filled (theme primary, since an anime can
-						     span multiple tags) when ≥1 of this anime's media is on the list. Click
-						     adds all main media (optionally + side stories), or removes all of this
-						     anime's watchlisted media (guarded). Restricted (guest) users see it
-						     disabled (visible-but-inert) so they see what their own account could do. -->
-						<WatchlistBookmarkButton
-							colors={heroColors}
-							tooltip={isRestricted
-								? "Guest accounts can't use the watchlist"
-								: heroWatchlisted
-									? `${watchlistedInAnime.length} on your watchlist — click to remove`
-									: 'Add this anime to your watchlist'}
-							ariaLabel={heroWatchlisted ? 'Remove anime from watchlist' : 'Add anime to watchlist'}
-							onclick={() => (heroWatchlisted ? (heroRemoveOpen = true) : (heroAddOpen = true))}
-							disabled={isRestricted}
-						/>
+						<div class="flex shrink-0 items-start">
+							<!-- Export this anime as an image to send in any messenger — your rating when
+							     you have one, otherwise a plain info card, so an unrated anime (and every
+							     guest, who can never rate) still has something to share. -->
+							<AnimeShare {anime} ratings={userRatingsList} {ratingStep} {nameLanguage} />
+
+							<!-- Anime-level watchlist bookmark — filled (theme primary, since an anime can
+							     span multiple tags) when ≥1 of this anime's media is on the list. Click
+							     adds all main media (optionally + side stories), or removes all of this
+							     anime's watchlisted media (guarded). Restricted (guest) users see it
+							     disabled (visible-but-inert) so they see what their own account could do. -->
+							<WatchlistBookmarkButton
+								colors={heroColors}
+								tooltip={isRestricted
+									? "Guest accounts can't use the watchlist"
+									: heroWatchlisted
+										? `${watchlistedInAnime.length} on your watchlist — click to remove`
+										: 'Add this anime to your watchlist'}
+								ariaLabel={heroWatchlisted ? 'Remove anime from watchlist' : 'Add anime to watchlist'}
+								onclick={() => (heroWatchlisted ? (heroRemoveOpen = true) : (heroAddOpen = true))}
+								disabled={isRestricted}
+							/>
+						</div>
 					</div>
 
 					{#if anime.avg_score !== null}
@@ -487,7 +495,7 @@
 						{#if anime.total_episodes !== null}
 							<div class="flex items-center gap-2 text-card-foreground">
 								<Tv class="size-4 text-primary shrink-0" />
-								<span>{anime.total_episodes} ep{anime.total_episodes !== 1 ? 's' : ''}</span>
+								<span>{formatEpisodeCount(anime.total_episodes)}</span>
 							</div>
 						{/if}
 						<div class="flex items-center gap-2 text-card-foreground">
@@ -495,7 +503,7 @@
 							<span>{anime.media.length} media</span>
 						</div>
 						{#if anime.season_start}
-							{@const isRange = anime.season_end && anime.season_end !== anime.season_start}
+							{@const isRange = isSeasonRange(anime.season_start, anime.season_end)}
 							<div class="flex items-start gap-2 text-card-foreground">
 								<Calendar class="size-4 text-primary shrink-0 {isRange ? 'mt-0.5' : ''}" />
 								{#if isRange}
@@ -695,7 +703,7 @@
 									<Badge variant="secondary" class={`${cls.badgeRelationTypeColor} text-xs px-1.5 py-0`}>{formatRelationType(item.relation_type)}</Badge>
 									<Badge variant="secondary" class={`${cls.badgeMediaTypeColor} text-xs px-1.5 py-0`}>{formatMediaType(item.media_type)}</Badge>
 									{#if item.episodes}
-										<span class="text-xs text-muted-foreground">{item.episodes} ep{item.episodes !== 1 ? 's' : ''}</span>
+										<span class="text-xs text-muted-foreground">{formatEpisodeCount(item.episodes)}</span>
 									{/if}
 								</div>
 							</div>

@@ -16,7 +16,7 @@
 	import ScoreDial from '$lib/components/ScoreDial.svelte';
 	import Notice from '$lib/components/Notice.svelte';
 	import { attributeBadges } from '$lib/utils/ratingAttributes';
-	import { formatDecimalDigits, clampAndSnapScore, decimalPlaces, roundScore } from '$lib/utils/formatString';
+	import { formatDecimalDigits, clampAndSnapScore, decimalPlaces, episodesWatchedLabel, roundScore, watchStatusLabel } from '$lib/utils/formatString';
 	import { userSettings } from '$lib/stores/userSettings';
 	import { watchlistTags, refreshWatchlist } from '$lib/stores/watchlist';
 	import { pushToast } from '$lib/stores/toast';
@@ -345,7 +345,7 @@
 				</div>
 
 				<div class="flex items-center gap-4">
-					<div class="w-16 h-16 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center shrink-0">
+					<div class="w-16 h-16 {cls.scoreCircle}">
 						<span class="text-xl font-bold text-card-foreground">
 							{formatDecimalDigits(existingRating.rating, DISPLAY_DECIMALS)}
 						</span>
@@ -361,7 +361,7 @@
 							{/if}
 							{#if existingRating.episodes_watched !== null}
 								<span class="text-muted-foreground">
-									· {existingRating.episodes_watched}{totalEpisodes ? `/${totalEpisodes}` : ''} eps
+									· {episodesWatchedLabel(existingRating.episodes_watched, totalEpisodes)}
 								</span>
 							{/if}
 							{#if existingRating.watched_count > 1}
@@ -589,7 +589,7 @@
 			<Dialog.Title>Keep your watch history?</Dialog.Title>
 			<Dialog.Description class="text-muted-foreground">
 				You're changing this from Completed to
-				{WATCH_STATUS_OPTIONS.find((o) => o.value === status)?.label ?? status}.
+				{watchStatusLabel(status)}.
 				{#if existingRating}
 					You have {existingRating.watched_count} recorded watch{existingRating.watched_count > 1 ? 'es' : ''}.
 				{/if}

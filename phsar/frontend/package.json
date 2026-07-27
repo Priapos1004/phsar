@@ -37,6 +37,7 @@
 		"echarts": "^6.1.0",
 		"jwt-decode": "^4.0.0",
 		"lucide-svelte": "^0.509.0",
+		"modern-screenshot": "^4.7.0",
 		"tailwind-merge": "^3.5.0",
 		"tailwind-variants": "^3.2.2",
 		"tailwindcss": "^4.1.5"

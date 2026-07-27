@@ -9,9 +9,15 @@
 		// Accepts either shape — only the 11 attribute keys are read (via getRatingAttr),
 		// which both RatingOut and the /ratings page's RatingScoreItem carry.
 		ratings: RatingOut[] | RatingScoreItem[];
+		/**
+		 * Fires once the radar has painted — for the share-card capture. Passing it also
+		 * turns the entrance animation OFF: a capture has no reason to wait out a grow-in it
+		 * will never show.
+		 */
+		onReady?: () => void;
 	}
 
-	let { ratings }: Props = $props();
+	let { ratings, onReady }: Props = $props();
 
 	// Quality attributes with a clear "bad to good" scale for radar visualization.
 	// ending_quality deliberately excludes "not_applicable" — those ratings are
@@ -74,12 +80,15 @@
 	let radarOption = $derived.by(() => {
 		const primaryColor = getThemedChartColorPalette()[0];
 		return {
+			animation: !onReady,
 			radar: {
 				indicator: RADAR_LABELS.map((name) => ({ name, max: 1 })),
 				splitNumber: 3,
 				shape: 'polygon' as const,
 				axisName: {
-					color: 'rgba(0,0,0,0.7)',
+					// Muted when there's nothing plotted, so an empty web reads as "not rated"
+					// rather than as a chart that failed to draw.
+					color: radarData.hasData ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.35)',
 					fontSize: 12,
 				},
 				splitArea: {
@@ -94,7 +103,7 @@
 					data: [
 						{
 							name: 'Your Profile',
-							value: radarData.avgs,
+							value: radarData.hasData ? radarData.avgs : [],
 							areaStyle: { color: primaryColor, opacity: 0.2 },
 							lineStyle: { color: primaryColor, width: 2 },
 							itemStyle: { color: primaryColor },
@@ -117,6 +126,7 @@
 	});
 </script>
 
-{#if radarData.hasData}
-	<EChart option={radarOption} height="224px" />
-{/if}
+<!-- Always rendered, even with nothing to plot: the bare web with muted labels reads as
+     "not rated yet", and it keeps the radar and the pills beside it appearing together
+     instead of the pills showing alone whenever no *quality* attribute was set. -->
+<EChart option={radarOption} height="224px" {onReady} />

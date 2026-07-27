@@ -1,13 +1,25 @@
 <!-- TODO(v0.15.1): Verify mobile layout — orbital pills may overlap on narrow viewports -->
 <script lang="ts">
-	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr } from '$lib/types/api';
+	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr, isAttrRated } from '$lib/types/api';
 	import type { RatingOut } from '$lib/types/api';
 
 	interface Props {
 		ratings: RatingOut[];
+		/**
+		 * `responsive` (default) picks the wrap on mobile and the orbit on desktop.
+		 * `wrap` pins the wrap at every width — what the fixed-size share card needs:
+		 * the orbit's pills overhang their 240px box by ~50px a side (fine inside a
+		 * half-width page column, but a fixed-width card has no slack to absorb it),
+		 * and a viewport-dependent layout would make the same rating export differently
+		 * from a phone than from a desktop.
+		 */
+		layout?: 'responsive' | 'wrap';
 	}
 
-	let { ratings }: Props = $props();
+	let { ratings, layout = 'responsive' }: Props = $props();
+
+	// One decision, derived once — two independent conditions could render both layouts.
+	let showOrbit = $derived(layout === 'responsive');
 
 	const BADGE_KEYS = [
 		'pace',
@@ -18,15 +30,20 @@
 		'originality',
 	];
 
-	// Each pill gets a fixed rotation and position on a circle (clockwise from top-right).
-	// Rotations are deliberately irregular for an organic, tossed-on-table feel.
+	// One row per BADGE_KEY: where the pill sits on the orbit, and how far it tilts in each
+	// layout. Rotations are deliberately irregular for an organic, tossed-on-table feel.
+	//
+	// `wrapRotation` is much gentler than the orbit's tilt because flex lays out the
+	// UNROTATED boxes: a tilt adds ±(width · sin θ)/2 of vertical reach the row gap has to
+	// absorb, and 8° on a ~290px pill needs 20px per side — which is what made adjacent
+	// wrapped rows collide. 2–3° needs ~8px, comfortably inside gap-y-5.
 	const PILL_STYLES = [
-		{ angle: 20, rotation: -6 },   // top-right (pace)
-		{ angle: 72, rotation: 4 },    // right (3d animation)
-		{ angle: 118, rotation: -8 },  // bottom-right (watched format) — raised to avoid fan service collision
-		{ angle: 200, rotation: 5 },   // bottom-left (fan service)
-		{ angle: 252, rotation: -3 },  // left (ending type)
-		{ angle: 308, rotation: 7 },   // top-left (originality) — lowered to avoid collision with pace
+		{ angle: 20, rotation: -6, wrapRotation: -2 },    // top-right (pace)
+		{ angle: 72, rotation: 4, wrapRotation: 1.5 },    // right (3d animation)
+		{ angle: 118, rotation: -8, wrapRotation: -3 },   // bottom-right (watched format) — raised to avoid fan service collision
+		{ angle: 200, rotation: 5, wrapRotation: 2 },     // bottom-left (fan service)
+		{ angle: 252, rotation: -3, wrapRotation: -1.5 }, // left (ending type)
+		{ angle: 308, rotation: 7, wrapRotation: 2.5 },   // top-left (originality) — lowered to avoid collision with pace
 	];
 
 	interface PillData {
@@ -41,7 +58,9 @@
 
 			for (const r of ratings) {
 				const val = getRatingAttr(r, key);
-				if (val) {
+				// `not_applicable` is auto-set on an unfinished watch, never chosen — it's an
+				// absence of an answer, so it reads as unset ("--") rather than as a value.
+				if (isAttrRated(val)) {
 					counts.set(val, (counts.get(val) ?? 0) + 1);
 				}
 			}
@@ -93,14 +112,15 @@
 	</span>
 {/snippet}
 
-<!-- Mobile: scattered flex wrap -->
-<div class="flex flex-wrap justify-center gap-2 md:hidden">
+<!-- Mobile (and every width when pinned to `wrap`): scattered flex wrap -->
+<div class="flex flex-wrap justify-center gap-x-2 gap-y-5 {showOrbit ? 'md:hidden' : ''}">
 	{#each pills as p, i}
-		{@render pill(p, i, 'inline-block', `transform: rotate(${PILL_STYLES[i].rotation}deg);`)}
+		{@render pill(p, i, 'inline-block', `transform: rotate(${PILL_STYLES[i].wrapRotation}deg);`)}
 	{/each}
 </div>
 
 <!-- Desktop: orbital ellipse arrangement -->
+{#if showOrbit}
 <div class="hidden md:block relative" style="width: 240px; height: 200px;">
 	{#each pills as p, i}
 		{@const angle = PILL_STYLES[i].angle}
@@ -116,6 +136,7 @@
 		)}
 	{/each}
 </div>
+{/if}
 
 <style>
 	@keyframes pill-burst {

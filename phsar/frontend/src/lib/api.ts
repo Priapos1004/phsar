@@ -2,6 +2,7 @@ import { API_URL } from '$lib/config';
 import { get } from 'svelte/store';
 import { token } from '$lib/stores/auth';
 import { bumpMaintenanceRefresh } from '$lib/stores/maintenance';
+import { triggerBlobDownload } from '$lib/utils/download';
 
 class ApiError extends Error {
 	status: number;
@@ -132,15 +133,10 @@ export const api = {
 			return;
 		}
 		const blob = await res.blob();
-		const objectUrl = URL.createObjectURL(blob);
-		const anchor = document.createElement('a');
-		anchor.href = objectUrl;
-		const resolved = filename ?? parseContentDispositionFilename(res.headers.get('Content-Disposition'));
-		if (resolved) anchor.download = resolved;
-		document.body.appendChild(anchor);
-		anchor.click();
-		anchor.remove();
-		URL.revokeObjectURL(objectUrl);
+		triggerBlobDownload(
+			blob,
+			filename ?? parseContentDispositionFilename(res.headers.get('Content-Disposition')),
+		);
 	},
 
 	async postMultipart<T = unknown>(path: string, formData: FormData): Promise<T> {

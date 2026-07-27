@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { getContext } from 'svelte';
 	import { api, ApiError } from '$lib/api';
-	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, resolveTitle, resolveSubtitles, formatRelationType, formatMediaType } from '$lib/utils/formatString';
+	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, formatEpisodeCount, cleanDescription, resolveTitle, resolveSubtitles, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -11,6 +11,7 @@
 	import RatingCard from '$lib/components/RatingCard.svelte';
 	import WatchlistDialog from '$lib/components/WatchlistDialog.svelte';
 	import WatchlistBookmarkButton from '$lib/components/WatchlistBookmarkButton.svelte';
+	import MediaShare from '$lib/components/MediaShare.svelte';
 	import BackLink from '$lib/components/BackLink.svelte';
 	import StudioLinks from '$lib/components/StudioLinks.svelte';
 	import GenreBadges from '$lib/components/GenreBadges.svelte';
@@ -26,6 +27,7 @@
 
 	const getUserRole = getContext<() => string | null>('userRole');
 	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
+	let ratingStep = $derived(parseFloat($userSettings?.rating_step ?? '0.5'));
 
 	let media = $state<MediaDetail | null>(null);
 	let userRating = $state<RatingOut | null>(null);
@@ -203,16 +205,22 @@
 							{/each}
 						</div>
 
-						<!-- Watchlist bookmark — filled + tag-colored when on the list; click
-						     opens the add/edit dialog. Restricted (guest) users see it disabled
-						     (visible-but-inert), so they see what their own account could do. -->
-						<WatchlistBookmarkButton
-							colors={watchlistEntry ? [watchlistEntry.tag_color] : []}
-							tooltip={isRestricted ? "Guest accounts can't use the watchlist" : watchlistEntry ? `On watchlist: ${watchlistEntry.tag_name}` : 'Add to watchlist'}
-							ariaLabel={watchlistEntry ? 'Edit watchlist entry' : 'Add to watchlist'}
-							onclick={() => (watchlistOpen = true)}
-							disabled={isRestricted}
-						/>
+						<div class="flex shrink-0 items-start">
+							<!-- Export this entry as an image to send in any messenger — your rating when
+							     you have one, otherwise a plain info card. -->
+							<MediaShare {media} rating={userRating} {ratingStep} {nameLanguage} />
+
+							<!-- Watchlist bookmark — filled + tag-colored when on the list; click
+							     opens the add/edit dialog. Restricted (guest) users see it disabled
+							     (visible-but-inert), so they see what their own account could do. -->
+							<WatchlistBookmarkButton
+								colors={watchlistEntry ? [watchlistEntry.tag_color] : []}
+								tooltip={isRestricted ? "Guest accounts can't use the watchlist" : watchlistEntry ? `On watchlist: ${watchlistEntry.tag_name}` : 'Add to watchlist'}
+								ariaLabel={watchlistEntry ? 'Edit watchlist entry' : 'Add to watchlist'}
+								onclick={() => (watchlistOpen = true)}
+								disabled={isRestricted}
+							/>
+						</div>
 					</div>
 
 					{#if media.score !== null}
@@ -247,7 +255,7 @@
 						{#if media.episodes !== null}
 							<div class="flex items-center gap-2 text-card-foreground">
 								<Tv class="size-4 text-primary shrink-0" />
-								<span>{media.episodes} ep{media.episodes !== 1 ? 's' : ''}</span>
+								<span>{formatEpisodeCount(media.episodes)}</span>
 							</div>
 						{/if}
 						{#if media.duration_seconds}

@@ -20,6 +20,16 @@ export const badgeDropped = 'bg-rose-100 text-rose-800 border-rose-200';
 // Story-complete (emerald) — shared by the anime-page badge + the anime search card badge.
 export const badgeComplete = 'bg-emerald-100 text-emerald-800 border-emerald-200';
 
+// Airing state, the four-way cascade the anime + media heroes render and the share card
+// rasterizes. `badgeFinished` carries `border-transparent` because the card's badges always
+// draw a border; the heroes' muted branch simply omits one.
+// NOTE: these are exported into a PNG, so they must stay inside the rasterizer-safe subset —
+// solid tints only, no fractional-alpha `color-mix` (which can fail to reparse in the clone).
+export const badgeAiring = 'bg-green-100 text-green-800 border-green-200';
+export const badgeUnaired = 'bg-yellow-100 text-yellow-800 border-yellow-200';
+export const badgeUpcoming = 'bg-blue-100 text-blue-800 border-blue-200';
+export const badgeFinished = 'bg-muted text-muted-foreground border-transparent';
+
 // "How you rated similar titles" comparison badges: a neighbor's attribute
 // vs your current selection. Green = neighbor higher, red = neighbor lower (quality attrs),
 // blue = differs (categorical), warm cream = matches your pick exactly, and neutral keeps the
@@ -41,6 +51,19 @@ export const badgeAgeRating = `${badgeAgeRatingColor} ${badgeSize}`;
 
 // Card glass effect
 export const cardGlass = 'bg-card/80 backdrop-blur';
+
+// Read-only score circle (the rating shown on the media page + the share card).
+// Size is composed at the call site; the editable ScoreDial keeps its own chrome
+// since it wraps an input.
+export const scoreCircle =
+	'rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center shrink-0';
+
+// Hero icon-button chrome (the watchlist bookmark + share actions on the anime/media
+// heroes). Disabled renders visible-but-inert rather than hidden, so a guest sees what
+// their own account could do.
+export const heroIconButton = 'p-2 rounded-lg transition';
+export const heroIconButtonEnabled = 'hover:bg-primary/10';
+export const heroIconButtonDisabled = 'opacity-50 cursor-not-allowed';
 
 // Small muted "pill" for a secondary label under a card title (main/side breakdown,
 // relation type) — shared by the ratings + watchlist grid cards so they can't drift.

@@ -115,7 +115,9 @@
 
 <Dialog.Root bind:open>
 	<Dialog.Content class="sm:max-w-md">
-		<Dialog.Header>
+		<!-- min-w-0 so a long nowrap title can't widen the grid track and push every row past the
+		     panel edge — see ShareDialog for the full why. -->
+		<Dialog.Header class="min-w-0">
 			<Dialog.Title>{existing ? 'Edit watchlist entry' : 'Add to watchlist'}</Dialog.Title>
 			{#if mediaTitle}
 				<Dialog.Description class="text-muted-foreground truncate">{mediaTitle}</Dialog.Description>
