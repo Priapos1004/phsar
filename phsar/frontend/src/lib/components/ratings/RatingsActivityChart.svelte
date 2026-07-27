@@ -5,7 +5,7 @@
 	import { getThemedChartColorPalette } from '$lib/utils/chartColors';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import { ratingSequence, movingAverage, cumulativeWatchTime } from '$lib/utils/ratingStats';
-	import { chartTooltipStyle } from '$lib/utils/chartTheme';
+	import { chartTooltipStyle, paddedAxisMin } from '$lib/utils/chartTheme';
 	import { formatDuration, formatDurationCompact, formatDecimalDigits, formatScoreWithStep, resolveTitle, escapeHtml } from '$lib/utils/formatString';
 	import { userSettings } from '$lib/stores/userSettings';
 	import type { RatingScoreItem } from '$lib/types/api';
@@ -152,6 +152,11 @@
 		},
 		yAxis: {
 			type: 'value' as const,
+			// A cumulative total barely moves inside a short window, so an axis anchored
+			// at 0 flattens the line against the top of the plot — scale to the span
+			// that's actually shown instead. `max` stays on auto so it still lands on a
+			// round tick. See paddedAxisMin for the degenerate windows it guards.
+			min: paddedAxisMin,
 			// Compact d/h/m label so the ticks fit (full duration is in the tooltip).
 			axisLabel: { color: 'rgba(0,0,0,0.55)', fontSize: 11, formatter: (v: number) => formatDurationCompact(v) },
 			splitLine: { lineStyle: { color: 'rgba(0,0,0,0.07)' } },
