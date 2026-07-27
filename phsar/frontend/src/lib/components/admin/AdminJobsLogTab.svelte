@@ -7,8 +7,9 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Label } from '$lib/components/ui/label';
 	import { ChevronRight } from 'lucide-svelte';
-	import { JOB_KIND_LABELS, PARENTING_KINDS, formatJobDuration, formatJobKind, formatShortDateTime } from '$lib/utils/formatString';
+	import { JOB_KIND_LABELS, SEASON_SWEEP_KINDS, formatJobDuration, formatJobKind, formatShortDateTime } from '$lib/utils/formatString';
 	import { STATUS_BADGE } from '$lib/utils/jobBadges';
+	import { hentaiRemoved, payloadSummary, probeAttachedMedia, rowTintClass, unknownGenreTags } from '$lib/utils/jobSummary';
 	import { jobsFilter, sanitizeKind, sanitizeStatus } from '$lib/stores/adminJobsFilter';
 	import type { AdminJobResponse, AdminJobsPage, JobKind, JobStatus } from '$lib/types/api';
 
@@ -99,9 +100,11 @@
 		offset = newOffset;
 	}
 
-	// Backend accepts ?parent_uuid= for any kind, so PARENTING_KINDS is
-	// the frontend's visual guard — adding a future parent-stamping kind
-	// only needs the constant in formatString.ts. Carry the response total
+	// Backend accepts ?parent_uuid= for any kind, so this is purely the frontend's
+	// visual guard: the season sweeps are the only kinds that stamp children today.
+	// A future parent-stamping kind that ISN'T a season sweep needs its own set
+	// rather than joining this one, which also feeds the summary formatter.
+	// Carry the response total
 	// alongside the rows so the renderer can surface truncation honestly
 	// if a sweep ever exceeds CHILDREN_LIMIT.
 	const CHILDREN_LIMIT = 500;
@@ -189,43 +192,6 @@
 		return row.kind === 'update_sweep' && row.version >= 2;
 	}
 
-	// v3+ sweeps expose a deduplicated list of MAL genre tags the seeder
-	// doesn't know yet. Surface them at the row level so the admin can
-	// spot which sweeps need a seeder update without drilling in.
-	function unknownGenreTags(row: AdminJobResponse): string[] {
-		const tags = row.result_summary?.unknown_genre_tags;
-		return Array.isArray(tags) ? (tags as string[]) : [];
-	}
-
-	// v6+ sweeps report how many media the relations probe attached. Surface
-	// it at the row level (blue, informational) so the admin spots which
-	// sweeps grew the catalog without drilling in — sibling to the amber
-	// unknown-genre-tags treatment. Media-grained, so pre-v6 rows (which only
-	// carried an anime-grained count) stay un-tinted.
-	function probeAttachedMedia(row: AdminJobResponse): number {
-		const counters = row.result_summary?.counters as Record<string, unknown> | undefined;
-		return num(counters?.probe_attached_media_count);
-	}
-
-	// v7+ sweeps report how many anime were deleted for flipping to Hentai — a
-	// notable destructive event, so it outranks the amber/blue tints (rose).
-	// Pre-v7 rows omit the counter → 0 → no tint.
-	function hentaiRemoved(row: AdminJobResponse): number {
-		const counters = row.result_summary?.counters as Record<string, unknown> | undefined;
-		return num(counters?.hentai_removed_count);
-	}
-
-	// Mutually-exclusive row tint in priority order: hentai-removal (rose,
-	// destructive) > unknown-genre-tags (amber, needs seeding) > probe-attach
-	// (blue, informational). The sublines below are additive (each renders
-	// independently); only the background tint is single-winner.
-	function rowTintClass(hentaiCount: number, unknownTagCount: number, probeMedia: number): string {
-		if (hentaiCount > 0) return 'bg-rose-500/15 border-l-2 border-l-rose-400';
-		if (unknownTagCount > 0) return 'bg-amber-500/15 border-l-2 border-l-amber-400';
-		if (probeMedia > 0) return 'bg-blue-500/10 border-l-2 border-l-blue-400';
-		return '';
-	}
-
 	function clickableNavProps(uuid: string) {
 		const go = () => void goto(`/admin/jobs/${uuid}`);
 		return {
@@ -236,64 +202,6 @@
 		};
 	}
 
-	// JSONB lookups land as `unknown` per the JobResultSummary index signature;
-	// this narrows safely so the formatter doesn't crash on legacy/malformed rows.
-	const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
-
-	function payloadSummary(row: AdminJobsPage['items'][number]): string {
-		if (row.kind === 'user_scrape') {
-			const q = typeof row.payload?.query === 'string' ? `"${row.payload.query}"` : '';
-			if (row.status === 'succeeded' && row.result_summary) {
-				const a = num(row.result_summary.anime_count);
-				const m = num(row.result_summary.media_count);
-				return `+${a} anime · +${m} media${q ? ` (${q})` : ''}`;
-			}
-			return q;
-		}
-		if (row.kind === 'backup' || row.kind === 'restore') {
-			const filename = row.result_summary?.filename;
-			return typeof filename === 'string' ? filename : '';
-		}
-		if (row.kind === 'update_sweep' && row.status === 'succeeded' && row.result_summary) {
-			// v2 (post-v0.14.5) nests aggregate counts under `counters` and
-			// carries per-media diffs the detail page renders. v1 rows pre-
-			// date the rework — fall back to the flat shape.
-			if (row.version >= 2) {
-				const c = (row.result_summary.counters ?? {}) as Record<string, unknown>;
-				// v5 (v0.14.8) went media-grained: anime_refreshed → media_refreshed
-				// and the anime_with_dynamic rollup → media_with_dynamic. Earlier
-				// versions keep their anime-grained keys so historical rows stay
-				// accurate.
-				const refreshed = row.version >= 5 ? num(c.media_refreshed) : num(c.anime_refreshed);
-				const refreshedLabel = row.version >= 5 ? 'media refreshed' : 'touched';
-				const dyn =
-					row.version >= 5 ? num(c.media_with_dynamic_changes) : num(c.anime_with_dynamic_changes);
-				const dynLabel = row.version >= 5 ? 'media w/ dynamic' : 'anime w/ dynamic';
-				const staticMedia = num(c.media_with_static_changes);
-				// Anime-changes + probe-attachments deliberately omitted from this
-				// one-line summary — they overflowed the cell, and attachments
-				// already surface via the blue row subline (v6); the full
-				// breakdown lives on the detail page.
-				const parts = [`${refreshed} ${refreshedLabel}`];
-				if (dyn > 0) parts.push(`${dyn} ${dynLabel}`);
-				if (staticMedia > 0) parts.push(`${staticMedia} media w/ static`);
-				return parts.join(' · ');
-			}
-			const refreshed = num(row.result_summary.anime_refreshed);
-			const changed = num(row.result_summary.anime_changed);
-			const metadataChanged = num(row.result_summary.metadata_changed_media);
-			const parts = [`refreshed ${refreshed} anime`, `${changed} changed`];
-			if (metadataChanged > 0) parts.push(`${metadataChanged} media updated`);
-			return parts.join(' · ');
-		}
-		if (row.kind === 'seasonal_sweep' && row.status === 'succeeded' && row.result_summary) {
-			const entries = num(row.result_summary.season_entries);
-			const enqueued = num(row.result_summary.new_entries_enqueued);
-			const dedup = num(row.result_summary.dedup_skipped);
-			return `${entries} season entries · ${enqueued} new scrapes enqueued · ${dedup} already known`;
-		}
-		return '';
-	}
 </script>
 
 <Card.Root>
@@ -354,7 +262,7 @@
 						<tbody>
 							{#each page.items as row (row.uuid)}
 								{@const expanded = expandedUuids.has(row.uuid)}
-								{@const expandable = PARENTING_KINDS.has(row.kind)}
+								{@const expandable = SEASON_SWEEP_KINDS.has(row.kind)}
 								{@const clickable = isClickableJob(row)}
 								{@const unknownTags = unknownGenreTags(row)}
 								{@const probeMedia = probeAttachedMedia(row)}

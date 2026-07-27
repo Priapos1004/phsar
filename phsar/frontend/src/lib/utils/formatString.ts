@@ -58,15 +58,19 @@ export const JOB_KIND_LABELS: Record<JobKind, string> = {
 	user_scrape: 'User scrape',
 	update_sweep: 'Update sweep',
 	seasonal_sweep: 'Seasonal sweep',
-	upcoming_sweep: 'Upcoming-season sweep',
+	upcoming_sweep: 'Upcoming sweep',
 	backup: 'Backup',
 	restore: 'Restore',
 };
 
-/** Both season sweeps enqueue parented system children (same dispatcher), so
- * both get the Jobs Log expander chevron. Backend allows `?parent_uuid=` for
- * any kind — this is purely the frontend's "row deserves a chevron" guard. */
-export const PARENTING_KINDS: ReadonlySet<JobKind> = new Set<JobKind>([
+/** The kinds served by `seasonal_sweep_dispatcher` — defined by that shared origin
+ * rather than by either thing the Jobs Log does with it, because it answers BOTH:
+ * they enqueue parented system children (so the row gets an expander chevron) AND
+ * they emit one common `result_summary` shape (so one branch formats both). Naming it
+ * for only the first would leave the second reading as a coincidence, and a future
+ * kind that parents children WITHOUT season counters would render "0 season entries".
+ * Backend allows `?parent_uuid=` for any kind — this is purely a frontend guard. */
+export const SEASON_SWEEP_KINDS: ReadonlySet<JobKind> = new Set<JobKind>([
 	'seasonal_sweep',
 	'upcoming_sweep',
 ]);

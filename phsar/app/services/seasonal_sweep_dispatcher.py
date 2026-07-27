@@ -22,7 +22,7 @@ from app.daos.media_dao import MediaDAO
 from app.daos.media_unwanted_dao import MediaUnwantedDAO
 from app.models.job import Job, JobKind, JobStatus
 from app.services.job_worker import job_worker
-from app.services.mal_scraper import MalScraper, next_season
+from app.services.mal_scraper import MalScraper, catalog_season_name, next_season
 from app.services.progress_reporter import ProgressReporter
 
 logger = logging.getLogger(__name__)
@@ -113,6 +113,14 @@ async def seasonal_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     enqueued = len(children)
     await progress.update(stage="Done", items_done=enqueued, force=True)
     return {
+        # Which season was swept is the one thing the counters can't convey, and
+        # it's the whole point of an upcoming_sweep row. Additive keys with no
+        # reshaping, so the kind stays at version 1 and pre-v0.15.3 rows just
+        # render without the season prefix. Emitted in the catalog's `SeasonType`
+        # vocabulary (MAL hands the season down lowercased) via the shared
+        # translator, so the frontend renders it verbatim like any other season.
+        "season_year": year,
+        "season_name": catalog_season_name(season),
         "season_entries": len(entries),
         "new_entries_enqueued": enqueued,
         "dedup_skipped": len(entries) - enqueued,
