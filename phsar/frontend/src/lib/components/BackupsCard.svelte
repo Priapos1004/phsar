@@ -4,6 +4,7 @@
     import { Button } from '$lib/components/ui/button';
     import * as Card from '$lib/components/ui/card';
     import Tooltip from '$lib/components/Tooltip.svelte';
+    import Notice from '$lib/components/Notice.svelte';
     import * as Select from '$lib/components/ui/select';
     import * as Dialog from '$lib/components/ui/dialog';
     import { Label } from '$lib/components/ui/label';
@@ -78,6 +79,8 @@
     });
 
     let restoreFilename = $state<string | null>(null);
+    // The row being restored, so the confirm dialog can state its verdict.
+    let restoreTarget = $derived(backups.find((b) => b.filename === restoreFilename));
     let restoreConfirmInput = $state('');
     let restoring = $state(false);
     let restoreError = $state('');
@@ -336,16 +339,14 @@
             </Select.Root>
             <!-- The live schema revision, as the reference every row's own revision is
                  compared against. `ml-auto` so it sits at the far right of the controls
-                 row. Read back off the listing (the dump the backend marked
-                 schema_current IS on the live revision), so it reads "unknown" in the
-                 window after a migration before the self-heal dump lands — which is
-                 itself the useful signal that nothing on disk matches. -->
+                 row. It comes from the response envelope (see the `load` comment) —
+                 null ONLY when the server could not read it, which no backup can fix. -->
             <Tooltip
                 text={dbRevision
                     ? `The database is at Alembic revision ${dbRevision}. A dump on a different revision would roll the schema back if restored.`
-                    : 'No dump on disk records the live schema revision, so it can’t be shown here. A backup taken now will record it.'}
+                    : 'The live schema revision couldn’t be read from the database, so no dump can be confirmed against it.'}
             >
-                <span class="ml-auto text-xs text-muted-foreground">
+                <span class="ml-auto text-xs text-muted-foreground" data-testid="live-db-revision">
                     DB schema <code class="text-card-foreground">{dbRevision?.slice(0, 8) ?? 'unknown'}</code>
                 </span>
             </Tooltip>
@@ -535,6 +536,23 @@
             </Dialog.Description>
         </Dialog.Header>
         <div class="space-y-4 py-2">
+            <!-- The restorability verdict AT THE POINT OF DECISION: the modal covers the
+                 row badge that carries it in the list. Restoring a non-`ok` dump stays
+                 allowed — it just may not be silent. No `corrupt` arm: the restore
+                 trigger is disabled for those, so this dialog can't open on one. -->
+            {#if restoreTarget && restoreTarget.status !== 'ok'}
+                <Notice>
+                    {#if restoreTarget.status === 'outdated'}
+                        This dump is on Alembic revision <code>{restoreTarget.alembic_revision}</code>
+                        but the database is at <code>{dbRevision ?? 'a newer revision'}</code>.
+                        Restoring it rolls the schema back under the running app — expect
+                        errors until you redeploy a matching version.
+                    {:else}
+                        This dump records no schema revision, so there is no way to confirm
+                        it matches the running app before restoring it.
+                    {/if}
+                </Notice>
+            {/if}
             <div class="space-y-2">
                 <Label for="restore-confirm">Your username</Label>
                 <Input

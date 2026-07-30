@@ -258,11 +258,16 @@ describe('BackupsCard', () => {
 		expect(screen.getAllByText('d9e4a1c7')).toHaveLength(2);
 	});
 
-	it('reports the live schema as unknown when no dump records it', async () => {
-		await renderWithBackups([makeBackup({ schema_current: null })]);
-		expect(screen.getByText('unknown')).toBeInTheDocument();
+	it('shows the live schema as unknown when the server could not read it', async () => {
+		// `db_revision: null` means read_db_revision() failed — a property of the
+		// SERVER, not of the dumps. Scoped to the controls row because a dump with
+		// no verdict renders its own `unknown` badge too.
+		await renderWithBackups(
+			[makeBackup({ alembic_revision: 'd9e4a1c7b3f2', schema_current: null, status: 'unknown' })],
+			null,
+		);
+		expect(screen.getByTestId('live-db-revision')).toHaveTextContent('unknown');
 	});
-
 
 	it('replaces "ok" with "schema outdated" on a revision mismatch', async () => {
 		await renderWithBackups(
@@ -273,9 +278,16 @@ describe('BackupsCard', () => {
 		expect(screen.queryByText('ok')).not.toBeInTheDocument();
 	});
 
-	it('keeps "ok" when the schema verdict is unknown (pre-feature dump)', async () => {
-		await renderWithBackups([makeBackup({ schema_current: null })]);
-		expect(screen.getByText('ok')).toBeInTheDocument();
+	it('does NOT show "ok" for a dump with no recorded revision', async () => {
+		// The server composes `unknown` for a revision-less dump precisely so it is
+		// never advertised as restorable. Fixtures here must stay states the server can
+		// actually emit: `status: 'ok'` with `schema_current: null` is impossible, and
+		// asserting on it would pass while the card composed its own verdict.
+		await renderWithBackups(
+			[makeBackup({ alembic_revision: null, schema_current: null, status: 'unknown' })],
+			'd9e4a1c7b3f2',
+		);
+		expect(screen.queryByText('ok')).not.toBeInTheDocument();
 		expect(screen.queryByText('schema outdated')).not.toBeInTheDocument();
 	});
 

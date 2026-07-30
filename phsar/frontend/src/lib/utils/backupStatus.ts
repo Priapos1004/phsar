@@ -1,11 +1,7 @@
 /** Display ordering for the server's dump-restorability verdict.
  *
- * The verdict ITSELF (`BackupMetadata.status`) is computed server-side, in the
- * same `list_backups` pass that derives `schema_current`. It has to be: the
- * startup self-heal decides whether to take a fresh dump on the same question the
- * card renders, and when this file owned the composite the two disagreed — a dump
- * with no recorded revision showed a green `ok` pill while the backend had just
- * decided nothing on disk was restorable. One producer, several consumers.
+ * The verdict ITSELF (`BackupMetadata.status`) is computed server-side — see
+ * `BackupStatus` in `backup_schema.py` for why it has exactly one producer.
  *
  * What's left here is presentation: worst-first ordering for the "By
  * restorability" sort. `unknown` outranks `outdated` because an unverified dump is
