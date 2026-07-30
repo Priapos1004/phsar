@@ -1272,11 +1272,12 @@ async def test_tier_archival_waits_for_the_180_day_net(db_session):
 
 @pytest.mark.asyncio
 async def test_tier_undated_media_stays_on_ninety_day_net(db_session):
-    """A media with no `aired_from` must keep the 90-day cadence. Regression
-    guard for the SQL three-valued-logic trap: tier 4 is narrowed by
-    `not_(archival)`, and a bare `aired_from < cutoff` would be NULL here — so
-    NOT NULL is NULL and the row would fall out of BOTH long-tail tiers and
-    never be refreshed again."""
+    """A media with no `aired_from` must keep the 90-day cadence.
+
+    An undated row fails the archival `WHEN` and lands on the `ELSE`, which is what
+    makes the single-atom window NULL-correct with no guard. The invariant: no row may
+    fall out of the long tail entirely — under a two-branch rewrite `aired_from <
+    cutoff` is NULL and so is its negation, so both branches would reject it."""
     undated = await _seed_anime(
         db_session, mal_id=-7022, stable_check_count=10,
         last_checked_at=datetime.now(timezone.utc) - timedelta(days=100),

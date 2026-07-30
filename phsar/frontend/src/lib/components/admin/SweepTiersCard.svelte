@@ -72,10 +72,12 @@
 			key: 'long_cycle',
 			label: '90-day cycle',
 			color: 'bg-indigo-500',
+			// Terminal bucket, so undated media land here: the slower archival net
+			// isn't one to apply on a guessed premiere.
 			tooltip: (m) =>
 				m === 'anime'
-					? 'Stable + not airing + no recent main, premiered within the last decade — its media resurface only on the 90-day safety net.'
-					: 'Stable + not airing + not a recent main, premiered within the last decade — refreshed only on the 90-day safety net.',
+					? 'Stable + not airing + no recent main, and not archival (premiered within the last decade, or undated) — its media resurface only on the 90-day safety net.'
+					: 'Stable + not airing + not a recent main, and not archival (premiered within the last decade, or undated) — refreshed only on the 90-day safety net.',
 		},
 		{
 			key: 'archival_cycle',

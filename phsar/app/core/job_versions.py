@@ -59,9 +59,11 @@ JOB_KIND_VERSIONS: dict[JobKind, int] = {
     # with safe defaults; bumped (like v4/v6) so the frontend renders a
     # genuinely-empty v7 list distinctly from a pre-v7 row that never tracked it.
     JobKind.update_sweep: 7,
+    # Both season sweeps come off ONE dispatcher and so write one shape:
+    # {season_entries, new_entries_enqueued, dedup_skipped, season_year, season_name}.
+    # The season pair is additive with a safe default and the frontend gates on its
+    # presence (an older row just drops the season prefix), so it stays v1.
     JobKind.seasonal_sweep: 1,
-    # upcoming_sweep shares seasonal_sweep's result_summary shape
-    # ({season_entries, new_entries_enqueued, dedup_skipped}) — same dispatcher.
     JobKind.upcoming_sweep: 1,
     JobKind.backup: 1,
     JobKind.restore: 1,

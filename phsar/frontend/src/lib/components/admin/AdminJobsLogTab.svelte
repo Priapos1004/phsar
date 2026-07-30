@@ -100,13 +100,8 @@
 		offset = newOffset;
 	}
 
-	// Backend accepts ?parent_uuid= for any kind, so this is purely the frontend's
-	// visual guard: the season sweeps are the only kinds that stamp children today.
-	// A future parent-stamping kind that ISN'T a season sweep needs its own set
-	// rather than joining this one, which also feeds the summary formatter.
-	// Carry the response total
-	// alongside the rows so the renderer can surface truncation honestly
-	// if a sweep ever exceeds CHILDREN_LIMIT.
+	// Carry the response total alongside the rows so the renderer can surface
+	// truncation honestly if a sweep ever exceeds CHILDREN_LIMIT.
 	const CHILDREN_LIMIT = 500;
 	type ChildrenState = { items: AdminJobResponse[]; total: number } | 'loading' | { error: string };
 	let childrenByParent = $state<Record<string, ChildrenState>>({});

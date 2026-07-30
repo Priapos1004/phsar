@@ -1,8 +1,8 @@
 <script lang="ts">
-	// Shared bar-label used by the ratings breakdown chart + the watchlist stats bars
-	// (was a byte-identical block in both). Purely presentational — every destination is
-	// caller-owned via `onClick`, so this component knows nothing about search, the
-	// ratings filter, or which dimensions have a drill-down.
+	// Shared bar-label used by the ratings breakdown chart + the watchlist stats bars.
+	// Purely presentational — every destination is caller-owned via `onClick`, so this
+	// component knows nothing about search, the ratings filter, or which dimensions
+	// have a drill-down.
 	//
 	// `describeGenre` is the one non-behavioural knob: the label text is a genre name, so
 	// look its description up for a hover tooltip. It's a separate prop rather than a

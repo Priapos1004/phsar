@@ -22,8 +22,12 @@
 		 * one (the exit tween then reads as ghost marks overlaying the new data). Pass a
 		 * value that changes exactly when the subject changes and the old option is dropped
 		 * outright first. Cheaper and smoother than remounting the component, which also
-		 * re-pays `echarts.init` and blanks the plot for the initial-measurement tick. */
-		resetKey?: unknown;
+		 * re-pays `echarts.init` and blanks the plot for the initial-measurement tick.
+		 *
+		 * PRIMITIVES ONLY — the check is reference identity, so an array or object literal
+		 * (`resetKey={[dim, sort]}`) is a fresh reference every render and would `clear()`
+		 * on every option update. Join a composite key into a string. */
+		resetKey?: string | number | boolean | null;
 		/** Fires once the canvas actually holds its finished pixels. There's no
 		 * DOM-observable moment for that — the first setOption waits on an async
 		 * ResizeObserver measurement (see below) and then animates — so a consumer needing
