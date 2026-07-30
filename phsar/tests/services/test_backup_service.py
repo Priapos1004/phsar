@@ -74,6 +74,31 @@ async def test_cron_backup_dedupes_silently(backup_dir):
     assert len(dumps) == 1
 
 
+async def test_dedupe_stamps_the_revision_onto_a_dump_that_lacks_one(backup_dir):
+    """A dedupe hit must carry its freshly-parsed revision onto the matched sidecar.
+
+    Byte-identical content means the revision applies verbatim, and this is the ONLY
+    path that can ever stamp an existing dump (`_rebuild_meta` uses the TOC check and
+    can't recover it). Without it the startup self-heal cannot converge on an install
+    whose DB content already equals its last dump: every boot dumps, dedupes, discards
+    the revision, and re-fires next boot.
+    """
+    first = await backup_service.create_backup(source=BackupSource.manual)
+    assert first.alembic_revision is not None
+
+    # Stand in for a dump predating revision stamping.
+    await backup_service._set_meta_field(first.filename, alembic_revision=None)
+    dump_path = backup_service.get_backup_path(first.filename)
+
+    second = await backup_service.create_backup(source=BackupSource.cron)
+    assert second.filename == first.filename
+    assert second.alembic_revision == first.alembic_revision
+    # Persisted, not just returned — the next listing has to see it.
+    assert backup_service._read_meta(dump_path).alembic_revision == first.alembic_revision
+    # And the derived fields must NOT have been written through to disk.
+    assert backup_service._read_meta(dump_path).status is BackupStatus.unknown
+
+
 async def test_pre_restore_backup_dedupes_silently(backup_dir):
     """pre_restore snapshots dedupe silently (like cron) so repeat restores of
     the same-state dump don't pile up no-op snapshots."""
@@ -752,7 +777,11 @@ async def test_dump_records_its_own_alembic_revision(backup_dir):
     # it changes under the dump every time a migration runs.
     assert "schema_current" not in sidecar or sidecar["schema_current"] is None
 
-    listed = next(b for b in await backup_service.list_backups() if b.filename == meta.filename)
+    # The envelope, not `list_backups()`: only the with-revision listing stamps the
+    # verdict, so the callers that read persisted fields don't pay a revision read.
+    listing = await backup_service.list_backups_with_revision()
+    assert listing.db_revision == live
+    listed = next(b for b in listing.backups if b.filename == meta.filename)
     assert listed.schema_current is True
     assert listed.status is BackupStatus.ok
 
@@ -783,7 +812,8 @@ async def test_schema_current_is_false_on_revision_mismatch(backup_dir, monkeypa
         return "deadbeef0000"
 
     monkeypatch.setattr(backup_service, "read_db_revision", _moved_on)
-    listed = next(b for b in await backup_service.list_backups() if b.filename == meta.filename)
+    listing = await backup_service.list_backups_with_revision()
+    listed = next(b for b in listing.backups if b.filename == meta.filename)
     assert listed.schema_current is False
     assert listed.status is BackupStatus.outdated
     # `integrity` stays a pure file verdict — apply_retention pins the

@@ -75,19 +75,20 @@ async def _post_yield_backfills() -> None:
     `EMBEDDING_REEMBED_ON_STARTUP` is set — the case-folding re-normalization
     path, gated OFF by default.
     """
+    # The self-heal runs FIRST: every pass below is an idempotent derived-data repair
+    # that re-runs each boot, so a dump taken before them loses nothing recoverable,
+    # while one taken after couldn't recover from a backfill that damaged data.
+    # Concurrency is fine — pg_dump's MVCC snapshot lands in ~1s, while the relation
+    # backfiller is still on its first MAL call.
+    #
+    # Its OWN try/except: the only pass that touches the filesystem and shells out,
+    # so an unwritable BACKUP_DIR must not abort relation, merge and split detection.
     try:
-        # FIRST, ahead of every backfill below. All three are idempotent
-        # derived-data repairs that re-run on each boot, so a dump taken before
-        # them loses nothing recoverable — restore it, restart, and they
-        # re-derive. A dump taken after them could not recover from a backfill
-        # that damaged data. It also gets a dump on disk seconds after a
-        # migration rather than ~14-23 min later. (Since the worker runs
-        # concurrently this is "starts first", not a barrier: pg_dump's MVCC
-        # snapshot is taken within ~1s while the relation backfiller is still
-        # awaiting its first MAL round-trip, so in practice it captures a
-        # pre-backfill state, and the same idempotency makes any early commits
-        # it does catch harmless.)
         await backup_service.ensure_up_to_date_backup()
+    except Exception:
+        logger.exception("Backup self-heal failed — catalog backfills continue")
+
+    try:
         # One-shot catalog re-encode (case-folding fix). Its own session so
         # the ~1k-row scan's identity map is dropped before the relation
         # backfill loads the whole catalog again. Gated OFF by default; see

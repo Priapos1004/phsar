@@ -16,9 +16,9 @@ class BackupStatus(str, Enum):
 
     Derived server-side (in `list_backups`) rather than in the UI so every
     consumer agrees: the Backups card renders it, the sort orders by it, and the
-    startup self-heal decides on it. Composing it per-consumer is what let the
-    card call a revision-less dump green while the self-heal called the same row
-    unrestorable.
+    startup self-heal decides on it. Composing it per-consumer is how the card
+    comes to call a revision-less dump green while the self-heal treats the same
+    row as unrestorable.
 
     `unknown` is NOT `ok`: an unstamped dump might restore cleanly, but nothing
     on disk says so, and a backup you can't vouch for isn't one you should be
@@ -29,15 +29,6 @@ class BackupStatus(str, Enum):
     outdated = "outdated"
     unknown = "unknown"
     ok = "ok"
-
-
-# Worst first — the order both the card's sort and any future triage would want.
-BACKUP_STATUS_ORDER: tuple[BackupStatus, ...] = (
-    BackupStatus.corrupt,
-    BackupStatus.outdated,
-    BackupStatus.unknown,
-    BackupStatus.ok,
-)
 
 
 class BackupSource(str, Enum):

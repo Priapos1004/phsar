@@ -28,6 +28,7 @@ from app.exceptions import BackupDiskSpaceError
 from app.models.job import Job, JobKind, JobStatus
 from app.schemas.backup_schema import (
     BackupIntegrity,
+    BackupListResponse,
     BackupMetadata,
     BackupSource,
     BackupStatus,
@@ -389,16 +390,16 @@ def _listed(status: BackupStatus, **over) -> BackupMetadata:
 
 @pytest.fixture
 def stub_listing(monkeypatch):
-    """Install a fake dump listing + live revision and silence the worker ping."""
-    def _install(*rows: BackupMetadata, db_revision: str = "new"):
+    """Install a fake listing envelope and silence the worker ping.
+
+    Patches `list_backups_with_revision` — the envelope IS what the self-heal reads,
+    so both halves of its decision come from one revision read.
+    """
+    def _install(*rows: BackupMetadata, db_revision: str | None = "new"):
         async def _fake_list():
-            return list(rows)
+            return BackupListResponse(db_revision=db_revision, backups=list(rows))
 
-        async def _rev():
-            return db_revision
-
-        monkeypatch.setattr(backup_service, "list_backups", _fake_list)
-        monkeypatch.setattr(backup_service, "read_db_revision", _rev)
+        monkeypatch.setattr(backup_service, "list_backups_with_revision", _fake_list)
         monkeypatch.setattr(backup_service.job_worker, "notify", lambda: None)
 
     return _install
@@ -449,6 +450,18 @@ async def test_startup_enqueues_when_nothing_on_disk_is_restorable(
     tracked_jobs.append(job.id)
     assert job.requested_by_user_id is None  # system job — invisible to every bell
     assert job.payload == {"source": BackupSource.cron.value}
+
+
+@pytest.mark.asyncio
+async def test_startup_skips_when_the_live_revision_is_unreadable(stub_listing):
+    """`status` is a comparison against the live revision, so with it unreadable no
+    dump can ever be `ok` — including one taken right now. Enqueueing on a verdict
+    that can't be computed re-fires on every restart and evicts real archival history,
+    so the unreadable case must be a no-op even though nothing looks restorable."""
+    stub_listing(_listed(BackupStatus.unknown), db_revision=None)
+    before = await _count_queued_backups()
+    await backup_service.ensure_up_to_date_backup()
+    assert await _count_queued_backups() == before
 
 
 @pytest.mark.asyncio
