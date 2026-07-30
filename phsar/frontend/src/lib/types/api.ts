@@ -547,6 +547,14 @@ export interface BackupResultSummary extends JobResultSummary {
 	deduped_against?: string | null;
 }
 
+// A restore names the dump it READ (plus the snapshot it took first), so it shares
+// no key with BackupResultSummary above — naming the shape is what keeps a reader
+// from reaching for `filename` and silently getting nothing.
+export interface RestoreResultSummary extends JobResultSummary {
+	restored_from?: string;
+	pre_restore_snapshot?: string | null;
+}
+
 // One field's before/after on the update_sweep detail page. `old`/`new`
 // are typed `unknown` because the JSONB store erases types — the
 // renderer narrows per field.

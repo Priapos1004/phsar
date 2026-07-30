@@ -1,23 +1,27 @@
 /** Pure `AdminJobResponse` → display-string/number helpers for the admin Jobs Log.
  *
- * Extracted from `AdminJobsLogTab.svelte` so the version-dispatching logic is
- * unit-testable (the same reason `mediaChangeSort` and the `adminJobsFilter`
- * sanitizers live outside their components): `payloadSummary` alone branches
- * across 5 job kinds and 3 `update_sweep` schema eras, which is exactly the
- * shape that drifts silently when it can only be exercised by clicking. */
+ * Lives outside the component so the kind- and version-dispatching is unit-testable
+ * (the same reason `mediaChangeSort` and the `adminJobsFilter` sanitizers do):
+ * `payloadSummary` alone branches across 5 job kinds and 3 `update_sweep` schema
+ * eras, which drifts silently while it can only be exercised by clicking. */
 
-import { SEASON_SWEEP_KINDS, formatBytes } from '$lib/utils/formatString';
-import type { AdminJobResponse } from '$lib/types/api';
+import { formatBytes } from '$lib/utils/formatString';
+import type {
+	AdminJobResponse,
+	BackupResultSummary,
+	RestoreResultSummary,
+} from '$lib/types/api';
 
 /** JSONB lookups land as `unknown` per the JobResultSummary index signature;
  * this narrows safely so the formatters don't crash on legacy/malformed rows. */
 const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
 
-/** The Detail cell: a one-line, kind- and version-aware précis of the job's
- * `result_summary`. Empty string when the kind carries nothing worth a line
- * (or the job hasn't finished). */
-export function payloadSummary(row: AdminJobResponse): string {
-	if (row.kind === 'user_scrape') {
+/** One formatter per kind, keyed on the CLOSED `JobKind` union rather than an
+ * if-ladder: a new kind is then a compile error here instead of a silently blank
+ * Detail cell, which is the failure this file exists to prevent. The two season
+ * kinds share one dispatcher, so they share one formatter. */
+const SUMMARY: Record<AdminJobResponse['kind'], (row: AdminJobResponse) => string> = {
+	user_scrape: (row) => {
 		const q = typeof row.payload?.query === 'string' ? `"${row.payload.query}"` : '';
 		if (row.status === 'succeeded' && row.result_summary) {
 			const a = num(row.result_summary.anime_count);
@@ -25,17 +29,36 @@ export function payloadSummary(row: AdminJobResponse): string {
 			return `+${a} anime · +${m} media${q ? ` (${q})` : ''}`;
 		}
 		return q;
-	}
-	if (row.kind === 'backup' || row.kind === 'restore') {
-		const s = row.result_summary;
+	},
+	backup: (row) => {
+		const s = row.result_summary as BackupResultSummary | null;
 		if (typeof s?.filename !== 'string') return '';
-		// Only `backup` carries size_bytes — a restore summary holds just the two
-		// filenames — so the size is appended when present rather than branched on kind.
 		return typeof s.size_bytes === 'number'
 			? `${s.filename} · ${formatBytes(s.size_bytes)}`
 			: s.filename;
-	}
-	if (row.kind === 'update_sweep' && row.status === 'succeeded' && row.result_summary) {
+	},
+	// Keyed `restored_from`, where `backup` uses `filename` — "the dump I read" and
+	// "the dump I wrote" are different facts, so the two kinds share no shape.
+	restore: (row) => {
+		const s = row.result_summary as RestoreResultSummary | null;
+		return typeof s?.restored_from === 'string' ? s.restored_from : '';
+	},
+	update_sweep: (row) => updateSweepSummary(row),
+	seasonal_sweep: (row) => seasonSweepSummary(row),
+	upcoming_sweep: (row) => seasonSweepSummary(row),
+};
+
+/** The Detail cell: a one-line, kind- and version-aware précis of the job's
+ * `result_summary`. Empty string when the kind carries nothing worth a line
+ * (or the job hasn't finished). */
+export function payloadSummary(row: AdminJobResponse): string {
+	// A row whose kind this build doesn't know (older frontend, newer backend)
+	// renders blank rather than throwing.
+	return SUMMARY[row.kind]?.(row) ?? '';
+}
+
+function updateSweepSummary(row: AdminJobResponse): string {
+	if (row.status === 'succeeded' && row.result_summary) {
 		// v2 (post-v0.14.5) nests aggregate counts under `counters` and
 		// carries per-media diffs the detail page renders. v1 rows pre-
 		// date the rework — fall back to the flat shape.
@@ -67,20 +90,19 @@ export function payloadSummary(row: AdminJobResponse): string {
 		if (metadataChanged > 0) parts.push(`${metadataChanged} media updated`);
 		return parts.join(' · ');
 	}
-	// Both season sweeps come off one dispatcher and so write one summary shape — which
-	// is what SEASON_SWEEP_KINDS is defined by, hence reading it rather than a kind
-	// literal. The literal is what left every upcoming_sweep row with an empty cell.
-	if (SEASON_SWEEP_KINDS.has(row.kind) && row.status === 'succeeded' && row.result_summary) {
-		const s = row.result_summary;
-		// season_name/_year are additive v0.15.3 keys (no version bump), so an older
-		// row drops the prefix instead of rendering "undefined NaN".
-		const season =
-			typeof s.season_name === 'string' && typeof s.season_year === 'number'
-				? `${s.season_name} ${s.season_year} · `
-				: '';
-		return `${season}${num(s.season_entries)} season entries · ${num(s.new_entries_enqueued)} new scrapes enqueued · ${num(s.dedup_skipped)} already known`;
-	}
 	return '';
+}
+
+function seasonSweepSummary(row: AdminJobResponse): string {
+	if (row.status !== 'succeeded' || !row.result_summary) return '';
+	const s = row.result_summary;
+	// season_name/_year are additive v0.15.3 keys (no version bump), so an older
+	// row drops the prefix instead of rendering "undefined NaN".
+	const season =
+		typeof s.season_name === 'string' && typeof s.season_year === 'number'
+			? `${s.season_name} ${s.season_year} · `
+			: '';
+	return `${season}${num(s.season_entries)} season entries · ${num(s.new_entries_enqueued)} new scrapes enqueued · ${num(s.dedup_skipped)} already known`;
 }
 
 /** v3+ sweeps expose a deduplicated list of MAL genre tags the seeder

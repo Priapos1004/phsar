@@ -82,10 +82,12 @@ describe('payloadSummary — backup / restore', () => {
 		);
 	});
 
-	it('shows the filename alone when no size is recorded (restore, or a legacy row)', () => {
+	it('names the dump a restore restored from', () => {
+		// The backend's restore summary is EXACTLY these two keys — no `filename`,
+		// which is why reading that one blanked the cell.
 		const s = {
 			restored_from: 'phsar-20260616-122017-manual.dump',
-			filename: 'phsar-20260616-122017-manual.dump',
+			pre_restore_snapshot: 'phsar-20260616-122015-pre-restore.dump',
 		};
 		expect(payloadSummary(row({ kind: 'restore', result_summary: s }))).toBe(
 			'phsar-20260616-122017-manual.dump',
@@ -95,6 +97,7 @@ describe('payloadSummary — backup / restore', () => {
 	it('is empty when the summary carries no filename', () => {
 		expect(payloadSummary(row({ kind: 'backup', result_summary: {} }))).toBe('');
 		expect(payloadSummary(row({ kind: 'backup', result_summary: null }))).toBe('');
+		expect(payloadSummary(row({ kind: 'restore', result_summary: {} }))).toBe('');
 	});
 });
 
