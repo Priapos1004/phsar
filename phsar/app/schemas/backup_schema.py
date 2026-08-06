@@ -14,11 +14,16 @@ class BackupStatus(str, Enum):
     """Whether a dump is restorable RIGHT NOW — `integrity` composed with
     `schema_current`, in the order a reader cares about.
 
-    Derived server-side (in `list_backups`) rather than in the UI so every
-    consumer agrees: the Backups card renders it, the sort orders by it, and the
-    startup self-heal decides on it. Composing it per-consumer is how the card
-    comes to call a revision-less dump green while the self-heal treats the same
-    row as unrestorable.
+    Derived server-side rather than in the UI so every consumer agrees: the
+    Backups card renders it, the sort orders by it, and the startup self-heal
+    decides on it. Composing it per-consumer is how the card comes to call a
+    revision-less dump green while the self-heal treats the same row as
+    unrestorable.
+
+    Only `list_backups_with_revision` stamps it — plain `list_backups` leaves it
+    (and `schema_current`) at the defaults here, since deriving it costs a live
+    `read_db_revision` its callers don't need. Reading `status` off a plain
+    `list_backups` row therefore reads `unknown`, never a real verdict.
 
     `unknown` is NOT `ok`: an unstamped dump might restore cleanly, but nothing
     on disk says so, and a backup you can't vouch for isn't one you should be
