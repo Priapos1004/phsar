@@ -78,6 +78,29 @@ jobs:
         sudo apt-get install -y postgresql-client-17
         echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
 
+    # Guards two things at once, in seconds and with no file written:
+    #  1. Models and migrations agree — an index or column declared in only one
+    #     of the two is exactly what makes the next `--autogenerate` propose a
+    #     destructive diff nobody reads closely.
+    #  2. The migration chain still replays from empty. Nothing else in CI does
+    #     this: the test DB below is built by `create_all`, so the chain is
+    #     never exercised end to end.
+    #
+    # It needs its OWN database, built by replaying the chain. Run it against
+    # `testdb` and it would compare `create_all`'s metadata to the same
+    # metadata, passing no matter how far the migrations had drifted. The
+    # step-level DB_NAME override is enough — alembic/env.py builds its URL from
+    # `settings`, and env vars outrank .env. The migrations create their own
+    # extensions (vector, pg_trgm), so there is nothing to set up.
+    - name: Check migrations replay and match models
+      env:
+        DB_NAME: migrationcheck
+        PGPASSWORD: testpassword
+      run: |
+        psql -h localhost -U testuser -d postgres -c 'CREATE DATABASE migrationcheck'
+        alembic upgrade head
+        alembic check
+
     - name: Create database schema and seed
       run: |
         python -c "
