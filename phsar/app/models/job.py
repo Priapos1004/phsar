@@ -9,7 +9,6 @@ from sqlalchemy import (
     Integer,
     String,
     desc,
-    func,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -141,9 +140,18 @@ class Job(BaseModel):
 # because the leading column is a JSONB extraction. Backs
 # JobDAO.find_recent_scrape_for_query, the dedup check that fires on every
 # /jobs/scrape POST.
+#
+# The expression is raw SQL in Postgres's OWN normalized spelling
+# (`TRIM(BOTH FROM …)`, explicit `::text`) rather than the equivalent
+# `func.lower(func.trim(payload["query"].astext))`. Both produce identical stored
+# DDL, so this affects no SQL — it affects what autogenerate COMPARES, which is
+# the reflected expression string. Anything but the normalized spelling reads as
+# perpetual drift and gets a drop-and-recreate proposed on every run, so keep
+# this byte-identical to `pg_get_indexdef`. The dedup query in
+# `JobDAO.find_recent_scrape_for_query` is unaffected and still uses `func.*`.
 Index(
     "ix_jobs_scrape_query",
-    func.lower(func.trim(Job.payload["query"].astext)),
+    text("lower(TRIM(BOTH FROM payload ->> 'query'::text))"),
     Job.created_at.desc(),
     postgresql_where=text("kind = 'user_scrape'"),
 )
