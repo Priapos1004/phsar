@@ -6,6 +6,9 @@
     import { spoilerVisibility, refreshSpoilerVisibility } from '$lib/stores/spoilerVisibility';
     import { refreshWatchlist, clearWatchlist } from '$lib/stores/watchlist';
     import { refreshTags, clearTags } from '$lib/stores/tags';
+    import { resetAllPersistedFilters } from '$lib/stores/persistedFilter';
+    import { applyFilterLifecycle } from '$lib/utils/filterLifecycle';
+    import { afterNavigate } from '$app/navigation';
     import { onMount, setContext } from 'svelte';
     import { jwtDecode } from 'jwt-decode';
     import { api } from '$lib/api';
@@ -32,6 +35,27 @@
 
     setContext('userRole', () => userRole);
     setContext('username', () => username);
+
+    // Everything keyed to WHICH user this tab belongs to. The filters join the
+    // watchlist/tags pair rather than auth.ts's per-session bell cleanup:
+    // `watchlistFilter.tagUuids` holds this user's list uuids, which the next
+    // user can't even see.
+    function clearPerUserStores() {
+      clearWatchlist();
+      clearTags();
+      resetAllPersistedFilters();
+    }
+
+    // Section filter resets; the rule, and why it can't live in the section
+    // layouts, are in utils/filterLifecycle. AFTER the navigation, not before:
+    // a section is only ever cleared when the destination is outside it, so no
+    // destination reads a store this touches — while clearing beforehand would
+    // invalidate the outgoing page's still-mounted derived chain and re-render
+    // the whole grid (expanding it back to unfiltered) one tick before it
+    // unmounts. `enter` is a first load, not a navigation away from anything.
+    afterNavigate(({ type, to }) => {
+      if (type !== 'enter' && to) applyFilterLifecycle(to.url.pathname);
+    });
 
     interface DecodedToken {
       sub: string;
@@ -62,10 +86,7 @@
             username = decoded.sub;
 
             if (needsUserLoad) {
-              if (isUserSwitch) {
-                clearWatchlist();
-                clearTags();
-              }
+              if (isUserSwitch) clearPerUserStores();
               // Fetch settings + spoiler visibility (+ watchlist/tags for non-guests)
               // in parallel to avoid serial latency. Restricted users can't watchlist,
               // so skip those fetches (they'd 403).
@@ -94,16 +115,14 @@
             username = null;
             userSettings.set(null);
             spoilerVisibility.set(null);
-            clearWatchlist();
-            clearTags();
+            clearPerUserStores();
           }
         } else {
           userRole = null;
           username = null;
           userSettings.set(null);
           spoilerVisibility.set(null);
-          clearWatchlist();
-          clearTags();
+          clearPerUserStores();
         }
         loading = false;
       });

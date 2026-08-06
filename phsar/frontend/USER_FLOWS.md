@@ -339,7 +339,7 @@ Each anime search result card shows:
 ### 8.1 Tab Navigation
 - Two tabs via a `?tab=` query param: **Ratings** (`ratings`, default) and **Statistics** (`stats`). An unknown/missing value falls back to `ratings`.
 - Page-level states cover both tabs: a loading state while the fetch is in flight, an error state with a retry button on failure, and an empty state ("You haven't rated anything yet" → link to search) when the user has no ratings.
-- Leaving `/ratings` entirely resets the filter state; switching between the two tabs preserves it.
+- Filter state survives a hard refresh, a browser back/forward, and a round-trip to an anime or media detail page (open a card, press back — the genre filter is still applied). Switching between the two tabs preserves it. Leaving `/ratings` for any *other* page (search, settings, the watchlist) resets the value filters, keeping the chosen view, grain and stats section. State is per browser tab and is discarded on logout or a user switch.
 
 ### 8.2 Ratings List Tab
 - Ratings are grouped to the **anime level** (one card/row per anime; an anime's score is the mean of its rated media).
@@ -366,7 +366,7 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 ### 9.1 Tab Navigation
 - Two tabs via a `?tab=` query param: **Watchlists** (`watchlists`, default — your entries) and **Lists** (`tags` — list management). An unknown/missing value falls back to `watchlists`.
 - The Watchlists tab loads one `GET /watchlist/items` fetch (a wide per-entry projection) on mount; both grains and both views derive from it client-side. It stays mounted (scroll preserved); the Lists tab mounts on demand.
-- Leaving `/watchlist` resets the value filters; the view + grain choice survive a detail round-trip.
+- Filter state survives a hard refresh and a round-trip to an anime or media detail page; leaving `/watchlist` for any other page resets the value filters, keeping the view + grain choice. State is per browser tab and is discarded on logout or a user switch.
 - Page states: loading, an unauthenticated prompt (sign-in link), an error state with a retry, and an empty state ("Your watchlist is empty" → browse link).
 
 ### 9.2 Watchlists Tab (entries)
@@ -475,7 +475,7 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 - Paginated all-jobs table sourced from `GET /admin/jobs` (50 rows per page, newest-first by `created_at`). Backed by `ix_jobs_created_at_desc` so the default unfiltered scan + COUNT stays cheap as the jobs table grows
 - **Clustering**: the default view hides rows whose `parent_job_id` is set, so the list isn't dominated by ~50 system user_scrape children that land after every Sunday's seasonal_sweep. Each season-sweep row (`seasonal_sweep` and `upcoming_sweep` — both enqueue parented children off the same dispatcher) renders an expander chevron — clicking fetches `?parent_uuid=<UUID>&limit=500` and renders the children inline below the parent, indented with a left primary-tinted border. Re-collapse hides them without re-fetching (state cached per parent). If a sweep ever exceeds the 500-row cap, the expanded view surfaces an amber "Showing X of Y children — rest are older than the 500-row cap" notice rather than silently truncating
 - Filters: **Kind** dropdown (All / User scrape / Update sweep / Seasonal sweep / Upcoming sweep / Backup / Restore — built from the shared kind-label map, so it can't omit a kind) and **Status** dropdown (All / queued / running / succeeded / failed). Changing either filter resets pagination to page 1 — keeping a stale offset against a narrower filter would strand the admin past the result tail. A monotonic request-id guards against a fast filter-then-page click letting an older response overwrite the newer state
-- **Filter persistence**: the active filter is held in an in-session store (not the URL), so it stays applied — and shown in the dropdowns — when switching to another admin tab and back, and when opening a job's detail page and returning via the "← Jobs Log" link. Leaving the admin section entirely (e.g. to Settings) clears it, so re-entering `/admin` starts unfiltered. The filter is not reflected in the URL and does not survive a hard page refresh
+- **Filter persistence**: the active filter is held in a per-tab session store, so it stays applied — and shown in the dropdowns — across admin tab switches, a job's detail page, a hard refresh, and a detour to an anime or media page opened from a job's failure list. Leaving the admin section for any other page (e.g. Settings) clears it, so re-entering `/admin` starts unfiltered. It is not reflected in the URL, so browser-back after leaving does not resurrect it, and it is discarded on logout or a user switch
 - Columns:
   - **Created** — short datetime
   - **Kind** — neutral badge (`User scrape` / `Update sweep` / etc., via shared `formatJobKind`)

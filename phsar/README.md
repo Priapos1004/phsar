@@ -286,6 +286,7 @@ phsar/
 │   │   │   │   ├── genres.ts
 │   │   │   │   ├── jobs.ts
 │   │   │   │   ├── maintenance.ts
+│   │   │   │   ├── persistedFilter.ts
 │   │   │   │   ├── ratingsFilter.ts
 │   │   │   │   ├── spoilerVisibility.ts
 │   │   │   │   ├── tags.ts
@@ -304,6 +305,7 @@ phsar/
 │   │   │       ├── cn.ts
 │   │   │       ├── color.ts
 │   │   │       ├── download.ts
+│   │   │       ├── filterLifecycle.ts
 │   │   │       ├── formatString.ts
 │   │   │       ├── getSeason.ts
 │   │   │       ├── index.ts
@@ -327,7 +329,6 @@ phsar/
 │   │   │   ├── +layout.ts
 │   │   │   ├── +page.svelte
 │   │   │   ├── admin/
-│   │   │   │   ├── +layout.svelte
 │   │   │   │   ├── +page.svelte
 │   │   │   │   └── jobs/
 │   │   │   │       └── [uuid]/
@@ -344,7 +345,6 @@ phsar/
 │   │   │   ├── media/
 │   │   │   │   └── +page.svelte
 │   │   │   ├── ratings/
-│   │   │   │   ├── +layout.svelte
 │   │   │   │   └── +page.svelte
 │   │   │   ├── register/
 │   │   │   │   └── +page.svelte
@@ -353,7 +353,6 @@ phsar/
 │   │   │   ├── settings/
 │   │   │   │   └── +page.svelte
 │   │   │   └── watchlist/
-│   │   │       ├── +layout.svelte
 │   │   │       └── +page.svelte
 │   │   └── tests/
 │   │       ├── setup.ts
@@ -366,6 +365,7 @@ phsar/
 │   │       ├── chart-theme.test.ts
 │   │       ├── color.test.ts
 │   │       ├── completion-status-card.test.ts
+│   │       ├── filter-lifecycle.test.ts
 │   │       ├── format-string.test.ts
 │   │       ├── genre-badges.test.ts
 │   │       ├── job-bell.test.ts
@@ -379,6 +379,7 @@ phsar/
 │   │       ├── merge-candidates-card.test.ts
 │   │       ├── navbar.test.ts
 │   │       ├── navigation.test.ts
+│   │       ├── persisted-filter.test.ts
 │   │       ├── rating-attributes.test.ts
 │   │       ├── rating-modal.test.ts
 │   │       ├── rating-neighbors.test.ts

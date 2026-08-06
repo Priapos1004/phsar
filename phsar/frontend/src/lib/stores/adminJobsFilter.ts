@@ -1,7 +1,7 @@
-import { writable } from 'svelte/store';
 import { JOB_KIND_LABELS } from '$lib/utils/formatString';
 import { STATUS_BADGE } from '$lib/utils/jobBadges';
 import type { JobKind, JobStatus } from '$lib/types/api';
+import { createPersistedFilter } from './persistedFilter';
 
 interface JobsFilter {
 	kind: '' | JobKind;
@@ -14,22 +14,29 @@ interface JobsFilter {
 const KIND_VALUES = new Set(Object.keys(JOB_KIND_LABELS));
 const STATUS_VALUES = new Set(Object.keys(STATUS_BADGE));
 
-export function sanitizeKind(raw: string | null): '' | JobKind {
-	return raw && KIND_VALUES.has(raw) ? (raw as JobKind) : '';
+export function sanitizeKind(raw: unknown): '' | JobKind {
+	return typeof raw === 'string' && KIND_VALUES.has(raw) ? (raw as JobKind) : '';
 }
 
-export function sanitizeStatus(raw: string | null): '' | JobStatus {
-	return raw && STATUS_VALUES.has(raw) ? (raw as JobStatus) : '';
+export function sanitizeStatus(raw: unknown): '' | JobStatus {
+	return typeof raw === 'string' && STATUS_VALUES.has(raw) ? (raw as JobStatus) : '';
 }
 
-// In-SPA memory for the Jobs Log filter. Lives in a module store (not the
-// URL) so it survives admin tab switches AND the round-trip through a job
-// detail page — both navigate to a bare `/admin?tab=jobs`, and a mounted
-// store carries the filter through without re-threading it. Cleared when the
-// admin section unmounts (see routes/admin/+layout.svelte) so re-entering
-// /admin from elsewhere starts clean.
-export const jobsFilter = writable<JobsFilter>({ kind: '', status: '' });
+const DEFAULT_JOBS_FILTER: JobsFilter = { kind: '', status: '' };
 
+// In-SPA memory for the Jobs Log filter, mirrored to sessionStorage so a
+// refresh keeps it. Not the URL: an internal tool doesn't need shareable
+// links, and a URL copy would resurrect the filter on browser-back after
+// leaving. The same setters the Select writes through already sanitize, so
+// rehydration reuses them.
+export const jobsFilter = createPersistedFilter<JobsFilter>({
+	key: 'phsar.filter.adminJobs',
+	version: 1,
+	defaults: DEFAULT_JOBS_FILTER,
+	sanitize: (raw) => ({ kind: sanitizeKind(raw.kind), status: sanitizeStatus(raw.status) }),
+});
+
+/** Reset the Jobs Log filter; fired by `utils/filterLifecycle`. */
 export function clearJobsFilter(): void {
-	jobsFilter.set({ kind: '', status: '' });
+	jobsFilter.set({ ...DEFAULT_JOBS_FILTER });
 }

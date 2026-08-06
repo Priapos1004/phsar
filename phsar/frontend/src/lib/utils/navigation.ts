@@ -30,8 +30,16 @@ export interface DetailHrefOptions {
     job?: string | null;
 }
 
+/** The two detail grains, and therefore the two top-level detail routes
+ * (`/anime`, `/media`). Exported so `utils/filterLifecycle` derives its
+ * detour set from here instead of restating the pair — adding a third grain
+ * or renaming one otherwise needs two edits with nothing linking them, and
+ * the miss is silent. */
+export const DETAIL_TYPES = ['anime', 'media'] as const;
+export type DetailType = (typeof DETAIL_TYPES)[number];
+
 export function buildDetailHref(
-    type: 'anime' | 'media',
+    type: DetailType,
     uuid: string,
     opts?: DetailHrefOptions,
 ): string {
