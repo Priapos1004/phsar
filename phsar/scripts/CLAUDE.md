@@ -52,37 +52,81 @@ python -m scripts.delete_anime_by_title "Boku no Hero" --apply    # actually del
 python -m scripts.audit_relation_backfill
 ```
 
-## Restoring a prod dump locally (for investigations)
+## The dev database is a restored prod dump
 
-To inspect production state, restore a downloaded backup dump into a throwaway
-DB and point the scripts / `psql` at it. Gotchas worth remembering so you don't
-re-derive them:
+Since v0.15.4 the dev DB is **`pgvector/pgvector:pg17`** (matching prod) loaded
+from a production dump, not a small hand-scraped catalog. Query plans, index
+choices and page-load timings are only worth measuring at prod shape, and the
+v0.15.3 follow-ups that were "gated on a prod-snapshot plan check" need it.
 
-- **Use PostgreSQL 17 client tools.** Dumps are PostgreSQL 16 custom format
-  (`pg_dump -Fc`, header `v1.16`); Homebrew's `postgresql@15` `pg_restore`
-  fails with `unsupported version (1.16)`. Use
-  `/opt/homebrew/opt/postgresql@17/bin/{psql,pg_restore}` (v17 reads v16).
-- **Connect over TCP**, not `docker exec` (the latter is blocked by the agent
-  sandbox here): `-h localhost -p 5432 -U <DB_USER>`, password from `phsar/.env`.
-  The running `anime-postgres` container already has pgvector (required).
-- Restore into a scratch DB:
+### 🎯 Use postgresql@17 everywhere — @15 breaks two different things
+
+```
+pg_restore: error: unsupported version (1.16) in file header
+pg_dump:    error: aborting because of server version mismatch
+```
+
+Dumps come from a PostgreSQL 17 server (`pg_dump -Fc`, archive header `v1.16`),
+so Homebrew's `postgresql@15` can neither read them nor talk to the container.
+Two consequences, and the second is easy to misread as a regression:
+
+- **Your own commands** must use `/opt/homebrew/opt/postgresql@17/bin` over TCP
+  (`docker exec` is blocked by the agent sandbox here).
+- **The backend shells out to whatever `pg_dump` / `pg_restore` is on `PATH`**
+  (`_pg_subprocess`), so a shell with @15 first fails the whole backup test
+  suite. Nothing is wrong with the code — prod's container ships matching v17
+  tools. Fix the shell profile, or prefix one-off runs:
 
   ```bash
-  PGB=/opt/homebrew/opt/postgresql@17/bin
-  export PGPASSWORD=$(grep '^DB_PASSWORD=' phsar/.env | cut -d= -f2-)
-  $PGB/psql  -h localhost -p 5432 -U <DB_USER> -d postgres \
-      -c "DROP DATABASE IF EXISTS prod_investigate;" -c "CREATE DATABASE prod_investigate;"
-  $PGB/pg_restore -h localhost -p 5432 -U <DB_USER> -d prod_investigate \
-      --no-owner --no-privileges phsar-YYYYMMDD-HHMMSS-manual.dump
+  PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH" pytest
   ```
 
-  The lone `SET transaction_timeout` error is harmless (a v17 client param the
-  older server ignores).
+### Rebuilding it
+
+```bash
+# Credentials come from phsar/.env — DB_USER / DB_PASSWORD / DB_NAME.
+docker rm -f anime-postgres && docker volume rm pgdata
+docker run --name anime-postgres \
+  -e POSTGRES_USER=<DB_USER> -e POSTGRES_PASSWORD=<DB_PASSWORD> \
+  -e POSTGRES_DB=<DB_NAME> -v pgdata:/var/lib/postgresql/data \
+  -p 5432:5432 -d pgvector/pgvector:pg17
+
+PGB=/opt/homebrew/opt/postgresql@17/bin
+export PGPASSWORD=$(grep '^DB_PASSWORD=' phsar/.env | cut -d= -f2-)
+$PGB/pg_restore -h localhost -p 5432 -U <DB_USER> -d <DB_NAME> \
+    --no-owner --no-privileges backups_prod/phsar-YYYYMMDD-HHMMSS-manual.dump
+$PGB/psql -h localhost -p 5432 -U <DB_USER> -d <DB_NAME> -c "VACUUM ANALYZE;"
+cd phsar && alembic upgrade head
+```
+
+The dump carries its own schema **and** `alembic_version`, so restore into an
+empty database and migrate afterwards — never `alembic upgrade` first.
+
+- **`VACUUM ANALYZE` is not optional.** `pg_restore` leaves no planner
+  statistics behind, so every `EXPLAIN` before it runs on default estimates and
+  is worthless for comparing query shapes.
 - **The live `jobs` table restores empty** — `backup_service` dumps with
   `--exclude-table-data=jobs` and stages terminal (`succeeded`/`failed`) rows
-  into the **`_jobs_dump_staging`** table instead. Query that table for sweep
-  history / `result_summary` (the live `jobs` table only repopulates on a real
-  restore via `_merge_jobs_audit_and_record_restore`).
+  into **`_jobs_dump_staging`** instead. Read that table directly for sweep
+  history / `result_summary`, or replay what a real restore does
+  (`_merge_jobs_audit_and_record_restore`) to populate the Jobs Log and the
+  admin Overview job counters:
+
+  ```sql
+  INSERT INTO jobs SELECT * FROM _jobs_dump_staging ON CONFLICT (id) DO NOTHING;
+  SELECT setval('jobs_id_seq', GREATEST(COALESCE((SELECT MAX(id) FROM jobs), 0), 1));
+  DROP TABLE _jobs_dump_staging;
+  ```
+
+- **`pg_stat_user_indexes` resets on restore.** Index *usage* evidence ("0
+  lifetime scans", HOT-update ratios) can only come from the live prod DB; a
+  restored snapshot answers the *plan* question, not the *usage* one.
+- **Set `RELATION_BACKFILL_ON_STARTUP=False`** before booting the backend
+  against a fresh restore, or the first startup spends ~14 min at MAL's 1 req/s.
+  The seeders will also add a local admin beside prod's users; harmless.
+- To keep prod state isolated instead of adopting it wholesale, the same
+  `pg_restore` line into a `CREATE DATABASE prod_investigate;` scratch DB still
+  works — point `psql` / a `DB_NAME` override at it.
 
 ## Conventions
 
