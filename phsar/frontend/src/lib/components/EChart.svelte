@@ -16,6 +16,18 @@
 		 * the caller stays in data terms (e.g. snap x to the nearest category) and never
 		 * touches zrender / convertFromPixel. Single-grid charts only. */
 		onGridClick?: (coord: [number, number]) => void;
+		/** Opt-in "replace, don't transition". Options are applied with `notMerge`, so
+		 * ECharts animates the OLD series out while the new one animates in — correct when
+		 * the new option re-measures the same subject, wrong when it describes an unrelated
+		 * one (the exit tween then reads as ghost marks overlaying the new data). Pass a
+		 * value that changes exactly when the subject changes and the old option is dropped
+		 * outright first. Cheaper and smoother than remounting the component, which also
+		 * re-pays `echarts.init` and blanks the plot for the initial-measurement tick.
+		 *
+		 * PRIMITIVES ONLY — the check is reference identity, so an array or object literal
+		 * (`resetKey={[dim, sort]}`) is a fresh reference every render and would `clear()`
+		 * on every option update. Join a composite key into a string. */
+		resetKey?: string | number | boolean | null;
 		/** Fires once the canvas actually holds its finished pixels. There's no
 		 * DOM-observable moment for that — the first setOption waits on an async
 		 * ResizeObserver measurement (see below) and then animates — so a consumer needing
@@ -25,11 +37,26 @@
 		onReady?: () => void;
 	}
 
-	let { option, width = '100%', height = '200px', onClick, onGridClick, onReady }: Props = $props();
+	let { option, width = '100%', height = '200px', onClick, onGridClick, resetKey, onReady }: Props = $props();
 
 	let container: HTMLDivElement;
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let chart = $state<any>(null);
+
+	// The box we last pushed to the canvas. `resize()` finishes whatever animation is
+	// in flight, so it must be called ONLY when the box actually changed — a redundant
+	// call landing mid-grow-in snaps the bars to their final length, which is what made
+	// the animation look intermittent on a chart whose height tracks its row count.
+	let lastSize = { w: 0, h: 0 };
+
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	function applySize(instance: any): void {
+		const w = container.clientWidth;
+		const h = container.clientHeight;
+		if (w === lastSize.w && h === lastSize.h) return;
+		lastSize = { w, h };
+		instance.resize();
+	}
 
 	onMount(() => {
 		let disposed = false;
@@ -71,7 +98,7 @@
 			// initial resize (which otherwise snaps a mid-flight animation to its end).
 			let measured = false;
 			observer = new ResizeObserver(() => {
-				instance.resize();
+				applySize(instance);
 				// Wait for a non-zero box before the first setOption, so a chart mounted
 				// inside a hidden container still plays its entrance animation when shown
 				// (rather than snapping at 0×0), not just when laid out at mount.
@@ -91,8 +118,27 @@
 		};
 	});
 
+	// Last `resetKey` applied. The sentinel (rather than the prop's initial value, which
+	// would be a non-reactive capture) means the first option is preceded by one clear() —
+	// a no-op on a freshly-init'd instance with no series, and it keeps `undefined` usable
+	// as a legitimate resetKey value.
+	const UNSET = Symbol('unset');
+	let lastResetKey: unknown = UNSET;
+
 	$effect(() => {
-		if (chart) chart.setOption(option, true);
+		if (!chart) return;
+		// Push a pending container-size change to the canvas BEFORE the new option. A
+		// consumer whose height tracks its data (the ratings Categories chart sizes itself
+		// by row count) changes `height` and `option` in the SAME update, and the
+		// ResizeObserver callback lands AFTER this effect — so without resizing here its
+		// `resize()` would arrive mid-animation and snap it. Doing it first leaves that
+		// callback seeing an unchanged box, where `applySize` skips.
+		applySize(chart);
+		if (resetKey !== lastResetKey) {
+			lastResetKey = resetKey;
+			chart.clear(); // see the resetKey prop — drop the old series, don't tween it out
+		}
+		chart.setOption(option, true);
 	});
 </script>
 

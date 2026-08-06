@@ -7,14 +7,17 @@ import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from fastapi import UploadFile
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.db import async_session_maker, engine
 from app.core.job_versions import make_job
 from app.core.maintenance import set_maintenance
+from app.daos.job_dao import JobDAO
 from app.exceptions import (
     BackupConfirmationMismatchError,
     BackupDiskSpaceError,
@@ -25,8 +28,16 @@ from app.exceptions import (
     DuplicateBackupError,
 )
 from app.models.job import JobKind, JobStatus
-from app.schemas.backup_schema import BackupIntegrity, BackupMetadata, BackupSource
+from app.schemas.admin_schema import JobEnqueuedResponse
+from app.schemas.backup_schema import (
+    BackupIntegrity,
+    BackupListResponse,
+    BackupMetadata,
+    BackupSource,
+    BackupStatus,
+)
 from app.services._pg_subprocess import run_capture
+from app.services.job_worker import job_worker
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +66,13 @@ _VARIABLE_LINE_RE = re.compile(
 # Anchored + restricted charset prevents path traversal via user-supplied filenames.
 _FILENAME_PATTERN = re.compile(r"^phsar-\d{8}-\d{6}(-[a-z0-9][a-z0-9_-]*)?\.dump$")
 _LABEL_SANITIZE_PATTERN = re.compile(r"[^a-z0-9_-]+")
+
+# An Alembic revision id is a short slug (this project's are 12 hex chars; custom
+# ids stay identifier-shaped). Bounded because the value is read out of a DUMP: for
+# an admin-UPLOADED dump the bytes after the COPY header are external input, and we
+# persist that string into the sidecar and render it in the Backups card. Anything
+# unrecognizable degrades to None — i.e. "schema unknown" — rather than being stored.
+_REVISION_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{1,64}$")
 
 # Floor, not a percentage — free-disk percentages are misleading on large drives
 # (macOS APFS can report <5% free on a 500 GB SSD with 20+ GB actually available),
@@ -218,8 +236,9 @@ def _mark_current_db_confirmed(filename: str) -> None:
 
 
 
-async def _compute_content_hash(dump_path: Path) -> str:
-    """Hash the logical content of a pg_dump custom-format archive.
+async def _compute_content_hash(dump_path: Path) -> tuple[str, str | None]:
+    """Hash the logical content of a pg_dump custom-format archive, and pick the
+    Alembic revision out of the same stream. Returns `(hash, revision)`.
 
     `pg_dump -Fc` output is not deterministic across runs of the same DB:
     the archive header embeds a creation timestamp, pg version strings, etc.
@@ -227,8 +246,14 @@ async def _compute_content_hash(dump_path: Path) -> str:
     the handful of lines that carry per-run values, and hash the remainder.
     Two dumps of an identical DB produce the same hash.
 
+    The revision rides along here rather than in its own subprocess because this
+    pass already streams every line of the archive, so it costs nothing — and
+    reading it from the DUMP rather than the live DB is what makes it correct for
+    an uploaded dump, whose schema is not the running one. `None` when the block
+    isn't found, which the caller treats as "unknown", never as "stale".
+
     Also stands in for an explicit integrity check: a corrupt archive makes
-    `pg_restore -f -` exit non-zero, which this raises as BackupIntegrityError.
+    `pg_restore -f - ` exit non-zero, which this raises as BackupIntegrityError.
     """
     timeout = settings.BACKUP_RESTORE_TIMEOUT_SECONDS
     proc = await asyncio.create_subprocess_exec(
@@ -239,26 +264,44 @@ async def _compute_content_hash(dump_path: Path) -> str:
     )
     assert proc.stdout is not None and proc.stderr is not None
 
-    async def _hash_stdout() -> str:
+    async def _hash_stdout() -> tuple[str, str | None]:
         hasher = hashlib.sha256()
         buffer = b""
+        revision: str | None = None
+        # The COPY block is `COPY public.alembic_version (version_num) FROM stdin;`
+        # then the single revision row then `\.`, so the revision is simply the line
+        # after the header. A flag rather than a lookbehind because the stream is
+        # consumed line-by-line and only once.
+        expect_revision = False
+        # `alembic_version` sorts first among the public tables, so the block is ~10%
+        # into the stream and the remaining ~90% of lines need no prefix compare.
+        # Keyed on "have we seen the block", NOT on `revision is None` — a value
+        # rejected by _REVISION_PATTERN sets that back to None and would rescan.
+        revision_seen = False
         while chunk := await proc.stdout.read(1024 * 1024):
             buffer += chunk
             lines = buffer.split(b"\n")
             buffer = lines.pop()
             for line in lines:
+                if expect_revision:
+                    expect_revision = False
+                    candidate = line.decode(errors="replace").strip()
+                    revision = candidate if _REVISION_PATTERN.match(candidate) else None
+                elif not revision_seen and line.startswith(b"COPY public.alembic_version "):
+                    expect_revision = True
+                    revision_seen = True
                 if not _VARIABLE_LINE_RE.match(line):
                     hasher.update(line)
                     hasher.update(b"\n")
         if buffer and not _VARIABLE_LINE_RE.match(buffer):
             hasher.update(buffer)
-        return hasher.hexdigest()
+        return hasher.hexdigest(), revision
 
     try:
         # Drain stdout + stderr concurrently: pg_restore can emit enough
         # warnings to fill the ~64 KB pipe buffer, at which point it would
         # block on stderr while we're still reading stdout → deadlock.
-        digest, stderr_bytes = await asyncio.wait_for(
+        (digest, revision), stderr_bytes = await asyncio.wait_for(
             asyncio.gather(_hash_stdout(), proc.stderr.read()),
             timeout=timeout,
         )
@@ -276,7 +319,7 @@ async def _compute_content_hash(dump_path: Path) -> str:
             "pg_restore -f - failed: "
             + stderr_bytes.decode(errors="replace").strip()[:300],
         )
-    return digest
+    return digest, revision
 
 
 async def _find_duplicate(content_hash: str) -> BackupMetadata | None:
@@ -307,6 +350,20 @@ def _read_meta(dump_path: Path) -> BackupMetadata | None:
         return BackupMetadata.model_validate_json(meta_file.read_text())
     except Exception:
         return None
+
+
+def _stamp_revision(filename: str, revision: str) -> None:
+    """Write `alembic_revision` onto an existing sidecar, in place.
+
+    Not `_set_meta_field`: its caller already holds `_BACKUP_WRITE_LOCK` and
+    `asyncio.Lock` isn't reentrant. Re-reads the RAW sidecar because the caller's copy
+    came from a listing and carries derived fields that must not persist.
+    """
+    dump_path = get_backup_path(filename)
+    raw = _read_meta(dump_path)
+    if raw is None:
+        return  # Deleted mid-job; the next listing rebuilds it.
+    _write_meta(dump_path, raw.model_copy(update={"alembic_revision": revision}))
 
 
 async def _set_meta_field(filename: str, **updates: object) -> BackupMetadata:
@@ -352,7 +409,7 @@ async def _finalize_partial_dump(
     return (cron + pre-restore), AND whether to move the Current pointer
     (live-capturing creates do, uploads don't)."""
     try:
-        content_hash = await _compute_content_hash(partial_path)
+        content_hash, alembic_revision = await _compute_content_hash(partial_path)
     except BackupIntegrityError:
         partial_path.unlink(missing_ok=True)
         raise
@@ -360,6 +417,15 @@ async def _finalize_partial_dump(
     duplicate = await _find_duplicate(content_hash)
     if duplicate is not None:
         partial_path.unlink(missing_ok=True)
+        # Byte-identical content ⇒ the revision just parsed is this dump's too, so
+        # stamp a sidecar that lacks one. The ONLY path that can stamp an existing
+        # dump (`_rebuild_meta` is TOC-only), and what lets the self-heal converge
+        # instead of re-dumping and discarding the revision every boot.
+        if duplicate.alembic_revision is None and alembic_revision is not None:
+            _stamp_revision(duplicate.filename, alembic_revision)
+            duplicate = duplicate.model_copy(
+                update={"alembic_revision": alembic_revision},
+            )
         return duplicate, True
 
     partial_path.rename(final_path)
@@ -371,6 +437,7 @@ async def _finalize_partial_dump(
         integrity=BackupIntegrity.ok,
         source=source,
         content_hash=content_hash,
+        alembic_revision=alembic_revision,
     )
     _write_meta(final_path, metadata)
     return metadata, False
@@ -505,7 +572,161 @@ async def reverify_backups() -> dict[str, int]:
     return {"checked": checked, "newly_corrupt": newly_corrupt}
 
 
+async def enqueue_backup_job(
+    db: AsyncSession,
+    source: BackupSource,
+    label: str | None,
+    requested_by_user_id: int | None,
+) -> JobEnqueuedResponse:
+    """The single enqueue path for every backup trigger: the manual endpoint, the
+    cron endpoints, and the startup self-heal.
+
+    Backup work flows through the JobWorker so admins don't wait minutes for
+    pg_dump and the cron path gets FIFO sequencing + crash recovery for free. The
+    dispatcher (`backup_dispatcher`) applies retention after every job — manual and
+    cron share the same 14-recent + 8-Sunday + 1-known-good pool, so a manual-only
+    install doesn't accumulate dumps indefinitely.
+
+    Manual backups attribute to the admin user so the row surfaces in *their* bell
+    only — multi-admin deployments don't get cross-admin bell clutter. Cron and the
+    self-heal leave `requested_by_user_id=None` (system job, same pattern as
+    sweeps), invisible to every user's bell — the dump list is their audit log.
+    """
+    payload: dict[str, Any] = {"source": source.value}
+    if label:
+        payload["label"] = label
+    job = make_job(
+        JobKind.backup,
+        status=JobStatus.queued,
+        requested_by_user_id=requested_by_user_id,
+        payload=payload,
+    )
+    db.add(job)
+    await db.commit()
+    job_worker.notify()
+    return JobEnqueuedResponse(job_uuid=job.uuid)
+
+
+async def ensure_up_to_date_backup() -> None:
+    """Enqueue a backup when no dump on disk is restorable against the live schema.
+
+    `docker/entrypoint.sh` runs `alembic upgrade head` BEFORE the app process starts,
+    so after a deploy that migrated, every existing dump carries the previous
+    revision and restoring one would roll the schema back under the running code.
+    That is the window this closes: without it a migration leaves the install with no
+    restorable backup until the next nightly cron.
+
+    Reads the server-derived `status`, so the card and this decision can't disagree.
+    """
+    listing = await list_backups_with_revision()
+    if listing.db_revision is None:
+        # Can't tell → don't act. `status` is a comparison against this value, so a
+        # dump taken now couldn't clear the condition either — it would re-fire every
+        # restart and evict real history from the archival pool.
+        logger.warning(
+            "Live Alembic revision unreadable — skipping the backup self-heal "
+            "rather than dumping on a verdict that can't be computed",
+        )
+        return
+    if any(b.status is BackupStatus.ok for b in listing.backups):
+        return
+    async with async_session_maker() as session:
+        # A restart landing while a dump is still queued/running must not stack a
+        # second one — the listing above can't see an in-flight job.
+        if await JobDAO().count_active_by_kind(session, JobKind.backup):
+            logger.info("No restorable backup, but one is already in flight — skipping")
+            return
+        enqueued = await enqueue_backup_job(
+            session, BackupSource.cron, label=None, requested_by_user_id=None,
+        )
+        logger.warning(
+            "No backup is restorable against schema %s — enqueued %s. On disk: %s",
+            listing.db_revision,
+            enqueued.job_uuid,
+            # Set, not a genexp: an install with 20 dumps on one revision should
+            # log that revision once.
+            sorted({
+                f"{b.alembic_revision or 'unknown'}:{b.status.value}"
+                for b in listing.backups
+            }),
+        )
+
+
+async def read_db_revision() -> str | None:
+    """The live DB's Alembic revision, or None if it can't be read.
+
+    Compared against each dump's stored `alembic_revision` to decide whether
+    restoring it would roll the schema back. Failing soft is deliberate: an
+    unreadable revision must degrade the whole list to "schema unknown", never
+    break the listing or accuse every dump of being stale.
+    """
+    try:
+        async with async_session_maker() as session:
+            result = await session.execute(text("SELECT version_num FROM alembic_version"))
+            return result.scalars().first()
+    except Exception:
+        logger.exception("Could not read the live Alembic revision")
+        return None
+
+
+def _backup_status(
+    integrity: BackupIntegrity, schema_current: bool | None,
+) -> BackupStatus:
+    """Compose the two verdicts into one. A corrupt file outranks any schema
+    finding (what schema it claims is beside the point if it won't restore), and a
+    dump whose revision couldn't be compared is `unknown` rather than `ok` — see
+    BackupStatus for why that distinction is load-bearing."""
+    if integrity is BackupIntegrity.corrupt:
+        return BackupStatus.corrupt
+    if schema_current is False:
+        return BackupStatus.outdated
+    if integrity is BackupIntegrity.ok and schema_current is True:
+        return BackupStatus.ok
+    return BackupStatus.unknown
+
+
 async def list_backups() -> list[BackupMetadata]:
+    """The dumps as recorded on disk, with `status`/`schema_current` left at their
+    defaults. For the callers that only read persisted fields — dedupe, retention,
+    reverify — so they don't pay a `read_db_revision()` round-trip per listing."""
+    return await _list_dumps()
+
+
+async def list_backups_with_revision() -> BackupListResponse:
+    """Every dump plus the live revision its `status` was judged against.
+
+    ONE `read_db_revision()` for the whole response: read it again per row, or again
+    for the envelope, and a migration landing between two reads can badge a row
+    "outdated against X" beside a displayed live revision that isn't X — the
+    two-consumers-one-question divergence `status` exists to remove.
+    """
+    db_revision = await read_db_revision()
+    items = [
+        _with_schema_verdict(meta, db_revision)
+        for meta in await _list_dumps()
+    ]
+    return BackupListResponse(db_revision=db_revision, backups=items)
+
+
+def _with_schema_verdict(
+    meta: BackupMetadata, db_revision: str | None,
+) -> BackupMetadata:
+    """Stamp the two derived schema fields. Both-known → a real verdict; either side
+    missing → `None`, which the UI renders differently from a mismatch."""
+    schema_current = (
+        meta.alembic_revision == db_revision
+        if db_revision is not None and meta.alembic_revision is not None
+        else None
+    )
+    return meta.model_copy(update={
+        "schema_current": schema_current,
+        "status": _backup_status(meta.integrity, schema_current),
+    })
+
+
+async def _list_dumps() -> list[BackupMetadata]:
+    """Glob the backup dir into sidecar-backed metadata, newest first, with
+    `is_current` + `previous_state` derived from the pointer."""
     backup_dir = _backup_dir()
     current_filename = _read_current_db_filename()
     items: list[BackupMetadata] = []

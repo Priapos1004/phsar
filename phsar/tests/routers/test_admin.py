@@ -11,6 +11,7 @@ from app.models.media_studio import MediaStudio
 from app.models.merge_candidate import MergeCandidate, MergeCandidateStatus
 from app.models.studio import Studio
 from app.models.users import RoleType, Users
+from app.schemas import admin_schema
 from tests._helpers import media_kwargs
 from tests.routers.conftest import CRON_AUTH_HEADER
 
@@ -524,7 +525,12 @@ async def test_stats_overview_returns_shape(client, admin_auth_headers):
         "total_entries", "total_anime", "users_with_entries",
         "avg_entries_per_user", "total_custom_lists", "avg_custom_lists_per_user",
     }
-    int_buckets = ("airing_now", "stabilizing", "weekly_cycle", "long_cycle")
+    # Read the response schema rather than a literal, so a new bucket can't be
+    # added server-side without this assertion following it.
+    int_buckets = tuple(
+        k for k in admin_schema.SweepTierBreakdown.model_fields
+        if k != "stabilizing_by_check"
+    )
     bucket_keys = {*int_buckets, "stabilizing_by_check"}
 
     def _tier_sum(tiers: dict) -> int:

@@ -6,6 +6,7 @@ settings.BACKUP_DIR, so no state leaks out to the real /backups volume.
 """
 
 import io
+import json
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -17,9 +18,15 @@ from app.core.config import settings
 from app.core.db import async_session_maker
 from app.exceptions import DuplicateBackupError
 from app.models.job import Job, JobKind, JobStatus
-from app.schemas.backup_schema import BackupIntegrity, BackupMetadata, BackupSource
+from app.schemas.backup_schema import (
+    BackupIntegrity,
+    BackupMetadata,
+    BackupSource,
+    BackupStatus,
+)
 from app.services import backup_service
 from app.services._pg_subprocess import run_capture
+from app.services.backup_service import _backup_status
 
 
 @pytest.fixture
@@ -34,10 +41,14 @@ async def test_content_hash_stable_across_invocations(backup_dir):
     test would fail."""
     first = await backup_service.create_backup(source=BackupSource.cron)
     dump_path = backup_dir / first.filename
-    h1 = await backup_service._compute_content_hash(dump_path)
-    h2 = await backup_service._compute_content_hash(dump_path)
+    h1, rev1 = await backup_service._compute_content_hash(dump_path)
+    h2, rev2 = await backup_service._compute_content_hash(dump_path)
     assert h1 == h2
     assert h1 == first.content_hash
+    # The revision rides the same stream, so it's stable across runs too and
+    # matches what the sidecar recorded.
+    assert rev1 == rev2 == first.alembic_revision
+    assert rev1
 
 
 async def test_manual_backup_dedupes_with_error(backup_dir):
@@ -61,6 +72,31 @@ async def test_cron_backup_dedupes_silently(backup_dir):
 
     dumps = list(backup_dir.glob("phsar-*.dump"))
     assert len(dumps) == 1
+
+
+async def test_dedupe_stamps_the_revision_onto_a_dump_that_lacks_one(backup_dir):
+    """A dedupe hit must carry its freshly-parsed revision onto the matched sidecar.
+
+    Byte-identical content means the revision applies verbatim, and this is the ONLY
+    path that can ever stamp an existing dump (`_rebuild_meta` uses the TOC check and
+    can't recover it). Without it the startup self-heal cannot converge on an install
+    whose DB content already equals its last dump: every boot dumps, dedupes, discards
+    the revision, and re-fires next boot.
+    """
+    first = await backup_service.create_backup(source=BackupSource.manual)
+    assert first.alembic_revision is not None
+
+    # Stand in for a dump predating revision stamping.
+    await backup_service._set_meta_field(first.filename, alembic_revision=None)
+    dump_path = backup_service.get_backup_path(first.filename)
+
+    second = await backup_service.create_backup(source=BackupSource.cron)
+    assert second.filename == first.filename
+    assert second.alembic_revision == first.alembic_revision
+    # Persisted, not just returned — the next listing has to see it.
+    assert backup_service._read_meta(dump_path).alembic_revision == first.alembic_revision
+    # And the derived fields must NOT have been written through to disk.
+    assert backup_service._read_meta(dump_path).status is BackupStatus.unknown
 
 
 async def test_pre_restore_backup_dedupes_silently(backup_dir):
@@ -165,7 +201,8 @@ async def test_unique_create_moves_current_to_new_dump(backup_dir, monkeypatch):
     real_hash = backup_service._compute_content_hash
 
     async def _perturbed(path):
-        return (await real_hash(path)) + "-x"
+        h, rev = await real_hash(path)
+        return h + "-x", rev
 
     monkeypatch.setattr(backup_service, "_compute_content_hash", _perturbed)
     second = await backup_service.create_backup(source=BackupSource.cron)
@@ -236,9 +273,9 @@ def unique_hashes(monkeypatch):
     counter = {"i": 0}
 
     async def _perturbed(path):
-        h = await real(path)
+        h, rev = await real(path)
         counter["i"] += 1
-        return f"{h}-tag{counter['i']}"
+        return f"{h}-tag{counter['i']}", rev
 
     monkeypatch.setattr(backup_service, "_compute_content_hash", _perturbed)
 
@@ -262,7 +299,7 @@ async def test_create_dedupe_after_restore_moves_current_to_matched(
 
     async def _unique_per_call(_path):
         counter["i"] += 1
-        return f"hash-{counter['i']}"
+        return f"hash-{counter['i']}", "rev-stub"
 
     monkeypatch.setattr(backup_service, "_compute_content_hash", _unique_per_call)
 
@@ -283,7 +320,7 @@ async def test_create_dedupe_after_restore_moves_current_to_matched(
     # Force the next create to hash-collide with B (live state happens to
     # match what B captured).
     async def _collide_with_b(_path):
-        return b.content_hash
+        return b.content_hash, b.alembic_revision
 
     monkeypatch.setattr(backup_service, "_compute_content_hash", _collide_with_b)
 
@@ -309,7 +346,7 @@ async def test_upload_dedupe_after_restore_does_not_move_current(
 
     async def _unique_per_call(_path):
         counter["i"] += 1
-        return f"hash-{counter['i']}"
+        return f"hash-{counter['i']}", "rev-stub"
 
     monkeypatch.setattr(backup_service, "_compute_content_hash", _unique_per_call)
 
@@ -324,7 +361,7 @@ async def test_upload_dedupe_after_restore_does_not_move_current(
     # match B byte-for-byte; the real hasher would arrive at the same
     # result, this just keeps the test independent of pg_restore output).
     async def _collide_with_b(_path):
-        return b.content_hash
+        return b.content_hash, b.alembic_revision
 
     monkeypatch.setattr(backup_service, "_compute_content_hash", _collide_with_b)
 
@@ -720,6 +757,101 @@ async def test_retention_named_backups_do_not_consume_recent_slots(backup_dir):
 
     deleted = await backup_service.apply_retention()
     assert auto not in deleted
+
+
+async def test_dump_records_its_own_alembic_revision(backup_dir):
+    """A fresh dump stamps the revision read out of its OWN alembic_version
+    block (not the live DB's), persists it to the sidecar, and — since it was
+    taken from the live DB — comes back `schema_current`."""
+    meta = await backup_service.create_backup(source=BackupSource.cron)
+    live = await backup_service.read_db_revision()
+    assert live
+    assert meta.alembic_revision == live
+
+    # Persisted, not merely returned.
+    sidecar = json.loads(
+        (backup_dir / f"{meta.filename}.meta.json").read_text()
+    )
+    assert sidecar["alembic_revision"] == live
+    # ...but the VERDICT is not persisted — it's re-derived per listing, because
+    # it changes under the dump every time a migration runs.
+    assert "schema_current" not in sidecar or sidecar["schema_current"] is None
+
+    # The envelope, not `list_backups()`: only the with-revision listing stamps the
+    # verdict, so the callers that read persisted fields don't pay a revision read.
+    listing = await backup_service.list_backups_with_revision()
+    assert listing.db_revision == live
+    listed = next(b for b in listing.backups if b.filename == meta.filename)
+    assert listed.schema_current is True
+    assert listed.status is BackupStatus.ok
+
+
+async def test_status_composes_integrity_with_the_schema_check(backup_dir, monkeypatch):
+    """`status` is the one restorability verdict every consumer reads — the card,
+    the sort, and the startup self-heal. Derived here rather than per-consumer
+    because when the frontend owned it the two disagreed on the `unknown` case."""
+    ok = _backup_status(BackupIntegrity.ok, True)
+    assert ok is BackupStatus.ok
+    # A file that won't restore outranks any schema finding.
+    assert _backup_status(BackupIntegrity.corrupt, True) is BackupStatus.corrupt
+    assert _backup_status(BackupIntegrity.corrupt, False) is BackupStatus.corrupt
+    # A positive finding of staleness.
+    assert _backup_status(BackupIntegrity.ok, False) is BackupStatus.outdated
+    # Unverifiable is NOT ok: it might restore, but nothing on disk says so — and
+    # calling it `ok` here while the self-heal called it unrestorable was the bug.
+    assert _backup_status(BackupIntegrity.ok, None) is BackupStatus.unknown
+    assert _backup_status(BackupIntegrity.unknown, None) is BackupStatus.unknown
+
+
+async def test_schema_current_is_false_on_revision_mismatch(backup_dir, monkeypatch):
+    """A dump whose revision differs from the live DB's reads as stale — the
+    signal behind the amber "schema outdated" badge and the startup self-heal."""
+    meta = await backup_service.create_backup(source=BackupSource.cron)
+
+    async def _moved_on():
+        return "deadbeef0000"
+
+    monkeypatch.setattr(backup_service, "read_db_revision", _moved_on)
+    listing = await backup_service.list_backups_with_revision()
+    listed = next(b for b in listing.backups if b.filename == meta.filename)
+    assert listed.schema_current is False
+    assert listed.status is BackupStatus.outdated
+    # `integrity` stays a pure file verdict — apply_retention pins the
+    # most-recent-OK dump as its archival anchor, and folding the schema verdict
+    # in would leave it with no anchor at all right after every migration.
+    assert listed.integrity is BackupIntegrity.ok
+
+
+async def test_schema_current_is_none_when_either_side_is_unknown(backup_dir, monkeypatch):
+    """Unknown must not read as stale: a pre-feature dump (no stamp) and an
+    unreadable live revision both degrade to None, so a legacy dump is never
+    accused of being schema-outdated."""
+    meta = await backup_service.create_backup(source=BackupSource.cron)
+
+    # (a) legacy sidecar with no revision recorded
+    await backup_service._set_meta_field(meta.filename, alembic_revision=None)
+    listed = next(b for b in await backup_service.list_backups() if b.filename == meta.filename)
+    assert listed.schema_current is None
+
+    # (b) live revision unreadable
+    await backup_service._set_meta_field(meta.filename, alembic_revision="abc123")
+
+    async def _unreadable():
+        return None
+
+    monkeypatch.setattr(backup_service, "read_db_revision", _unreadable)
+    listed = next(b for b in await backup_service.list_backups() if b.filename == meta.filename)
+    assert listed.schema_current is None
+
+
+async def test_read_db_revision_fails_soft(monkeypatch):
+    """An unreadable revision must degrade the listing to "unknown", never
+    raise — a broken read would otherwise take the whole Backups tab down."""
+    def _boom(*_a, **_kw):
+        raise RuntimeError("no database")
+
+    monkeypatch.setattr(backup_service, "async_session_maker", _boom)
+    assert await backup_service.read_db_revision() is None
 
 
 async def test_set_backup_name_sets_trims_and_clears(backup_dir):

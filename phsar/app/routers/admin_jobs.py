@@ -7,14 +7,14 @@ separate router (no router-level admin dep) so the cron token is the only
 auth they require — the JWT admin chain doesn't apply to machine-only
 endpoints.
 
-The two helpers (`_enqueue_scheduled_sweep`, `enqueue_backup_job`) are
-exported because `admin.py`'s manual-backup endpoint shares the backup
-enqueue path.
+`_enqueue_scheduled_sweep` is local to this module; the backup enqueue path
+lives in `backup_service` (three callers now — the manual endpoint in
+`admin.py`, the cron endpoints here, and the startup self-heal), which is the
+right layer for it since routers depend on services and not the reverse.
 """
 
 import calendar
 from datetime import datetime, timedelta, timezone
-from typing import Any
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +24,7 @@ from app.core.job_versions import make_job
 from app.core.maintenance import set_scheduled_at
 from app.models.job import JobKind, JobStatus
 from app.schemas import admin_schema, backup_schema
+from app.services.backup_service import enqueue_backup_job
 from app.services.job_worker import job_worker
 
 router = APIRouter()
@@ -54,42 +55,6 @@ async def _enqueue_scheduled_sweep(
     return admin_schema.ScheduledSweepResponse(
         job_uuid=job.uuid, scheduled_at=not_before,
     )
-
-
-async def enqueue_backup_job(
-    db: AsyncSession,
-    source: backup_schema.BackupSource,
-    label: str | None,
-    requested_by_user_id: int | None,
-) -> admin_schema.JobEnqueuedResponse:
-    """Shared enqueue path for the manual + cron backup endpoints.
-
-    Backup work now flows through the JobWorker so admins don't wait
-    minutes for pg_dump and the cron path gets FIFO sequencing + crash
-    recovery for free. The dispatcher (`backup_dispatcher`) applies
-    retention after every job — manual and cron share the same
-    14-recent + 8-Sunday + 1-known-good pool, so a manual-only install
-    doesn't accumulate dumps indefinitely.
-
-    Manual backups attribute to the admin user so the row surfaces in
-    *their* bell only — multi-admin deployments don't get cross-admin
-    bell clutter. Cron leaves `requested_by_user_id=None` (system job,
-    same pattern as sweeps), invisible to every user's bell — the dump
-    list is the audit log for those.
-    """
-    payload: dict[str, Any] = {"source": source.value}
-    if label:
-        payload["label"] = label
-    job = make_job(
-        JobKind.backup,
-        status=JobStatus.queued,
-        requested_by_user_id=requested_by_user_id,
-        payload=payload,
-    )
-    db.add(job)
-    await db.commit()
-    job_worker.notify()
-    return admin_schema.JobEnqueuedResponse(job_uuid=job.uuid)
 
 
 # `delay_minutes` upper bound is 24h — anything longer is almost certainly

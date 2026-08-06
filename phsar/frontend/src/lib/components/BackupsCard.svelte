@@ -4,11 +4,13 @@
     import { Button } from '$lib/components/ui/button';
     import * as Card from '$lib/components/ui/card';
     import Tooltip from '$lib/components/Tooltip.svelte';
+    import Notice from '$lib/components/Notice.svelte';
     import * as Select from '$lib/components/ui/select';
     import * as Dialog from '$lib/components/ui/dialog';
     import { Label } from '$lib/components/ui/label';
     import { Input } from '$lib/components/ui/input';
     import { Badge } from '$lib/components/ui/badge';
+    import { compareByRestorability } from '$lib/utils/backupStatus';
     import {
         ArrowUpDown,
         Check,
@@ -26,7 +28,7 @@
     import { pushToast } from '$lib/stores/toast';
     import { formatBytes, formatShortDateTime } from '$lib/utils/formatString';
     import { addOptimisticJob, backupSaved, bumpJobsRefresh, onBump } from '$lib/stores/jobs';
-    import type { BackupMetadata, BackupSource } from '$lib/types/api';
+    import type { BackupListResponse, BackupMetadata, BackupSource } from '$lib/types/api';
 
     interface Props {
         currentUsername: string;
@@ -40,10 +42,9 @@
         { value: 'newest', label: 'Newest first' },
         { value: 'oldest', label: 'Oldest first' },
         { value: 'largest', label: 'Largest first' },
-        { value: 'status', label: 'By integrity' },
+        { value: 'status', label: 'By restorability' },
     ];
 
-    const STATUS_ORDER: Record<string, number> = { corrupt: 0, unknown: 1, ok: 2 };
 
     const SOURCE_LABELS: Record<BackupSource, string> = {
         manual: 'Manual',
@@ -78,6 +79,8 @@
     });
 
     let restoreFilename = $state<string | null>(null);
+    // The row being restored, so the confirm dialog can state its verdict.
+    let restoreTarget = $derived(backups.find((b) => b.filename === restoreFilename));
     let restoreConfirmInput = $state('');
     let restoring = $state(false);
     let restoreError = $state('');
@@ -108,15 +111,17 @@
                 sorted.sort((a, b) => b.size_bytes - a.size_bytes);
                 break;
             case 'status':
-                sorted.sort((a, b) => {
-                    const diff = (STATUS_ORDER[a.integrity] ?? 9) - (STATUS_ORDER[b.integrity] ?? 9);
-                    if (diff !== 0) return diff;
-                    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-                });
+                sorted.sort(compareByRestorability);
                 break;
         }
         return sorted;
     });
+
+    // The live schema revision, straight from the server. Deliberately NOT derived
+    // from "whichever dump is schema_current": that made it unavailable right after
+    // a migration, when no dump matches — exactly when the amber badges need to name
+    // what they're outdated against.
+    let dbRevision = $state<string | null>(null);
 
     export async function refresh() {
         // Don't flip `loading` here: it gates the whole list behind a one-line
@@ -127,7 +132,9 @@
         // MergeCandidatesCard), so unpin/rename/delete don't jump the page.
         error = '';
         try {
-            backups = await api.get<BackupMetadata[]>('/admin/backups');
+            const resp = await api.get<BackupListResponse>('/admin/backups');
+            backups = resp.backups;
+            dbRevision = resp.db_revision;
         } catch (err) {
             error = err instanceof ApiError ? err.detail : 'Failed to load backups';
         } finally {
@@ -330,6 +337,19 @@
                     {/each}
                 </Select.Content>
             </Select.Root>
+            <!-- The live schema revision, as the reference every row's own revision is
+                 compared against. `ml-auto` so it sits at the far right of the controls
+                 row. It comes from the response envelope (see the `load` comment) —
+                 null ONLY when the server could not read it, which no backup can fix. -->
+            <Tooltip
+                text={dbRevision
+                    ? `The database is at Alembic revision ${dbRevision}. A dump on a different revision would roll the schema back if restored.`
+                    : 'The live schema revision couldn’t be read from the database, so no dump can be confirmed against it.'}
+            >
+                <span class="ml-auto text-xs text-muted-foreground" data-testid="live-db-revision">
+                    DB schema <code class="text-card-foreground">{dbRevision?.slice(0, 8) ?? 'unknown'}</code>
+                </span>
+            </Tooltip>
         </div>
 
         {#if loading}
@@ -385,18 +405,36 @@
                                         Current
                                     </Badge>
                                 {/if}
-                                {#if b.integrity === 'ok'}
-                                    <Badge>ok</Badge>
-                                {:else if b.integrity === 'corrupt'}
+                                <!-- One pill per dump, straight off the server's `status` — the
+                                     same field the "By restorability" sort and the startup
+                                     self-heal read. A schema mismatch REPLACES "ok" rather than
+                                     sitting beside it: both at once reads as contradictory. -->
+                                {#if b.status === 'corrupt'}
                                     <Badge class="bg-destructive/15 text-destructive">corrupt</Badge>
+                                {:else if b.status === 'outdated'}
+                                    <Tooltip
+                                        text="Dumped at {b.alembic_revision}; the database is now at {dbRevision ?? 'a newer revision'}. Restoring this would roll the schema back under the running app."
+                                    >
+                                        <Badge class="bg-amber-500/15 text-amber-500">schema outdated</Badge>
+                                    </Tooltip>
+                                {:else if b.status === 'ok'}
+                                    <Badge>ok</Badge>
                                 {:else}
-                                    <Badge class="bg-muted text-muted-foreground">unknown</Badge>
+                                    <Tooltip text="This dump records no schema revision, so we can't confirm it would restore cleanly. The next backup will record one.">
+                                        <Badge class="bg-muted text-muted-foreground">unknown</Badge>
+                                    </Tooltip>
                                 {/if}
                                 <Badge class="bg-primary/10 text-primary">{SOURCE_LABELS[b.source]}</Badge>
                             </div>
                             <div class="text-xs text-muted-foreground flex gap-3 flex-wrap">
                                 <span>Created {formatShortDateTime(b.created_at)}</span>
                                 <span>{formatBytes(b.size_bytes)}</span>
+                                <!-- Sits with the other catalog facts rather than among the
+                                     badges: it's a reference value, not a status. The badge
+                                     row already carries the verdict it feeds. -->
+                                {#if b.alembic_revision}
+                                    <span>schema <code>{b.alembic_revision.slice(0, 8)}</code></span>
+                                {/if}
                             </div>
                             {#if b.is_current && b.previous_state}
                                 <p class="text-xs text-muted-foreground">
@@ -498,6 +536,23 @@
             </Dialog.Description>
         </Dialog.Header>
         <div class="space-y-4 py-2">
+            <!-- The restorability verdict AT THE POINT OF DECISION: the modal covers the
+                 row badge that carries it in the list. Restoring a non-`ok` dump stays
+                 allowed — it just may not be silent. No `corrupt` arm: the restore
+                 trigger is disabled for those, so this dialog can't open on one. -->
+            {#if restoreTarget && restoreTarget.status !== 'ok'}
+                <Notice>
+                    {#if restoreTarget.status === 'outdated'}
+                        This dump is on Alembic revision <code>{restoreTarget.alembic_revision}</code>
+                        but the database is at <code>{dbRevision ?? 'a newer revision'}</code>.
+                        Restoring it rolls the schema back under the running app — expect
+                        errors until you redeploy a matching version.
+                    {:else}
+                        This dump records no schema revision, so there is no way to confirm
+                        it matches the running app before restoring it.
+                    {/if}
+                </Notice>
+            {/if}
             <div class="space-y-2">
                 <Label for="restore-confirm">Your username</Label>
                 <Input

@@ -10,6 +10,32 @@ class BackupIntegrity(str, Enum):
     unknown = "unknown"
 
 
+class BackupStatus(str, Enum):
+    """Whether a dump is restorable RIGHT NOW — `integrity` composed with
+    `schema_current`, in the order a reader cares about.
+
+    Derived server-side rather than in the UI so every consumer agrees: the
+    Backups card renders it, the sort orders by it, and the startup self-heal
+    decides on it. Composing it per-consumer is how the card comes to call a
+    revision-less dump green while the self-heal treats the same row as
+    unrestorable.
+
+    Only `list_backups_with_revision` stamps it — plain `list_backups` leaves it
+    (and `schema_current`) at the defaults here, since deriving it costs a live
+    `read_db_revision` its callers don't need. Reading `status` off a plain
+    `list_backups` row therefore reads `unknown`, never a real verdict.
+
+    `unknown` is NOT `ok`: an unstamped dump might restore cleanly, but nothing
+    on disk says so, and a backup you can't vouch for isn't one you should be
+    told to rely on. It stays distinct from `outdated` (which is a positive
+    finding of staleness) so a legacy dump is never *accused*.
+    """
+    corrupt = "corrupt"
+    outdated = "outdated"
+    unknown = "unknown"
+    ok = "ok"
+
+
 class BackupSource(str, Enum):
     manual = "manual"
     cron = "cron"
@@ -45,6 +71,40 @@ class BackupMetadata(BaseModel):
     # `restored_to` equals the current filename (the "state before the current
     # restore"). Not persisted — derived like is_current.
     previous_state: str | None = None
+    # The Alembic revision the DUMP carries, read out of its own
+    # `alembic_version` table (not the live DB's) so an uploaded dump reports
+    # what it actually holds. Persisted. None for dumps written before this
+    # existed, and for a sidecar rebuilt from an orphaned dump — the cheap TOC
+    # check can't recover it, same as content_hash.
+    alembic_revision: str | None = None
+    # Whether `alembic_revision` matches the live DB's. Set at list time, not
+    # persisted — the answer changes under the dump every time a migration runs.
+    # None = unknown (either side missing), which is deliberately NOT the same as
+    # False: a legacy dump shouldn't be accused of being schema-stale.
+    #
+    # Kept OUT of `integrity`, which stays a pure file-corruption verdict, because
+    # `apply_retention` pins the most-recent-ok dump as its known-good archival
+    # anchor — folding a schema verdict in would leave retention with no anchor at
+    # all immediately after every migration. The composite lives in `status`.
+    schema_current: bool | None = None
+    # `integrity` + `schema_current` composed into the one restorability verdict
+    # every consumer reads. Derived at list time; see BackupStatus.
+    status: BackupStatus = BackupStatus.unknown
+
+
+class BackupListResponse(BaseModel):
+    """The dump list plus the live DB's Alembic revision.
+
+    An envelope rather than a bare list because `db_revision` is one
+    process-global fact, not a per-dump one — denormalizing it onto N rows would
+    be worse. It has to come from the server: the card previously read it back off
+    whichever dump was `schema_current`, which made it unavailable in exactly the
+    state it explains (right after a migration, when no dump matches and the
+    "outdated" tooltip most needs to name what the dump is outdated *against*).
+    `None` only when the revision genuinely can't be read.
+    """
+    db_revision: str | None
+    backups: list[BackupMetadata]
 
 
 class BackupCreateRequest(BaseModel):

@@ -440,9 +440,28 @@ export function spearman(pairs: { x: number; y: number }[]): SpearmanResult {
 	return { rho: sxy / Math.sqrt(sxx * syy), n, ok: true };
 }
 
-// ── Genre / studio breakdowns (one implementation, keyed on the tag field) ───
+// ── Categorical breakdowns (one implementation, keyed on the bucketing dim) ──
 
-export type TagDim = 'genres' | 'studios';
+export type TagDim = 'genres' | 'studios' | 'seasons' | 'ageRatings';
+
+/** How each dim reads its bucket keys off a rating. Genres/studios are already
+ * many-per-media; season and age rating are scalar, so they yield a one-element
+ * list (or none when the media carries no value — a null must be SKIPPED, not
+ * bucketed as its own "unknown" tag).
+ *
+ * The key is deliberately the RAW filter value ("17", not "R-17+") — the chart's
+ * click-through writes it straight into `ratingsFilter`, and going the other way
+ * (display label → filter value) would need a reverse lookup that silently breaks
+ * the moment a label is reworded. Display formatting is the caller's job. */
+const TAG_DIM_KEYS: Record<TagDim, (it: RatingScoreItem) => string[]> = {
+	genres: (it) => it.genres,
+	studios: (it) => it.studios,
+	seasons: (it) => {
+		const s = seasonLabel(it);
+		return s == null ? [] : [s];
+	},
+	ageRatings: (it) => (it.age_rating_numeric == null ? [] : [String(it.age_rating_numeric)]),
+};
 
 export interface TagMetric {
 	tag: string;
@@ -455,8 +474,9 @@ export interface TagMetric {
 /** Collect (tag → rating[]) once. */
 function bucketByTag(items: RatingScoreItem[], dim: TagDim): Map<string, RatingScoreItem[]> {
 	const map = new Map<string, RatingScoreItem[]>();
+	const keysOf = TAG_DIM_KEYS[dim];
 	for (const it of items) {
-		for (const tag of it[dim]) {
+		for (const tag of keysOf(it)) {
 			const b = map.get(tag);
 			if (b) b.push(it);
 			else map.set(tag, [it]);
@@ -465,7 +485,7 @@ function bucketByTag(items: RatingScoreItem[], dim: TagDim): Map<string, RatingS
 	return map;
 }
 
-/** Per-tag metrics (genre or studio) in one pass: avg rating, count, total watch
+/** Per-bucket metrics (genre, studio, season or age rating) in one pass: avg rating, count, total watch
  * time, and a composite `weighted` score. The composite blends quality, volume and
  * watch time — `avg × log10(count+1) × (1 + log10(hours+1))` — then divides by the
  * strongest tag so the best is 1 and the rest scale below it (the same log-damping
@@ -651,7 +671,7 @@ export function movingAverage(values: number[], window: number): number[] {
 // ── Cumulative watch time over (rating) time ─────────────────────────────────
 
 export interface CumulativePoint {
-	date: string; // the rating's created_at
+	date: string; // the rating's created_at — or `sinceISO` for the carried window-start point
 	seconds: number; // cumulative actual watch time up to and including this point
 }
 
@@ -660,7 +680,16 @@ export interface CumulativePoint {
  * rate. Credits actual watched time (episodes_watched × per-episode runtime) for
  * every status, so on-hold/dropped partials count. `sinceISO` clips the x-axis to
  * a recent window while keeping the y-values absolute, so the recent slope stays
- * truthful. */
+ * truthful.
+ *
+ * Clipping the x-axis must not clip the RUNNING TOTAL: a clipped window opens with
+ * a synthetic point AT `sinceISO` carrying the total as of the last rating *before*
+ * it, so the line runs flat from the left edge to the first rating inside the
+ * window. This is the mirror of the flat extension to `now` the caller appends, and
+ * both exist for the same reason — the plateaus at either end are real. Without the
+ * carry the series began at the first in-window rating, so the plot started mid-
+ * window with its leading flat stretch missing, and a window containing no ratings
+ * at all drew nothing instead of a truthful plateau. */
 export function cumulativeWatchTime(items: RatingScoreItem[], sinceISO?: string): CumulativePoint[] {
 	// Decorate-sort-undecorate: parse each created_at once instead of in the comparator.
 	const sorted = items
@@ -680,7 +709,20 @@ export function cumulativeWatchTime(items: RatingScoreItem[], sinceISO?: string)
 	// Compare on epoch ms, not the raw string, so the cutoff (built from JS `Date`)
 	// clips correctly regardless of timezone-format differences in created_at.
 	const since = epochMs(sinceISO);
-	return Number.isFinite(since) ? pts.filter((p) => epochMs(p.date) >= since) : pts;
+	if (sinceISO === undefined || !Number.isFinite(since) || !pts.length) return pts;
+
+	// Normalizing findIndex's -1 to `pts.length` ("the whole history precedes the window")
+	// collapses the empty-window and first-rating-in-window cases into the same two
+	// expressions below, instead of branching on -1 twice.
+	const found = pts.findIndex((p) => epochMs(p.date) >= since);
+	const start = found === -1 ? pts.length : found;
+	const inWindow = pts.slice(start);
+	// A rating landing exactly on the cutoff already IS the window-start total, so a
+	// baseline there would be a duplicate x — which `step: 'end'` draws as a spurious
+	// vertical stub at the left edge.
+	if (inWindow.length && epochMs(inWindow[0].date) === since) return inWindow;
+	// start === 0 → the window holds the user's first rating, so nothing preceded it.
+	return [{ date: sinceISO, seconds: start > 0 ? pts[start - 1].seconds : 0 }, ...inWindow];
 }
 
 // ── Watch time ───────────────────────────────────────────────────────────────

@@ -299,6 +299,7 @@ phsar/
 │   │   │   │   └── api.ts
 │   │   │   └── utils/
 │   │   │       ├── chartColors.ts
+│   │   │       ├── backupStatus.ts
 │   │   │       ├── chartTheme.ts
 │   │   │       ├── cn.ts
 │   │   │       ├── color.ts
@@ -307,6 +308,7 @@ phsar/
 │   │   │       ├── getSeason.ts
 │   │   │       ├── index.ts
 │   │   │       ├── jobBadges.ts
+│   │   │       ├── jobSummary.ts
 │   │   │       ├── mediaChangeSort.ts
 │   │   │       ├── navigation.ts
 │   │   │       ├── ratingAttributes.ts
@@ -359,13 +361,16 @@ phsar/
 │   │       ├── admin-jobs-filter.test.ts
 │   │       ├── api-download.test.ts
 │   │       ├── auth-store.test.ts
+│   │       ├── backup-status.test.ts
 │   │       ├── backups-card.test.ts
+│   │       ├── chart-theme.test.ts
 │   │       ├── color.test.ts
 │   │       ├── completion-status-card.test.ts
 │   │       ├── format-string.test.ts
 │   │       ├── genre-badges.test.ts
 │   │       ├── job-bell.test.ts
 │   │       ├── job-detail-counters.test.ts
+│   │       ├── job-summary.test.ts
 │   │       ├── library-add.test.ts
 │   │       ├── login.test.ts
 │   │       ├── maintenance-banner.test.ts

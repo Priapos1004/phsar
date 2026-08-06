@@ -217,10 +217,22 @@ def _mal_date_to_iso(value: str | None) -> str | None:
     return dt.isoformat() if dt else None
 
 
+def catalog_season_name(season: str) -> str:
+    """MAL's lowercase season name → the catalog's `SeasonType` spelling ("fall" → "Fall").
+
+    The single owner of that vocabulary boundary. MAL emits lowercase everywhere
+    (`start_season.season`, the URL segment), while every stored
+    `Media.anime_season_name` and the frontend's `formatSeason` expect the title-cased
+    form. Shared by `extract_information`'s season derivation AND the season sweeps'
+    `result_summary`, so a persisted JSONB summary can't drift from the enum.
+    """
+    return season.capitalize()
+
+
 def _month_to_season(month: int) -> str:
     """Month → MAL season name (lowercase — matches both the
     `/anime/season/{y}/{season}` URL segment and `start_season.season`).
-    `.capitalize()` at the SeasonType-enum site."""
+    Pass through `catalog_season_name` for the SeasonType-enum spelling."""
     if month <= 3:
         return "winter"
     if month <= 6:
@@ -423,13 +435,13 @@ class MalScraper:
         season = start_season.get("season")
         year = start_season.get("year")
         if season and year:
-            return season.capitalize(), int(year)
+            return catalog_season_name(season), int(year)
 
         # Fallback when MAL omits start_season: derive from the premiere date.
         date = _mal_date_to_datetime(anime.get("start_date"))
         if not date:
             return None, None
-        return _month_to_season(date.month).capitalize(), date.year
+        return catalog_season_name(_month_to_season(date.month)), date.year
 
     # MAL synopses commonly end with one or more credit tags
     # ("[Written by MAL Rewrite]", "[Source: AniDB]", "[Source: Anime News

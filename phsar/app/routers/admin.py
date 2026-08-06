@@ -20,7 +20,6 @@ from app.core.dependencies import get_db, require_roles
 from app.models.job import JobKind, JobStatus
 from app.models.users import RoleType
 from app.routers.admin_completion import router as admin_completion_router
-from app.routers.admin_jobs import enqueue_backup_job
 from app.routers.admin_jobs import router as admin_jobs_router
 from app.routers.admin_merge import router as admin_merge_router
 from app.routers.admin_split import router as admin_split_router
@@ -143,9 +142,12 @@ async def get_job_for_admin(
 backups_router = APIRouter(prefix="/backups", dependencies=[Depends(require_admin)])
 
 
-@backups_router.get("", response_model=list[backup_schema.BackupMetadata])
+@backups_router.get("", response_model=backup_schema.BackupListResponse)
 async def list_backups():
-    return await backup_service.list_backups()
+    """The dump list + the live schema revision every row's `status` was judged
+    against — see `BackupListResponse` for why that ships from here. The service
+    builds the whole envelope so both halves come from one revision read."""
+    return await backup_service.list_backups_with_revision()
 
 
 @backups_router.post(
@@ -163,7 +165,7 @@ async def create_backup(
     working. The bell tracks progress + surfaces the final filename so
     the BackupsCard can refresh its dump list on completion."""
     label = data.label if data else None
-    return await enqueue_backup_job(
+    return await backup_service.enqueue_backup_job(
         db,
         backup_schema.BackupSource.manual,
         label=label,

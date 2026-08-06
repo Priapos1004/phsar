@@ -97,6 +97,11 @@ jobs:
                 await seed_admin_user(session)
         asyncio.run(setup())
         "
+        # `alembic_version` is Alembic-managed, so `create_all` never builds it —
+        # and the backup tests read it to compare a dump's stamped revision
+        # against the live DB's. Stamp (not `upgrade head`) because the schema is
+        # already at head from `create_all`; this only writes the version row.
+        alembic stamp head
 
     - name: Run tests
       run: pytest --tb=short -q

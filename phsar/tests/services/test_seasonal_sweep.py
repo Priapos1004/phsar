@@ -208,6 +208,8 @@ async def test_dispatcher_enqueues_only_new_mal_ids(
     summary = await _run_dispatcher()
 
     assert summary == {
+        "season_year": 2026,
+        "season_name": "Summer",
         "season_entries": 4,
         "new_entries_enqueued": 2,
         "dedup_skipped": 2,
@@ -242,12 +244,18 @@ async def test_dispatcher_targets_season_by_kind(
     _patch_progress(monkeypatch)
 
     seasonal_fetched = _patch_scraper(monkeypatch, [], current=(2026, "summer"))
-    await _run_dispatcher(JobKind.seasonal_sweep)
+    seasonal_summary = await _run_dispatcher(JobKind.seasonal_sweep)
     assert seasonal_fetched == [(2026, "summer")]
 
     upcoming_fetched = _patch_scraper(monkeypatch, [], current=(2026, "summer"))
-    await _run_dispatcher(JobKind.upcoming_sweep)
+    upcoming_summary = await _run_dispatcher(JobKind.upcoming_sweep)
     assert upcoming_fetched == [(2026, "fall")]
+
+    # The summary records the season it actually targeted — the counters alone
+    # can't distinguish the two runs, and it's what the Jobs Log row prefixes
+    # with. Title-cased to match the catalog's stored SeasonType values.
+    assert (seasonal_summary["season_year"], seasonal_summary["season_name"]) == (2026, "Summer")
+    assert (upcoming_summary["season_year"], upcoming_summary["season_name"]) == (2026, "Fall")
 
 
 @pytest.mark.asyncio
@@ -294,6 +302,8 @@ async def test_dispatcher_empty_season_returns_zeros(cleanup_seasonal_children, 
     summary = await _run_dispatcher()
 
     assert summary == {
+        "season_year": 2026,
+        "season_name": "Summer",
         "season_entries": 0,
         "new_entries_enqueued": 0,
         "dedup_skipped": 0,
@@ -640,6 +650,8 @@ async def test_dispatcher_dedupes_duplicate_mal_ids_within_one_run(
     summary = await _run_dispatcher()
 
     assert summary == {
+        "season_year": 2026,
+        "season_name": "Summer",
         "season_entries": 5,
         "new_entries_enqueued": 3,
         "dedup_skipped": 2,

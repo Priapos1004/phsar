@@ -29,6 +29,7 @@ from app.seeders.user_seeder import (
     seed_admin_user,
     seed_guest_user,
 )
+from app.services import backup_service
 from app.services.backup_dispatcher import backup_dispatcher
 from app.services.job_worker import job_worker
 from app.services.merge_detection_service import backfill_merge_candidates
@@ -41,8 +42,14 @@ from app.services.seasonal_sweep_dispatcher import seasonal_sweep_dispatcher
 setup_logging()
 logger = logging.getLogger(__name__)
 
+
 async def _post_yield_backfills() -> None:
     """Long-running catalog backfills that must not block /health.
+
+    Also where the backup self-heal runs (`backup_service.ensure_up_to_date_backup`,
+    first): `list_backups()` may shell out `pg_restore --list` once per sidecar-less
+    dump, which is precisely the /health-starvation hazard this escape hatch exists
+    for. The policy lives in `backup_service`; only the ORDERING belongs here.
 
     On the first v0.14.1 deploy against an existing v0.14.0 DB the
     relation backfiller lazy-fetches missing MediaRelationEdges from MAL
@@ -68,6 +75,19 @@ async def _post_yield_backfills() -> None:
     `EMBEDDING_REEMBED_ON_STARTUP` is set — the case-folding re-normalization
     path, gated OFF by default.
     """
+    # The self-heal runs FIRST: every pass below is an idempotent derived-data repair
+    # that re-runs each boot, so a dump taken before them loses nothing recoverable,
+    # while one taken after couldn't recover from a backfill that damaged data.
+    # Concurrency is fine — pg_dump's MVCC snapshot lands in ~1s, while the relation
+    # backfiller is still on its first MAL call.
+    #
+    # Its OWN try/except: the only pass that touches the filesystem and shells out,
+    # so an unwritable BACKUP_DIR must not abort relation, merge and split detection.
+    try:
+        await backup_service.ensure_up_to_date_backup()
+    except Exception:
+        logger.exception("Backup self-heal failed — catalog backfills continue")
+
     try:
         # One-shot catalog re-encode (case-folding fix). Its own session so
         # the ~1k-row scan's identity map is dropped before the relation

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
 	import { ArrowDown, ArrowUp } from 'lucide-svelte';
 	import EChart from '$lib/components/EChart.svelte';
 	import Tooltip from '$lib/components/Tooltip.svelte';
@@ -9,7 +10,9 @@
 	import { scoreColor, getThemedChartColorPalette } from '$lib/utils/chartColors';
 	import { tagMetrics, type TagDim, type TagMetric } from '$lib/utils/ratingStats';
 	import { chartTooltipStyle } from '$lib/utils/chartTheme';
-	import { formatDecimalDigits, formatDuration, escapeHtml } from '$lib/utils/formatString';
+	import { ratingsFilter } from '$lib/stores/ratingsFilter';
+	import { searchByStudio } from '$lib/utils/navigation';
+	import { AGE_RATING_LABELS, formatDecimalDigits, formatDuration, escapeHtml } from '$lib/utils/formatString';
 	import { ensureGenresLoaded } from '$lib/stores/genres';
 	import type { RatingScoreItem } from '$lib/types/api';
 
@@ -43,9 +46,40 @@
 		{ key: 'weighted', label: 'Weighted score', value: (t) => t.weighted, axisMax: 1 },
 	];
 
+	// Per-dim metadata. `format` turns a raw bucket key into its display string — the
+	// buckets are keyed on the FILTER value (see TAG_DIM_KEYS), so age ratings arrive as
+	// "17" and only become "R-17+" here and in the tooltip.
+	const DIMS: Record<TagDim, { label: string; singular: string; format: (tag: string) => string }> = {
+		genres: { label: 'Genres', singular: 'genre', format: (t) => t },
+		studios: { label: 'Studios', singular: 'studio', format: (t) => t },
+		seasons: { label: 'Seasons', singular: 'season', format: (t) => t },
+		ageRatings: { label: 'Age', singular: 'age rating', format: (t) => AGE_RATING_LABELS[Number(t)] ?? t },
+	};
+
 	let dim = $state<TagDim>('genres');
 	let sortKey = $state<MetricKey>('avg');
 	let dir = $state<'asc' | 'desc'>('desc');
+
+	/** Where a bar label goes, per dimension — the single place that decides it.
+	 * Season + age drill INTO your own ratings ("what did I rate in Fall 2025"); a
+	 * studio asks the opposite question ("what ELSE did they make") so it leaves for
+	 * search; a genre has no destination and keeps its description tooltip instead. */
+	function labelAction(tag: string): (() => void) | undefined {
+		if (dim === 'studios') return () => searchByStudio(tag);
+		if (dim === 'genres') return undefined;
+		// The other value filters are CLEARED rather than intersected: clicking a bar
+		// means "show me this", not "narrow whatever was already applied".
+		return () => {
+			ratingsFilter.update((f) => ({
+				...f,
+				view: 'grid',
+				genres: [],
+				seasons: dim === 'seasons' ? [tag] : [],
+				ageRatings: dim === 'ageRatings' ? [Number(tag)] : [],
+			}));
+			void goto('/ratings?tab=ratings');
+		};
+	}
 
 	onMount(ensureGenresLoaded); // genre descriptions for the y-axis label tooltips
 
@@ -94,7 +128,7 @@
 				const idx = (params as { dataIndex: number }[])[0]?.dataIndex ?? 0;
 				const t = rows[idx];
 				return t
-					? `<strong>${escapeHtml(t.tag)}</strong><br/>Avg ${formatDecimalDigits(t.avg, 2)} · ${t.count} anime · ${formatDuration(t.watchSeconds)}`
+					? `<strong>${escapeHtml(DIMS[dim].format(t.tag))}</strong><br/>Avg ${formatDecimalDigits(t.avg, 2)} · ${t.count} anime · ${formatDuration(t.watchSeconds)}`
 					: '';
 			},
 		},
@@ -131,13 +165,13 @@
 <div class="space-y-4">
 	<div class="flex flex-wrap items-center justify-between gap-3">
 		<h3 class="flex items-baseline gap-2 text-sm font-semibold text-card-foreground">
-			<span>Breakdown by {dim === 'genres' ? 'genre' : 'studio'}</span>
+			<span>Breakdown by {DIMS[dim].singular}</span>
 			{#if allMetrics.length > rows.length}<span class="font-normal text-muted-foreground">Top {rows.length} of {allMetrics.length}</span>{/if}
 		</h3>
 		<SegmentedControl
 			size="md"
 			ariaLabel="Breakdown dimension"
-			options={[{ value: 'genres', label: 'Genres' }, { value: 'studios', label: 'Studios' }]}
+			options={(Object.keys(DIMS) as TagDim[]).map((k) => ({ value: k, label: DIMS[k].label }))}
 			value={dim}
 			onSelect={(v) => (dim = v)}
 		/>
@@ -174,12 +208,23 @@
 			<div class="shrink-0 w-36" style="padding-top:{TOP_PAD}px;padding-bottom:{AXIS_PAD}px">
 				{#each labels as t (t.tag)}
 					<div class="flex items-center justify-end min-w-0 text-xs" style="height:{ROW}px">
-						<TagBarLabel name={t.tag} kind={dim === 'studios' ? 'studio' : 'genre'} />
+						<TagBarLabel
+							name={DIMS[dim].format(t.tag)}
+							describeGenre={dim === 'genres'}
+							onClick={labelAction(t.tag)}
+						/>
 					</div>
 				{/each}
 			</div>
 			<div class="flex-1 min-w-0">
-				<EChart {option} height={chartHeight} />
+				<!-- `resetKey={dim}` because a dimension swap is an unrelated dataset: without
+				     it the previous dimension's bars tween out while the new ones grow, which
+				     reads as ghost bars overlaying the new set (different bar counts, unrelated
+				     categories). Deliberately NOT keyed on the sort controls — re-sorting keeps
+				     the bar count, so ECharts maps the data by index and tweens the lengths in
+				     place, which is both ghost-free and the better affordance: you watch the
+				     bars re-rank rather than rebuild. -->
+				<EChart {option} height={chartHeight} resetKey={dim} />
 			</div>
 		</div>
 	{:else}

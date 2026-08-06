@@ -23,6 +23,23 @@ export const chartTooltipStyle = {
 		'border-radius: 6px; box-shadow: 0 6px 24px -6px color-mix(in oklch, var(--primary) 55%, transparent);',
 } as const;
 
+/** Axis floor for a series whose interesting variation is small next to its absolute
+ * value — a cumulative total. ECharts anchors a `value` axis at 0, so a one-month
+ * window over a 112d→115d running total renders as a flat line pinned to the top of
+ * the plot. Returning a floor just under the observed minimum instead spends the whole
+ * axis on the span that actually varies. Pass it straight as `yAxis.min` — the
+ * `{min, max} → number` shape IS ECharts' axis-extent callback contract.
+ *
+ * The fallback covers the degenerate window the naive `min - span·0.1` collapses on:
+ * nothing watched in the range, so `max === min`, the span is 0 and the floor would
+ * equal the value — a zero-height axis. Padding off the absolute value instead still
+ * opens a window around the plateau. Clamped at 0 so a duration axis never dips
+ * negative, which also covers the empty range (`min === max === 0` → 0). */
+export function paddedAxisMin({ min, max }: { min: number; max: number }): number {
+	const span = max - min || max * 0.02;
+	return Math.max(0, min - span * 0.1);
+}
+
 /** Shared score gauge (0–10, color-ramped by value). Used by the anime-page
  * RatingsOverviewStats and the /ratings statistics Overview so the two can't
  * drift in shape. */

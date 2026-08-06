@@ -227,9 +227,10 @@ class SweepTierBreakdown(BaseModel):
     cascade (an airing anime that is also stabilizing counts under
     `airing_now`, not `stabilizing`). Membership, not due-ness — counts
     reflect where each anime sits in the cycle and stay stable across
-    sweeps. `weekly_cycle` = has a recent main; `long_cycle` = the rest
-    (only the 90-day net touches these). Sum equals total anime count,
-    so the card can render each bucket as a share of the catalog.
+    sweeps. `weekly_cycle` = has a recent main; `archival_cycle` =
+    premiered over SWEEP_ARCHIVAL_AGE_YEARS ago, on the 180-day net;
+    `long_cycle` = the rest, on the 90-day net. Sum equals total anime
+    count, so the card can render each bucket as a share of the catalog.
 
     `stabilizing_by_check` breaks the `stabilizing` total down by
     `stable_check_count` (keys 0..SWEEP_STABILIZE_THRESHOLD-1, zero-filled)
@@ -241,6 +242,7 @@ class SweepTierBreakdown(BaseModel):
     stabilizing_by_check: dict[int, int]
     weekly_cycle: int
     long_cycle: int
+    archival_cycle: int
 
 
 class WatchlistStats(BaseModel):

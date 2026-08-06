@@ -33,10 +33,10 @@
 	// Display buckets map 1:1 to the backend's 4 mutually-exclusive
 	// cycle-membership tiers (priority cascade). The stabilizing tier renders
 	// the per-check sub-rows below. Tooltips paraphrase each predicate; the
-	// stabilize (< threshold sweeps) and long-cycle (90-day) borders are
+	// stabilize (< threshold sweeps) and long-cycle (90/180-day) borders are
 	// shared by both grains.
 	const ROWS: {
-		key: 'airing_now' | 'stabilizing' | 'weekly_cycle' | 'long_cycle';
+		key: 'airing_now' | 'stabilizing' | 'weekly_cycle' | 'long_cycle' | 'archival_cycle';
 		label: string;
 		color: string;
 		tooltip: (mode: 'anime' | 'media') => string;
@@ -72,10 +72,21 @@
 			key: 'long_cycle',
 			label: '90-day cycle',
 			color: 'bg-indigo-500',
+			// Terminal bucket, so undated media land here: the slower archival net
+			// isn't one to apply on a guessed premiere.
 			tooltip: (m) =>
 				m === 'anime'
-					? 'Stable + not airing + no recent main — its media resurface only on the 90-day safety net.'
-					: 'Stable + not airing + not a recent main — refreshed only on the 90-day safety net.',
+					? 'Stable + not airing + no recent main, and not archival (premiered within the last decade, or undated) — its media resurface only on the 90-day safety net.'
+					: 'Stable + not airing + not a recent main, and not archival (premiered within the last decade, or undated) — refreshed only on the 90-day safety net.',
+		},
+		{
+			key: 'archival_cycle',
+			label: '180-day cycle',
+			color: 'bg-violet-500',
+			tooltip: (m) =>
+				m === 'anime'
+					? 'Every media premiered over a decade ago — MAL metadata has effectively frozen, so the whole franchise sits on the slower 180-day net.'
+					: 'Premiered over a decade ago — MAL metadata has effectively frozen, so it sits on the slower 180-day net.',
 		},
 	];
 
