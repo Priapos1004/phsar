@@ -38,7 +38,13 @@ export const PRIORITY_ACCENT: Record<number, { text: string; dot: string }> = {
 // The color a new custom list starts on — taken straight from a wheel cell (a vivid blue)
 // so it's always pre-selected in the picker AND clickable again to restore. A hardcoded hex
 // outside the wheel couldn't be re-selected without refreshing the page.
-export const DEFAULT_NEW_TAG_COLOR = buildColorWheel()[2][1].hex;
+//
+// A function, not a const: as a const this built the whole 37-cell wheel at module
+// scope, and this module is imported by every surface that renders a bookmark — so
+// each of them paid for a value only the list-color picker ever reads.
+export function defaultNewTagColor(): string {
+	return buildColorWheel()[2][1].hex;
+}
 
 // The default "Watchlist" list's reserved orange (mirrors tag_service.DEFAULT_TAG_COLOR).
 // The color picker blocks a custom list from picking it, so the default stays visually unique.

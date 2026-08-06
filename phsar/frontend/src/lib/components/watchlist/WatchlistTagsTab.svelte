@@ -12,7 +12,7 @@
 	import { tags, refreshTags } from '$lib/stores/tags';
 	import { refreshWatchlist } from '$lib/stores/watchlist';
 	import { pushToast } from '$lib/stores/toast';
-	import { DEFAULT_NEW_TAG_COLOR } from '$lib/utils/watchlist';
+	import { defaultNewTagColor } from '$lib/utils/watchlist';
 	import * as cls from '$lib/styles/classes';
 	import type { Tag } from '$lib/types/api';
 
@@ -26,7 +26,7 @@
 
 	// Create
 	let newName = $state('');
-	let newColor = $state(DEFAULT_NEW_TAG_COLOR);
+	let newColor = $state(defaultNewTagColor());
 	let creating = $state(false);
 	let createError = $state('');
 
@@ -70,7 +70,7 @@
 			await refreshTags();
 			pushToast('List created', 'success');
 			newName = '';
-			newColor = DEFAULT_NEW_TAG_COLOR;
+			newColor = defaultNewTagColor();
 		} catch (err) {
 			createError = errText(err, 'Failed to create list');
 		} finally {

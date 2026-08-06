@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { hslToHex, normalizeHex, contrastText, buildColorWheel } from '$lib/utils/color';
-import { DEFAULT_NEW_TAG_COLOR } from '$lib/utils/watchlist';
+import { defaultNewTagColor } from '$lib/utils/watchlist';
 
 describe('hslToHex', () => {
 	it('converts the primaries + achromatics', () => {
@@ -62,7 +62,7 @@ describe('buildColorWheel', () => {
 
 	// The new-list default must be a selectable cell, else the picker can't re-select it
 	// (it would need a page refresh to restore) — the regression this guards.
-	it('exposes DEFAULT_NEW_TAG_COLOR as one of its cells', () => {
-		expect(wheel.flat().map((c) => c.hex)).toContain(DEFAULT_NEW_TAG_COLOR);
+	it('exposes defaultNewTagColor() as one of its cells', () => {
+		expect(wheel.flat().map((c) => c.hex)).toContain(defaultNewTagColor());
 	});
 });
