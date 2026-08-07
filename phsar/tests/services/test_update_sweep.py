@@ -1298,6 +1298,13 @@ def _tier_total(counts: dict) -> int:
     return sum(counts[k] for k in _TIER_BUCKETS)
 
 
+def _tier_delta(after: dict, baseline: dict) -> dict[str, int]:
+    """Per-bucket change between two tier snapshots. Delta-based assertions are
+    the file's convention — they isolate seeded rows from the dev DB's real
+    catalogue, so bucket attribution can be exact rather than floor-only."""
+    return {k: after[k] - baseline.get(k, 0) for k in _TIER_BUCKETS}
+
+
 def _breakdown_delta(after: dict, baseline: dict) -> dict[int, int]:
     base = baseline["stabilizing_by_check"]
     return {n: c - base.get(n, 0) for n, c in after["stabilizing_by_check"].items()}
@@ -1359,7 +1366,7 @@ async def test_count_by_sweep_tier_priority_buckets_each_anime_once(db_session):
     await db_session.flush()
 
     after = await AnimeDAO().count_by_sweep_tier_priority(db_session)
-    delta = {k: after[k] - baseline.get(k, 0) for k in _TIER_BUCKETS}
+    delta = _tier_delta(after, baseline)
     assert delta == {
         "airing_now": 1,
         "stabilizing": 1,
@@ -1403,7 +1410,7 @@ async def test_anime_tier_is_media_rollup_not_anime_probe_counter(db_session):
     await db_session.flush()
 
     after = await AnimeDAO().count_by_sweep_tier_priority(db_session)
-    delta = {k: after[k] - baseline.get(k, 0) for k in _TIER_BUCKETS}
+    delta = _tier_delta(after, baseline)
     assert delta == {
         "airing_now": 0, "stabilizing": 1, "weekly_cycle": 0,
         "long_cycle": 0, "archival_cycle": 0,
@@ -1448,7 +1455,7 @@ async def test_media_less_anime_falls_through_to_long_cycle(db_session):
     await db_session.flush()
 
     after = await AnimeDAO().count_by_sweep_tier_priority(db_session)
-    delta = {k: after[k] - baseline.get(k, 0) for k in _TIER_BUCKETS}
+    delta = _tier_delta(after, baseline)
     assert delta == {
         "airing_now": 0, "stabilizing": 0, "weekly_cycle": 0,
         "long_cycle": 1, "archival_cycle": 0,
@@ -1493,7 +1500,7 @@ async def test_count_media_by_sweep_tier_priority_buckets_each_media_once(db_ses
     await db_session.flush()
 
     after = await AnimeDAO().count_media_by_sweep_tier_priority(db_session)
-    delta = {k: after[k] - baseline.get(k, 0) for k in _TIER_BUCKETS}
+    delta = _tier_delta(after, baseline)
     assert delta == {
         "airing_now": 1,
         "stabilizing": 1,

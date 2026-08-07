@@ -209,36 +209,37 @@ def apply_media_filters(stmt, filters: MediaSearchFilters):
     return stmt
 
 
-def _anime_genre_majority_condition(genre_names: list[str]):
-    """Anime where EVERY selected genre is carried by a MAJORITY of that anime's
-    media (`genre_count * 2 > total`) — the same threshold
-    `filter_service._get_anime_majority_genres` applies when deciding which
-    genres the anime-view dropdown offers at all.
+def anime_genre_majority_relation(genre_names: list[str] | None = None):
+    """The `(anime_id, genre_name)` pairs where that genre is carried by a
+    MAJORITY of the anime's media (`genre_count * 2 > total`) — a subquery.
 
-    One non-correlated pass: per-(anime, genre) counts and per-anime media
-    totals are each computed once, joined, and the surviving pairs counted, so
-    an anime qualifies when it clears the bar on all N selected genres. The
-    alternative shape — one correlated majority-subquery per genre — grows
-    superlinearly, because each added genre both adds a SubPlan and widens the
-    set every existing SubPlan is re-evaluated over.
+    **Single source of the majority rule**, because two features depend on it
+    agreeing with itself: the anime-view genre dropdown offers exactly the genres
+    that can pass (`filter_service._get_anime_majority_genres` projects
+    `DISTINCT genre_name` from here), and the search filter tests membership
+    (`_anime_genre_majority_condition` below). Written twice, a threshold change
+    would silently offer genres in the dropdown that the filter then rejects —
+    an empty result page with no explanation.
 
-    The denominator is the anime's FULL media count, deliberately unfiltered:
-    the majority a user means when picking a genre is "most of this anime", not
-    "most of whatever survived my other filters". Pinned by
+    `genre_names` narrows the scan when the caller knows which genres it cares
+    about; the dropdown passes None and takes them all.
+
+    The denominator is the anime's FULL media count, deliberately unfiltered: the
+    majority a user means when picking a genre is "most of this anime", not "most
+    of whatever survived my other filters". Pinned by
     `test_genre_majority_denominator_survives_a_pre_filter`.
     """
-    unique_genres = set(genre_names)
-    genre_counts = (
-        select(
-            Media.anime_id.label("anime_id"),
-            Genre.name.label("genre_name"),
-            func.count(Media.id).label("genre_count"),
-        )
-        .join(MediaGenre, MediaGenre.media_id == Media.id)
-        .join(Genre, Genre.id == MediaGenre.genre_id)
-        .where(Genre.name.in_(unique_genres))
-        .group_by(Media.anime_id, Genre.name)
-    ).subquery()
+    genre_counts = select(
+        Media.anime_id.label("anime_id"),
+        Genre.name.label("genre_name"),
+        func.count(Media.id).label("genre_count"),
+    ).join(MediaGenre, MediaGenre.media_id == Media.id).join(
+        Genre, Genre.id == MediaGenre.genre_id
+    )
+    if genre_names:
+        genre_counts = genre_counts.where(Genre.name.in_(set(genre_names)))
+    genre_counts = genre_counts.group_by(Media.anime_id, Genre.name).subquery()
+
     media_totals = (
         select(
             Media.anime_id.label("anime_id"),
@@ -246,11 +247,28 @@ def _anime_genre_majority_condition(genre_names: list[str]):
         )
         .group_by(Media.anime_id)
     ).subquery()
-    qualifying = (
-        select(genre_counts.c.anime_id)
+
+    return (
+        select(genre_counts.c.anime_id, genre_counts.c.genre_name)
         .join(media_totals, media_totals.c.anime_id == genre_counts.c.anime_id)
         .where(genre_counts.c.genre_count * 2 > media_totals.c.total)
-        .group_by(genre_counts.c.anime_id)
+    ).subquery()
+
+
+def _anime_genre_majority_condition(genre_names: list[str]):
+    """Anime clearing the majority bar on EVERY selected genre.
+
+    One non-correlated pass over `anime_genre_majority_relation`: count each
+    anime's surviving genres and require all N. The alternative shape — one
+    correlated majority-subquery per genre — grows superlinearly, since each
+    added genre both adds a SubPlan and widens the set every existing SubPlan is
+    re-evaluated over, and this fires on ticking genre chips.
+    """
+    unique_genres = set(genre_names)
+    majority = anime_genre_majority_relation(genre_names)
+    qualifying = (
+        select(majority.c.anime_id)
+        .group_by(majority.c.anime_id)
         .having(func.count() == len(unique_genres))
     )
     return Anime.id.in_(qualifying)

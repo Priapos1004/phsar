@@ -96,6 +96,16 @@ export function createPersistedFilter<T extends object>(
  * value that silently falls back forever. Same shape as `JOB_KIND_LABELS` /
  * `STATUS_BADGE`, which `adminJobsFilter` already whitelists against.
  */
+/** `asc | desc` — every sortable list section has a direction. */
+export type Direction = 'asc' | 'desc';
+
+/** Whitelists shared by the ratings + watchlist filters, whose view and grain
+ *  unions are the same two pairs. Kept beside `pickKey` (which consumes them)
+ *  rather than duplicated per store. */
+export const VIEW_KEYS: Record<'grid' | 'table', true> = { grid: true, table: true };
+export const GRAIN_KEYS: Record<'anime' | 'media', true> = { anime: true, media: true };
+export const DIRECTION_KEYS: Record<Direction, true> = { asc: true, desc: true };
+
 export function pickKey<T extends string>(
 	raw: unknown,
 	allowed: Record<T, unknown>,

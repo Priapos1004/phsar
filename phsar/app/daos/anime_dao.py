@@ -25,7 +25,7 @@ from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
 from app.services.relation_classifier import AIRING_STATUS_CURRENTLY_AIRING
-from app.services.vector_embedding_service import generate_embedding
+from app.services.vector_embedding_service import generate_query_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +95,18 @@ class _MediaSweepAtoms(NamedTuple):
     due_long_tail: Any
 
 
+def _is_recent_main():
+    """"This media is a Main that aired within the recent-main window" — the tier-3
+    membership predicate. Shared verbatim by the media atoms and the anime roll-up
+    (`_anime_sweep_cte` wraps it in `bool_or`), because the two grains have to
+    agree on it by definition: an anime is in the weekly cycle exactly when one of
+    its media is."""
+    return and_(
+        Media.relation_type == RelationType.Main,
+        Media.aired_from >= func.now() - text(f"interval '{SWEEP_RECENT_MAIN_YEARS} years'"),
+    )
+
+
 def _media_sweep_atoms(mf_alias) -> _MediaSweepAtoms:
     """Build the media-level sweep-tier atoms against the given
     MediaFreshness alias."""
@@ -102,17 +114,13 @@ def _media_sweep_atoms(mf_alias) -> _MediaSweepAtoms:
     stable = func.coalesce(mf_alias.stable_check_count, 0)
     now = func.now()
     week_ago = now - text("interval '7 days'")
-    recent_main_cutoff = now - text(f"interval '{SWEEP_RECENT_MAIN_YEARS} years'")
     archival_cutoff = now - text(f"interval '{SWEEP_ARCHIVAL_AGE_YEARS} years'")
     archival = Media.aired_from < archival_cutoff
 
     return _MediaSweepAtoms(
         airing_now=Media.airing_status == AIRING_STATUS_CURRENTLY_AIRING,
         still_stabilizing=stable < SWEEP_STABILIZE_THRESHOLD,
-        recent_main=and_(
-            Media.relation_type == RelationType.Main,
-            Media.aired_from >= recent_main_cutoff,
-        ),
+        recent_main=_is_recent_main(),
         archival=archival,
         due_weekly=last_checked < week_ago,
         # ONE long-tail atom with a per-row window, rather than two mutually-
@@ -148,20 +156,13 @@ def _anime_sweep_cte():
     of a media that simply has no freshness sidecar yet.
     """
     mf = aliased(MediaFreshness)
-    now = func.now()
-    recent_main_cutoff = now - text(f"interval '{SWEEP_RECENT_MAIN_YEARS} years'")
     return (
         select(
             Media.anime_id.label("anime_id"),
             func.bool_or(
                 Media.airing_status == AIRING_STATUS_CURRENTLY_AIRING
             ).label("airing_now"),
-            func.bool_or(
-                and_(
-                    Media.relation_type == RelationType.Main,
-                    Media.aired_from >= recent_main_cutoff,
-                )
-            ).label("recent_main"),
+            func.bool_or(_is_recent_main()).label("recent_main"),
             # MAX, not an EXISTS pair — see `_sweep_atoms`' archival note.
             func.max(Media.aired_from).label("newest_aired"),
             # The anime's least-settled member. While the anime is in the
@@ -531,7 +532,7 @@ class AnimeDAO(MalIdDAO[Anime]):
         # Vector search joins
         query_embedding = None
         if query:
-            query_embedding = await generate_embedding(query)
+            query_embedding = await generate_query_embedding(query)
             if search_type == SearchType.TITLE:
                 stmt = stmt.join(AnimeSearch, AnimeSearch.anime_id == Anime.id)
             elif search_type == SearchType.DESCRIPTION:

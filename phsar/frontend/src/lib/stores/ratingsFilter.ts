@@ -1,10 +1,18 @@
 import type { SortKey } from '$lib/utils/ratingStats';
 import type { StatsSection } from '$lib/components/ratings/types';
-import { createPersistedFilter, pickKey, pickNumbers, pickStrings } from './persistedFilter';
+import {
+	createPersistedFilter,
+	DIRECTION_KEYS,
+	GRAIN_KEYS,
+	pickKey,
+	pickNumbers,
+	pickStrings,
+	VIEW_KEYS,
+	type Direction,
+} from './persistedFilter';
 
 export type RatingsView = 'grid' | 'table';
 export type RatingsGrain = 'anime' | 'media';
-type Direction = 'asc' | 'desc';
 type GenreMode = 'any' | 'all';
 
 export interface RatingsFilterState {
@@ -33,10 +41,8 @@ export const DEFAULT_RATINGS_FILTER: RatingsFilterState = {
 	seasons: [],
 };
 
-// Rehydration whitelists — see `pickKey`.
-const VIEWS: Record<RatingsView, true> = { grid: true, table: true };
-const GRAINS: Record<RatingsGrain, true> = { anime: true, media: true };
-const DIRECTIONS: Record<Direction, true> = { asc: true, desc: true };
+// Rehydration whitelists — see `pickKey`. View/grain/direction come from
+// persistedFilter; the rest are section-specific.
 const GENRE_MODES: Record<GenreMode, true> = { any: true, all: true };
 const SORT_KEYS: Record<SortKey, true> = {
 	score: true,
@@ -59,11 +65,11 @@ const STATS_SECTIONS: Record<StatsSection, true> = {
 // nothing, and the chip stays visible so the user can see why.
 function sanitize(raw: Record<string, unknown>): RatingsFilterState {
 	return {
-		view: pickKey(raw.view, VIEWS, DEFAULT_RATINGS_FILTER.view),
-		grain: pickKey(raw.grain, GRAINS, DEFAULT_RATINGS_FILTER.grain),
+		view: pickKey(raw.view, VIEW_KEYS, DEFAULT_RATINGS_FILTER.view),
+		grain: pickKey(raw.grain, GRAIN_KEYS, DEFAULT_RATINGS_FILTER.grain),
 		sort: pickKey(raw.sort, SORT_KEYS, DEFAULT_RATINGS_FILTER.sort),
-		sortDir: pickKey(raw.sortDir, DIRECTIONS, DEFAULT_RATINGS_FILTER.sortDir),
-		bandDir: pickKey(raw.bandDir, DIRECTIONS, DEFAULT_RATINGS_FILTER.bandDir),
+		sortDir: pickKey(raw.sortDir, DIRECTION_KEYS, DEFAULT_RATINGS_FILTER.sortDir),
+		bandDir: pickKey(raw.bandDir, DIRECTION_KEYS, DEFAULT_RATINGS_FILTER.bandDir),
 		statsSection: pickKey(raw.statsSection, STATS_SECTIONS, DEFAULT_RATINGS_FILTER.statsSection),
 		genres: pickStrings(raw.genres),
 		genreMode: pickKey(raw.genreMode, GENRE_MODES, DEFAULT_RATINGS_FILTER.genreMode),

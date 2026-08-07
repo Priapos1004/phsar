@@ -17,7 +17,7 @@ from app.models.media_genre import MediaGenre
 from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
-from app.services.vector_embedding_service import generate_embedding
+from app.services.vector_embedding_service import generate_query_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +94,7 @@ class MediaDAO(MalIdDAO[Media]):
         stmt = select(Media)
 
         if query != "":
-            query_embedding = await generate_embedding(query)
+            query_embedding = await generate_query_embedding(query)
             # Inner join ensures only media with embeddings are searched
             stmt = stmt.join(MediaSearch)
 

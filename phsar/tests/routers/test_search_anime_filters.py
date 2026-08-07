@@ -496,6 +496,12 @@ async def test_genre_majority_denominator_survives_a_pre_filter(
 
 _MULTI_GENRE_A = "MultiScopeGenreA"
 _MULTI_GENRE_B = "MultiScopeGenreB"
+_MULTI_GENRE_QUERY = "MultiScope"
+_MULTI_GENRE_TITLES = {
+    "MultiScope BothMajority Anime",
+    "MultiScope OnlyAMajority Anime",
+    "MultiScope NeitherMajority Anime",
+}
 
 
 @pytest.fixture
@@ -543,12 +549,8 @@ async def test_multiple_genres_all_must_reach_majority(
     genre while carrying the other as a minority must not surface."""
     titles = await _result_fixture_titles(
         client, user_auth_headers,
-        fixture_titles={
-            "MultiScope BothMajority Anime",
-            "MultiScope OnlyAMajority Anime",
-            "MultiScope NeitherMajority Anime",
-        },
-        query="MultiScope",
+        fixture_titles=_MULTI_GENRE_TITLES,
+        query=_MULTI_GENRE_QUERY,
         genre_name=[_MULTI_GENRE_A, _MULTI_GENRE_B],
     )
     assert titles == {"MultiScope BothMajority Anime"}
@@ -562,12 +564,8 @@ async def test_single_genre_matches_every_anime_that_reaches_its_majority(
     filtering on A alone must keep both anime where A is a majority."""
     titles = await _result_fixture_titles(
         client, user_auth_headers,
-        fixture_titles={
-            "MultiScope BothMajority Anime",
-            "MultiScope OnlyAMajority Anime",
-            "MultiScope NeitherMajority Anime",
-        },
-        query="MultiScope",
+        fixture_titles=_MULTI_GENRE_TITLES,
+        query=_MULTI_GENRE_QUERY,
         genre_name=[_MULTI_GENRE_A],
     )
     assert titles == {

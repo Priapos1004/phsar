@@ -14,27 +14,16 @@ logger = logging.getLogger(__name__)
 
 model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
-# Bounded at ~3.0 MB: a 384-float tuple measures ~12 kB in CPython (the boxed
-# floats dominate, 24 B apiece — not the 3 kB the raw values suggest).
-#
-# Sized for search-query reuse, not for holding the catalog. The cache is shared
-# with document text (titles, descriptions, notes), so a sweep re-embedding
-# hundreds of media will evict every query in it. That's the LRU doing its job:
-# the entries worth keeping are the ones being asked for repeatedly, and a miss
-# only costs what every call cost before.
+# Bounded at ~4 MB: each 384-float tuple measures ~12 kB in CPython (the boxed
+# floats dominate at 24 B apiece — not the 3 kB the raw values suggest), plus the
+# key strings, which for a description can be several kB of synopsis.
 EMBEDDING_CACHE_SIZE = 256
 
 
-@lru_cache(maxsize=EMBEDDING_CACHE_SIZE)
-def _encode_cached(text: str) -> tuple[float, ...]:
-    """Memoized encode. Safe to cache by construction: `model.encode` is
-    deterministic and the model version is fixed at deploy, so the folded text
-    fully determines the vector.
-
-    Returns a TUPLE. The value is shared across every caller that hits this key,
-    and callers hand the result to ORM attributes — a cached list would be a
-    shared mutable with no owner. `generate_embedding` copies it into a fresh
-    list per call, which is 384 floats.
+def _encode(text: str) -> tuple[float, ...]:
+    """Encode one string. Returns a TUPLE because the memoized wrapper below
+    shares its value across every caller of a key, and callers hand the result to
+    ORM attributes — a cached list would be a shared mutable with no owner.
 
     show_progress_bar=False: encode() defaults to a tqdm "Batches: ..." bar on
     stdout. We encode one short string per call (search queries, saves, sweeps,
@@ -43,34 +32,64 @@ def _encode_cached(text: str) -> tuple[float, ...]:
     return tuple(model.encode(text, show_progress_bar=False).tolist())
 
 
+@lru_cache(maxsize=EMBEDDING_CACHE_SIZE)
+def _encode_query_cached(text: str) -> tuple[float, ...]:
+    """Memoized encode, for SEARCH QUERIES only. Safe to cache by construction:
+    `model.encode` is deterministic and the model version is fixed at deploy, so
+    the folded text fully determines the vector."""
+    return _encode(text)
+
+
+def _fold(text: str) -> str:
+    """The single case-fold every embedding passes through.
+
+    `paraphrase-multilingual-MiniLM-L12-v2` is a *cased* model, so "Kurokos" and
+    "kurokos" produce materially different vectors — and the query-case difference
+    alone reorders title results enough to drop the intended show off the page
+    (the cosine swing exceeds the literal-match bonus). Folding here, on both
+    queries AND stored title/description/note text, keeps them in one case space
+    (the textbook precondition for embedding retrieval); folding at the query
+    call-sites alone would paper over the symptom and risk a fresh
+    query↔document mismatch. It is also what makes capitalisation variants of one
+    query a single cache entry. Existing catalog vectors predate this and are
+    re-normalized by `embedding_backfiller.reembed_all_embeddings`.
+    """
+    return text.lower()
+
+
+async def _run_encode(fn, text: str) -> list[float]:
+    """Run an encode off the event loop and copy the result into a fresh list.
+
+    abandon_on_cancel=True: if the calling task is cancelled (e.g. the client
+    disconnects), abandon the thread rather than blocking until encode()
+    finishes — otherwise cancelled requests hold a threadpool slot through the
+    whole CPU-heavy computation.
+
+    A cache hit still pays this hop (~100 µs). Deliberate: that is 0.3% of a
+    ~30 ms miss, and short-circuiting on the loop would mean two code paths for
+    one operation.
+    """
+    return list(await to_thread.run_sync(lambda: fn(_fold(text)), abandon_on_cancel=True))
+
+
+async def generate_query_embedding(text: str) -> list[float]:
+    """Embed a SEARCH QUERY — memoized (~30 ms → ~0.1 ms on a hit).
+
+    Separate from `generate_embedding` because the two populations have opposite
+    reuse profiles and would share one cache otherwise. Queries repeat; document
+    text does not — a save encodes each title and description exactly once, and a
+    sweep or `reembed_all_embeddings` inserts thousands of keys that can never be
+    hit again. Sharing a 256-slot LRU therefore left the query cache fully evicted
+    after every sweep, i.e. cold precisely after the nightly maintenance window.
+    """
+    return await _run_encode(_encode_query_cached, text)
+
+
 async def generate_embedding(text: str) -> list[float]:
-    # Case-fold before encoding. `paraphrase-multilingual-MiniLM-L12-v2` is a
-    # *cased* model, so "Kurokos" and "kurokos" produce materially different
-    # vectors — and the query case difference alone reorders title results
-    # enough to drop the intended show off the page (the cosine swing exceeds
-    # the literal-match bonus). This is the single chokepoint every embedding
-    # passes through — search queries AND stored title/description/note text —
-    # so lowering here keeps the query and the documents in one case space
-    # (the textbook precondition for embedding retrieval). Lowering at the
-    # query call-sites alone would only paper over the symptom and risk a new
-    # query↔document mismatch. Existing catalog vectors predate this and are
-    # re-normalized by `embedding_backfiller.reembed_all_embeddings`.
-    text = text.lower()
-    # The encode is memoized on the FOLDED text (see `_encode_cached`), so the
-    # fold is what makes "Kurokos" and "kurokos" one cache entry rather than two.
-    #
-    # A cache hit still pays the thread hop. That's deliberate: it costs
-    # microseconds against a ~30 ms miss, and checking the cache on the event
-    # loop first would mean two code paths for one operation.
-    #
-    # abandon_on_cancel=True: if the calling async task is cancelled (e.g. client
-    # disconnects), abandon the thread instead of blocking until encode() finishes.
-    # Without this, cancelled requests keep the thread pool occupied during the
-    # CPU-heavy embedding computation.
-    return list(await to_thread.run_sync(
-        lambda: _encode_cached(text),
-        abandon_on_cancel=True,
-    ))
+    """Embed DOCUMENT text (titles, descriptions, rating notes) — uncached, since
+    a given document string is encoded once. Search queries go through
+    `generate_query_embedding`."""
+    return await _run_encode(_encode, text)
 
 
 async def _compute_search_embeddings(

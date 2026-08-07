@@ -5,11 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.genre_dao import GenreDAO
 from app.daos.media_dao import MediaDAO
-from app.daos.search_filters import weighted_mean_votes_expr
+from app.daos.search_filters import (
+    anime_genre_majority_relation,
+    weighted_mean_votes_expr,
+)
 from app.daos.studio_dao import StudioDAO
-from app.models.genre import Genre
 from app.models.media import Media
-from app.models.media_genre import MediaGenre
 from app.schemas.genre_schema import GenreOut
 from app.schemas.media_filter_schema import ViewType
 
@@ -81,35 +82,19 @@ def sort_age_ratings(age_rating_tuples: list[tuple[str, int]]) -> list[str]:
 
 
 async def _get_anime_majority_genres(db: AsyncSession) -> list[str]:
-    """Get genres that pass majority rule (>50% of media) for at least one anime.
-    Populates the genre dropdown; the same threshold is applied per-anime in
-    search_filters._anime_genre_majority_condition when filtering search results."""
-    # For each (anime_id, genre), count media with that genre and total media.
-    # Keep genres where count * 2 > total for at least one anime.
-    media_count_subq = (
-        select(Media.anime_id, func.count(Media.id).label("total"))
-        .group_by(Media.anime_id)
-    ).subquery()
+    """Genres that pass the majority rule (>50% of media) for at least one anime —
+    the anime-view genre dropdown.
 
-    genre_count_subq = (
-        select(
-            Media.anime_id,
-            Genre.name.label("genre_name"),
-            func.count(Media.id).label("genre_count"),
-        )
-        .join(MediaGenre, MediaGenre.media_id == Media.id)
-        .join(Genre, Genre.id == MediaGenre.genre_id)
-        .group_by(Media.anime_id, Genre.name)
-    ).subquery()
-
+    Projects `DISTINCT genre_name` from the SAME relation the search filter tests
+    membership against (`search_filters.anime_genre_majority_relation`), which is
+    what makes the dropdown's promise true: every genre offered here can actually
+    pass the filter. Duplicating the threshold instead would let the two drift
+    into offering genres that return nothing.
+    """
+    majority = anime_genre_majority_relation()
     stmt = (
-        select(distinct(genre_count_subq.c.genre_name))
-        .join(
-            media_count_subq,
-            media_count_subq.c.anime_id == genre_count_subq.c.anime_id,
-        )
-        .where(genre_count_subq.c.genre_count * 2 > media_count_subq.c.total)
-        .order_by(genre_count_subq.c.genre_name)
+        select(distinct(majority.c.genre_name))
+        .order_by(majority.c.genre_name)
     )
     result = await db.execute(stmt)
     return [row[0] for row in result.all()]

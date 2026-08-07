@@ -10,6 +10,18 @@ from app.models.job import Job, JobKind, JobStatus
 
 
 class JobDAO(BaseDAO[Job]):
+    @staticmethod
+    def scrape_query_expr():
+        """The normalized scrape-query expression the dedup lookup filters on.
+
+        Named so `ix_jobs_scrape_query` (declared in `models/job.py` as raw SQL in
+        Postgres's own normalized spelling, to keep `alembic check` quiet) has an
+        identifiable counterpart. The two must stay the same expression to
+        Postgres or the index silently stops being used —
+        `test_scrape_dedup_predicate_can_use_its_index` is the guard.
+        """
+        return func.lower(func.trim(Job.payload["query"].astext))
+
     # Eager-load options the admin Jobs-Log surfaces need so the response
     # builder can read `requested_by_username` and `parent_job_uuid`
     # without a lazy-raise fault. Shared between the list endpoint and
@@ -283,9 +295,7 @@ class JobDAO(BaseDAO[Job]):
                 )
             )
             .where(Job.created_at >= cutoff)
-            .where(
-                func.lower(func.trim(Job.payload["query"].astext)) == normalized
-            )
+            .where(self.scrape_query_expr() == normalized)
             .order_by(Job.created_at.desc())
             .limit(1)
         )

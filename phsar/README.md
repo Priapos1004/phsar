@@ -31,6 +31,7 @@ phsar/
 │   │   ├── genre_dao.py
 │   │   ├── job_dao.py
 │   │   ├── media_dao.py
+│   │   ├── media_projections.py
 │   │   ├── media_unwanted_dao.py
 │   │   ├── merge_candidate_dao.py
 │   │   ├── rating_dao.py
@@ -436,6 +437,7 @@ phsar/
     │   ├── test_admin_sweep.py
     │   ├── test_anime_detail.py
     │   ├── test_auth.py
+    │   ├── test_compression.py
     │   ├── test_filters_genres.py
     │   ├── test_filters_options.py
     │   ├── test_filters_token.py
@@ -461,6 +463,7 @@ phsar/
         ├── test_backup_jobs.py
         ├── test_backup_service.py
         ├── test_backup_subprocess_failures.py
+        ├── test_base_dao_min_max.py
         ├── test_job_dao.py
         ├── test_job_worker.py
         ├── test_mal_scraper.py

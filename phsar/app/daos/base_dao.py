@@ -91,18 +91,6 @@ class BaseDAO(Generic[T]):
         result = await db.execute(stmt)
         return [tuple(row) for row in result.fetchall()]
     
-    def _numeric_field(self, field_name: str):
-        """Resolve a field name to its column, rejecting anything non-numeric.
-        Separate from the queries so the two raises stay in one place."""
-        mapper = inspect(self.model)
-        if field_name not in mapper.columns and not hasattr(self.model, field_name):
-            raise FieldDoesNotExistError(field_name, self.model.__name__)
-
-        field = getattr(self.model, field_name)
-        if type(field.type) not in (Integer, Float, Numeric):
-            raise NonNumericFieldError(field_name)
-        return field
-
     async def get_min_max(self, db: AsyncSession, field_name: str) -> tuple:
         """The (min, max) bounds of a numeric field — one query, two aggregates.
 
@@ -113,7 +101,15 @@ class BaseDAO(Generic[T]):
         `percentile_cont` median needs its own sort) for numbers nothing reads —
         four such per `/filters/options?view_type=media`. Add other statistics
         only together with a caller that reads them.
+
+        `hasattr` as well as `mapper.columns`, so a hybrid with a SQL expression
+        (`Media.total_watch_time`) resolves — the media filter bounds need it.
         """
-        field = self._numeric_field(field_name)
+        if field_name not in inspect(self.model).columns and not hasattr(self.model, field_name):
+            raise FieldDoesNotExistError(field_name, self.model.__name__)
+        field = getattr(self.model, field_name)
+        if type(field.type) not in (Integer, Float, Numeric):
+            raise NonNumericFieldError(field_name)
+
         row = (await db.execute(select(func.min(field), func.max(field)))).one()
         return row[0], row[1]

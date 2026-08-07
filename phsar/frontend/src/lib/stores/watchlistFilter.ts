@@ -1,9 +1,16 @@
 import type { WatchlistGrain, WatchlistSortKey, WatchlistView } from '$lib/utils/watchlistStats';
-import { PRIORITY_OPTIONS } from '$lib/utils/watchlist';
-import { createPersistedFilter, pickKey, pickNumbers, pickStrings } from './persistedFilter';
+import {
+	createPersistedFilter,
+	DIRECTION_KEYS,
+	GRAIN_KEYS,
+	pickKey,
+	pickNumbers,
+	pickStrings,
+	VIEW_KEYS,
+	type Direction,
+} from './persistedFilter';
 
 export type WatchlistTabKey = 'watchlists' | 'tags' | 'stats';
-type Direction = 'asc' | 'desc';
 
 export interface WatchlistFilterState {
 	view: WatchlistView;
@@ -23,29 +30,31 @@ export const DEFAULT_WATCHLIST_FILTER: WatchlistFilterState = {
 	sortDir: 'asc',
 };
 
-// Rehydration whitelists — see `pickKey`.
-const VIEWS: Record<WatchlistView, true> = { grid: true, table: true };
-const GRAINS: Record<WatchlistGrain, true> = { anime: true, media: true };
-const DIRECTIONS: Record<Direction, true> = { asc: true, desc: true };
+// Rehydration whitelists — see `pickKey`. View/grain/direction come from
+// persistedFilter; only the sort keys are section-specific.
 const SORT_KEYS: Record<WatchlistSortKey, true> = {
 	title: true,
 	priority: true,
 	date: true,
 	note: true,
 };
-const PRIORITY_VALUES: readonly number[] = PRIORITY_OPTIONS.map((o) => o.value);
+// The three priority bands, inlined rather than derived from
+// `utils/watchlist.PRIORITY_OPTIONS`: this store is reachable from the ROOT
+// layout (via filterLifecycle), and that import chain pulls `utils/color`'s
+// wheel builder into every route's entry chunk — including /login.
+const PRIORITY_VALUES: readonly number[] = [1, 2, 3];
 
 // `tagUuids` needs no key set here: WatchlistFilterBar already prunes uuids
 // that aren't in the loaded `tags` store, so a rehydrated filter pointing at a
 // deleted list collapses to "all" on mount rather than rendering nothing.
 function sanitize(raw: Record<string, unknown>): WatchlistFilterState {
 	return {
-		view: pickKey(raw.view, VIEWS, DEFAULT_WATCHLIST_FILTER.view),
-		grain: pickKey(raw.grain, GRAINS, DEFAULT_WATCHLIST_FILTER.grain),
+		view: pickKey(raw.view, VIEW_KEYS, DEFAULT_WATCHLIST_FILTER.view),
+		grain: pickKey(raw.grain, GRAIN_KEYS, DEFAULT_WATCHLIST_FILTER.grain),
 		tagUuids: pickStrings(raw.tagUuids),
 		priorities: pickNumbers(raw.priorities).filter((p) => PRIORITY_VALUES.includes(p)),
 		sort: pickKey(raw.sort, SORT_KEYS, DEFAULT_WATCHLIST_FILTER.sort),
-		sortDir: pickKey(raw.sortDir, DIRECTIONS, DEFAULT_WATCHLIST_FILTER.sortDir),
+		sortDir: pickKey(raw.sortDir, DIRECTION_KEYS, DEFAULT_WATCHLIST_FILTER.sortDir),
 	};
 }
 
