@@ -5,7 +5,7 @@ from sqlalchemy import and_, delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.daos.base_dao import BaseDAO
+from app.daos.base_dao import BaseDAO, recency_order
 from app.daos.search_filters import apply_media_filters, apply_vector_ordering
 from app.models.anime import Anime
 from app.models.media import Media
@@ -136,7 +136,8 @@ class RatingDAO(BaseDAO[Ratings]):
             select(self.model)
             .filter_by(user_id=user_id)
             .options(*self._eager_load_options())
-            .order_by(self.model.modified_at.desc())
+            # Paginated, so the PK tiebreak is load-bearing — see recency_order.
+            .order_by(*recency_order(self.model))
             .limit(limit)
             .offset(offset)
         )

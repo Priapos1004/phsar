@@ -9,6 +9,26 @@ from app.exceptions import FieldDoesNotExistError, NonNumericFieldError
 
 T = TypeVar("T", bound=DeclarativeMeta)  # any SQLAlchemy model
 
+
+def recency_order(model, column: str = "modified_at") -> tuple:
+    """`(<column> DESC, id DESC)` — newest-first WITH a primary-key tiebreak.
+
+    Every newest-first ordering needs the tiebreak, because the timestamps tie by
+    construction, not by coincidence: a bulk rate stamps one `modified_at` across
+    every media in an anime, and a seasonal sweep bulk-inserts hundreds of child
+    jobs in one transaction, so `server_default=func.now()` gives them all the
+    same `created_at`.
+
+    Without a tiebreak the consequences differ by query but are never benign. An
+    unpaginated list reshuffles tied rows between identical requests. A
+    *paginated* one is worse: the sort is free to place a tied row differently
+    per page fetch, so the same row can appear on page 1 and again on page 2 —
+    or be skipped entirely.
+
+    Pass `column="created_at"` for insertion-ordered listings.
+    """
+    return (getattr(model, column).desc(), model.id.desc())
+
 class BaseDAO(Generic[T]):
     def __init__(self, model: type[T]):
         self.model = model

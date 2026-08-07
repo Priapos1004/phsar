@@ -5,7 +5,7 @@ from sqlalchemy import case, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.daos.base_dao import BaseDAO
+from app.daos.base_dao import BaseDAO, recency_order
 from app.models.job import Job, JobKind, JobStatus
 
 
@@ -158,7 +158,10 @@ class JobDAO(BaseDAO[Job]):
         if filters:
             page_stmt = page_stmt.where(*filters)
         page_stmt = (
-            page_stmt.order_by(Job.created_at.desc())
+            # Paginated, and a seasonal sweep bulk-inserts hundreds of children in
+            # one transaction — so they all share a created_at and the PK tiebreak
+            # is what stops a row appearing on two pages. See recency_order.
+            page_stmt.order_by(*recency_order(Job, "created_at"))
             .limit(limit)
             .offset(offset)
             .options(*self._ADMIN_LOAD_OPTIONS)
