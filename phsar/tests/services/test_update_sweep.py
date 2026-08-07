@@ -1427,6 +1427,41 @@ async def test_tier_handles_missing_sidecar(db_session):
 
 
 @pytest.mark.asyncio
+async def test_media_less_anime_falls_through_to_long_cycle(db_session):
+    """An anime with NO media at all must land in `long_cycle`, and must still
+    be counted exactly once so the buckets keep summing to the catalogue total.
+
+    This is the sharp edge of the per-anime facts roll-up: the anime grain reads
+    its atoms from a media-grouped aggregate LEFT JOINed to `Anime`, so a
+    media-less anime has no row there and every atom reads NULL. Every `WHEN` in
+    the cascade is then not-true and it drops to the `else_`. Coalescing
+    `min_stable` to 0 on the way out of that join — which looks like defensive
+    tidying — would instead match the `stabilizing_0` branch and silently
+    reclassify it.
+
+    (The `coalesce` INSIDE the aggregate is the unrelated, correct case of a
+    media with no freshness sidecar — covered by the test above.)
+    """
+    baseline = await AnimeDAO().count_by_sweep_tier_priority(db_session)
+
+    db_session.add(Anime(mal_id=-7008, title="A-7008-no-media"))
+    await db_session.flush()
+
+    after = await AnimeDAO().count_by_sweep_tier_priority(db_session)
+    delta = {k: after[k] - baseline.get(k, 0) for k in _TIER_BUCKETS}
+    assert delta == {
+        "airing_now": 0, "stabilizing": 0, "weekly_cycle": 0,
+        "long_cycle": 1, "archival_cycle": 0,
+    }
+    # Not attributed to any stabilize check-count — the give-away that a
+    # coalesce leaked in would be a +1 under check 0.
+    assert _breakdown_delta(after, baseline) == {0: 0, 1: 0, 2: 0}
+
+    total_anime = (await db_session.execute(select(func.count(Anime.id)))).scalar_one()
+    assert _tier_total(after) == total_anime
+
+
+@pytest.mark.asyncio
 async def test_count_media_by_sweep_tier_priority_buckets_each_media_once(db_session):
     """Media-level membership cascade: airing_now > stabilizing (stable<3) >
     weekly_cycle (recent main) > archival_cycle (premiered >10y ago) >

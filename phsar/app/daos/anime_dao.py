@@ -3,7 +3,7 @@ from typing import Any, NamedTuple
 from uuid import UUID
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import and_, case, cast, exists, func, or_, select, text
+from sqlalchemy import and_, case, cast, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
@@ -60,14 +60,13 @@ SWEEP_STABILIZE_THRESHOLD = 3
 
 class _SweepAtoms(NamedTuple):
     """Anime-level cycle-membership atoms for the admin Overview count card
-    (`count_by_sweep_tier_priority`). As of v0.14.8 these are pure roll-ups
-    of the anime's MEDIA tiers — every atom is an EXISTS over the anime's
-    media — so the anime breakdown stays consistent with the media breakdown
-    (an anime inherits its most-urgent media's tier under the priority
-    cascade). The stabilizing tier is derived from a separate MIN
-    stable_check_count subquery (`count_by_sweep_tier_priority` builds it and
-    feeds it to `_tier_bucket`), so it's not an atom here — only the
-    airing / recent-main / archival membership EXISTS gates are.
+    (`count_by_sweep_tier_priority`). Pure roll-ups of the anime's MEDIA tiers,
+    so the anime breakdown stays consistent with the media breakdown — an anime
+    inherits its most-urgent media's tier under the priority cascade.
+
+    All three read columns off `_anime_sweep_cte`, which rolls the media up in
+    one pass; the stabilizing tier reads that CTE's `min_stable` directly and so
+    isn't an atom here.
     """
     airing_now: Any
     recent_main: Any
@@ -130,53 +129,69 @@ def _media_sweep_atoms(mf_alias) -> _MediaSweepAtoms:
     )
 
 
-def _sweep_atoms() -> _SweepAtoms:
-    """Build the anime membership atoms as roll-ups of the anime's MEDIA
-    tiers (EXISTS over media). Stabilizing membership isn't an atom — it's
-    derived in `_tier_bucket` from the MIN stable_check_count subquery
-    `count_by_sweep_tier_priority` supplies (matching the media card, not the
-    anime probe counter)."""
+def _anime_sweep_cte():
+    """Every per-anime input the tier cascade needs, rolled up from media in ONE
+    pass grouped by `media.anime_id`.
+
+    It has to be one pre-aggregated pass rather than correlated subqueries per
+    atom. `_tier_bucket` emits one `WHEN` per stabilize level, so a correlated
+    `min_stable` appears in the compiled SQL once per level and Postgres plans
+    that many independent SubPlans with no cross-node caching — each re-scanning
+    that anime's media. The cost grows faster than the catalogue does, on a card
+    that loads with every admin Overview.
+
+    LEFT JOIN this to `Anime` and **do not coalesce the result**: a media-less
+    anime gets no CTE row, so every atom reads NULL, every `WHEN` in the cascade
+    is not-true, and it falls through to the `else_` (`long_cycle`) — which is
+    what it should get. Coalescing `min_stable` to 0 would bucket it as
+    `stabilizing_0` instead. The `coalesce` INSIDE the CTE is the different case
+    of a media that simply has no freshness sidecar yet.
+    """
+    mf = aliased(MediaFreshness)
     now = func.now()
     recent_main_cutoff = now - text(f"interval '{SWEEP_RECENT_MAIN_YEARS} years'")
-    archival_cutoff = now - text(f"interval '{SWEEP_ARCHIVAL_AGE_YEARS} years'")
+    return (
+        select(
+            Media.anime_id.label("anime_id"),
+            func.bool_or(
+                Media.airing_status == AIRING_STATUS_CURRENTLY_AIRING
+            ).label("airing_now"),
+            func.bool_or(
+                and_(
+                    Media.relation_type == RelationType.Main,
+                    Media.aired_from >= recent_main_cutoff,
+                )
+            ).label("recent_main"),
+            # MAX, not an EXISTS pair — see `_sweep_atoms`' archival note.
+            func.max(Media.aired_from).label("newest_aired"),
+            # The anime's least-settled member. While the anime is in the
+            # stabilizing tier this is < threshold, so it maps onto exactly one
+            # `stabilizing_<n>` bucket.
+            func.min(func.coalesce(mf.stable_check_count, 0)).label("min_stable"),
+        )
+        .outerjoin(mf, mf.media_id == Media.id)
+        .group_by(Media.anime_id)
+        .cte("anime_sweep_facts")
+    )
 
-    airing_now = exists().where(
-        and_(
-            Media.anime_id == Anime.id,
-            Media.airing_status == AIRING_STATUS_CURRENTLY_AIRING,
-        )
-    )
-    recent_main = exists().where(
-        and_(
-            Media.anime_id == Anime.id,
-            Media.relation_type == RelationType.Main,
-            Media.aired_from >= recent_main_cutoff,
-        )
-    )
+
+def _sweep_atoms(cte) -> _SweepAtoms:
+    """Project `_anime_sweep_cte`'s rolled-up columns into the membership atoms
+    `_tier_bucket` consumes."""
+    archival_cutoff = func.now() - text(f"interval '{SWEEP_ARCHIVAL_AGE_YEARS} years'")
     # "The newest thing this franchise aired is older than the cutoff" — the ∀
-    # quantifier, where airing_now / recent_main use ∃. That's the same documented
+    # quantifier, where airing_now / recent_main are ∃. That's the same documented
     # rule ("an anime inherits its most-urgent media's tier"), not a special case:
     # those two are the FAST end of the cascade so any qualifying member wins,
     # while archival is the SLOW end so every member must qualify. A future editor
-    # "fixing" this into an EXISTS for symmetry would be wrong.
+    # "fixing" this into a bool_or for symmetry would be wrong.
     #
-    # MAX rather than `EXISTS(aged) AND NOT EXISTS(newer)`: identical on every shape
-    # (MAX ignores NULLs, so an all-undated or media-less anime yields
-    # `NULL < cutoff` → not true → falls to long_cycle) and measurably cheaper —
-    # the two-EXISTS form made the planner hash both subplans over all of `media`,
-    # costing ~68% more on the Overview card's query. Mirrors the correlated MIN
-    # that `count_by_sweep_tier_priority` already builds for the stabilize counter.
-    newest_aired = (
-        select(func.max(Media.aired_from))
-        .where(Media.anime_id == Anime.id)
-        .correlate(Anime)
-        .scalar_subquery()
-    )
-    archival = newest_aired < archival_cutoff
+    # MAX also drops the NULL hazard for free: it ignores NULLs, so an all-undated
+    # anime yields `NULL < cutoff` → not true → long_cycle.
     return _SweepAtoms(
-        airing_now=airing_now,
-        recent_main=recent_main,
-        archival=archival,
+        airing_now=cte.c.airing_now,
+        recent_main=cte.c.recent_main,
+        archival=cte.c.newest_aired < archival_cutoff,
     )
 
 
@@ -425,22 +440,18 @@ class AnimeDAO(MalIdDAO[Anime]):
         most-urgent media's tier. `weekly_cycle` = has a recent main (no
         airing/stabilizing media); `long_cycle` = the else. The stabilizing
         total is further broken down per check count (see `_tier_bucket`).
+
+        OUTER join to the facts CTE, un-coalesced, so a media-less anime falls
+        through the whole cascade to `long_cycle` — see `_anime_sweep_cte`.
         """
-        mf_min = aliased(MediaFreshness)
-        # Anime stabilization progress = its least-settled member: the MIN
-        # stable_check_count across the anime's media (a missing sidecar
-        # coalesces to 0). While the anime is in the stabilizing tier this MIN
-        # is < threshold, so it maps onto exactly one `stabilizing_<n>` bucket.
-        min_stable = (
-            select(func.min(func.coalesce(mf_min.stable_check_count, 0)))
-            .select_from(Media)
-            .outerjoin(mf_min, mf_min.media_id == Media.id)
-            .where(Media.anime_id == Anime.id)
-            .correlate(Anime)
-            .scalar_subquery()
+        facts = _anime_sweep_cte()
+        bucket = self._tier_bucket(_sweep_atoms(facts), facts.c.min_stable)
+        stmt = (
+            select(bucket, func.count(Anime.id))
+            .select_from(Anime)
+            .outerjoin(facts, facts.c.anime_id == Anime.id)
+            .group_by(bucket)
         )
-        bucket = self._tier_bucket(_sweep_atoms(), min_stable)
-        stmt = select(bucket, func.count(Anime.id)).select_from(Anime).group_by(bucket)
         return await self._count_by_tier(db, stmt)
 
     async def count_media_by_sweep_tier_priority(
