@@ -335,7 +335,7 @@ Each anime search result card shows:
 
 ## 8. Ratings Page
 
-`/ratings` is your personal ratings hub (replaces the old `/statistics` placeholder). One `GET /ratings/scores` fetch on page load feeds both tabs; all grouping, filtering, and statistics are computed client-side.
+`/ratings` is your personal ratings hub (replaces the old `/statistics` placeholder). One `GET /ratings/scores` fetch feeds both tabs; all grouping, filtering, and statistics are computed client-side. That fetch is shared session-wide with the watchlist Statistics subtab and the rating-consistency panel, so visiting them in any order downloads it once — and any rating write (save, delete, rewatch, bulk) drops it so the next reader sees fresh scores.
 
 ### 8.1 Tab Navigation
 - Two tabs via a `?tab=` query param: **Ratings** (`ratings`, default) and **Statistics** (`stats`). An unknown/missing value falls back to `ratings`.
@@ -584,7 +584,7 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 | `/search/media` | GET | Media-view search after token verification |
 | `/media/anime/{uuid}` | GET | Anime detail page load |
 | `/media/{uuid}` | GET | Media detail page load |
-| `/ratings/scores` | GET | Rating-consistency helper (compact list of the user's ratings; fetched once on panel expand) |
+| `/ratings/scores` | GET | The `/ratings` page, the watchlist Statistics subtab, and the rating-consistency panel — one shared session-cached fetch (`ratingScores` store), invalidated by any rating write |
 | `/ratings/media/{uuid}` | GET | Media detail page load (fetch user's rating) |
 | `/ratings/anime/{uuid}` | GET | Anime detail page load (fetch user's ratings for all media) |
 | `/ratings/media/{uuid}` | PUT | Create or update a rating |

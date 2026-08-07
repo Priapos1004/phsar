@@ -31,6 +31,7 @@
 	import WatchlistBookmarkButton from '$lib/components/WatchlistBookmarkButton.svelte';
 	import WatchlistBookmarkIcon from '$lib/components/WatchlistBookmarkIcon.svelte';
 	import AnimeShare from '$lib/components/AnimeShare.svelte';
+	import { invalidateRatingScores } from '$lib/stores/ratingScores';
 
 	const getUserRole = getContext<() => string | null>('userRole');
 	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
@@ -226,6 +227,7 @@
 		try {
 			const qs = bulkDeleteHistory ? '?delete_watch_history=true' : '';
 			await api.post(`/ratings/bulk-delete${qs}`, { media_uuids: [...selectedUuids] });
+			invalidateRatingScores();
 			showDeleteDialog = false;
 			selectMode = false;
 			selectedUuids = new Set();

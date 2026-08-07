@@ -15,6 +15,7 @@
 	import { userSettings } from '$lib/stores/userSettings';
 	import { refreshWatchlist } from '$lib/stores/watchlist';
 	import { pushToast } from '$lib/stores/toast';
+	import { invalidateRatingScores } from '$lib/stores/ratingScores';
 
 	interface Props {
 		open: boolean;
@@ -88,6 +89,7 @@
 
 		try {
 			const results = await api.put<RatingOut[]>('/ratings/bulk', payload);
+			invalidateRatingScores();
 			// Rating succeeded — optionally take the watchlisted subset off the watchlist.
 			// bulk-delete silently skips media not on the list, so the whole selection is safe.
 			if (alsoRemoveWatchlist && watchlistedCount > 0) {

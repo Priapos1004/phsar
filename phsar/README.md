@@ -289,6 +289,7 @@ phsar/
 │   │   │   │   ├── jobs.ts
 │   │   │   │   ├── maintenance.ts
 │   │   │   │   ├── persistedFilter.ts
+│   │   │   │   ├── ratingScores.ts
 │   │   │   │   ├── ratingsFilter.ts
 │   │   │   │   ├── spoilerVisibility.ts
 │   │   │   │   ├── tags.ts
@@ -373,9 +374,9 @@ phsar/
 │   │       ├── job-bell.test.ts
 │   │       ├── job-detail-counters.test.ts
 │   │       ├── job-summary.test.ts
+│   │       ├── layout-guard.test.ts
 │   │       ├── library-add.test.ts
 │   │       ├── login.test.ts
-│   │       ├── layout-guard.test.ts
 │   │       ├── maintenance-banner.test.ts
 │   │       ├── media-change-sort.test.ts
 │   │       ├── media-detail.test.ts
@@ -386,6 +387,7 @@ phsar/
 │   │       ├── rating-attributes.test.ts
 │   │       ├── rating-modal.test.ts
 │   │       ├── rating-neighbors.test.ts
+│   │       ├── rating-scores-store.test.ts
 │   │       ├── rating-stats.test.ts
 │   │       ├── searchbar.test.ts
 │   │       ├── segmented-control.test.ts

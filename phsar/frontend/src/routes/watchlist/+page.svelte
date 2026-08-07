@@ -2,6 +2,7 @@
 	import { onMount, getContext } from 'svelte';
 	import { page } from '$app/state';
 	import { api, ApiError } from '$lib/api';
+	import { ensureRatingScores } from '$lib/stores/ratingScores';
 	import { userSettings } from '$lib/stores/userSettings';
 	import { refreshTags } from '$lib/stores/tags';
 	import type { WatchlistItem, RatingScoreItem } from '$lib/types/api';
@@ -72,7 +73,7 @@
 		if (statsRequested) return;
 		statsRequested = true;
 		try {
-			const scores = await api.get<RatingScoreItem[]>('/ratings/scores');
+			const scores = await ensureRatingScores();
 			rated = scores.map((s) => ({ media_uuid: s.media_uuid, anime_uuid: s.anime_uuid }));
 		} catch {
 			// The rated/continuation figures need ratings; on failure show 0 for them (rated = [])

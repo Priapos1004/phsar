@@ -6,6 +6,7 @@
     import { spoilerVisibility, refreshSpoilerVisibility } from '$lib/stores/spoilerVisibility';
     import { refreshWatchlist, clearWatchlist } from '$lib/stores/watchlist';
     import { refreshTags, clearTags } from '$lib/stores/tags';
+    import { clearRatingScores } from '$lib/stores/ratingScores';
     import { resetAllPersistedFilters } from '$lib/stores/persistedFilter';
     import { applyFilterLifecycle } from '$lib/utils/filterLifecycle';
     import { afterNavigate } from '$app/navigation';
@@ -39,10 +40,12 @@
     // Everything keyed to WHICH user this tab belongs to. The filters join the
     // watchlist/tags pair rather than auth.ts's per-session bell cleanup:
     // `watchlistFilter.tagUuids` holds this user's list uuids, which the next
-    // user can't even see.
+    // user can't even see. The rating-scores cache is the bluntest case — it
+    // holds one user's entire rating set.
     function clearPerUserStores() {
       clearWatchlist();
       clearTags();
+      clearRatingScores();
       resetAllPersistedFilters();
     }
 

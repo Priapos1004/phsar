@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Badge } from '$lib/components/ui/badge';
-	import { api } from '$lib/api';
+	import { ensureRatingScores } from '$lib/stores/ratingScores';
 	import { getRatingAttr } from '$lib/types/api';
 	import type { RatingScoreItem } from '$lib/types/api';
 	import { selectRatingNeighbors } from '$lib/utils/ratingNeighbors';
@@ -58,7 +58,7 @@
 		loadingNeighbors = true;
 		neighborsError = false;
 		try {
-			neighborItems = await api.get<RatingScoreItem[]>('/ratings/scores');
+			neighborItems = await ensureRatingScores();
 		} catch {
 			// Leave neighborItems null (not []) so a re-expand or the explicit
 			// "Try again" retries instead of latching the misleading empty state.
