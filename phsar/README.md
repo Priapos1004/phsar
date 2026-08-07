@@ -374,6 +374,7 @@ phsar/
 │   │       ├── job-summary.test.ts
 │   │       ├── library-add.test.ts
 │   │       ├── login.test.ts
+│   │       ├── layout-guard.test.ts
 │   │       ├── maintenance-banner.test.ts
 │   │       ├── media-change-sort.test.ts
 │   │       ├── media-detail.test.ts

@@ -17,8 +17,9 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 
 ### 1.2 Auth Guard
 - Navigating to any route except `/login` without a token redirects to `/login`
-- On every page load, the stored token is validated via `GET /auth/validate`
-- If validation returns 401, token is cleared from localStorage and user is redirected to `/login`
+- The guard decides locally and synchronously, from the token's own `exp` claim — it must not make a request. SvelteKit re-runs the root load on *any* URL change (including `?tab=` switches) and `preload-data="hover"` runs it on hover, so a request here would sit in front of every navigation and every link hover
+- A token that is missing, expired or unparseable is cleared from localStorage and the user is redirected to `/login`
+- The server stays authoritative: every API call the page then makes rejects a bad token, and the JWT is signed so `exp` can't be forged. Expiry *during* a session is the session tick's job (1.6), not the guard's
 - A 401 on any *other* in-app API call is **not** globally redirected — that would let a background poll on a just-expired token bypass the idle-timeout dialog (1.6). The caller handles it (e.g. the JobBell silently stops polling); stale tokens are otherwise caught by the navigation guard above and the session tick
 
 ### 1.3 Logout
@@ -575,8 +576,7 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 | Endpoint | Method | When |
 |----------|--------|------|
 | `/auth/login` | POST | Login form submission |
-| `/auth/validate` | GET | Every page load (layout) |
-| `/filters/options?view_type=anime\|media` | GET | SearchBar mount and view toggle |
+| `/filters/options?view_type=anime\|media` | GET | SearchBar first mount per view (cached for the session by the `filterOptions` store; cleared when a scrape lands) |
 | `/filters/genres` | GET | Genre-badge tooltips (cached once per session by the `genres` store) |
 | `/filters/create-token` | POST | Search submission |
 | `/filters/verify-token` | POST | Search page load |
