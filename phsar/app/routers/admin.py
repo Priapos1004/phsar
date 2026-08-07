@@ -180,6 +180,17 @@ async def download_backup(filename: str):
         path=path,
         media_type="application/octet-stream",
         filename=filename,
+        # Opt this one response out of GZipMiddleware, which otherwise decides on
+        # size + content-type alone and would stream a multi-GB `pg_dump -Fc`
+        # archive through gzip. The archive is already zlib-compressed, so that
+        # buys ~0% at real CPU cost on a 2-vCPU VM, and it drops Content-Length
+        # (turning the browser's download progress indeterminate).
+        # `IdentityResponder.send_with_compression` skips compression whenever a
+        # content-encoding is already set. Note RFC 9110 reserves `identity` for
+        # Accept-Encoding, so this is the pragmatic opt-out idiom rather than a
+        # conforming header — swap it for a content-type allowlist if a proxy
+        # ever objects.
+        headers={"Content-Encoding": "identity"},
     )
 
 

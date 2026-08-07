@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.core import maintenance
+from app.core.config import settings
 from app.core.db import DATABASE_URL, async_session_maker
 from app.core.db import engine as global_engine
 from app.models.job import Job
@@ -62,6 +63,18 @@ async def db_engine():
     yield engine
     await engine.dispose()
     await _drain_async_close()
+
+
+@pytest.fixture
+def backup_dir(tmp_path, monkeypatch):
+    """Point `BACKUP_DIR` at a per-test temp dir, so anything that shells out
+    `pg_dump` writes there instead of the real backup directory.
+
+    Lives here rather than per-file because four test modules across two
+    directories need it — the router-level compression test is the one that put
+    it outside `tests/services/`."""
+    monkeypatch.setattr(settings, "BACKUP_DIR", str(tmp_path))
+    return tmp_path
 
 
 @pytest.fixture

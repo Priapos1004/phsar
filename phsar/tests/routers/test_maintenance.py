@@ -61,6 +61,9 @@ async def test_503_carries_cors_headers_for_cross_origin_requests(client):
     maintenance gate AFTER CORSMiddleware (via add_middleware) put the
     gate OUTSIDE CORS — so 503 short-circuits never reached CORS's
     response-header injection.
+
+    Also covers the gzip layer, which sits between the two: this runs against the
+    real `create_app()`, so anything registered outside CORS breaks it.
     """
     maintenance.set_maintenance(True)
 

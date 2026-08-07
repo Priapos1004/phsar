@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
@@ -187,7 +188,20 @@ def create_app() -> FastAPI:
     # otherwise cross-origin fetch() rejects with a TypeError instead of a
     # 503 response, and the frontend's catch falls into the generic
     # "unexpected error" branch instead of the maintenance-banner branch.
+    #
+    # GZip sits BETWEEN the two, so CORS stays outermost and the invariant
+    # above holds. The JSON list endpoints compress ~7x (they're long runs of
+    # repeated field names), which on a home connection to the VM is the
+    # dominant term in their latency. `compresslevel=6` rather than starlette's
+    # default 9: level 9 spends real CPU on a 2-vCPU VM for a percent or two of
+    # size. `minimum_size` keeps small bodies — including the maintenance
+    # gate's own 503 — passing through untouched.
+    #
+    # A binary endpoint whose payload is ALREADY compressed should opt out rather
+    # than pay gzip for nothing: set `Content-Encoding: identity` on the response,
+    # as the backup download does (`routers/admin.download_backup`).
     app.add_middleware(MaintenanceGateMiddleware)
+    app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=6)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.CORS_ORIGINS,
