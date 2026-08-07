@@ -1,6 +1,7 @@
 import logging
 from uuid import UUID
 
+from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.rating_dao import RatingDAO
@@ -219,38 +220,24 @@ async def get_ratings_for_anime(
     return await _ratings_to_out(db, user_id, ratings)
 
 
-def _rating_to_score_item(r: Ratings) -> RatingScoreItem:
-    data = {
-        "media_uuid": r.media.uuid,
-        "anime_uuid": r.media.anime.uuid,
-        "media_title": r.media.title,
-        "media_name_eng": r.media.name_eng,
-        "media_name_jap": r.media.name_jap,
-        "anime_title": r.media.anime.title,
-        "anime_name_eng": r.media.anime.name_eng,
-        "anime_name_jap": r.media.anime.name_jap,
-        "media_cover_image": r.media.cover_image,
-        "anime_cover_image": r.media.anime.cover_image,
-        "rating": r.rating,
-        "watch_status": r.watch_status,
-        "episodes_watched": r.episodes_watched,
-        "age_rating_numeric": r.media.age_rating_numeric,
-        "genres": [mg.genre.name for mg in r.media.media_genre],
-        "studios": [ms.studio.name for ms in r.media.media_studio],
-        # MAL score/votes + watch-time + season-year feed the /ratings page charts;
-        # all are columns on the already-loaded media row (no extra query).
-        "mal_score": r.media.score,
-        "scored_by": r.media.scored_by,
-        "episodes": r.media.episodes,
-        "duration_seconds": r.media.duration_seconds,
-        "anime_season_name": r.media.anime_season_name.value if r.media.anime_season_name else None,
-        "anime_season_year": r.media.anime_season_year,
-        "relation_type": r.media.relation_type.value,
-        "created_at": r.created_at,
-        "modified_at": r.modified_at,
-    }
-    for field in RatingAttributes.model_fields:
-        data[field] = getattr(r, field)
+def _rating_to_score_item(r: Row) -> RatingScoreItem:
+    """Build the DTO from one flat projection row.
+
+    `RatingDAO.get_all_for_score_items` labels every column to its DTO field —
+    including the 11 attribute fields, which it selects off the same
+    schema-derived list the DTO inherits them from — so the row maps across
+    wholesale and only the four values needing a Python-side conversion are named
+    here. Spelling out all 36 renames instead would put the field list in a third
+    place (DTO, projection, builder), so adding a field would mean three edits.
+    """
+    data = dict(r._mapping)
+    # str-enums → the DTO fields are plain `str`.
+    data["relation_type"] = r.relation_type.value
+    data["anime_season_name"] = r.anime_season_name.value if r.anime_season_name else None
+    # A media with no genres/studios has no aggregate row, so the LEFT JOIN
+    # yields NULL rather than an empty array.
+    data["genres"] = r.genres or []
+    data["studios"] = r.studios or []
     return RatingScoreItem(**data)
 
 

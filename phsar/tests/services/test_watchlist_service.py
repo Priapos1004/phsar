@@ -275,3 +275,47 @@ async def test_get_items_projection(db_session):
     assert item.tag_name == tag_service.DEFAULT_TAG_NAME
     assert item.tag_color == tag_service.DEFAULT_TAG_COLOR
     assert item.mal_id == media[0].mal_id
+    # The projection aggregates genres/studios with array_agg, which yields SQL
+    # NULL — not an empty array — for a media with none. The DTO must normalize
+    # that to [], or the Statistics subtab's tallies get a null in the list.
+    assert item.genres == []
+    assert item.studios == []
+    # Media and Anime both have uuid/title/name_eng/name_jap/cover_image, so an
+    # unlabelled column in the flat projection would silently collapse the pair.
+    # Pin that the two grains stayed distinct.
+    assert item.anime_uuid != item.media_uuid
+    assert item.media_title == media[0].title
+
+
+async def test_get_items_order_is_deterministic_under_modified_at_ties(db_session):
+    """A bulk add stamps ONE modified_at across every selected media, so the
+    overview's `ORDER BY modified_at DESC` ties across the whole batch. The
+    consumer treats the incoming order as meaningful (it breaks its own full ties
+    by relying on it), so the query needs a tiebreak — otherwise the same request
+    can return tied rows in a different order on each call and the grid reshuffles
+    under the user for no reason.
+
+    Asserting repeat calls agree, rather than asserting one specific order, is
+    the point: the property that matters is stability, and a hardcoded order
+    would pass even with a nondeterministic query on a small enough fixture.
+    """
+    user, default, media = await _setup(db_session, media_count=6, mal_seed=-80600)
+    await watchlist_service.bulk_upsert_watchlist(
+        db_session, user.id,
+        WatchlistBulkCreate(
+            media_uuids=[m.uuid for m in media], tag_uuid=default.uuid, priority=2,
+        ),
+    )
+
+    runs = [
+        [i.media_uuid for i in await watchlist_service.get_watchlist_items(db_session, user.id)]
+        for _ in range(4)
+    ]
+    assert len(runs[0]) == 6
+    # All six share one modified_at, so this is entirely the tiebreak's doing.
+    stamps = {
+        i.modified_at
+        for i in await watchlist_service.get_watchlist_items(db_session, user.id)
+    }
+    assert len(stamps) == 1, f"fixture no longer ties on modified_at: {stamps}"
+    assert all(r == runs[0] for r in runs[1:]), f"order varied between calls: {runs}"

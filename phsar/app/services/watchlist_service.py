@@ -1,6 +1,7 @@
 import logging
 from uuid import UUID
 
+from sqlalchemy.engine import Row
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,40 +48,24 @@ def _to_out(w: Watchlist) -> WatchlistOut:
     )
 
 
-def _to_item(w: Watchlist) -> WatchlistItem:
-    # Requires the WIDE loader: reads m.media_genre/media_studio (both lazy="raise"), which
-    # only WatchlistDAO.get_all_for_items eager-loads — under a lighter lookup loader the
-    # lazy="raise" guard raises InvalidRequestError here. Its sole caller (get_watchlist_items)
-    # uses that loader.
-    m = w.media
-    a = m.anime
-    return WatchlistItem(
-        uuid=w.uuid,
-        media_uuid=m.uuid,
-        anime_uuid=a.uuid,
-        media_title=m.title,
-        media_name_eng=m.name_eng,
-        media_name_jap=m.name_jap,
-        anime_title=a.title,
-        anime_name_eng=a.name_eng,
-        anime_name_jap=a.name_jap,
-        media_cover_image=m.cover_image,
-        anime_cover_image=a.cover_image,
-        priority=w.priority,
-        note=w.note,
-        tag_uuid=w.tag.uuid,
-        tag_name=w.tag.name,
-        tag_color=w.tag.color,
-        relation_type=m.relation_type.value,
-        anime_season_name=m.anime_season_name.value if m.anime_season_name else None,
-        anime_season_year=m.anime_season_year,
-        mal_id=m.mal_id,
-        genres=[mg.genre.name for mg in m.media_genre],
-        studios=[ms.studio.name for ms in m.media_studio],
-        total_watch_time=m.total_watch_time,
-        created_at=w.created_at,
-        modified_at=w.modified_at,
-    )
+def _to_item(w: Row) -> WatchlistItem:
+    """Build the overview DTO from one flat projection row.
+
+    `WatchlistDAO.get_all_for_items` labels every column to its DTO field, so the
+    row maps across wholesale and only the four values needing a Python-side
+    conversion are named here. Spelling out all 25 renames instead would put the
+    field list in a third place (DTO, projection, builder), so adding a field
+    would mean three edits.
+    """
+    data = dict(w._mapping)
+    # str-enums → the DTO fields are plain `str`.
+    data["relation_type"] = w.relation_type.value
+    data["anime_season_name"] = w.anime_season_name.value if w.anime_season_name else None
+    # A media with no genres/studios has no aggregate row, so the LEFT JOIN
+    # yields NULL rather than an empty array.
+    data["genres"] = w.genres or []
+    data["studios"] = w.studios or []
+    return WatchlistItem(**data)
 
 
 async def _resolve_tag(db: AsyncSession, user_id: int, tag_uuid: UUID) -> Tag:

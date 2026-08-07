@@ -2,10 +2,17 @@ import logging
 from uuid import UUID
 
 from sqlalchemy import and_, delete, select
+from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.daos.base_dao import BaseDAO, recency_order
+from app.daos.media_projections import (
+    anime_identity_columns,
+    media_genre_names,
+    media_identity_columns,
+    media_studio_names,
+)
 from app.daos.search_filters import apply_media_filters, apply_vector_ordering
 from app.models.anime import Anime
 from app.models.media import Media
@@ -16,7 +23,7 @@ from app.models.rating_search import RatingSearch
 from app.models.ratings import Ratings
 from app.schemas.media_filter_schema import SearchType
 from app.schemas.rating_schema import RatingAttributes, RatingSearchFilters
-from app.services.vector_embedding_service import generate_embedding
+from app.services.vector_embedding_service import generate_query_embedding
 
 logger = logging.getLogger(__name__)
 
@@ -144,24 +151,59 @@ class RatingDAO(BaseDAO[Ratings]):
         result = await db.execute(stmt)
         return result.scalars().all()
 
-    async def get_all_for_score_items(self, db: AsyncSession, user_id: int) -> list[Ratings]:
-        """All of a user's ratings with media → anime + genres + studios eager-loaded
-        (no embeddings), for the rating-consistency helper. No pagination: the helper
-        compares against the whole set to find the nearest scores client-side.
-        Ordered modified_at desc so the client's stable sort breaks full ties by
-        recency without an extra sort key."""
+    async def get_all_for_score_items(self, db: AsyncSession, user_id: int) -> list[Row]:
+        """All of a user's ratings as a FLAT projection of scalars — `Row`s, not
+        ORM objects — for `rating_service.get_rating_score_items`. No pagination:
+        the consistency helper compares against the whole set to find the nearest
+        scores client-side.
+
+        Flat rather than `selectinload`ed: see `daos/media_projections` for why
+        these two endpoints project instead of eager-loading.
+
+        Every column is labelled to its `RatingScoreItem` field name, which is
+        what lets the service build the DTO straight off `Row._mapping` — so this
+        projection IS the field list, and a rename here is a rename of the DTO
+        contract.
+
+        `ix_ratings_user_modified` covers the `WHERE user_id ORDER BY
+        modified_at DESC` on the driving table; `recency_order` supplies the
+        required PK tiebreak.
+        """
+        media_scope = select(Ratings.media_id).where(Ratings.user_id == user_id)
+        genres = media_genre_names(media_scope)
+        studios = media_studio_names(media_scope)
         stmt = (
-            select(self.model)
-            .filter_by(user_id=user_id)
-            .options(
-                selectinload(Ratings.media).selectinload(Media.anime),
-                selectinload(Ratings.media).selectinload(Media.media_genre).selectinload(MediaGenre.genre),
-                selectinload(Ratings.media).selectinload(Media.media_studio).selectinload(MediaStudio.studio),
+            select(
+                Ratings.rating,
+                Ratings.watch_status,
+                Ratings.episodes_watched,
+                Ratings.created_at,
+                Ratings.modified_at,
+                # Driven off the schema-derived list so a new attribute can't be
+                # added to the DTO and forgotten here.
+                *(getattr(Ratings, f) for f in _RATING_ATTR_FIELDS),
+                *media_identity_columns(),
+                Media.score.label("mal_score"),
+                Media.scored_by,
+                Media.episodes,
+                Media.duration_seconds,
+                Media.anime_season_name,
+                Media.anime_season_year,
+                Media.relation_type,
+                # Hybrid with a SQL expression — selects like a column.
+                Media.age_rating_numeric.label("age_rating_numeric"),
+                *anime_identity_columns(),
+                genres.c.genres,
+                studios.c.studios,
             )
-            .order_by(self.model.modified_at.desc())
+            .join(Media, Media.id == Ratings.media_id)
+            .join(Anime, Anime.id == Media.anime_id)
+            .outerjoin(genres, genres.c.media_id == Media.id)
+            .outerjoin(studios, studios.c.media_id == Media.id)
+            .where(Ratings.user_id == user_id)
+            .order_by(*recency_order(Ratings))
         )
-        result = await db.execute(stmt)
-        return result.scalars().all()
+        return (await db.execute(stmt)).all()
 
     async def search_ratings_with_filters(
         self,
@@ -207,7 +249,7 @@ class RatingDAO(BaseDAO[Ratings]):
         )
 
         if query:
-            query_embedding = await generate_embedding(query)
+            query_embedding = await generate_query_embedding(query)
             stmt = apply_vector_ordering(
                 stmt, search_type, query_embedding,
                 extra_columns={SearchType.RATING_NOTES: RatingSearch.note_embedding},

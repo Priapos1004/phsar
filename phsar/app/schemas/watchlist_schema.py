@@ -57,8 +57,11 @@ class WatchlistOut(BaseModel):
 
 class WatchlistItem(BaseModel):
     """Wide projection for the /watchlist overview page (list + grid derived from one
-    fetch). Every field is a column on rows already eager-loaded by
-    WatchlistDAO.get_all_for_items (media → anime + tag), so no extra query cost."""
+    fetch). Every field is a scalar, which is what lets
+    WatchlistDAO.get_all_for_items fetch the whole set as one flat projection
+    (genres/studios as aggregated arrays) with no ORM hydration — keep it that way,
+    since a field needing a relationship traversal would reintroduce the
+    per-collection round trips."""
     uuid: UUID
     media_uuid: UUID
     anime_uuid: UUID
@@ -79,8 +82,8 @@ class WatchlistItem(BaseModel):
     anime_season_name: str | None
     anime_season_year: int | None
     mal_id: int
-    # Per-media genres + studios (eager-loaded by get_all_for_items) so the Statistics
-    # subtab can tally top genres/studios client-side off this one fetch.
+    # Per-media genres + studios (aggregated arrays from get_all_for_items) so the
+    # Statistics subtab can tally top genres/studios client-side off this one fetch.
     genres: list[str]
     studios: list[str]
     # For the Statistics "queued time" figure: the Media.total_watch_time hybrid
