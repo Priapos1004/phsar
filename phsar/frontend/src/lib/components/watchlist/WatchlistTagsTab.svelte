@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
@@ -23,6 +24,12 @@
 	}
 
 	let { onEntriesChanged }: Props = $props();
+
+	// This tab renders Tag.entry_count / anime_count, which go stale as the user
+	// adds and removes watchlist entries elsewhere. It mounts on demand, so
+	// refreshing here costs one small query only when the counts are on screen —
+	// rather than on every /watchlist visit, most of which never open this tab.
+	onMount(refreshTags);
 
 	// Create
 	let newName = $state('');

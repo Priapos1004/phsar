@@ -594,7 +594,7 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 | `/ratings/{uuid}` | DELETE | Delete a rating |
 | `/ratings/spoiler-visibility` | GET | Layout auth (fetch visible media UUIDs for spoiler protection) |
 | `/watchlist/media-tags` | GET | Layout auth + after any watchlist mutation (bookmark icon-state + per-media list color) |
-| `/watchlist/tags` | GET | Layout auth + watchlist page + dialogs (the user's lists, default first) |
+| `/watchlist/tags` | GET | Login (layout) + the watchlist **Lists** tab on mount + dialogs. Not on every `/watchlist` visit: only that tab reads the per-list entry counts, and it mounts on demand |
 | `/watchlist/tags` | POST | Watchlist Lists tab (create a list) |
 | `/watchlist/tags/{uuid}` | PATCH | Watchlist Lists tab (rename / recolor a list) |
 | `/watchlist/tags/{uuid}` | DELETE | Watchlist Lists tab (delete a non-default list; `?reassign_entries=` moves entries to the default list vs cascade) |
