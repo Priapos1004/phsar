@@ -182,6 +182,68 @@ async def test_anime_fuzzy_typo_lifts_best_match_above_unrelated(
 
 
 # ---------------------------------------------------------------------------
+# Anime-view ranking is invariant to how many media an anime has
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+async def uneven_media_count_set(db_session):
+    """Two substring-matching anime with wildly different media counts (6 vs 1),
+    plus a non-matcher. Both matchers carry the SAME anime title, so the only
+    thing that differs between them is how many rows they contribute to the
+    GROUP BY."""
+    await _make_anime_with_media_titled(
+        db_session, mal_id=87101,
+        anime_title=f"{_RANK_FIXTURE_QUERY} Lord of Franchise",
+        media_titles=[f"{_RANK_FIXTURE_QUERY} Lord of Franchise S{i}" for i in range(6)],
+    )
+    await _make_anime_with_media_titled(
+        db_session, mal_id=87102,
+        anime_title=f"{_RANK_FIXTURE_QUERY} Lord of Standalone",
+        media_titles=[f"{_RANK_FIXTURE_QUERY} Lord of Standalone"],
+    )
+    await _make_anime_with_media_titled(
+        db_session, mal_id=87103,
+        anime_title=f"{_RANK_FIXTURE_QUERY} Wholly Different Title",
+        media_titles=[f"{_RANK_FIXTURE_QUERY} Wholly Different Title"],
+    )
+
+
+async def test_anime_ranking_is_invariant_to_media_count(
+    client, user_auth_headers, uneven_media_count_set,
+):
+    """Anime-level title search groups over the JOINed media rows, so a
+    6-media anime contributes 6 identical (anime, embedding) rows and a
+    1-media anime contributes 1. The ordering distance is aggregated over that
+    group, and the aggregate must be one that ignores group SIZE — MIN and AVG
+    both do, SUM does not, and a SUM would rank the 6-media anime six times
+    worse purely for being a franchise.
+
+    Both matchers share the "Lord of" substring, so both earn the same literal
+    bonus; only the group size differs between them.
+    """
+    ordered = await _ordered_fixture_titles(
+        client, user_auth_headers,
+        url=ANIME_SEARCH_URL,
+        query=f"{_RANK_FIXTURE_QUERY} Lord of",
+    )
+    franchise = f"{_RANK_FIXTURE_QUERY} Lord of Franchise"
+    standalone = f"{_RANK_FIXTURE_QUERY} Lord of Standalone"
+    non_matcher = f"{_RANK_FIXTURE_QUERY} Wholly Different Title"
+
+    assert {franchise, standalone} <= set(ordered), (
+        f"a substring matcher dropped out of the results: {ordered}"
+    )
+    if non_matcher in ordered:
+        assert ordered.index(franchise) < ordered.index(non_matcher), (
+            f"The 6-media anime fell below a non-matching title — the ordering "
+            f"aggregate is scaling with group size. Order: {ordered}"
+        )
+        assert ordered.index(standalone) < ordered.index(non_matcher), (
+            f"The 1-media matcher fell below a non-matching title. Order: {ordered}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # Media view (same bonus applies via media_dao)
 # ---------------------------------------------------------------------------
 

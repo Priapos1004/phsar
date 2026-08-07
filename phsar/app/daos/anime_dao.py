@@ -531,12 +531,12 @@ class AnimeDAO(MalIdDAO[Anime]):
         # Pre-aggregation WHERE filters (any-match semantics)
         stmt = apply_anime_pre_filters(stmt, filters)
 
-        # GROUP BY — include AnimeSearch.title_embedding for title search
-        # since it's one-to-one with Anime and used in ORDER BY
-        group_cols = [Anime.id]
-        if query and search_type == SearchType.TITLE:
-            group_cols.append(AnimeSearch.title_embedding)
-        stmt = stmt.group_by(*group_cols)
+        # GROUP BY the PK alone. Title search orders on the anime_search
+        # embedding, which lives on another table, so it can't ride functional
+        # dependency the way Anime's own columns do — it's aggregated in the
+        # ORDER BY instead (`aggregate_distance` below). Grouping by the vector
+        # would put 384 floats in the hash/sort key of every input row.
+        stmt = stmt.group_by(Anime.id)
 
         # Post-aggregation HAVING filters (majority/range semantics)
         stmt = apply_anime_having_filters(stmt, filters, agg_columns)
@@ -549,6 +549,10 @@ class AnimeDAO(MalIdDAO[Anime]):
                     query=query,
                     title_columns=[Anime.title, Anime.name_eng],
                     extra_columns={SearchType.TITLE: AnimeSearch.title_embedding},
+                    # AnimeSearch is 1:1 with Anime, so MIN over the group is
+                    # that row's own distance — the aggregate exists to satisfy
+                    # the GROUP BY, not to pick between candidates.
+                    aggregate_distance=True,
                 )
             elif search_type == SearchType.DESCRIPTION:
                 avg_distance = func.avg(

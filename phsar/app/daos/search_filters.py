@@ -399,11 +399,21 @@ def apply_vector_ordering(
     query: str | None = None,
     title_columns: list | None = None,
     extra_columns: dict | None = None,
+    aggregate_distance: bool = False,
 ):
     """Apply cosine distance ordering for vector similarity search.
 
     `extra_columns` registers additional `search_type → embedding column`
     mappings (e.g., `RATING_NOTES → RatingSearch.note_embedding`).
+
+    `aggregate_distance` wraps the distance in `MIN()` for callers that GROUP BY
+    (anime-level search). The embedding lives on a different table from the
+    grouped key, so Postgres won't infer functional dependency and needs either
+    the 384-float vector in the GROUP BY — which puts it in the hash/sort key of
+    every input row — or an aggregate over it. It has to wrap the DISTANCE
+    rather than the embedding, since pgvector has no `min(vector)`. The literal
+    bonuses below stay UN-aggregated: they read columns of the grouped table, so
+    they're functionally dependent on its primary key and already legal.
 
     `query` + `title_columns` enable two literal-text bonuses on
     `SearchType.TITLE` (description and rating-notes search skip both
@@ -425,6 +435,8 @@ def apply_vector_ordering(
         return stmt
 
     distance = func.cosine_distance(column, cast(query_embedding, Vector))
+    if aggregate_distance:
+        distance = func.min(distance)
 
     if query and title_columns and search_type == SearchType.TITLE:
         pattern = f"%{_escape_like(query)}%"
