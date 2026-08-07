@@ -71,47 +71,29 @@ class BaseDAO(Generic[T]):
         result = await db.execute(stmt)
         return [tuple(row) for row in result.fetchall()]
     
-    async def get_field_stats(self, db: AsyncSession, field_name: str) -> dict:
-        """
-        Get min, max, avg, stddev, median for a numeric field.
-        Raises NonNumericFieldError if the field is not numeric.
-        """
+    def _numeric_field(self, field_name: str):
+        """Resolve a field name to its column, rejecting anything non-numeric.
+        Separate from the queries so the two raises stay in one place."""
         mapper = inspect(self.model)
         if field_name not in mapper.columns and not hasattr(self.model, field_name):
             raise FieldDoesNotExistError(field_name, self.model.__name__)
 
         field = getattr(self.model, field_name)
-        field_type = type(field.type)
-
-        if field_type not in (Integer, Float, Numeric):
+        if type(field.type) not in (Integer, Float, Numeric):
             raise NonNumericFieldError(field_name)
+        return field
 
-        # min, max, avg, stddev
-        stats_stmt = select(
-            func.min(field),
-            func.max(field),
-            func.avg(field),
-            func.stddev_pop(field)
-        )
-        result = await db.execute(stats_stmt)
-        row = result.one_or_none()
-
-        # median (Postgres)
-        median_stmt = select(
-            func.percentile_cont(0.5).within_group(field)
-        )
-        median_result = await db.execute(median_stmt)
-        median_row = median_result.one_or_none()
-        median_value = median_row[0] if median_row else None
-
-        return {
-            'min': row[0],
-            'max': row[1],
-            'avg': row[2],
-            'stddev': row[3],
-            'median': median_value
-        }
-    
     async def get_min_max(self, db: AsyncSession, field_name: str) -> tuple:
-        stats = await self.get_field_stats(db, field_name)
-        return stats['min'], stats['max']
+        """The (min, max) bounds of a numeric field — one query, two aggregates.
+
+        Kept deliberately narrow rather than routed through a general
+        "field stats" helper: the sole caller is the filter-slider bounds in
+        `filter_service`, which reads exactly these two values, and computing
+        avg/stddev/median alongside costs a second query per field (the
+        `percentile_cont` median needs its own sort) for numbers nothing reads —
+        four such per `/filters/options?view_type=media`. Add other statistics
+        only together with a caller that reads them.
+        """
+        field = self._numeric_field(field_name)
+        row = (await db.execute(select(func.min(field), func.max(field)))).one()
+        return row[0], row[1]
