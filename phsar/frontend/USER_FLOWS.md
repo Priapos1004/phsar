@@ -149,7 +149,7 @@ Filters appear in a collapsible panel below the search input. Filter options ada
 - Total Watch Time (time display — aggregated sum for anime view)
 
 **Behavior:**
-- Filter options are fetched from `GET /filters/options?view_type=anime|media` on component mount and on view toggle
+- Filter options come from `GET /filters/options?view_type=anime|media`, cached per view for the session — SearchBar mounts on both `/` and `/search`, so a hop between them reuses the cached bounds instead of refetching. A finished scrape (which can widen a slider or add a season/studio) drops the cache
 - "Clear all" button resets all filters and query to defaults
 - Modifying filters and resubmitting creates a new search token and navigates
 - **Anime view:** filters apply to the value shown on the anime card, not to individual media. Age rating uses the max across media; airing status uses the priority-collapsed value (Currently Airing dominates over Finished over Not yet aired).

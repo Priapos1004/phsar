@@ -1,8 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { SlidersHorizontal, Search } from 'lucide-svelte';
-	import { api } from '$lib/api';
-	import type { FilterOptions } from '$lib/types/api';
+	import { ensureFilterOptions } from '$lib/stores/filterOptions';
 	import TagSelect from '$lib/components/TagSelect.svelte';
 	import DoubleRangeSlider from '$lib/components/DoubleRangeSlider.svelte';
 	import { Input } from '$lib/components/ui/input';
@@ -194,8 +193,9 @@
 
 	async function fetchFilters() {
 		try {
-			const params = new URLSearchParams({ view_type: viewType });
-			const data = await api.get<FilterOptions>('/filters/options', { params });
+			// Session-cached per view_type — this component mounts on both / and
+			// /search, so every hop between them used to refetch. See filterOptions.
+			const data = await ensureFilterOptions(viewType);
 
 			filterConfig.forEach((config) => {
 				if (config.type === 'list') {

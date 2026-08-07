@@ -284,6 +284,7 @@ phsar/
 │   │   │   │   ├── adminJobsFilter.ts
 │   │   │   │   ├── auth.ts
 │   │   │   │   ├── bell-session.ts
+│   │   │   │   ├── filterOptions.ts
 │   │   │   │   ├── genres.ts
 │   │   │   │   ├── jobs.ts
 │   │   │   │   ├── maintenance.ts
