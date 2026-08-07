@@ -83,7 +83,7 @@ def sort_age_ratings(age_rating_tuples: list[tuple[str, int]]) -> list[str]:
 async def _get_anime_majority_genres(db: AsyncSession) -> list[str]:
     """Get genres that pass majority rule (>50% of media) for at least one anime.
     Populates the genre dropdown; the same threshold is applied per-anime in
-    search_filters.apply_anime_having_filters when filtering search results."""
+    search_filters._anime_genre_majority_condition when filtering search results."""
     # For each (anime_id, genre), count media with that genre and total media.
     # Keep genres where count * 2 > total for at least one anime.
     media_count_subq = (

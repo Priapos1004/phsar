@@ -482,9 +482,9 @@ async def genre_majority_with_prefilter_set(db_session):
 async def test_genre_majority_denominator_survives_a_pre_filter(
     client, user_auth_headers, genre_majority_with_prefilter_set,
 ):
-    """The genre-majority HAVING counts over all of the anime's media, so its
-    `media_count` denominator has to as well — a stacked studio filter must not
-    shrink it into agreeing that a 1-of-3 genre is a majority."""
+    """The genre-majority check counts over all of the anime's media, so its
+    denominator has to as well — a stacked studio filter must not shrink it into
+    agreeing that a 1-of-3 genre is a majority."""
     resp = await client.get(
         ANIME_SEARCH_URL,
         params=[("studio_name", _MAJORITY_STUDIO), ("genre_name", _MAJORITY_GENRE)],
@@ -492,3 +492,85 @@ async def test_genre_majority_denominator_survives_a_pre_filter(
     )
     assert resp.status_code == 200, resp.text
     assert resp.json() == []
+
+
+_MULTI_GENRE_A = "MultiScopeGenreA"
+_MULTI_GENRE_B = "MultiScopeGenreB"
+
+
+@pytest.fixture
+async def multi_genre_majority_set(db_session):
+    """Three anime of 3 media each, differing only in which of two genres reach a
+    majority:
+
+    - BothMajority  — A on 2/3, B on 2/3  → passes an A+B filter
+    - OnlyAMajority — A on 3/3, B on 1/3  → fails it (B is a minority)
+    - NeitherMajority — A on 1/3, B on 1/3 → fails it
+    """
+    genre_a = Genre(
+        name=_MULTI_GENRE_A, genre_type=GenreType.Genres, description="multi test a",
+    )
+    genre_b = Genre(
+        name=_MULTI_GENRE_B, genre_type=GenreType.Genres, description="multi test b",
+    )
+    db_session.add_all([genre_a, genre_b])
+    await db_session.flush()
+
+    # (title, mal_id base, how many of the 3 media carry A, how many carry B)
+    layouts = [
+        ("MultiScope BothMajority Anime", 85610, 2, 2),
+        ("MultiScope OnlyAMajority Anime", 85620, 3, 1),
+        ("MultiScope NeitherMajority Anime", 85630, 1, 1),
+    ]
+    for title, base, a_count, b_count in layouts:
+        anime = await _make_anime(db_session, mal_id=base, title=title)
+        media = [
+            await _add_media(db_session, anime, base * 10 + i, score=8.0, scored_by=1_000)
+            for i in range(3)
+        ]
+        for m in media[:a_count]:
+            db_session.add(MediaGenre(media_id=m.id, genre_id=genre_a.id))
+        for m in media[:b_count]:
+            db_session.add(MediaGenre(media_id=m.id, genre_id=genre_b.id))
+    await db_session.flush()
+
+
+async def test_multiple_genres_all_must_reach_majority(
+    client, user_auth_headers, multi_genre_majority_set,
+):
+    """Selecting several genres means EVERY one of them is a majority of the
+    anime's media, not any of them. An anime clearing the bar on one selected
+    genre while carrying the other as a minority must not surface."""
+    titles = await _result_fixture_titles(
+        client, user_auth_headers,
+        fixture_titles={
+            "MultiScope BothMajority Anime",
+            "MultiScope OnlyAMajority Anime",
+            "MultiScope NeitherMajority Anime",
+        },
+        query="MultiScope",
+        genre_name=[_MULTI_GENRE_A, _MULTI_GENRE_B],
+    )
+    assert titles == {"MultiScope BothMajority Anime"}
+
+
+async def test_single_genre_matches_every_anime_that_reaches_its_majority(
+    client, user_auth_headers, multi_genre_majority_set,
+):
+    """The one-genre companion to the test above, so a rewrite can't satisfy the
+    AND semantics by being wrong in the same direction for a single genre:
+    filtering on A alone must keep both anime where A is a majority."""
+    titles = await _result_fixture_titles(
+        client, user_auth_headers,
+        fixture_titles={
+            "MultiScope BothMajority Anime",
+            "MultiScope OnlyAMajority Anime",
+            "MultiScope NeitherMajority Anime",
+        },
+        query="MultiScope",
+        genre_name=[_MULTI_GENRE_A],
+    )
+    assert titles == {
+        "MultiScope BothMajority Anime",
+        "MultiScope OnlyAMajority Anime",
+    }

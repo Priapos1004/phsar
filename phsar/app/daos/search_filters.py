@@ -209,14 +209,67 @@ def apply_media_filters(stmt, filters: MediaSearchFilters):
     return stmt
 
 
-def apply_anime_pre_filters(stmt, filters: MediaSearchFilters):
-    """Select WHICH ANIME qualify, with 'any media matches' semantics — an anime is
-    by studio X / of type TV when at least one of its media is. Genre, range,
-    age_rating and airing_status filters are excluded; they use HAVING aggregations
-    that mirror the anime card's derived display values instead.
+def _anime_genre_majority_condition(genre_names: list[str]):
+    """Anime where EVERY selected genre is carried by a MAJORITY of that anime's
+    media (`genre_count * 2 > total`) — the same threshold
+    `filter_service._get_anime_majority_genres` applies when deciding which
+    genres the anime-view dropdown offers at all.
 
-    All conditions sit in one subquery, so they must hold for the SAME media row
-    (studio X + type TV means one media is a TV by X), matching media-level semantics.
+    One non-correlated pass: per-(anime, genre) counts and per-anime media
+    totals are each computed once, joined, and the surviving pairs counted, so
+    an anime qualifies when it clears the bar on all N selected genres. The
+    alternative shape — one correlated majority-subquery per genre — grows
+    superlinearly, because each added genre both adds a SubPlan and widens the
+    set every existing SubPlan is re-evaluated over.
+
+    The denominator is the anime's FULL media count, deliberately unfiltered:
+    the majority a user means when picking a genre is "most of this anime", not
+    "most of whatever survived my other filters". Pinned by
+    `test_genre_majority_denominator_survives_a_pre_filter`.
+    """
+    unique_genres = set(genre_names)
+    genre_counts = (
+        select(
+            Media.anime_id.label("anime_id"),
+            Genre.name.label("genre_name"),
+            func.count(Media.id).label("genre_count"),
+        )
+        .join(MediaGenre, MediaGenre.media_id == Media.id)
+        .join(Genre, Genre.id == MediaGenre.genre_id)
+        .where(Genre.name.in_(unique_genres))
+        .group_by(Media.anime_id, Genre.name)
+    ).subquery()
+    media_totals = (
+        select(
+            Media.anime_id.label("anime_id"),
+            func.count(Media.id).label("total"),
+        )
+        .group_by(Media.anime_id)
+    ).subquery()
+    qualifying = (
+        select(genre_counts.c.anime_id)
+        .join(media_totals, media_totals.c.anime_id == genre_counts.c.anime_id)
+        .where(genre_counts.c.genre_count * 2 > media_totals.c.total)
+        .group_by(genre_counts.c.anime_id)
+        .having(func.count() == len(unique_genres))
+    )
+    return Anime.id.in_(qualifying)
+
+
+def apply_anime_pre_filters(stmt, filters: MediaSearchFilters):
+    """Select WHICH ANIME qualify. Two independent conditions, both selecting
+    anime rather than narrowing the grouped media rows:
+
+    - Categorical + studio, with 'any media matches' semantics — an anime is by
+      studio X / of type TV when at least one of its media is. These share ONE
+      subquery, so they must hold for the SAME media row (studio X + type TV
+      means one media is a TV by X), matching media-level semantics.
+    - Genre majority, which gets its own subquery precisely because it is NOT a
+      same-media-row question — it's an aggregate over the anime's whole media
+      set (see `_anime_genre_majority_condition`).
+
+    Range, age_rating and airing_status filters are excluded here; they use
+    HAVING aggregations that mirror the anime card's derived display values.
 
     Selecting anime rather than filtering the grouped media rows keeps the aggregates
     (`avg_score`/`avg_scored_by`/`total_episodes`/`media_count` and every HAVING
@@ -228,17 +281,23 @@ def apply_anime_pre_filters(stmt, filters: MediaSearchFilters):
     if filters.studio_name:
         conditions.append(_studio_condition(filters.studio_name))
 
-    if not conditions:
-        return stmt
+    if conditions:
+        stmt = stmt.where(
+            Anime.id.in_(select(Media.anime_id).where(and_(*conditions)))
+        )
 
-    return stmt.where(
-        Anime.id.in_(select(Media.anime_id).where(and_(*conditions)))
-    )
+    if filters.genre_name:
+        stmt = stmt.where(_anime_genre_majority_condition(filters.genre_name))
+
+    return stmt
 
 
 def apply_anime_having_filters(stmt, filters: MediaSearchFilters, agg_columns: dict):
     """Apply HAVING-clause filters on aggregated values for anime-level search.
-    agg_columns maps field names to SQLAlchemy aggregate column expressions."""
+    agg_columns maps field names to SQLAlchemy aggregate column expressions.
+
+    Genre is NOT here — it's a majority test over the anime's media set, which
+    `apply_anime_pre_filters` answers in one non-correlated pass."""
     conditions = []
 
     if filters.score_min is not None:
@@ -257,23 +316,6 @@ def apply_anime_having_filters(stmt, filters: MediaSearchFilters, agg_columns: d
         conditions.append(agg_columns["total_watch_time"].isnot(None) & (agg_columns["total_watch_time"] >= filters.total_watch_time_min))
     if filters.total_watch_time_max is not None:
         conditions.append(agg_columns["total_watch_time"].isnot(None) & (agg_columns["total_watch_time"] <= filters.total_watch_time_max))
-
-    # Genre majority filter: for each selected genre, a correlated subquery checks
-    # if >50% of the anime's media have that genre. This mirrors the threshold in
-    # filter_service._get_anime_majority_genres, which uses the same formula to
-    # determine which genres appear in the dropdown.
-    if filters.genre_name:
-        for genre_name in filters.genre_name:
-            genre_count_subq = (
-                select(func.count(Media.id))
-                .join(Media.media_genre)
-                .join(MediaGenre.genre)
-                .where(Media.anime_id == Anime.id)
-                .where(Genre.name == genre_name)
-                .correlate(Anime)
-                .scalar_subquery()
-            )
-            conditions.append(genre_count_subq * 2 > agg_columns["media_count"])
 
     # Age-rating filter: compare against MAX(media.age_rating_numeric), the
     # same aggregation `_compute_anime_aggregates` uses for the card's
