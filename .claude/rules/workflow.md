@@ -14,6 +14,11 @@ beside this file; doc placement lives in `docs.md`.
 - Surface **design decisions before writing code** — API shape, enum semantics,
   one endpoint vs two. The user has strong opinions here and catches better
   designs than the first plan; picking silently wastes the work.
+- **Read the relevant `docs/features/` doc while planning**, before settling on an
+  approach. They don't load automatically (root `CLAUDE.md` indexes them), and they
+  are where a subsystem's current behaviour is written down whole — the constraint
+  that invalidates a plan is usually in there rather than in the code you'd read
+  first.
 - **Don't push after committing.** Stop at the commit. The user controls push
   timing so they can tag first, batch several commits, or hold one back —
   an auto-push also fires CI mid-stream.

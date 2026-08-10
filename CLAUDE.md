@@ -134,14 +134,14 @@ Modules:
 - `media_search_service.py` / `anime_search_service.py` — filtered DB search (anime variant: two-phase GROUP BY + HAVING)
 - `filter_service.py` — filter option values; view-type-aware. Also `fetch_genres` — all genres + descriptions for the frontend genre-badge tooltips (`GET /filters/genres`)
 - `auth_service.py`, `user_settings_service.py`, `token_service.py`, `admin_service.py`
-- `merge_detection_service.py` — duplicate detector (title_studio / title_desc / relation_link signals). `relation_link` reads from `media_relation_edges` sidecars (single source of truth — see services CLAUDE.md for rationale); three call sites (save, sweep, backfill) converge through `find_cross_anime_relation_pairs` so the signal fires identically regardless of how anime rows entered the catalog
+- `merge_detection_service.py` — duplicate detector (title_studio / title_desc / relation_link signals). `relation_link` reads from `media_relation_edges` sidecars (single source of truth — see [docs/features/relations.md](docs/features/relations.md)); three call sites (save, sweep, backfill) converge through `find_cross_anime_relation_pairs` so the signal fires identically regardless of how anime rows entered the catalog
 - `merge_candidate_service.py` — admin merge operations
 - `split_candidate_service.py` — admin split operations (list, dismiss, execute_split)
 - `relation_classifier.py` — pure-function two-pass classifier (DB-less) + third-pass `find_disjoint_franchises` for split detection
 - `anime_relation_service.py` — `reclassify_anime` orchestration; umbrella drift detection
 - `anime_summary.py` — shared `summarize_anime(anime, rating_count)` helper for the merge + split admin cards
 - `completion_service.py` — admin story-complete mark/unmark + the marked list (with cover + marked-by audit) for the Completion tab
-- `rating_service.py` — rating CRUD + note search; logs watch events (first completion + rewatches) and derives `watched_count`. `get_rating_score_items` backs `GET /ratings/scores` — one wide projection consumed by both the RatingCard consistency helper (v0.14.11) and the `/ratings` page list + statistics (v0.14.12); the field list + wide-DTO trade-off live in the services CLAUDE.md + the `RatingScoreItem` docstring
+- `rating_service.py` — rating CRUD + note search; logs watch events (first completion + rewatches) and derives `watched_count`. `get_rating_score_items` backs `GET /ratings/scores` — one wide projection consumed by both the RatingCard consistency helper (v0.14.11) and the `/ratings` page list + statistics (v0.14.12); the field list + wide-DTO trade-off live in [phsar/app/services/CLAUDE.md](phsar/app/services/CLAUDE.md) + the `RatingScoreItem` docstring
 - `tag_service.py` — watchlist "list" (tag) CRUD (v0.15.0). Immutable per-user default tag (`DEFAULT_TAG_NAME` "Watchlist", reserved `DEFAULT_TAG_COLOR` kept out of the user palette, `TAGS_PER_USER_LIMIT`); `create_default_tag` (idempotent), `list_tags` (with entry + anime counts), `create_tag`/`update_tag` (blocks the default), `delete_tag` (reassign-to-default vs cascade), `empty_tag` (any list, incl. default). Unique names enforced at DB + service pre-check + IntegrityError backstop for the double-click race
 - `watchlist_service.py` — watchlist entry CRUD (v0.15.0): upsert/get/delete by media_uuid, `get_watchlist_for_anime`, `bulk_upsert`/`bulk_delete`, `get_watchlist_items` (overview projection), `get_watchlisted_media_tags` (bookmark icon-state set). No spoiler-frontier recompute (want-to-watch ≠ watched; see Key Patterns). Shares `media_service.resolve_media_uuids` with rating_service
 - `spoiler_service.py` — frontier algorithm + `user_visible_media` cache
@@ -281,7 +281,7 @@ Quick map:
   - `lazy="raise"` on every relationship, and never `asyncio.gather` over a shared `AsyncSession` — both in [.claude/rules/backend.md](.claude/rules/backend.md)
 - **Vector search**: `paraphrase-multilingual-MiniLM-L12-v2` model, pgvector storage
   - **Case-folded**: `generate_embedding` lowercases before encoding. The model is *cased*, so without this the same query in different capitalisation produced a materially different vector — enough to reorder title results and bury the intended show (capitalising a query dropped it off the page). Folding in the one chokepoint every embedding passes through keeps the query and the stored documents in one case space. Existing catalog vectors are re-normalized by `reembed_all_embeddings` (see seeders)
-  - **Search queries are memoized; document text is not.** `generate_query_embedding` (the three DAO search paths) wraps an `lru_cache(256)` over the **folded** text, so capitalisation variants share one entry — ~0.1 ms on a hit vs ~30 ms, bounded ~4 MB. `generate_embedding` stays uncached for titles/descriptions/notes. Two populations, opposite reuse: queries repeat, a document string is encoded once, so one shared cache would let a sweep's thousands of never-hit keys evict every query. Both go through the same fold, keeping query and documents in one case space; see the services CLAUDE.md for the tuple-not-list and thread-hop details
+  - **Search queries are memoized; document text is not.** `generate_query_embedding` (the three DAO search paths) wraps an `lru_cache(256)` over the **folded** text, so capitalisation variants share one entry — ~0.1 ms on a hit vs ~30 ms, bounded ~4 MB. `generate_embedding` stays uncached for titles/descriptions/notes. Two populations, opposite reuse: queries repeat, a document string is encoded once, so one shared cache would let a sweep's thousands of never-hit keys evict every query. Both go through the same fold, keeping query and documents in one case space; see [docs/features/search.md](docs/features/search.md) for the tuple-not-list detail
   - `SearchType` enum (`title`, `description`, `rating_notes`) selects the target
   - `ViewType` enum (`anime`, `media`) selects the search mode
   - Filter schemas use inheritance: `MediaSearchFilters` (base) → `RatingSearchFilters` (adds rating-specific filters)
@@ -297,7 +297,7 @@ Quick map:
   - Per-theme chart color palettes in `chartColors.ts` avoid hue clashes
 - **Two-pass relation classifier + third-pass split detection**: scrape-time + merge-time + backfill-time. See [compound-docs/2026-05-11-jikan-scraper-quirks.md](compound-docs/2026-05-11-jikan-scraper-quirks.md) for v0.14.1 classifier rationale and [compound-docs/2026-05-18-v0.14.2-split-candidates.md](compound-docs/2026-05-18-v0.14.2-split-candidates.md) for the third pass
   - Pass 1 (`mal_scraper.search_title`) captures relation **edges** during BFS — no classification baked in. TERMINAL nodes (arrived via identity-breaking edges) still capture their outgoing edges into the sidecar (bundled in their own detail fetch since the v2 migration; the v0.14.2 split-candidates change), but the BFS still does NOT recurse from them — the graph stays bounded. Sidecars persist edges unfiltered, including dangling targets
-  - Pass 2 (`relation_classifier.classify_anime_relations`) picks a canonical anchor by substance gate + tier (TV > ONA > Movie) + oldest aired_from, builds main chain via sequel/prequel closure, classifies alt-chain via `alternative_version` edges, defaults rest to `side_story`; demotes weak Mains via substance gate and recaps (`full_story`) to `summary`. The substance gate's per-floor relaxation is scoped to the **main chain** (v0.14.14), so an off-chain full-length side entry (e.g. a spin-off special) can't re-enforce the duration floor on genuinely-short main seasons; and a high-episode short-form entry whose aggregate runtime (`episodes × duration`) clears a total-runtime floor still passes the gate, so a flagship short-form season (Saiki K. S1: 120 × 5.5 min ≈ 11h) anchors and stays Main instead of being demoted for its short per-episode length — see services CLAUDE.md. **Not-yet-aired entries** get a provisional substance pass (so an announced sequel stays Main) but are **anchor-ineligible** (a franchise can't anchor on something unaired) — see services CLAUDE.md. The `AIRING_STATUS_*` sentinels live in `relation_classifier` (re-imported by `mal_scraper`)
+  - Pass 2 (`relation_classifier.classify_anime_relations`) picks a canonical anchor by substance gate + tier (TV > ONA > Movie) + oldest aired_from, builds main chain via sequel/prequel closure, classifies alt-chain via `alternative_version` edges, defaults rest to `side_story`; demotes weak Mains via substance gate and recaps (`full_story`) to `summary`. The substance gate's per-floor relaxation is scoped to the **main chain** (v0.14.14), so an off-chain full-length side entry (e.g. a spin-off special) can't re-enforce the duration floor on genuinely-short main seasons; and a high-episode short-form entry whose aggregate runtime (`episodes × duration`) clears a total-runtime floor still passes the gate, so a flagship short-form season (Saiki K. S1: 120 × 5.5 min ≈ 11h) anchors and stays Main instead of being demoted for its short per-episode length — see [docs/features/relations.md](docs/features/relations.md). **Not-yet-aired entries** get a provisional substance pass (so an announced sequel stays Main) but are **anchor-ineligible** (a franchise can't anchor on something unaired) — see [docs/features/relations.md](docs/features/relations.md). The `AIRING_STATUS_*` sentinels live in `relation_classifier` (re-imported by `mal_scraper`)
   - Pass 3 (`relation_classifier.find_disjoint_franchises`) takes the classified graph and flags substance-passing media outside the anchor's main+alt chain that form their own connected sub-chain — the Overlord+Eminence, BNHA+Vigilante, Toaru Index+Railgun shapes. Conan-exception: movie-only clusters bridged via `parent_story` or `summary` are legitimate side-story chains and stay quiet. Surfaces as a `split_candidate` for admin review; never auto-splits
   - `RelationType.AlternativeVersion` enum value distinguishes retellings (Evangelion TV ↔ Rebuild Movies, Hokuto no Ken alts) from genuine side stories. Spoiler frontier treats alt-version as an anchor. `RelationType` is now `Main`/`Summary`/`SideStory`/`AlternativeVersion` — v0.14.14 dropped the unused `Crossover` value (MAL v2 never emits `crossover`, routing those links through `character` which is already excluded from edge capture; 0 catalog rows carried it), recreating the PG enum via migration `f1b9c4e2a7d3`
   - Same three passes run at three sites: scrape (per BFS-result), merge survivor (consolidated A∪B), backfiller (per catalog row)
@@ -307,7 +307,7 @@ Quick map:
 - **Spoiler protection**: three levels (`off`/`blur`/`hide`) via `SpoilerLevel` user setting
   - Frontier algorithm: per anime, all media up to and including the next unwatched **anchor** (`main` or `alternative_version`) entry are visible — retellings extend the story so each alt-version gates the next
   - Precomputed in `user_visible_media`; updated per-anime on rating changes, per-user on registration, and **scoped to the changed anime** after catalog mutations (save / sweep / merge / split) via `refresh_spoiler_cache_for_anime_ids`. `backfill_spoiler_visibility` (startup) is the only whole-catalog path
-  - **Restricted (guest) users are pinned to `spoiler_level=off` and excluded from the cache** (they can't rate). See services CLAUDE.md for the enforcement points; the settings UI renders their rating-related controls disabled rather than hidden
+  - **Restricted (guest) users are pinned to `spoiler_level=off` and excluded from the cache** (they can't rate). See [docs/features/spoilers.md](docs/features/spoilers.md) for the enforcement points; the settings UI renders their rating-related controls disabled rather than hidden
   - Backend `GET /ratings/spoiler-visibility` returns visible UUIDs; frontend stores as `Set` in `spoilerVisibility` store
   - `SpoilerGuard.svelte` wraps covers/descriptions with blur + click-to-reveal
   - Detail pages compute frontier locally for fresher data
@@ -368,6 +368,23 @@ until they apply:
 | `backend.md` — layering, async session, exceptions | `phsar/app/**/*.py` |
 | `database.md` — models, sidecars, indexes, migrations | models / DAOs / alembic |
 | `frontend.md` — runes, tokens, shared components, copy | `phsar/frontend/src/**` |
+
+### Feature docs
+
+`docs/features/` describes how each subsystem works **today**, across the modules it
+spans. These do not load automatically — **read the relevant one when planning work
+that touches its area**, before deciding an approach.
+
+| Doc | Covers |
+|---|---|
+| [scraping](docs/features/scraping.md) | MAL API v2 client, BFS, rate limiting, value translation, skip rules |
+| [relations](docs/features/relations.md) | Two-pass classifier, substance gate, split detection, merge signals |
+| [jobs](docs/features/jobs.md) | Worker, job kinds, `result_summary` versioning, the sweeps |
+| [search](docs/features/search.md) | Embeddings, ranking, anime-view filters, main-story scoring |
+| [backups](docs/features/backups.md) | Dump/restore, retention pools, the restorability verdict |
+| [spoilers](docs/features/spoilers.md) | Frontier algorithm, visibility cache |
+
+Compound-docs record **why** something changed; feature docs record how it works now.
 
 ## Configuration
 
