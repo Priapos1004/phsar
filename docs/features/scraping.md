@@ -36,8 +36,8 @@ A class-level lock spaces request *starts* at `MAL_MIN_REQUEST_INTERVAL_S`
 for continuous flows, and tighter intervals (0.35s, 0.5s) draw 429s.
 
 Retries are Tenacity `wait_exponential(multiplier=2, min=1, max=30)`, gated by
-`_is_transient_mal_error` so only 5xx, timeouts and network errors retry — 4xx is
-deterministic and would burn 31s of backoff to fail identically. `reraise=True`
+`_is_transient_mal_error` so only 5xx, 429, timeouts and network errors retry —
+every other 4xx is deterministic and would burn 31s of backoff to fail identically. `reraise=True`
 surfaces the underlying `httpx` error rather than tenacity's wrapper.
 
 **429 is capped at 3 attempts** where 5xx/timeout get 5. Retrying a throttle

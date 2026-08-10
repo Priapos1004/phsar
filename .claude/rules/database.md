@@ -28,8 +28,8 @@ Ask: is this **what the entity is**, or **how the system tracks it**? The latter
 a sidecar. Catalog rows reach Pydantic via `model_dump()`, so an inline tracking
 column leaks sweep cadence into API responses and widens the row.
 
-Shape: `unique=True` on the FK column to enforce 1:1 (as `anime_search` and
-`media_search` do), plus `uselist=False`, `cascade="all, delete-orphan"` and
+Shape: `unique=True` on the FK column to enforce 1:1 (as `anime_freshness` and
+`media_freshness` do), plus `uselist=False`, `cascade="all, delete-orphan"` and
 `lazy="raise"` on the parent relationship. Read paths **`LEFT JOIN` and `COALESCE`**
 against a sensible default (e.g. the parent's `created_at`) so a parent inserted
 without its sidecar still queries correctly.

@@ -4,7 +4,7 @@
 They are dated and frozen: a claim here was true when written and may since have been
 superseded. For how a subsystem works **today**, read `docs/features/` instead.
 
-`/ship` appends a row when a new doc lands.
+`/update-docs` owns this index.
 
 ## By subsystem
 

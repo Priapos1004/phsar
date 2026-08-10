@@ -16,8 +16,10 @@ restore lifts the gate without calling `notify()`, so the idle poll has to catch
 that transition itself.
 
 Handlers are registered `JobKind → handler` from the `main.py` lifespan. Each job
-runs in its own sequential sessions (claim-tx, then work-tx in a fresh session),
-which avoids asyncpg pool deadlocks under nested-savepoint patterns.
+runs in its own sequential sessions (claim-tx, then work-tx in a fresh session):
+two sequential sessions rather than nested ones, because concurrent sessions on a
+small asyncpg pool deadlock. Savepoints nested *inside* the sweep are the
+deliberate working pattern, not the hazard.
 
 Concurrency is deliberately one. Parallel jobs would only fragment the 1 req/s
 MAL budget, so the per-user cap (`JOBS_PER_USER_LIMIT`) bounds *queue depth*, not
@@ -37,6 +39,10 @@ row to `failed`, so a mid-job restart can't strand a row forever.
 | `backup` | `pg_dump` + verify + retention | no |
 | `restore` | Restores a dump | yes (request-scoped) |
 
+`restore` has no dispatcher and is never queued or drained: its row is written
+afterwards with its final status already set, as an audit record. Every other kind
+is a real worker kind.
+
 `backup` doesn't bracket because `pg_dump` runs on an MVCC snapshot — concurrent
 user writes are safe.
 
@@ -46,8 +52,10 @@ Two stamps on `result_summary` drive the UI:
 
 - `retryable = not isinstance(failure, PermanentPhsarError)` — the bell shows a
   retry button only when retrying could plausibly work.
-- `error_category` via `classify_error` — `upstream_outage` (httpx 5xx, timeouts,
-  network errors, `TransientUpstreamError`), `backup_disk_full`, `backup_corrupt`.
+- `error_category` via `classify_error` — `upstream_outage` (httpx 5xx and 429,
+  timeouts, network errors, `TransientUpstreamError`), `backup_disk_full`,
+  `backup_corrupt`. 429 belongs here specifically so sustained throttling trips
+  the circuit breaker rather than grinding through the batch.
   The bell renders friendly copy per category; anything uncategorized falls
   through to `error_message`, which is already friendly for domain errors.
 
@@ -71,8 +79,8 @@ default do not bump** — the frontend simply omits them on older rows.
 
 Selection is **per media**, not per anime: `AnimeDAO.select_due_media_for_sweep`
 picks due media, the dispatcher groups them by parent anime and refreshes only
-those. A still-airing franchise's settled older members no longer pay a refresh
-every night.
+those, so settled older members of a still-airing franchise are not refreshed
+nightly.
 
 Two clocks: `MediaFreshness` (`last_checked_at` + `stable_check_count`) is the
 per-media *refresh* clock; `AnimeFreshness` is the per-anime *probe* clock.
@@ -155,8 +163,8 @@ clock, and the upcoming sweep targets `next_season` of it.
 The pass is pure discovery: paginate the season, dedupe against
 `Anime.mal_id ∪ Media.mal_id ∪ MediaUnwanted.mal_id` (plus per-run dedupe, since
 MAL repeats titles across pages), then bulk-insert one system `user_scrape` child
-per new mal_id with `parent_job_id` set. Children carry `seed_mal_id` so each
-child's BFS skips the fuzzy lookup.
+per new mal_id with `parent_job_id` set. Children carry the seed mal_id in their
+payload under `mal_id`, so each child's BFS skips the fuzzy lookup.
 
 Bulk insert rather than per-row commit: the enqueue loop does no MAL I/O, so the
 crash-safety argument doesn't apply and a shorter maintenance window wins.

@@ -653,7 +653,8 @@ bun run dev -- --open
 pytest
 ```
 
-All changes to the database during the tests are rolled back afterwards.
+Each test rolls back its database changes afterwards; the ones that must commit for
+real clean up after themselves.
 
 ### Frontend
 
@@ -664,7 +665,7 @@ bun run test
 
 ## Scheduled jobs
 
-The backend exposes five cron-authed endpoints — all share the same `JOBS_CRON_TOKEN` bearer.
+The backend's cron-authed endpoints all share the same `JOBS_CRON_TOKEN` bearer.
 
 **Recommended (one daily task):** point your cron at the combined nightly endpoint. It enqueues a backup immediately (pg_dump is MVCC-snapshot, no maintenance window needed), an `update_sweep` after `delay_minutes`, on Sunday UTC a `seasonal_sweep` with the same delay so the weekly catalog pickup piggybacks on the maintenance window, and on Wednesday UTC in the last month of a quarter (Mar/Jun/Sep/Dec) an `upcoming_sweep` so next-quarter shows can be added about a month early.
 

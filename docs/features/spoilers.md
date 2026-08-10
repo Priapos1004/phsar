@@ -16,16 +16,24 @@ an anime are. Hiding the franchise you searched for would defeat the search.
 ## The frontier
 
 Per anime, all media up to **and including** the next unwatched *anchor* entry are
+visible. Outside that sentence: an individually rated media stays visible even
+beyond the frontier (you have already watched it); an anime with no anchors at all
+shows only its first media; and once every anchor is rated the whole anime is
 visible.
 
 An anchor is a media whose relation type is `Main` **or** `AlternativeVersion`.
 Retellings extend the story, so each alt-version gates the next: rating the
 Evangelion TV series reveals Rebuild Movie 1, but not Movies 2–4.
 
-The walk orders media with `filter_service.chronological_media_key`, the same key
-the anime-detail table and the related-media carousel use — so the order a user
-sees matches the order the frontier walks. Diverging keys would be a silent bug
-where the visible set doesn't match the displayed sequence.
+The backend walk orders media with `filter_service.chronological_media_key`, the
+same key the anime-detail table and the related-media carousel use — so the order
+a user sees matches the order the frontier walks. Diverging keys would be a silent
+bug where the visible set doesn't match the displayed sequence.
+
+The client-side walk in `utils/spoilerFrontier.ts` is the one deliberate
+divergence: it tiebreaks same-season media on `uuid` where the backend uses
+`mal_id`, because the client has no `mal_id` to hand. Two media in the same season
+can therefore order differently there than in the table beside them.
 
 ## The cache
 
@@ -40,15 +48,17 @@ Three recompute paths:
 | Registration, startup backfill | that user, whole catalogue |
 | Catalogue mutation — save, sweep, merge, split | the changed anime, across all non-restricted users |
 
-The third replaced a whole-catalogue refresh. The frontier is per-anime and the
+The third is scoped rather than whole-catalogue. The frontier is per-anime and the
 cache keys on media id, and media ids only move *between the named anime* on merge
 or split — so scoping is sufficient, and the cost is O(users × changed) rather than
 O(users × everything). Each call site passes the set it already tracks: save passes
 its new anime, the sweep its probe-attached anime, merge the survivor, split the
 source plus the new rows.
 
-Detail pages compute the frontier locally rather than reading the cache, so they
-reflect a rating made moments ago.
+The anime detail page computes the frontier locally rather than reading the cache,
+so it reflects a rating made moments ago. The media detail page reads the cached
+set instead, and covers the same window with an optimistic "rated ⇒ visible" check
+plus a refetch.
 
 The startup `backfill_spoiler_visibility` only covers users with **zero** cache rows
 (new deployments, pre-feature users). It does not repair partial drift on existing

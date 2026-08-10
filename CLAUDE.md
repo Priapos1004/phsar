@@ -9,7 +9,7 @@ Phsar is a full-stack anime search and rating web application. It combines a Fas
 ## Where to find things
 
 This file is the map: what exists, where it lives, how to run it. Depth lives in
-four other places, each with one job.
+the places below, each with one job.
 
 **`.claude/rules/`** — invariants. Loaded automatically, only when relevant.
 
@@ -60,7 +60,7 @@ uvicorn app.main:app --reload
 ruff check .
 ruff check . --fix    # auto-fix
 
-# Tests (requires running PostgreSQL container; all DB changes are rolled back)
+# Tests (requires running PostgreSQL container)
 pytest
 pytest tests/routers/test_auth.py           # single file
 pytest tests/routers/test_auth.py::test_fn  # single test
@@ -101,6 +101,7 @@ docker exec -it anime-postgres psql -U <DB_USER> -d <DB_NAME> \
 ```bash
 # Build + run db + backend + frontend containers end-to-end (NOT the dev flow).
 cp phsar/.env.example .env
+# Fill in the copy's real values first — docker-compose.yml's header says which.
 docker compose up --build
 ```
 
@@ -112,8 +113,8 @@ Layered, with dependency flowing one way: **routers → services → DAOs → mo
 The layering rules and their exceptions are in
 [.claude/rules/backend.md](.claude/rules/backend.md).
 
-**`routers/`** — grouped by API prefix (`/admin` spans five modules, mounted from
-`admin.py`). The live contract is FastAPI's own
+**`routers/`** — grouped by API prefix (`/admin` is mounted from `admin.py` across
+several `admin_*` modules). The live contract is FastAPI's own
 `/docs`; the frontend's consumer view is [USER_FLOWS.md](phsar/frontend/USER_FLOWS.md) §13.
 
 | Prefix | Purpose |
@@ -134,13 +135,13 @@ The layering rules and their exceptions are in
 stateful components are classes. Per-service notes in
 [services/CLAUDE.md](phsar/app/services/CLAUDE.md); subsystem behaviour in `docs/features/`.
 
-**`daos/`** — all SQL. `BaseDAO` gives generic async CRUD; specialized DAOs own the
-vector, aggregation and filtering queries. `search_filters.py` holds the shared
+**`daos/`** — where SQL belongs. `BaseDAO` gives generic async CRUD; specialized
+DAOs own the vector, aggregation and filtering queries. `search_filters.py` holds the shared
 filter/order helpers and `media_projections.py` the shared wide-projection columns.
 Query invariants are in [.claude/rules/database.md](.claude/rules/database.md).
 
-**`models/`** — SQLAlchemy ORM. Alongside the canonical tables sit three deliberate
-shapes, all covered by `rules/database.md`: **1:1 sidecars** for operational state
+**`models/`** — SQLAlchemy ORM. Alongside the canonical tables sit the deliberate
+shapes covered by `rules/database.md`: **1:1 sidecars** for operational state
 (`anime_freshness`, `media_freshness`, `media_relation_edges`, `anime_completion`),
 **search tables** holding pgvector embeddings (`anime_search`, `media_search`,
 `rating_search`), and **caches** (`user_visible_media`).
@@ -155,8 +156,15 @@ by the single handler in `main.py`. `PermanentPhsarError` marks a failure
 non-retryable; `TransientUpstreamError` sits outside it and stays retryable.
 
 **`seeders/`** — run from the lifespan: genres, admin + optional guest user, then
-idempotent backfills (settings, default tags, embeddings, relations, merge and split
-candidates, spoiler visibility). They re-run every boot and repair derived data.
+idempotent backfills (settings, default tags, spoiler visibility and its
+restricted-user purge, title suffixes, embeddings) before the yield; the backup
+self-heal and the catalogue-wide passes (relations, merge candidates, split
+candidates) after it. They re-run every boot and repair derived data. Merge-candidate backfill is the one that lives in
+`services/merge_detection_service.py` instead, because detection is shared with
+the save and sweep paths — you cannot find it from `seeders/`.
+
+**The post-yield order is load-bearing** — `main.py` comments the constraint at the
+call site.
 
 ### Frontend (`phsar/frontend/`)
 
@@ -272,7 +280,7 @@ Ruff runs a curated ruleset, not the defaults: `select = ["E4","E7","E9","F","I"
 
 ## Test Config
 
-- **Backend** (`pytest.ini`): `asyncio_mode = auto`, so no `@pytest.mark.asyncio` decorators. Tests run against the real database, not mocks; every change is rolled back after each test.
+- **Backend** (`pytest.ini`): `asyncio_mode = auto`, so no `@pytest.mark.asyncio` decorators. Tests run against the real database, not mocks; each test rolls back after itself.
 - **Frontend** (`vite.config.ts`): Vitest with jsdom and `@testing-library/svelte`; `resolve.conditions: ['browser']` for Svelte 5. SvelteKit modules (`$app/navigation`, `$app/environment`, `$app/state`) are mocked in `src/tests/setup.ts`.
 
 ## License

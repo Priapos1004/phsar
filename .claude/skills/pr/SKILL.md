@@ -14,13 +14,22 @@ Pushing and opening the PR need explicit approval, every time — see
 
 ```!
 git status --short
-git log --oneline main..HEAD
-git diff --stat main...HEAD
+base=$(gh pr view --json baseRefName -q .baseRefName 2>/dev/null || echo main)
+echo "base: $base"
+git log --oneline "$base"..HEAD
+git diff --stat "$base"...HEAD
 ```
 
-Everything below reviews `main...HEAD`, not just the last commit. If the working
-tree is dirty, `/ship` it into a commit first — the review must cover what will
-actually merge.
+**Establish the base branch first — it is not always `main`.** This repo stacks
+release branches, so a docs or fix branch often targets its release branch
+instead. Take it from `$ARGUMENTS` when the invocation names one, else an existing
+PR, else `main`. Everything below reviews `<base>...HEAD`, not just the last
+commit; getting this wrong feeds the panel hundreds of lines of already-reviewed
+parent-branch code and stamps `pr-ok` over a range nobody reviewed.
+
+If the working tree is dirty, `/ship` it into a commit first — the review must
+cover what will actually merge. A provisional compound doc for this branch is the
+one expected exception; step 5 rewrites and commits it.
 
 ## 2. Tests
 
@@ -38,8 +47,8 @@ running, say so and stop rather than opening a PR on unrun tests.
 
 ## 3. ISO 25010 review panel
 
-Launch all six reviewers **in parallel** (one message, six Agent calls), each with
-the full `main...HEAD` diff:
+Launch **every reviewer in the table below** in parallel — one message, one Agent
+call each — passing the full `<base>...HEAD` diff:
 
 | Agent | Looks for |
 |---|---|

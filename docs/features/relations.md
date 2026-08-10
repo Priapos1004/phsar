@@ -27,7 +27,8 @@ those into one anime row produced false-positive merge candidates on every sweep
 
 `classify_anime_relations(nodes, edges)` picks an **anchor**, builds the main chain
 by sequel/prequel closure, labels the alt chain via `alternative_version` edges,
-and defaults everything else to `side_story`. A final layer demotes weak mains and
+labels anything carrying a `summary` edge to the anchored set as `summary`, and
+defaults everything else to `side_story`. A final layer demotes weak mains and
 relabels recaps.
 
 Relation types: `Main`, `Summary`, `SideStory`, `AlternativeVersion`.
@@ -133,11 +134,18 @@ a blocklist. Weaker MAL relations are MAL asserting "related but distinct", not
 cross-anime edges. The allowlist is shared with the classifier's alt-chain edge
 set, since both ask "does MAL say these belong together?". Extend with care.
 
-All three signals converge in `detect_merge_candidates`, called from three sites
-with identical semantics: on save (scope = new anime), on sweep (scope = every
-step-1 success, broader than probe-attached because a refresh alone rewrites
-sidecars and can surface a fresh pair), and on backfill (whole catalogue). A
-`seen_pairs` pre-fetch short-circuits already-flagged and admin-resolved pairs
+`detect_merge_candidates` runs the title signals itself via `_flag_if_similar`,
+and takes the relation-link signal as `cross_link_pairs` computed outside it by
+`find_cross_anime_relation_pairs`. Scopes differ per call site: on save, the new
+anime; on sweep, the cross-link query widens to every sidecar-touched anime —
+a refresh alone rewrites sidecars and can surface a fresh pair — while detection
+stays on the narrower probe-attached set. Callers that pass no `cross_link_pairs`
+(the post-merge and post-split re-runs) get title signals only; backfill is the
+mirror case, running its own whole-catalogue `_flag_if_similar` pass and then
+calling `detect_merge_candidates` with an empty `new_anime_ids`, which makes that
+call relation-link only.
+
+A `seen_pairs` pre-fetch short-circuits already-flagged and admin-resolved pairs
 before any signal is computed, so a dismissal survives re-detection everywhere.
 
 ## Executing a merge or split
@@ -146,9 +154,11 @@ Each pending merge candidate carries `pending_reclassifications` — the per-med
 changes that *would* land (substance-gate demotions, alt-version labels, anchor
 flips), so the admin sees the consequence before clicking merge rather than after.
 
-**Merge** re-parents B's media onto A, deletes B by cascade, reclassifies the
+**Merge** re-parents B's media onto A, deletes B, reclassifies the
 consolidated set, re-runs detection against the survivor, and recomputes the
-spoiler cache. `keep_uuid` swaps which side survives — the DB invariant
+spoiler cache. The delete is explicit; the cascade on
+`merge_candidates.anime_b_id` is what clears the candidate rows pointing at B.
+`keep_uuid` swaps which side survives — the DB invariant
 `anime_a_id < anime_b_id` is unchanged, A/B is presentation only. A shared
 `Media.mal_id` between the two sides **fails loud**: a global unique violation
 needs a human.

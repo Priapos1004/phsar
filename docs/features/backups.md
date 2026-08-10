@@ -4,7 +4,8 @@
 dump is actually restorable.
 
 **Code**: `services/backup_service.py` (all logic) →
-`services/backup_dispatcher.py` (the `backup` job handler) → `routers/admin.py`.
+`services/backup_dispatcher.py` (the `backup` job handler) → `routers/admin.py`
+for the CRUD sub-router, `routers/admin_jobs.py` for the cron enqueue points.
 
 ## Creating a dump
 
@@ -20,8 +21,8 @@ All write paths serialize on a module-level `asyncio.Lock` (single-worker
 assumption), including the sidecar read-modify-write. Subprocess passwords go via
 `PGPASSWORD`, never on the command line.
 
-`enqueue_backup_job` is the single enqueue path for all three triggers — the manual
-endpoint, the cron endpoint, and the startup self-heal. It lives in the service
+`enqueue_backup_job` is the single enqueue path for every trigger — the manual
+endpoint, the cron endpoints, and the startup self-heal. It lives in the service
 because routers depend on services, not the reverse.
 
 ## Is this dump restorable?
@@ -63,7 +64,9 @@ against X" beside a displayed live revision that isn't X — the exact divergenc
 
 ## Restart-triggered backups
 
-`ensure_up_to_date_backup` enqueues a dump when nothing on disk has `status == ok`.
+`ensure_up_to_date_backup` enqueues a dump when nothing on disk has `status == ok`
+and no `backup` job is already active — the in-flight guard keeps a restart storm
+from queueing one dump per boot.
 The container migrates before the app process starts, so after a migrating deploy
 every existing dump carries the previous revision and restoring one would roll the
 schema back — this closes the window where an install has nothing restorable until

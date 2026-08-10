@@ -16,8 +16,10 @@ targets, selected by `SearchType`: `title`, `description`, `rating_notes`.
 **Everything is case-folded before encoding.** The model is *cased*, so the same
 text in different capitalisation produces materially different vectors — enough
 that capitalising a query reorders title results and can bury the intended show.
-`generate_embedding` is the single chokepoint every embedding passes through,
-queries and stored documents alike, so folding there keeps both in one case space.
+`_fold` is the single chokepoint every embedding passes through, queries and
+stored documents alike — `generate_query_embedding` and `generate_embedding` are
+siblings over `_run_encode`, not one calling the other — so folding there keeps
+both in one case space.
 The SQL literal-match bonuses still use the raw query, which is already
 case-insensitive.
 
@@ -42,8 +44,10 @@ that keeps queries and documents in one case space is pinned by
 
 `apply_vector_ordering` subtracts a two-tier bonus from `cosine_distance` so
 literal matches outrank merely thematically-similar shows: a flat bonus for a
-substring (`ilike`) match, and a pg_trgm `similarity()` bonus scaled linearly above
-a threshold so typos still surface the intended title.
+substring (`ilike`) match, and a pg_trgm `word_similarity()` bonus scaled linearly
+above a threshold so typos still surface the intended title. It must stay
+`word_similarity` and not plain `similarity`, which penalises the length mismatch
+between a short query and a long title and buries partial matches.
 
 Description and rating-note search skip both bonuses — those are semantic queries,
 not literal ones.
@@ -100,7 +104,7 @@ over, and this fires on every genre chip toggle. The denominator is the anime's
 Summary count 0 — i.e. the same anchor set the spoiler frontier uses.
 
 The Python computation in `_compute_anime_aggregates` is the twin of the SQL
-`weighted_mean_score_expr` / `_votes_expr` used by the default ordering, the
+`weighted_mean_score_expr` / `weighted_mean_votes_expr` used by the default ordering, the
 score HAVING filters, and `score_top_percent`. Keeping them in step is what stops
 the displayed number, the ranking and the "Top N%" pill from drifting apart.
 
@@ -110,10 +114,13 @@ the displayed number, the ranking and the "Top N%" pill from drifting apart.
 ## Ordering media within an anime
 
 `filter_service.chronological_media_key(season_year, season_name, mal_id)` is the
-project-wide sort key. The spoiler frontier walk, the anime-detail media table and
-timeline, and the related-media carousel all call it, so the order in the carousel
-matches the table matches what the frontier walks. Diverging keys would be a silent
-UX bug.
+project-wide sort key. The backend spoiler-frontier walk, the anime-detail media
+table and timeline, and the related-media carousel all call it, so the order in
+the carousel matches the table matches what the frontier walks. Diverging keys
+would be a silent UX bug.
+
+The client-side frontier walk is the one sanctioned divergence — see
+[spoilers.md](spoilers.md).
 
 ---
 
