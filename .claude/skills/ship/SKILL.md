@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Run the pre-commit pipeline on the current block of work — docs, simplify, lint — then present a commit plan for approval. Use before every commit; pre-commit-gate.sh blocks commits without it.
+description: Run the pre-commit pipeline on the current block of work — docs, simplify, lint — then present a commit plan for approval. Use before every commit; review-gate.sh blocks commits without it.
 argument-hint: [optional note about the block being shipped]
 ---
 
@@ -80,8 +80,9 @@ always available locally.
 .claude/hooks/mark-reviewed.sh
 ```
 
-Last, after every edit above. `pre-commit-gate.sh` compares this marker's mtime against
-the newest changed file, so stamping earlier would vouch for work done afterwards.
+Last, after every edit above. The marker records the **content hash** of every
+changed file, and `review-gate.sh` refuses a commit whose staged content isn't in it —
+so stamping earlier would vouch for work done afterwards.
 
 ## 7. Present the commit plan and stop
 

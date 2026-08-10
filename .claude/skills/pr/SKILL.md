@@ -97,7 +97,17 @@ Add it to `compound-docs/INDEX.md` in **both** groupings.
 
 Then `/ship` this doc as its own commit.
 
-## 6. Present, and stop
+## 6. Stamp the PR marker
+
+```
+.claude/hooks/mark-pr-ready.sh
+```
+
+Last, after the compound doc is committed — it records the branch tip SHA, and
+`review-gate.sh` refuses `gh pr create` when that SHA isn't the current one. Stamping
+before the commits in steps 4 and 5 would vouch for a tip that didn't exist yet.
+
+## 7. Present, and stop
 
 Report: test results, what each reviewer found, what was fixed, what was skipped and
 why, and the proposed PR title and body. Then **stop and wait**.

@@ -36,6 +36,14 @@ what stops the job bell offering retry on a deterministic failure.
 
 ## Roles
 
+Three: `admin` (full access), `user` (read + write), `restricted_user` (a read-only
+guest — browse and search, no writes).
+
+**Every write endpoint gates on `require_user_or_admin`**, so a guest gets 403.
+Rating and watchlist *reads* are gated too, not just their writes: they are
+per-user data a guest has none of, so an ungated read would return an empty page
+that looks like a bug rather than a permission boundary.
+
 Use the `RoleType` enum directly, never `.value` strings.
 
 ## Triggering operational jobs

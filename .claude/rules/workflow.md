@@ -37,7 +37,7 @@ Work is committed in **blocks**: one coherent, reviewable change each.
 
 ## Every commit goes through `/ship`
 
-`.claude/hooks/pre-commit-gate.sh` enforces it. The skill owns the steps; the
+`.claude/hooks/review-gate.sh` enforces it. The skill owns the steps; the
 hook owns the exemptions.
 
 ## Opening a PR
@@ -79,6 +79,11 @@ docs. Describe the change on its own terms.
   a hit") is a current constraint and stays.
   Self-check before committing: grep added lines for `was `, `were `, `used to`,
   `previously`, `replaced`, `until v`.
+- **Don't write counts that go stale.** "the five docs without a version",
+  "four cron endpoints", "31 compound-docs" — each is correct until the next
+  addition and then quietly wrong, with nothing to catch it. Describe the set by
+  its property ("docs whose filename carries no version") instead. Same failure as
+  a version stamp: a fact that decays without anyone touching it.
 - **Hardcode design decisions; don't parameterize them.** Before adding a
   config option or parameter, ask whether the frontend or user will ever need
   to choose differently. If not, hardcode it and comment why — the option costs

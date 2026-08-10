@@ -192,7 +192,7 @@ style — is in [.claude/rules/workflow.md](.claude/rules/workflow.md), loaded e
 session. Two points govern the rest:
 
 - **Ask before changing the repo**: commits, pushes, issues, milestones, releases.
-- **Every commit goes through `/ship`**, enforced by `.claude/hooks/pre-commit-gate.sh`.
+- **Every commit goes through `/ship`**, enforced by `.claude/hooks/review-gate.sh`.
 
 ## Configuration
 
