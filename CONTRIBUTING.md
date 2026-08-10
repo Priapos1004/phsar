@@ -47,7 +47,7 @@ Thank you for your interest in contributing to Phsar! This project is licensed u
 ## Architecture reference & tooling
 
 - The nested **`CLAUDE.md`** files are the source of truth for architecture and conventions: [CLAUDE.md](CLAUDE.md) (root), [phsar/app/services/CLAUDE.md](phsar/app/services/CLAUDE.md), [phsar/frontend/CLAUDE.md](phsar/frontend/CLAUDE.md), and [phsar/scripts/CLAUDE.md](phsar/scripts/CLAUDE.md). Read the relevant one before working in that subtree. [phsar/frontend/USER_FLOWS.md](phsar/frontend/USER_FLOWS.md) specifies user-facing behavior.
-- This repo is set up for **Claude Code** with project skills (`/update-docs`, `/simplify`, and others). If you use it, the conventional loop is implement → `/update-docs` → `/simplify` → lint/tests → commit. These are optional helpers — the plain commands above are all a contribution needs.
+- This repo is set up for **Claude Code** with project skills. If you use it, `/ship` runs the whole pre-commit loop (`/update-docs` → `/simplify` → lint) and a `PreToolUse` hook, [`.claude/hooks/pre-commit-gate.sh`](.claude/hooks/pre-commit-gate.sh), blocks `git commit` until it has — so the loop is enforced rather than remembered. Contributing **without** Claude Code is unaffected: the hook only sees Claude's own tool calls, and the plain commands above are all a contribution needs.
 
 ## Pull Request Guidelines
 

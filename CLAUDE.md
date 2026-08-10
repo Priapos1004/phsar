@@ -352,6 +352,8 @@ Quick map:
 
 - Always ask before making changes to the repo such as creating issues, milestones, releases, commits, or pushing code.
 - When planning work, discuss the plan with me before executing — don't assume priorities or release groupings.
+- **Every commit goes through `/ship`**: `/update-docs` → `/simplify` → lint → a commit plan for approval. `.claude/hooks/pre-commit-gate.sh` enforces this rather than trusting it — `git commit` is denied when lint fails, or when the staged content is not content `/ship` reviewed (it records blob hashes, so a stash or rebase that restores identical bytes still counts as reviewed). Small doc-only commits are exempt; the hook's own message names the current threshold. `GATE_BYPASS=1 git commit …` escapes deliberately and says so in its output.
+- **Bundle work into blocks before shipping.** Several small fixes are one block, not one pipeline run each (~100 LOC is a reasonable floor). Finish a block → `/ship` → commit → *then* start the next; never carry unreviewed work into the next step of a plan, because untangling intermixed changes afterwards is the failure this avoids.
 
 ## Configuration
 
