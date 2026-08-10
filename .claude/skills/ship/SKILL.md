@@ -20,8 +20,10 @@ git diff --cached --stat
 Classify the change set — it decides which steps below apply:
 
 - **Frontend files touched** (`phsar/frontend/**`) → step 1 applies.
-- **Doc-only** (every path ends `.md`) → skip step 2; `/update-docs` on a doc-only
-  change is circular. Go straight to step 3.
+- **Prose-only** — every path ends `.md` **and** no file was added, renamed or
+  deleted → skip step 2 and go to step 3. Running `/update-docs` to commit a
+  docs fix is circular. Adding or removing a file is *not* prose-only whatever
+  its extension: it changes the tree and what other docs must point at.
 - **Anything else** → all steps.
 
 ## 1. Frontend work stops for a human first
@@ -83,9 +85,9 @@ the newest changed file, so stamping earlier would vouch for work done afterward
 
 ## 7. Present the commit plan and stop
 
-Propose commits as **logical blocks** (see "Working With Me" in [CLAUDE.md](../../../CLAUDE.md)),
-with the message for each. State the lint result. Then **stop and wait** — the user approves
-before anything is committed.
+Propose commits as **logical blocks**, with the message for each — see "Commit blocks"
+and "Commit messages" in [.claude/rules/workflow.md](../../rules/workflow.md). State the
+lint result. Then **stop and wait** — the user approves before anything is committed.
 
 ## Re-entrancy
 

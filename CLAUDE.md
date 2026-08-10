@@ -162,7 +162,7 @@ Data access layer.
     - `ix_media_airing_now` — partial index on `media(anime_id) WHERE airing_status = 'Currently Airing'`
     - `ix_media_main_aired_from` — composite `(anime_id, relation_type, aired_from)`
     - Both must be declared in `models/media.py`'s module-scope `Index(...)` block, not only in the migration that creates them — autogenerate proposes DROPping any index absent from the metadata, so a migration-only index here silently loses the sweep its access paths. `alembic check` in CI is the guard
-    - There is deliberately NO index on either sidecar's `last_checked_at`, and adding one is a regression: the planner can't use it (the staleness predicate is a `coalesce` across a joined table, so it isn't sargable, and the `ORDER BY` sits on the nullable side of a LEFT JOIN), and it's worse than inert — `last_checked_at` is the only indexed *mutable* column on either sidecar, so indexing it makes every sweep write a non-HOT update
+    - Neither sidecar's `last_checked_at` is indexed, deliberately — see [.claude/rules/database.md](.claude/rules/database.md)
   - `score_top_percent(anime_id)` (v0.14.11) — rank of this anime among all scored anime by its confidence-weighted MAL score (`weighted_score_expr` = `score * log10(scored_by + 1)`) as a rank-based "top N%" (worst = 100); `None` when the anime has no scored main entries. The anime metric feeds on the **relation-weighted means** `S_w`/`V_w` (`weighted_mean_score_expr` / `weighted_mean_votes_expr`) — `Σ(w·x)/Σ(w)` over the anime's media with `RELATION_SCORE_WEIGHTS` (Main + AlternativeVersion = 1, SideStory/Summary = 0), i.e. the **main story only**, the same anchor set the spoiler frontier uses. Those same `S_w`/`V_w` are the displayed `avg_score`/`avg_scored_by` and drive the default search ordering + the score/scored_by HAVING filters, so the pill, the shown numbers, and the ranking all move together (higher in both → higher rank) — and because anime-view filters select anime without narrowing the grouped media (see `search_filters.py`), applying a filter moves none of the three. `MediaDAO.score_top_percent(media_id)` is the per-media analogue (plain per-media `score`/`scored_by`, no relation weighting). Both surface as `score_top_percent` on the detail responses (anime ranks among anime, media among media) → the frontend "Top N%" chip. Query-shape rationale (window vs `count FILTER`, why no metric index, SQL/Python parity via the drift test) lives in `compound-docs/2026-06-22-v0.14.11-further-qol.md`; the main-only scoping (prod-data study behind `RELATION_SCORE_WEIGHTS`, incl. why side-story Movies stay excluded) in `compound-docs/2026-07-19-*.md`
   - `count_by_sweep_tier_priority` / `count_media_by_sweep_tier_priority` — anime- and media-grained membership-bucket counts for the admin Overview SweepTiersCard toggle; both use the shared atoms (`_sweep_atoms` / `_media_sweep_atoms`) and the shared `_tier_bucket` CASE. `SWEEP_STABILIZE_THRESHOLD` (3), `SWEEP_LONG_TAIL_DAYS` (90), `SWEEP_ARCHIVAL_AGE_YEARS` (10) and `SWEEP_ARCHIVAL_DAYS` (180) are single constants shared by media + anime so the two grains can't drift. `archival_cycle` is an explicit CASE branch **before** the `else_` (which is `long_cycle`, so an appended branch would never fire) and sits after `recent_main`, so a franchise with a recent main season still reads as weekly even with decade-old members.
     - The anime grain reads all four of its inputs off **`_anime_sweep_cte`**, one pre-aggregated pass over `media` grouped by `anime_id`. It must stay pre-aggregated rather than correlated-per-atom: `_tier_bucket` emits one `WHEN` per stabilize level, so a correlated `min_stable` is compiled once per level and planned as that many uncached SubPlans, each re-scanning the anime's media — cost that grows faster than the catalogue, on a card that loads with every admin Overview
@@ -211,7 +211,7 @@ SQLAlchemy ORM models mapped to PostgreSQL tables.
   - Partial composite index on `(created_at) WHERE status='queued'` keeps the worker's FIFO claim cheap regardless of finished-row volume
 - **`anime_completion.py`** — 1:1 sidecar (`unique=True` on FK) for the admin story-complete flag (v0.14.10). **Row-presence = finished** (no boolean): marking inserts, unmarking deletes. `marked_by_user_id` (FK `SET NULL`) + `created_at` are the who/when audit. Sidecar so the admin flag can't leak into the anime Pydantic schemas; surfaced explicitly as `is_finished` on detail + search results
 - **`anime_freshness.py`** / **`media_freshness.py`** — 1:1 sidecars (`unique=True` on FK) for the nightly update sweep
-  - Both hold `last_checked_at` + `stable_check_count` outside canonical rows so sweep cadence can't leak into Pydantic schemas via `model_dump()`. v0.14.8 added `stable_check_count` to `media_freshness` (server_default 0): `MediaFreshness` is the per-media **refresh** clock that drives `select_due_media_for_sweep`; `AnimeFreshness` is the per-anime **probe** clock
+  - Both hold `last_checked_at` + `stable_check_count` (see [.claude/rules/database.md](.claude/rules/database.md) for why operational state is a sidecar). `MediaFreshness` is the per-media **refresh** clock that drives `select_due_media_for_sweep`; `AnimeFreshness` is the per-anime **probe** clock
   - Existing rows backfilled to parent's `created_at` so sweep enters them at honest age, not "never checked"
 
 #### Other backend modules
@@ -278,8 +278,7 @@ Quick map:
   - The root layout's navigation guard decides from the token's own `exp` (`isSessionLive`), never a request. SvelteKit re-runs that load on any URL change — `?tab=` switches included — and `preload-data="hover"` runs it on hover, so a call there would front every navigation and every hover. `GET /auth/validate` therefore has no frontend caller; the server stays authoritative through each page's own API calls, and the JWT is signed so `exp` can't be forged
   - Security note: shortening the token only tightens the *passive-leak* window; the token lives in `localStorage`, so XSS (which can also call `/auth/refresh`) is the real exposure. HttpOnly-cookie auth is the bigger lever and is out of scope
 - **Async throughout**: asyncpg driver, SQLAlchemy AsyncSession, async service/DAO methods
-  - All ORM relationships use `lazy="raise"` to prevent implicit lazy loading — every relationship access must go through explicit `selectinload` in the DAO query
-  - **🎯 Never `asyncio.gather` coroutines that share one `AsyncSession`** — SQLAlchemy's AsyncSession can't multiplex concurrent operations on a single session, and `gather` corrupts the in-flight query state. Pure-CPU coroutines (e.g. `to_thread.run_sync` over an embedding encode) that don't touch the session are fine to gather; anything that touches the session must run sequentially. See the inline comment at `seasonal_sweep_dispatcher.py:48-51` for the canonical "don't" example and `compound-docs/2026-05-09-v0.14.0-content-pipeline.md` (LANDMINE entry) for the failure mode.
+  - `lazy="raise"` on every relationship, and never `asyncio.gather` over a shared `AsyncSession` — both in [.claude/rules/backend.md](.claude/rules/backend.md)
 - **Vector search**: `paraphrase-multilingual-MiniLM-L12-v2` model, pgvector storage
   - **Case-folded**: `generate_embedding` lowercases before encoding. The model is *cased*, so without this the same query in different capitalisation produced a materially different vector — enough to reorder title results and bury the intended show (capitalising a query dropped it off the page). Folding in the one chokepoint every embedding passes through keeps the query and the stored documents in one case space. Existing catalog vectors are re-normalized by `reembed_all_embeddings` (see seeders)
   - **Search queries are memoized; document text is not.** `generate_query_embedding` (the three DAO search paths) wraps an `lru_cache(256)` over the **folded** text, so capitalisation variants share one entry — ~0.1 ms on a hit vs ~30 ms, bounded ~4 MB. `generate_embedding` stays uncached for titles/descriptions/notes. Two populations, opposite reuse: queries repeat, a document string is encoded once, so one shared cache would let a sweep's thousands of never-hit keys evict every query. Both go through the same fold, keeping query and documents in one case space; see the services CLAUDE.md for the tuple-not-list and thread-hop details
@@ -289,11 +288,11 @@ Quick map:
   - Anime-level title search uses `AnimeSearch` embeddings directly; description search averages cosine distances across media. Both **aggregate** the distance in the ORDER BY (`apply_vector_ordering(aggregate_distance=True)` for title, an inline `avg()` for description) rather than putting the embedding in the GROUP BY — the vector lives on a different table from the grouped `Anime.id`, so Postgres won't infer functional dependency the way it does for Anime's own columns, and grouping by it puts 384 floats in the hash/sort key of every input row (forcing a GroupAggregate + full sort where a HashAggregate would do). Three constraints on that aggregate: it must wrap the **distance**, since pgvector has no `min(vector)`; it must **ignore group size**, because the query groups over the joined media rows so a 6-media anime contributes 6 identical rows — `min`/`avg` qualify, `sum` would rank a franchise six times worse for being a franchise (pinned by `test_anime_ranking_is_invariant_to_media_count`); and the literal-match bonuses stay un-aggregated, being functionally dependent on the grouped PK
   - `/filters/options?view_type=anime` returns anime-appropriate filter ranges (aggregated episodes/watch time, majority genres)
   - `/filters/genres` returns every genre's `{name, description}` — the frontend caches it once and looks up descriptions for the genre-badge tooltips on the anime/media pages
-- **Domain exceptions**: all custom exceptions extend `PhsarBaseError` with `status_code`. One handler in `main.py`. See exceptions.py above for hierarchy
+- **Domain exceptions**: hierarchy in exceptions.py above; the contract is in [.claude/rules/backend.md](.claude/rules/backend.md)
 - **Theme system**: CSS custom properties with `@property` indirection
   - `@property --primary` / `--ring` hold source values, `@theme inline` references via `var()`, `.theme-*` classes override
   - Why: forces Tailwind to emit `var()` in utilities instead of inlining static values
-  - Components use semantic tokens (`bg-primary`, `text-primary`, `ring-ring`)
+  - Components use semantic tokens, never hardcoded colors — see [.claude/rules/frontend.md](.claude/rules/frontend.md)
   - Centralized config in `lib/themes.ts`; FOUC prevention via inline localStorage script in `app.html`
   - Per-theme chart color palettes in `chartColors.ts` avoid hue clashes
 - **Two-pass relation classifier + third-pass split detection**: scrape-time + merge-time + backfill-time. See [compound-docs/2026-05-11-jikan-scraper-quirks.md](compound-docs/2026-05-11-jikan-scraper-quirks.md) for v0.14.1 classifier rationale and [compound-docs/2026-05-18-v0.14.2-split-candidates.md](compound-docs/2026-05-18-v0.14.2-split-candidates.md) for the third pass
@@ -350,10 +349,25 @@ Quick map:
 
 ## Working With Me
 
-- Always ask before making changes to the repo such as creating issues, milestones, releases, commits, or pushing code.
-- When planning work, discuss the plan with me before executing — don't assume priorities or release groupings.
-- **Every commit goes through `/ship`**: `/update-docs` → `/simplify` → lint → a commit plan for approval. `.claude/hooks/pre-commit-gate.sh` enforces this rather than trusting it — `git commit` is denied when lint fails, or when the staged content is not content `/ship` reviewed (it records blob hashes, so a stash or rebase that restores identical bytes still counts as reviewed). Small doc-only commits are exempt; the hook's own message names the current threshold. `GATE_BYPASS=1 git commit …` escapes deliberately and says so in its output.
-- **Bundle work into blocks before shipping.** Several small fixes are one block, not one pipeline run each (~100 LOC is a reasonable floor). Finish a block → `/ship` → commit → *then* start the next; never carry unreviewed work into the next step of a plan, because untangling intermixed changes afterwards is the failure this avoids.
+The working contract — approval, commit blocks, the `/ship` pipeline, authoring
+style — lives in [.claude/rules/workflow.md](.claude/rules/workflow.md), which loads
+automatically every session. Two points that govern everything else:
+
+- **Ask before changing the repo**: commits, pushes, issues, milestones, releases.
+- **Every commit goes through `/ship`**, enforced by `.claude/hooks/pre-commit-gate.sh`.
+
+### Rules
+
+`.claude/rules/` holds the invariants, loaded only when relevant so they cost nothing
+until they apply:
+
+| Rule | Loads when |
+|---|---|
+| `workflow.md` | always |
+| `docs.md` — where a fact belongs, how to write it | editing any `.md` |
+| `backend.md` — layering, async session, exceptions | `phsar/app/**/*.py` |
+| `database.md` — models, sidecars, indexes, migrations | models / DAOs / alembic |
+| `frontend.md` — runes, tokens, shared components, copy | `phsar/frontend/src/**` |
 
 ## Configuration
 

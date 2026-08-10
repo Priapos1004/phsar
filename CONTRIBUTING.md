@@ -26,27 +26,25 @@ Thank you for your interest in contributing to Phsar! This project is licensed u
 
 ## Code Style
 
-### Backend (Python)
-- **Linter**: Ruff (config in `pyproject.toml`) — run `ruff check .` and `ruff check . --fix`
-- **Architecture**: routers → services → DAOs → models (strict dependency flow)
-- **Services**: Module-level async functions (not classes)
-- **Exceptions**: Extend `PhsarBaseError` with a `status_code` class attribute
-- **DAOs**: Extend `BaseDAO` and delegate to `get_by_field()` where possible
-- **Role checks**: Use `RoleType` enum directly, not `.value` strings
-- **Async gotchas** (these will bite you — see [CLAUDE.md](CLAUDE.md) for the full rationale):
-  - All ORM relationships use `lazy="raise"` — load related rows explicitly with `selectinload` in the DAO query; an implicit lazy access raises
-  - Never `asyncio.gather` coroutines that share one `AsyncSession`. It corrupts in-flight query state. Run session work sequentially
+Conventions live in [`.claude/rules/`](.claude/rules/) — one file per area, kept there so
+there is a single copy to keep correct:
 
-### Frontend (TypeScript/Svelte)
-- **Framework**: SvelteKit with Svelte 5 runes (`$props()`, `$state()`, `$derived()`, `$effect()`)
-- **Components**: Use shadcn-svelte for UI primitives
-- **Styling**: Theme tokens (`bg-card`, `text-primary`, etc.) instead of hardcoded Tailwind colors
-- **API calls**: Use the centralized `api` client from `$lib/api.ts`
-- **Types**: Define API response types in `$lib/types/api.ts`
+| Read before working on | File |
+|---|---|
+| Backend Python — layering, async/session gotchas, exceptions | [backend.md](.claude/rules/backend.md) |
+| Models, DAOs, migrations — sidecars, index rules `alembic check` enforces | [database.md](.claude/rules/database.md) |
+| Svelte/TypeScript — runes, theme tokens, shared components | [frontend.md](.claude/rules/frontend.md) |
+| Docs — where a fact belongs, how to write it | [docs.md](.claude/rules/docs.md) |
+
+Two async rules in `backend.md` will bite you specifically: every ORM relationship is
+`lazy="raise"`, and `asyncio.gather` must never span coroutines sharing one `AsyncSession`.
+
+**Linting**: Ruff, configured in `pyproject.toml` — `ruff check .` and `ruff check . --fix`.
 
 ## Architecture reference & tooling
 
 - The nested **`CLAUDE.md`** files are the source of truth for architecture and conventions: [CLAUDE.md](CLAUDE.md) (root), [phsar/app/services/CLAUDE.md](phsar/app/services/CLAUDE.md), [phsar/frontend/CLAUDE.md](phsar/frontend/CLAUDE.md), and [phsar/scripts/CLAUDE.md](phsar/scripts/CLAUDE.md). Read the relevant one before working in that subtree. [phsar/frontend/USER_FLOWS.md](phsar/frontend/USER_FLOWS.md) specifies user-facing behavior.
+- **[`.claude/rules/`](.claude/rules/)** holds the invariants worth knowing before you write code — the backend's async-session and `lazy="raise"` rules, the modelling and index rules that `alembic check` enforces, and the frontend's theme-token and shared-component conventions. Claude Code loads each one automatically when you touch matching files; they are plain markdown and worth reading directly otherwise.
 - This repo is set up for **Claude Code** with project skills. If you use it, `/ship` runs the whole pre-commit loop (`/update-docs` → `/simplify` → lint) and a `PreToolUse` hook, [`.claude/hooks/pre-commit-gate.sh`](.claude/hooks/pre-commit-gate.sh), blocks `git commit` until it has — so the loop is enforced rather than remembered. Contributing **without** Claude Code is unaffected: the hook only sees Claude's own tool calls, and the plain commands above are all a contribution needs.
 
 ## Pull Request Guidelines
