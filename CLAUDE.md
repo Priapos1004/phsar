@@ -35,8 +35,10 @@ that touches its area, before settling on an approach.
 | [backups](docs/features/backups.md) | Dump/restore, retention pools, the restorability verdict |
 | [spoilers](docs/features/spoilers.md) | Frontier algorithm, visibility cache |
 
-**`compound-docs/`** — why something changed. Dated and frozen; feature docs say how
-it works now.
+**`compound-docs/`** — why something changed, dated and frozen; feature docs say how
+it works now. [INDEX.md](compound-docs/INDEX.md) lists them by subsystem and by date.
+
+**`docs/ROADMAP.md`** — feature design decisions and the version table.
 
 **Nested `CLAUDE.md`** — what is local to one subtree, loaded when working there:
 [services](phsar/app/services/CLAUDE.md), [frontend](phsar/frontend/CLAUDE.md),

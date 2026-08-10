@@ -1,3 +1,8 @@
+---
+name: update-docs
+description: Update project documentation after code changes. Owns the doc-target list — invoke this rather than hand-editing docs.
+---
+
 Update project documentation after code changes.
 
 Review what changed in the current work session and update all affected documentation. Always read each file before editing. Present proposed changes to the user for approval before writing.
@@ -64,7 +69,7 @@ Review what changed in the current work session and update all affected document
 - Update error states when error handling changes.
 - Don't document backend-only changes that have no frontend impact.
 
-### 6. `.claude/plans/agile-sprouting-gray.md`
+### 6. `docs/ROADMAP.md`
 **Purpose:** Feature design decisions and version roadmap — long-lived planning document.
 **When to update:** Design decisions are made or changed, milestones are completed or rescheduled, scope of a feature changes, new features are planned.
 **Be careful:**
@@ -74,7 +79,14 @@ Review what changed in the current work session and update all affected document
 - Keep the version roadmap table current with actual progress.
 - When scope changes, update both the feature section AND the roadmap table.
 
-### 7. GitHub Issues
+### 7. `compound-docs/INDEX.md`
+**Purpose:** The only way the compound-docs are discoverable — the ones whose filename carries no version are unreachable otherwise.
+**When to update:** A new compound-doc landed.
+**Be careful:**
+- Add the row to **both** groupings (by subsystem and chronological) — a doc in only one is half-invisible.
+- The index says what each doc *settles*, not what it changed. Keep it to one clause.
+
+### 8. GitHub Issues
 **Purpose:** Track work items, bugs, and feature requests aligned with the roadmap.
 **When to update:** Roadmap changes that affect planned work, milestones completed, scope changes that require new issues or closing outdated ones.
 **Be careful:**
@@ -88,7 +100,7 @@ Review what changed in the current work session and update all affected document
 1. **List the current directory tree** to ground assumptions. Run `tree -L 4 -I 'node_modules|__pycache__|.svelte-kit|venv|.git|build|.pytest_cache|backups|st-cache'` from the repo root (fall back to `find` if `tree` isn't available). This catches new files / directories that aren't reflected in `phsar/README.md`'s tree. Diff mentally against the tree section of `phsar/README.md` — any addition or removal is a doc edit.
 2. **Find all `CLAUDE.md` files in the repo**: `find . -name CLAUDE.md -not -path './node_modules/*' -not -path './.git/*'`. Each one is in scope when the corresponding subtree changed.
 3. **Assess scope**: Determine which of the above files/systems are affected by the current changes. The tree listing from step 1 + the CLAUDE.md scan from step 2 are inputs to this — don't rely on memory of "what I touched".
-   - **Roadmap row (don't skip):** if this work corresponds to a version bump, the version roadmap table in `.claude/plans/agile-sprouting-gray.md` (doc #6) needs a row for that version — add it if missing, mark it `✓` when shipped. Keep the new row's length in line with the existing rows (e.g. v0.12.0 / v0.14.0), not a full changelog. This is the most commonly-missed doc edit.
+   - **Roadmap row (don't skip):** if this work corresponds to a version bump, the version roadmap table in `docs/ROADMAP.md` (doc #6) needs a row for that version — add it if missing, mark it `✓` when shipped. Keep the new row's length in line with the existing rows (e.g. v0.12.0 / v0.14.0), not a full changelog. This is the most commonly-missed doc edit.
 4. **Read affected files**: Read each file that needs updating. Never edit blind.
 5. **Draft changes**: For each file, identify what specifically needs to change and why.
 6. **Present for approval**: Show the user a summary of proposed changes across all affected docs. For GitHub issues, list planned creates/updates/closes.
