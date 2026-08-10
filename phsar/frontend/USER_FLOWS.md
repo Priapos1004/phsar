@@ -641,7 +641,8 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 | `/library/recent` | GET | `/library/add` recent-additions panel (global feed of recently-saved anime) |
 | `/admin/jobs/schedule-sweep` | POST | Coolify cron only — bearer token authenticated, enqueues a delayed `update_sweep` |
 | `/admin/jobs/schedule-seasonal` | POST | Coolify cron only — bearer token authenticated, enqueues a delayed `seasonal_sweep` |
-| `/admin/jobs/schedule-nightly` | POST | Coolify cron only — bearer token authenticated, combined daily entry: enqueues `backup` (immediate) + delayed `update_sweep` + (Sundays UTC) delayed `seasonal_sweep` |
+| `/admin/jobs/schedule-upcoming` | POST | Coolify cron only — bearer token authenticated, enqueues a delayed `upcoming_sweep` (next season) |
+| `/admin/jobs/schedule-nightly` | POST | Coolify cron only — bearer token authenticated, combined daily entry: enqueues `backup` (immediate) + delayed `update_sweep` + (Sundays UTC) delayed `seasonal_sweep` + (Wednesdays UTC in Mar/Jun/Sep/Dec) delayed `upcoming_sweep` |
 
 ---
 
