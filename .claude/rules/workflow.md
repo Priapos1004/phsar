@@ -40,6 +40,13 @@ Work is committed in **blocks**: one coherent, reviewable change each.
 `.claude/hooks/pre-commit-gate.sh` enforces it. The skill owns the steps; the
 hook owns the exemptions.
 
+## Opening a PR
+
+`/pr` runs what only makes sense once per branch: the full test suite, the ISO 25010
+review panel, a re-`/ship` when that review changed anything substantial, and the
+compound doc. It **stops before pushing** — push and PR creation need approval like
+any other repo change.
+
 ## Commit messages
 
 `<type>(v<version>): <subject>` — the scope is the release the work ships in,

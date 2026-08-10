@@ -41,6 +41,20 @@ doc is the easiest place to slip into narrating releases. "v0.14.8 made X
 media-level" tells a reader nothing about what X does now and forces them to
 replay every delta to find out.
 
+## Compound-docs
+
+Structure is in [compound-docs/TEMPLATE.md](../../compound-docs/TEMPLATE.md);
+[INDEX.md](../../compound-docs/INDEX.md) lists what already exists — check it before
+starting a new one, since extending the right doc beats a near-duplicate.
+
+**On a long branch, keep a provisional doc as you go** — same filename convention,
+`status: in progress`. Write down decisions, dead ends and gotchas while they are
+fresh; a later session cannot reconstruct why an approach was abandoned.
+
+Don't polish it. `/pr` **rewrites** it into the template's shape at PR time rather
+than tidying it, precisely because the running commentary and per-session ordering
+are what a future reader doesn't want. Verbose is fine; lost is not.
+
 ## Doc ownership
 
 `/update-docs` owns the list of doc targets and the rules for each. Invoke the
