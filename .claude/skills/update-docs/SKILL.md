@@ -1,3 +1,8 @@
+---
+name: update-docs
+description: Update project documentation after code changes. Owns the doc-target list — invoke this rather than hand-editing docs.
+---
+
 Update project documentation after code changes.
 
 Review what changed in the current work session and update all affected documentation. Always read each file before editing. Present proposed changes to the user for approval before writing.
@@ -14,12 +19,23 @@ Review what changed in the current work session and update all affected document
 - Update "Commands" when new scripts, CLI commands, or workflows are introduced.
 - Update "Configuration" when new env vars are added.
 
+### 1b. `docs/features/*.md` — how each subsystem works TODAY
+**Purpose:** One doc per subsystem, spanning the modules it touches: `scraping`, `relations`, `jobs`, `search`, `backups`, `spoilers`.
+**When to update:** Any change to how one of those subsystems behaves — new step in a pipeline, changed threshold, new job kind, altered ranking or filtering, changed retention or verdict logic.
+**Be careful:**
+- **These are the OWNER of cross-module behaviour.** If a fact belongs to a subsystem, it goes here, not into a per-tree `CLAUDE.md` and not into root `CLAUDE.md`. Those link to it instead.
+- **Present tense, current state only.** Why something *changed* goes in `compound-docs/` and is linked from the doc's "Why it is this way" footer — never narrated inline.
+- Keep tuned constants together with the warning attached to them (thresholds validated against a prod dump say so).
+- New feature doc? Add it to the index table in root `CLAUDE.md`.
+
 ### 2. Per-tree `CLAUDE.md` files (loaded contextually when Claude Code works in that subtree)
-**Purpose:** Deeper rationale for one part of the codebase, layered on top of the root file.
+**Purpose:** Notes for things that live only in that subtree, layered on top of the root file.
 **Locations:**
-- `phsar/app/services/CLAUDE.md` — per-service design notes (why each service exists, the trade-offs of its key decisions, gotchas)
+- `phsar/app/services/CLAUDE.md` — services with no feature doc of their own (auth/settings/tokens, ratings, watchlist + tags, export), plus the pointer table to `docs/features/`
 - `phsar/frontend/CLAUDE.md` — frontend component / store / util conventions, theme system, route map
 - `phsar/scripts/CLAUDE.md` — dev DB helper scripts catalog (read-only vs. mutating, when to use each)
+**Be careful:**
+- **Do not write subsystem rationale back into `services/CLAUDE.md`.** Scraping, relations, jobs, search, backups and spoilers moved to `docs/features/`; that file keeps a pointer table and only the services no feature doc covers.
 **When to update:** Changes inside the corresponding subtree that affect rationale or conventions — new services/components/scripts, changed patterns in that tree, new utilities, removed/renamed modules.
 **Be careful:**
 - These are loaded by Claude Code automatically when working in their subtree, so they're the FIRST place future sessions learn local conventions. Skipping an update here means the next session has to re-derive context from source.
@@ -53,7 +69,7 @@ Review what changed in the current work session and update all affected document
 - Update error states when error handling changes.
 - Don't document backend-only changes that have no frontend impact.
 
-### 6. `.claude/plans/agile-sprouting-gray.md`
+### 6. `docs/ROADMAP.md`
 **Purpose:** Feature design decisions and version roadmap — long-lived planning document.
 **When to update:** Design decisions are made or changed, milestones are completed or rescheduled, scope of a feature changes, new features are planned.
 **Be careful:**
@@ -62,8 +78,27 @@ Review what changed in the current work session and update all affected document
 - When a decision changes, update the "Key Decisions" section for that feature — don't just append, replace the outdated decision.
 - Keep the version roadmap table current with actual progress.
 - When scope changes, update both the feature section AND the roadmap table.
+- **A version row says what shipped, in about a sentence or three — aim ~350
+  characters in the Notes cell and treat ~500 as the ceiling.** The row is an
+  index entry, not a changelog: the reasoning, the rejected alternatives and the
+  measurements belong in the release's compound-doc, which `INDEX.md` already
+  makes reachable. Rows creep because each release adds "just one more clause"
+  and nobody re-reads the table as a whole, so check the new row against its
+  neighbours before writing it.
+- **Never put a measurement in a row.** Numbers like "~21,000 tokens → ~4,700"
+  or "7× faster" are true on the day and rot silently after, because nothing
+  re-measures them. State them once in the compound-doc, where the date and the
+  baseline are recorded alongside. A row may say a thing got faster or smaller;
+  it may not say by how much.
 
-### 7. GitHub Issues
+### 7. `compound-docs/INDEX.md`
+**Purpose:** The only way the compound-docs are discoverable — the ones whose filename carries no version are unreachable otherwise.
+**When to update:** A new compound-doc landed.
+**Be careful:**
+- Add the row to **both** groupings (by subsystem and chronological) — a doc in only one is half-invisible.
+- The index says what each doc *settles*, not what it changed. Keep it to one clause.
+
+### 8. GitHub Issues
 **Purpose:** Track work items, bugs, and feature requests aligned with the roadmap.
 **When to update:** Roadmap changes that affect planned work, milestones completed, scope changes that require new issues or closing outdated ones.
 **Be careful:**
@@ -77,7 +112,7 @@ Review what changed in the current work session and update all affected document
 1. **List the current directory tree** to ground assumptions. Run `tree -L 4 -I 'node_modules|__pycache__|.svelte-kit|venv|.git|build|.pytest_cache|backups|st-cache'` from the repo root (fall back to `find` if `tree` isn't available). This catches new files / directories that aren't reflected in `phsar/README.md`'s tree. Diff mentally against the tree section of `phsar/README.md` — any addition or removal is a doc edit.
 2. **Find all `CLAUDE.md` files in the repo**: `find . -name CLAUDE.md -not -path './node_modules/*' -not -path './.git/*'`. Each one is in scope when the corresponding subtree changed.
 3. **Assess scope**: Determine which of the above files/systems are affected by the current changes. The tree listing from step 1 + the CLAUDE.md scan from step 2 are inputs to this — don't rely on memory of "what I touched".
-   - **Roadmap row (don't skip):** if this work corresponds to a version bump, the version roadmap table in `.claude/plans/agile-sprouting-gray.md` (doc #6) needs a row for that version — add it if missing, mark it `✓` when shipped. Keep the new row's length in line with the existing rows (e.g. v0.12.0 / v0.14.0), not a full changelog. This is the most commonly-missed doc edit.
+   - **Roadmap row (don't skip):** if this work corresponds to a version bump, the version roadmap table in `docs/ROADMAP.md` (doc #6) needs a row for that version — add it if missing, mark it `✓` when shipped. Keep the new row's length in line with the existing rows (e.g. v0.12.0 / v0.14.0), not a full changelog. This is the most commonly-missed doc edit.
 4. **Read affected files**: Read each file that needs updating. Never edit blind.
 5. **Draft changes**: For each file, identify what specifically needs to change and why.
 6. **Present for approval**: Show the user a summary of proposed changes across all affected docs. For GitHub issues, list planned creates/updates/closes.

@@ -4,6 +4,7 @@ date: 2026-03-31
 scope: backend, frontend, security, data model
 ---
 
+# Little fixes — Argon2 migration, age_rating rename, season decomposition, search UX
 ## Summary
 
 Batch of cross-cutting improvements: Argon2 password migration with transparent rehashing, `fsk`-to-`age_rating` rename, anime season column decomposition, genre descriptions, hentai content filtering, and several frontend search UX fixes (log-scale slider, description vector search toggle, clear-all button).

@@ -653,7 +653,8 @@ bun run dev -- --open
 pytest
 ```
 
-All changes to the database during the tests are rolled back afterwards.
+Each test rolls back its database changes afterwards; the ones that must commit for
+real clean up after themselves.
 
 ### Frontend
 
@@ -664,9 +665,9 @@ bun run test
 
 ## Scheduled jobs
 
-The backend exposes four cron-authed endpoints — all share the same `JOBS_CRON_TOKEN` bearer.
+The backend's cron-authed endpoints all share the same `JOBS_CRON_TOKEN` bearer.
 
-**Recommended (one daily task):** point your cron at the combined nightly endpoint. It enqueues a backup immediately (pg_dump is MVCC-snapshot, no maintenance window needed), an `update_sweep` after `delay_minutes`, and on Sunday UTC a `seasonal_sweep` with the same delay so the weekly catalog pickup piggybacks on the maintenance window.
+**Recommended (one daily task):** point your cron at the combined nightly endpoint. It enqueues a backup immediately (pg_dump is MVCC-snapshot, no maintenance window needed), an `update_sweep` after `delay_minutes`, on Sunday UTC a `seasonal_sweep` with the same delay so the weekly catalog pickup piggybacks on the maintenance window, and on Wednesday UTC in the last month of a quarter (Mar/Jun/Sep/Dec) an `upcoming_sweep` so next-quarter shows can be added about a month early.
 
 ```sh
 curl -fsS -X POST -H "Authorization: Bearer $JOBS_CRON_TOKEN" \
@@ -678,6 +679,7 @@ curl -fsS -X POST -H "Authorization: Bearer $JOBS_CRON_TOKEN" \
 - `POST /admin/backups/auto` — backup only
 - `POST /admin/jobs/schedule-sweep?delay_minutes=N` — `update_sweep` only
 - `POST /admin/jobs/schedule-seasonal?delay_minutes=N` — `seasonal_sweep` only
+- `POST /admin/jobs/schedule-upcoming?delay_minutes=N` — `upcoming_sweep` only
 
 `delay_minutes` is bound to `[0, 1440]` on every sweep endpoint and drives the frontend's maintenance-banner countdown.
 

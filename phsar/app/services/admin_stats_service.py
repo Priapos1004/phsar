@@ -200,7 +200,7 @@ async def get_overview_stats(db: AsyncSession) -> AdminOverviewStats:
 
 async def get_curation_pending_counts(db: AsyncSession) -> CurationPendingCounts:
     """Sequential awaits, not asyncio.gather: AsyncSession can't multiplex
-    concurrent ops on one session (see CLAUDE.md LANDMINE). Both queries
+    concurrent ops on one session (see .claude/rules/backend.md). Both queries
     are sub-millisecond pending-only COUNTs, so the cost is irrelevant."""
     return CurationPendingCounts(
         merge=await merge_candidate_dao.count_pending(db),

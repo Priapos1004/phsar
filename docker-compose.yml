@@ -2,8 +2,11 @@
 # for native uvicorn + bun dev with hot-reload).
 #
 # Usage: cp phsar/.env.example .env && docker compose up --build
-# (Uncomment the docker-compose-only block in phsar/.env.example before
-# running — CORS_ORIGINS, PUBLIC_API_BASE_URL, APP_VERSION.)
+# Fill in the real secrets in that copy. MY_ANIME_LIST_CLIENT_ID ships as a
+# placeholder: the stack still starts with it, but every MAL request is rejected
+# upstream, so scrapes and sweeps fail while search over existing data works.
+# The docker-compose-only block in phsar/.env.example is optional: every var in
+# it is defaulted below.
 
 name: phsar
 
@@ -41,6 +44,8 @@ services:
       GUEST_PASSWORD: ${GUEST_PASSWORD:-}
       SECRET_KEY: ${SECRET_KEY}
       SEARCH_SECRET_KEY: ${SEARCH_SECRET_KEY}
+      # The image never COPYs a .env, so this has to be forwarded explicitly.
+      MY_ANIME_LIST_CLIENT_ID: ${MY_ANIME_LIST_CLIENT_ID}
       CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000"]}
       APP_VERSION: ${APP_VERSION:-dev}
       JOBS_CRON_TOKEN: ${JOBS_CRON_TOKEN:-}

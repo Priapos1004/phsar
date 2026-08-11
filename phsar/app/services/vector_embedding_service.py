@@ -97,9 +97,9 @@ async def _compute_search_embeddings(
 ) -> tuple[list[float], list[float]]:
     """Encode title + description embeddings without touching the DB.
     Returned in title-then-description order. Two sequential awaits;
-    `asyncio.gather` is intentionally avoided (see CLAUDE.md "Async
-    throughout" — the trap surface isn't worth the modest CPU win on
-    a 2-vCPU VM)."""
+    `asyncio.gather` is intentionally avoided (see .claude/rules/backend.md
+    "Async — the two that bite" — the trap surface isn't worth the modest
+    CPU win on a 2-vCPU VM)."""
     combined_text = " ".join([t for t in title_texts if t])
     title_embedding = await generate_embedding(combined_text)
     description_embedding = await generate_embedding(f"{combined_text} {description_text}")

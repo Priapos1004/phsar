@@ -1,3 +1,8 @@
+---
+name: review-comments
+description: Fetch, classify and resolve PR review comments and code-scanning (CodeQL) alerts, verifying each claim against the code before acting.
+---
+
 Fetch, classify, and resolve PR review comments **and code-scanning (CodeQL) alerts**.
 
 ## Arguments
