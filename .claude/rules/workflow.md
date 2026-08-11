@@ -40,6 +40,14 @@ Work is committed in **blocks**: one coherent, reviewable change each.
 `.claude/hooks/review-gate.sh` enforces it. The skill owns the steps; the
 hook owns the exemptions.
 
+Changing the gate means running `.claude/hooks/test-gate.sh` and adding a case
+for whatever you changed. Its failures are all fail-*open* — a gate that wrongly
+allows looks identical to one that works, so the tests are the only symptom.
+
+It is a speed bump, not a boundary: it cannot see mutations made earlier in the
+same command, and its parser only recognises `git` in first position. The hook's
+own header lists the gaps. Rely on it to catch drift, not evasion.
+
 ## Opening a PR
 
 `/pr` runs what only makes sense once per branch: the full test suite, the ISO 25010
