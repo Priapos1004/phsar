@@ -78,6 +78,18 @@ Review what changed in the current work session and update all affected document
 - When a decision changes, update the "Key Decisions" section for that feature — don't just append, replace the outdated decision.
 - Keep the version roadmap table current with actual progress.
 - When scope changes, update both the feature section AND the roadmap table.
+- **A version row says what shipped, in about a sentence or three — aim ~350
+  characters in the Notes cell and treat ~500 as the ceiling.** The row is an
+  index entry, not a changelog: the reasoning, the rejected alternatives and the
+  measurements belong in the release's compound-doc, which `INDEX.md` already
+  makes reachable. Rows creep because each release adds "just one more clause"
+  and nobody re-reads the table as a whole, so check the new row against its
+  neighbours before writing it.
+- **Never put a measurement in a row.** Numbers like "~21,000 tokens → ~4,700"
+  or "7× faster" are true on the day and rot silently after, because nothing
+  re-measures them. State them once in the compound-doc, where the date and the
+  baseline are recorded alongside. A row may say a thing got faster or smaller;
+  it may not say by how much.
 
 ### 7. `compound-docs/INDEX.md`
 **Purpose:** The only way the compound-docs are discoverable — the ones whose filename carries no version are unreachable otherwise.
