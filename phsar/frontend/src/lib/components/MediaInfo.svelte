@@ -31,7 +31,14 @@
 		media_uuid: string;
 		searchToken?: string | null;
 		fromParam?: DetailOrigin | null;
-		/** Anime-only: admin-marked story-complete. Renders a small badge by the title. */
+		/**
+		 * Anime-only: admin-marked story-complete. Renders a small badge by the title.
+		 *
+		 * Deliberately bare here — no tooltip. A hover popup firing while the user
+		 * scrolls a result list is intrusive, so the airing-vs-story explanation lives
+		 * only on the anime detail page's "Story Complete" badge, where the cursor is
+		 * already at rest.
+		 */
 		is_finished?: boolean;
 	}
 

@@ -6,6 +6,11 @@
 		topPercent: number | null;
 	}
 
+	// The copy below stays grain-agnostic. This renders on both the media page,
+	// which ranks a single entry, and the anime page, whose figures cover the main
+	// story only — so wording that names either grain makes the other page lie.
+	// The anime page says that in its own score tooltip, where it is true.
+
 	let { topPercent }: Props = $props();
 
 	// Color ramps by tier: top → emerald, above median → sky, below → neutral.

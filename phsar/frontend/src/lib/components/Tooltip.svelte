@@ -31,7 +31,12 @@
 </script>
 
 <!-- Self-contained Provider so the component works anywhere (incl. isolated
-     component tests) without depending on an ancestor Provider. -->
+     component tests) without depending on an ancestor Provider.
+
+     Consequence for tests: one that mocks svelte's setContext/getContext has to
+     delegate unknown keys to the real implementation, or this Provider's own
+     context breaks and every tooltip in the tree fails to mount. See
+     tests/media-detail.test.ts. -->
 <TooltipPrimitive.Provider delayDuration={500}>
 <TooltipPrimitive.Root>
 	<TooltipPrimitive.Trigger>

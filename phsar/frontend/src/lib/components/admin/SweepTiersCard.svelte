@@ -30,11 +30,21 @@
 	);
 	let stabilizeThreshold = $derived(stabilizingBreakdown.length);
 
-	// Display buckets map 1:1 to the backend's 4 mutually-exclusive
+	// Display buckets map 1:1 to the backend's 5 mutually-exclusive
 	// cycle-membership tiers (priority cascade). The stabilizing tier renders
 	// the per-check sub-rows below. Tooltips paraphrase each predicate; the
 	// stabilize (< threshold sweeps) and long-cycle (90/180-day) borders are
 	// shared by both grains.
+	//
+	// These are NOT the due-ness tiers in docs/features/jobs.md, which answer
+	// "what does tonight's sweep pick up" and deliberately treat the long tail
+	// as a per-row window rather than a tier. Cycle *membership* is a stable
+	// trait, which is what makes these counts hold still between sweeps.
+	//
+	// `total` below sums this array alone, while the header claims the buckets
+	// sum to the catalogue — so a tier the backend adds and this array omits
+	// breaks that claim silently, with nothing to catch it. Registering a new
+	// tier here is not optional.
 	const ROWS: {
 		key: 'airing_now' | 'stabilizing' | 'weekly_cycle' | 'long_cycle' | 'archival_cycle';
 		label: string;
