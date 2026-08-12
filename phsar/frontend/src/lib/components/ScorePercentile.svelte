@@ -6,11 +6,6 @@
 		topPercent: number | null;
 	}
 
-	// The copy below stays grain-agnostic. This renders on both the media page,
-	// which ranks a single entry, and the anime page, whose figures cover the main
-	// story only — so wording that names either grain makes the other page lie.
-	// The anime page says that in its own score tooltip, where it is true.
-
 	let { topPercent }: Props = $props();
 
 	// Color ramps by tier: top → emerald, above median → sky, below → neutral.
@@ -26,10 +21,15 @@
 <!-- Always-visible chip (no hover needed → works on mobile); the tooltip only
      adds the full explanation. -->
 {#if topPercent !== null}
-	<!-- Phrased as the chip's own "top N%" rank rather than an inverted
+	<!-- This copy must stay grain-agnostic: the chip renders on both the media page,
+	     which ranks a single entry, and the anime page, whose figures cover the main
+	     story only — so wording that names either grain makes the other page lie. The
+	     anime page says which grain it means in its own score tooltip, where it is true.
+
+	     Phrased as the chip's own "top N%" rank rather than an inverted
 	     "higher than (100-N)%" figure: topPercent is floored at 1, so the
-	     inverted form overstated the best title (always "higher than 99%") and
-	     was nonsensical for a tiny catalog. "Among the top N%" is honest at every
+	     inverted form overstates the best title (always "higher than 99%") and
+	     is nonsensical for a tiny catalog. "Among the top N%" is honest at every
 	     catalog size. -->
 	{@const explanation = `Among the top ${topPercent}% of Phsar's catalog by MyAnimeList score. Ranked by score weighted by vote count, so a high score from few votes doesn't rank near the top.`}
 	<Tooltip text={explanation}>

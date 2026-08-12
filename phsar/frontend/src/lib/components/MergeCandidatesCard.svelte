@@ -211,11 +211,10 @@
                                         Anime {i === 0 ? 'A (kept)' : 'B (merged in)'}
                                     </div>
                                     <!-- Same tab, carrying a `curation` origin, so verifying a pair
-                                         returns to this list via "Back to curation". The opposite
-                                         call is right for the job-detail change cards, which open a
-                                         new tab: that list runs to hundreds of rows and an admin
-                                         checking one must not lose their scroll position. Here the
-                                         list is short and there is no scroll to lose. -->
+                                         returns to this list via "Back to curation" — the list is
+                                         short, so there is no scroll position to lose. The
+                                         job-detail change cards open a new tab instead and argue
+                                         that at their own link. -->
                                     <a
                                         href={buildDetailHref('anime', anime.uuid, { from: 'curation' })}
                                         class="text-sm font-medium text-card-foreground hover:text-primary transition block"

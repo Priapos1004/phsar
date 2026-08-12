@@ -1,5 +1,5 @@
 ---
-description: Frontend conventions — runes, theme tokens, shared components, cross-page consistency, and UI copy.
+description: Frontend conventions — runes, theme tokens, shared components, tooltip and chart mechanics, dialog sizing, route titles, restricted accounts, and UI copy.
 paths: "phsar/frontend/src/**/*"
 ---
 

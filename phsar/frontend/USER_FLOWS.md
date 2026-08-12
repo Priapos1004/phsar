@@ -4,13 +4,15 @@ What the PHSAR frontend does from the user's side: what each page shows, what ea
 control does, and which endpoints the frontend calls. Why it is built that way lives
 with the code — this side is the observable behaviour.
 
-**How much to trust it.** §13's endpoint table is pinned to the app's real route table
-by `phsar/tests/routers/test_user_flows_endpoints.py`, so it cannot drift. The
-behavioural sections are **not** systematically verified against source. Spot-checking
-finds most claims accurate and a minority wrong, concentrated in the longest sections
-(§6, §7, §12). So: reliable for orientation, and worth confirming against the source
-before you rely on a specific claim — then correct it here, and narrow this note as
-sections get checked.
+**How much to trust it.** §13's endpoint table is checked against the app's real route
+table by `phsar/tests/routers/test_user_flows_endpoints.py`: every row names a route the
+app actually serves, and every row still parses. It is **not** checked for completeness —
+whether an endpoint is frontend-consumed is not something the route table knows, so a new
+call site can go undocumented here without failing anything. The behavioural sections are
+**not** systematically verified against source. Spot-checking finds most claims accurate
+and a minority wrong, concentrated in the longest sections (§6, §7, §12). So: reliable for
+orientation, and worth confirming against the source before you rely on a specific claim —
+then correct it here, and narrow this note as sections get checked.
 
 ---
 
@@ -30,7 +32,7 @@ sections get checked.
 - The guard decides locally and synchronously, from the token's own `exp` claim — it must not make a request. SvelteKit re-runs the root load on *any* URL change (including `?tab=` switches) and `preload-data="hover"` runs it on hover, so a request here would sit in front of every navigation and every link hover
 - A token that is missing, expired or unparseable is cleared from localStorage and the user is redirected to `/login`
 - The server stays authoritative: every API call the page then makes rejects a bad token, and the JWT is signed so `exp` can't be forged. Expiry *during* a session is the session tick's job (1.6), not the guard's
-- A 401 on any *other* in-app API call is **not** globally redirected, so a background request failing on a just-expired token never throws the user out mid-countdown — the idle-timeout dialog (1.6) still gets its turn. The caller handles it instead (the JobBell silently stops polling); stale tokens are otherwise caught by the navigation guard above and the session tick. `lib/api.ts` argues the choice at the throw site
+- A 401 on any *other* in-app API call is **not** globally redirected. The caller handles it instead (the JobBell silently stops polling), and the user stays on the page. `lib/api.ts` argues the choice at the throw site
 
 ### 1.3 Logout
 - Clicking "Logout" in the NavBar dropdown clears the token immediately, shows a ~1.5s themed sakura-ring loading screen as a soft transition, then redirects to `/login`
@@ -622,6 +624,7 @@ The charts replay their build-up animation every time you open the tab, not just
 | `/users/account` | DELETE | Settings page (account deletion with password) |
 | `/admin/stats/overview` | GET | Admin Overview tab (aggregate catalog + job health + activity counters) |
 | `/admin/jobs` | GET | Admin Jobs Log tab (paginated all-jobs list with status/kind/user/date filters) |
+| `/admin/jobs/{uuid}` | GET | Job detail page load (12.1d), and its 1s re-poll while the job is still running |
 | `/admin/curation/pending-counts` | GET | Polled by JobBell each tick when user role is admin; drives the pinned reminder + badge contribution |
 | `/admin/registration-tokens` | GET | Admin page (list all tokens) |
 | `/admin/registration-tokens` | POST | Admin page (create token) |
@@ -637,18 +640,23 @@ The charts replay their build-up animation every time you open the tab, not just
 | `/admin/merge-candidates/{uuid}/merge` | POST | Admin page Merge Candidates card (merge B into A, delete B) |
 | `/admin/merge-candidates/{uuid}/dismiss` | POST | Admin page Merge Candidates card (mark as reviewed-not-duplicate) |
 | `/admin/merge-candidates/backfill` | POST | Admin page Merge Candidates card "Re-run detection" — re-runs existing × existing detection without a container restart (post-restore workflow) |
+| `/admin/merge-candidates/dismissed` | GET | Merge Candidates card's dismissed-decisions section (list previously dismissed rows) |
+| `/admin/merge-candidates/{uuid}/delete` | POST | Dismissed-decisions section — permanently forget a dismissal (username confirmation) |
 | `/admin/split-candidates` | GET | Admin page Split Candidates card (list pending disjoint-franchise rows) |
 | `/admin/split-candidates/{uuid}/split` | POST | Admin page Split Candidates card (split clusters into separate anime, re-parent media) |
 | `/admin/split-candidates/{uuid}/dismiss` | POST | Admin page Split Candidates card (mark as reviewed-keep-bundled) |
 | `/admin/split-candidates/backfill` | POST | Admin page Split Candidates card "Re-run detection" — re-runs disjoint-franchise detection across the catalog |
+| `/admin/split-candidates/dismissed` | GET | Split Candidates card's dismissed-decisions section (list previously dismissed rows) |
+| `/admin/split-candidates/{uuid}/delete` | POST | Dismissed-decisions section — permanently forget a dismissal (username confirmation) |
 | `/admin/finished-anime` | GET | Admin Completion tab (list story-complete anime) |
 | `/admin/finished-anime/{uuid}` | POST | Admin Completion tab (mark anime story-complete) |
 | `/admin/finished-anime/{uuid}` | DELETE | Admin Completion tab (remove story-complete flag) |
 | `/auth/register` | POST | Registration page |
+| `/auth/refresh` | POST | Session tick (1.6) — silently re-issues the token while the user is active, before the idle countdown can start |
 | `/maintenance/status` | GET | Polled by MaintenanceBanner every 30s on every page (no auth) |
 | `/jobs/scrape` | POST | `/library/add` form submission (enqueues a `user_scrape` job; restricted users rejected by role check) |
 | `/jobs/mine` | GET | Polled by JobBell every 2s while any of your jobs is queued/running, every 30s when idle (active + recently-finished jobs for the current user) |
-| `/jobs/{uuid}` | GET | Single-job poll for owner or admin (used by bell retry + admin debugging) |
+| `/jobs/{uuid}` | GET | Single-job poll for owner or admin. No frontend caller — the bell polls `/jobs/mine` and re-POSTs the original request to retry; listed because it is the own-job counterpart to `/admin/jobs/{uuid}` |
 | `/library/recent` | GET | `/library/add` recent-additions panel (global feed of recently-saved anime) |
 | `/admin/jobs/schedule-sweep` | POST | Coolify cron only — bearer token authenticated, enqueues a delayed `update_sweep` |
 | `/admin/jobs/schedule-seasonal` | POST | Coolify cron only — bearer token authenticated, enqueues a delayed `seasonal_sweep` |

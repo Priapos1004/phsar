@@ -14,14 +14,15 @@ history belong in `compound-docs/`; a rule is read while someone is mid-edit.
 
 ## `paths:` accepts globs, brace sets, lists and single files
 
-Measured on CLI 2.1.128 — all six forms load. Braces expanding mid-path is the
-only non-obvious one.
+Measured on CLI 2.1.128 — every form in the table loads. Braces expanding mid-path
+is the only non-obvious one, including when an alternative contains a `/`.
 
 | Form | |
 |---|---|
 | `"phsar/app/daos/**/*.py"` | ✅ |
 | `"phsar/{app,tests,scripts}/**/*.py"` — braces expand | ✅ |
-| `"**/*.md"` | ✅ |
+| `"phsar/{app/models,app/daos}/**/*.py"` — alternatives spanning a `/` | ✅ |
+| `"**/*.md"` — matches inside dot-directories too | ✅ |
 | `"phsar/app/daos/**"` — no trailing `/*` | ✅ |
 | `"phsar/app/daos/base_dao.py"` — one named file | ✅ |
 | a YAML **list** of any of the above | ✅ |

@@ -54,9 +54,9 @@
 
 		 Staying mounted is not free: AdminJobsLogTab keeps its own poll running
 		 whether or not it is the visible tab (3s while a job runs, 30s idle), so
-		 an admin parked on Overview still generates a /admin/jobs request every
-		 30s. That is the accepted cost of the trade — anything added here that
-		 polls pays it too, and should gate on visibility if it is heavier. -->
+		 an admin parked on Overview still pulls /admin/jobs every 30s — not a cheap
+		 request, since each row carries its whole result_summary. Gate anything new
+		 added here on visibility rather than following this poll's example. -->
 	<div class:hidden={active !== 'overview'}>
 		<AdminOverviewTab />
 	</div>

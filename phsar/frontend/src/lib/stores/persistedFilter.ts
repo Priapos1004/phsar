@@ -12,12 +12,15 @@ import { browser } from '$app/environment';
  * writes every change through, so each store's own `clearXFilter()` persists
  * its reset with no extra call.
  *
- * Adding one covers logout and user-switch automatically: the factory registers
- * its own reset below, which is what stops `resetAllPersistedFilters` missing a
- * filter. Belonging to a *section* is the separate step — export a
- * `clearXFilter()` deciding which display prefs survive, then register it in
- * `utils/filterLifecycle`'s `SECTION_FILTERS`. Skip that and the filter works but
- * never clears on leaving its section.
+ * Adding one: export a `clearXFilter()` deciding which display prefs survive, then
+ * register it in `utils/filterLifecycle`'s `SECTION_FILTERS` — and widen the `ALL`
+ * list in `tests/filter-lifecycle.test.ts`, which pins the set.
+ *
+ * That registration also guards logout: `resetters` fills at *module evaluation*,
+ * so a filter clears only if its module has loaded. `filterLifecycle` imports every
+ * `clearXFilter` and the root layout imports `filterLifecycle` — a filter missing
+ * from `SECTION_FILTERS` loads only on its own page, so a value set there outlives
+ * the logout that should have cleared it.
  */
 
 interface PersistedFilterConfig<T extends object> {

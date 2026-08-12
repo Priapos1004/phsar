@@ -42,10 +42,9 @@ that carry an area's reasoning; it is not an inventory of the tree.
 
 Several of these render a verdict the backend owns — restorability, cycle membership,
 merge and split candidates, sibling order — and must not recompute it; the relevant
-[feature doc](../../docs/features/) carries the contract. One trap worth naming: the
-sweep-tiers card's cycle-membership buckets are **not** the due-ness tiers in
-[jobs](../../docs/features/jobs.md), which count the long tail deliberately
-differently — the two disagree on how many there are, on purpose.
+[feature doc](../../docs/features/) carries the contract. The trap in that group is
+`admin/SweepTiersCard.svelte`, which argues at its bucket list why its tiers are not
+the similarly-named ones in [jobs](../../docs/features/jobs.md).
 
 ## lib/
 
