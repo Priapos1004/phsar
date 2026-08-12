@@ -10,6 +10,9 @@ Bump rules:
 - Net-new key with safe default: no bump (frontend treats missing as
   default).
 - Removed key, renamed key, reshaped nested structure: bump.
+- A net-new key only the job-detail page reads also belongs in
+  `LIST_OMITTED_SUMMARY_KEYS` below, or it silently re-inflates the
+  Jobs Log list response.
 
 The dict is hardcoded by design — no per-environment override, no
 runtime registration. A KeyError on lookup is the loud signal that a
@@ -68,6 +71,37 @@ JOB_KIND_VERSIONS: dict[JobKind, int] = {
     JobKind.backup: 1,
     JobKind.restore: 1,
 }
+
+# result_summary keys the Jobs Log *list* never reads — only the
+# /admin/jobs/{uuid} detail page renders them. They dominate an
+# update_sweep row (media_changes alone is one 13-key object per changed
+# media, up to JOBS_SWEEP_MAX_PER_RUN of them), while the list shows
+# nothing but `counters` scalars and `unknown_genre_tags`. A 50-row page
+# on a 3s poll ships that repeatedly for nothing, so
+# `JobDAO.list_admin_paginated` projects them out.
+#
+# A denylist rather than an allowlist of the keys the list *does* read:
+# an allowlist would have to enumerate every kind's small keys
+# (retryable, anime_count, filename, restored_from, ...) and a forgotten
+# entry would blank a Jobs Log cell instead of merely bloating a payload.
+# The cost is that a future heavy key must be added here deliberately —
+# see the bump rules in the module docstring.
+#
+# Flat rather than keyed by kind, because the query applies it to every
+# row (`jsonb - text[]` is a no-op for keys a row doesn't carry). A dict
+# would claim a per-kind precision the projection doesn't deliver, and
+# the claim would be wrong in the one direction that matters: a name
+# that is detail-only for one kind but *rendered* for another would be
+# stripped from both. Keep these names unique to their kind, or switch
+# the query to a CASE on `jobs.kind` at the same time as adding one.
+LIST_OMITTED_SUMMARY_KEYS: tuple[str, ...] = (
+    "media_changes",           # update_sweep v2
+    "anime_umbrella_changes",  # update_sweep v2
+    "step1_failures",          # update_sweep v4
+    "probe_failures",          # update_sweep v5
+    "probe_attached_anime",    # update_sweep v6
+    "hentai_removed",          # update_sweep v7
+)
 
 
 def make_job(kind: JobKind, **kwargs: Any) -> Job:

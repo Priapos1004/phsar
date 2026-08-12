@@ -148,7 +148,8 @@ shapes covered by `rules/database.md`: **1:1 sidecars** for operational state
 
 **`core/`** — cross-cutting infrastructure: `config.py` (env), `db.py` (engine),
 `dependencies.py` (JWT user dep + `require_roles()` + the cron-bearer factory),
-`security.py`, `job_versions.py` (the `result_summary` version registry),
+`security.py`, `job_versions.py` (the `result_summary` version registry, and which
+of its keys the Jobs Log list projects away),
 `logging_config.py`, `maintenance.py` + `maintenance_middleware.py`.
 
 **`exceptions.py`** — every error extends `PhsarBaseError` with a `status_code`, read

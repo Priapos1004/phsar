@@ -75,7 +75,14 @@ class AdminJobResponse(JobResponse):
 
 class AdminJobsPage(BaseModel):
     """Paginated response for GET /admin/jobs. `total` reflects the full
-    filter result; `items` is the current page."""
+    filter result; `items` is the current page.
+
+    Each item's `result_summary` is **projected**: the keys only the job
+    detail page renders are stripped, because they dominate an update_sweep
+    row and this endpoint is polled. A list row therefore carries the
+    counters and nothing built per-media — fetch `GET /admin/jobs/{uuid}`
+    for the whole summary. `LIST_OMITTED_SUMMARY_KEYS` in
+    `core/job_versions.py` is the list."""
     items: list[AdminJobResponse]
     total: int
     limit: int

@@ -32,6 +32,7 @@
 		const raw = page.url.searchParams.get('tab');
 		return raw && TAB_KEYS.has(raw as AdminTabKey) ? (raw as AdminTabKey) : DEFAULT_TAB;
 	});
+	let jobsVisible = $derived(active === 'jobs');
 
 	onMount(() => {
 		if (getUserRole() !== 'admin') goto('/');
@@ -52,16 +53,19 @@
 		 backups), so the parallel-fetch cost on first paint buys instant tab
 		 switches for the rest of the session.
 
-		 Staying mounted is not free: AdminJobsLogTab keeps its own poll running
-		 whether or not it is the visible tab (3s while a job runs, 30s idle), so
-		 an admin parked on Overview still pulls /admin/jobs every 30s — not a cheap
-		 request, since each row carries its whole result_summary. Gate anything new
-		 added here on visibility rather than following this poll's example. -->
+		 A one-off fetch is what that trade buys; a *repeating* one is not covered
+		 by it, because a hidden tab polling forever costs the whole session rather
+		 than one paint. So anything on a timer takes `visible` and stops when it
+		 isn't the active tab — AdminJobsLogTab is the one that does today. -->
 	<div class:hidden={active !== 'overview'}>
 		<AdminOverviewTab />
 	</div>
-	<div class:hidden={active !== 'jobs'}>
-		<AdminJobsLogTab />
+	<!-- One derived predicate, not two hand-maintained negations: `class:hidden`
+		 and `visible` must always be exact opposites, and a drift between them
+		 gives a panel that renders but never polls — silent, because the thing
+		 that would catch it is a negative assertion. -->
+	<div class:hidden={!jobsVisible}>
+		<AdminJobsLogTab visible={jobsVisible} />
 	</div>
 	<div class:hidden={active !== 'tokens'}>
 		<RegistrationTokensCard />

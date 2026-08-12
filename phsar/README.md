@@ -361,6 +361,7 @@ phsar/
 │   │       ├── setup.ts
 │   │       ├── SpoilerGuardTest.svelte
 │   │       ├── admin-jobs-filter.test.ts
+│   │       ├── admin-jobs-poll.test.ts
 │   │       ├── api-download.test.ts
 │   │       ├── auth-store.test.ts
 │   │       ├── backup-status.test.ts

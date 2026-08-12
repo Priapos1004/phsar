@@ -473,7 +473,7 @@ The charts replay their build-up animation every time you open the tab, not just
 
 ### 12.1a Tab navigation
 - Admin sections live behind a tab bar driven by the `?tab=` query param (`/admin?tab=overview`, `?tab=jobs`, `?tab=tokens`, `?tab=curation`, `?tab=completion`, `?tab=backups`). Default tab is `overview` if `?tab=` is absent or unknown — a stale bookmark to a retired tab key still lands the admin somewhere useful instead of a blank page.
-- The active tab is preserved across refresh and is bookmarkable. First paint fetches every tab's data at once, so switching afterwards is instant. The Jobs Log keeps polling once loaded even while another tab is showing, so an admin left on the page continues to make requests. `routes/admin/+page.svelte` explains the trade.
+- The active tab is preserved across refresh and is bookmarkable. First paint fetches every tab's data at once, so switching afterwards is instant. That one-off fetch is the whole cost of staying mounted: a tab that polls stops while it is hidden, so an admin parked on one tab makes no requests on another's behalf. `routes/admin/+page.svelte` explains the trade.
 
 ### 12.1b Overview tab (default)
 - Four stat cards sourced from `GET /admin/stats/overview`:
@@ -494,12 +494,13 @@ The charts replay their build-up animation every time you open the tab, not just
   - **Created** — short datetime
   - **Kind** — neutral badge (`User scrape` / `Update sweep` / etc., via shared `formatJobKind`)
   - **Status** — color-coded badge (queued muted, running primary, succeeded emerald, failed destructive)
-  - **Duration** — wall-clock seconds since `started_at` (or `started_at → finished_at`). Live-ticks every 1s while any row on the page is `running`; queued rows show `—`. The interval is gated by a `hasRunning` derived so a stable page doesn't keep the timer alive
+  - **Duration** — wall-clock seconds since `started_at` (or `started_at → finished_at`). Live-ticks every 1s while any row on the page is `running`; queued rows show `—`. The interval is gated by a `hasRunning` derived AND by tab visibility, so neither a stable page nor a hidden tab keeps the timer alive
   - **User** — `requested_by_username` (flattened server-side from the eager-loaded relationship) or `system` for cron + seasonal-sweep children
   - **Detail** — for failed rows, the `error_message` in destructive color; for succeeded rows the dispatcher's `result_summary` rendered per-kind: user_scrape → "+N anime · +M media", update_sweep v5 → "N media refreshed · X media w/ dynamic · Y media w/ static · Z umbrella · W new attached" (v2–v4 use the anime-grained "N touched · X anime w/ dynamic · …"; v1 rows fall back to the legacy "refreshed N anime · M changed · …" copy), both season sweeps → "Fall 2026 · N season entries · M new scrapes enqueued · K already known" (the season prefix is omitted on rows predating v0.15.3, which didn't record it), backup → filename · dump size, restore → filename
 - **Click-through to detail page**: rows of kind `update_sweep` with `version >= 2` are clickable (cursor-pointer, hover tint, keyboard-accessible via Enter) — they route to `/admin/jobs/[uuid]` (see 12.1d). Other kinds and pre-v0.14.5 update_sweep rows stay non-clickable since the detail page has nothing to add beyond what the row already shows
 - **Unknown-genre-tag highlight**: update_sweep v3 rows whose `result_summary.unknown_genre_tags` is non-empty get an amber tint + a left amber accent border + an inline subline under the payload summary listing the missing tag names ("⚠ New genre tags need seeding: Survival Game, Dark Fantasy"). The seeder is the deliberate source of truth for the user-facing genre taxonomy, so unknown tags don't auto-seed — they surface here for admin to add manually before the next sweep
 - Pagination footer: `"start–end of total"` range on the left, prev/next buttons + `"Page N of M"` on the right. Buttons disable at the boundaries. `total === 0` degrades to `"0 of 0"` and both buttons disabled
+- **Live refresh**: while this is the visible tab the list silently re-fetches every 3s when any row is `running` and every 30s otherwise, so a row that was running at load keeps its Duration honest and jobs started elsewhere (another user, the bell) surface without a manual refresh. Silent, so it never flashes the skeleton or blips a transient error over a good list. Polling stops entirely while another tab is showing and fires once immediately on return, since the list is as stale as the detour was long. Expanded season-sweep children are not live-refreshed
 - First admin paint pays this tab's filtered COUNT + SELECT alongside the other tabs' fetches; switching to it afterwards is instant
 
 ### 12.1d Job detail page (`/admin/jobs/[uuid]`)

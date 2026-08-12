@@ -75,6 +75,12 @@ stamps `job.version` from it. The frontend dispatches on `(kind, version)`.
 Bump a kind's integer when its shape changes. Purely **additive keys with a safe
 default do not bump** — the frontend simply omits them on older rows.
 
+The two admin endpoints serve **different amounts** of the same summary:
+`GET /admin/jobs/{uuid}` returns it whole, and the Jobs Log list strips the keys
+only the detail page renders, because they dominate an `update_sweep` row on an
+endpoint that is polled. `LIST_OMITTED_SUMMARY_KEYS` in `core/job_versions.py`
+decides which.
+
 ## The update sweep
 
 Selection is **per media**, not per anime: `AnimeDAO.select_due_media_for_sweep`
