@@ -25,7 +25,7 @@ first within their subsystem.
 
 **Ratings & watchlist** — [ratings backend](2026-04-04-v0.9.0-ratings-backend.md) · [media detail + rating UI](2026-04-05-v0.10.0-media-detail-rating-ui.md) · [ratings QoL](2026-06-22-v0.14.10-ratings-qol.md) (watch status, watch events) · [further QoL](2026-06-22-v0.14.11-further-qol.md) (detail-page polish: `score_top_percent`, genre tooltips, the rating-consistency helper) · [ratings page](2026-06-23-v0.14.12-ratings-page.md) · [watchlist](2026-07-23-v0.15.0-watchlist.md) · [ratings ↔ watchlist coupling](2026-07-26-v0.15.1-ratings-watchlist-coupling.md) · [shareable cards](2026-07-26-v0.15.2-shareable-rating-cards.md)
 
-**Repo & tooling** — [Claude Code setup restructure](2026-08-11-claude-setup-restructure.md) (why the review pipeline is a hook rather than guidance, why the gate verifies a union instead of detecting commit shapes, and what it still cannot see)
+**Repo & tooling** — [Claude Code setup restructure](2026-08-11-claude-setup-restructure.md) (why the review pipeline is a hook rather than guidance, why the gate verifies a union instead of detecting commit shapes, and what it still cannot see) · [frontend docs restructure](2026-08-12-frontend-docs-restructure.md) (why deletion beat relocation, why homes must exist before facts are cut, and how a green test hid an incomplete table)
 
 **Spoilers** — [user settings, themes, admin](2026-04-11-v0.12.0-user-settings-profile.md) (where the spoiler frontier, the three levels and the `user_visible_media` cache are designed, alongside the settings and theme system)
 
@@ -67,3 +67,4 @@ first within their subsystem.
 | 2026-08-06 | [performance baseline](2026-08-06-performance-baseline.md) |
 | 2026-08-06 | [v0.15.4 efficiency improvements](2026-08-06-v0.15.4-efficiency-improvements.md) |
 | 2026-08-11 | [Claude Code setup restructure](2026-08-11-claude-setup-restructure.md) |
+| 2026-08-12 | [Frontend docs restructure](2026-08-12-frontend-docs-restructure.md) |

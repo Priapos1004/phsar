@@ -3,7 +3,7 @@ date: 2026-08-12
 version: v0.15.4
 branch: docs/claude-setup-frontend-restructure
 topic: Frontend docs — give every fact one home, and verify instead of trusting
-status: in progress
+status: shipped
 related:
   - 2026-08-11-claude-setup-restructure.md
 ---
@@ -21,7 +21,7 @@ the largest auto-loading file in the repo. It is now a 5,739 B map.
 | `.claude/rules/frontend.md` | 2,846 B / 59 lines | 6,858 B / 136 lines |
 | Auto-loaded for frontend work | 104,278 B | 12,597 B (**−88%**) |
 | Version stamps in the doc | 97 | 0 |
-| `USER_FLOWS.md` §13 | unverified | CI-pinned, 68/68 |
+| `USER_FLOWS.md` §13 | unverified | CI-checked, 74 rows |
 
 **The diagnosis was not "the doc is too long".** The doc's per-component prose was a
 second copy of comments that already existed in the components. `filterLifecycle.ts`
@@ -96,12 +96,17 @@ rule; without it the rule reads as a static page name. The file ended up **large
 before the trim (6,858 vs 6,742 B). The size concern was unfounded: it earns it.
 
 **Claiming a cross-user leak in the filter contract.** Asserted that a new section
-filter could skip the per-user reset and leak user A's list uuids to user B. It cannot:
-`createPersistedFilter` registers its own reset (`persistedFilter.ts:87`) and
-`resetAllPersistedFilters()` is already in `clearPerUserStores`
-(`routes/+layout.svelte:49`). The registry exists precisely to make that unmissable.
-Only the *section* wiring is manual, and its failure is a stale filter, not a leak —
-which is why it became one sentence at the factory instead of a rule.
+filter could skip the per-user reset and leak user A's list uuids to user B. For the
+three filters that exist, it cannot: `createPersistedFilter`'s `resetters.push` runs for
+each, and `resetAllPersistedFilters()` is already in `clearPerUserStores`
+(`routes/+layout.svelte:49`). But the retraction went one step too far, and review caught
+it: `resetters` is populated at **module evaluation**, so the registry only covers filters
+whose module has actually loaded. What makes today's three safe is the very step the
+comment had called optional — `filterLifecycle` imports all three `clearXFilter`s and the
+root layout imports `filterLifecycle`, so they load everywhere. A filter registered
+nowhere is loaded only by its own page, and the leak is real again. Cite the mechanism,
+not the line: a `file:line` in this doc was already stale on arrival, because the same
+branch edited the file it pointed into.
 
 **Measuring comment coverage with a regex that only matched JS comments.** Reported 169
 KB / 21%, missing the HTML comments Svelte templates use heavily. A second attempt with
@@ -168,25 +173,48 @@ calibrates: §13 pinned by a test and unable to drift, behavioural sections not
 systematically verified with errors concentrated in the longest ones. Written to
 *narrow* as sections get checked rather than to stand as a blanket disclaimer.
 
-**Pin what a machine can check; say so about the rest.** §13's 68 endpoint rows are now
+**Pin what a machine can check; say so about the rest.** §13's endpoint rows are
 asserted against `create_app()`'s real route table rather than parsed from decorators —
-reconstructing the paths means reimplementing FastAPI's prefix nesting (`admin.py`
-mounts four sub-routers declaring no prefix, plus a `/backups` one that does), and a
-parser that gets that subtly wrong reports success while checking nothing. Verified to
-fail on a bogus path, on a wrong method for a real path, and on the table's format
-changing so no rows parse — that last case being the only way it could silently stop
-checking, so it fails closed on a row-count floor.
+reconstructing the paths means reimplementing FastAPI's prefix nesting, and a parser
+that gets that subtly wrong reports success while checking nothing. Verified to fail on
+a bogus path, on a wrong method for a real path, and on any row that stops parsing.
 
-**Sampling sized the remaining risk.** `USER_FLOWS.md`'s tabular content is clean (68/68
-endpoints); a 6-claim sample of §12's behavioural prose found 1 wrong, and 3 of the 4
-errors found incidentally were also behavioural prose in §7/§12. Extrapolating over
-~296 behavioural claims gives roughly 30–60 wrong — wide error bars on a small sample,
-but not near zero.
+**A partial check described as a total one is worse than no check.** The first version
+of that header said §13 "cannot drift". The assertion only runs `documented ⊆ served`:
+it proves no row is invented, and nothing about completeness — which is the direction a
+table titled *"API Endpoints Used by Frontend"* is read for. Two reviewers landed on it
+independently, and it was true in the strongest possible way: six frontend-consumed
+endpoints were missing (`/auth/refresh`, `/admin/jobs/{uuid}`, and the four dismissed
+merge/split routes), and one documented row claimed a caller that does not exist. The
+test was green throughout. The header now says which direction is checked; closing the
+other direction is on the debt list below, because the shape that would work is not the
+one the caveat rules out — see there.
 
-**The review panel earned its cost twice.** Once catching the 9 lost facts, once
-catching the four overstated rules. Both were invisible from the inside: a deleted fact
-leaves no symptom, and a rule that reads confidently is indistinguishable from a rule
-that is right.
+**The row-count floor had the same shape as the bug it guarded against.** `MIN_ROWS = 40`
+against a table of 68 meant nearly half the rows could stop parsing while the suite stayed
+green — a guard against silent blindness that was itself silently partial. Replaced with
+"every data row must parse", which is the assertion that was meant all along.
+
+**Sampling sized the remaining risk.** A 6-claim sample of §12's behavioural prose found
+1 wrong, and 3 of the 4 errors found incidentally were also behavioural prose in §7/§12.
+Extrapolating over ~296 behavioural claims gives roughly 30–60 wrong — wide error bars on
+a small sample, but not near zero. Note what the §13 gap says about the other half of the
+estimate: the sampling measured whether claims are *wrong*, and never asked whether the
+tables are *complete*. Omissions do not show up in a sample of assertions.
+
+**Documenting a hazard is not the same as catching it.** Two comments landed on this
+branch saying, correctly, that nothing would catch a particular drift: the sweep-tiers
+card's tier list going stale against the backend, and the jobs-log poll being heavier
+than it looks. Writing that down felt like closing the issue. For the tier list it was
+one type away from being real — `TierKey` is now derived from the response type and the
+array checked for exhaustiveness, so the drift is a build failure and the comment
+describes a guard rather than a wish.
+
+**The review panel earned its cost three times.** Once catching the 9 lost facts, once
+catching the four overstated rules, once catching the §13 completeness overclaim. All
+three are invisible from the inside: a deleted fact leaves no symptom, a rule that reads
+confidently is indistinguishable from one that is right, and a green test is
+indistinguishable from a test that checks the thing you think it checks.
 
 ## Future work / debt
 
@@ -195,6 +223,46 @@ that is right.
   Estimated 30–60 wrong claims. Wants its own branch: verify each claim before
   rewriting it, since five of the previous pass's corrections-from-review were
   themselves wrong.
+- **§13 is not checked for completeness**, and nothing will tell you when it drifts
+  again. The caveat in the test rules out the wrong mechanism: `served ⊆ documented`
+  does need a non-frontend allowlist and would rot, but that is not what the table's
+  title promises. *Every frontend call site appears here* has its source of truth in
+  the frontend, needs no allowlist, and belongs in the vitest suite rather than the
+  backend one. Review measured 69 of 70 `api.*` call sites taking a literal or
+  template-literal first argument, and normalising them (`${…}` → `{}`) reproduces the
+  corrected table exactly; asserting extracted-count equals call-site-count makes
+  under-extraction loud. Unlike the FastAPI-prefix parser this test exists to avoid,
+  a wrong extraction there fails loudly rather than passing silently.
+- **The jobs-log poll can be gated without waiting on the payload fix.** Passing
+  `active === 'jobs'` into `AdminJobsLogTab` and short-circuiting its poll `$effect`
+  is frontend-only and removes the whole cost for a parked admin, independent of the
+  response-shape change below.
+- **`min-w-0` could be structural rather than remembered.** `ui/dialog/dialog-content.svelte`
+  is already a customised copy of the primitive, and `[&>*]:min-w-0` in its `cn()`
+  would zero the min-content floor for every `Dialog.Content` call site at once —
+  after which the rule section and all three source pointers delete themselves. Three
+  of the call sites carry the fix today; the rest are one long unbroken string away
+  from the bug. Not done here because it changes the layout of every dialog and wants
+  a call-site audit plus visual verification.
+- **`GET /admin/jobs` ships each row's whole `result_summary`** — for `update_sweep`
+  rows that is the per-media diff arrays, which only the detail page reads and which
+  dominate the payload. The jobs-log tab polls it every 30s while mounted behind a
+  hidden tab, and every 3s while any job runs. Projecting the detail-only keys out of
+  the list response is the fix; it changes a response shape, so backend and frontend
+  images must move to the same tag together. Deliberately out of scope here.
+- **The job-detail route wedges after a failed load.** The param-change `$effect` in
+  `routes/admin/jobs/[uuid]/+page.svelte` re-enters on `job`, which the error path sets
+  to `null` — so once a load fails, in-route navigation cannot recover and the page
+  shows a stale error under a different uuid until a full reload. Wants a `loadedUuid`
+  guard and a retry affordance on the error `Notice`; both are behaviour changes with
+  no test, which is why they are not on a docs branch.
+- **The frontend `Dockerfile` healthcheck dials `127.0.0.1:3000`** while `PORT` is a
+  plain `ENV` the platform may override — set it and the container restart-loops while
+  serving traffic correctly. The probe already runs node, so it can read the same
+  variable the server does.
+- **`PUBLIC_API_BASE_URL` falls back to `localhost:8000` silently.** In a misconfigured
+  deploy every request targets the *user's* machine and the operator gets no signal —
+  the fallback is indistinguishable from the dev case it exists for.
 - The frontend stack sentence appears in root `CLAUDE.md`, `rules/frontend.md` and
   `frontend/CLAUDE.md`. Left deliberately: one clause, it does not drift, and each copy
   orients a different reader.
