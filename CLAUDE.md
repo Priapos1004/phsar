@@ -17,10 +17,10 @@ the places below, each with one job.
 |---|---|
 | `workflow.md` — approval, commit blocks, `/ship`, authoring style | always |
 | `docs.md` — where a fact belongs, how to write it | editing any `.md` |
-| `backend.md` — layering, async session, exceptions | `phsar/{app,tests,scripts}/**/*.py` |
+| `backend.md` — layering, async session, exceptions | backend / test / script Python |
 | `database.md` — models, sidecars, indexes, migrations | models / DAOs / alembic |
-| `frontend.md` — runes, tokens, shared components, copy | `phsar/frontend/src/**` |
-| `authoring-rules.md` — how to write a rule | editing `.claude/rules/**` |
+| `frontend.md` — runes, tokens, tooltips, dialogs, guests | any frontend source file |
+| `authoring-rules.md` — how to write a rule | editing a rule |
 
 **`docs/features/`** — how a subsystem works **today**, across the modules it spans.
 These do **not** load automatically: **read the relevant one while planning** work

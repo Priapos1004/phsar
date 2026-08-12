@@ -151,13 +151,15 @@ Once all features are discussed, this becomes the basis for GitHub issues and mi
 | `spoiler_protection` | Boolean | false | Hides descriptions and covers of unrated media. Default set during get-started onboarding. |
 
 ### Theme System
-- 4 themes: default (purple), red (crimson), blue (ocean), green (forest)
-- Each theme sets: `--primary`, `--ring`, gradient colors via `.theme-*` CSS class on `<html>`
-- `@property` + `var()` indirection in `@theme inline` forces Tailwind to emit dynamic `var()` utilities
-- Character pic per theme displayed as hero banner on home page (InfoDiashow)
-- Centralized config in `lib/themes.ts` — single source of truth for all theme data
-- Per-theme chart color palettes avoid hue clashes (e.g., red theme swaps static red for teal)
-- FOUC prevention via inline localStorage script in `app.html`
+- Themes: default (purple), red (crimson), blue (ocean), green (forest) — each with a
+  character pic shown as the home page hero banner (InfoDiashow)
+- The user's choice must survive the first paint, so it is applied before hydration
+  rather than by a component
+- How it is wired — the custom-property indirection and `.theme-*` classes, the central
+  config, the per-theme chart palettes that dodge hue clashes, the pre-hydration script —
+  is in `app.css`, `lib/themes.ts`, `lib/utils/chartColors.ts` and `app.html`, each with
+  its own reasoning; `app.css` records why the `:root` defaults cannot be left to
+  `@property` alone
 
 ### Spoiler Protection Behavior
 

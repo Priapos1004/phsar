@@ -179,10 +179,15 @@ stamped `pr-ok` over a range nobody reviewed.
   `git add -p` on new files) is unshippable for the mirror reason.
 - **Both stampers are on the permission allowlist**, so either marker the gate
   trusts can be produced without a prompt.
-- `phsar/frontend/CLAUDE.md` is not restructured — 99 KB, the largest
-  auto-loading file in the repo and ~81% of a frontend session's loaded context.
-  Only a cross-reference in it changed here.
-- Root `CLAUDE.md` still duplicates parts of `.claude/rules/` and `docs/features/`.
+- ~~`phsar/frontend/CLAUDE.md` is not restructured~~ — 99 KB when this shipped, the
+  largest auto-loading file in the repo and ~81% of a frontend session's loaded
+  context; only a cross-reference in it changed here. **Since addressed**: it is a
+  5.7 KB map, because the per-module reasoning it copied already lives in the modules
+  (24% of frontend source is comments). The cross-module residue went to
+  `rules/frontend.md`, and the frontend earned no `docs/features/` doc.
+- Root `CLAUDE.md` still duplicates parts of `docs/features/`. Its rules table no
+  longer restates each rule's glob — a second copy of frontmatter that could only
+  decay.
 - The six `.claude/agents/*-reviewer.md` are byte-identical copies of an installed
   plugin's agents. `/pr`'s panel table names them bare, but only the
   `onethousand:`-prefixed names resolved in the session that ran the panel, so
