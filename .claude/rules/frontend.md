@@ -81,10 +81,11 @@ directly — a raw `title` silently ignores the user's setting.
 
 ## A toggle's surface decides its component
 
-`SegmentedControl` is the on-card toggle — muted track, solid thumb — and belongs on
-the white card surface. A toggle on the dark page surface is a border-fill pill
-instead (`GrainToggle`, the ratings view pills). Same job, different surface,
-deliberately not the same component; unifying them breaks one of the two.
+The exception to "prefer changing the component" above. `SegmentedControl` is the
+on-card toggle — muted track, solid thumb — and belongs on the white card surface. A
+toggle on the dark page surface is a border-fill pill instead (`GrainToggle`, the
+ratings view pills). Same job, different surface, deliberately two components:
+unifying them makes one of the two illegible against its own background.
 
 ## Dialog children that cannot shrink
 
@@ -96,12 +97,15 @@ floor, because its `overflow:hidden` only does so on a grid or flex item.
 
 ## Every route titles its own tab
 
-`<svelte:head><title>` on each route, formatted `<Page> — Phsar` — page name first,
-em dash, "Phsar" in title case. Several Phsar tabs are a normal way to use the app and
-the favicon already says which app it is, so the page name is the only thing that
-distinguishes them. `app.html` sets a bare `PHSAR` purely so the first paint isn't
-blank; a route that fails to override it is indistinguishable from every other. Detail
-pages bind the title to the resolved name and fall back to a generic label while loading.
+`<svelte:head><title>` per route, formatted `<Page> — Phsar`: page name first, em
+dash, "Phsar" in title case. Several Phsar tabs are a normal way to use the app and
+the favicon already says which app it is, so the page name is the only thing telling
+them apart. `app.html`'s bare `PHSAR` exists so the first paint isn't blank, not as a
+fallback to leave in place.
+
+A **detail** page's title is its subject, not its route: bind it through
+`resolveTitle` (above) and fall back to a generic `Anime — Phsar` / `Media — Phsar`
+only while loading.
 
 ## Restricted accounts lose the action, not the affordance
 

@@ -69,7 +69,7 @@ anyone stepping around it.
 **Rules are path-scoped so they load only when relevant**, rather than kept in one
 always-loaded file where every session pays for every rule. That is the whole
 mechanism behind the context saving; `authoring-rules.md` documents the glob
-forms that work, because both failing forms fail silently.
+forms that work, because a glob matching nothing fails silently.
 
 ## Failed approaches
 
@@ -95,11 +95,13 @@ evaluates false, and the gate passes every commit on Linux while `CONTRIBUTING.m
 advertises it as enforcement. Drove the switch to git blob hashes, which are
 portable and answer a better question.
 
-**Concluding `paths:` gating was unsupported.** It works; a bare `dir/**` glob
-simply matches nothing, and a rule matching nothing loads never — indistinguishable
-from an unsupported feature, with no error either way. Had the rule files shipped
-that way while root `CLAUDE.md` was stripped in the same pass, the content would
-have loaded nowhere.
+**Concluding `paths:` gating was unsupported.** It works; a rule whose glob matches
+nothing loads never — indistinguishable from an unsupported feature, with no error
+either way. Had the rule files shipped mis-scoped while root `CLAUDE.md` was
+stripped in the same pass, the content would have loaded nowhere. The specific
+forms blamed here were themselves diagnosed from single runs and are wrong —
+`authoring-rules.md` carries the measured set, and the lesson generalises to
+"verify, and repeat an absent answer" rather than to any one glob shape.
 
 **Verifying a rule with a question other docs can answer.** The first load test
 asked about facts that also appear in the always-loaded root `CLAUDE.md`, so a
