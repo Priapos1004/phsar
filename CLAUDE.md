@@ -22,6 +22,12 @@ the places below, each with one job.
 | `frontend.md` — runes, tokens, tooltips, dialogs, guests | any frontend source file |
 | `authoring-rules.md` — how to write a rule | editing a rule |
 
+**`.claude/agents/`** — the rubrics a pipeline fans out to, one per reviewer.
+Changing what a review looks for means editing the rubric, not the skill that
+calls it. The prose reviewers `/ship` runs enforce `docs.md` and `workflow.md`
+and cite the rule behind every finding, so extend those rules first and the
+rubric second. Each file states how it is loaded; not all of them are wired up.
+
 **`docs/features/`** — how a subsystem works **today**, across the modules it spans.
 These do **not** load automatically: **read the relevant one while planning** work
 that touches its area, before settling on an approach.
