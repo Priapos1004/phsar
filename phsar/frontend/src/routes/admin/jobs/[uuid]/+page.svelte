@@ -317,6 +317,15 @@
 				</Card.Root>
 			{/if}
 
+			<!-- Anime changes sit ABOVE Media changes: a sweep produces a handful of anime
+			     rows against 300+ media diffs, so the reverse order buries them past the
+			     point anyone scrolls.
+
+			     Every card on this page is gated on its data being PRESENT, never on
+			     job.status. A sweep aborted by the circuit breaker stores the partial
+			     summary it had gathered, so a failed job still renders real counters and
+			     failure lists beside its error banner. A new card here follows the same
+			     rule — gate it on its own field, not on the job having succeeded. -->
 			{#if v2Summary && (v2Summary.anime_umbrella_changes?.length ?? 0) > 0}
 				<Card.Root>
 					<Card.Header>

@@ -62,9 +62,11 @@ native attribute instead.
 
 ## Charts
 
-Every `EChart` consumer spreads `chartTooltipStyle` into `option.tooltip` and sets
-`emphasis: { disabled: true }`. Neither is optional and neither is type-enforced, so
-a new chart only matches its siblings if you copy both.
+Every chart sets `emphasis: { disabled: true }`, and every chart **that has a hover**
+spreads `chartTooltipStyle` into `option.tooltip`. Neither is type-enforced, so a new
+chart only matches its siblings if you copy them across. The score gauges are the
+legitimate exception on the tooltip half — there is nothing to hover on a gauge — so
+don't "fix" them by adding one.
 
 **A chart `formatter` returns HTML that ECharts writes via `innerHTML`, so Svelte's
 escaping never reaches inside it.** Catalog text spliced into one — titles, genre and
@@ -91,6 +93,31 @@ width, and every item then inherits the widened track — so a single unshrinkab
 (a `nowrap` title, an image carrying an aspect ratio) pushes the whole dialog past its
 `max-w-*`. Give the header and body `min-w-0`. `truncate` alone does not zero that
 floor, because its `overflow:hidden` only does so on a grid or flex item.
+
+## Every route titles its own tab
+
+`<svelte:head><title>` on each route, formatted `<Page> — Phsar` — page name first,
+em dash, "Phsar" in title case. Several Phsar tabs are a normal way to use the app and
+the favicon already says which app it is, so the page name is the only thing that
+distinguishes them. `app.html` sets a bare `PHSAR` purely so the first paint isn't
+blank; a route that fails to override it is indistinguishable from every other. Detail
+pages bind the title to the resolved name and fall back to a generic label while loading.
+
+## Restricted accounts lose the action, not the affordance
+
+Scale the treatment to what is being withheld:
+
+- **A single control** renders **inert, not hidden** — a dimmed bookmark or a disabled
+  select shows the guest what the account could do, so it reads as limited rather than
+  as broken.
+- **A whole section** gets an **explanatory replacement** instead: the media page swaps
+  the rating form for a card saying why, and the watchlist tabs show a muted
+  empty-state. A section silently disabled in place would just look dead.
+
+Never leave a guest facing a control that appears live and fails. Requests that would
+403 are skipped or their 403 swallowed — the layout gates the watchlist and tag store
+refreshes, pages gate their own fetches, and the detail pages absorb the 403 — and the
+backend drops a restricted user's write defensively rather than trusting any of it.
 
 ## UI copy
 

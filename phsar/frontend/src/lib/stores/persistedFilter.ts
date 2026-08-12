@@ -88,14 +88,6 @@ export function createPersistedFilter<T extends object>(
 	return store;
 }
 
-/**
- * Whitelist a stored string against a `Record<Union, …>` key set.
- *
- * Takes a Record rather than an array so TypeScript enforces exhaustiveness at
- * the definition — a union member the caller forgets is a compile error, not a
- * value that silently falls back forever. Same shape as `JOB_KIND_LABELS` /
- * `STATUS_BADGE`, which `adminJobsFilter` already whitelists against.
- */
 /** `asc | desc` — every sortable list section has a direction. */
 export type Direction = 'asc' | 'desc';
 
@@ -106,6 +98,14 @@ export const VIEW_KEYS: Record<'grid' | 'table', true> = { grid: true, table: tr
 export const GRAIN_KEYS: Record<'anime' | 'media', true> = { anime: true, media: true };
 export const DIRECTION_KEYS: Record<Direction, true> = { asc: true, desc: true };
 
+/**
+ * Whitelist a stored string against a `Record<Union, …>` key set.
+ *
+ * Takes a Record rather than an array so TypeScript enforces exhaustiveness at
+ * the definition — a union member the caller forgets is a compile error, not a
+ * value that silently falls back forever. Same shape as `JOB_KIND_LABELS` /
+ * `STATUS_BADGE`, which `adminJobsFilter` already whitelists against.
+ */
 export function pickKey<T extends string>(
 	raw: unknown,
 	allowed: Record<T, unknown>,

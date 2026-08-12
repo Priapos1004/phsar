@@ -10,12 +10,12 @@
 	}
 	let { animeTiers, mediaTiers }: Props = $props();
 
-	// v0.14.8: refresh selection went media-level, but the cadence-membership
-	// view is useful at both grains — anime ("where does each umbrella sit")
-	// and media ("which rows actually drive nightly refresh"). Toggle, default
-	// anime to preserve the prior view. Membership, not due-ness: each count is
-	// where a row *sits* in the cycle, a stable trait, so rows don't empty
-	// themselves the moment a nightly sweep refreshes their members.
+	// Refresh selection happens at media level, but the cadence-membership view is
+	// worth having at both grains — anime answers "where does each umbrella sit"
+	// and media "which rows actually drive nightly refresh". Anime is the default
+	// because it is the coarser, more orienting read. Membership, not due-ness:
+	// each count is where a row *sits* in the cycle, a stable trait, so rows don't
+	// empty themselves the moment a nightly sweep refreshes their members.
 	let mode = $state<'anime' | 'media'>('anime');
 	let tiers = $derived(mode === 'anime' ? animeTiers : mediaTiers);
 

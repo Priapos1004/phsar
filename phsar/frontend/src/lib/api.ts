@@ -54,6 +54,13 @@ async function handleResponse<T>(res: Response): Promise<T> {
 				window.location.href = '/login';
 			}
 		}
+		// A plain 401 deliberately gets no global handler — it just throws for the
+		// caller to deal with. Redirecting here would break the idle-timeout flow:
+		// SessionTimeoutBanner shows a countdown and then a dialog, and a background
+		// poll (the bell above all) that happened to hit a 401 on the just-expired
+		// token would hard-navigate to /login first, throwing the user out
+		// mid-countdown instead of offering the dialog. The bell stops polling on its
+		// own 401, and the +layout.ts navigation guard covers stale tokens on routes.
 		throw new ApiError(res.status, detail);
 	}
 	if (res.status === 204) {
