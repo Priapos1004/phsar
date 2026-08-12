@@ -3,7 +3,8 @@
 Everything slow runs as a job: catalogue scrapes, the nightly sweeps, backups.
 Current behaviour; decisions are in the linked compound-docs.
 
-**Code**: `services/job_worker.py` (the worker) → `services/scrape_dispatcher.py`,
+**Code**: `services/job_submission_service.py` (user submission) →
+`services/job_worker.py` (the worker) → `services/scrape_dispatcher.py`,
 `services/seasonal_sweep_dispatcher.py`, `services/backup_dispatcher.py` (handlers)
 → `services/progress_reporter.py` (progress) → `models/job.py`, `daos/job_dao.py`.
 
@@ -24,6 +25,11 @@ deliberate working pattern, not the hazard.
 Concurrency is deliberately one. Parallel jobs would only fragment the 1 req/s
 MAL budget, so the per-user cap (`JOBS_PER_USER_LIMIT`) bounds *queue depth*, not
 parallelism.
+
+**Everything a user-submitted scrape passes before it becomes a row** — that cap,
+the other quotas, the dedupe window, the MAL-id rule — is in
+`services/job_submission_service.py`. It is the only entry point for
+`user_scrape` from a person; the sweeps build their children directly.
 
 **Crash recovery**: `JobDAO.reap_orphans` runs at startup and flips any `running`
 row to `failed`, so a mid-job restart can't strand a row forever.

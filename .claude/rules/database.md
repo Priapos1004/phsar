@@ -29,8 +29,9 @@ a sidecar. Catalog rows reach Pydantic via `model_dump()`, so an inline tracking
 column leaks sweep cadence into API responses and widens the row.
 
 Shape: `unique=True` on the FK column to enforce 1:1 (as `anime_freshness` and
-`media_freshness` do), plus `uselist=False`, `cascade="all, delete-orphan"` and
-`lazy="raise"` on the parent relationship. Read paths **`LEFT JOIN` and `COALESCE`**
+`media_freshness` do), plus `uselist=False` and `cascade="all, delete-orphan"` on
+the parent relationship (which carries the codebase-wide loader setting from
+[backend.md](backend.md) like every other). Read paths **`LEFT JOIN` and `COALESCE`**
 against a sensible default (e.g. the parent's `created_at`) so a parent inserted
 without its sidecar still queries correctly.
 

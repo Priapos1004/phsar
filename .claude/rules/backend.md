@@ -13,13 +13,29 @@ module-level async functions; long-lived stateful components are classes
 delegate to `get_by_field()` where it fits.
 
 A thin read endpoint with no business logic may call a DAO directly rather than
-grow a pass-through service — `routers/library.py` and `routers/jobs.py` do. Any
-logic beyond fetch-and-return belongs in a service.
+grow a pass-through service — `routers/library.py` and `GET /jobs/mine` do. The
+test is fetch-and-return with nothing in between; passing `current_user.id` as a
+filter still counts, since it branches on nothing. A quota, an ownership check
+that can raise, or a write is business logic and belongs in a service.
 
-The reverse exception also exists: several services execute statements directly
-rather than through a DAO — bulk cache rewrites, raw `text()` DDL, and one-off
-aggregations for stats and export. It is a tolerated shape, not a pattern to copy
-— new SQL goes in a DAO.
+Where a router owns a write anyway, it **argues the case in its module
+docstring** — that is the bar, and the reason the cron scheduler's enqueue is
+allowed to sit next to its endpoints while the user-facing one is not.
+
+The reverse shape exists too — services that execute statements against the
+session instead of going through a DAO. It is **tolerated where it already is,
+not a pattern to copy**: new SQL goes in a DAO. Assume you are outside the
+exception rather than inside it, because the cases that stay are narrow and
+argue for themselves at the call site — DDL that has no ORM expression, an
+aggregation that exists to be one query, or a write whose transaction boundary
+would break if a DAO owned it.
+
+**Seeders reach the model layer directly too**, outside `routers → services →
+DAOs`. They run at startup and are also invoked directly by a few routers and
+services, so treat them as a backfill layer that may reach the session, not as
+services with a different name. **A seeder does not own its transaction** — it
+leaves the commit to whoever called it, so that a caller can batch several into
+one. That is why a handler invoking one ends in a bare `db.commit()`.
 
 ## Async — the two that bite
 
@@ -31,7 +47,9 @@ aggregations for stats and export. It is a tolerated shape, not a pattern to cop
   failure mode in `compound-docs/2026-05-09-v0.14.0-content-pipeline.md`.
 - **Every relationship is `lazy="raise"`.** Load related rows explicitly with
   `selectinload` in the DAO query; an implicit lazy access raises rather than
-  silently emitting a query.
+  silently emitting a query. The same applies at column grain when a query
+  deliberately omits a column: `defer(..., raiseload=True)`, so a path that
+  forgot about it faults instead of emitting one lazy load per row.
 
 ## Exceptions
 
@@ -47,17 +65,35 @@ guest — browse and search, no writes).
 **Every non-admin write endpoint gates on `require_user_or_admin`**, so a guest
 gets 403. Admin endpoints gate on `require_roles(RoleType.Admin)` instead, bound
 once at module load or as a router-level `dependencies=` — a `user` must never
-reach an admin mutation.
+reach an admin mutation. *Write* means it touches the database: a POST that only
+encodes or decodes its own body takes no `db` and is not one.
 
-Three writes are deliberately role-ungated. `/auth/register` and `/auth/login` are
-public. `/auth/refresh` and `PUT /users/settings` take bare `get_current_user`, so
-a guest keeps its sliding session and its own theme; the settings service drops
+A short, closed set of endpoints is deliberately role-ungated, and nothing should
+join it without argument. `/auth/register` and `/auth/login` are public — both
+write, which is why they are named here rather than left to the rule above.
+`/auth/refresh` and `PUT /users/settings` take bare `get_current_user`, so a guest
+keeps its sliding session and its own theme; the settings service drops
 `spoiler_level` for a restricted user rather than the endpoint refusing the call.
-Rating and watchlist *reads* are gated too, not just their writes: they are
-per-user data a guest has none of, so an ungated read would return an empty page
-that looks like a bug rather than a permission boundary.
 
-Use the `RoleType` enum directly, never `.value` strings.
+**A read whose rows are scoped to the caller gates like a write by default**, and
+the test is what an empty answer would mean. Usually it reads as a bug rather
+than as a permission boundary, which is the failure the gate exists to prevent —
+that is why ratings, watchlist and spoiler visibility all 403 a guest instead of
+returning nothing. Leave one ungated only where emptiness is the *intended*
+state and the UI says so: the bell reads `/jobs/mine` for a guest who can never
+own a job, and the navbar comments that it is deliberately always empty.
+
+The admin/non-admin split is not the whole picture: the
+[cron-authed schedulers](#triggering-operational-jobs) sit under `/admin` on a
+separate chain with no role check at all. Every other
+`/admin` sub-router binds its dependency once on the router; theirs binds
+per-route, and neither it nor the parent carries one. So an endpoint added to
+that module with a plain `@router.post(...)` is **unauthenticated**, not
+admin-gated and not even bearer-gated — the decorator has to carry its own
+`dependencies=`.
+
+Compare with the `RoleType` enum, never a `.value` string — `.value` belongs
+only at a serialization boundary, such as a JWT claim or a log line.
 
 ## Triggering operational jobs
 
