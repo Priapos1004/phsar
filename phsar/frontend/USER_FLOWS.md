@@ -1,6 +1,18 @@
-# User Flows — Test Specification
+# User Flows — behaviour specification
 
-This document describes the user-facing behavior of the PHSAR frontend. It serves as the source of truth for what should still work after the shadcn/runes migration.
+What the PHSAR frontend does from the user's side: what each page shows, what each
+control does, and which endpoints the frontend calls. Why it is built that way lives
+with the code — this side is the observable behaviour.
+
+**How much to trust it.** §13's endpoint table is checked against the app's real route
+table by `phsar/tests/routers/test_user_flows_endpoints.py`: the table is still there,
+every row still parses, and every row names a route the app actually serves. It is **not**
+checked for completeness — whether an endpoint is frontend-consumed is not something the
+route table knows, so a new call site can go undocumented here without failing anything.
+The behavioural sections are **not** systematically verified against source. Spot-checking
+finds most claims accurate and a minority wrong, concentrated in the longest sections (§6,
+§7, §12). So: reliable for orientation, and worth confirming against the source before you
+rely on a specific claim — then correct it here, and narrow this note as sections get checked.
 
 ---
 
@@ -20,7 +32,7 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 - The guard decides locally and synchronously, from the token's own `exp` claim — it must not make a request. SvelteKit re-runs the root load on *any* URL change (including `?tab=` switches) and `preload-data="hover"` runs it on hover, so a request here would sit in front of every navigation and every link hover
 - A token that is missing, expired or unparseable is cleared from localStorage and the user is redirected to `/login`
 - The server stays authoritative: every API call the page then makes rejects a bad token, and the JWT is signed so `exp` can't be forged. Expiry *during* a session is the session tick's job (1.6), not the guard's
-- A 401 on any *other* in-app API call is **not** globally redirected — that would let a background poll on a just-expired token bypass the idle-timeout dialog (1.6). The caller handles it (e.g. the JobBell silently stops polling); stale tokens are otherwise caught by the navigation guard above and the session tick
+- A 401 on any *other* in-app API call is **not** globally redirected. The caller handles it instead (the JobBell silently stops polling), and the user stays on the page. `lib/api.ts` argues the choice at the throw site
 
 ### 1.3 Logout
 - Clicking "Logout" in the NavBar dropdown clears the token immediately, shows a ~1.5s themed sakura-ring loading screen as a soft transition, then redirects to `/login`
@@ -32,7 +44,7 @@ This document describes the user-facing behavior of the PHSAR frontend. It serve
 
 ### 1.5 Maintenance Mode
 - **Sticky pre-warning banner.** A yellow `Notice` card sits in a sticky container at the top of every page (including `/login` and `/register`), pinned alongside the navbar so scrolling the page keeps both visible. Renders only when a maintenance window is upcoming or active.
-  - Polls `GET /maintenance/status` every 30s via raw `fetch` (deliberately bypasses the API client so a 503 mid-window can't trigger the redirect below and defeat the warning). 30s instead of 60s so the seasonal-sweep dispatcher's short maintenance window (which can be only a few seconds long since the per-id MAL work runs in child jobs) is still observable for idle sessions.
+  - Polls `GET /maintenance/status` every 30s, so an idle session still catches a window only seconds long. The component explains why it polls that fast and why it bypasses the API client to do it.
   - Also subscribes to the auth `token` store and to a shared `maintenanceRefresh` bump signal — any login/logout transition AND any 503-with-maintenance response triggers an immediate refetch, so the banner reacts in milliseconds rather than waiting for the next 30s poll.
   - When `scheduled_at` is within 30 min: "Scheduled maintenance starts in ~N minutes — pause your current episode." (singular "minute" at exactly 1).
   - When `active` is true: "Maintenance in progress. Please try again later."
@@ -325,11 +337,12 @@ Each anime search result card shows:
   - `?from=job&job=<uuid>` → "Back to job" (admin job-detail page's failed-refresh / failed-probe / attached links → `/admin/jobs/[uuid]`)
   - `?from=completion` → "Back to completion" (admin Completion tab's anime links → `/admin?tab=completion`)
   - `?from=curation` → "Back to curation" (Merge/Split candidate cards' anime links → `/admin?tab=curation`)
+  - `?from=ratings` → "Back to ratings" (a rated card or table row in the `/ratings` list → `/ratings`)
   - `?from=ratings-stats` → "Back to statistics" (a You-vs-MAL scatter point **or** an Activity score-trend point → `/ratings?tab=stats`, landing back on the section you came from)
   - `?from=watchlist` → "Back to watchlist" (a `/watchlist` entry → its media/anime detail → `/watchlist`)
   - neither → no back button (direct-URL arrivals stay clean)
 - These flags propagate across the entire anime↔media jump chain (anime → media tile, media → anime link, related-media carousel) via `buildDetailHref`'s options bag, so a deep dive like curation → anime → media → sibling stays linkable back to the origin
-- Origin set is a closed `DetailOrigin` TS union (`'library' | 'job' | 'completion' | 'curation' | 'ratings' | 'ratings-stats' | 'watchlist'`); extending it requires updating both `lib/utils/navigation.ts` AND `BackLink.svelte`'s switch — surfaces as a type error otherwise
+- The set above is closed. An unrecognised `from` falls through to the search token if one is present, and otherwise renders no back button — never a broken one. `lib/utils/navigation.ts` owns the union and says what adding to it touches
 
 ---
 
@@ -351,7 +364,7 @@ Each anime search result card shows:
 - **Filter bar**: genre filter with an any/all match toggle, season filter, and age-rating chips; a "Clear all" button appears when any value filter is active. Filter options are the union of values present in your ratings (no extra fetch).
 
 ### 8.3 Statistics Tab
-Lazy-mounts on first entry and re-mounts each time you return to it, so the charts replay their build-up animation. Five sections:
+The charts replay their build-up animation every time you open the tab, not just the first. Five sections:
 - **Overview** — summary counters + a score-distribution histogram (fixed 0.5-wide buckets, bars score-colored, main/side split per bucket). Buckets are disjoint and upper-inclusive — a score on a boundary goes to the lower bucket, so tooltip ranges read `4.26–4.75` / `4.76–5.25` with no shared edge value.
 - **You vs MAL** — a scatter of your score vs the MAL score, one point per rated media, point size scaled by MAL vote count. With enough varied points it adds a weighted best-fit line, R², and Spearman ρ with a plain-English read-out; otherwise a skip note. Clicking a point opens that media's detail page with a "Back to statistics" return.
 - **Categories** — one configurable horizontal bar chart with a **Genres / Studios / Seasons / Age** toggle, a sort select (avg rating / rated-anime count / watch time / weighted score), and an asc/desc arrow that swaps between the top and bottom buckets. Media with no season or no age rating are left out of those two breakdowns rather than grouped under an "unknown" bar. Axis labels behave per dimension: genre labels carry description tooltips, studio labels link to a studio-filtered **search** ("what else did they make"), and **season + age labels jump to the Ratings tab's grid view filtered to that bucket** ("what did I rate in Fall 2025") — the jump clears the other value filters, so it shows that bucket rather than narrowing whatever was already applied. Swapping the dimension replays the bars' grow-in from zero with no residue of the previous dimension; re-sorting instead animates the bars in place so you can watch them re-rank.
@@ -460,12 +473,12 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 
 ### 12.1a Tab navigation
 - Admin sections live behind a tab bar driven by the `?tab=` query param (`/admin?tab=overview`, `?tab=jobs`, `?tab=tokens`, `?tab=curation`, `?tab=completion`, `?tab=backups`). Default tab is `overview` if `?tab=` is absent or unknown — a stale bookmark to a retired tab key still lands the admin somewhere useful instead of a blank page.
-- The active tab is preserved across refresh and is bookmarkable. Tabs eager-render on first admin load and stay mounted across switches — visibility toggles via `class:hidden`, not conditional unmount. Admin sessions usually touch several tabs in a row, so the one-time parallel-fetch cost on first paint buys instant subsequent switches. No card polls, so keeping them mounted doesn't generate ongoing traffic.
+- The active tab is preserved across refresh and is bookmarkable. First paint fetches every tab's data at once, so switching afterwards is instant. The Jobs Log keeps polling once loaded even while another tab is showing, so an admin left on the page continues to make requests. `routes/admin/+page.svelte` explains the trade.
 
 ### 12.1b Overview tab (default)
 - Four stat cards sourced from `GET /admin/stats/overview`:
   - **Catalog**: total anime count, total media count, anime added in the last 7 days, media added in the last 7 days
-  - **Job health (7d)**: per-kind succeeded/failed counts, parenthesized retryable-failed subset, and a colored success-rate percentage (theme-primary at ≥90%, amber at 75–89%, destructive red below 75%). Percent cell is fixed-width + `tabular-nums` so the column edge stays aligned. The `user_scrape` row counts user-initiated submissions only — seasonal-sweep children (system-attributed user_scrapes) are excluded so a Sunday burst of Music/PV-filtered shows doesn't drag the user-facing signal down. Retryable-failed counts ALSO drop system jobs (sweeps, cron backups) since the bell's retry button only fires on user-owned rows; counting cron retries would imply admin action is available when it isn't
+  - **Job health (7d)**: per-kind succeeded/failed counts, parenthesized retryable-failed subset, and a colored success-rate percentage (green at ≥90%, amber at 75–89%, red below 75%). Percent cell is fixed-width + `tabular-nums` so the column edge stays aligned. The `user_scrape` row counts user-initiated submissions only — seasonal-sweep children (system-attributed user_scrapes) are excluded so a Sunday burst of Music/PV-filtered shows doesn't drag the user-facing signal down. Retryable-failed counts ALSO drop system jobs (sweeps, cron backups) since the bell's retry button only fires on user-owned rows; counting cron retries would imply admin action is available when it isn't
   - **Sweep tiers**: where every row sits in the update-sweep cycle, with an **Anime / Media toggle** (default Anime). Five rows in priority cascade — Airing now (emerald) > Stabilizing (amber) > Weekly cycle (sky) > 180-day cycle (violet) > 90-day cycle (indigo). Each row has a horizontal share-of-total bar, count, percentage, and tooltip paraphrasing the predicate (stabilize = first 3 sweeps; 90-day long cycle; 180-day cycle for anything that premiered over a decade ago, whose MAL metadata has effectively frozen). The Stabilizing row expands into indented per-check sub-rows ("0 checks / 1 check / …", one per stabilize sweep) showing how the stabilization pipeline is distributed — for media each row is bucketed by its own check count, for anime by its least-settled member. The number of sub-rows tracks the stabilize threshold automatically. The backend exposes these as 5 mutually-exclusive **cycle-membership** buckets at each grain (`AnimeDAO.count_by_sweep_tier_priority` / `count_media_by_sweep_tier_priority` → `sweep_tiers` / `media_sweep_tiers`); the card renders the selected grain 1:1. Membership, not due-ness — a tier counts where a row *belongs* (e.g. "Weekly cycle" = has/is a recent main), so a row doesn't empty itself when a sweep refreshes its members. Sum equals the grain's catalog total (anime count / media count)
   - **User activity (7d)**: active users (distinct user_ids touching ratings or jobs), new ratings, scrapes submitted (user-attributed only)
 - Refresh: subscribes to the `librarySaved` bump in `lib/stores/jobs.ts`, so the panel reloads in milliseconds whenever the bell observes a new succeeded `user_scrape` — admin sees the catalog + activity counters move without a manual refresh. No periodic polling
@@ -487,15 +500,15 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 - **Click-through to detail page**: rows of kind `update_sweep` with `version >= 2` are clickable (cursor-pointer, hover tint, keyboard-accessible via Enter) — they route to `/admin/jobs/[uuid]` (see 12.1d). Other kinds and pre-v0.14.5 update_sweep rows stay non-clickable since the detail page has nothing to add beyond what the row already shows
 - **Unknown-genre-tag highlight**: update_sweep v3 rows whose `result_summary.unknown_genre_tags` is non-empty get an amber tint + a left amber accent border + an inline subline under the payload summary listing the missing tag names ("⚠ New genre tags need seeding: Survival Game, Dark Fantasy"). The seeder is the deliberate source of truth for the user-facing genre taxonomy, so unknown tags don't auto-seed — they surface here for admin to add manually before the next sweep
 - Pagination footer: `"start–end of total"` range on the left, prev/next buttons + `"Page N of M"` on the right. Buttons disable at the boundaries. `total === 0` degrades to `"0 of 0"` and both buttons disabled
-- Tab eager-renders on first admin paint (visibility toggles via `class:hidden`, not unmount) — first paint pays one filtered COUNT + SELECT alongside the other tabs' fetches, subsequent tab switches are instant
+- First admin paint pays this tab's filtered COUNT + SELECT alongside the other tabs' fetches; switching to it afterwards is instant
 
 ### 12.1d Job detail page (`/admin/jobs/[uuid]`)
 - Standalone route (not a tab — a separate SvelteKit page). Reached by clicking an `update_sweep v2+` row in the Jobs Log. Direct-URL access works too; admin role is enforced on mount (non-admin → `/`)
 - **Header card**: kind badge, color-coded status badge, version chip (`v3`), duration (live-ticks for running jobs), created / started / finished timestamps, requested_by username, parent-job link if `parent_job_uuid` is set, "← Jobs Log" back link. Failed jobs render the `error_message` in a destructive-tinted banner below the metadata grid — this is the actionable info, the page omits the "predates v0.14.5" notice for failed rows since their missing counters reflect a crashed run, not an old schema
 - **Counters grid** (v2+ jobs only): version-aware stats from `result_summary.counters`. v5 (v0.14.8, media-level) shows media refreshed, anime touched, media skipped (media belonging to touched anime not refreshed this run — tooltip), media w/ dynamic changes, media w/ static changes, umbrella reclassed, probes succeeded, probes failed, anime w/ new attach, orphaned studios removed, failed refresh. v2–v4 show the original anime-grained set (anime refreshed + anime w/ dynamic/static rollups instead of the media-level trio). The "Failed refresh" cell renders "—" for v<4 (not a misleading 0) and tints amber when > 0. Plus inline warning lines if `merge_detect_failed` or `cache_recompute_failed` fired (the catalog work still committed; only the post-sweep merge-detection / spoiler-cache recompute failed)
 - **Failed-refresh / Failed-probe cards**: when `step1_failures` (v4+) or `probe_failures` (v5+) is non-empty, a card lists each skipped anime — title (link to `/anime?uuid=<uuid>`), `error_category` chip, and the error message. Both kept their old `last_checked_at` / `AnimeFreshness`, so the next sweep retries them. A progress-divergence notice fires when `items_done < items_total` — v5 progress is media-grained (`items_total` = due media, `items_done` = refreshed media), so the gap is the media skipped because their anime failed step-1 refresh (probe failures don't widen it — their media committed; they show in the Failed-probe card). v2–v4 rows keep the anime-grained wording
+- **Anime changes section** (v2+ only) — rendered *above* Media changes, since a sweep yields a handful of anime rows against hundreds of media diffs: for each anime with any drift in its anchor-derived umbrella fields, an `AnimeUmbrellaCard` shows the anime title (link to `/anime?uuid=<uuid>`, new tab), "anchor moved" / "embedding regen" badges when applicable, a Field/Was/Now table for the changed umbrella fields, and a list of per-media relation reclassifications (`mal_id=NNNN: old_rt → new_rt`)
 - **Media changes section** (v2+ only): filter chips (All / Dynamic-no-rating / Rating only / Static only / Has genre-studio drift) + free-text search input (substring match across `media_title`, `media_name_eng`, `media_name_jap`, `anime_title`, `anime_name_eng`, `anime_name_jap`, `media_mal_id`). Each match renders a `MediaChangeCard` — media title links to `/media?uuid=<uuid>` (new tab), relation-type chip, mal_id, and a Field/Was/Now table with one row per changed field. Tone colors via a left border: rating (gray, score/scored_by — sorts last so vote-count noise doesn't drown the rest), dynamic (amber, episodes/airing/aired_to), static (sky), genre (fuchsia), studio (indigo). Genre / studio drift folds into the same table as a tagset row — was-cell shows old tags with removed in red, now-cell shows new tags with added in green. v2 legacy drift kinds render a "Not auto-applied — admin review needed" subline beneath the now-cell since the dispatcher only logged them; v3 drift is always applied (audit log is the rollback path)
-- **Anime field changes section** (v2+ only) — heading "Anime field changes": for each anime whose 7 aggregate fields drifted, an `AnimeUmbrellaCard` shows the anime title (link to `/anime?uuid=<uuid>`, new tab), "anchor moved" / "embedding regen" badges when applicable, a Field/Was/Now table for the changed umbrella fields, and a list of per-media relation reclassifications (`mal_id=NNNN: old_rt → new_rt`)
 - **v1 fallback**: pre-v0.14.5 sweeps (job version 1) didn't capture per-media diffs. The page renders the header + a "predates v0.14.5's per-media diff capture" notice in place of the counters/diff sections. v1 rows are NOT clickable from the Jobs Log so this fallback is reached only via direct URL
 
 ### 12.2 Create Registration Token (Tokens tab)
@@ -611,6 +624,7 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 | `/users/account` | DELETE | Settings page (account deletion with password) |
 | `/admin/stats/overview` | GET | Admin Overview tab (aggregate catalog + job health + activity counters) |
 | `/admin/jobs` | GET | Admin Jobs Log tab (paginated all-jobs list with status/kind/user/date filters) |
+| `/admin/jobs/{uuid}` | GET | Job detail page load (12.1d), and its 1s re-poll while the job is still running |
 | `/admin/curation/pending-counts` | GET | Polled by JobBell each tick when user role is admin; drives the pinned reminder + badge contribution |
 | `/admin/registration-tokens` | GET | Admin page (list all tokens) |
 | `/admin/registration-tokens` | POST | Admin page (create token) |
@@ -626,18 +640,23 @@ Lazy-mounts on first entry and re-mounts each time you return to it, so the char
 | `/admin/merge-candidates/{uuid}/merge` | POST | Admin page Merge Candidates card (merge B into A, delete B) |
 | `/admin/merge-candidates/{uuid}/dismiss` | POST | Admin page Merge Candidates card (mark as reviewed-not-duplicate) |
 | `/admin/merge-candidates/backfill` | POST | Admin page Merge Candidates card "Re-run detection" — re-runs existing × existing detection without a container restart (post-restore workflow) |
+| `/admin/merge-candidates/dismissed` | GET | Merge Candidates card's dismissed-decisions section (list previously dismissed rows) |
+| `/admin/merge-candidates/{uuid}/delete` | POST | Dismissed-decisions section — permanently forget a dismissal (username confirmation) |
 | `/admin/split-candidates` | GET | Admin page Split Candidates card (list pending disjoint-franchise rows) |
 | `/admin/split-candidates/{uuid}/split` | POST | Admin page Split Candidates card (split clusters into separate anime, re-parent media) |
 | `/admin/split-candidates/{uuid}/dismiss` | POST | Admin page Split Candidates card (mark as reviewed-keep-bundled) |
 | `/admin/split-candidates/backfill` | POST | Admin page Split Candidates card "Re-run detection" — re-runs disjoint-franchise detection across the catalog |
+| `/admin/split-candidates/dismissed` | GET | Split Candidates card's dismissed-decisions section (list previously dismissed rows) |
+| `/admin/split-candidates/{uuid}/delete` | POST | Dismissed-decisions section — permanently forget a dismissal (username confirmation) |
 | `/admin/finished-anime` | GET | Admin Completion tab (list story-complete anime) |
 | `/admin/finished-anime/{uuid}` | POST | Admin Completion tab (mark anime story-complete) |
 | `/admin/finished-anime/{uuid}` | DELETE | Admin Completion tab (remove story-complete flag) |
 | `/auth/register` | POST | Registration page |
+| `/auth/refresh` | POST | Session tick (1.6) — silently re-issues the token while the user is active, before the idle countdown can start |
 | `/maintenance/status` | GET | Polled by MaintenanceBanner every 30s on every page (no auth) |
 | `/jobs/scrape` | POST | `/library/add` form submission (enqueues a `user_scrape` job; restricted users rejected by role check) |
 | `/jobs/mine` | GET | Polled by JobBell every 2s while any of your jobs is queued/running, every 30s when idle (active + recently-finished jobs for the current user) |
-| `/jobs/{uuid}` | GET | Single-job poll for owner or admin (used by bell retry + admin debugging) |
+| `/jobs/{uuid}` | GET | Single-job poll for owner or admin. No frontend caller — the bell polls `/jobs/mine` and re-POSTs the original request to retry; listed because it is the own-job counterpart to `/admin/jobs/{uuid}` |
 | `/library/recent` | GET | `/library/add` recent-additions panel (global feed of recently-saved anime) |
 | `/admin/jobs/schedule-sweep` | POST | Coolify cron only — bearer token authenticated, enqueues a delayed `update_sweep` |
 | `/admin/jobs/schedule-seasonal` | POST | Coolify cron only — bearer token authenticated, enqueues a delayed `seasonal_sweep` |

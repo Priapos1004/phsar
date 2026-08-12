@@ -19,6 +19,15 @@
 	 * Constrained to the CSS the rasterizer's foreignObject pass reproduces faithfully:
 	 * no `backdrop-filter`, no CSS `mask`, no scroll containers, and nothing whose layout
 	 * depends on the viewport (hence `AttributeBadges layout="wrap"` — see that prop).
+	 *
+	 * Every size decision below is spent against a fixed budget, which is why so many
+	 * of them are hardcoded pixels rather than something fluid. The card is exactly
+	 * `SHARE_CARD_WIDTH`×`SHARE_CARD_HEIGHT` (540×675, half the PNG) with no scroll
+	 * container anywhere, so content that overruns does not grow the card — it bleeds
+	 * past the white surface and is silently clipped. The hero row is pinned at the
+	 * cover's 176px and the radar at a hard 224px, and what remains is shared between
+	 * the facts band and the synopsis. The rating variant spends nearly all of it, so
+	 * treat any addition here as taking room from something else rather than as free.
 	 */
 	import { onMount, tick } from 'svelte';
 	import AttributeRadar from '$lib/components/AttributeRadar.svelte';

@@ -11,6 +11,16 @@ import { browser } from '$app/environment';
  * Storage is a mirror of the store, not a second source of truth — a subscriber
  * writes every change through, so each store's own `clearXFilter()` persists
  * its reset with no extra call.
+ *
+ * Adding one: export a `clearXFilter()` deciding which display prefs survive, then
+ * register it in `utils/filterLifecycle`'s `SECTION_FILTERS` — and widen the `ALL`
+ * list in `src/tests/filter-lifecycle.test.ts`, which pins the set.
+ *
+ * That registration also guards logout: `resetters` fills at *module evaluation*,
+ * so a filter clears only if its module has loaded. `filterLifecycle` imports every
+ * `clearXFilter` and the root layout imports `filterLifecycle` — a filter missing
+ * from `SECTION_FILTERS` loads only on its own page, so a value set there outlives
+ * the logout that should have cleared it.
  */
 
 interface PersistedFilterConfig<T extends object> {
@@ -88,14 +98,6 @@ export function createPersistedFilter<T extends object>(
 	return store;
 }
 
-/**
- * Whitelist a stored string against a `Record<Union, …>` key set.
- *
- * Takes a Record rather than an array so TypeScript enforces exhaustiveness at
- * the definition — a union member the caller forgets is a compile error, not a
- * value that silently falls back forever. Same shape as `JOB_KIND_LABELS` /
- * `STATUS_BADGE`, which `adminJobsFilter` already whitelists against.
- */
 /** `asc | desc` — every sortable list section has a direction. */
 export type Direction = 'asc' | 'desc';
 
@@ -106,6 +108,14 @@ export const VIEW_KEYS: Record<'grid' | 'table', true> = { grid: true, table: tr
 export const GRAIN_KEYS: Record<'anime' | 'media', true> = { anime: true, media: true };
 export const DIRECTION_KEYS: Record<Direction, true> = { asc: true, desc: true };
 
+/**
+ * Whitelist a stored string against a `Record<Union, …>` key set.
+ *
+ * Takes a Record rather than an array so TypeScript enforces exhaustiveness at
+ * the definition — a union member the caller forgets is a compile error, not a
+ * value that silently falls back forever. Same shape as `JOB_KIND_LABELS` /
+ * `STATUS_BADGE`, which `adminJobsFilter` already whitelists against.
+ */
 export function pickKey<T extends string>(
 	raw: unknown,
 	allowed: Record<T, unknown>,

@@ -457,6 +457,7 @@ phsar/
     │   ├── test_search_media.py
     │   ├── test_search_ranking.py
     │   ├── test_search_ratings.py
+    │   ├── test_user_flows_endpoints.py
     │   ├── test_user_settings.py
     │   └── test_watchlist.py
     ├── seeders/

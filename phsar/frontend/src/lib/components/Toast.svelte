@@ -1,4 +1,9 @@
 <script lang="ts">
+    /**
+     * The fly-in banner itself. `ToastHost` is its only consumer and must stay so —
+     * a page mounting its own `<Toast>` gives the app several banners on divergent
+     * timeouts. Fire `pushToast()` instead; the single host renders it.
+     */
     import { fly } from 'svelte/transition';
     import type { ToastVariant } from '$lib/stores/toast';
 
