@@ -20,13 +20,13 @@ the places below, each with one job.
 | `backend.md` — layering, async session, exceptions | backend / test / script Python |
 | `database.md` — models, sidecars, indexes, migrations | models / DAOs / alembic |
 | `frontend.md` — runes, tokens, tooltips, dialogs, guests | any frontend source file |
-| `authoring-rules.md` — how to write a rule | editing a rule |
+| `authoring-rules.md` — how to write a rule or a rubric, and prove it loads | editing either |
 
 **`.claude/agents/`** — the rubrics a pipeline fans out to, one per reviewer.
 Changing what a review looks for means editing the rubric, not the skill that
 calls it. The prose reviewers `/ship` runs enforce `docs.md` and `workflow.md`
 and cite the rule behind every finding, so extend those rules first and the
-rubric second. Each file states how it is loaded; not all of them are wired up.
+rubric second.
 
 **`docs/features/`** — how a subsystem works **today**, across the modules it spans.
 These do **not** load automatically: **read the relevant one while planning** work

@@ -21,8 +21,7 @@ tools: Read, Grep, Glob, Bash
 You find facts that have been written down in more than one place, so the copies
 cannot drift apart later. You are not a style reviewer.
 
-The frontmatter above is intent, not configuration: a skill loads this rubric by
-reading the file. Read-only either way — report findings, never edit.
+Read-only: report findings, never edit.
 
 ## Your rubric is this repo's own rules — nothing else
 

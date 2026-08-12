@@ -66,16 +66,11 @@ Each rubric states its own scope; do not re-scope it in the prompt. Scope covers
 docstrings and code comments as well as `.md`, which is why this step lives here
 and not in `/update-docs`.
 
-**Pass the rubric by path — never summarise it in the prompt.** A paraphrase drops
-the calibrations first, and those are what stop the review deleting dense
-load-bearing comments. Give each agent the diff path, the repo root, and one
-sentence on what the change does. Nothing else.
+**Pass the rubric by path — never summarise it in the prompt.** Give each agent the
+diff path, the repo root, and one sentence on what the change does. Nothing else.
 
-**Read the rubric, don't name it as a `subagent_type`.** Files under
-`.claude/agents/` do not register as agent types here — a fresh session lists only
-the built-in ones — so naming one is a runtime "Agent type not found". Verify with
-`claude -p --model haiku "List ONLY the subagent_type values available to the Agent
-tool" < /dev/null` before assuming otherwise.
+**Read the rubric, don't name it as a `subagent_type`** — see
+[authoring-rules.md](../../rules/authoring-rules.md).
 
 Apply their findings like `/simplify`'s: fix, or skip with a stated reason.
 

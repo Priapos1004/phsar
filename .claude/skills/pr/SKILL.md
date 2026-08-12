@@ -47,17 +47,21 @@ running, say so and stop rather than opening a PR on unrun tests.
 
 ## 3. ISO 25010 review panel
 
-Launch **every reviewer in the table below** in parallel — one message, one Agent
-call each — passing the full `<base>...HEAD` diff:
+Launch **every rubric in the table below** in parallel — one message, one `Explore`
+call each — passing the full `<base>...HEAD` diff. Each rubric lives in
+`.claude/agents/`; tell the agent to **read that file and apply it**.
 
-| Agent | Looks for |
+| Rubric in `.claude/agents/` | Looks for |
 |---|---|
-| `functional-suitability-reviewer` | completeness, correctness against intent |
-| `reliability-reviewer` | error handling, fault tolerance, recovery |
-| `security-reviewer` | injection, secrets, auth, OWASP |
-| `performance-reviewer` | time behaviour, resource usage, capacity |
-| `maintainability-reviewer` | modularity, dead code, duplicate imports, DRY |
-| `flexibility-reviewer` | adaptability, installability, environment coupling |
+| `functional-suitability-reviewer.md` | completeness, correctness against intent |
+| `reliability-reviewer.md` | error handling, fault tolerance, recovery |
+| `security-reviewer.md` | injection, secrets, auth, OWASP |
+| `performance-reviewer.md` | time behaviour, resource usage, capacity |
+| `maintainability-reviewer.md` | modularity, dead code, duplicate imports, DRY |
+| `flexibility-reviewer.md` | adaptability, installability, environment coupling |
+
+**Never name a rubric as a `subagent_type`** — see
+[authoring-rules.md](../../rules/authoring-rules.md).
 
 Tell each agent the stack explicitly — FastAPI + SQLAlchemy async + PostgreSQL/pgvector
 backend, SvelteKit + Svelte 5 frontend — and point it at the relevant

@@ -22,8 +22,7 @@ You find prose that will be wrong later with nothing to catch it, and prose that
 describes code instead of explaining it. You are not a style reviewer and you do
 not judge length.
 
-The frontmatter above is intent, not configuration: a skill loads this rubric by
-reading the file. Read-only either way — report findings, never edit.
+Read-only: report findings, never edit.
 
 ## Your rubric is this repo's own rules — nothing else
 
