@@ -44,7 +44,8 @@ def _table_rows() -> list[str]:
     after them is data, including a row that no longer parses.
     """
     lines = USER_FLOWS.read_text(encoding="utf-8").splitlines()
-    start = next(i for i, line in enumerate(lines) if line.startswith("## 13."))
+    start = next((i for i, line in enumerate(lines) if line.startswith("## 13.")), None)
+    assert start is not None, "USER_FLOWS.md has no '## 13.' heading for this test to read."
     end = next(
         (i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")),
         len(lines),
@@ -64,11 +65,16 @@ def _actual_endpoints() -> set[tuple[str, str]]:
 
 def test_documented_endpoints_all_exist():
     rows = _table_rows()
-    matches = [(line, _ROW.search(line)) for line in rows]
 
-    # Every data row must parse. A row-count floor would let a reformat take most
-    # of the table out of the check while still passing — a guard against silent
-    # blindness that is itself silently partial.
+    # Two preconditions before the comparison below means anything, and neither is
+    # a row *count*: a floor like "at least 40 rows" lets a reformat take most of
+    # the table out of the check while still passing — a guard against silent
+    # blindness that is itself silently partial. Instead: the table exists at all
+    # (emptied, or rewritten in a form with no `|` rows, it leaves nothing to parse
+    # and everything below holds vacuously), and every row it has still parses.
+    assert rows, "USER_FLOWS.md section 13 has no table rows left to check."
+
+    matches = [(line, _ROW.search(line)) for line in rows]
     unparsed = [line for line, m in matches if m is None]
     assert not unparsed, (
         f"{len(unparsed)} of {len(rows)} rows in USER_FLOWS.md section 13 no longer "

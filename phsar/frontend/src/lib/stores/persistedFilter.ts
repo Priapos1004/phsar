@@ -14,7 +14,7 @@ import { browser } from '$app/environment';
  *
  * Adding one: export a `clearXFilter()` deciding which display prefs survive, then
  * register it in `utils/filterLifecycle`'s `SECTION_FILTERS` — and widen the `ALL`
- * list in `tests/filter-lifecycle.test.ts`, which pins the set.
+ * list in `src/tests/filter-lifecycle.test.ts`, which pins the set.
  *
  * That registration also guards logout: `resetters` fills at *module evaluation*,
  * so a filter clears only if its module has loaded. `filterLifecycle` imports every

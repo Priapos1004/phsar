@@ -5,14 +5,14 @@ control does, and which endpoints the frontend calls. Why it is built that way l
 with the code — this side is the observable behaviour.
 
 **How much to trust it.** §13's endpoint table is checked against the app's real route
-table by `phsar/tests/routers/test_user_flows_endpoints.py`: every row names a route the
-app actually serves, and every row still parses. It is **not** checked for completeness —
-whether an endpoint is frontend-consumed is not something the route table knows, so a new
-call site can go undocumented here without failing anything. The behavioural sections are
-**not** systematically verified against source. Spot-checking finds most claims accurate
-and a minority wrong, concentrated in the longest sections (§6, §7, §12). So: reliable for
-orientation, and worth confirming against the source before you rely on a specific claim —
-then correct it here, and narrow this note as sections get checked.
+table by `phsar/tests/routers/test_user_flows_endpoints.py`: the table is still there,
+every row still parses, and every row names a route the app actually serves. It is **not**
+checked for completeness — whether an endpoint is frontend-consumed is not something the
+route table knows, so a new call site can go undocumented here without failing anything.
+The behavioural sections are **not** systematically verified against source. Spot-checking
+finds most claims accurate and a minority wrong, concentrated in the longest sections (§6,
+§7, §12). So: reliable for orientation, and worth confirming against the source before you
+rely on a specific claim — then correct it here, and narrow this note as sections get checked.
 
 ---
 

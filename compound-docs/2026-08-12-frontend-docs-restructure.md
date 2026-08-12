@@ -193,7 +193,11 @@ one the caveat rules out — see there.
 **The row-count floor had the same shape as the bug it guarded against.** `MIN_ROWS = 40`
 against a table of 68 meant nearly half the rows could stop parsing while the suite stayed
 green — a guard against silent blindness that was itself silently partial. Replaced with
-"every data row must parse", which is the assertion that was meant all along.
+"every data row must parse", which is the assertion that was meant all along. That
+replacement left the *empty* case open, and PR review caught it: discarding the over-broad
+"at least 40 rows" floor had quietly discarded the narrow "at least one row" floor inside
+it, so a §13 whose table was deleted or rewritten without `|` rows passed while checking
+nothing. The guards are explicit now, and none of them is a count.
 
 **Sampling sized the remaining risk.** A 6-claim sample of §12's behavioural prose found
 1 wrong, and 3 of the 4 errors found incidentally were also behavioural prose in §7/§12.
@@ -268,8 +272,6 @@ indistinguishable from a test that checks the thing you think it checks.
   orients a different reader.
 - `docs/ROADMAP.md`'s share-design section overlaps the share source. Left deliberately:
   the roadmap holds the *why*, the modules hold the *how*, which is the correct split.
-- `main` is behind this branch's base. The PR base is `v0.15.4-efficiency-improvements`,
-  against which this branch is exactly its own commits; against `main` it is 41.
 - Untouched, outside this branch: `shellcheck` over the hooks, a shared
   `scripts/lint.sh`, and the six `.claude/agents/*-reviewer.md` duplicates — that last
   one still needs a delete-or-adapt decision.
