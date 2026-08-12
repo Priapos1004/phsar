@@ -49,9 +49,14 @@
 
 	<!-- Tabs eager-render and stay mounted; visibility toggles via class:hidden.
 		 Admin sessions usually touch several tabs in a row (tokens → curation →
-		 backups), so the one-time parallel-fetch cost on first paint buys
-		 instant tab switches for the rest of the session. No card polls, so
-		 keeping them mounted doesn't generate ongoing traffic. -->
+		 backups), so the parallel-fetch cost on first paint buys instant tab
+		 switches for the rest of the session.
+
+		 Staying mounted is not free: AdminJobsLogTab keeps its own poll running
+		 whether or not it is the visible tab (3s while a job runs, 30s idle), so
+		 an admin parked on Overview still generates a /admin/jobs request every
+		 30s. That is the accepted cost of the trade — anything added here that
+		 polls pays it too, and should gate on visibility if it is heavier. -->
 	<div class:hidden={active !== 'overview'}>
 		<AdminOverviewTab />
 	</div>

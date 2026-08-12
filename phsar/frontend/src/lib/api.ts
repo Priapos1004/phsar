@@ -44,7 +44,7 @@ async function handleResponse<T>(res: Response): Promise<T> {
 		if (maintenance) {
 			// Backend is gated during a maintenance window (sweep or restore).
 			// Bump the banner store so it refetches /maintenance/status in
-			// ms instead of waiting up to 60s for the next poll — needed for
+			// ms instead of waiting out the banner's poll interval — needed for
 			// the case where the user is already token-less (login submit),
 			// since token.set(null) → null isn't a real transition and won't
 			// fire its subscriber.
