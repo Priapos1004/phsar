@@ -43,8 +43,9 @@ that carry an area's reasoning; it is not an inventory of the tree.
 Several of these render a verdict the backend owns — restorability, cycle membership,
 merge and split candidates, sibling order — and must not recompute it; the relevant
 [feature doc](../../docs/features/) carries the contract. One trap worth naming: the
-sweep-tiers card's five cycle-membership buckets are **not** the due-ness tiers in
-[jobs](../../docs/features/jobs.md), which count the long tail deliberately differently.
+sweep-tiers card's cycle-membership buckets are **not** the due-ness tiers in
+[jobs](../../docs/features/jobs.md), which count the long tail deliberately
+differently — the two disagree on how many there are, on purpose.
 
 ## lib/
 
@@ -55,7 +56,7 @@ deliberate absence of a global 401 handler, both argued at the throw site.
 | Area | Start here |
 |---|---|
 | Stores | `stores/` — each file's header carries its own lifecycle. The two that catch people: `ratingScores.ts` is a real cache, so every rating write has to invalidate it, and `filterOptions.ts` is catalogue-global and deliberately survives a logout |
-| Filter persistence | `stores/persistedFilter.ts` — the factory, its version envelope, and the reset registry — under the three section filter stores. `utils/filterLifecycle.ts` decides *when* a section resets |
+| Filter persistence | `stores/persistedFilter.ts` — the factory, its version envelope, and the reset registry — under every section's filter store. `utils/filterLifecycle.ts` decides *when* a section resets |
 | Per-user cleanup | `clearPerUserStores` in `routes/+layout.svelte`; anything keyed to *which* user belongs in it |
 | Formatting | `utils/formatString.ts`, where the score rounding and step-awareness rules live |
 | Ratings + watchlist maths | `utils/ratingStats.ts`, `utils/watchlistStats.ts` — pure, unit-tested, and the reason there is no per-user stats endpoint |

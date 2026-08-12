@@ -11,6 +11,13 @@ import { browser } from '$app/environment';
  * Storage is a mirror of the store, not a second source of truth — a subscriber
  * writes every change through, so each store's own `clearXFilter()` persists
  * its reset with no extra call.
+ *
+ * Adding one covers logout and user-switch automatically: the factory registers
+ * its own reset below, which is what stops `resetAllPersistedFilters` missing a
+ * filter. Belonging to a *section* is the separate step — export a
+ * `clearXFilter()` deciding which display prefs survive, then register it in
+ * `utils/filterLifecycle`'s `SECTION_FILTERS`. Skip that and the filter works but
+ * never clears on leaving its section.
  */
 
 interface PersistedFilterConfig<T extends object> {
