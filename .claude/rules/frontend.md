@@ -119,8 +119,8 @@ Scale the treatment to what is being withheld:
   empty-state. A section silently disabled in place would just look dead.
 
 Never leave a guest facing a control that appears live and fails. Requests that would
-403 are skipped or their 403 swallowed — the layout gates the watchlist and tag store
-refreshes, pages gate their own fetches, and the detail pages absorb the 403 — and the
+403 are skipped or their 403 swallowed — the layout gates its whole per-user load,
+pages gate their own fetches, and the detail pages absorb the 403 — and the
 backend drops a restricted user's write defensively rather than trusting any of it.
 
 ## UI copy

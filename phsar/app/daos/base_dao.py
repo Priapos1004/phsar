@@ -26,6 +26,13 @@ def recency_order(model, column: str = "modified_at") -> tuple:
     or be skipped entirely.
 
     Pass `column="created_at"` for insertion-ordered listings.
+
+    The tie argument is direction-agnostic: an ascending FIFO listing needs the
+    same tiebreak, because a backfill that inserts a whole set in one transaction
+    gives every row the same `created_at`. Those pass `(col.asc(), id.asc())`
+    directly rather than through here, since this helper is newest-first by name
+    and by default. The one ordering entitled to skip it is a queue claim, where
+    any tied row is an equally good pick.
     """
     return (getattr(model, column).desc(), model.id.desc())
 

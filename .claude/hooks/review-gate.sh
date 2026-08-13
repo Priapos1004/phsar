@@ -45,7 +45,31 @@ DOC_CHAR_THRESHOLD=800
 # already terse.
 BUN_CHECK_TAIL=30
 
-hook_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# `read`, not `$(cat)`: this is the first thing on EVERY Bash tool call, so it pays
+# a fork and an exec on the common path. The builtin wins on the small payloads
+# that dominate; it loses on a large one, because bash reads a pipe a byte at a
+# time and the crossover is a few KB — a heredoc writing a long doc is the case
+# that pays. Net favourable, not universally cheaper.
+# `-d ''` reads to NUL, which the payload never contains, so it consumes all of
+# stdin and returns non-zero at EOF — hence `|| true`. `IFS=` keeps surrounding
+# whitespace.
+IFS= read -r -d '' payload || true
+
+# Cheap pre-filter on the RAW payload, before any tooling is demanded. This hook
+# matches every Bash call, and exit 2 blocks the call it fires on — so demanding
+# tooling first would mean a machine without jq could not run `ls`, and the refusal
+# would talk about unverified *commits*, which points nowhere near the real cause.
+#
+# Sound because every gated command contains "commit" or "create" literally, and
+# the command is a substring of the payload: a payload holding neither cannot
+# produce a gated command below. The converse doesn't hold — an unrelated field
+# mentioning either word still demands tooling — and that is the safe direction.
+#
+# **This test must stay a superset of `is_gated`.** Widening the gated set to a
+# verb that contains neither word (`git tag -s`, `git push --force`) means
+# widening here too, or the hook exits before the new action is ever tested —
+# a fail-open, which is the direction this file must never drift.
+[[ "$payload" == *commit* || "$payload" == *create* ]] || exit 0
 
 # Fail closed on missing tooling. Without these the gate cannot reach a verdict,
 # and "cannot verify" must never read as "verified" — exit 2 blocks the call
@@ -58,10 +82,18 @@ for tool in jq git sed awk paste; do
   }
 done
 
+# Resolved here rather than at the top of the file: it costs two process spawns,
+# and everything above this point runs on every Bash call while this runs only on
+# the gated ones.
+hook_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
 # shellcheck source=lib/state.sh
 . "$hook_dir/lib/state.sh" || { echo "review-gate: cannot load lib/state.sh." >&2; exit 2; }
 
-payload=$(cat)
+# The gated set, in one place. Widening it (a `git tag -s`, a `git push --force`)
+# is then one edit rather than three, and a missed copy here is a fail-open —
+# the asymmetry the header says must drive every change to this file.
+is_gated() { [[ "$1" == *commit* || "$1" == *"pr"*"create"* ]]; }
 
 emit_allow_note() { jq -n --arg c "$1" '{systemMessage:$c}'; exit 0; }
 emit_deny() {
@@ -75,16 +107,17 @@ cmd=$(jq -r '.tool_input.command // ""' <<<"$payload")
 # changes, the extraction yields "" and every branch below no-ops forever with no
 # signal. So an unreadable command that *looks* like a gated action fails closed.
 if [[ -z "$cmd" ]]; then
-  [[ "$payload" == *commit* || "$payload" == *"pr"*"create"* ]] &&
+  is_gated "$payload" &&
     emit_deny "review-gate: could not read the command from the hook payload — refusing to allow unverified."
   exit 0
 fi
 
-# This hook runs on EVERY Bash call, so the common path must be nearly free.
-# Tested against the *command*, never the whole payload: the payload carries
-# transcript_path, which contains ".claude/projects/", so a payload-level `pr`
-# test matches unconditionally and the guard degenerates to "contains create".
-[[ "$cmd" == *commit* || "$cmd" == *"pr"*"create"* ]] || exit 0
+# The precise test, narrowing the pre-filter above. It runs against the *command*
+# and never the whole payload: the payload carries transcript_path, which contains
+# ".claude/projects/", so a payload-level `pr` test matches unconditionally and the
+# guard degenerates to "contains create". That is tolerable as a pre-filter, whose
+# only cost is demanding tooling; it is not tolerable as the gate itself.
+is_gated "$cmd" || exit 0
 
 # Deliberate, logged escape hatch. Anchored as a leading env assignment so that
 # merely *mentioning* it in a commit message cannot silently disable the gate.
@@ -256,7 +289,14 @@ fi
 # whole-tree run: this costs ~11s, not ~26ms, and a docs-only commit under
 # phsar/frontend/ paid it in full to check nothing.
 if [[ -z "$fail" ]] && grep -qE '^phsar/frontend/.*\.(svelte|ts|js|json)$' <<<"$touched"; then
-  if command -v bun >/dev/null; then
+  if ! command -v bun >/dev/null; then
+    notes+="review-gate: bun not on PATH — svelte-check NOT verified. "
+  elif [[ ! -d phsar/frontend/node_modules ]]; then
+    # Uninstalled deps are an environment problem like a missing bun, not a
+    # quality one. Denying here reports a module-resolution error as if the
+    # author's code were broken, with nothing naming the actual remedy.
+    notes+="review-gate: phsar/frontend/node_modules missing — svelte-check NOT verified (cd phsar/frontend && bun install). "
+  else
     # Bounded, because a hook that outruns its own timeout is treated as
     # non-blocking — an unbounded check fails open on exactly the slowest path.
     # 180 must stay under the `timeout` on this hook in settings.json (240s):
@@ -274,8 +314,6 @@ if [[ -z "$fail" ]] && grep -qE '^phsar/frontend/.*\.(svelte|ts|js|json)$' <<<"$
     elif (( rc != 0 )); then
       fail+="bun run check failed:"$'\n'"$(tail -"$BUN_CHECK_TAIL" <<<"$out")"$'\n\n'
     fi
-  else
-    notes+="review-gate: bun not on PATH — svelte-check NOT verified. "
   fi
 fi
 

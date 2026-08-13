@@ -255,7 +255,7 @@ class RatingDAO(BaseDAO[Ratings]):
                 extra_columns={SearchType.RATING_NOTES: RatingSearch.note_embedding},
             )
         else:
-            stmt = stmt.order_by(self.model.modified_at.desc())
+            stmt = stmt.order_by(*recency_order(self.model))
 
         stmt = stmt.limit(limit)
         result = await db.execute(stmt)

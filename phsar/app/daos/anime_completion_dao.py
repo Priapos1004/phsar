@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.daos.base_dao import BaseDAO
+from app.daos.base_dao import BaseDAO, recency_order
 from app.models.anime_completion import AnimeCompletion
 
 
@@ -27,7 +27,7 @@ class AnimeCompletionDAO(BaseDAO[AnimeCompletion]):
                 selectinload(AnimeCompletion.anime),
                 selectinload(AnimeCompletion.marked_by),
             )
-            .order_by(AnimeCompletion.created_at.desc())
+            .order_by(*recency_order(AnimeCompletion, "created_at"))
         )
         return list((await db.execute(stmt)).scalars().all())
 

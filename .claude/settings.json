@@ -33,6 +33,7 @@
       "Bash(sort *)",
       "Bash(.claude/hooks/mark-reviewed.sh)",
       "Bash(.claude/hooks/mark-pr-ready.sh)",
+      "Bash(.claude/hooks/test-gate.sh)",
       "Bash(tree *)",
       "Bash(npx shadcn-svelte@latest add *)",
       "Bash(npx svelte-check:*)",

@@ -145,11 +145,9 @@ it.
 
 ## Download
 
-The download endpoint sets `Content-Encoding: identity` to opt out of gzip. A
-`pg_dump -Fc` archive is already zlib-compressed, so streaming it through gzip
-gains ~0% and loses `Content-Length`, which makes the browser's download progress
-indeterminate. Starlette skips compression whenever a content-encoding is already
-set, so that header *is* the opt-out.
+The download opts out of gzip, so a dump arrives as raw
+`pg_dump -Fc` bytes with a real `Content-Length`. The mechanism and the RFC wart
+that comes with it are argued at the call site, `routers/admin.download_backup`.
 
 ## Path safety
 

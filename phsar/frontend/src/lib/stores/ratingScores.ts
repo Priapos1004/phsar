@@ -31,15 +31,21 @@ let loadPromise: Promise<RatingScoreItem[]> | null = null;
 export function ensureRatingScores(): Promise<RatingScoreItem[]> {
 	if (loadPromise) return loadPromise;
 
-	loadPromise = (async () => {
-		try {
-			return await api.get<RatingScoreItem[]>('/ratings/scores');
-		} catch (err) {
-			loadPromise = null;
-			throw err;
-		}
-	})();
-	return loadPromise;
+	const pending = api.get<RatingScoreItem[]>('/ratings/scores');
+	loadPromise = pending;
+
+	// Clear on failure so a retry re-requests rather than replaying the error —
+	// but only while this request is still the cached one. A rating write calling
+	// `invalidateRatingScores` mid-flight, followed by a consumer starting a fresh
+	// fetch, would otherwise let the older request's rejection drop the newer
+	// promise from the cache. Nobody holding it is affected; the cost is that the
+	// next mount misses and refetches. Attached as a side branch, so the caller
+	// still sees the rejection.
+	pending.catch(() => {
+		if (loadPromise === pending) loadPromise = null;
+	});
+
+	return pending;
 }
 
 /**

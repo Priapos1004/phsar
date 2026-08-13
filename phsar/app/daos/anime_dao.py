@@ -7,6 +7,7 @@ from sqlalchemy import and_, case, cast, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
+from app.daos.base_dao import recency_order
 from app.daos.base_mal_id_dao import MalIdDAO
 from app.daos.search_filters import (
     apply_anime_having_filters,
@@ -429,9 +430,9 @@ class AnimeDAO(MalIdDAO[Anime]):
     async def count_by_sweep_tier_priority(
         self, db: AsyncSession,
     ) -> dict[str, Any]:
-        """5 mutually-exclusive cycle-MEMBERSHIP bucket counts in priority
-        cascade: airing_now > stabilizing > weekly_cycle > archival_cycle >
-        long_cycle.
+        """Mutually-exclusive cycle-MEMBERSHIP bucket counts, one per
+        `_TIER_BUCKETS` entry, in priority cascade: airing_now > stabilizing >
+        weekly_cycle > archival_cycle > long_cycle.
         Sum equals total anime count. Powers the admin Overview
         tier-breakdown card.
 
@@ -459,7 +460,7 @@ class AnimeDAO(MalIdDAO[Anime]):
         self, db: AsyncSession,
     ) -> dict[str, Any]:
         """Media-level analogue of `count_by_sweep_tier_priority` (v0.14.8):
-        5 mutually-exclusive cycle-MEMBERSHIP bucket counts in the same
+        Mutually-exclusive cycle-MEMBERSHIP bucket counts in the same
         priority cascade, but per media. Sum equals total media count.
         Powers the media side of the admin Overview tier-breakdown toggle.
 
@@ -486,7 +487,7 @@ class AnimeDAO(MalIdDAO[Anime]):
         'recent additions' panel on /library/add."""
         stmt = (
             select(Anime)
-            .order_by(Anime.created_at.desc())
+            .order_by(*recency_order(Anime, "created_at"))
             .limit(limit)
         )
         result = await db.execute(stmt)

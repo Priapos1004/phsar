@@ -15,10 +15,17 @@ import { expFromToken, isSessionLive } from '$lib/utils/sessionTimeout';
  * `data-sveltekit-preload-data="hover"` runs universal loads on hover, so a call
  * here would front every navigation AND every link hover.
  *
- * Local costs nothing in authority: the server rejects a bad token on every
- * actual API call this page makes, and the JWT is signed so a client can't forge
- * a later `exp`. The worst case a local check admits is a still-unexpired token
- * belonging to a since-deleted user, whose first real request 401s anyway.
+ * Local costs nothing in *authority*: the JWT is signed so a client can't forge a
+ * later `exp`, and the server re-checks the caller on every actual API call, so
+ * nothing is granted that the backend wouldn't grant anyway.
+ *
+ * What it does cost is *recovery*. A token the server has stopped accepting but
+ * whose `exp` is still future — after a `SECRET_KEY` rotation, or for a deleted
+ * user — passes this guard, and nothing downstream clears it: `api.ts` installs
+ * no global 401 handler by design, and the layout's own user-load swallows the
+ * 401. The tab then renders signed-in with empty data until `exp` is reached, or
+ * until SessionTimeoutBanner's refresh 401s at the threshold. Bounded by
+ * ACCESS_TOKEN_EXPIRE_MINUTES, and the manual escape is Sign out.
  *
  * Expiry DURING a session is not this function's job — `SessionTimeoutBanner`
  * owns the 1s tick, the silent refresh and the countdown. This only catches a

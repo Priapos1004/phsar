@@ -38,8 +38,8 @@ one expected exception; step 5 rewrites and commits it.
 ## 2. Tests
 
 ```
-cd phsar && pytest
-cd phsar/frontend && bun run test
+(cd phsar && pytest)
+(cd phsar/frontend && bun run test)
 ```
 
 `/ship` deliberately skips these — they need the database container, so they are a
@@ -117,10 +117,11 @@ Then `/ship` this doc as its own commit.
 ## 6. Stamp the PR marker
 
 ```
-.claude/hooks/mark-pr-ready.sh
+cd "$(git rev-parse --show-toplevel)" && .claude/hooks/mark-pr-ready.sh
 ```
 
-Last, after the compound doc is committed — it records the branch tip SHA, and
+The `cd` is load-bearing — see `/ship`'s stamping step for why a bare relative
+path breaks after any earlier `cd`. Last, after the compound doc is committed — it records the branch tip SHA, and
 `review-gate.sh` refuses `gh pr create` when that SHA isn't the current one. Stamping
 before the commits in steps 4 and 5 would vouch for a tip that didn't exist yet.
 

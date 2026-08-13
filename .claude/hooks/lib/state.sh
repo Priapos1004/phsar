@@ -33,7 +33,7 @@ pr_marker()       { printf '%s/pr-ok' "$(state_dir)"; }
 # needing a distinct sentinel.
 hash_paths() {
   local paths hashes
-  paths=$(grep -v '^$' || true)
+  paths=$(sed '/^$/d')
   [[ -n "$paths" ]] || return 0
 
   # One spawn regardless of file count: ~42ms for the whole 647-file tree, where

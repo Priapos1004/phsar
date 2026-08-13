@@ -500,7 +500,7 @@ The charts replay their build-up animation every time you open the tab, not just
 - **Click-through to detail page**: rows of kind `update_sweep` with `version >= 2` are clickable (cursor-pointer, hover tint, keyboard-accessible via Enter) — they route to `/admin/jobs/[uuid]` (see 12.1d). Other kinds and pre-v0.14.5 update_sweep rows stay non-clickable since the detail page has nothing to add beyond what the row already shows
 - **Unknown-genre-tag highlight**: update_sweep v3 rows whose `result_summary.unknown_genre_tags` is non-empty get an amber tint + a left amber accent border + an inline subline under the payload summary listing the missing tag names ("⚠ New genre tags need seeding: Survival Game, Dark Fantasy"). The seeder is the deliberate source of truth for the user-facing genre taxonomy, so unknown tags don't auto-seed — they surface here for admin to add manually before the next sweep
 - Pagination footer: `"start–end of total"` range on the left, prev/next buttons + `"Page N of M"` on the right. Buttons disable at the boundaries. `total === 0` degrades to `"0 of 0"` and both buttons disabled
-- **Live refresh**: while this is the visible tab the list silently re-fetches every 3s when any row is `running` and every 30s otherwise, so a row that was running at load keeps its Duration honest and jobs started elsewhere (another user, the bell) surface without a manual refresh. Silent, so it never flashes the skeleton or blips a transient error over a good list. Polling stops entirely while another tab is showing and fires once immediately on return, since the list is as stale as the detour was long. Expanded season-sweep children are not live-refreshed
+- **Live refresh**: while this is the visible tab the list silently re-fetches every 3s when any row is `running` and every 30s otherwise, so a row that was running at load keeps its Duration honest and jobs started elsewhere (another user, the bell) surface without a manual refresh. Silent, so it never flashes the skeleton or blips a transient error over a good list. Polling stops entirely while another tab is showing, and on return catches up only once a poll interval's worth of time has actually elapsed. Expanded season-sweep children are not live-refreshed
 - First admin paint pays this tab's filtered COUNT + SELECT alongside the other tabs' fetches; switching to it afterwards is instant
 
 ### 12.1d Job detail page (`/admin/jobs/[uuid]`)
@@ -625,7 +625,7 @@ The charts replay their build-up animation every time you open the tab, not just
 | `/users/account` | DELETE | Settings page (account deletion with password) |
 | `/admin/stats/overview` | GET | Admin Overview tab (aggregate catalog + job health + activity counters) |
 | `/admin/jobs` | GET | Admin Jobs Log tab (paginated all-jobs list with status/kind/user/date filters) |
-| `/admin/jobs/{uuid}` | GET | Job detail page load (12.1d), and its 1s re-poll while the job is still running |
+| `/admin/jobs/{uuid}` | GET | Job detail page load (12.1d), and again when the uuid changes. Not polled — the page's 1s timer only advances the rendered Duration |
 | `/admin/curation/pending-counts` | GET | Polled by JobBell each tick when user role is admin; drives the pinned reminder + badge contribution |
 | `/admin/registration-tokens` | GET | Admin page (list all tokens) |
 | `/admin/registration-tokens` | POST | Admin page (create token) |

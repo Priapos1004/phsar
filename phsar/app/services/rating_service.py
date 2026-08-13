@@ -224,11 +224,11 @@ def _rating_to_score_item(r: Row) -> RatingScoreItem:
     """Build the DTO from one flat projection row.
 
     `RatingDAO.get_all_for_score_items` labels every column to its DTO field —
-    including the 11 attribute fields, which it selects off the same
-    schema-derived list the DTO inherits them from — so the row maps across
-    wholesale and only the four values needing a Python-side conversion are named
-    here. Spelling out all 36 renames instead would put the field list in a third
-    place (DTO, projection, builder), so adding a field would mean three edits.
+    including the attribute fields, which it selects off the same schema-derived
+    list the DTO inherits them from — so the row maps across wholesale and only
+    the values needing a Python-side conversion are named here. Spelling out
+    every rename instead would put the field list in a third place (DTO,
+    projection, builder), so adding a field would mean three edits.
     """
     data = dict(r._mapping)
     # str-enums → the DTO fields are plain `str`.

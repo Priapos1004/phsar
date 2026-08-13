@@ -90,13 +90,15 @@
 
             if (needsUserLoad) {
               if (isUserSwitch) clearPerUserStores();
-              // Fetch settings + spoiler visibility (+ watchlist/tags for non-guests)
-              // in parallel to avoid serial latency. Restricted users can't watchlist,
-              // so skip those fetches (they'd 403).
-              const userLoads: Promise<unknown>[] = [refreshSpoilerVisibility()];
-              if (decoded.role !== 'restricted_user') {
-                userLoads.push(refreshWatchlist(), refreshTags());
-              }
+              // Fetch settings + spoiler visibility + watchlist/tags in parallel to
+              // avoid serial latency. A restricted user gets none of them: they can't
+              // watchlist, and they are pinned to spoiler_level `off` and excluded
+              // from the visibility cache, so every one of these 403s. Skipping beats
+              // swallowing — a request known to fail shouldn't be sent.
+              const userLoads: Promise<unknown>[] =
+                decoded.role === 'restricted_user'
+                  ? []
+                  : [refreshSpoilerVisibility(), refreshWatchlist(), refreshTags()];
               try {
                 const [settings] = await Promise.all([
                   api.get<UserSettings>('/users/settings'),

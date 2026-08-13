@@ -198,8 +198,8 @@ def create_app() -> FastAPI:
     # gate's own 503 — passing through untouched.
     #
     # A binary endpoint whose payload is ALREADY compressed should opt out rather
-    # than pay gzip for nothing: set `Content-Encoding: identity` on the response,
-    # as the backup download does (`routers/admin.download_backup`).
+    # than pay gzip for nothing. `routers/admin.download_backup` is the worked
+    # example and carries the mechanism.
     app.add_middleware(MaintenanceGateMiddleware)
     app.add_middleware(GZipMiddleware, minimum_size=1000, compresslevel=6)
     app.add_middleware(

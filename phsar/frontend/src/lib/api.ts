@@ -60,7 +60,8 @@ async function handleResponse<T>(res: Response): Promise<T> {
 		// poll (the bell above all) that happened to hit a 401 on the just-expired
 		// token would hard-navigate to /login first, throwing the user out
 		// mid-countdown instead of offering the dialog. The bell stops polling on its
-		// own 401, and the +layout.ts navigation guard covers stale tokens on routes.
+		// own 401. The gap that leaves — a token the server rejects before its `exp`
+		// runs out — is argued in +layout.ts.
 		throw new ApiError(res.status, detail);
 	}
 	if (res.status === 204) {

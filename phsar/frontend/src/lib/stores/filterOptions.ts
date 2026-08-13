@@ -10,14 +10,17 @@ type ViewType = 'anime' | 'media';
 /**
  * Session cache for `GET /filters/options`, keyed by `view_type`.
  *
- * Worth caching because the endpoint is 8-15 backend round trips (46-66 ms) for
- * slider bounds and dropdown values that change only when the CATALOGUE does,
+ * Worth caching because the endpoint is a dozen-odd backend round trips (tens of
+ * ms) for slider bounds and dropdown values that change only when the CATALOGUE does,
  * while `SearchBar` — its only caller — mounts on both `/` and `/search`, so
  * every hop between them would otherwise refetch, as would every anime <-> media
  * toggle.
  *
- * Same shape as `genres.ts`: a stored promise, so concurrent callers share one
- * in-flight request and a failure evicts the key rather than caching itself.
+ * A stored promise, so concurrent callers share one in-flight request and a
+ * failure evicts the key rather than caching itself. `ratingScores.ts` holds the
+ * same shape at single-key grain, including the identity guard on eviction;
+ * `genres.ts` looks similar but is not the same contract — it populates a
+ * writable and swallows failures, which is why the three are not one factory.
  *
  * Deliberately NOT cleared on logout or user switch (contrast `ratingScores.ts`):
  * filter options are catalogue-global, identical for every account, and contain
@@ -30,18 +33,15 @@ export function ensureFilterOptions(viewType: ViewType): Promise<FilterOptions> 
 	const existing = cache.get(viewType);
 	if (existing) return existing;
 
-	const pending = (async () => {
-		try {
-			const params = new URLSearchParams({ view_type: viewType });
-			return await api.get<FilterOptions>('/filters/options', { params });
-		} catch (err) {
-			// Drop the key so a later mount retries instead of replaying the failure
-			// for the rest of the session; the caller still sees the rejection.
-			cache.delete(viewType);
-			throw err;
-		}
-	})();
+	const params = new URLSearchParams({ view_type: viewType });
+	const pending = api.get<FilterOptions>('/filters/options', { params });
 	cache.set(viewType, pending);
+
+	// Same in-flight eviction guard as `ratingScores.ts`, argued there.
+	pending.catch(() => {
+		if (cache.get(viewType) === pending) cache.delete(viewType);
+	});
+
 	return pending;
 }
 

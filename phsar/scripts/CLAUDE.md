@@ -54,10 +54,10 @@ python -m scripts.audit_relation_backfill
 
 ## The dev database is a restored prod dump
 
-Since v0.15.4 the dev DB is **`pgvector/pgvector:pg17`** (matching prod) loaded
-from a production dump, not a small hand-scraped catalog. Query plans, index
-choices and page-load timings are only worth measuring at prod shape, and the
-v0.15.3 follow-ups that were "gated on a prod-snapshot plan check" need it.
+The dev DB is **`pgvector/pgvector:pg17`** (matching prod), loaded from a
+production dump rather than a hand-scraped catalog. Query plans, index choices
+and page-load timings are only worth measuring at prod shape, so any change
+gated on a plan check needs this database to mean anything.
 
 ### 🎯 Use postgresql@17 everywhere — @15 breaks two different things
 

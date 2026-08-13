@@ -15,7 +15,17 @@ set -uo pipefail
 
 SRC="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 WORK=$(mktemp -d)
+# Guard rather than trust: mktemp failing still assigns, so `set -u` says nothing
+# and every `rm -rf "$WORK/r"` below would target "/r" instead.
+[[ -n "$WORK" && -d "$WORK" ]] || { echo "test-gate: could not create a work dir." >&2; exit 1; }
 trap 'rm -rf "$WORK"' EXIT
+
+# The throwaway repos must not inherit the developer's git config. `commit.gpgsign`
+# is the one that bites — every `git commit` below would block on pinentry or fail
+# outright, reporting the wrong verdict for nearly every case. Since this suite is
+# the ONLY symptom of a fail-open regression, a false red costs as much as a false
+# green. `core.hooksPath` and `init.templateDir` would interfere the same way.
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null
 
 pass=0; fail=0
 setup() {
@@ -31,10 +41,15 @@ setup() {
   echo "seed" > seed.txt
   git add -A >/dev/null; git commit -qm init
 }
+# One definition of the harness payload shape. review-gate.sh calls a schema
+# change here "a permanent silent disarm", so every driver below must feed the
+# same shape — two spellings means updating one and leaving the other asserting
+# against a payload the hook no longer parses, while still reporting green.
+payload_for() { printf '{"tool_name":"Bash","tool_input":{"command":%s}}' "$(printf '%s' "$1" | jq -Rs .)"; }
+
 run() {  # run <command-string> -> "DENY" (review) | "DENY-LINT" | "ALLOW"
   local out
-  out=$(printf '{"tool_name":"Bash","tool_input":{"command":%s}}' \
-        "$(printf '%s' "$1" | jq -Rs .)" | ./.claude/hooks/review-gate.sh 2>/dev/null)
+  out=$(payload_for "$1" | ./.claude/hooks/review-gate.sh 2>/dev/null)
   # jq -n pretty-prints, so the key and value are separated by ": " — match loosely.
   if grep -Eq '"permissionDecision"[[:space:]]*:[[:space:]]*"deny"' <<<"$out"; then
     # A lint or PR denial must not be reported as a review denial: either would
@@ -212,6 +227,40 @@ setup
 .claude/hooks/mark-pr-ready.sh >/dev/null 2>&1
 echo "later" > later.txt; git add -A >/dev/null; git commit -qm later
 check "gh pr create after a commit landed post-/pr"       DENY-PR "$(run 'gh pr create --fill')"
+
+echo "=== MISSING TOOLING BLOCKS ONLY WHAT IT CANNOT VERIFY ==="
+# The hook matches every Bash call and exit 2 blocks the call it fires on, so
+# without the payload pre-filter a missing jq makes the whole repo unusable through
+# Claude Code — and reports it as an unverified *commit*, which points nowhere near
+# the cause. PATH here holds `bash` (the shebang resolves it) and `cat` (the payload
+# read) and nothing else: enough to reach the pre-filter, short of everything the
+# gated path needs.
+setup
+mkdir -p "$WORK/onlycat"
+for t in bash cat; do ln -sf "$(command -v "$t")" "$WORK/onlycat/$t"; done
+nojq() {  # nojq <command-string> -> the hook's exit code
+  # The git-config isolation exported above must survive `env -i`, or a later
+  # widening of `onlycat` to include git silently reinstates the developer's
+  # commit.gpgsign for these cases alone.
+  payload_for "$1" |
+    env -i PATH="$WORK/onlycat" HOME="$HOME" \
+      GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
+      ./.claude/hooks/review-gate.sh >/dev/null 2>&1
+  echo $?
+}
+check "ungated command survives a toolless PATH"          0 "$(nojq 'ls -la')"
+check "gated commit on a toolless PATH still blocks"      2 "$(nojq 'git commit -m x')"
+check "gated pr create on a toolless PATH still blocks"   2 "$(nojq 'gh pr create --fill')"
+
+echo "=== UNINSTALLED FRONTEND DEPS ARE AN ENV PROBLEM, NOT A LINT FAILURE ==="
+# Only discriminating where bun is installed: without bun the hook warns and allows
+# on the first arm instead, so this passes either way rather than reporting a false
+# red on a machine that simply has no frontend toolchain.
+setup
+echo "export const x = 1;" > phsar/frontend/src/a.ts          # no node_modules anywhere
+.claude/hooks/mark-reviewed.sh >/dev/null 2>&1
+git add -A >/dev/null
+check "shipped .ts with no node_modules warns, not denies" ALLOW "$(run 'git commit -m x')"
 
 echo "=== REGRESSION: previously-fixed holes stay fixed ==="
 setup

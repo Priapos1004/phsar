@@ -70,8 +70,8 @@ def backup_dir(tmp_path, monkeypatch):
     """Point `BACKUP_DIR` at a per-test temp dir, so anything that shells out
     `pg_dump` writes there instead of the real backup directory.
 
-    Lives here rather than per-file because four test modules across two
-    directories need it — the router-level compression test is the one that put
+    Lives here rather than per-file because test modules in more than one
+    directory need it — the router-level compression test is the one that put
     it outside `tests/services/`."""
     monkeypatch.setattr(settings, "BACKUP_DIR", str(tmp_path))
     return tmp_path

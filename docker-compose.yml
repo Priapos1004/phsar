@@ -7,6 +7,13 @@
 # upstream, so scrapes and sweeps fail while search over existing data works.
 # The docker-compose-only block in phsar/.env.example is optional: every var in
 # it is defaulted below.
+#
+# The backend reads that .env through `env_file`, so every optional tunable in it
+# reaches the container. Without it only the explicitly-listed vars arrive, and
+# rehearsing a flag here — EMBEDDING_REEMBED_ON_STARTUP, RELATION_BACKFILL_ON_STARTUP,
+# a retuned JOBS_SWEEP_MAX_PER_RUN — silently does nothing, which is the one thing
+# compose-parity exists to catch. The `environment:` block still wins over it, so
+# the container-specific overrides below (DB_HOST above all) stay authoritative.
 
 name: phsar
 
@@ -32,6 +39,7 @@ services:
       context: ./phsar
       args:
         APP_VERSION: ${APP_VERSION:-dev}
+    env_file: .env
     environment:
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
@@ -44,7 +52,6 @@ services:
       GUEST_PASSWORD: ${GUEST_PASSWORD:-}
       SECRET_KEY: ${SECRET_KEY}
       SEARCH_SECRET_KEY: ${SEARCH_SECRET_KEY}
-      # The image never COPYs a .env, so this has to be forwarded explicitly.
       MY_ANIME_LIST_CLIENT_ID: ${MY_ANIME_LIST_CLIENT_ID}
       CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost:3000"]}
       APP_VERSION: ${APP_VERSION:-dev}

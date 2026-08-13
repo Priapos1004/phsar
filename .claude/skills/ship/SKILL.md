@@ -83,8 +83,8 @@ owns the command and its ignore list — and diff the result against `phsar/READ
 ## 6. Lint
 
 ```
-cd phsar && ruff check .
-cd phsar/frontend && bun run check     # only when frontend files changed
+(cd phsar && ruff check .)
+(cd phsar/frontend && bun run check)   # only when frontend files changed
 ```
 
 Fix what surfaces (`ruff check . --fix` for the mechanical ones). Treat findings like
@@ -98,8 +98,16 @@ always available locally.
 ## 7. Stamp the review marker
 
 ```
-.claude/hooks/mark-reviewed.sh
+cd "$(git rev-parse --show-toplevel)" && .claude/hooks/mark-reviewed.sh
 ```
+
+The `cd` is load-bearing, not decoration. The Bash tool's working directory
+persists between calls, so a bare `cd phsar` in an earlier step leaves this
+resolving to `phsar/.claude/hooks/…` — and the failure is a stamp that never
+happens, so the next `git commit` is denied for work that *was* reviewed. The
+lint commands above use subshells for the same reason. `$CLAUDE_PROJECT_DIR` is
+not the escape hatch: it is set for hooks, not for tool calls, and expands empty
+here.
 
 Last, after every edit above. The marker records the **content hash** of every
 changed file, and `review-gate.sh` refuses a commit whose staged content isn't in it —

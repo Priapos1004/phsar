@@ -95,9 +95,10 @@ jobs:
     - name: Check migrations replay and match models
       env:
         DB_NAME: migrationcheck
-        PGPASSWORD: testpassword
+        PGPASSWORD: ${{ env.DB_PASSWORD }}
       run: |
-        psql -h localhost -U testuser -d postgres -c 'CREATE DATABASE migrationcheck'
+        psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres \
+          -c 'CREATE DATABASE migrationcheck'
         alembic upgrade head
         alembic check
 

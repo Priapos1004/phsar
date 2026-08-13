@@ -13,8 +13,10 @@ Ask: **what breaks if this is missing?**
 |---|---|---|
 | Can't run or navigate the project | root `CLAUDE.md` | always |
 | Would write code violating an invariant | `.claude/rules/<topic>.md` | when matching files are touched |
+| Couldn't say how a subsystem behaves across the modules it spans | `docs/features/<topic>.md` | read while planning work in that area |
 | Would re-litigate a settled trade-off | `compound-docs/` | on demand |
 | Describes one module's current shape | docstring, or nearest nested `CLAUDE.md` | with the code |
+| A feature decision not yet built, or the version table | `docs/ROADMAP.md` | on demand |
 
 **No fact appears in two rows.** Cross-references are links, never restatements.
 A doc that explains something *and then* says "see X for details" is both a copy

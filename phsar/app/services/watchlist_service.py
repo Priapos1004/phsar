@@ -52,8 +52,8 @@ def _to_item(w: Row) -> WatchlistItem:
     """Build the overview DTO from one flat projection row.
 
     `WatchlistDAO.get_all_for_items` labels every column to its DTO field, so the
-    row maps across wholesale and only the four values needing a Python-side
-    conversion are named here. Spelling out all 25 renames instead would put the
+    row maps across wholesale and only the values needing a Python-side
+    conversion are named here. Spelling out every rename instead would put the
     field list in a third place (DTO, projection, builder), so adding a field
     would mean three edits.
     """

@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
-from app.daos.base_dao import BaseDAO
+from app.daos.base_dao import BaseDAO, recency_order
 from app.models.anime import Anime
 from app.models.anime_search import AnimeSearch
 from app.models.media import Media
@@ -44,9 +44,14 @@ class MergeCandidateDAO(BaseDAO[MergeCandidate]):
     async def list_pending_with_anime(self, db: AsyncSession) -> list[MergeCandidate]:
         """Pending candidates with both anime + media + studios + relation-edge
         sidecars eager-loaded (one roundtrip): admin shows side-by-side
-        summaries AND a per-pair reclassification preview. FIFO by created_at."""
+        summaries AND a per-pair reclassification preview. FIFO by created_at,
+        with the PK tiebreak that makes it actually first-in — the backfill
+        inserts the whole initial set in one transaction, so every row shares a
+        `created_at` and the queue would otherwise reshuffle between refreshes."""
         return await self._list_with_anime(
-            db, MergeCandidateStatus.pending, MergeCandidate.created_at.asc()
+            db,
+            MergeCandidateStatus.pending,
+            (MergeCandidate.created_at.asc(), MergeCandidate.id.asc()),
         )
 
     async def list_dismissed_with_anime(self, db: AsyncSession) -> list[MergeCandidate]:
@@ -59,14 +64,14 @@ class MergeCandidateDAO(BaseDAO[MergeCandidate]):
         the pair from `get_existing_pairs`' skip-set so re-detection resurfaces
         it."""
         return await self._list_with_anime(
-            db, MergeCandidateStatus.dismissed, MergeCandidate.modified_at.desc()
+            db, MergeCandidateStatus.dismissed, recency_order(MergeCandidate)
         )
 
     async def _list_with_anime(
         self,
         db: AsyncSession,
         status: MergeCandidateStatus,
-        order_by: ColumnExpressionArgument,
+        order_by: tuple[ColumnExpressionArgument, ...],
     ) -> list[MergeCandidate]:
         """Shared query for the pending + dismissed lists — both eager-load
         both anime + media + studios + relation-edge sidecars in one roundtrip
@@ -83,7 +88,7 @@ class MergeCandidateDAO(BaseDAO[MergeCandidate]):
                 selectinload(MergeCandidate.anime_a).options(media_loader),
                 selectinload(MergeCandidate.anime_b).options(media_loader),
             )
-            .order_by(order_by)
+            .order_by(*order_by)
         )
         result = await db.execute(stmt)
         return list(result.scalars().all())

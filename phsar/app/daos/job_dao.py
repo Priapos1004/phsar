@@ -260,7 +260,7 @@ class JobDAO(BaseDAO[Job]):
         stmt = (
             select(Job)
             .where(Job.requested_by_user_id == user_id)
-            .order_by(status_priority.asc(), Job.created_at.desc())
+            .order_by(status_priority.asc(), *recency_order(Job, "created_at"))
             .limit(limit)
         )
         return list((await db.execute(stmt)).scalars().all())
@@ -362,7 +362,7 @@ class JobDAO(BaseDAO[Job]):
             )
             .where(Job.created_at >= cutoff)
             .where(self.scrape_query_expr() == normalized)
-            .order_by(Job.created_at.desc())
+            .order_by(*recency_order(Job, "created_at"))
             .limit(1)
         )
         result = await db.execute(stmt)
