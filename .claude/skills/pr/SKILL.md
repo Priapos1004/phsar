@@ -14,18 +14,22 @@ Pushing and opening the PR need explicit approval, every time — see
 
 ```!
 git status --short
-base=$(gh pr view --json baseRefName -q .baseRefName 2>/dev/null || echo main)
-echo "base: $base"
-git log --oneline "$base"..HEAD
-git diff --stat "$base"...HEAD
 ```
 
 **Establish the base branch first — it is not always `main`.** This repo stacks
 release branches, so a docs or fix branch often targets its release branch
-instead. Take it from `$ARGUMENTS` when the invocation names one, else an existing
-PR, else `main`. Everything below reviews `<base>...HEAD`, not just the last
-commit; getting this wrong feeds the panel hundreds of lines of already-reviewed
-parent-branch code and stamps `pr-ok` over a range nobody reviewed.
+instead. Take it from `$ARGUMENTS` when the invocation names one, else
+`gh pr view --json baseRefName -q .baseRefName`, else `main`. Then scope the
+range:
+
+```
+git log --oneline <base>..HEAD
+git diff --stat <base>...HEAD
+```
+
+Everything below reviews `<base>...HEAD`, not just the last commit; getting this
+wrong feeds the panel hundreds of lines of already-reviewed parent-branch code
+and stamps `pr-ok` over a range nobody reviewed.
 
 If the working tree is dirty, `/ship` it into a commit first — the review must
 cover what will actually merge. A provisional compound doc for this branch is the

@@ -1,13 +1,16 @@
 ---
-description: How to write a rule or an agent rubric — frontmatter, glob forms, and how to verify either one actually loads.
-paths: ".claude/{rules,agents}/**/*.md"
+description: How to write a rule, an agent rubric or a skill — `paths:` globs, the pre-run block, and how to verify one actually runs.
+paths: ".claude/**/*.md"
 ---
 
-# Writing a rule or a rubric
+# Writing a rule, a rubric or a skill
 
-Both are markdown with YAML frontmatter, and both fail the same way: silently, by
-never being loaded at all. **Verifying that is the part that matters**, and the
-method at the bottom applies to either.
+Everything the harness loads from `.claude/` is markdown with YAML frontmatter, and
+each kind fails in a way you will not notice while writing it: a rule that never
+loads, a rubric that does not resolve as an agent type, a skill whose pre-run block
+is refused before its body is read. Only the rule fails in silence — the other two
+abort once something invokes them, which is late but audible. **Verifying is the part
+that matters.**
 
 ## Rules
 
@@ -41,7 +44,9 @@ Prefer a **directory-shaped** glob over a **content-shaped** one. Scoping to a
 subtree means a file nobody has written yet already matches; scoping to the files
 that currently exhibit a pattern means the rule loads where the convention is kept
 and stays silent in the new file about to break it. Every rule here is
-directory-shaped for that reason.
+directory-shaped for that reason, this file included: `.claude/**/*.md` rather than a
+brace set naming the kinds that exist, so a slash command — same pre-run fence as a
+skill — is covered before anyone writes one.
 
 ## Agent rubrics
 
@@ -61,6 +66,19 @@ Check what actually resolves before wiring a skill to a name:
 ```
 claude -p --model haiku "List ONLY the subagent_type values available to the Agent tool" < /dev/null
 ```
+
+## Skills
+
+A skill's body is instructions for the model. A `!`-prefixed fence is not: that block
+runs before the body reaches the model, and its output is substituted in.
+
+**Every line in a `!` block must be a literal command** — verified on the CLI version
+stamped above, and as version-dependent as the glob forms. The block is
+permission-checked as one string, so command substitution `$(…)` or a `$var` is
+refused outright rather than prompted — the invocation aborts with `Shell command
+permission check failed for pattern` and the body never runs. Keep those lines to
+commands `settings.json` already allowlists; anything needing interpolation belongs
+in the body, where it becomes an ordinary tool call that *can* prompt.
 
 ## Verify it actually loads
 
