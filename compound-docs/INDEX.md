@@ -21,7 +21,7 @@ first within their subsystem.
 
 **Backups & deployment** — [deployment & infrastructure](2026-04-19-v0.13.0-deployment.md) (Coolify, images, the original backup design) · [backup retention refinement](2026-06-16-v0.14.6-backup-refinement.md) (the three pools) · [quality-of-life upgrades](2026-07-27-v0.15.3-quality-of-life.md) (backup revision stamping and the composite `status`; the archival cadence as a **per-row window on the long-tail tier**, not a fifth tier; filter/score scoping)
 
-**Performance** — [performance baseline](2026-08-06-performance-baseline.md) (measured at prod catalogue scale; the reference point for **ratios and buffer counts** — it states that wall-clock is not portable across harnesses) · [efficiency improvements](2026-08-06-v0.15.4-efficiency-improvements.md) (running notes, self-marked as not yet a finished record)
+**Performance** — [performance baseline](2026-08-06-performance-baseline.md) (measured at prod catalogue scale; the reference point for **ratios and buffer counts** — it states that wall-clock is not portable across harnesses) · [efficiency improvements](2026-08-06-v0.15.4-efficiency-improvements.md) (applying the baseline's findings: the index/migration hygiene rules, the size-invariant search aggregate, the split embedding caches, and the ordering bug the projections exposed)
 
 **Ratings & watchlist** — [ratings backend](2026-04-04-v0.9.0-ratings-backend.md) · [media detail + rating UI](2026-04-05-v0.10.0-media-detail-rating-ui.md) · [ratings QoL](2026-06-22-v0.14.10-ratings-qol.md) (watch status, watch events) · [further QoL](2026-06-22-v0.14.11-further-qol.md) (detail-page polish: `score_top_percent`, genre tooltips, the rating-consistency helper) · [ratings page](2026-06-23-v0.14.12-ratings-page.md) · [watchlist](2026-07-23-v0.15.0-watchlist.md) · [ratings ↔ watchlist coupling](2026-07-26-v0.15.1-ratings-watchlist-coupling.md) · [shareable cards](2026-07-26-v0.15.2-shareable-rating-cards.md)
 
@@ -65,6 +65,6 @@ first within their subsystem.
 | 2026-07-26 | [v0.15.2 shareable cards](2026-07-26-v0.15.2-shareable-rating-cards.md) |
 | 2026-07-27 | [v0.15.3 quality-of-life upgrades](2026-07-27-v0.15.3-quality-of-life.md) |
 | 2026-08-06 | [performance baseline](2026-08-06-performance-baseline.md) |
-| 2026-08-06 | [v0.15.4 efficiency improvements](2026-08-06-v0.15.4-efficiency-improvements.md) |
 | 2026-08-11 | [Claude Code setup restructure](2026-08-11-claude-setup-restructure.md) |
 | 2026-08-12 | [Frontend docs restructure](2026-08-12-frontend-docs-restructure.md) |
+| 2026-08-13 | [v0.15.4 efficiency improvements](2026-08-06-v0.15.4-efficiency-improvements.md) |
