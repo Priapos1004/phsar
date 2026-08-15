@@ -29,6 +29,7 @@ def _job(
     user_id: int | None = None,
     not_before_at: datetime | None = None,
     payload: dict | None = None,
+    parent_job_id: int | None = None,
 ) -> Job:
     return Job(
         kind=kind,
@@ -36,6 +37,7 @@ def _job(
         requested_by_user_id=user_id,
         payload=payload or {},
         not_before_at=not_before_at,
+        parent_job_id=parent_job_id,
     )
 
 
@@ -147,3 +149,41 @@ async def test_mark_failed_truncates_long_error(db_session):
 
     assert job.status is JobStatus.failed
     assert len(job.error_message) == 2000
+
+
+@pytest.mark.asyncio
+async def test_admin_pagination_partitions_a_batch_tied_on_created_at(db_session):
+    """`recency_order`'s PK tiebreak, tested where its absence does real damage.
+
+    A seasonal sweep's children are the batch that ties — see `recency_order`
+    for why one transaction gives them all one `created_at`. They reach this
+    query through `parent_job_id`, since the default `roots_only` hides them,
+    so that is the branch paged here; it also scopes the read to this fixture,
+    which a dev database full of real jobs otherwise wouldn't be.
+
+    Paging is the point. An unpaginated listing of a tied batch can only come
+    back in some order; only LIMIT/OFFSET can drop a row or serve it twice.
+    """
+    batch, page_size = 6, 2
+    parent = _job(kind=JobKind.seasonal_sweep)
+    db_session.add(parent)
+    await db_session.flush()
+    children = [_job(parent_job_id=parent.id) for _ in range(batch)]
+    db_session.add_all(children)
+    await db_session.flush()
+    stamps = {j.created_at for j in children}
+    assert len(stamps) == 1, f"fixture no longer ties on created_at: {stamps}"
+
+    paged: list[int] = []
+    for offset in range(0, batch, page_size):
+        page, total = await dao.list_admin_paginated(
+            db_session, parent_job_id=parent.id, limit=page_size, offset=offset,
+        )
+        assert total == batch
+        paged.extend(j.id for j in page)
+
+    expected = sorted((j.id for j in children), reverse=True)
+    assert paged == expected, (
+        f"paging a tied batch did not walk it newest-id-first exactly once: "
+        f"{paged} vs {expected}"
+    )

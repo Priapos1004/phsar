@@ -11,23 +11,19 @@ import gzip
 import pytest
 
 from app.models.anime import Anime
-from app.models.media import Media, SeasonType
+from app.models.media import Media
 from app.services import backup_service
-from tests._helpers import media_kwargs
+from tests._helpers import SentinelSeason, media_kwargs
 
 GZIP_HEADERS = {"Accept-Encoding": "gzip"}
 
 # Mirrors `GZipMiddleware(minimum_size=...)` in main.py.
 _GZIP_MINIMUM_SIZE = 1000
 
-# A season no real catalogue entry carries, so the filtered response is the
-# fixture's rows and nothing else — the same bytes against CI's empty database
-# as against a populated dev one. Sizing the body from whatever the catalogue
-# happens to hold is what lets a gzip assertion go quietly vacuous.
+# 12 rows of one sentinel season put the body over `minimum_size` at a size that
+# doesn't depend on the catalogue — see `SentinelSeason`.
 _GZIP_ROW_COUNT = 12
-_GZIP_SEASON_YEAR = 1901
-_GZIP_SEASON = SeasonType.Winter
-_GZIP_SEASON_FILTER = f"{_GZIP_SEASON.value} {_GZIP_SEASON_YEAR}"
+_GZIP_SEASON = SentinelSeason(1901)
 
 
 @pytest.fixture
@@ -45,8 +41,7 @@ async def compressible_catalog(db_session):
         Media(**media_kwargs(
             anime.id, anime.mal_id,
             title=f"Compression Fixture Media {i}",
-            anime_season_name=_GZIP_SEASON,
-            anime_season_year=_GZIP_SEASON_YEAR,
+            **_GZIP_SEASON.columns,
         ))
         for i, anime in enumerate(animes)
     ])
@@ -61,7 +56,7 @@ async def _season_search(client, headers, accept_encoding):
     means anything unless that body clears `minimum_size`."""
     resp = await client.get(
         "/search/anime",
-        params={"anime_season": _GZIP_SEASON_FILTER},
+        params={"anime_season": _GZIP_SEASON.filter},
         headers={**headers, "Accept-Encoding": accept_encoding},
     )
     assert resp.status_code == 200, resp.text

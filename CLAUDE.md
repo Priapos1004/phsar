@@ -71,6 +71,11 @@ pytest
 pytest tests/routers/test_auth.py           # single file
 pytest tests/routers/test_auth.py::test_fn  # single test
 
+# To quieten the DEBUG spam, raise the level (--log-cli-level=WARNING). Never
+# with -p no:logging: caplog ships in the plugin that flag unloads, so the tests
+# taking it ERROR out. -q does not do it either — log_cli in pytest.ini forces
+# verbosity back on.
+
 # Database migrations
 alembic revision --autogenerate -m "Describe change"
 alembic upgrade head
