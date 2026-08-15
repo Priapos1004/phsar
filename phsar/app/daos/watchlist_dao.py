@@ -2,14 +2,19 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.daos.base_dao import BaseDAO
+from app.daos.base_dao import BaseDAO, recency_order
+from app.daos.media_projections import (
+    anime_identity_columns,
+    media_genre_names,
+    media_identity_columns,
+    media_studio_names,
+)
 from app.models.anime import Anime
 from app.models.media import Media
-from app.models.media_genre import MediaGenre
-from app.models.media_studio import MediaStudio
 from app.models.tag import Tag
 from app.models.watchlist import Watchlist
 
@@ -82,23 +87,56 @@ class WatchlistDAO(BaseDAO[Watchlist]):
         )
         return (await db.execute(stmt)).scalars().all()
 
-    async def get_all_for_items(self, db: AsyncSession, user_id: int) -> list[Watchlist]:
-        """All of a user's watchlist entries with media → anime + tag eager-loaded,
-        for the overview page's one-fetch list + grid. Ordered modified_at desc.
-        Also eager-loads genres + studios (only here, not the shared loader used by the
-        lookup methods) so the Statistics subtab derives top genres/studios off the same
-        fetch — mirrors RatingDAO.get_all_for_score_items."""
+    async def get_all_for_items(self, db: AsyncSession, user_id: int) -> list[Row]:
+        """All of a user's watchlist entries as a FLAT projection of scalars —
+        `Row`s, not ORM objects — backing the overview page's one-fetch list +
+        grid + Statistics subtab. Ordered modified_at desc
+        (`ix_watchlist_user_modified` covers the WHERE + ORDER BY on the driving
+        table).
+
+        Flat rather than `selectinload`ed: see `daos/media_projections` for why
+        these two endpoints project instead of eager-loading.
+
+        Every column is labelled to its `WatchlistItem` field name, which is what
+        lets the service build the DTO straight off `Row._mapping` — so this
+        projection IS the field list, and a rename here is a rename of the DTO
+        contract. (`Tag.uuid`/`Tag.name` collide with Media's and Anime's too, so
+        they carry `tag_*` labels for the same reason.)
+        """
+        media_scope = select(Watchlist.media_id).where(Watchlist.user_id == user_id)
+        genres = media_genre_names(media_scope)
+        studios = media_studio_names(media_scope)
         stmt = (
-            select(Watchlist)
-            .filter_by(user_id=user_id)
-            .options(
-                *self._eager_load_options(),  # media→anime + tag (shared with the lookups)
-                selectinload(Watchlist.media).selectinload(Media.media_genre).selectinload(MediaGenre.genre),
-                selectinload(Watchlist.media).selectinload(Media.media_studio).selectinload(MediaStudio.studio),
+            select(
+                Watchlist.uuid,
+                Watchlist.priority,
+                Watchlist.note,
+                Watchlist.created_at,
+                Watchlist.modified_at,
+                Tag.uuid.label("tag_uuid"),
+                Tag.name.label("tag_name"),
+                Tag.color.label("tag_color"),
+                *media_identity_columns(),
+                Media.relation_type,
+                Media.anime_season_name,
+                Media.anime_season_year,
+                Media.mal_id,
+                # The canonical hybrid, not raw episodes x duration — watchlist
+                # media are unwatched, so the full runtime IS the queued time.
+                Media.total_watch_time.label("total_watch_time"),
+                *anime_identity_columns(),
+                genres.c.genres,
+                studios.c.studios,
             )
-            .order_by(Watchlist.modified_at.desc())
+            .join(Tag, Tag.id == Watchlist.tag_id)
+            .join(Media, Media.id == Watchlist.media_id)
+            .join(Anime, Anime.id == Media.anime_id)
+            .outerjoin(genres, genres.c.media_id == Media.id)
+            .outerjoin(studios, studios.c.media_id == Media.id)
+            .where(Watchlist.user_id == user_id)
+            .order_by(*recency_order(Watchlist))
         )
-        return (await db.execute(stmt)).scalars().all()
+        return (await db.execute(stmt)).all()
 
     # --- All-users aggregates (admin Overview; no per-user breakdown) ---
 

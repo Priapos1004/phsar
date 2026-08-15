@@ -187,6 +187,7 @@
                             <div class="text-xs font-semibold uppercase text-muted-foreground tracking-wide">
                                 Source anime (will lose extracted clusters)
                             </div>
+                            <!-- Same-tab with a `curation` origin, as in MergeCandidatesCard. -->
                             <a
                                 href={buildDetailHref('anime', c.source_anime.uuid, { from: 'curation' })}
                                 class="text-sm font-medium text-card-foreground hover:text-primary transition block"

@@ -19,9 +19,8 @@ class ScrapeJobRequest(BaseModel):
     seeds directly from the given mal_id. The seasonal sweep uses this
     so children don't pull unrelated top-3 matches into the catalog;
     user-facing callers can still submit `{query}` only. A bare 5–6 digit
-    `query` is also treated as a direct mal_id at the router (MAL's fuzzy
-    search can't surface some shows by title) — see `_MAL_ID_QUERY` in the
-    /jobs router.
+    `query` is also treated as a direct mal_id — see `_MAL_ID_QUERY` in
+    `services/job_submission_service.py`.
     """
     query: str = Field(..., min_length=4, max_length=200)
     mal_id: int | None = Field(default=None, gt=0)
@@ -75,7 +74,14 @@ class AdminJobResponse(JobResponse):
 
 class AdminJobsPage(BaseModel):
     """Paginated response for GET /admin/jobs. `total` reflects the full
-    filter result; `items` is the current page."""
+    filter result; `items` is the current page.
+
+    Each item's `result_summary` is **projected**: the keys only the job
+    detail page renders are stripped, because they dominate an update_sweep
+    row and this endpoint is polled. A list row therefore carries the
+    counters and nothing built per-media — fetch `GET /admin/jobs/{uuid}`
+    for the whole summary. `LIST_OMITTED_SUMMARY_KEYS` in
+    `core/job_versions.py` is the list."""
     items: list[AdminJobResponse]
     total: int
     limit: int

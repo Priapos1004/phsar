@@ -251,10 +251,7 @@
 
 <Dialog.Root bind:open>
 	<Dialog.Content class="sm:max-w-md">
-		<!-- min-w-0: Dialog.Content's auto grid column is floored by its widest item's min-content
-		     width, so a long nowrap title widens the track and drags every sibling out past the
-		     panel with it. `truncate` can't stand in — overflow:hidden zeroes that floor only on
-		     a grid or flex item, which the Description is not. -->
+		<!-- min-w-0 required (see .claude/rules/frontend.md "Dialog children that cannot shrink"). -->
 		<Dialog.Header class="min-w-0">
 			<Dialog.Title>
 				{variant === 'rating' ? 'Share your rating' : `Share this ${noun}`}

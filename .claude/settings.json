@@ -27,9 +27,14 @@
       "Bash(gh issue list *)",
       "Bash(gh milestone list *)",
       "Bash(gh pr list *)",
+      "Bash(gh pr view:*)",
       "WebFetch(domain:shadcn-svelte.com)",
       "Bash(yes)",
       "Bash(sort *)",
+      "Bash(.claude/hooks/mark-reviewed.sh)",
+      "Bash(.claude/hooks/mark-pr-ready.sh)",
+      "Bash(.claude/hooks/test-gate.sh)",
+      "Bash(tree *)",
       "Bash(npx shadcn-svelte@latest add *)",
       "Bash(npx svelte-check:*)",
       "mcp__dev-browser__browser_navigate",
@@ -45,6 +50,20 @@
       "Bash(git reset --hard *)",
       "Bash(git checkout -- *)",
       "Bash(docker exec *)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/review-gate.sh",
+            "timeout": 240
+          }
+        ]
+      }
     ]
   }
 }

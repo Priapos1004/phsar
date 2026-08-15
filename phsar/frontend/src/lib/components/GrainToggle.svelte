@@ -1,6 +1,6 @@
 <script lang="ts">
-	// Shared anime/media grain pill for the ratings + watchlist filter bars (was two
-	// byte-identical inline copies). Presentational: the caller owns the source of truth
+	// Shared anime/media grain pill for the ratings + watchlist filter bars — one
+	// component so the two bars cannot drift. Presentational: the caller owns the truth
 	// via `grain` + `onSelect`. Lives on the DARK page surface (border-fill pills), so it's
 	// deliberately NOT the on-card SegmentedControl — same reasoning as the grid/table
 	// view pills next to it.

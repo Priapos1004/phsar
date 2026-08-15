@@ -15,6 +15,7 @@
 	import { userSettings } from '$lib/stores/userSettings';
 	import { refreshWatchlist } from '$lib/stores/watchlist';
 	import { pushToast } from '$lib/stores/toast';
+	import { invalidateRatingScores } from '$lib/stores/ratingScores';
 
 	interface Props {
 		open: boolean;
@@ -88,6 +89,7 @@
 
 		try {
 			const results = await api.put<RatingOut[]>('/ratings/bulk', payload);
+			invalidateRatingScores();
 			// Rating succeeded — optionally take the watchlisted subset off the watchlist.
 			// bulk-delete silently skips media not on the list, so the whole selection is safe.
 			if (alsoRemoveWatchlist && watchlistedCount > 0) {
@@ -116,9 +118,7 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		<!-- min-w-0: Dialog.Content is a CSS grid, whose items default to min-width:auto and
-		     refuse to shrink below a nowrap child (a long neighbor title) — this lets the
-		     inner truncate engage instead of overflowing the dialog. -->
+		<!-- min-w-0 required (see .claude/rules/frontend.md "Dialog children that cannot shrink"). -->
 		<div class="space-y-4 py-2 min-w-0">
 			{#if alreadyRatedCount > 0}
 				<div class="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">

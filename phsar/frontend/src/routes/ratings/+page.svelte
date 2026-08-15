@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { api, ApiError } from '$lib/api';
+	import { ApiError } from '$lib/api';
+	import { ensureRatingScores } from '$lib/stores/ratingScores';
 	import { userSettings } from '$lib/stores/userSettings';
 	import type { RatingScoreItem } from '$lib/types/api';
 	import type { RatingsTabKey } from '$lib/components/ratings/types';
@@ -36,7 +37,7 @@
 		error = '';
 		unauthenticated = false;
 		try {
-			items = await api.get<RatingScoreItem[]>('/ratings/scores');
+			items = await ensureRatingScores();
 		} catch (e) {
 			if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
 				unauthenticated = true;

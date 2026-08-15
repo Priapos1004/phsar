@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.daos.base_dao import BaseDAO
+from app.daos.base_dao import BaseDAO, recency_order
 from app.models.anime import Anime
 from app.models.media import Media
 from app.models.media_studio import MediaStudio
@@ -58,9 +58,14 @@ class SplitCandidateDAO(BaseDAO[SplitCandidate]):
         """Pending candidates with the source anime + media + relation-edge
         sidecars + media studios eager-loaded (one roundtrip): admin needs media
         titles/types/sidecars (cluster previews) AND studios (source summary).
-        FIFO by created_at."""
+        FIFO by created_at, with the PK tiebreak that makes it actually first-in:
+        the backfill inserts the whole initial set in one transaction, so every
+        row shares a `created_at` and the queue would otherwise reshuffle between
+        refreshes and lose the reviewer's place."""
         return await self._list_with_anime(
-            db, SplitCandidateStatus.pending, SplitCandidate.created_at.asc()
+            db,
+            SplitCandidateStatus.pending,
+            (SplitCandidate.created_at.asc(), SplitCandidate.id.asc()),
         )
 
     async def list_dismissed_with_anime(
@@ -71,17 +76,21 @@ class SplitCandidateDAO(BaseDAO[SplitCandidate]):
         `BaseDAO.delete`) clears the sticky-dismissal history in
         `upsert_pending`, so re-detection resurfaces it."""
         return await self._list_with_anime(
-            db, SplitCandidateStatus.dismissed, SplitCandidate.modified_at.desc()
+            db, SplitCandidateStatus.dismissed, recency_order(SplitCandidate)
         )
 
     async def _list_with_anime(
         self,
         db: AsyncSession,
         status: SplitCandidateStatus,
-        order_by: ColumnExpressionArgument,
+        order_by: tuple[ColumnExpressionArgument, ...],
     ) -> list[SplitCandidate]:
         """Shared query for the pending + dismissed lists — same eager-load,
-        differ only in status filter + ordering."""
+        differ only in status filter + ordering.
+
+        A tuple, so the dismissed list can pass `recency_order`'s pair: a bulk
+        dismissal flips several candidates in one transaction and gives them one
+        `modified_at`."""
         media_loader = selectinload(Anime.media).options(
             selectinload(Media.relation_edges),
             selectinload(Media.media_studio).selectinload(MediaStudio.studio),
@@ -90,7 +99,7 @@ class SplitCandidateDAO(BaseDAO[SplitCandidate]):
             select(SplitCandidate)
             .where(SplitCandidate.status == status)
             .options(selectinload(SplitCandidate.anime).options(media_loader))
-            .order_by(order_by)
+            .order_by(*order_by)
         )
         return list((await db.execute(stmt)).scalars().all())
 

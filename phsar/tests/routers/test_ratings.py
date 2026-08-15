@@ -736,3 +736,14 @@ async def test_spoiler_visibility_updates_after_rating(client, user_auth_headers
 async def test_spoiler_visibility_unauthenticated(client):
     resp = await client.get("/ratings/spoiler-visibility")
     assert resp.status_code == 401
+
+
+async def test_spoiler_visibility_forbidden_for_restricted_user(
+    client, restricted_user_auth_headers,
+):
+    """403 rather than an empty set: restricted users are excluded from the
+    visibility cache, so answering would return zero visible media."""
+    resp = await client.get(
+        "/ratings/spoiler-visibility", headers=restricted_user_auth_headers,
+    )
+    assert resp.status_code == 403

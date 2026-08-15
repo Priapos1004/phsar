@@ -9,6 +9,33 @@ from app.exceptions import FieldDoesNotExistError, NonNumericFieldError
 
 T = TypeVar("T", bound=DeclarativeMeta)  # any SQLAlchemy model
 
+
+def recency_order(model, column: str = "modified_at") -> tuple:
+    """`(<column> DESC, id DESC)` — newest-first WITH a primary-key tiebreak.
+
+    Every newest-first ordering needs the tiebreak, because the timestamps tie by
+    construction, not by coincidence: a bulk rate stamps one `modified_at` across
+    every media in an anime, and a seasonal sweep bulk-inserts hundreds of child
+    jobs in one transaction, so `server_default=func.now()` gives them all the
+    same `created_at`.
+
+    Without a tiebreak the consequences differ by query but are never benign. An
+    unpaginated list reshuffles tied rows between identical requests. A
+    *paginated* one is worse: the sort is free to place a tied row differently
+    per page fetch, so the same row can appear on page 1 and again on page 2 —
+    or be skipped entirely.
+
+    Pass `column="created_at"` for insertion-ordered listings.
+
+    The tie argument is direction-agnostic: an ascending FIFO listing needs the
+    same tiebreak, because a backfill that inserts a whole set in one transaction
+    gives every row the same `created_at`. Those pass `(col.asc(), id.asc())`
+    directly rather than through here, since this helper is newest-first by name
+    and by default. The one ordering entitled to skip it is a queue claim, where
+    any tied row is an equally good pick.
+    """
+    return (getattr(model, column).desc(), model.id.desc())
+
 class BaseDAO(Generic[T]):
     def __init__(self, model: type[T]):
         self.model = model
@@ -71,47 +98,25 @@ class BaseDAO(Generic[T]):
         result = await db.execute(stmt)
         return [tuple(row) for row in result.fetchall()]
     
-    async def get_field_stats(self, db: AsyncSession, field_name: str) -> dict:
+    async def get_min_max(self, db: AsyncSession, field_name: str) -> tuple:
+        """The (min, max) bounds of a numeric field — one query, two aggregates.
+
+        Kept deliberately narrow rather than routed through a general
+        "field stats" helper: the sole caller is the filter-slider bounds in
+        `filter_service`, which reads exactly these two values, and computing
+        avg/stddev/median alongside costs a second query per field (the
+        `percentile_cont` median needs its own sort) for numbers nothing reads —
+        four such per `/filters/options?view_type=media`. Add other statistics
+        only together with a caller that reads them.
+
+        `hasattr` as well as `mapper.columns`, so a hybrid with a SQL expression
+        (`Media.total_watch_time`) resolves — the media filter bounds need it.
         """
-        Get min, max, avg, stddev, median for a numeric field.
-        Raises NonNumericFieldError if the field is not numeric.
-        """
-        mapper = inspect(self.model)
-        if field_name not in mapper.columns and not hasattr(self.model, field_name):
+        if field_name not in inspect(self.model).columns and not hasattr(self.model, field_name):
             raise FieldDoesNotExistError(field_name, self.model.__name__)
-
         field = getattr(self.model, field_name)
-        field_type = type(field.type)
-
-        if field_type not in (Integer, Float, Numeric):
+        if type(field.type) not in (Integer, Float, Numeric):
             raise NonNumericFieldError(field_name)
 
-        # min, max, avg, stddev
-        stats_stmt = select(
-            func.min(field),
-            func.max(field),
-            func.avg(field),
-            func.stddev_pop(field)
-        )
-        result = await db.execute(stats_stmt)
-        row = result.one_or_none()
-
-        # median (Postgres)
-        median_stmt = select(
-            func.percentile_cont(0.5).within_group(field)
-        )
-        median_result = await db.execute(median_stmt)
-        median_row = median_result.one_or_none()
-        median_value = median_row[0] if median_row else None
-
-        return {
-            'min': row[0],
-            'max': row[1],
-            'avg': row[2],
-            'stddev': row[3],
-            'median': median_value
-        }
-    
-    async def get_min_max(self, db: AsyncSession, field_name: str) -> tuple:
-        stats = await self.get_field_stats(db, field_name)
-        return stats['min'], stats['max']
+        row = (await db.execute(select(func.min(field), func.max(field)))).one()
+        return row[0], row[1]

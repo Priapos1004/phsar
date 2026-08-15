@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy import select
 
 from app.core.config import settings
+from app.core.job_versions import LIST_OMITTED_SUMMARY_KEYS
 from app.models.anime import Anime
 from app.models.job import Job, JobKind, JobStatus
 from app.models.media import Media
@@ -744,6 +745,94 @@ async def test_admin_get_job_returns_admin_shape(client, admin_auth_headers, db_
     assert data["parent_job_uuid"] == str(parent.uuid)
     assert "requested_by_username" in data
     assert "version" in data
+
+
+def _sweep_summary() -> dict:
+    """An update_sweep result_summary carrying one entry in each of the
+    detail-only arrays plus the scalars the Jobs Log list renders."""
+    return {
+        "counters": {"media_refreshed": 3, "step1_failed": 1},
+        "unknown_genre_tags": ["Iyashikei"],
+        "media_changes": [{"media_uuid": "m", "dynamic": [], "static": []}],
+        "anime_umbrella_changes": [{"anime_uuid": "a", "dynamic": []}],
+        "step1_failures": [{"anime_uuid": "a", "error_message": "boom"}],
+        "probe_failures": [{"anime_uuid": "a", "error_message": "boom"}],
+        "probe_attached_anime": [{"anime_uuid": "a", "media": []}],
+        "hentai_removed": [{"anime_uuid": "a", "mal_ids": [1]}],
+    }
+
+
+@pytest.mark.asyncio
+async def test_admin_jobs_list_projects_summary_but_detail_does_not(
+    client, admin_auth_headers, db_session,
+):
+    """The list strips the detail-only arrays; the detail endpoint the
+    projection exists to serve returns them whole.
+
+    Both halves assert against the SAME row on purpose — either alone
+    passes vacuously, since "key absent from the list" is also true of a
+    row that never had the key."""
+    job = Job(
+        kind=JobKind.update_sweep, status=JobStatus.succeeded,
+        payload={"source": "cron"}, result_summary=_sweep_summary(),
+    )
+    db_session.add(job)
+    await db_session.flush()
+
+    listed = (await client.get(
+        f"{JOBS_LOG_URL}?kind=update_sweep", headers=admin_auth_headers,
+    )).json()
+    row = next(r for r in listed["items"] if r["uuid"] == str(job.uuid))
+    # Per key, so adding one to LIST_OMITTED_SUMMARY_KEYS without seeding
+    # it in _sweep_summary is the only way this drifts.
+    for key in LIST_OMITTED_SUMMARY_KEYS:
+        assert key not in row["result_summary"], key
+    # The scalars the list actually renders survive the projection.
+    assert row["result_summary"]["counters"]["media_refreshed"] == 3
+    assert row["result_summary"]["unknown_genre_tags"] == ["Iyashikei"]
+
+    detail = (await client.get(
+        f"{JOBS_LOG_URL}/{job.uuid}", headers=admin_auth_headers,
+    )).json()
+    assert detail["result_summary"] == _sweep_summary()
+
+
+@pytest.mark.asyncio
+async def test_admin_jobs_log_leaves_other_kinds_summaries_intact(
+    client, admin_auth_headers, db_session,
+):
+    """The denylist is update_sweep-shaped, but it is applied to every row
+    (a `jsonb - text[]` is a no-op for absent keys). A backup row must come
+    back whole — the list reads filename/size_bytes off it."""
+    job = Job(
+        kind=JobKind.backup, status=JobStatus.succeeded, payload={"source": "manual"},
+        result_summary={"filename": "phsar-2026-08-12.dump", "size_bytes": 1234},
+    )
+    db_session.add(job)
+    await db_session.flush()
+
+    data = (await client.get(
+        f"{JOBS_LOG_URL}?kind=backup", headers=admin_auth_headers,
+    )).json()
+    row = next(r for r in data["items"] if r["uuid"] == str(job.uuid))
+    assert row["result_summary"] == {
+        "filename": "phsar-2026-08-12.dump", "size_bytes": 1234,
+    }
+
+
+@pytest.mark.asyncio
+async def test_admin_jobs_log_handles_null_summary(client, admin_auth_headers, db_session):
+    """`NULL - text[]` is NULL in Postgres, not an error — a queued row
+    that has no summary yet must still list."""
+    job = Job(kind=JobKind.update_sweep, status=JobStatus.queued, payload={})
+    db_session.add(job)
+    await db_session.flush()
+
+    data = (await client.get(
+        f"{JOBS_LOG_URL}?status=queued", headers=admin_auth_headers,
+    )).json()
+    row = next(r for r in data["items"] if r["uuid"] == str(job.uuid))
+    assert row["result_summary"] is None
 
 
 @pytest.mark.asyncio

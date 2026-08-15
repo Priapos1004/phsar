@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import * as Card from '$lib/components/ui/card';
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Button } from '$lib/components/ui/button';
@@ -12,7 +13,7 @@
 	import { tags, refreshTags } from '$lib/stores/tags';
 	import { refreshWatchlist } from '$lib/stores/watchlist';
 	import { pushToast } from '$lib/stores/toast';
-	import { DEFAULT_NEW_TAG_COLOR } from '$lib/utils/watchlist';
+	import { defaultNewTagColor } from '$lib/utils/watchlist';
 	import * as cls from '$lib/styles/classes';
 	import type { Tag } from '$lib/types/api';
 
@@ -24,9 +25,15 @@
 
 	let { onEntriesChanged }: Props = $props();
 
+	// This tab renders Tag.entry_count / anime_count, which go stale as the user
+	// adds and removes watchlist entries elsewhere. It mounts on demand, so
+	// refreshing here costs one small query only when the counts are on screen —
+	// rather than on every /watchlist visit, most of which never open this tab.
+	onMount(refreshTags);
+
 	// Create
 	let newName = $state('');
-	let newColor = $state(DEFAULT_NEW_TAG_COLOR);
+	let newColor = $state(defaultNewTagColor());
 	let creating = $state(false);
 	let createError = $state('');
 
@@ -70,7 +77,7 @@
 			await refreshTags();
 			pushToast('List created', 'success');
 			newName = '';
-			newColor = DEFAULT_NEW_TAG_COLOR;
+			newColor = defaultNewTagColor();
 		} catch (err) {
 			createError = errText(err, 'Failed to create list');
 		} finally {

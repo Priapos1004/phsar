@@ -10,12 +10,12 @@
 	}
 	let { animeTiers, mediaTiers }: Props = $props();
 
-	// v0.14.8: refresh selection went media-level, but the cadence-membership
-	// view is useful at both grains — anime ("where does each umbrella sit")
-	// and media ("which rows actually drive nightly refresh"). Toggle, default
-	// anime to preserve the prior view. Membership, not due-ness: each count is
-	// where a row *sits* in the cycle, a stable trait, so rows don't empty
-	// themselves the moment a nightly sweep refreshes their members.
+	// Refresh selection happens at media level, but the cadence-membership view is
+	// worth having at both grains — anime answers "where does each umbrella sit"
+	// and media "which rows actually drive nightly refresh". Anime is the default
+	// because it is the coarser, more orienting read. Membership, not due-ness:
+	// each count is where a row *sits* in the cycle, a stable trait, so rows don't
+	// empty themselves the moment a nightly sweep refreshes their members.
 	let mode = $state<'anime' | 'media'>('anime');
 	let tiers = $derived(mode === 'anime' ? animeTiers : mediaTiers);
 
@@ -30,17 +30,28 @@
 	);
 	let stabilizeThreshold = $derived(stabilizingBreakdown.length);
 
-	// Display buckets map 1:1 to the backend's 4 mutually-exclusive
-	// cycle-membership tiers (priority cascade). The stabilizing tier renders
-	// the per-check sub-rows below. Tooltips paraphrase each predicate; the
-	// stabilize (< threshold sweeps) and long-cycle (90/180-day) borders are
-	// shared by both grains.
-	const ROWS: {
-		key: 'airing_now' | 'stabilizing' | 'weekly_cycle' | 'long_cycle' | 'archival_cycle';
-		label: string;
-		color: string;
-		tooltip: (mode: 'anime' | 'media') => string;
-	}[] = [
+	// Display buckets map 1:1 to the backend's mutually-exclusive cycle-membership
+	// tiers (priority cascade). The stabilizing tier renders the per-check sub-rows
+	// below. Tooltips paraphrase each predicate; the stabilize (< threshold sweeps)
+	// and long-cycle (90/180-day) borders are shared by both grains.
+	//
+	// These are NOT the due-ness tiers in docs/features/jobs.md, which answer
+	// "what does tonight's sweep pick up" and deliberately treat the long tail
+	// as a per-row window rather than a tier. Cycle *membership* is a stable
+	// trait, which is what makes these counts hold still between sweeps.
+	//
+	// `total` below sums this array alone while the header claims the buckets sum
+	// to the catalogue, so omitting a tier would understate the catalogue and
+	// renormalise every bar — consistently, and therefore invisibly. `TierKey` is
+	// derived from `AdminSweepTierBreakdown` and checked for exhaustiveness below.
+	// That mirror is hand-maintained against the Pydantic schema, so this catches
+	// the likely half — a tier added to the mirror but not rendered here. A tier
+	// that never reaches the mirror is still invisible.
+	type TierKey = Exclude<keyof AdminSweepTierBreakdown, 'stabilizing_by_check'>;
+	// `satisfies` rather than a type annotation: it type-checks each row while
+	// keeping `key` narrowed to its literal, which is what the check below reads.
+	// Under an annotation the Exclude collapses to `never` and passes vacuously.
+	const ROWS = [
 		{
 			key: 'airing_now',
 			label: 'Airing now',
@@ -88,7 +99,17 @@
 					? 'Every media premiered over a decade ago — MAL metadata has effectively frozen, so the whole franchise sits on the slower 180-day net.'
 					: 'Premiered over a decade ago — MAL metadata has effectively frozen, so it sits on the slower 180-day net.',
 		},
-	];
+	] satisfies {
+		key: TierKey;
+		label: string;
+		color: string;
+		tooltip: (mode: 'anime' | 'media') => string;
+	}[];
+
+	// Fails to compile if the backend grows a tier `ROWS` does not render: the
+	// Exclude is then a non-empty union, which cannot satisfy `extends never`.
+	type AssertNoTierMissing<T extends never> = T;
+	type _AllTiersRendered = AssertNoTierMissing<Exclude<TierKey, (typeof ROWS)[number]['key']>>;
 
 	let total = $derived(ROWS.reduce((acc, row) => acc + (tiers[row.key] ?? 0), 0));
 </script>

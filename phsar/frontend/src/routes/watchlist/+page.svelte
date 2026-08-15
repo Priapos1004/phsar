@@ -2,8 +2,8 @@
 	import { onMount, getContext } from 'svelte';
 	import { page } from '$app/state';
 	import { api, ApiError } from '$lib/api';
+	import { ensureRatingScores } from '$lib/stores/ratingScores';
 	import { userSettings } from '$lib/stores/userSettings';
-	import { refreshTags } from '$lib/stores/tags';
 	import type { WatchlistItem, RatingScoreItem } from '$lib/types/api';
 	import type { WatchlistTabKey } from '$lib/stores/watchlistFilter';
 	import { watchlistSummary, type WatchlistSummary } from '$lib/utils/watchlistStats';
@@ -41,9 +41,10 @@
 		error = '';
 		unauthenticated = false;
 		try {
-			// Refresh tags too so the Lists tab + the filter chips reflect current counts.
-			const [fetched] = await Promise.all([api.get<WatchlistItem[]>('/watchlist/items'), refreshTags()]);
-			items = fetched;
+			// Tags are NOT refetched here — the Lists tab refreshes the counts it
+			// renders on its own mount (see WatchlistTagsTab). Login populated the
+			// store, and the filter chips read only name + color.
+			items = await api.get<WatchlistItem[]>('/watchlist/items');
 		} catch (e) {
 			if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
 				unauthenticated = true;
@@ -72,7 +73,7 @@
 		if (statsRequested) return;
 		statsRequested = true;
 		try {
-			const scores = await api.get<RatingScoreItem[]>('/ratings/scores');
+			const scores = await ensureRatingScores();
 			rated = scores.map((s) => ({ media_uuid: s.media_uuid, anime_uuid: s.anime_uuid }));
 		} catch {
 			// The rated/continuation figures need ratings; on failure show 0 for them (rated = [])

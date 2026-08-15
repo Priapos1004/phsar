@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { api, ApiError } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
@@ -12,6 +13,18 @@
 	import { hentaiRemoved, payloadSummary, probeAttachedMedia, rowTintClass, unknownGenreTags } from '$lib/utils/jobSummary';
 	import { jobsFilter, sanitizeKind, sanitizeStatus } from '$lib/stores/adminJobsFilter';
 	import type { AdminJobResponse, AdminJobsPage, JobKind, JobStatus } from '$lib/types/api';
+
+	// The admin page eager-mounts every tab, so this component keeps running
+	// while hidden. `visible` is what stops the timers below from polling on
+	// behalf of a tab nobody is on. The initial + filter fetch stays ungated
+	// on purpose — that one-off is what buys the instant tab switch the admin
+	// page mounts eagerly for; a repeating request is not covered by that trade.
+	//
+	// It tracks the ADMIN tab only, not the browser tab: parked on Jobs Log in
+	// a backgrounded window, this still polls (throttled by the browser, never
+	// stopped). Closing that axis wants a shared document-visibility primitive
+	// and should take JobBell with it, which polls on every page.
+	let { visible = true }: { visible?: boolean } = $props();
 
 	const PAGE_SIZE = 50;
 
@@ -41,6 +54,12 @@
 	// Monotonic request id — a rapid filter-then-page click would let the
 	// older response overwrite the newer one without this guard.
 	let loadRequestId = 0;
+	// When the last request went out, so the catch-up fetch below can tell a
+	// detour that actually missed a poll tick from one that didn't. Plain
+	// `let`, not `$state`: only ever read inside an effect that already
+	// re-runs on its own dependencies, and making it reactive would retrigger
+	// that effect on every load.
+	let lastLoadStartedAt = 0;
 
 	let totalPages = $derived(page ? Math.max(1, Math.ceil(page.total / PAGE_SIZE)) : 1);
 	let currentPage = $derived(Math.floor(offset / PAGE_SIZE) + 1);
@@ -51,6 +70,7 @@
 	// fresh rows on success (same idea as BackupsCard's silent refresh).
 	async function load(silent = false) {
 		const thisRequest = ++loadRequestId;
+		lastLoadStartedAt = Date.now();
 		if (!silent) {
 			loading = true;
 			error = '';
@@ -152,7 +172,7 @@
 		);
 	});
 	$effect(() => {
-		if (!hasRunning) return;
+		if (!hasRunning || !visible) return;
 		const id = setInterval(() => (now = Date.now()), 1000);
 		return () => clearInterval(id);
 	});
@@ -169,8 +189,19 @@
 	// `hasRunning` flips, swapping the interval delay.
 	// (Expanded seasonal-sweep children aren't live-refreshed — the top-level
 	// list is the reported case.)
+	// Runs only while this is the visible tab — see the `visible` prop above.
+	//
+	// Returning to the tab catches up on the ticks the stopped poll missed,
+	// rather than waiting out a fresh interval on a list that is as stale as
+	// the detour was long. Gated on elapsed time, not on the transition
+	// itself: flicking through tabs would otherwise fetch on every return and
+	// cost MORE than the ungated poll this replaced. `untrack` because
+	// `load()` reads offset and the filters — tracking them here would tear
+	// down and restart the interval on every page change.
 	$effect(() => {
+		if (!visible) return;
 		const delay = hasRunning ? 3000 : 30000;
+		if (Date.now() - lastLoadStartedAt >= delay) untrack(() => load(true));
 		const id = setInterval(() => void load(true), delay);
 		return () => clearInterval(id);
 	});

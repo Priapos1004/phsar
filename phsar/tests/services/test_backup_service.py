@@ -14,7 +14,6 @@ import pytest
 from fastapi import UploadFile
 from sqlalchemy import text
 
-from app.core.config import settings
 from app.core.db import async_session_maker
 from app.exceptions import DuplicateBackupError
 from app.models.job import Job, JobKind, JobStatus
@@ -27,12 +26,6 @@ from app.schemas.backup_schema import (
 from app.services import backup_service
 from app.services._pg_subprocess import run_capture
 from app.services.backup_service import _backup_status
-
-
-@pytest.fixture
-def backup_dir(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "BACKUP_DIR", str(tmp_path))
-    return tmp_path
 
 
 async def test_content_hash_stable_across_invocations(backup_dir):

@@ -12,11 +12,11 @@
 	 */
 	import { onMount } from 'svelte';
 	import { get } from 'svelte/store';
-	import { jwtDecode } from 'jwt-decode';
 	import { token } from '$lib/stores/auth';
 	import { api, ApiError } from '$lib/api';
 	import {
 		evaluateSession,
+		expFromToken,
 		formatCountdown,
 		TICK_MS,
 	} from '$lib/utils/sessionTimeout';
@@ -72,17 +72,10 @@
 		const value = get(token);
 		if (!value) return;
 
-		// A malformed token decodes to undefined exp → evaluateSession returns
-		// 'logout', so the dead-session path is handled by the one branch below.
-		let exp: number | undefined;
-		try {
-			exp = jwtDecode<{ exp?: number }>(value).exp;
-		} catch {
-			exp = undefined;
-		}
-
+		// A malformed token yields undefined exp → evaluateSession returns 'logout',
+		// so the dead-session path is handled by the one branch below.
 		const { action, remainingMs } = evaluateSession({
-			exp,
+			exp: expFromToken(value),
 			now: Date.now(),
 			lastActivity,
 		});

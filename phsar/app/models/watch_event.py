@@ -7,7 +7,8 @@ as COUNT(events), never denormalized onto Ratings.
 
 `watched_at` is the event timestamp (kept distinct from BaseModel.created_at so a
 backfilled or back-dated event can carry its real watch date) — it's what future
-time-series forecasting of watch behaviour reads.
+time-series forecasting of watch behaviour would read. Nothing reads it yet, hence
+no index on it — see below.
 
 Both FKs are ON DELETE CASCADE so account deletion / media removal clean up at the
 DB level; deleting a *rating* does NOT touch events unless the user opts in (see
@@ -30,7 +31,8 @@ class WatchEvent(BaseModel):
     watched_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
-# (user_id, media_id) drives the derived watched_count lookups; watched_at drives
-# the time-series reads.
+# (user_id, media_id) drives the derived watched_count lookups — the only shape
+# `WatchEventDAO` queries by. `watched_at` is deliberately UNindexed: no reader
+# orders or ranges on it (the time-series analysis it exists for isn't built),
+# and an index on an append-only log's timestamp is write cost for nothing.
 Index("ix_watch_events_user_media", WatchEvent.user_id, WatchEvent.media_id)
-Index("ix_watch_events_watched_at", WatchEvent.watched_at)

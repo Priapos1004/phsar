@@ -14,7 +14,9 @@ if (browser) {
       localStorage.removeItem('token');
       // sessionStorage survives a hard nav inside the same tab, so without
       // this every logout-and-back-in path keeps the previous session's
-      // bell timestamp + seen-uuids set.
+      // bell timestamp + seen-uuids set. The per-USER stores (watchlist, tags,
+      // filters) are cleared by the root layout's own token subscriber, which
+      // sees this same transition — see clearPerUserStores there.
       clearBellSession();
     }
   });

@@ -22,6 +22,7 @@
 	import { pushToast } from '$lib/stores/toast';
 	import * as cls from '$lib/styles/classes';
 	import { ChevronDown, ChevronUp, Star, Pencil, Trash2, RotateCcw } from 'lucide-svelte';
+	import { invalidateRatingScores } from '$lib/stores/ratingScores';
 
 	interface Props {
 		mediaUuid: string;
@@ -233,6 +234,7 @@
 		try {
 			const qs = deleteWatchHistory ? '?delete_watch_history=true' : '';
 			const result = await api.put<RatingOut>(`/ratings/media/${mediaUuid}${qs}`, payload);
+			invalidateRatingScores();
 			onSaved(result);
 			editing = false;
 			downgradeOpen = false;
@@ -273,6 +275,7 @@
 		try {
 			const qs = deleteHistory ? '?delete_watch_history=true' : '';
 			await api.del(`/ratings/${existingRating.uuid}${qs}`);
+			invalidateRatingScores();
 			onDeleted();
 			editing = false;
 			deleteOpen = false;
@@ -290,6 +293,7 @@
 
 		try {
 			const updated = await api.post<RatingOut>(`/ratings/${existingRating.uuid}/rewatch`, {});
+			invalidateRatingScores();
 			onSaved(updated);
 			rewatchOpen = false;
 			// A rewatch is always a fresh watch — honor the dialog's inline box (default on).

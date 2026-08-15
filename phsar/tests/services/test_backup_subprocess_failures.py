@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-from app.core.config import settings
 from app.exceptions import BackupIntegrityError, BackupRestoreError
 from app.schemas.backup_schema import BackupIntegrity, BackupSource
 from app.services import _pg_subprocess, backup_service
@@ -50,12 +49,6 @@ def _patch_runner(monkeypatch, process: _FakeProcess) -> None:
     async def _fake_runner(*_args, **_kwargs):
         return process
     monkeypatch.setattr(_pg_subprocess, "_default_runner", _fake_runner)
-
-
-@pytest.fixture
-def backup_dir(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "BACKUP_DIR", str(tmp_path))
-    return tmp_path
 
 
 async def test_pg_dump_nonzero_raises_integrity_and_unlinks_partial(backup_dir, monkeypatch):

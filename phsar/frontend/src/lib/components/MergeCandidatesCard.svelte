@@ -210,6 +210,11 @@
                                     <div class="text-xs font-semibold uppercase text-muted-foreground tracking-wide">
                                         Anime {i === 0 ? 'A (kept)' : 'B (merged in)'}
                                     </div>
+                                    <!-- Same tab, carrying a `curation` origin, so verifying a pair
+                                         returns to this list via "Back to curation" — the list is
+                                         short, so there is no scroll position to lose. The
+                                         job-detail change cards open a new tab instead and argue
+                                         that at their own link. -->
                                     <a
                                         href={buildDetailHref('anime', anime.uuid, { from: 'curation' })}
                                         class="text-sm font-medium text-card-foreground hover:text-primary transition block"

@@ -31,6 +31,7 @@ phsar/
 │   │   ├── genre_dao.py
 │   │   ├── job_dao.py
 │   │   ├── media_dao.py
+│   │   ├── media_projections.py
 │   │   ├── media_unwanted_dao.py
 │   │   ├── merge_candidate_dao.py
 │   │   ├── rating_dao.py
@@ -128,6 +129,7 @@ phsar/
 │       ├── completion_service.py
 │       ├── export_service.py
 │       ├── filter_service.py
+│       ├── job_submission_service.py
 │       ├── job_worker.py
 │       ├── mal_scraper.py
 │       ├── media_linking_service.py
@@ -283,9 +285,12 @@ phsar/
 │   │   │   │   ├── adminJobsFilter.ts
 │   │   │   │   ├── auth.ts
 │   │   │   │   ├── bell-session.ts
+│   │   │   │   ├── filterOptions.ts
 │   │   │   │   ├── genres.ts
 │   │   │   │   ├── jobs.ts
 │   │   │   │   ├── maintenance.ts
+│   │   │   │   ├── persistedFilter.ts
+│   │   │   │   ├── ratingScores.ts
 │   │   │   │   ├── ratingsFilter.ts
 │   │   │   │   ├── spoilerVisibility.ts
 │   │   │   │   ├── tags.ts
@@ -304,6 +309,7 @@ phsar/
 │   │   │       ├── cn.ts
 │   │   │       ├── color.ts
 │   │   │       ├── download.ts
+│   │   │       ├── filterLifecycle.ts
 │   │   │       ├── formatString.ts
 │   │   │       ├── getSeason.ts
 │   │   │       ├── index.ts
@@ -327,7 +333,6 @@ phsar/
 │   │   │   ├── +layout.ts
 │   │   │   ├── +page.svelte
 │   │   │   ├── admin/
-│   │   │   │   ├── +layout.svelte
 │   │   │   │   ├── +page.svelte
 │   │   │   │   └── jobs/
 │   │   │   │       └── [uuid]/
@@ -344,7 +349,6 @@ phsar/
 │   │   │   ├── media/
 │   │   │   │   └── +page.svelte
 │   │   │   ├── ratings/
-│   │   │   │   ├── +layout.svelte
 │   │   │   │   └── +page.svelte
 │   │   │   ├── register/
 │   │   │   │   └── +page.svelte
@@ -353,12 +357,12 @@ phsar/
 │   │   │   ├── settings/
 │   │   │   │   └── +page.svelte
 │   │   │   └── watchlist/
-│   │   │       ├── +layout.svelte
 │   │   │       └── +page.svelte
 │   │   └── tests/
 │   │       ├── setup.ts
 │   │       ├── SpoilerGuardTest.svelte
 │   │       ├── admin-jobs-filter.test.ts
+│   │       ├── admin-jobs-poll.test.ts
 │   │       ├── api-download.test.ts
 │   │       ├── auth-store.test.ts
 │   │       ├── backup-status.test.ts
@@ -366,11 +370,13 @@ phsar/
 │   │       ├── chart-theme.test.ts
 │   │       ├── color.test.ts
 │   │       ├── completion-status-card.test.ts
+│   │       ├── filter-lifecycle.test.ts
 │   │       ├── format-string.test.ts
 │   │       ├── genre-badges.test.ts
 │   │       ├── job-bell.test.ts
 │   │       ├── job-detail-counters.test.ts
 │   │       ├── job-summary.test.ts
+│   │       ├── layout-guard.test.ts
 │   │       ├── library-add.test.ts
 │   │       ├── login.test.ts
 │   │       ├── maintenance-banner.test.ts
@@ -379,9 +385,11 @@ phsar/
 │   │       ├── merge-candidates-card.test.ts
 │   │       ├── navbar.test.ts
 │   │       ├── navigation.test.ts
+│   │       ├── persisted-filter.test.ts
 │   │       ├── rating-attributes.test.ts
 │   │       ├── rating-modal.test.ts
 │   │       ├── rating-neighbors.test.ts
+│   │       ├── rating-scores-store.test.ts
 │   │       ├── rating-stats.test.ts
 │   │       ├── searchbar.test.ts
 │   │       ├── segmented-control.test.ts
@@ -435,6 +443,7 @@ phsar/
     │   ├── test_admin_sweep.py
     │   ├── test_anime_detail.py
     │   ├── test_auth.py
+    │   ├── test_compression.py
     │   ├── test_filters_genres.py
     │   ├── test_filters_options.py
     │   ├── test_filters_token.py
@@ -450,6 +459,7 @@ phsar/
     │   ├── test_search_media.py
     │   ├── test_search_ranking.py
     │   ├── test_search_ratings.py
+    │   ├── test_user_flows_endpoints.py
     │   ├── test_user_settings.py
     │   └── test_watchlist.py
     ├── seeders/
@@ -460,6 +470,7 @@ phsar/
         ├── test_backup_jobs.py
         ├── test_backup_service.py
         ├── test_backup_subprocess_failures.py
+        ├── test_base_dao_min_max.py
         ├── test_job_dao.py
         ├── test_job_worker.py
         ├── test_mal_scraper.py
@@ -486,78 +497,16 @@ phsar/
 
 ### Add Credentials for Database and Admin User
 
-Add the file `.env` to the `phsar/` folder with the following content:
+Copy the template into place and fill in the real values:
 
-```text
-DB_USER=animeuser
-DB_PASSWORD=animepass
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=anime_db
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=supersecretpassword
-SECRET_KEY=supersecretsecretkey
-SEARCH_SECRET_KEY=supersecretsearchsecretkey
-
-# --- MyAnimeList official API v2 (data source) ------------------------------
-# REQUIRED. Client ID from your MAL API panel (https://myanimelist.net/apiconfig).
-# Public data needs no OAuth — the scraper sends this as the X-MAL-CLIENT-ID
-# header on every request. Fails closed if unset.
-MY_ANIME_LIST_CLIENT_ID=your_mal_client_id_here
-# Optional overrides (defaults shown). Base URL + 1 req/s rate interval; only
-# change if MAL's policy changes or you front the API with a proxy.
-# MAL_BASE_URL=https://api.myanimelist.net/v2
-# MAL_MIN_REQUEST_INTERVAL_S=1.0
-
-# Optional: seeded guest account (restricted_user role, read-only)
-# GUEST_USERNAME=guest
-# GUEST_PASSWORD=guestpassword
-
-# --- Backups ----------------------------------------------------------------
-# Where dumps land. Defaults to ./backups (cwd-relative) so native dev works
-# without root; the container Dockerfile sets BACKUP_DIR=/backups.
-# BACKUP_DIR=./backups
-# pg_restore timeout. Raise if the DB grows large enough that restores
-# legitimately take > 10 min — a mid-restore kill leaves the DB half-dropped.
-# BACKUP_RESTORE_TIMEOUT_SECONDS=600
-
-# --- Content pipeline (jobs + sweeps) ---------------------------------------
-# Shared bearer for every cron-authed endpoint. See "Scheduled jobs" below.
-# Empty disables every cron endpoint (they fail closed).
-# JOBS_CRON_TOKEN=supersecretcrontoken
-# Max queued+running scrape jobs per user (bounds queue DEPTH, not parallelism
-# — the worker is sequential because of MAL's ~1 req/s rate limit).
-# JOBS_PER_USER_LIMIT=4
-# Max user_scrape submissions per user in any trailing 24h window. Counts
-# every status (succeeded/failed too) so transient MAL failures can't grant
-# unlimited retries; 51st submission returns 429.
-# JOBS_DAILY_LIMIT=50
-# Dedupe window for /jobs/scrape. Failed jobs don't count.
-# JOBS_DEDUPE_HOURS=24
-# Bounds the nightly update_sweep batch size.
-# JOBS_SWEEP_MAX_PER_RUN=500
-# Circuit breaker: abort update_sweep after this many CONSECUTIVE upstream
-# (MAL 5xx/timeout) failures so a total outage can't hold the maintenance
-# window (503 on login) for hours. Job fails retryable; maintenance clears
-# at once. A stray non-upstream failure (404) neither trips nor resets it.
-# JOBS_SWEEP_ABORT_AFTER_CONSECUTIVE_FAILURES=10
-# Re-runs the relation classifier over the catalog at lifespan startup. First
-# cold start lazy-fetches missing MediaRelationEdges sidecars from MAL at
-# 1 req/s (~14 min for an 800-media catalog); subsequent restarts skip already-
-# populated rows and finish in seconds. Disable for tight maintenance windows
-# on fresh deploys.
-# RELATION_BACKFILL_ON_STARTUP=True
-# One-shot: regenerate EVERY search embedding in place at startup so the catalog
-# picks up a generate_embedding change (the query/document case-fold). Default
-# off — a ~5-9 min catalog re-encode on the 2-vCPU VM is wasteful on every
-# restart. Flip on for a single deploy, watch for the "Re-embed complete" log,
-# then flip off. Runs post-yield in the background so it never blocks /health.
-# EMBEDDING_REEMBED_ON_STARTUP=False
+```bash
+cp phsar/.env.example phsar/.env
 ```
 
-*Change `animeuser`, `animepass`, `admin`, `supersecretpassword`, `supersecretsecretkey`, and `supersecretsearchsecretkey`*
-
-`SECRET_KEY` and `SEARCH_SECRET_KEY` should be random generated and at least 256 bit *(≈43 characters)*, as they are used to encode the access tokens and url search parameter.
+[.env.example](.env.example) is the single list of settings. It marks which ones
+the app will not start without, states the key-length rule for the two signing
+secrets, and carries the rationale for every optional default — so the file you
+are editing is also the file that explains itself.
 
 ### Use alembic to Safely Migrate Changes
 
@@ -645,7 +594,8 @@ bun run dev -- --open
 pytest
 ```
 
-All changes to the database during the tests are rolled back afterwards.
+Each test rolls back its database changes afterwards; the ones that must commit for
+real clean up after themselves.
 
 ### Frontend
 
@@ -656,9 +606,9 @@ bun run test
 
 ## Scheduled jobs
 
-The backend exposes four cron-authed endpoints — all share the same `JOBS_CRON_TOKEN` bearer.
+The backend's cron-authed endpoints all share the same `JOBS_CRON_TOKEN` bearer.
 
-**Recommended (one daily task):** point your cron at the combined nightly endpoint. It enqueues a backup immediately (pg_dump is MVCC-snapshot, no maintenance window needed), an `update_sweep` after `delay_minutes`, and on Sunday UTC a `seasonal_sweep` with the same delay so the weekly catalog pickup piggybacks on the maintenance window.
+**Recommended (one daily task):** point your cron at the combined nightly endpoint. It enqueues a backup immediately (pg_dump is MVCC-snapshot, no maintenance window needed), an `update_sweep` after `delay_minutes`, on Sunday UTC a `seasonal_sweep` with the same delay so the weekly catalog pickup piggybacks on the maintenance window, and on Wednesday UTC in the last month of a quarter (Mar/Jun/Sep/Dec) an `upcoming_sweep` so next-quarter shows can be added about a month early.
 
 ```sh
 curl -fsS -X POST -H "Authorization: Bearer $JOBS_CRON_TOKEN" \
@@ -670,6 +620,7 @@ curl -fsS -X POST -H "Authorization: Bearer $JOBS_CRON_TOKEN" \
 - `POST /admin/backups/auto` — backup only
 - `POST /admin/jobs/schedule-sweep?delay_minutes=N` — `update_sweep` only
 - `POST /admin/jobs/schedule-seasonal?delay_minutes=N` — `seasonal_sweep` only
+- `POST /admin/jobs/schedule-upcoming?delay_minutes=N` — `upcoming_sweep` only
 
 `delay_minutes` is bound to `[0, 1440]` on every sweep endpoint and drives the frontend's maintenance-banner countdown.
 

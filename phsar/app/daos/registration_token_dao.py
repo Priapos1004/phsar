@@ -4,7 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.daos.base_dao import BaseDAO
+from app.daos.base_dao import BaseDAO, recency_order
 from app.models.registration_token import RegistrationToken
 
 
@@ -25,6 +25,6 @@ class RegistrationTokenDAO(BaseDAO[RegistrationToken]):
                 selectinload(RegistrationToken.created_by),
                 selectinload(RegistrationToken.used_for_user),
             )
-            .order_by(RegistrationToken.created_at.desc())
+            .order_by(*recency_order(RegistrationToken, "created_at"))
         )
         return list(result.scalars().all())

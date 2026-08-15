@@ -1,4 +1,5 @@
 import logging
+from functools import lru_cache
 
 from anyio import to_thread
 from sentence_transformers import SentenceTransformer
@@ -13,30 +14,82 @@ logger = logging.getLogger(__name__)
 
 model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
 
+# Bounded at ~4 MB: each 384-float tuple measures ~12 kB in CPython (the boxed
+# floats dominate at 24 B apiece — not the 3 kB the raw values suggest), plus the
+# key strings, which for a description can be several kB of synopsis.
+EMBEDDING_CACHE_SIZE = 256
+
+
+def _encode(text: str) -> tuple[float, ...]:
+    """Encode one string. Returns a TUPLE because the memoized wrapper below
+    shares its value across every caller of a key, and callers hand the result to
+    ORM attributes — a cached list would be a shared mutable with no owner.
+
+    show_progress_bar=False: encode() defaults to a tqdm "Batches: ..." bar on
+    stdout. We encode one short string per call (search queries, saves, sweeps,
+    re-embed), so the bar is pure noise — it flooded the Coolify logs.
+    """
+    return tuple(model.encode(text, show_progress_bar=False).tolist())
+
+
+@lru_cache(maxsize=EMBEDDING_CACHE_SIZE)
+def _encode_query_cached(text: str) -> tuple[float, ...]:
+    """Memoized encode, for SEARCH QUERIES only. Safe to cache by construction:
+    `model.encode` is deterministic and the model version is fixed at deploy, so
+    the folded text fully determines the vector."""
+    return _encode(text)
+
+
+def _fold(text: str) -> str:
+    """The single case-fold every embedding passes through.
+
+    `paraphrase-multilingual-MiniLM-L12-v2` is a *cased* model, so "Kurokos" and
+    "kurokos" produce materially different vectors — and the query-case difference
+    alone reorders title results enough to drop the intended show off the page
+    (the cosine swing exceeds the literal-match bonus). Folding here, on both
+    queries AND stored title/description/note text, keeps them in one case space
+    (the textbook precondition for embedding retrieval); folding at the query
+    call-sites alone would paper over the symptom and risk a fresh
+    query↔document mismatch. It is also what makes capitalisation variants of one
+    query a single cache entry. Existing catalog vectors predate this and are
+    re-normalized by `embedding_backfiller.reembed_all_embeddings`.
+    """
+    return text.lower()
+
+
+async def _run_encode(fn, text: str) -> list[float]:
+    """Run an encode off the event loop and copy the result into a fresh list.
+
+    abandon_on_cancel=True: if the calling task is cancelled (e.g. the client
+    disconnects), abandon the thread rather than blocking until encode()
+    finishes — otherwise cancelled requests hold a threadpool slot through the
+    whole CPU-heavy computation.
+
+    A cache hit still pays this hop (~100 µs). Deliberate: that is 0.3% of a
+    ~30 ms miss, and short-circuiting on the loop would mean two code paths for
+    one operation.
+    """
+    return list(await to_thread.run_sync(lambda: fn(_fold(text)), abandon_on_cancel=True))
+
+
+async def generate_query_embedding(text: str) -> list[float]:
+    """Embed a SEARCH QUERY — memoized (~30 ms → ~0.1 ms on a hit).
+
+    Separate from `generate_embedding` because the two populations have opposite
+    reuse profiles and would share one cache otherwise. Queries repeat; document
+    text does not — a save encodes each title and description exactly once, and a
+    sweep or `reembed_all_embeddings` inserts thousands of keys that can never be
+    hit again. Sharing a 256-slot LRU therefore left the query cache fully evicted
+    after every sweep, i.e. cold precisely after the nightly maintenance window.
+    """
+    return await _run_encode(_encode_query_cached, text)
+
+
 async def generate_embedding(text: str) -> list[float]:
-    # Case-fold before encoding. `paraphrase-multilingual-MiniLM-L12-v2` is a
-    # *cased* model, so "Kurokos" and "kurokos" produce materially different
-    # vectors — and the query case difference alone reorders title results
-    # enough to drop the intended show off the page (the cosine swing exceeds
-    # the literal-match bonus). This is the single chokepoint every embedding
-    # passes through — search queries AND stored title/description/note text —
-    # so lowering here keeps the query and the documents in one case space
-    # (the textbook precondition for embedding retrieval). Lowering at the
-    # query call-sites alone would only paper over the symptom and risk a new
-    # query↔document mismatch. Existing catalog vectors predate this and are
-    # re-normalized by `embedding_backfiller.reembed_all_embeddings`.
-    text = text.lower()
-    # abandon_on_cancel=True: if the calling async task is cancelled (e.g. client
-    # disconnects), abandon the thread instead of blocking until encode() finishes.
-    # Without this, cancelled requests keep the thread pool occupied during the
-    # CPU-heavy embedding computation.
-    # show_progress_bar=False: encode() defaults to a tqdm "Batches: ..." bar on
-    # stdout. We encode one short string per call (search queries, saves, sweeps,
-    # re-embed), so the bar is pure noise — it flooded the Coolify logs.
-    return await to_thread.run_sync(
-        lambda: model.encode(text, show_progress_bar=False).tolist(),
-        abandon_on_cancel=True,
-    )
+    """Embed DOCUMENT text (titles, descriptions, rating notes) — uncached, since
+    a given document string is encoded once. Search queries go through
+    `generate_query_embedding`."""
+    return await _run_encode(_encode, text)
 
 
 async def _compute_search_embeddings(
@@ -44,9 +97,9 @@ async def _compute_search_embeddings(
 ) -> tuple[list[float], list[float]]:
     """Encode title + description embeddings without touching the DB.
     Returned in title-then-description order. Two sequential awaits;
-    `asyncio.gather` is intentionally avoided (see CLAUDE.md "Async
-    throughout" — the trap surface isn't worth the modest CPU win on
-    a 2-vCPU VM)."""
+    `asyncio.gather` is intentionally avoided (see .claude/rules/backend.md
+    "Async — the two that bite" — the trap surface isn't worth the modest
+    CPU win on a 2-vCPU VM)."""
     combined_text = " ".join([t for t in title_texts if t])
     title_embedding = await generate_embedding(combined_text)
     description_embedding = await generate_embedding(f"{combined_text} {description_text}")

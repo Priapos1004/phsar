@@ -106,10 +106,13 @@ class RatingScoreItem(RatingAttributes):
        the MAL score/vote-count (You-vs-MAL alignment), watch-time + season-year
        (watch-time stats), and created_at (the ratings-over-time timeline).
 
-    All fields are columns on rows already eager-loaded by
-    RatingDAO.get_all_for_score_items (media → anime + genres + studios), so no
-    extra query cost. watched_count stays out by design (it needs the per-media
-    watch-event count batch this query deliberately skips); episodes_watched is on
+    Every field is a scalar, which is what lets
+    RatingDAO.get_all_for_score_items fetch the whole set as one flat projection
+    (genres/studios as aggregated arrays) with no ORM hydration. Keep it that
+    way: a field needing a relationship traversal would reintroduce the
+    per-collection round trips. watched_count stays out by design (it needs the
+    per-media watch-event count batch this query deliberately skips);
+    episodes_watched is on
     the rating row itself, so it ships freely and powers the actual-watched-time
     stats alongside the per-episode duration_seconds."""
 

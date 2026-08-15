@@ -11,6 +11,7 @@ from sqlalchemy import (
     Integer,
     String,
     case,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.hybrid import hybrid_property
@@ -173,4 +174,26 @@ Index(
     "ix_media_year_season",
     Media.anime_season_year,
     Media.anime_season_name,
+)
+
+# The two indexes backing `AnimeDAO.select_due_media_for_sweep`'s tier atoms
+# (`_media_sweep_atoms`). They must be declared HERE, not only in the migration
+# that creates them: autogenerate proposes DROPping any index missing from the
+# metadata, so a migration-only index is one unread diff away from taking the
+# nightly sweep's access paths with it. `alembic check` in CI enforces this.
+#
+# Partial on the airing tier — "Currently Airing" is a small slice of the
+# catalog, so the index stays a fraction of a full one on anime_id.
+Index(
+    "ix_media_airing_now",
+    Media.anime_id,
+    postgresql_where=text("airing_status = 'Currently Airing'"),
+)
+# Composite for the recent-main tier: anime_id groups, relation_type selects
+# Main, aired_from is the range bound.
+Index(
+    "ix_media_main_aired_from",
+    Media.anime_id,
+    Media.relation_type,
+    Media.aired_from,
 )

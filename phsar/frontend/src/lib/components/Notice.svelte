@@ -4,6 +4,10 @@
      * countdown and inline notices on /login. Stays a contained
      * rounded-card so a full-width edge-to-edge bar (which reads as
      * alarming) is no longer the default look.
+     *
+     * The surface is solid on purpose. This sits on the dark body gradient, so a
+     * translucent or blurred fill (`bg-yellow-50/80`, `backdrop-blur`) lets the
+     * gradient through and the notice stops reading as a raised card.
      */
     import { AlertTriangle } from 'lucide-svelte';
     import type { Snippet } from 'svelte';

@@ -1,20 +1,65 @@
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
-from sqlalchemy import case, func, or_, select, update
+from sqlalchemy import Text, case, cast, func, or_, select, update
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, array
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import defer, selectinload
+from sqlalchemy.orm.attributes import set_committed_value
 
-from app.daos.base_dao import BaseDAO
+from app.core.job_versions import LIST_OMITTED_SUMMARY_KEYS
+from app.daos.base_dao import BaseDAO, recency_order
 from app.models.job import Job, JobKind, JobStatus
+
+# `result_summary` with the Jobs Log's detail-only keys removed. Which keys
+# and why is in `core/job_versions.py`; applied to every row, since
+# `jsonb - text[]` is a no-op for keys a row doesn't carry and NULL minus
+# an array is NULL.
+#
+# What this does and does not save: Postgres still detoasts and decompresses
+# the whole column to build the trimmed copy — `jsonb - text[]` needs a
+# materialised value, and there is no partial detoast for jsonb the way there
+# is for text. What it removes is everything past the socket, which is the
+# larger half and the half that repeats: the driver's JSON parse, the
+# validate/dump/rebuild walk in `admin_service`, re-serialisation, gzip and
+# wire bytes — all of it on a 3s poll. Removing the DB-side read too would
+# mean not storing the arrays on the listed row at all (a sidecar), which is
+# a bigger change than it is worth until profiling says otherwise.
+#
+# `cast` because `-` on jsonb needs a text[] on the right; without it the
+# array literal comes through untyped and Postgres can't resolve the
+# operator. `return_type` keeps the result a parsed dict rather than
+# SQLAlchemy's NullType default.
+_LIST_SUMMARY_EXPR = Job.result_summary.op("-", return_type=JSONB)(
+    cast(array(LIST_OMITTED_SUMMARY_KEYS), ARRAY(Text)),
+)
 
 
 class JobDAO(BaseDAO[Job]):
+    @staticmethod
+    def scrape_query_expr():
+        """The normalized scrape-query expression the dedup lookup filters on.
+
+        Named so `ix_jobs_scrape_query` (declared in `models/job.py` as raw SQL in
+        Postgres's own normalized spelling, to keep `alembic check` quiet) has an
+        identifiable counterpart. The two must stay the same expression to
+        Postgres or the index silently stops being used —
+        `test_scrape_dedup_predicate_can_use_its_index` is the guard.
+        """
+        return func.lower(func.trim(Job.payload["query"].astext))
+
     # Eager-load options the admin Jobs-Log surfaces need so the response
     # builder can read `requested_by_username` and `parent_job_uuid`
     # without a lazy-raise fault. Shared between the list endpoint and
     # the single-row detail fetch.
-    _ADMIN_LOAD_OPTIONS = (selectinload(Job.requested_by), selectinload(Job.parent))
+    # `parent` is narrowed to its uuid because that is the only field any
+    # caller reads off it (`_job_to_admin_response`). Without the narrowing a
+    # parent's own full result_summary rides along on every child row of an
+    # expanded sweep — the same waste the list projection exists to remove.
+    _ADMIN_LOAD_OPTIONS = (
+        selectinload(Job.requested_by),
+        selectinload(Job.parent).load_only(Job.uuid, raiseload=True),
+    )
 
     def __init__(self):
         super().__init__(Job)
@@ -28,11 +73,18 @@ class JobDAO(BaseDAO[Job]):
         """Same as get_by_uuid but eager-loads requested_by + parent so
         the admin detail builder can read both without a lazy-raise
         fault. Worth its own method because the bell's /jobs/{uuid} path
-        deliberately stays lighter."""
+        deliberately stays lighter.
+
+        `populate_existing` because this is the endpoint that must return
+        the summary WHOLE: if `list_admin_paginated` has already run in
+        this session, the identity map holds that row with a projected
+        summary, and the default behaviour would hand it back instead of
+        the columns just fetched."""
         stmt = (
             select(Job)
             .where(Job.uuid == uuid)
             .options(*self._ADMIN_LOAD_OPTIONS)
+            .execution_options(populate_existing=True)
         )
         return (await db.execute(stmt)).scalars().first()
 
@@ -132,7 +184,18 @@ class JobDAO(BaseDAO[Job]):
 
         Each Job eager-loads `requested_by` (for username flattening)
         and `parent` (so the row's response can carry the parent's uuid
-        without a client-side join)."""
+        without a client-side join).
+
+        **The returned rows carry a projected `result_summary`** (see
+        `_LIST_SUMMARY_EXPR`), so they are for reading into a response and
+        nothing else — writing one back would persist the truncated summary,
+        and a caller that needs the whole thing wants
+        `get_by_uuid_with_relations`, which the detail endpoint uses.
+
+        For the same reason this must stay the only query in its session
+        that touches these rows: the projected value is written onto the
+        entity as if loaded, so it would overwrite a fully-loaded instance
+        already in the identity map."""
         filters = []
         if status is not None:
             filters.append(Job.status == status)
@@ -154,16 +217,34 @@ class JobDAO(BaseDAO[Job]):
             total_stmt = total_stmt.where(*filters)
         total = (await db.execute(total_stmt)).scalar_one()
 
-        page_stmt = select(Job)
+        page_stmt = select(Job, _LIST_SUMMARY_EXPR.label("list_summary"))
         if filters:
             page_stmt = page_stmt.where(*filters)
         page_stmt = (
-            page_stmt.order_by(Job.created_at.desc())
+            # Paginated, and a seasonal sweep bulk-inserts hundreds of children in
+            # one transaction — so they all share a created_at and the PK tiebreak
+            # is what stops a row appearing on two pages. See recency_order.
+            page_stmt.order_by(*recency_order(Job, "created_at"))
             .limit(limit)
             .offset(offset)
-            .options(*self._ADMIN_LOAD_OPTIONS)
+            .options(
+                *self._ADMIN_LOAD_OPTIONS,
+                # Keep the raw column out of the SELECT entirely — the whole
+                # point is not to read it. raiseload so a future path that
+                # skips the set_committed_value below faults loudly instead of
+                # quietly emitting one lazy load per row.
+                defer(Job.result_summary, raiseload=True),
+            )
         )
-        items = list((await db.execute(page_stmt)).scalars().all())
+        items: list[Job] = []
+        for job, list_summary in (await db.execute(page_stmt)).all():
+            # Populate the projected value as if it had been loaded, so the
+            # response builder reads `job.result_summary` unchanged and keeps
+            # its "no field list to keep in sync" property. set_committed_value
+            # (not plain assignment) leaves the instance clean — an assignment
+            # would mark it dirty and risk flushing the truncated summary.
+            set_committed_value(job, "result_summary", list_summary)
+            items.append(job)
         return items, total
 
     async def list_for_user(self, db: AsyncSession, user_id: int, limit: int = 25) -> list[Job]:
@@ -179,7 +260,7 @@ class JobDAO(BaseDAO[Job]):
         stmt = (
             select(Job)
             .where(Job.requested_by_user_id == user_id)
-            .order_by(status_priority.asc(), Job.created_at.desc())
+            .order_by(status_priority.asc(), *recency_order(Job, "created_at"))
             .limit(limit)
         )
         return list((await db.execute(stmt)).scalars().all())
@@ -280,10 +361,8 @@ class JobDAO(BaseDAO[Job]):
                 )
             )
             .where(Job.created_at >= cutoff)
-            .where(
-                func.lower(func.trim(Job.payload["query"].astext)) == normalized
-            )
-            .order_by(Job.created_at.desc())
+            .where(self.scrape_query_expr() == normalized)
+            .order_by(*recency_order(Job, "created_at"))
             .limit(1)
         )
         result = await db.execute(stmt)

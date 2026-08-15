@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import SearchBar from '$lib/components/SearchBar.svelte';
 import { token } from '$lib/stores/auth';
+import { clearFilterOptions } from '$lib/stores/filterOptions';
 
 describe('SearchBar', () => {
 	const originalFetch = globalThis.fetch;
@@ -12,6 +13,11 @@ describe('SearchBar', () => {
 	});
 
 	beforeEach(() => {
+		// Filter options are cached for the session, so an earlier mount in this
+		// file would otherwise serve later ones from cache and they'd observe no
+		// fetch at all. Reset per test to keep them independent.
+		clearFilterOptions();
+
 		// Set token in store (used by api client)
 		token.set('test-token');
 
@@ -111,7 +117,9 @@ describe('SearchBar', () => {
 		);
 	});
 
-	it('fetches filter options on mount', async () => {
+	it('fetches filter options on first mount of a view', async () => {
+		// Per session per view_type, not per mount — the component mounts on both /
+		// and /search, and the options only change when the catalogue does.
 		render(SearchBar);
 
 		await vi.waitFor(() => {
@@ -122,5 +130,18 @@ describe('SearchBar', () => {
 				})
 			);
 		});
+	});
+
+	it('does not refetch filter options when remounted', async () => {
+		// The reason the cache exists: SearchBar mounts on BOTH / and /search, so
+		// every hop between them used to re-run an 8-15 round-trip endpoint.
+		const { unmount } = render(SearchBar);
+		await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
+		unmount();
+
+		render(SearchBar);
+		// Give a stray fetch a chance to land before asserting its absence.
+		await new Promise((r) => setTimeout(r, 20));
+		expect(globalThis.fetch).toHaveBeenCalledTimes(1);
 	});
 });

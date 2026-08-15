@@ -1,3 +1,9 @@
+---
+name: release
+description: Create a tagged GitHub release: determine the version, collect commits since the last tag, draft grouped release notes, and publish after explicit confirmation.
+disable-model-invocation: true
+---
+
 Create a new GitHub release for the phsar project.
 
 ## Steps

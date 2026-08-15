@@ -16,7 +16,10 @@ from app.core.db import Base
 class UserVisibleMedia(Base):
     __tablename__ = "user_visible_media"
 
-    id = Column(Integer, primary_key=True, index=True)
+    # No index=True — the PK's own unique btree already covers it. This table
+    # doesn't inherit BaseModel, so it needs the rule stated separately; see the
+    # note on BaseModel.id.
+    id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     media_id = Column(Integer, ForeignKey("media.id", ondelete="CASCADE"), nullable=False)
 

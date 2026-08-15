@@ -21,7 +21,6 @@ import pytest
 from pydantic import ValidationError
 from sqlalchemy import select
 
-from app.core.config import settings
 from app.core.db import async_session_maker
 from app.daos.job_dao import JobDAO
 from app.exceptions import BackupDiskSpaceError
@@ -78,12 +77,6 @@ def _patch_progress(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.services.backup_dispatcher.ProgressReporter", _NoopProgressReporter,
     )
-
-
-@pytest.fixture
-def backup_dir(tmp_path, monkeypatch):
-    monkeypatch.setattr(settings, "BACKUP_DIR", str(tmp_path))
-    return tmp_path
 
 
 async def _enqueue_backup_job(payload: dict) -> int:

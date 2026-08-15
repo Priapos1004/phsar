@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user, get_db, require_user_or_admin
+from app.core.dependencies import get_db, require_user_or_admin
 from app.schemas import rating_schema
 from app.services import rating_service
 from app.services.spoiler_service import get_spoiler_visibility
@@ -100,7 +100,7 @@ async def bulk_upsert_ratings(
 @router.get("/spoiler-visibility", response_model=rating_schema.SpoilerVisibility)
 async def spoiler_visibility(
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(require_user_or_admin),
 ):
     """Compute which media UUIDs are visible (not spoiler-protected) for the current user.
     Uses the spoiler frontier algorithm based on watch progress through main media."""
