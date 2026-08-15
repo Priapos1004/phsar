@@ -107,6 +107,29 @@ A **detail** page's title is its subject, not its route: bind it through
 `resolveTitle` (above) and fall back to a generic `Anime — Phsar` / `Media — Phsar`
 only while loading.
 
+## A departure for /login carries where it came from
+
+Never a bare `'/login'` literal. Every involuntary exit is expected to round-trip, and
+a literal is how the next one silently stops doing it — nothing fails for a path that
+was simply never captured.
+
+| Leaving because | Use |
+|---|---|
+| the session died, or the backend refused | `captureReturnTarget(url)` — stashes the filters *and* returns the URL |
+| the page's own fetch failed and the user clicks "Sign in" | `loginUrlReturningTo(url)` — a plain href, so route only |
+| the user **chose** to go: signing out, deleting the account | bare `/login`, plus `clearResume()` |
+
+`captureReturnTarget` owns the ordering that makes the stash correct, so call it
+**before** `token.set(null)` and never re-assemble its parts at a call site.
+
+A deliberate departure stays bare: the next person at this browser is not owed the
+last person's page.
+
+Consuming a `next` goes through `safeReturnPath`, always — it is a URL anyone can hand
+a user, so an off-origin value is an open redirect pointed at someone who has just
+typed their password. `landAfterAuth` is the only thing that should decide where a
+successful sign-in lands; a plainer `goto` there silently drops that check.
+
 ## Restricted accounts lose the action, not the affordance
 
 Scale the treatment to what is being withheld:

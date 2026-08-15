@@ -1,5 +1,6 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
+    import { clearResume } from '$lib/utils/resumeSession';
     import { api, ApiError } from '$lib/api';
     import { token } from '$lib/stores/auth';
     import { userSettings } from '$lib/stores/userSettings';
@@ -95,6 +96,8 @@
     function handleFarewellClose() {
         token.set(null);
         userSettings.set(null);
+        // Bare, and the stash goes with the account: there is nothing to return to.
+        clearResume();
         goto('/login');
     }
 

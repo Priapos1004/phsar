@@ -6,6 +6,8 @@ import {
 	pickNumbers,
 	pickStrings,
 	resetAllPersistedFilters,
+	restoreAllPersistedFilters,
+	snapshotAllPersistedFilters,
 } from '$lib/stores/persistedFilter';
 
 interface Demo {
@@ -113,6 +115,67 @@ describe('resetAllPersistedFilters', () => {
 		// persisting the reset is all that is needed to wipe the user's state.
 		expect(stored(a.key).state).toEqual(DEFAULTS);
 		expect(get(makeFilter(1, a.key).store)).toEqual(DEFAULTS);
+	});
+});
+
+describe('snapshot / restore', () => {
+	beforeEach(() => {
+		sessionStorage.clear();
+		resetAllPersistedFilters();
+	});
+
+	it('round-trips a filter through a reset, which is what the resume stash does', () => {
+		const { store } = makeFilter();
+		store.set(FILLED);
+
+		const snapshot = JSON.parse(JSON.stringify(snapshotAllPersistedFilters()));
+		resetAllPersistedFilters();
+		expect(get(store)).toEqual(DEFAULTS);
+
+		restoreAllPersistedFilters(snapshot);
+		expect(get(store)).toEqual(FILLED);
+	});
+
+	it('keys the snapshot by storage key', () => {
+		const { key, store } = makeFilter();
+		store.set(FILLED);
+		expect(snapshotAllPersistedFilters()[key]).toEqual(FILLED);
+	});
+
+	// A snapshot comes back out of sessionStorage, so it is exactly as untrusted
+	// as the live keys `read` whitelists.
+	it('sanitizes restored values rather than trusting them', () => {
+		const { key, store } = makeFilter();
+		restoreAllPersistedFilters({ [key]: { view: 'wall', genres: ['ok', 7], limit: 'x' } });
+		expect(get(store)).toEqual({ view: 'grid', genres: ['ok'], limit: 0 });
+	});
+
+	it('leaves a store untouched when the snapshot has no entry for it', () => {
+		const { store } = makeFilter();
+		store.set(FILLED);
+		restoreAllPersistedFilters({ 'test.filter.absent': DEFAULTS });
+		expect(get(store)).toEqual(FILLED);
+	});
+
+	it('persists a restore through the write-through subscriber', () => {
+		const { key, store } = makeFilter();
+		store.set(FILLED);
+		resetAllPersistedFilters();
+		restoreAllPersistedFilters({ [key]: FILLED });
+		expect(stored(key).state).toEqual(FILLED);
+	});
+
+	// One unusable entry must not cost the other sections their state.
+	it('isolates a bad entry from the rest of the set', () => {
+		const good = makeFilter();
+		const bad = makeFilter();
+		good.store.set(FILLED);
+		bad.store.set(FILLED);
+		resetAllPersistedFilters();
+
+		restoreAllPersistedFilters({ [good.key]: FILLED, [bad.key]: 'not an object' });
+		expect(get(good.store)).toEqual(FILLED);
+		expect(get(bad.store)).toEqual(DEFAULTS);
 	});
 });
 

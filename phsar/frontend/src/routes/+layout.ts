@@ -4,6 +4,13 @@ import { redirect } from '@sveltejs/kit';
 import { get } from 'svelte/store';
 import { token } from '$lib/stores/auth';
 import { expFromToken, isSessionLive } from '$lib/utils/sessionTimeout';
+import { isAuthPage } from '$lib/utils/returnTo';
+import { captureReturnTarget } from '$lib/utils/resumeSession';
+// Side-effect import: pulls in every filter store, filling the snapshot registry
+// before this load can stash from it. resumeSession can't do it itself — see its
+// header. Pinned by layout-guard.test.ts, since an organize-imports that dropped
+// this would fail nothing else.
+import '$lib/utils/filterLifecycle';
 
 /**
  * Navigation guard: bounce an unauthenticated or expired visitor to /login.
@@ -30,17 +37,22 @@ import { expFromToken, isSessionLive } from '$lib/utils/sessionTimeout';
  * Expiry DURING a session is not this function's job — `SessionTimeoutBanner`
  * owns the 1s tick, the silent refresh and the countdown. This only catches a
  * token that was already dead on arrival (a tab left closed overnight).
+ *
+ * Both exits carry the attempted URL as `?next=`, so signing in lands back on
+ * it — the path a shared link also takes, since a recipient without a session
+ * arrives here first. `utils/returnTo` owns the validation on the way back in.
  */
 export const load: LayoutLoad = ({ url }) => {
 	if (!browser) return;
-	if (url.pathname === '/login' || url.pathname === '/register') return;
+	if (isAuthPage(url.pathname)) return;
 
 	const raw = get(token);
-	if (!raw) throw redirect(302, '/login');
+	if (!raw) throw redirect(302, captureReturnTarget(url));
 
 	// An unparseable token yields no exp, hence not live — see expFromToken.
 	if (!isSessionLive(expFromToken(raw), Date.now())) {
+		const target = captureReturnTarget(url);
 		token.set(null);
-		throw redirect(302, '/login');
+		throw redirect(302, target);
 	}
 };

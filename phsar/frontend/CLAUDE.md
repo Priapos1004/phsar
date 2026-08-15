@@ -55,13 +55,14 @@ deliberate absence of a global 401 handler, both argued at the throw site.
 | Area | Start here |
 |---|---|
 | Stores | `stores/` — each file's header carries its own lifecycle. The two that catch people: `ratingScores.ts` is a real cache, so every rating write has to invalidate it, and `filterOptions.ts` is catalogue-global and deliberately survives a logout |
-| Filter persistence | `stores/persistedFilter.ts` — the factory, its version envelope, and the reset registry — under every section's filter store. `utils/filterLifecycle.ts` decides *when* a section resets |
+| Filter persistence | `stores/persistedFilter.ts` — the factory, its version envelope, and the reset/snapshot/restore registry — under every section's filter store. `utils/filterLifecycle.ts` decides *when* a section resets |
 | Per-user cleanup | `clearPerUserStores` in `routes/+layout.svelte`; anything keyed to *which* user belongs in it |
 | Formatting | `utils/formatString.ts`, where the score rounding and step-awareness rules live |
 | Ratings + watchlist maths | `utils/ratingStats.ts`, `utils/watchlistStats.ts` — pure, unit-tested, and the reason there is no per-user stats endpoint |
 | Charts | `utils/chartTheme.ts`, `utils/chartColors.ts`, `echarts.ts` |
 | Share | `utils/shareContent.ts`, `utils/shareImage.ts` |
 | Navigation | `utils/navigation.ts` — `buildDetailHref` and the closed `DetailOrigin` set |
+| Returning after a login | `utils/returnTo.ts` (the `?next=` param and its validation) and `utils/resumeSession.ts` (the `phsar.resume` filter stash). Mind the import graph — `resumeSession`'s header states the cycle it must not close, and the root layout carries the side-effect import that avoids it |
 | Theme | `themes.ts` with `app.css` |
 
 ## The rest of the tree

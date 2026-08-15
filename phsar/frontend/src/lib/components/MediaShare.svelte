@@ -1,9 +1,11 @@
 <script lang="ts">
 	/** The media hero's share action — the media-grain twin of AnimeShare (see there for why
 	 *  this is a wrapper rather than page-level wiring). */
+	import { page } from '$app/state';
 	import ShareButton from '$lib/components/ShareButton.svelte';
 	import ShareDialog from '$lib/components/ShareDialog.svelte';
 	import { resolveTitle } from '$lib/utils/formatString';
+	import { absoluteDetailUrl } from '$lib/utils/navigation';
 	import { mediaInfoCard, mediaRatingCard } from '$lib/utils/shareContent';
 	import type { MediaDetail, NameLanguage, RatingOut } from '$lib/types/api';
 
@@ -30,6 +32,7 @@
 
 	let ratingCard = $derived(rating ? mediaRatingCard(media, rating, ratingStep) : null);
 	let infoCard = $derived(mediaInfoCard(media));
+	let shareUrl = $derived(absoluteDetailUrl('media', media.uuid, page.url.origin));
 </script>
 
 <!-- Never disabled, including for an entry behind the spoiler frontier: asking to share is
@@ -42,4 +45,4 @@
 	onclick={() => (open = true)}
 />
 
-<ShareDialog bind:open {title} {subtitle} noun="entry" rating={ratingCard} info={infoCard} />
+<ShareDialog bind:open {title} {subtitle} noun="entry" rating={ratingCard} info={infoCard} {shareUrl} />

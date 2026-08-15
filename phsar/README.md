@@ -321,6 +321,8 @@ phsar/
 │   │   │       ├── ratingNeighbors.ts
 │   │   │       ├── ratingStats.ts
 │   │   │       ├── relations.ts
+│   │   │       ├── resumeSession.ts
+│   │   │       ├── returnTo.ts
 │   │   │       ├── search.ts
 │   │   │       ├── sessionTimeout.ts
 │   │   │       ├── shareContent.ts
@@ -361,6 +363,8 @@ phsar/
 │   │   └── tests/
 │   │       ├── setup.ts
 │   │       ├── SpoilerGuardTest.svelte
+│   │       ├── fixtures/
+│   │       │   └── jwt.ts
 │   │       ├── admin-jobs-filter.test.ts
 │   │       ├── admin-jobs-poll.test.ts
 │   │       ├── api-download.test.ts
@@ -391,6 +395,8 @@ phsar/
 │   │       ├── rating-neighbors.test.ts
 │   │       ├── rating-scores-store.test.ts
 │   │       ├── rating-stats.test.ts
+│   │       ├── resume-session.test.ts
+│   │       ├── return-to.test.ts
 │   │       ├── searchbar.test.ts
 │   │       ├── segmented-control.test.ts
 │   │       ├── session-timeout.test.ts

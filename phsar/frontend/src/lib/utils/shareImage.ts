@@ -2,9 +2,16 @@
  * Rating-share plumbing: turn a rendered `ShareCard` DOM node into a PNG the user can
  * save or hand to their phone's share sheet.
  *
- * Sharing is deliberately image-based rather than link-based: a hosted share page would
- * either expire or become a scrapeable endpoint exposing users' ratings. A PNG the user
- * owns is permanent, works in every messenger, and needs no public surface at all.
+ * The PNG is the payload, and there is no hosted share page behind it: such a page would
+ * either expire or become a scrapeable endpoint exposing users' ratings. A picture the
+ * user owns is permanent and works in every messenger.
+ *
+ * The sheet also carries the app's own deep link to the title. That is not a public
+ * surface — the route is behind the navigation guard, so anyone without a session lands
+ * on /login (and registration needs a token), and the link says nothing the card doesn't
+ * already show. It buys the recipient a way in: the login carries the target through and
+ * lands them on the page. It will never render a preview card in a messenger, which is
+ * the deliberate cost of having no public surface to unfurl.
  */
 
 /** Exported pixel size — portrait 4:5, the shape messengers show without cropping. */
@@ -96,14 +103,24 @@ export async function captureCardPng(node: HTMLElement): Promise<Blob> {
 	});
 }
 
-/** Can this device hand a PNG to a native share sheet? (Web Share API Level 2.) */
-export function canShareFiles(file: File): boolean {
+/**
+ * Will this device's share sheet take this exact payload? (Web Share API Level 2.)
+ *
+ * One detect for every question asked of the sheet, because they diverge otherwise:
+ * `canShare` alone is not enough — a platform can answer it and still lack `share`.
+ */
+function canShareData(data: ShareData): boolean {
 	return (
 		typeof navigator !== 'undefined' &&
 		typeof navigator.canShare === 'function' &&
 		typeof navigator.share === 'function' &&
-		navigator.canShare({ files: [file] })
+		navigator.canShare(data)
 	);
+}
+
+/** Can this device hand a PNG to a native share sheet? */
+export function canShareFiles(file: File): boolean {
+	return canShareData({ files: [file] });
 }
 
 /**
@@ -122,6 +139,22 @@ export function isIosLike(): boolean {
 }
 
 /**
+ * What to hand the share sheet: the PNG, plus the deep link when the platform accepts
+ * both together.
+ *
+ * The file always wins a disagreement. Web Share Level 2 lets a platform accept `files`
+ * and reject `files + url`, and the card is the thing the user built and previewed — a
+ * silently dropped PNG would be a worse trade than a missing link. Asked as one
+ * `canShare` on the exact payload rather than assumed per-platform, since the answer is
+ * the browser's to give.
+ */
+export function sharePayload(file: File, title: string, url?: string | null): ShareData {
+	const withLink: ShareData = { files: [file], title, url: url ?? undefined };
+	if (url && canShareData(withLink)) return withLink;
+	return { files: [file], title };
+}
+
+/**
  * Open the native share sheet with the PNG attached.
  *
  * Two rejections are the sheet behaving normally rather than failing, so both are
@@ -133,9 +166,9 @@ export function isIosLike(): boolean {
  * There is no third option of closing the sheet ourselves — it's an OS surface, and the
  * Web Share API has no cancellation path.
  */
-export async function shareFile(file: File, title: string): Promise<void> {
+export async function shareFile(file: File, title: string, url?: string | null): Promise<void> {
 	try {
-		await navigator.share({ files: [file], title });
+		await navigator.share(sharePayload(file, title, url));
 	} catch (err) {
 		if (err instanceof DOMException) {
 			if (err.name === 'AbortError' || err.name === 'InvalidStateError') return;

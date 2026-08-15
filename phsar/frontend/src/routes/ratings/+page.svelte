@@ -10,6 +10,7 @@
 	import RatingsListTab from '$lib/components/ratings/RatingsListTab.svelte';
 	import RatingsStatsTab from '$lib/components/ratings/RatingsStatsTab.svelte';
 	import Notice from '$lib/components/Notice.svelte';
+	import { loginUrlReturningTo } from '$lib/utils/returnTo';
 	import { Button } from '$lib/components/ui/button';
 
 	const TABS: { key: RatingsTabKey; label: string }[] = [
@@ -66,7 +67,10 @@
 	{:else if unauthenticated}
 		<div class="py-12 text-center space-y-3">
 			<p class="text-white/70">Sign in to see and analyse your ratings.</p>
-			<Button href="/login">Sign in</Button>
+			<!-- Carries the route, not the filters: this is a link rendered when the
+			     page's own fetch 401s, and by the time it is followed the filter
+			     lifecycle has cleared them anyway. -->
+			<Button href={loginUrlReturningTo(page.url)}>Sign in</Button>
 		</div>
 	{:else if error}
 		<Notice>{error} <button class="underline" onclick={load}>Try again</button></Notice>

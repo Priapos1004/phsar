@@ -1,4 +1,4 @@
-import { writable, type Writable } from 'svelte/store';
+import { get, writable, type Writable } from 'svelte/store';
 import { browser } from '$app/environment';
 
 /**
@@ -16,11 +16,12 @@ import { browser } from '$app/environment';
  * register it in `utils/filterLifecycle`'s `SECTION_FILTERS` — and widen the `ALL`
  * list in `src/tests/filter-lifecycle.test.ts`, which pins the set.
  *
- * That registration also guards logout: `resetters` fills at *module evaluation*,
+ * That registration also guards logout: `registered` fills at *module evaluation*,
  * so a filter clears only if its module has loaded. `filterLifecycle` imports every
  * `clearXFilter` and the root layout imports `filterLifecycle` — a filter missing
  * from `SECTION_FILTERS` loads only on its own page, so a value set there outlives
- * the logout that should have cleared it.
+ * the logout that should have cleared it. The same caveat governs the snapshot
+ * below: an unloaded filter is absent from it, and comes back at its defaults.
  */
 
 interface PersistedFilterConfig<T extends object> {
@@ -37,12 +38,51 @@ interface PersistedFilterConfig<T extends object> {
 	sanitize: (raw: Record<string, unknown>) => T;
 }
 
-// Every filter created here registers its reset, so `resetAllPersistedFilters`
-// can't miss one the way a hand-maintained key list (cf. bell-session.ts) can.
-const resetters: (() => void)[] = [];
+interface RegisteredFilter {
+	key: string;
+	snapshot: () => object;
+	restore: (raw: unknown) => void;
+	reset: () => void;
+}
+
+// Every filter created here registers itself, so no whole-set operation can
+// miss one the way a hand-maintained key list (cf. bell-session.ts) can.
+const registered: RegisteredFilter[] = [];
 
 export function resetAllPersistedFilters(): void {
-	for (const reset of resetters) reset();
+	for (const entry of registered) entry.reset();
+}
+
+/**
+ * Every filter's current state, keyed by storage key.
+ *
+ * For `utils/resumeSession`, which stashes this before a lapsed session clears
+ * the live keys. Returns live store values — the caller serializes immediately.
+ */
+export function snapshotAllPersistedFilters(): Record<string, object> {
+	const out: Record<string, object> = {};
+	for (const entry of registered) out[entry.key] = entry.snapshot();
+	return out;
+}
+
+/**
+ * Apply a snapshot back onto the stores.
+ *
+ * Routed through each filter's own `sanitize`, because a snapshot read back out
+ * of sessionStorage is exactly as untrusted as the live keys `read` guards —
+ * same hazard, same whitelist. Per-entry isolation so one unusable entry costs
+ * only its own section; a missing key leaves that store untouched.
+ */
+export function restoreAllPersistedFilters(snapshot: Record<string, unknown>): void {
+	for (const entry of registered) {
+		const raw = snapshot[entry.key];
+		if (!raw || typeof raw !== 'object') continue;
+		try {
+			entry.restore(raw);
+		} catch {
+			// A sanitize that threw. Leave this store at whatever it holds.
+		}
+	}
 }
 
 function serialize(version: number, state: object): string {
@@ -91,10 +131,16 @@ export function createPersistedFilter<T extends object>(
 		});
 	}
 
-	// Logout / user switch. The write-through subscriber persists the defaults,
-	// which `read` treats identically to an absent key — so there is nothing
-	// left to remove.
-	resetters.push(() => store.set({ ...cfg.defaults }));
+	// Reset is logout / user switch: the write-through subscriber persists the
+	// defaults, which `read` treats identically to an absent key — so there is
+	// nothing left to remove. Snapshot and restore serve the resume stash, and
+	// ride the same subscriber, so a restore is persisted like any other change.
+	registered.push({
+		key: cfg.key,
+		snapshot: () => get(store),
+		restore: (raw) => store.set(cfg.sanitize(raw as Record<string, unknown>)),
+		reset: () => store.set({ ...cfg.defaults }),
+	});
 	return store;
 }
 

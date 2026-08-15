@@ -7,6 +7,7 @@
 	import type { WatchlistItem, RatingScoreItem } from '$lib/types/api';
 	import type { WatchlistTabKey } from '$lib/stores/watchlistFilter';
 	import { watchlistSummary, type WatchlistSummary } from '$lib/utils/watchlistStats';
+	import { loginUrlReturningTo } from '$lib/utils/returnTo';
 	import TabNav from '$lib/components/TabNav.svelte';
 	import WatchlistListTab from '$lib/components/watchlist/WatchlistListTab.svelte';
 	import WatchlistTagsTab from '$lib/components/watchlist/WatchlistTagsTab.svelte';
@@ -132,7 +133,8 @@
 			{:else if unauthenticated}
 				<div class="py-12 text-center space-y-3">
 					<p class="text-white/70">Sign in to see your watchlist.</p>
-					<Button href="/login">Sign in</Button>
+					<!-- Route only, for the reason given at the ratings page's twin. -->
+					<Button href={loginUrlReturningTo(page.url)}>Sign in</Button>
 				</div>
 			{:else if error}
 				<Notice>{error} <button class="underline" onclick={load}>Try again</button></Notice>

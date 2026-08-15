@@ -22,21 +22,30 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 - User sees a centered card with username/password fields and a "Login" button
 - Page background is a themed light-to-deep gradient matching the active theme (purple / red / blue / green), driven by the theme class pre-applied from localStorage by the FOUC script in `app.html`
 - Submitting the form POSTs credentials to `/auth/login` (URL-encoded)
-- On success: token is stored in localStorage, user is redirected to `/`
+- On success: token is stored in localStorage, and the user lands on the URL's `?next=` when it carries a valid one, otherwise `/`. The navigation **replaces** the history entry, so browser-back from the restored page doesn't return to the form
+- `next` is only honoured when it resolves **same-origin** and isn't one of the pages that ask for credentials or the liveness endpoint (`/login`, `/register`, `/health`). An off-origin, protocol-relative (`//host`) or backslash-authority (`/\host`) value is discarded and the user goes to `/`
+- Whether the path names a real route is **not** checked: any same-origin path is honoured, so `?next=quark` lands on `/quark`'s 404 and `/admin/jobs/<uuid>` round-trips without needing to be enumerated
+- The home page is never captured — a redirect from `/` produces a bare `/login`
+- When `next` is present the card shows a line above the form naming the destination ("After signing in you'll be taken to your watchlist."), derived from the pathname, so a route it doesn't name reads "the page you opened". The Register link carries `next` across
 - On invalid credentials: error message appears below the form in red
 - On network error: "An unexpected error occurred." message appears
 - While submitting: button shows "Logging in..." and is disabled
 
 ### 1.2 Auth Guard
-- Navigating to any route except `/login` without a token redirects to `/login`
+- Navigating to any route except `/login` without a token redirects to `/login?next=<the attempted path and query>`. The query string travels too, so a detail page comes back with its `uuid`, a search with its token, and a section with its `?tab=` — and the `from` marker means the back button is there on arrival
 - The guard decides locally and synchronously, from the token's own `exp` claim — it must not make a request. SvelteKit re-runs the root load on *any* URL change (including `?tab=` switches) and `preload-data="hover"` runs it on hover, so a request here would sit in front of every navigation and every link hover
 - A token that is missing, expired or unparseable is cleared from localStorage and the user is redirected to `/login`
 - The server stays authoritative: every API call the page then makes rejects a bad token, and the JWT is signed so `exp` can't be forged. Expiry *during* a session is the session tick's job (1.6), not the guard's
 - A 401 on any *other* in-app API call is **not** globally redirected. The caller handles it instead (the JobBell silently stops polling), and the user stays on the page. `lib/api.ts` argues the choice at the throw site
 
 ### 1.3 Logout
-- Clicking "Logout" in the NavBar dropdown clears the token immediately, shows a ~1.5s themed sakura-ring loading screen as a soft transition, then redirects to `/login`
-- Involuntary logouts (maintenance 503, account deletion) skip the animation and redirect instantly. The idle-timeout case (1.6) instead shows the "Session Expired" dialog first, then runs the same animated logout when the user clicks "Log in"
+- Clicking "Logout" in the NavBar dropdown clears the token immediately, shows a ~1.5s themed sakura-ring loading screen as a soft transition, then redirects to a **bare** `/login`, dropping the resume stash (1.3a)
+- Involuntary logouts (maintenance 503, account deletion) skip the animation and redirect instantly. The idle-timeout case (1.6) instead shows the "Session Expired" dialog first, then runs the same animated logout when the user clicks "Log in" — that one **does** carry `next` and a stash. Account deletion carries neither
+
+### 1.3a Returning to where you were
+- Every involuntary exit captures the current URL as `?next=` and, where a user can be identified from the token, stashes the `/ratings` + `/watchlist` filter state under the sessionStorage key `phsar.resume`. The two "Sign in" empty-state buttons (8, 9) capture the route only
+- The stash is applied on the next login only when **the same user** returns within **3 hours** in **the same tab**, and is removed on read whatever the outcome
+- A stash owned by somebody else sends the user to `/` instead of the captured page. One that is merely too old keeps the route and drops only the filters, so a shared link still works the next day
 
 ### 1.4 Token Persistence
 - Token is stored in and loaded from localStorage
@@ -49,7 +58,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
   - When `scheduled_at` is within 30 min: "Scheduled maintenance starts in ~N minutes — pause your current episode." (singular "minute" at exactly 1).
   - When `active` is true: "Maintenance in progress. Please try again later."
   - When neither: banner is hidden.
-- **Mid-window redirect.** When the backend returns 503 with `{maintenance: true}` on *any other* request, the API client clears the token, bumps `maintenanceRefresh` so the global banner refetches state immediately, and hard-navigates to `/login` (when the user wasn't already there).
+- **Mid-window redirect.** When the backend returns 503 with `{maintenance: true}` on *any other* request, the API client clears the token, bumps `maintenanceRefresh` so the global banner refetches state immediately, and hard-navigates to `/login` (when the user wasn't already there) carrying `?next=` and a resume stash (1.3a) — the window is short, so the page the user was on is worth coming back to.
 - **/login during a maintenance window.** The form has no inline maintenance message — the global sticky banner above the navbar conveys the state. A 503 from `/auth/login` is silently swallowed by the form's catch (no error text, no submit-disable); the user can retry once the global banner clears.
 
 ### 1.6 Session idle timeout (sliding session)
@@ -90,8 +99,8 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 | Route | Page | Auth Required |
 |-------|------|---------------|
 | `/` | Home (search bar + placeholders) | Yes |
-| `/login` | Login form | No |
-| `/register` | Registration form (requires token) | No |
+| `/login?next=<path>` | Login form; optional validated post-login destination (1.1) | No |
+| `/register?next=<path>` | Registration form (requires token); `next` carried over from the login link | No |
 | `/search?q=<token>` | Search results (anime or media view) | Yes |
 | `/anime?uuid=<uuid>` | Anime detail (aggregated metadata + media table) | Yes |
 | `/media?uuid=<uuid>` | Media detail + rating | Yes |
@@ -268,9 +277,12 @@ Each anime search result card shows:
 - **Cover unavailable** (missing, or the fetch fails) → the card falls back to the "No image" placeholder; the export still succeeds
 - Actions: **Save image** downloads `phsar-<slug>-rating.png` (or `phsar-<slug>.png` for an info card — the filename shouldn't promise a score the image doesn't carry), and **Share** appears only on devices whose native share sheet accepts files (mobile) and hands the PNG straight to the OS picker — WhatsApp, Signal, Telegram etc. Dismissing the native sheet is not an error
 - **On iPhone/iPad the two collapse into one "Save or share" button** that opens the sheet: a download there lands in Files, and only the sheet's "Save Image" reaches Photos — so both outcomes are behind the same picker and a second button would be a duplicate
+- The sheet is handed the title's **deep link** (`/anime?uuid=…` or `/media?uuid=…`) alongside the PNG, so a messenger shows both and the recipient can open the title rather than retype it. The link carries the uuid only — none of the sharer's `q` / `from` / `job`
+- Whether both travel is the platform's call, asked as a single `canShare` on the exact payload. Where a platform accepts files but refuses files-plus-url, **the PNG is sent and the link is dropped**
+- Following that link while signed out lands on `/login` carrying it as `?next=`, so the recipient signs in and arrives on the page (1.1). No messenger renders a preview card for it — the attached PNG is the preview
 - While a share sheet is open the button reads **"Sharing…"** and is inert. A second click does nothing rather than reporting a failure — the sheet belongs to the OS and the page has no way to close it
 - On failure: a red "Couldn't build the image." with a **Try again** button (the underlying cause is logged to the console)
-- Closing the dialog abandons any in-flight build and releases the preview; nothing is uploaded or published at any point
+- Closing the dialog abandons any in-flight build and releases the preview; nothing is uploaded or published at any point, and the shared link only opens for someone with an account
 
 ---
 
