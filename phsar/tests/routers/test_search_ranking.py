@@ -188,9 +188,9 @@ async def test_anime_fuzzy_typo_lifts_best_match_above_unrelated(
 @pytest.fixture
 async def uneven_media_count_set(db_session):
     """Two substring-matching anime with wildly different media counts (6 vs 1),
-    plus a non-matcher. Both matchers carry the SAME anime title, so the only
-    thing that differs between them is how many rows they contribute to the
-    GROUP BY."""
+    plus a non-matcher. Their titles differ, so their title embeddings differ
+    too — what the pair isolates is not embedding distance but how many rows
+    each contributes to the GROUP BY."""
     await _make_anime_with_media_titled(
         db_session, mal_id=87101,
         anime_title=f"{_RANK_FIXTURE_QUERY} Lord of Franchise",
@@ -218,8 +218,8 @@ async def test_anime_ranking_is_invariant_to_media_count(
     both do, SUM does not, and a SUM would rank the 6-media anime six times
     worse purely for being a franchise.
 
-    Both matchers share the "Lord of" substring, so both earn the same literal
-    bonus; only the group size differs between them.
+    Both matchers contain the "Lord of" substring, so both earn the same
+    literal bonus.
     """
     ordered = await _ordered_fixture_titles(
         client, user_auth_headers,
@@ -230,9 +230,14 @@ async def test_anime_ranking_is_invariant_to_media_count(
     standalone = f"{_RANK_FIXTURE_QUERY} Lord of Standalone"
     non_matcher = f"{_RANK_FIXTURE_QUERY} Wholly Different Title"
 
+    # A size-scaling aggregate multiplies the franchise's distance by six, which
+    # pushes it past the result limit rather than merely down the list — so it
+    # leaves the response entirely, and this is the check that notices.
     assert {franchise, standalone} <= set(ordered), (
         f"a substring matcher dropped out of the results: {ordered}"
     )
+    # Conditional because a populated catalogue can push the non-matcher past
+    # the limit — an absent non-matcher makes the comparison meaningless, not failed.
     if non_matcher in ordered:
         assert ordered.index(franchise) < ordered.index(non_matcher), (
             f"The 6-media anime fell below a non-matching title — the ordering "

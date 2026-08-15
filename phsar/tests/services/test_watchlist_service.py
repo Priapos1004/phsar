@@ -9,11 +9,13 @@ color); and that a watchlist write never touches the spoiler cache.
 import uuid as uuidlib
 
 import pytest
+from sqlalchemy import select
 
 from app.exceptions import MediaNotFoundError, TagNotFoundError, WatchlistNotFoundError
 from app.models.anime import Anime
 from app.models.media import Media, RelationType, SeasonType
 from app.models.user_visible_media import UserVisibleMedia
+from app.models.watchlist import Watchlist
 from app.schemas.tag_schema import TagCreate
 from app.schemas.watchlist_schema import WatchlistBulkCreate, WatchlistCreate
 from app.services import tag_service, watchlist_service
@@ -287,17 +289,18 @@ async def test_get_items_projection(db_session):
     assert item.media_title == media[0].title
 
 
-async def test_get_items_order_is_deterministic_under_modified_at_ties(db_session):
+async def test_get_items_orders_tied_rows_by_id_desc(db_session):
     """A bulk add stamps ONE modified_at across every selected media, so the
     overview's `ORDER BY modified_at DESC` ties across the whole batch. The
     consumer treats the incoming order as meaningful (it breaks its own full ties
-    by relying on it), so the query needs a tiebreak — otherwise the same request
-    can return tied rows in a different order on each call and the grid reshuffles
-    under the user for no reason.
+    by relying on it), so the query needs `recency_order`'s primary-key tiebreak
+    — otherwise the same request can return tied rows in a different order on
+    each call and the grid reshuffles under the user for no reason.
 
-    Asserting repeat calls agree, rather than asserting one specific order, is
-    the point: the property that matters is stability, and a hardcoded order
-    would pass even with a nondeterministic query on a small enough fixture.
+    Assert the intended `id DESC` order rather than that repeated calls agree:
+    Postgres replays physical order for an unchanged query, so a stability check
+    holds with the tiebreak gone — and holds while serving the batch backwards,
+    since physical order runs id ASC.
     """
     user, default, media = await _setup(db_session, media_count=6, mal_seed=-80600)
     await watchlist_service.bulk_upsert_watchlist(
@@ -307,15 +310,18 @@ async def test_get_items_order_is_deterministic_under_modified_at_ties(db_sessio
         ),
     )
 
-    runs = [
-        [i.media_uuid for i in await watchlist_service.get_watchlist_items(db_session, user.id)]
-        for _ in range(4)
-    ]
-    assert len(runs[0]) == 6
-    # All six share one modified_at, so this is entirely the tiebreak's doing.
-    stamps = {
-        i.modified_at
-        for i in await watchlist_service.get_watchlist_items(db_session, user.id)
-    }
+    items = await watchlist_service.get_watchlist_items(db_session, user.id)
+    assert len(items) == 6
+    # All six share one modified_at, so the order below is entirely the tiebreak's doing.
+    stamps = {i.modified_at for i in items}
     assert len(stamps) == 1, f"fixture no longer ties on modified_at: {stamps}"
-    assert all(r == runs[0] for r in runs[1:]), f"order varied between calls: {runs}"
+
+    # Read the expected order straight off the PKs rather than assuming the bulk
+    # insert assigned them in argument order.
+    expected = (await db_session.execute(
+        select(Media.uuid)
+        .join(Watchlist, Watchlist.media_id == Media.id)
+        .where(Watchlist.user_id == user.id)
+        .order_by(Watchlist.id.desc())
+    )).scalars().all()
+    assert [i.media_uuid for i in items] == expected
