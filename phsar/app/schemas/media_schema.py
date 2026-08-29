@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -25,8 +25,8 @@ class MediaBase(BaseModel):
     anime_season_name: str | None
     anime_season_year: int | None
     airing_status: str
-    aired_from: datetime | None
-    aired_to: datetime | None
+    aired_from: date | None
+    aired_to: date | None
     duration: str | None
     duration_seconds: int | None
 

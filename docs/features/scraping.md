@@ -67,9 +67,11 @@ against the stored format.
 - Relation labels normalize via `normalize_relation` (lowercase, spaces →
   underscores) plus a `spin_off` → `spin-off` alias, so a sweep re-fetch doesn't
   rewrite every spin-off edge.
-- **Partial dates** (`YYYY`, `YYYY-MM`, common on older records) fill missing
-  month/day with `01` at midnight UTC, matching how dates are stored — otherwise
-  every sweep re-fetch diffs the date spuriously.
+- **Air dates carry no time.** MAL publishes `start_date` / `end_date` as bare
+  `YYYY-MM-DD`, and `_mal_date_to_iso` stores that form unchanged. **Partial
+  dates** (`YYYY`, `YYYY-MM`, common on older records) fill the missing
+  month/day with `01`; that padding is not recoverable, so a stored
+  `2011-01-01` may mean "sometime in 2011".
 - `duration_seconds` comes from `average_episode_duration` (exact per-episode
   seconds). The legacy `duration` display string is always None; the frontend
   renders from `duration_seconds` via `formatDuration`.

@@ -11,7 +11,7 @@ superseded. For how a subsystem works **today**, read `docs/features/` instead.
 Docs whose filename carries no version are the easiest to miss, so they are listed
 first within their subsystem.
 
-**Scraping** — [scraper quirks & field notes](2026-05-11-jikan-scraper-quirks.md) (upstream data oddities; written against **Jikan v4**, so its endpoints, its rate-limit reasoning and the since-removed `Crossover` relation are historical — the data quirks still hold) · [MAL API v2 migration](2026-07-18-v0.14.14-mal-api-migration.md) (endpoint/field mapping, substance-gate waivers, the empty-relation-cache regression)
+**Scraping** — [scraper quirks & field notes](2026-05-11-jikan-scraper-quirks.md) (upstream data oddities; written against **Jikan v4**, so its endpoints, its rate-limit reasoning and the since-removed `Crossover` relation are historical — the data quirks still hold) · [MAL API v2 migration](2026-07-18-v0.14.14-mal-api-migration.md) (endpoint/field mapping, substance-gate waivers, the empty-relation-cache regression) · [quality-of-life upgrades](2026-08-29-v0.15.5-quality-of-life.md) (why air dates are `Date` and render unconverted, and what MAL does and doesn't publish about broadcast time)
 
 **Relations** — [classifier redesign](2026-05-16-v0.14.1-search-and-data-fixes.md) (the two-pass design) · [split candidates](2026-05-18-v0.14.2-split-candidates.md) (third pass, TERMINAL edge capture) · [merge-candidate fix](2026-06-11-v0.14.4-merge-candidates-fix.md)
 
@@ -68,3 +68,4 @@ first within their subsystem.
 | 2026-08-11 | [Claude Code setup restructure](2026-08-11-claude-setup-restructure.md) |
 | 2026-08-12 | [Frontend docs restructure](2026-08-12-frontend-docs-restructure.md) |
 | 2026-08-13 | [v0.15.4 efficiency improvements](2026-08-06-v0.15.4-efficiency-improvements.md) |
+| 2026-08-29 | [v0.15.5 quality-of-life upgrades](2026-08-29-v0.15.5-quality-of-life.md) |

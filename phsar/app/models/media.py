@@ -3,7 +3,7 @@ import enum
 from sqlalchemy import (
     CheckConstraint,
     Column,
-    DateTime,
+    Date,
     Enum,
     Float,
     ForeignKey,
@@ -92,8 +92,8 @@ class Media(BaseModel):
     anime_season_name = Column(Enum(SeasonType), nullable=True)
     anime_season_year = Column(Integer, nullable=True)
     airing_status = Column(String, nullable=False)
-    aired_from = Column(DateTime(timezone=True), nullable=True)
-    aired_to = Column(DateTime(timezone=True), nullable=True)
+    aired_from = Column(Date, nullable=True)
+    aired_to = Column(Date, nullable=True)
     duration = Column(String, nullable=True)
     duration_seconds = Column(Integer, nullable=True)
 

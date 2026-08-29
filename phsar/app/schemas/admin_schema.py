@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import Literal
 from uuid import UUID
@@ -38,7 +38,7 @@ class MergeCandidateAnimeSummary(BaseModel):
     media_count: int
     studios: list[str]
     earliest_year: int | None = None
-    earliest_aired_from: datetime | None = None
+    earliest_aired_from: date | None = None
     rating_count: int = 0
 
 

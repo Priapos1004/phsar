@@ -19,7 +19,7 @@ helpers and is purely a discovery pass that hands off to user_scrape.
 
 import logging
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import NamedTuple
 
 from sqlalchemy import delete
@@ -56,7 +56,7 @@ from app.services.job_worker import ERROR_CATEGORY_UPSTREAM_OUTAGE, classify_err
 from app.services.mal_scraper import (
     MalScraper,
     is_hentai,
-    parse_mal_datetime,
+    parse_mal_date,
     parse_relation_edges,
 )
 from app.services.merge_detection_service import (
@@ -1033,7 +1033,7 @@ _EMBEDDING_TEXT_FIELDS = ("title", "name_eng", "name_jap", "other_names", "descr
 # back to weekly polling over a duration typo. All None-guarded in the loop below
 # so a MAL omission never nulls a populated value. media_type, anime_season_name
 # and aired_from are self-healed too but need special handling (enum coercion /
-# datetime parse) so they live outside this tuple.
+# date parse) so they live outside this tuple.
 _METADATA_NONTEXT_FIELDS = (
     "cover_image", "age_rating", "original_source",
     "duration_seconds", "anime_season_year", "mal_url",
@@ -1048,12 +1048,11 @@ _VALID_SEASON_NAMES = frozenset(s.value for s in SeasonType)
 
 
 def _jsonable(value: object) -> object:
-    """Coerce values into a JSONB-safe shape for the diff sink. Datetime
-    is the one type the volatile-field bucket emits that Python's default
-    json encoder rejects (the JSONB column's serializer goes through
-    `json.dumps`). All other field types in result_summary are already
-    primitive/list/dict."""
-    if isinstance(value, datetime):
+    """Coerce values into a JSONB-safe shape for the diff sink. Date-valued
+    captures are the only ones Python's default json encoder rejects (the JSONB
+    column's serializer goes through `json.dumps`); every other field in
+    result_summary is already primitive/list/dict."""
+    if isinstance(value, date):
         return value.isoformat()
     return value
 
@@ -1366,7 +1365,7 @@ def _apply_media_diff(
     # None-guarded like every sibling volatile field: a transient MAL
     # response that omits end_date on a finished media must not null a
     # populated aired_to (and reset its stability counter).
-    new_aired_to = parse_mal_datetime(payload.get("aired_to"))
+    new_aired_to = parse_mal_date(payload.get("aired_to"))
     if new_aired_to is not None and media.aired_to != new_aired_to:
         _capture("aired_to", media.aired_to, new_aired_to)
         media.aired_to = new_aired_to
@@ -1377,7 +1376,7 @@ def _apply_media_diff(
     # but do NOT flip `changed`: a premiere-date correction is a rare
     # structural fix, not the volatile churn the stability counter tracks.
     # None-guarded so a MAL omission never nulls a populated premiere date.
-    new_aired_from = parse_mal_datetime(payload.get("aired_from"))
+    new_aired_from = parse_mal_date(payload.get("aired_from"))
     if new_aired_from is not None and media.aired_from != new_aired_from:
         _capture("aired_from", media.aired_from, new_aired_from)
         media.aired_from = new_aired_from

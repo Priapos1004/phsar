@@ -38,6 +38,16 @@ without its sidecar still queries correctly.
 Inline columns stay right for fields the API legitimately exposes (`media.score`,
 `media.airing_status`) and for the `BaseModel` timestamps.
 
+## A bare calendar date is a `Date` column
+
+A value the upstream publishes with no time of day is `Date` (`media.aired_from`
+/ `aired_to`). `DateTime` has to invent a time and a zone, and the invented
+midnight then reads as real precision to every consumer downstream.
+
+Retyping one needs `USING (col AT TIME ZONE 'UTC')::date`, because a bare
+`timestamptz::date` resolves through the session `TimeZone` and shifts every
+value a day west of Greenwich.
+
 ## Indexes must be declared in the model, not only the migration
 
 An index present in a migration but absent from the model's module-scope

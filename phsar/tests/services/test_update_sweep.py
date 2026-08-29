@@ -14,7 +14,7 @@ the exact payload it wants without rebuilding a full MAL response.
 
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -125,7 +125,10 @@ def _payload(
     scored_by: int = 1000,
     episodes: int | None = 12,
     airing_status: str = "Finished Airing",
-    aired_to: str | None = "2020-06-30T00:00:00+00:00",
+    aired_to: str | None = "2020-06-30",
+    # Defaults off: the media fixtures below are undated, so a real value here
+    # would make the self-heal fire and add an entry to every sink assertion.
+    aired_from: str | None = None,
 ) -> dict:
     return {
         "score": score,
@@ -133,6 +136,7 @@ def _payload(
         "episodes": episodes,
         "airing_status": airing_status,
         "aired_to": aired_to,
+        "aired_from": aired_from,
     }
 
 
@@ -142,11 +146,19 @@ def _payload(
 
 
 def test_diff_no_change_returns_false():
+    """Asserting the sink is EMPTY, not just that `changed` is False: the
+    `aired_from` heal deliberately never flips `changed`, so a parser returning
+    the wrong type would rewrite the column and flood result_summary on every
+    sweep with this test still green."""
     media = Media(**media_kwargs(anime_id=1, mal_id=1, score=7.5, scored_by=1000, episodes=12,
         airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_from=date(2020, 4, 1),
+        aired_to=date(2020, 6, 30),
     ))
-    assert _apply_media_diff(media, _payload()) is False
+    sink: list[dict] = []
+
+    assert _apply_media_diff(media, _payload(aired_from="2020-04-01"), diff_sink=sink) is False
+    assert sink == []
 
 
 def test_diff_sink_captures_dynamic_field_changes():
@@ -156,7 +168,7 @@ def test_diff_sink_captures_dynamic_field_changes():
     media = Media(**media_kwargs(
         anime_id=1, mal_id=1, score=7.5, scored_by=1000, episodes=12,
         airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     ))
     sink: list[dict] = []
     _apply_media_diff(
@@ -170,23 +182,22 @@ def test_diff_sink_captures_dynamic_field_changes():
     assert captured["episodes"] == (12, 13)
 
 
-def test_diff_sink_serializes_datetime_to_iso_string():
-    """aired_to is a datetime — JSONB serialization via json.dumps would
-    crash if we stuffed the raw object into result_summary. Regression
-    guard for the datetime-in-diff-sink serialization blocker."""
+def test_diff_sink_serializes_date_to_iso_string():
+    """aired_to is a date — JSONB serialization via json.dumps would
+    crash if we stuffed the raw object into result_summary."""
     media = Media(**media_kwargs(
         anime_id=1, mal_id=1, score=7.5, scored_by=1000, episodes=12,
         airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     ))
     sink: list[dict] = []
     _apply_media_diff(
         media,
-        _payload(aired_to="2021-06-30T00:00:00+00:00"),
+        _payload(aired_to="2021-06-30"),
         diff_sink=sink,
     )
     captured = {e["field"]: (e["old"], e["new"]) for e in sink}
-    assert captured["aired_to"] == ("2020-06-30T00:00:00+00:00", "2021-06-30T00:00:00+00:00")
+    assert captured["aired_to"] == ("2020-06-30", "2021-06-30")
     # The whole sink must json-serialize cleanly — same call json.dumps
     # makes inside SQLAlchemy's JSONB serializer.
     json.dumps(sink)
@@ -205,7 +216,7 @@ def test_diff_sink_skipped_when_none():
 def test_diff_score_change_returns_true():
     media = Media(**media_kwargs(anime_id=1, mal_id=1, score=7.5, scored_by=1000, episodes=12,
         airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     ))
     assert _apply_media_diff(media, _payload(score=8.0)) is True
     assert media.score == 8.0
@@ -227,9 +238,9 @@ def test_diff_small_vote_drift_below_threshold_returns_false():
     delta is essentially zero — must not reset the stability counter."""
     media = Media(**media_kwargs(anime_id=1, mal_id=1, score=8.5, scored_by=5_000_000, episodes=12,
         airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     ))
-    payload = _payload(score=8.5, scored_by=5_000_001, episodes=12, aired_to="2020-06-30T00:00:00+00:00")
+    payload = _payload(score=8.5, scored_by=5_000_001, episodes=12, aired_to="2020-06-30")
     assert _apply_media_diff(media, payload) is False
     # But the value is still written through — data freshness.
     assert media.scored_by == 5_000_001
@@ -239,7 +250,7 @@ def test_diff_borderline_score_change_below_threshold_returns_false():
     """+0.005 score on 1k votes — weighted delta ~0.015, below 0.05."""
     media = Media(**media_kwargs(anime_id=1, mal_id=1, score=7.500, scored_by=1000, episodes=12,
         airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     ))
     payload = _payload(score=7.505, scored_by=1000)
     assert _apply_media_diff(media, payload) is False
@@ -264,7 +275,7 @@ def test_diff_refuses_to_clobber_airing_status_with_none():
     defensive) must not blow up the row."""
     media = Media(**media_kwargs(anime_id=1, mal_id=1, score=7.5, scored_by=1000, episodes=12,
         airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     ))
     payload = _payload()
     payload["airing_status"] = None
@@ -278,7 +289,7 @@ def test_diff_refuses_to_clobber_score_with_omitted_field():
     means MAL omitted the field — refuse to overwrite a populated count."""
     media = Media(**media_kwargs(anime_id=1, mal_id=1, score=8.5, scored_by=5_000_000, episodes=12,
         airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     ))
     payload = _payload(score=None, scored_by=0)
     assert _apply_media_diff(media, payload) is False
@@ -292,10 +303,10 @@ def test_diff_refuses_to_clobber_aired_to_with_none():
     the same None-guard every sibling volatile field carries."""
     media = Media(**media_kwargs(anime_id=1, mal_id=1, score=7.5, scored_by=1000, episodes=12,
         airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     ))
     assert _apply_media_diff(media, _payload(aired_to=None)) is False
-    assert media.aired_to == datetime(2020, 6, 30, tzinfo=timezone.utc)
+    assert media.aired_to == date(2020, 6, 30)
 
 
 # ---------------------------------------------------------------------------
@@ -800,7 +811,7 @@ async def test_refresh_increments_counter_when_unchanged(db_session):
         freshness=AnimeFreshness(last_checked_at=datetime.now(timezone.utc) - timedelta(days=1), stable_check_count=5),
         media_freshness=MediaFreshness(last_checked_at=datetime.now(timezone.utc) - timedelta(days=1)),
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     )
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper({media_mal_id: _payload()})
@@ -821,7 +832,7 @@ async def test_refresh_resets_counter_on_score_change(db_session):
         freshness=AnimeFreshness(last_checked_at=datetime.now(timezone.utc) - timedelta(days=1), stable_check_count=7),
         media_freshness=MediaFreshness(last_checked_at=datetime.now(timezone.utc) - timedelta(days=1)),
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     )
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper({media_mal_id: _payload(score=8.0)})
@@ -866,7 +877,7 @@ async def test_refresh_bumps_last_checked_even_when_unchanged(db_session):
         freshness=AnimeFreshness(last_checked_at=old_anime_ts, stable_check_count=10),
         media_freshness=MediaFreshness(last_checked_at=old_media_ts),
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     )
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper({media_mal_id: _payload()})
@@ -891,7 +902,7 @@ async def test_refresh_rewrites_relation_edges_from_full_payload(db_session):
         freshness=AnimeFreshness(last_checked_at=datetime.now(timezone.utc) - timedelta(days=1)),
         media_freshness=MediaFreshness(last_checked_at=datetime.now(timezone.utc) - timedelta(days=1)),
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     )
     # Seed an existing sidecar with one stale edge; the detail payload
     # returns two anime relations, so the rewrite should replace this.
@@ -930,7 +941,7 @@ async def test_refresh_creates_missing_sidecars_defensively(db_session):
         db_session, mal_id_a=-9005, mal_id_m=-9105,
         freshness=None, media_freshness=None,
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     )
     assert anime.freshness is None
     assert anime.media[0].freshness is None
@@ -958,7 +969,7 @@ async def test_refresh_hentai_genre_removes_anime_and_blacklists(db_session):
     anime = await _build_anime_with_one_media(
         db_session, mal_id_a=-9310, mal_id_m=-9410,
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     )
     media_mal_id = anime.media[0].mal_id
     anime_uuid = str(anime.uuid)
@@ -991,7 +1002,7 @@ async def test_refresh_hentai_rx_rating_without_genre_tag_removes(db_session):
     anime = await _build_anime_with_one_media(
         db_session, mal_id_a=-9311, mal_id_m=-9411,
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     )
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper(
@@ -1021,7 +1032,7 @@ async def test_refresh_non_hentai_is_not_removed(db_session):
             last_checked_at=datetime.now(timezone.utc) - timedelta(days=1),
         ),
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     )
     anime_id = anime.id
     media_mal_id = anime.media[0].mal_id
@@ -1045,7 +1056,7 @@ async def test_refresh_advances_per_media_stability_counter(db_session):
             stable_check_count=4,
         ),
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     )
     media_mal_id = anime.media[0].mal_id
 
@@ -1089,7 +1100,7 @@ async def test_refresh_only_touches_due_media(db_session):
             stable_check_count=8,
         ),
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     )
     # Add a stable sibling NOT in the due set. It stays out of the
     # eager-loaded anime.media collection (added after the build query), so
@@ -1130,7 +1141,7 @@ async def test_refresh_only_touches_due_media(db_session):
 async def _seed_anime(
     db_session, *, mal_id: int, last_checked_at: datetime | None,
     stable_check_count: int = 5, airing_status: str = "Finished Airing",
-    aired_from: datetime | None = None, relation_type=None,
+    aired_from: date | None = None, relation_type=None,
 ):
     """Insert anime + one media + a media_freshness row. Defaults avoid
     every tier (stable=5 so not stabilizing, last_checked=recent, finished,
@@ -1209,7 +1220,7 @@ async def test_tier_recent_main_weekly_selected(db_session):
         db_session, mal_id=-7004, stable_check_count=10,
         last_checked_at=datetime.now(timezone.utc) - timedelta(days=8),
         relation_type=RelationType.Main,
-        aired_from=datetime.now(timezone.utc) - timedelta(days=730),  # 2y ago
+        aired_from=date.today() - timedelta(days=730),  # 2y ago
     )
     assert recent_main.id in await _select_due_ids(db_session)
 
@@ -1224,7 +1235,7 @@ async def test_tier_old_main_excluded_from_weekly(db_session):
         db_session, mal_id=-7005, stable_check_count=10,
         last_checked_at=datetime.now(timezone.utc) - timedelta(days=8),
         relation_type=RelationType.Main,
-        aired_from=datetime.now(timezone.utc) - timedelta(days=365 * 7),
+        aired_from=date.today() - timedelta(days=365 * 7),
     )
     assert old_main.id not in await _select_due_ids(db_session)
 
@@ -1236,7 +1247,7 @@ async def test_tier_long_tail_selected(db_session):
     tier) is not. Dated 2y back so both sit in the 90-day cohort — the undated
     and archival cohorts have their own tests."""
     now = datetime.now(timezone.utc)
-    two_years = now - timedelta(days=730)
+    two_years = date.today() - timedelta(days=730)
     due = await _seed_anime(
         db_session, mal_id=-7006, stable_check_count=10,
         last_checked_at=now - timedelta(days=100), aired_from=two_years,
@@ -1256,7 +1267,7 @@ async def test_tier_archival_waits_for_the_180_day_net(db_session):
     against the 180-day window, not the 90-day one — so a 100d-stale archival
     row is NOT due while a 200d-stale one is."""
     now = datetime.now(timezone.utc)
-    twelve_years = now - timedelta(days=365 * 12)
+    twelve_years = date.today() - timedelta(days=365 * 12)
     not_yet = await _seed_anime(
         db_session, mal_id=-7020, stable_check_count=10,
         last_checked_at=now - timedelta(days=100), aired_from=twelve_years,
@@ -1329,6 +1340,7 @@ async def test_count_by_sweep_tier_priority_buckets_each_anime_once(db_session):
     """
     from app.models.media import RelationType
     now = datetime.now(timezone.utc)
+    today = date.today()
     baseline = await AnimeDAO().count_by_sweep_tier_priority(db_session)
 
     await _seed_anime(  # airing wins over stable<3 -> airing_now
@@ -1342,13 +1354,13 @@ async def test_count_by_sweep_tier_priority_buckets_each_anime_once(db_session):
         db_session, mal_id=-7103, stable_check_count=10,
         last_checked_at=now - timedelta(days=8),
         relation_type=RelationType.Main,
-        aired_from=now - timedelta(days=365),
+        aired_from=today - timedelta(days=365),
     )
     await _seed_anime(  # recent main, RECENTLY SWEPT (1h) -> weekly_cycle
         db_session, mal_id=-7104, stable_check_count=10,
         last_checked_at=now - timedelta(hours=1),
         relation_type=RelationType.Main,
-        aired_from=now - timedelta(days=365),
+        aired_from=today - timedelta(days=365),
     )
     await _seed_anime(  # no recent main, recently checked -> long_cycle
         db_session, mal_id=-7105, stable_check_count=10,
@@ -1361,7 +1373,7 @@ async def test_count_by_sweep_tier_priority_buckets_each_anime_once(db_session):
     await _seed_anime(  # every media premiered 12y ago -> archival_cycle
         db_session, mal_id=-7107, stable_check_count=10,
         last_checked_at=now - timedelta(hours=1),
-        aired_from=now - timedelta(days=365 * 12),
+        aired_from=today - timedelta(days=365 * 12),
     )
     await db_session.flush()
 
@@ -1393,6 +1405,7 @@ async def test_anime_tier_is_media_rollup_not_anime_probe_counter(db_session):
     with the media card (anime weekly_cycle while all media stabilizing)."""
     from app.models.media import RelationType
     now = datetime.now(timezone.utc)
+    today = date.today()
     baseline = await AnimeDAO().count_by_sweep_tier_priority(db_session)
 
     anime = Anime(mal_id=-7301, title="A-7301")
@@ -1400,7 +1413,7 @@ async def test_anime_tier_is_media_rollup_not_anime_probe_counter(db_session):
     await db_session.flush()
     media = Media(**media_kwargs(
         anime_id=anime.id, mal_id=-730100,
-        relation_type=RelationType.Main, aired_from=now - timedelta(days=365),
+        relation_type=RelationType.Main, aired_from=today - timedelta(days=365),
     ))
     db_session.add(media)
     await db_session.flush()
@@ -1476,6 +1489,7 @@ async def test_count_media_by_sweep_tier_priority_buckets_each_media_once(db_ses
     don't skew bucket attribution."""
     from app.models.media import RelationType
     now = datetime.now(timezone.utc)
+    today = date.today()
     baseline = await AnimeDAO().count_media_by_sweep_tier_priority(db_session)
 
     await _seed_anime(  # airing wins over stable<3 -> airing_now
@@ -1488,14 +1502,14 @@ async def test_count_media_by_sweep_tier_priority_buckets_each_media_once(db_ses
     await _seed_anime(  # recent main, stable -> weekly_cycle
         db_session, mal_id=-7203, stable_check_count=10,
         last_checked_at=now - timedelta(hours=1),
-        relation_type=RelationType.Main, aired_from=now - timedelta(days=365),
+        relation_type=RelationType.Main, aired_from=today - timedelta(days=365),
     )
     await _seed_anime(  # no recent main, stable, undated -> long_cycle
         db_session, mal_id=-7204, stable_check_count=10, last_checked_at=now,
     )
     await _seed_anime(  # premiered 12y ago -> archival_cycle
         db_session, mal_id=-7205, stable_check_count=10, last_checked_at=now,
-        aired_from=now - timedelta(days=365 * 12),
+        aired_from=today - timedelta(days=365 * 12),
     )
     await db_session.flush()
 
@@ -1958,7 +1972,7 @@ async def test_dispatcher_partial_anime_failure_rolls_back_media_freshness(
         ok_media = Media(**media_kwargs(
             anime_id=anime.id, mal_id=m_ok,
             score=7.5, scored_by=1000, episodes=12,
-            aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+            aired_to=date(2020, 6, 30),
         ))
         fail_media = Media(**media_kwargs(anime_id=anime.id, mal_id=m_fail))
         s.add_all([ok_media, fail_media])

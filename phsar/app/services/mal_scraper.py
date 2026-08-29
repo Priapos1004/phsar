@@ -3,7 +3,7 @@ import enum
 import logging
 import re
 from collections import deque
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from time import monotonic
 from typing import TYPE_CHECKING
 
@@ -176,22 +176,14 @@ def is_hentai(anime_info: dict) -> bool:
     return anime_info.get("age_rating") == _AGE_RATING_HENTAI
 
 
-def parse_mal_datetime(value: str | None) -> datetime | None:
-    """Parse a full-ISO datetime string (as produced by `_mal_date_to_iso`
-    and as stored in the catalog). None-safe. Kept as the shared parser the
-    sweep dispatcher uses to compare `aired_from`/`aired_to` payload strings
-    against the DB `DateTime` columns."""
-    if not value:
-        return None
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+def parse_mal_date(value: str | None) -> date | None:
+    """Parse a MAL v2 date (`YYYY`, `YYYY-MM`, or `YYYY-MM-DD`), padding a
+    missing month/day with `01`. None-safe, and None rather than an exception
+    on a malformed value so one bad record can't abort the scrape holding it.
 
-
-def _mal_date_to_datetime(value: str | None) -> datetime | None:
-    """Parse a MAL v2 date (`YYYY`, `YYYY-MM`, or `YYYY-MM-DD`) into a
-    midnight-UTC datetime, filling a missing month/day with `01`. None-safe;
-    returns None on a malformed value. The shared parser behind both
-    `_mal_date_to_iso` (storage form) and the season derivation (needs the
-    month) so the string isn't round-tripped through ISO to read it back."""
+    Serves the wire form and the stored form both, because `_mal_date_to_iso`
+    normalizes to the same `YYYY-MM-DD` MAL sends. The season derivation reads
+    `.month` off it, which is why it returns the object rather than a string."""
     if not value:
         return None
     parts = value.split("-")
@@ -199,22 +191,16 @@ def _mal_date_to_datetime(value: str | None) -> datetime | None:
         year = int(parts[0])
         month = int(parts[1]) if len(parts) > 1 else 1
         day = int(parts[2]) if len(parts) > 2 else 1
-        return datetime(year, month, day, tzinfo=timezone.utc)
+        return date(year, month, day)
     except (ValueError, IndexError):
         return None
 
 
 def _mal_date_to_iso(value: str | None) -> str | None:
-    """Normalize a MAL v2 date into the full midnight-UTC ISO string the
-    catalog stores (`YYYY-MM-DDT00:00:00+00:00`).
-
-    MAL drops Jikan's full ISO datetimes and emits partial dates for older /
-    imprecise records. Filling the missing month/day with `01` at midnight UTC
-    reproduces exactly how Jikan normalized these (verified: every stored
-    aired_from/to is midnight UTC, year-only → 01-01), so a sweep re-fetch of
-    an existing row doesn't spuriously diff the date."""
-    dt = _mal_date_to_datetime(value)
-    return dt.isoformat() if dt else None
+    """Normalize a MAL v2 date to the `YYYY-MM-DD` the catalog stores. See
+    `docs/features/scraping.md` for what the `01` padding costs."""
+    d = parse_mal_date(value)
+    return d.isoformat() if d else None
 
 
 def catalog_season_name(season: str) -> str:
@@ -438,10 +424,10 @@ class MalScraper:
             return catalog_season_name(season), int(year)
 
         # Fallback when MAL omits start_season: derive from the premiere date.
-        date = _mal_date_to_datetime(anime.get("start_date"))
-        if not date:
+        premiere = parse_mal_date(anime.get("start_date"))
+        if not premiere:
             return None, None
-        return catalog_season_name(_month_to_season(date.month)), date.year
+        return catalog_season_name(_month_to_season(premiere.month)), premiere.year
 
     # MAL synopses commonly end with one or more credit tags
     # ("[Written by MAL Rewrite]", "[Source: AniDB]", "[Source: Anime News

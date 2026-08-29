@@ -5,7 +5,7 @@ coverage lives in tests/routers/test_admin.py. This file pins down the
 service's recommended-A ordering and the merge service's keep_uuid swap.
 """
 
-from datetime import datetime, timezone
+from datetime import date
 from uuid import UUID
 
 import pytest
@@ -39,8 +39,8 @@ async def _make_pair(
     *,
     a_mal: int,
     b_mal: int,
-    a_aired_from: datetime | None = None,
-    b_aired_from: datetime | None = None,
+    a_aired_from: date | None = None,
+    b_aired_from: date | None = None,
 ) -> tuple[Anime, Anime, Media, Media, UUID]:
     studio = Studio(name=f"Service Studio {a_mal}")
     db_session.add(studio)
@@ -77,8 +77,8 @@ async def _make_pair(
 async def test_list_pending_orders_by_earliest_aired_from(db_session):
     """When both sides have aired_from, the side that aired earlier is
     surfaced as anime_a (the recommended-keep side)."""
-    earlier = datetime(2010, 1, 1, tzinfo=timezone.utc)
-    later = datetime(2018, 1, 1, tzinfo=timezone.utc)
+    earlier = date(2010, 1, 1)
+    later = date(2018, 1, 1)
     a, b, _, _, candidate_uuid = await _make_pair(
         db_session, a_mal=90101, b_mal=90102,
         a_aired_from=later, b_aired_from=earlier,
@@ -249,14 +249,14 @@ async def test_list_pending_includes_reclassification_preview(db_session):
         a.id, 940101, title="Preview TV",
         media_type=MediaType.TV, relation_type=RelationType.Main,
         episodes=13, duration_seconds=1440,
-        aired_from=datetime(2015, 1, 1, tzinfo=timezone.utc),
+        aired_from=date(2015, 1, 1),
     ))
     # B's weak Main (1-min Movie) — substance gate will demote it.
     media_b = Media(**media_kwargs(
         b.id, 940201, title="Preview Manner Movie",
         media_type=MediaType.Movie, relation_type=RelationType.Main,
         episodes=1, duration_seconds=60,
-        aired_from=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        aired_from=date(2024, 1, 1),
     ))
     db_session.add_all([media_a, media_b])
     await db_session.flush()
@@ -309,7 +309,7 @@ async def test_merge_reconnects_main_chain_via_bridge_edges(db_session):
         a.id, 970101, title="Bridge S1",
         media_type=MediaType.TV, relation_type=RelationType.Main,
         episodes=24, duration_seconds=1440,
-        aired_from=datetime(2019, 7, 5, tzinfo=timezone.utc),
+        aired_from=date(2019, 7, 5),
     ))
     # The bridge: TVSpecial with 1 ep — fails substance, will be
     # side_story. But the closure walks through it as long as the
@@ -318,13 +318,13 @@ async def test_merge_reconnects_main_chain_via_bridge_edges(db_session):
         a.id, 970201, title="Bridge Special",
         media_type=MediaType.TVSpecial, relation_type=RelationType.SideStory,
         episodes=1, duration_seconds=1440,
-        aired_from=datetime(2022, 7, 10, tzinfo=timezone.utc),
+        aired_from=date(2022, 7, 10),
     ))
     s2 = Media(**media_kwargs(
         b.id, 970301, title="Bridge S2",
         media_type=MediaType.TV, relation_type=RelationType.Main,
         episodes=22, duration_seconds=1440,
-        aired_from=datetime(2023, 4, 6, tzinfo=timezone.utc),
+        aired_from=date(2023, 4, 6),
     ))
     db_session.add_all([s1, bridge, s2])
     await db_session.flush()
@@ -385,13 +385,13 @@ async def test_merge_demotes_weak_main_from_loser(db_session):
         a.id, 950101, title="Demote TV",
         media_type=MediaType.TV, relation_type=RelationType.Main,
         episodes=13, duration_seconds=1440,
-        aired_from=datetime(2015, 1, 1, tzinfo=timezone.utc),
+        aired_from=date(2015, 1, 1),
     ))
     media_b = Media(**media_kwargs(
         b.id, 950201, title="Demote Manner Movie",
         media_type=MediaType.Movie, relation_type=RelationType.Main,
         episodes=1, duration_seconds=60,
-        aired_from=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        aired_from=date(2024, 1, 1),
     ))
     db_session.add_all([media_a, media_b])
     await db_session.flush()

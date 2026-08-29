@@ -70,15 +70,14 @@ def _make_anime(
     media_type: str = "TV",
     duration: str = "23 min per ep",
     episodes: int = 12,
-    aired_from: str = "2020-04-01T00:00:00+00:00",
+    aired_from: str = "2020-04-01",
     related_anime: list | None = None,
 ) -> dict:
     """Minimum MAL v2 anime object accepted by extract_information without
     nulls. Keeps the Jikan-era display keywords (media_type='TV',
-    duration='23 min per ep', full-ISO aired_from) and translates them to the
-    MAL wire shape internally. `related_anime` rides in the SAME object (v2
-    bundles relations into the detail response)."""
-    start_date = aired_from.split("T")[0] if aired_from else None
+    duration='23 min per ep') and translates them to the MAL wire shape
+    internally. `related_anime` rides in the SAME object (v2 bundles
+    relations into the detail response)."""
     return {
         "id": mal_id,
         "title": title,
@@ -87,7 +86,7 @@ def _make_anime(
             "medium": "https://example/cover.jpg",
             "large": "https://example/cover.jpg",
         },
-        "start_date": start_date,
+        "start_date": aired_from,
         "end_date": "2020-06-30",
         "synopsis": "",
         "mean": 7.5,
@@ -658,8 +657,8 @@ def test_extract_information_maps_mal_object_to_catalog_shape():
     assert info["airing_status"] == "Finished Airing"
     assert info["duration"] is None
     assert info["duration_seconds"] == 23 * 60
-    assert info["aired_from"] == "2020-04-01T00:00:00+00:00"
-    assert info["aired_to"] == "2020-06-30T00:00:00+00:00"
+    assert info["aired_from"] == "2020-04-01"
+    assert info["aired_to"] == "2020-06-30"
     assert info["cover_image"] == "https://example/cover.jpg"
 
 
@@ -697,12 +696,14 @@ def test_extract_information_translates_mal_enums():
 
 def test_mal_date_to_iso_handles_partial_dates():
     """MAL emits partial dates (`YYYY`, `YYYY-MM`) for older/imprecise
-    records; the missing month/day fill with 01 at midnight UTC to
-    reproduce Jikan's normalization exactly."""
-    assert _mal_date_to_iso("2011") == "2011-01-01T00:00:00+00:00"
-    assert _mal_date_to_iso("2011-04") == "2011-04-01T00:00:00+00:00"
-    assert _mal_date_to_iso("2011-04-02") == "2011-04-02T00:00:00+00:00"
+    records; the missing month/day fill with 01."""
+    assert _mal_date_to_iso("2011") == "2011-01-01"
+    assert _mal_date_to_iso("2011-04") == "2011-04-01"
+    assert _mal_date_to_iso("2011-04-02") == "2011-04-02"
     assert _mal_date_to_iso(None) is None
+    # None, not an exception: the sweep's air-date comparison shares this
+    # parser, so one malformed record must not abort the run holding it.
+    assert _mal_date_to_iso("not-a-date") is None
 
 
 def test_parse_relation_edges_aliases_spinoff_and_excludes_character():
@@ -1978,10 +1979,10 @@ async def test_search_title_weak_anchor_root_releases_visited_ids(monkeypatch):
         )
 
     anime_by_id = {
-        38472: _short_tv(38472, "Isekai Quartet", "2019-04-09T00:00:00+00:00"),
-        39988: _short_tv(39988, "Isekai Quartet 2", "2020-01-14T00:00:00+00:00"),
-        41567: _movie(41567, "Isekai Quartet Movie", "2022-06-10T00:00:00+00:00"),
-        61851: _short_tv(61851, "Isekai Quartet 3", "2025-04-09T00:00:00+00:00"),
+        38472: _short_tv(38472, "Isekai Quartet", "2019-04-09"),
+        39988: _short_tv(39988, "Isekai Quartet 2", "2020-01-14"),
+        41567: _movie(41567, "Isekai Quartet Movie", "2022-06-10"),
+        61851: _short_tv(61851, "Isekai Quartet 3", "2025-04-09"),
     }
 
     async def fake_get(self, url, params=None):
