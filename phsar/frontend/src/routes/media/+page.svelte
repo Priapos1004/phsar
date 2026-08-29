@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { getContext } from 'svelte';
 	import { api, ApiError } from '$lib/api';
-	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, formatEpisodeCount, cleanDescription, resolveTitle, resolveSubtitles, formatRelationType, formatMediaType } from '$lib/utils/formatString';
+	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, formatEpisodeCount, formatAiringStatus, cleanDescription, resolveTitle, resolveSubtitles, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -187,9 +187,11 @@
 								{resolveTitle(media.title, media.name_eng, media.name_jap, nameLanguage)}
 							</h1>
 							{#if media.airing_status === 'Currently Airing'}
-								<span class="inline-flex items-center gap-1.5 mt-1.5 px-2.5 py-1 rounded-md font-semibold bg-green-100 text-green-800 border border-green-200">
+								<!-- Structurally the anime hero's badge. The media grain has no
+								     upcoming-content qualifier, so there is only ever one part. -->
+								<span class="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-1.5 px-2.5 py-1 rounded-md font-semibold bg-green-100 text-green-800 border border-green-200">
 									<span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-									{media.airing_status}
+									<span>{formatAiringStatus(media.airing_status, false, media.aired_to)}</span>
 								</span>
 							{:else if media.airing_status === 'Not yet aired'}
 								<span class="inline-block mt-1.5 px-2.5 py-1 rounded-md font-semibold bg-yellow-100 text-yellow-800 border border-yellow-200">

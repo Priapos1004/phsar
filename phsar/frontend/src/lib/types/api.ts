@@ -318,6 +318,9 @@ export interface AnimeDetail extends AnimeAggregatedBase {
 	 * over the anime's main entries only (Main + AlternativeVersion), matching
 	 * avg_score / avg_scored_by. */
 	score_top_percent: number | null;
+	/** Latest `aired_to` among the currently-airing media, as `"2026-09-21"`.
+	 * Null unless MAL has published an end date for one of them. */
+	airing_until: string | null;
 	media: AnimeMediaItem[];
 }
 

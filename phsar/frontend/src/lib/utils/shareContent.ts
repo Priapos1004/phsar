@@ -14,6 +14,13 @@ import { meanScore } from '$lib/utils/ratingStats';
 import { MAIN_RELATIONS } from '$lib/utils/relations';
 import type { AnimeDetail, AnimeMediaItem, MediaConnected, MediaDetail, RatingOut } from '$lib/types/api';
 
+/*
+ * A card carries nothing time-relative — no air date, no countdown, no "last updated".
+ * The corollary of MISSING's premise below: a PNG travels away from *now* as well as from
+ * the app, and never re-renders to correct itself. Governs any addition here, not just the
+ * status line — which is why `statusBadges` drops `formatAiringStatus`'s end-date argument.
+ */
+
 /** Everything a `ShareCard` needs beyond the title, score and ratings. */
 export interface ShareCardContent {
 	coverUrl: string | null;

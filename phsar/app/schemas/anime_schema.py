@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -114,5 +114,8 @@ class AnimeDetail(AnimeAggregatedBase):
     # scored anime in the catalog (None when unscored). Detail-only — not on
     # the search cards.
     score_top_percent: int | None = None
+    # Latest end date among the currently-airing media, when MAL has published
+    # one. Detail-only for the same reason as score_top_percent.
+    airing_until: date | None = None
     # All media in this anime
     media: list[AnimeMediaItem] = []

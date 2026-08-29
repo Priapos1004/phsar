@@ -215,6 +215,8 @@ Each anime search result card shows:
 ### 6.2 Hero Card
 - Same blurred cover background pattern as media detail
 - Title (English preferred), alternate titles, airing status badge: green (Currently Airing), yellow (Not yet aired), blue (upcoming content), grey (Finished Airing)
+- The green badge names an end date when MAL has published one — "Currently Airing until Sep 19", taking the latest when two entries are in flight. Most airing shows have none, and the badge then reads just "Currently Airing"; finished and not-yet-aired titles never show one
+- With announced sequels the qualifier follows the date ("Currently Airing until Sep 19 + upcoming content"), and moves to a second line whole — never mid-phrase — only when the badge runs out of width
 - "Story Complete" badge (emerald, additive — shown alongside the airing badge when an admin marked the anime story-complete). Hovering shows a tooltip explaining it differs from "Finished Airing" (broadcast ended) — the *story* has concluded
 - Average MAL score with "ratings/media" label, computed over the anime's main entries only (Main + AlternativeVersion; side stories and recaps excluded); hovering the score pill shows a tooltip clarifying it's the MyAnimeList community score across the main entries, not Phsar users' ratings
 - A small "Top N%" chip after the rating-count text (always visible, color-ramped) showing where this anime ranks among all scored anime by its vote-weighted MAL score (main entries only); hovering explains the top-N% standing and the vote weighting. Hidden when the anime has no scored main entries
@@ -266,6 +268,7 @@ Each anime search result card shows:
 - Both cards share a frame: PHSAR wordmark, a label top-right ("My rating" / "Check this out"), cover image, title in your name-language setting, catalog facts, and the site host + today's date, on your **active theme's** gradient and accent colour
 - The **rating card** adds: your score at your rating-step precision, a status line beside the score, the 5-axis quality radar and the 6 descriptive pills
 - The **info card** adds: the airing-status badge (and "Story Complete" where it applies, anime only) under the title, the genre + age-rating chips in your theme colour, the studio chips, and the synopsis where the rating card puts the radar. At most 6 genres and 2 studios are shown, the rest folding into a "+N" chip, and a long synopsis is trimmed — the card is a fixed size with nothing to scroll
+- **No card carries a time-relative fact** — the airing badge omits the "until Sep 19" end date the detail heroes show
 - The info card **never drops a fact it doesn't have**: a missing episode count reads `-- eps`, and a missing genre/studio/age chip is a `--` chip, so "not on record" can't be mistaken for a rendering fault in an image you're sending on
 - **Titles**: the anime card shows no secondary title (an alternate-language name reads as noise on a glanceable card). The media card shows its parent anime's name underneath, unless that name is identical to the media's own — a single-season show would otherwise print the same string twice
 - **Catalog facts**: media grain is one line, `type · season · total runtime`. Anime grain is the season span plus `episodes · total runtime`, on **one** line for a single season and **two** when the span is a range (`Fall 2020 - Winter 2026` plus the length facts overflows a single line). The runtime is always the catalog's full length, never the partial you've watched — this line describes the show, not your progress
@@ -299,7 +302,7 @@ Each anime search result card shows:
 - Cover image (with fallback placeholder if missing or load fails; spoiler-guarded with blur + click-to-reveal when media is beyond the spoiler frontier)
 - Title (English preferred, falls back to default title)
 - Japanese title and romaji subtitle (if different from displayed title)
-- Airing status badge: green pulsing dot for "Currently Airing", yellow for "Not yet aired", muted for finished
+- Airing status badge: green pulsing dot for "Currently Airing", yellow for "Not yet aired", muted for finished. The green badge names this entry's end date when MAL has published one ("Currently Airing until Sep 19")
 - MAL score with star icon and rating count; hovering the score pill shows a tooltip clarifying it's the MyAnimeList community score, not Phsar users' ratings
 - A small "Top N%" chip after the rating-count text (always visible, color-ramped) showing where this media ranks among all scored media by its vote-weighted MAL score; hovering explains the rank + vote weighting. Hidden when the media has no score
 - Badges: media type (green), relation type (blue), age rating (orange)

@@ -79,6 +79,19 @@ Any user-facing title goes through `resolveTitle(title, name_eng, name_jap, name
 The romaji `title` is the fallback *inside* that helper, never the thing you render
 directly — a raw `title` silently ignores the user's setting.
 
+## A timestamp and a calendar date use different formatters
+
+Which formatter a value takes is decided by its wire shape, not by its name. A
+**timestamp** — a Pydantic `datetime`, carrying a time and a zone — is an instant:
+`formatShortDate` / `formatShortDateTime`, rendered in the viewer's zone. A
+**calendar date** — a Pydantic `date`, arriving bare as `"2026-09-21"`:
+`formatAirDate`, and never `new Date()` on one, which parses as UTC midnight and
+renders a day early west of Greenwich.
+
+Picking wrong is silent, wrong for only some viewers, and invisible to a suite
+running in UTC, so guard it by asserting the value never reaches `Date` rather
+than by asserting what it rendered.
+
 ## A toggle's surface decides its component
 
 The exception to "prefer changing the component" above. `SegmentedControl` is the
