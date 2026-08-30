@@ -162,20 +162,10 @@ a {
   @apply outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm;
 }
 
-/* The landing flash on a back-button return — `utils/scrollFocus` adds this to the
-   card or row it just centred, so the eye finds it without the page having moved
-   under the user. Written out here rather than as a utility string because that
-   module is where the class name lives, and Tailwind's scanner cannot see it there.
-   Ring AND tint, because a card hides the tint behind its own opaque surface. */
+/* The ring a card takes on a back-button return. */
 @keyframes focus-flash {
-  from {
-    box-shadow: 0 0 0 3px var(--ring);
-    background-color: color-mix(in oklab, var(--primary) 20%, transparent);
-  }
-  to {
-    box-shadow: 0 0 0 3px transparent;
-    background-color: transparent;
-  }
+  from { box-shadow: 0 0 0 3px var(--ring); }
+  to { box-shadow: 0 0 0 3px transparent; }
 }
 
 /* Travels the highlight across the row. `background-size` is 3× the row, so the
@@ -187,19 +177,26 @@ a {
   to { background-position: 0% 0; }
 }
 
-.focus-flash {
+/* The landing flash on a back-button return — `utils/scrollFocus` adds this class to
+   the card or row it just centred, so the eye finds it without the page having moved
+   under the user. Written out here rather than as a utility string because that module
+   is where the class name lives, and Tailwind's scanner cannot see it there.
+
+   Each surface gets exactly one animation, and the two are selected apart rather than
+   one overriding the other — `scrollFocus.ts` clears the class on the first
+   `animationend`, which is only correct while that holds. */
+.focus-flash:not(tr) {
   @apply rounded-xl;
   animation: focus-flash 3s ease-out;
 }
 
-/* A row in a collapsed table paints no box-shadow, so the ring half of the flash
-   never reaches one and the tint alone is a flat block of colour. A row DOES paint a
-   background image, so it gets a highlight travelling its length instead, layered
-   over the tint — and over whatever background-color the row already carries, so the
-   Jobs Log status tints still show through.
+/* A row in a collapsed table paints no box-shadow, so the ring never reaches one.
+   A row DOES paint a background image, so it takes a highlight travelling its length
+   instead — and only that: a wash over the whole row reads as a flat block, and it
+   would bury the Jobs Log status tints the row already carries.
 
-   The band is broad and only a little brighter than the tint on purpose: a narrow,
-   high-contrast one crosses as a flicker rather than as a wash going past. */
+   The band is broad and only a little brighter than the surface on purpose: a
+   narrow, high-contrast one crosses as a flicker rather than as a wash going past. */
 tr.focus-flash {
   background-image: linear-gradient(
     100deg,
@@ -209,7 +206,7 @@ tr.focus-flash {
   );
   background-repeat: no-repeat;
   background-size: 300% 100%;
-  animation: focus-flash 3s ease-out, focus-flash-sweep 1.6s ease-out;
+  animation: focus-flash-sweep 1.6s ease-out;
 }
 
 @custom-variant data-open {

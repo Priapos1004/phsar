@@ -24,8 +24,7 @@ import { replaceState } from '$app/navigation';
 export const FOCUS_PARAM = 'focus';
 
 /** Defined in `app.css`, not as a utility string: it is added from here, where
- *  Tailwind's class scanner cannot see it. The class and the keyframes share the
- *  name, so this identifies both the marker and the animation to wait on. */
+ *  Tailwind's class scanner cannot see it. */
 const FLASH_CLASS = 'focus-flash';
 
 /** How long the target is held centred while the page finishes settling — see
@@ -84,19 +83,14 @@ export function revealFocused(uuid: string | null): void {
 	});
 }
 
-/** Mark `el`, and unmark it when the animation says so rather than on a timer here —
+/** Mark `el`, and unmark it when the animation ends rather than on a timer here —
  *  the class has to go for a later return to replay it, and a duration duplicated in
- *  this file would drift from the one in `app.css`. A table row runs the sweep
- *  alongside, so the name is what distinguishes the end of the flash from the end of
- *  the highlight crossing it. */
+ *  this file would drift from the one in `app.css`. Each surface runs exactly one
+ *  animation, the ring on a card and the sweep on a row, so the first end is the
+ *  end. */
 function flash(el: HTMLElement): void {
 	el.classList.add(FLASH_CLASS);
-	const done = (event: AnimationEvent) => {
-		if (event.animationName !== FLASH_CLASS) return;
-		el.classList.remove(FLASH_CLASS);
-		el.removeEventListener('animationend', done);
-	};
-	el.addEventListener('animationend', done);
+	el.addEventListener('animationend', () => el.classList.remove(FLASH_CLASS), { once: true });
 }
 
 /** Keep `el` centred until the page has stopped moving under it, then let go. */

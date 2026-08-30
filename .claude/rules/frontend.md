@@ -18,6 +18,25 @@ paths: "phsar/frontend/src/**/*"
   and log the user out) and `shareImage.ts` (fetches cover bytes from MAL's CDN, not
   from this API).
 
+## An animated `color-mix()` can vanish from the production bundle
+
+In **`app.css`**, a `color-mix()` inside `@keyframes` takes the whole keyframe block
+with it: that file's minifier pass emits `color-mix` fallbacks by duplicating the
+**rule** holding them, and a keyframe block cannot be duplicated, so it drops the
+block instead. The animation then interpolates from whatever the element already
+had. Name the colour on `:root` and animate `var(--that)` — `--tooltip-surface` is
+the shape.
+
+**Not a blanket ban**: component `<style>` blocks run a different pipeline and keep
+theirs today (`AttributeBadges`' `pill-burst` ships whole). That difference is build
+configuration, not a language rule, so it is worth re-checking rather than trusting.
+
+Checking means **reading the emitted CSS** — `bun run check`, `bun run test` and
+`bun run build` are all green either way, because the build succeeds and simply
+emits less than you wrote. Any animation verified only against `bun run dev` is
+unverified. `styles/classes.ts` records the other transformation step that mangles
+`color-mix`: the share-card rasterizer.
+
 ## Shared components
 
 **Audit every usage before changing one.** Grep for all call sites and review the
