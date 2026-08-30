@@ -1,8 +1,8 @@
 /**
  * The per-tab stash that lets a re-login pick up where a lapsed session left off.
  *
- * Only the list filters live here; the route travels as `?next=` — see
- * `utils/returnTo` for why the two are split across different carriers.
+ * Only the list filters live here; the route travels as `?next=` in
+ * `utils/returnTo`. Why the two are split: `docs/features/navigation.md`.
  *
  * A separate key rather than a change to when the live `phsar.filter.*` keys
  * are cleared. `clearPerUserStores` wipes those on `token.set(null)`, so the

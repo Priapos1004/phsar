@@ -1,11 +1,9 @@
 /**
  * Where a login should send the user back to.
  *
- * The route travels as a `next` query param on the /login URL rather than in
- * memory or storage, because neither reaches: the sites that hard-navigate via
- * `window.location.href` hand nothing to the next page, and a shared link opened
- * in a fresh tab has no sessionStorage to read. The list filters, which cannot
- * fit in a URL, travel separately — see `utils/resumeSession`.
+ * The route travels as a `next` query param on the /login URL; the list filters,
+ * which cannot fit in one, travel separately in `utils/resumeSession`. Why the
+ * round-trip needs both carriers is in `docs/features/navigation.md`.
  *
  * Everything a detail page needs is already in its URL (`uuid`, the search
  * token `q`, the `from` origin marker, `tab`), so restoring the path restores
