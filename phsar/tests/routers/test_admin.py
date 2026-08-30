@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import select
@@ -13,6 +14,7 @@ from app.models.merge_candidate import MergeCandidate, MergeCandidateStatus
 from app.models.studio import Studio
 from app.models.users import RoleType, Users
 from app.schemas import admin_schema
+from app.services.admin_stats_service import JOB_HEALTH_WINDOW_DAYS
 from tests._helpers import media_kwargs
 from tests.routers.conftest import CRON_AUTH_HEADER
 
@@ -505,16 +507,16 @@ STATS_URL = "/admin/stats/overview"
 
 @pytest.mark.asyncio
 async def test_stats_overview_returns_shape(client, admin_auth_headers):
-    """Endpoint returns the full nested shape — catalog totals, jobs_7d
+    """Endpoint returns the full nested shape — catalog totals, jobs
     per kind, activity_7d counters. Numbers depend on whatever the
     rolled-back test DB contains, so this test only asserts the
-    structure + that every JobKind appears in jobs_7d.by_kind."""
+    structure + that every JobKind appears in jobs.by_kind."""
     resp = await client.get(STATS_URL, headers=admin_auth_headers)
     assert resp.status_code == 200, resp.text
     data = resp.json()
 
     assert set(data.keys()) == {
-        "catalog", "jobs_7d", "activity_7d", "watchlist", "sweep_tiers", "media_sweep_tiers",
+        "catalog", "jobs", "activity_7d", "watchlist", "sweep_tiers", "media_sweep_tiers",
     }
     assert set(data["catalog"].keys()) == {
         "anime_count", "media_count", "anime_added_7d", "media_added_7d",
@@ -545,15 +547,66 @@ async def test_stats_overview_returns_shape(client, admin_auth_headers):
     # v0.14.9: the per-check breakdown sums back to the stabilizing total.
     for tiers in (data["sweep_tiers"], data["media_sweep_tiers"]):
         assert sum(tiers["stabilizing_by_check"].values()) == tiers["stabilizing"]
-    kinds_returned = {row["kind"] for row in data["jobs_7d"]["by_kind"]}
+    kinds_returned = {row["kind"] for row in data["jobs"]["by_kind"]}
     assert kinds_returned == {k.value for k in JobKind}
+    # Every kind carries the window its counts were taken over. Read off the
+    # service's table rather than literals, so retuning a window can't leave
+    # this assertion pinning the old value.
+    assert {row["kind"]: row["window_days"] for row in data["jobs"]["by_kind"]} == {
+        kind.value: days for kind, days in JOB_HEALTH_WINDOW_DAYS.items()
+    }
+
+
+def _kind_row(resp_json: dict, kind: JobKind) -> dict:
+    return next(
+        row for row in resp_json["jobs"]["by_kind"]
+        if row["kind"] == kind.value
+    )
 
 
 def _user_scrape_row(resp_json: dict) -> dict:
-    return next(
-        row for row in resp_json["jobs_7d"]["by_kind"]
-        if row["kind"] == JobKind.user_scrape.value
-    )
+    return _kind_row(resp_json, JobKind.user_scrape)
+
+
+@pytest.mark.asyncio
+async def test_job_health_window_applies_per_kind_not_globally(
+    client, admin_auth_headers, db_session,
+):
+    """A 30-day-old row counts for seasonal_sweep (90d window) and does NOT
+    count for update_sweep (7d). One shared cutoff — of any length — would
+    move both rows or neither, so this is the assertion that distinguishes
+    per-kind windows from a retuned global one. The 100-day-old seasonal
+    row proves 90d still bounds rather than reaching back forever."""
+    assert JOB_HEALTH_WINDOW_DAYS[JobKind.seasonal_sweep] == 90
+    assert JOB_HEALTH_WINDOW_DAYS[JobKind.update_sweep] == 7
+
+    before = (await client.get(STATS_URL, headers=admin_auth_headers)).json()
+    now = datetime.now(timezone.utc)
+    db_session.add_all([
+        Job(
+            kind=JobKind.seasonal_sweep, status=JobStatus.succeeded,
+            payload={"note": "window-test-inside"},
+            created_at=now - timedelta(days=30),
+        ),
+        Job(
+            kind=JobKind.seasonal_sweep, status=JobStatus.succeeded,
+            payload={"note": "window-test-outside"},
+            created_at=now - timedelta(days=100),
+        ),
+        Job(
+            kind=JobKind.update_sweep, status=JobStatus.succeeded,
+            payload={"note": "window-test-stale"},
+            created_at=now - timedelta(days=30),
+        ),
+    ])
+    await db_session.flush()
+    after = (await client.get(STATS_URL, headers=admin_auth_headers)).json()
+
+    def gained(kind: JobKind) -> int:
+        return _kind_row(after, kind)["succeeded"] - _kind_row(before, kind)["succeeded"]
+
+    assert gained(JobKind.seasonal_sweep) == 1, "only the 30d row is inside seasonal's 90d window"
+    assert gained(JobKind.update_sweep) == 0, "30d is outside update_sweep's 7d window"
 
 
 async def _admin_user_id(db_session) -> int:

@@ -800,6 +800,9 @@ export interface AdminCatalogStats {
 
 export interface AdminJobKindStats {
 	kind: JobKind;
+	// How far back this kind's counts reach. Render it; never assume a
+	// window shared with the other kinds.
+	window_days: number;
 	succeeded: number;
 	failed: number;
 	retryable_failed: number;
@@ -843,7 +846,7 @@ export interface AdminSweepTierBreakdown {
 
 export interface AdminOverviewStats {
 	catalog: AdminCatalogStats;
-	jobs_7d: AdminJobsStats;
+	jobs: AdminJobsStats;
 	activity_7d: AdminActivityStats;
 	watchlist: AdminWatchlistStats;
 	// `sweep_tiers` = anime cycle-membership; `media_sweep_tiers` = the same

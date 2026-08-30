@@ -314,6 +314,7 @@ phsar/
 │   │   │       ├── getSeason.ts
 │   │   │       ├── index.ts
 │   │   │       ├── jobBadges.ts
+│   │   │       ├── jobHealth.ts
 │   │   │       ├── jobSummary.ts
 │   │   │       ├── mediaChangeSort.ts
 │   │   │       ├── navigation.ts
@@ -380,6 +381,7 @@ phsar/
 │   │       ├── genre-badges.test.ts
 │   │       ├── job-bell.test.ts
 │   │       ├── job-detail-counters.test.ts
+│   │       ├── job-health.test.ts
 │   │       ├── job-summary.test.ts
 │   │       ├── layout-guard.test.ts
 │   │       ├── library-add.test.ts

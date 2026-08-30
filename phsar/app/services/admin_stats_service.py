@@ -10,7 +10,7 @@ but the Overview tab stays leaderboard-free.
 """
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.anime_dao import AnimeDAO
@@ -64,9 +64,35 @@ async def _catalog_stats(db: AsyncSession, cutoff: datetime) -> CatalogStats:
     )
 
 
-async def _jobs_stats(db: AsyncSession, cutoff: datetime) -> JobsStats:
+# A success rate is only a rate if its window holds several runs, so each
+# kind's window is sized to how often it runs: a single shared cutoff either
+# starves the rare kinds (a weekly sweep in 7 days reads 0% or 100%) or
+# dilutes the frequent ones (three bad nights in 90 still reads 97%).
+#
+# 90d is chosen for `upcoming_sweep` in particular because its runs cluster
+# in the last month of each quarter, and those months sit three months
+# apart — so a 90-day window always covers one such block wherever you stand
+# in the quarter, and never lands in a gap.
+#
+# Keyed on JobKind with no default, so a new kind fails loudly here rather
+# than silently inheriting someone else's cadence.
+JOB_HEALTH_WINDOW_DAYS: dict[JobKind, int] = {
+    JobKind.user_scrape: 7,
+    JobKind.update_sweep: 7,
+    JobKind.backup: 7,
+    JobKind.seasonal_sweep: 90,
+    JobKind.upcoming_sweep: 90,
+    JobKind.restore: 90,
+}
+
+
+async def _jobs_stats(db: AsyncSession, now: datetime) -> JobsStats:
     """One GROUP BY query per kind / status / retryable triple — server
     folds rows into the per-kind shape the schema expects.
+
+    Each kind is bounded by its own `JOB_HEALTH_WINDOW_DAYS` entry, as an OR
+    of per-kind (kind, cutoff) pairs so the filter reads 1:1 against that
+    table.
 
     Excludes system-attributed `user_scrape` rows (the children seasonal_sweep
     enqueues with requested_by_user_id=NULL). The Job Health card is meant
@@ -82,7 +108,10 @@ async def _jobs_stats(db: AsyncSession, cutoff: datetime) -> JobsStats:
             user_attributed.label("user_attributed"),
             func.count(Job.id),
         )
-        .where(Job.created_at >= cutoff)
+        .where(or_(*[
+            and_(Job.kind == kind, Job.created_at >= now - timedelta(days=days))
+            for kind, days in JOB_HEALTH_WINDOW_DAYS.items()
+        ]))
         .where(or_(
             Job.kind != JobKind.user_scrape,
             Job.requested_by_user_id.is_not(None),
@@ -109,7 +138,11 @@ async def _jobs_stats(db: AsyncSession, cutoff: datetime) -> JobsStats:
                 bucket["retryable_failed"] += count
     return JobsStats(
         by_kind=[
-            JobKindStats(kind=kind.value, **counts)
+            JobKindStats(
+                kind=kind.value,
+                window_days=JOB_HEALTH_WINDOW_DAYS[kind],
+                **counts,
+            )
             for kind, counts in by_kind.items()
         ]
     )
@@ -186,11 +219,15 @@ async def _watchlist_stats(db: AsyncSession) -> WatchlistStats:
 
 
 async def get_overview_stats(db: AsyncSession) -> AdminOverviewStats:
-    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+    # One clock read for the whole response, so every number on the card is
+    # as of the same instant. Catalog and activity share a 7d cutoff; job
+    # health derives a cutoff per kind (see JOB_HEALTH_WINDOW_DAYS).
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=7)
     # Sequential awaits — AsyncSession can't multiplex.
     return AdminOverviewStats(
         catalog=await _catalog_stats(db, cutoff),
-        jobs_7d=await _jobs_stats(db, cutoff),
+        jobs=await _jobs_stats(db, now),
         activity_7d=await _activity_stats(db, cutoff),
         watchlist=await _watchlist_stats(db),
         sweep_tiers=await _sweep_tier_breakdown(db),

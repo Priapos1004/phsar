@@ -190,17 +190,21 @@ class CatalogStats(BaseModel):
 
 
 class JobKindStats(BaseModel):
-    """Per-kind breakdown of jobs created in the last 7 days. `failed`
-    counts both retryable and permanent failures; `retryable_failed` is
-    a subset showing how many of those `failed` rows could still recover
-    (so admin can spot user_scrape jobs stuck on transient MAL outages
-    vs. permanently-dead deterministic failures).
+    """Per-kind breakdown of recently-created jobs. `failed` counts both
+    retryable and permanent failures; `retryable_failed` is a subset
+    showing how many of those `failed` rows could still recover (so admin
+    can spot user_scrape jobs stuck on transient MAL outages vs.
+    permanently-dead deterministic failures).
+
+    `window_days` is how far back this kind's counts reach, sized per kind
+    by `JOB_HEALTH_WINDOW_DAYS` in `admin_stats_service`.
 
     The `user_scrape` row counts user-initiated submissions only; the
     seasonal-sweep children that share kind=user_scrape but have
     requested_by_user_id=NULL are excluded so their failure rate
     (Music/PV/etc. filtering) doesn't dilute the user-facing signal."""
     kind: str
+    window_days: int
     succeeded: int
     failed: int
     retryable_failed: int
@@ -264,7 +268,9 @@ class WatchlistStats(BaseModel):
 
 class AdminOverviewStats(BaseModel):
     catalog: CatalogStats
-    jobs_7d: JobsStats
+    # Unsuffixed because job health windows each kind separately — the window
+    # is per row. `activity_7d` beside it really is one 7-day window.
+    jobs: JobsStats
     activity_7d: ActivityStats
     watchlist: WatchlistStats
     # `sweep_tiers` is the anime-membership breakdown (every anime's cycle

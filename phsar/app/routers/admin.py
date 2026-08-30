@@ -76,7 +76,7 @@ async def get_stats_overview(
     current_user=Depends(require_admin),
 ):
     """Aggregate stats for the admin Overview tab. Catalog totals,
-    7-day job health by kind, and 7-day activity counters."""
+    per-kind job health, and 7-day activity counters."""
     return await admin_stats_service.get_overview_stats(db)
 
 
