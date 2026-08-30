@@ -20,6 +20,7 @@ the places below, each with one job.
 | `backend.md` — layering, async session, exceptions | backend / test / script Python |
 | `database.md` — models, sidecars, indexes, migrations | models / DAOs / alembic |
 | `frontend.md` — runes, tokens, tooltips, dialogs, guests | any frontend source file |
+| `tests.md` — proving a test guards, teardown, what jsdom can't assert | backend or frontend test files |
 | `authoring-rules.md` — how to write a rule, a rubric or a skill, and prove it runs | editing any `.md` under `.claude/` |
 
 **`.claude/agents/`** — the rubrics a pipeline fans out to, one per reviewer.
