@@ -72,6 +72,7 @@
 
 <a
 	{href}
+	data-focus-uuid={media_uuid}
 	class="block transition duration-200 transform hover:scale-[1.015]"
 >
 	<Card.Root class="h-full bg-card/80 backdrop-blur">

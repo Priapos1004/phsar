@@ -4,6 +4,7 @@
 	import { api, ApiError } from '$lib/api';
 	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, airingStatusParts, formatEpisodeCount, isSeasonRange, resolveTitle, resolveSubtitles, decimalPlaces, roundScore, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
+	import { FOCUS_PARAM } from '$lib/utils/scrollFocus';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -244,6 +245,9 @@
 	let searchToken = $derived(page.url.searchParams.get('q'));
 	let fromParam = $derived(page.url.searchParams.get('from') as DetailOrigin | null);
 	let jobUuid = $derived(page.url.searchParams.get('job'));
+	// This page IS the card that was clicked, so its own uuid is the anchor unless a
+	// deeper hop already named one — see `utils/scrollFocus`.
+	let focusUuid = $derived(page.url.searchParams.get(FOCUS_PARAM) ?? page.url.searchParams.get('uuid'));
 
 	let cleanedDescription = $derived(anime?.description ? cleanDescription(anime.description) : null);
 
@@ -339,7 +343,7 @@
 	}
 
 	function mediaHref(item: AnimeMediaItem): string {
-		return buildDetailHref('media', item.uuid, { q: searchToken, from: fromParam, job: jobUuid });
+		return buildDetailHref('media', item.uuid, { q: searchToken, from: fromParam, job: jobUuid, focus: focusUuid });
 	}
 
 	function imgFailed(e: Event) {
@@ -366,7 +370,7 @@
 	{:else if error}
 		<div class="text-center text-destructive py-20">{error}</div>
 	{:else if anime}
-		<BackLink {searchToken} {fromParam} {jobUuid} />
+		<BackLink {searchToken} {fromParam} {jobUuid} {focusUuid} />
 
 		<!-- Hero section -->
 		<div class="relative rounded-xl overflow-hidden">

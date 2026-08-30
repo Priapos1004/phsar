@@ -6,6 +6,15 @@ import { createPersistedFilter } from './persistedFilter';
 interface JobsFilter {
 	kind: '' | JobKind;
 	status: '' | JobStatus;
+	/** Which page is shown, 1-based. A list control like the filters beside it: a job
+	 *  detour has to come back to the page the row was on, and putting it here
+	 *  means `filterLifecycle` already governs when it resets.
+	 *
+	 *  A page number rather than a row offset, so the stored value stays
+	 *  self-describing: an offset would silently mean a different page if the
+	 *  table's page size ever changed, with no field shape changing to force a
+	 *  version bump. It also keeps the page size in the table that renders it. */
+	page: number;
 }
 
 // Whitelist of valid filter values — anything else (a stale value, an
@@ -22,7 +31,11 @@ export function sanitizeStatus(raw: unknown): '' | JobStatus {
 	return typeof raw === 'string' && STATUS_VALUES.has(raw) ? (raw as JobStatus) : '';
 }
 
-const DEFAULT_JOBS_FILTER: JobsFilter = { kind: '', status: '' };
+export function sanitizePage(raw: unknown): number {
+	return typeof raw === 'number' && Number.isInteger(raw) && raw >= 1 ? raw : 1;
+}
+
+const DEFAULT_JOBS_FILTER: JobsFilter = { kind: '', status: '', page: 1 };
 
 // In-SPA memory for the Jobs Log filter, mirrored to sessionStorage so a
 // refresh keeps it. Not the URL: an internal tool doesn't need shareable
@@ -31,9 +44,13 @@ const DEFAULT_JOBS_FILTER: JobsFilter = { kind: '', status: '' };
 // rehydration reuses them.
 export const jobsFilter = createPersistedFilter<JobsFilter>({
 	key: 'phsar.filter.adminJobs',
-	version: 1,
+	version: 2,
 	defaults: DEFAULT_JOBS_FILTER,
-	sanitize: (raw) => ({ kind: sanitizeKind(raw.kind), status: sanitizeStatus(raw.status) }),
+	sanitize: (raw) => ({
+		kind: sanitizeKind(raw.kind),
+		status: sanitizeStatus(raw.status),
+		page: sanitizePage(raw.page),
+	}),
 });
 
 /** Reset the Jobs Log filter; fired by `utils/filterLifecycle`. */

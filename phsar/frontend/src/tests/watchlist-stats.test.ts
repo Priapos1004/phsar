@@ -68,6 +68,10 @@ describe('toMediaRows', () => {
 		expect(rows[0].mainSide).toBeNull(); // main/side is an anime-grain concept
 		expect(rows[0].colors).toEqual(['#111']);
 		expect(rows[0].spoilerMediaUuid).not.toBeNull();
+		// `key` is the ENTRY uuid at this grain, so the detail link and the scroll-back
+		// anchor need the media uuid stated separately.
+		expect(rows[0].detailUuid).toBe(rows[0].spoilerMediaUuid);
+		expect(rows[0].detailUuid).not.toBe(rows[0].key);
 	});
 
 	it('flags note presence per media (noteCount 0/1)', () => {

@@ -49,7 +49,7 @@
 		<tbody>
 			{#each rows as row (row.key)}
 				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-				<tr class="group border-b border-border/60 last:border-0 hover:bg-muted/40 transition-colors cursor-pointer" onclick={(e) => rowClickNavigate(e, row.href)}>
+				<tr data-focus-uuid={row.detailUuid} class="group border-b border-border/60 last:border-0 hover:bg-muted/40 transition-colors cursor-pointer" onclick={(e) => rowClickNavigate(e, row.href)}>
 					<td class="px-3 py-2">
 						<Tooltip text={row.tagLabel}>
 							<span class="block size-3.5 rounded-full" style="background:{tagGradient(row.colors)}"></span>

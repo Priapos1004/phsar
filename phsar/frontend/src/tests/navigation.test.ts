@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { buildDetailHref, searchByStudio } from '$lib/utils/navigation';
+import { absoluteDetailUrl, buildDetailHref, searchByStudio } from '$lib/utils/navigation';
 import { api } from '$lib/api';
 
 // `goto` is globally mocked in setup.ts; mock the API so navigateToSearch's
@@ -43,6 +43,22 @@ describe('buildDetailHref', () => {
 	it('percent-encodes tokens with URL-unsafe characters', () => {
 		const href = buildDetailHref('media', uuid, { q: 'a b/c?d' });
 		expect(href).toContain('q=a+b%2Fc%3Fd');
+	});
+
+	it('propagates the scroll anchor as ?focus=', () => {
+		expect(buildDetailHref('media', uuid, { focus: 'anime-1' })).toBe(
+			`/media?uuid=${uuid}&focus=anime-1`,
+		);
+	});
+});
+
+describe('absoluteDetailUrl', () => {
+	// A share link records nothing about how the sharer got there — the scroll
+	// anchor would send a recipient back to a list they never saw.
+	it('stays bare', () => {
+		expect(absoluteDetailUrl('anime', 'abc-123', 'https://example.test')).toBe(
+			'https://example.test/anime?uuid=abc-123',
+		);
 	});
 });
 

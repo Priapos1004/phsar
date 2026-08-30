@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { get } from 'svelte/store';
 import {
 	sanitizeKind,
+	sanitizePage,
 	sanitizeStatus,
 	jobsFilter,
 	clearJobsFilter,
@@ -27,16 +28,42 @@ describe('sanitizeKind / sanitizeStatus', () => {
 	});
 });
 
-describe('jobsFilter store + clearJobsFilter', () => {
-	it('defaults to an empty filter', () => {
-		clearJobsFilter();
-		expect(get(jobsFilter)).toEqual({ kind: '', status: '' });
+describe('sanitizePage', () => {
+	it('passes through a real page number', () => {
+		expect(sanitizePage(1)).toBe(1);
+		expect(sanitizePage(7)).toBe(7);
 	});
 
-	it('clearJobsFilter resets a set filter back to empty', () => {
-		jobsFilter.set({ kind: 'update_sweep', status: 'failed' });
-		expect(get(jobsFilter)).toEqual({ kind: 'update_sweep', status: 'failed' });
+	// Pages are 1-based, so 0 is as invalid as -1 — falling back to 0 would ask the
+	// table for a page that does not exist.
+	it('falls back to the first page for anything that is not one', () => {
+		expect(sanitizePage(0)).toBe(1);
+		expect(sanitizePage(-3)).toBe(1);
+		expect(sanitizePage(2.5)).toBe(1);
+		expect(sanitizePage('3')).toBe(1);
+		expect(sanitizePage(null)).toBe(1);
+		expect(sanitizePage(Number.NaN)).toBe(1);
+		expect(sanitizePage(Number.POSITIVE_INFINITY)).toBe(1);
+	});
+});
+
+describe('jobsFilter store + clearJobsFilter', () => {
+	it('defaults to an empty filter on page 1', () => {
 		clearJobsFilter();
-		expect(get(jobsFilter)).toEqual({ kind: '', status: '' });
+		expect(get(jobsFilter)).toEqual({ kind: '', status: '', page: 1 });
+	});
+
+	it('clearJobsFilter resets a set filter, the page included', () => {
+		jobsFilter.set({ kind: 'update_sweep', status: 'failed', page: 3 });
+		clearJobsFilter();
+		expect(get(jobsFilter)).toEqual({ kind: '', status: '', page: 1 });
+	});
+
+	// The envelope version gates rehydration: a stored v1 payload has no `page`, and
+	// reading it back would land the admin on page 1 while believing otherwise.
+	it('persists under the version that knows about the page', () => {
+		jobsFilter.set({ kind: '', status: 'failed', page: 2 });
+		expect(JSON.parse(sessionStorage.getItem('phsar.filter.adminJobs')!).v).toBe(2);
+		clearJobsFilter();
 	});
 });

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
+	import { consumeFocus, revealFocused } from '$lib/utils/scrollFocus';
 	import { ApiError } from '$lib/api';
 	import { ensureRatingScores } from '$lib/stores/ratingScores';
 	import { userSettings } from '$lib/stores/userSettings';
@@ -53,6 +54,16 @@
 	onMount(load);
 
 	let isEmpty = $derived(items !== null && items.length === 0);
+
+	// Centre the row a back link came from, once the list has rendered — every row
+	// renders, so there is nothing to expand first. Plain flag, not $state: it fires
+	// once and must not fight the user's own scrolling.
+	let revealed = false;
+	$effect(() => {
+		if (revealed || loading || !items) return;
+		revealed = true;
+		revealFocused(consumeFocus(page.url));
+	});
 </script>
 
 <svelte:head><title>Ratings — Phsar</title></svelte:head>

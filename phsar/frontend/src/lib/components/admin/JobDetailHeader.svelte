@@ -4,6 +4,7 @@
 	import { ArrowLeft, ExternalLink } from 'lucide-svelte';
 	import { formatJobDuration, formatJobKind, formatShortDateTime } from '$lib/utils/formatString';
 	import { STATUS_BADGE } from '$lib/utils/jobBadges';
+	import { hrefWithFocus } from '$lib/utils/scrollFocus';
 	import type { AdminJobResponse } from '$lib/types/api';
 
 	interface Props {
@@ -30,7 +31,7 @@
 		<div class="flex items-center justify-between gap-4 flex-wrap">
 			<div class="flex items-center gap-2">
 				<a
-					href="/admin?tab=jobs"
+					href={hrefWithFocus('/admin?tab=jobs', job.uuid)}
 					class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-card-foreground transition-colors"
 				>
 					<ArrowLeft class="size-4" />

@@ -323,6 +323,7 @@ phsar/
 │   │   │       ├── relations.ts
 │   │   │       ├── resumeSession.ts
 │   │   │       ├── returnTo.ts
+│   │   │       ├── scrollFocus.ts
 │   │   │       ├── search.ts
 │   │   │       ├── sessionTimeout.ts
 │   │   │       ├── shareContent.ts
@@ -397,6 +398,7 @@ phsar/
 │   │       ├── rating-stats.test.ts
 │   │       ├── resume-session.test.ts
 │   │       ├── return-to.test.ts
+│   │       ├── scroll-focus.test.ts
 │   │       ├── searchbar.test.ts
 │   │       ├── segmented-control.test.ts
 │   │       ├── session-timeout.test.ts

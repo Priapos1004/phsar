@@ -16,6 +16,10 @@ export type NameLanguage = 'english' | 'japanese' | 'romaji';
 
 export interface WatchlistRow {
 	key: string;
+	/** The uuid this row's detail page is keyed by, for the scroll-back anchor
+	 *  (`utils/scrollFocus`). Not `key`, which at media grain is the watchlist
+	 *  ENTRY uuid and appears in no detail URL. */
+	detailUuid: string;
 	href: string;
 	coverImage: string | null;
 	/** media grain → SpoilerGuard the cover by this uuid; anime grain → null (anime
@@ -60,6 +64,7 @@ export function filterByTags(items: WatchlistItem[], tagUuids: string[]): Watchl
 export function toMediaRows(items: WatchlistItem[], lang: NameLanguage): WatchlistRow[] {
 	return items.map((i) => ({
 		key: i.uuid,
+		detailUuid: i.media_uuid,
 		href: buildDetailHref('media', i.media_uuid, { from: 'watchlist' }),
 		coverImage: i.media_cover_image,
 		spoilerMediaUuid: i.media_uuid,
@@ -120,6 +125,7 @@ export function toAnimeRows(items: WatchlistItem[], lang: NameLanguage): Watchli
 	}
 	return [...byAnime.values()].map(({ item: i, priority, colors, count, main, side, noted, earliest }) => ({
 		key: i.anime_uuid,
+		detailUuid: i.anime_uuid,
 		href: buildDetailHref('anime', i.anime_uuid, { from: 'watchlist' }),
 		coverImage: i.anime_cover_image,
 		spoilerMediaUuid: null,

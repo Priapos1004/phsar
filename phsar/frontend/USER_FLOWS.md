@@ -149,6 +149,8 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 7. "Show More" button loads 20 more results per click
 8. If no results: "No results found :-("
 
+**Returning from a card** (7.6) re-expands the list far enough to render the one you opened before scrolling to it, so a result deep in the list doesn't need its "Show More" clicks repeated. Expanding issues no request — the results are already in hand. An expansion wider than that card needs is left alone.
+
 **No token** (`/search` with no `q` — the navbar link, or the "Browse anime" buttons on the ratings/watchlist empty states): the page runs an **empty search** (no query, no filters) in the user's default view, so it lands on a browsable, ranked list (the backend orders an empty query by weighted score) instead of a blank page. Typing a query / applying filters then navigates to a normal `?q=<token>` search.
 9. If no search performed yet: "Start searching!!!"
 
@@ -258,7 +260,7 @@ Each anime search result card shows:
 
 ### 6.6 Back Navigation
 - "Back to search" link appears when `q` search token is present in URL
-- Restores the correct anime/media toggle and filters on the search page
+- Restores the correct anime/media toggle and filters on the search page, and the position you left (7.6)
 
 ### 6.7 Share Dialog (anime + media)
 - Reached from the share icon on either hero (6.2, 7.2). Same dialog on both — only the data differs: the anime grain aggregates across the anime's rated media, the media grain shows that one entry
@@ -358,6 +360,7 @@ Each anime search result card shows:
   - neither → no back button (direct-URL arrivals stay clean)
 - These flags propagate across the entire anime↔media jump chain (anime → media tile, media → anime link, related-media carousel) via `buildDetailHref`'s options bag, so a deep dive like curation → anime → media → sibling stays linkable back to the origin
 - The set above is closed. An unrecognised `from` falls through to the search token if one is present, and otherwise renders no back button — never a broken one. `lib/utils/navigation.ts` owns the union and says what adding to it touches
+- **Back returns you to the item you opened, not the top of the list.** The list scrolls that card or row to centre and flashes it briefly, then strips the `?focus=` param it arrived with, so a refresh doesn't re-scroll. It survives the anime↔media chain like the flags above: search → anime → a media tile → back centres the **anime** card originally clicked. Which origins carry it is decided in `BackLink`, beside the labels above; the rest link back unchanged. When the item is not on the page the list lands at the top, and a share link never carries a `focus`
 
 ---
 
@@ -368,7 +371,7 @@ Each anime search result card shows:
 ### 8.1 Tab Navigation
 - Two tabs via a `?tab=` query param: **Ratings** (`ratings`, default) and **Statistics** (`stats`). An unknown/missing value falls back to `ratings`.
 - Page-level states cover both tabs: a loading state while the fetch is in flight, an error state with a retry button on failure, and an empty state ("You haven't rated anything yet" → link to search) when the user has no ratings.
-- Filter state survives a hard refresh, a browser back/forward, and a round-trip to an anime or media detail page (open a card, press back — the genre filter is still applied). Switching between the two tabs preserves it. Leaving `/ratings` for any *other* page (search, settings, the watchlist) resets the value filters, keeping the chosen view, grain and stats section. State is per browser tab and is discarded on logout or a user switch.
+- Filter state survives a hard refresh, a browser back/forward, and a round-trip to an anime or media detail page (open a card, press back — the genre filter is still applied, and you land back on the card, per 7.6). Switching between the two tabs preserves it. Leaving `/ratings` for any *other* page (search, settings, the watchlist) resets the value filters, keeping the chosen view, grain and stats section. State is per browser tab and is discarded on logout or a user switch.
 
 ### 8.2 Ratings List Tab
 - Ratings are grouped to the **anime level** (one card/row per anime; an anime's score is the mean of its rated media).
@@ -395,7 +398,7 @@ The charts replay their build-up animation every time you open the tab, not just
 ### 9.1 Tab Navigation
 - Two tabs via a `?tab=` query param: **Watchlists** (`watchlists`, default — your entries) and **Lists** (`tags` — list management). An unknown/missing value falls back to `watchlists`.
 - The Watchlists tab loads one `GET /watchlist/items` fetch (a wide per-entry projection) on mount; both grains and both views derive from it client-side. It stays mounted (scroll preserved); the Lists tab mounts on demand.
-- Filter state survives a hard refresh and a round-trip to an anime or media detail page; leaving `/watchlist` for any other page resets the value filters, keeping the view + grain choice. State is per browser tab and is discarded on logout or a user switch.
+- Filter state survives a hard refresh and a round-trip to an anime or media detail page, which also returns to the entry you opened (7.6); leaving `/watchlist` for any other page resets the value filters, keeping the view + grain choice. State is per browser tab and is discarded on logout or a user switch.
 - Page states: loading, an unauthenticated prompt (sign-in link), an error state with a retry, and an empty state ("Your watchlist is empty" → browse link).
 
 ### 9.2 Watchlists Tab (entries)
@@ -504,7 +507,7 @@ The charts replay their build-up animation every time you open the tab, not just
 - Paginated all-jobs table sourced from `GET /admin/jobs` (50 rows per page, newest-first by `created_at`). Backed by `ix_jobs_created_at_desc` so the default unfiltered scan + COUNT stays cheap as the jobs table grows
 - **Clustering**: the default view hides rows whose `parent_job_id` is set, so the list isn't dominated by ~50 system user_scrape children that land after every Sunday's seasonal_sweep. Each season-sweep row (`seasonal_sweep` and `upcoming_sweep` — both enqueue parented children off the same dispatcher) renders an expander chevron — clicking fetches `?parent_uuid=<UUID>&limit=500` and renders the children inline below the parent, indented with a left primary-tinted border. Re-collapse hides them without re-fetching (state cached per parent). If a sweep ever exceeds the 500-row cap, the expanded view surfaces an amber "Showing X of Y children — rest are older than the 500-row cap" notice rather than silently truncating
 - Filters: **Kind** dropdown (All / User scrape / Update sweep / Seasonal sweep / Upcoming sweep / Backup / Restore — built from the shared kind-label map, so it can't omit a kind) and **Status** dropdown (All / queued / running / succeeded / failed). Changing either filter resets pagination to page 1 — keeping a stale offset against a narrower filter would strand the admin past the result tail. A monotonic request-id guards against a fast filter-then-page click letting an older response overwrite the newer state
-- **Filter persistence**: the active filter is held in a per-tab session store, so it stays applied — and shown in the dropdowns — across admin tab switches, a job's detail page, a hard refresh, and a detour to an anime or media page opened from a job's failure list. Leaving the admin section for any other page (e.g. Settings) clears it, so re-entering `/admin` starts unfiltered. It is not reflected in the URL, so browser-back after leaving does not resurrect it, and it is discarded on logout or a user switch
+- **Filter persistence**: the active filter **and which page you are on** are held in a per-tab session store, so both stay applied — the filter also shown in the dropdowns — across admin tab switches, a job's detail page, a hard refresh, and a detour to an anime or media page opened from a job's failure list. Opening a job from page 3 and coming back lands on page 3, on the row you left (7.6). Leaving the admin section for any other page (e.g. Settings) clears it, so re-entering `/admin` starts unfiltered. It is not reflected in the URL, so browser-back after leaving does not resurrect it, and it is discarded on logout or a user switch
 - Columns:
   - **Created** — short datetime
   - **Kind** — neutral badge (`User scrape` / `Update sweep` / etc., via shared `formatJobKind`)
@@ -520,7 +523,7 @@ The charts replay their build-up animation every time you open the tab, not just
 
 ### 12.1d Job detail page (`/admin/jobs/[uuid]`)
 - Standalone route (not a tab — a separate SvelteKit page). Reached by clicking an `update_sweep v2+` row in the Jobs Log. Direct-URL access works too; admin role is enforced on mount (non-admin → `/`)
-- **Header card**: kind badge, color-coded status badge, version chip (`v3`), duration (live-ticks for running jobs), created / started / finished timestamps, requested_by username, parent-job link if `parent_job_uuid` is set, "← Jobs Log" back link. Failed jobs render the `error_message` in a destructive-tinted banner below the metadata grid — this is the actionable info, the page omits the "predates v0.14.5" notice for failed rows since their missing counters reflect a crashed run, not an old schema
+- **Header card**: kind badge, color-coded status badge, version chip (`v3`), duration (live-ticks for running jobs), created / started / finished timestamps, requested_by username, parent-job link if `parent_job_uuid` is set, "← Jobs Log" back link (12.1c). Failed jobs render the `error_message` in a destructive-tinted banner below the metadata grid — this is the actionable info, the page omits the "predates v0.14.5" notice for failed rows since their missing counters reflect a crashed run, not an old schema
 - **Counters grid** (v2+ jobs only): version-aware stats from `result_summary.counters`. v5 (v0.14.8, media-level) shows media refreshed, anime touched, media skipped (media belonging to touched anime not refreshed this run — tooltip), media w/ dynamic changes, media w/ static changes, umbrella reclassed, probes succeeded, probes failed, anime w/ new attach, orphaned studios removed, failed refresh. v2–v4 show the original anime-grained set (anime refreshed + anime w/ dynamic/static rollups instead of the media-level trio). The "Failed refresh" cell renders "—" for v<4 (not a misleading 0) and tints amber when > 0. Plus inline warning lines if `merge_detect_failed` or `cache_recompute_failed` fired (the catalog work still committed; only the post-sweep merge-detection / spoiler-cache recompute failed)
 - **Failed-refresh / Failed-probe cards**: when `step1_failures` (v4+) or `probe_failures` (v5+) is non-empty, a card lists each skipped anime — title (link to `/anime?uuid=<uuid>`), `error_category` chip, and the error message. Both kept their old `last_checked_at` / `AnimeFreshness`, so the next sweep retries them. A progress-divergence notice fires when `items_done < items_total` — v5 progress is media-grained (`items_total` = due media, `items_done` = refreshed media), so the gap is the media skipped because their anime failed step-1 refresh (probe failures don't widen it — their media committed; they show in the Failed-probe card). v2–v4 rows keep the anime-grained wording
 - **Anime changes section** (v2+ only) — rendered *above* Media changes, since a sweep yields a handful of anime rows against hundreds of media diffs: for each anime with any drift in its anchor-derived umbrella fields, an `AnimeUmbrellaCard` shows the anime title (link to `/anime?uuid=<uuid>`, new tab), "anchor moved" / "embedding regen" badges when applicable, a Field/Was/Now table for the changed umbrella fields, and a list of per-media relation reclassifications (`mal_id=NNNN: old_rt → new_rt`)

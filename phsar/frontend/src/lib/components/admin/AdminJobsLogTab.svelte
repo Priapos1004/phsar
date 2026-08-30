@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { goto } from '$app/navigation';
+	// Aliased: `page` is this component's own AdminJobsPage.
+	import { page as appPage } from '$app/state';
 	import { api, ApiError } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
@@ -12,6 +14,7 @@
 	import { STATUS_BADGE } from '$lib/utils/jobBadges';
 	import { hentaiRemoved, payloadSummary, probeAttachedMedia, rowTintClass, unknownGenreTags } from '$lib/utils/jobSummary';
 	import { jobsFilter, sanitizeKind, sanitizeStatus } from '$lib/stores/adminJobsFilter';
+	import { consumeFocus, revealFocused } from '$lib/utils/scrollFocus';
 	import type { AdminJobResponse, AdminJobsPage, JobKind, JobStatus } from '$lib/types/api';
 
 	// The admin page eager-mounts every tab, so this component keeps running
@@ -44,9 +47,11 @@
 	// The active filter lives in the `jobsFilter` module store (in-SPA memory)
 	// so it survives admin tab switches and the job-detail round-trip without
 	// touching the URL. These derived reads feed the Select UI + the fetch.
+	// Which page is shown rides along for the same round-trip reason.
 	let kindFilter = $derived($jobsFilter.kind);
 	let statusFilter = $derived($jobsFilter.status);
-	let offset = $state(0);
+	let currentPage = $derived($jobsFilter.page);
+	let offset = $derived((currentPage - 1) * PAGE_SIZE);
 
 	let page = $state<AdminJobsPage | null>(null);
 	let loading = $state(true);
@@ -62,7 +67,6 @@
 	let lastLoadStartedAt = 0;
 
 	let totalPages = $derived(page ? Math.max(1, Math.ceil(page.total / PAGE_SIZE)) : 1);
-	let currentPage = $derived(Math.floor(offset / PAGE_SIZE) + 1);
 
 	// `silent` (used by the live poll below) skips the loading spinner + the
 	// error banner so a background refetch never flashes the skeleton, snaps
@@ -98,27 +102,33 @@
 		}
 	}
 
-	// Re-fetch whenever the active filter or the page offset changes (covers
-	// the initial load too — effects run once on mount).
+	// Re-fetch whenever the filter or the page changes — both live in the one store
+	// now (covers the initial load too — effects run once on mount).
 	$effect(() => {
 		void $jobsFilter;
-		void offset;
 		void load();
 	});
 
 	// Filter changes always reset to page 1 — keeping a stale offset on a
 	// narrower filter would strand the admin past the result tail.
 	function setKindFilter(v: string) {
-		jobsFilter.set({ kind: sanitizeKind(v), status: statusFilter });
-		offset = 0;
+		jobsFilter.set({ kind: sanitizeKind(v), status: statusFilter, page: 1 });
 	}
 	function setStatusFilter(v: string) {
-		jobsFilter.set({ kind: kindFilter, status: sanitizeStatus(v) });
-		offset = 0;
+		jobsFilter.set({ kind: kindFilter, status: sanitizeStatus(v), page: 1 });
 	}
-	function gotoPage(newOffset: number) {
-		offset = newOffset;
+	function gotoPage(newPage: number) {
+		jobsFilter.update((f) => ({ ...f, page: newPage }));
 	}
+
+	// Centre the row a `← Jobs Log` link came from, once the first page settles.
+	// Fires once — a poll refresh must not yank the admin's scroll back.
+	let revealed = false;
+	$effect(() => {
+		if (revealed || loading || !page) return;
+		revealed = true;
+		revealFocused(consumeFocus(appPage.url));
+	});
 
 	// Carry the response total alongside the rows so the renderer can surface
 	// truncation honestly if a sweep ever exceeds CHILDREN_LIMIT.
@@ -294,6 +304,7 @@
 								{@const probeMedia = probeAttachedMedia(row)}
 								{@const hentaiCount = hentaiRemoved(row)}
 								<tr
+									data-focus-uuid={row.uuid}
 									class="border-b border-border/50 align-top {clickable ? 'cursor-pointer hover:bg-muted/20 transition-colors' : ''} {rowTintClass(hentaiCount, unknownTags.length, probeMedia)}"
 									{...(clickable ? clickableNavProps(row.uuid) : {})}
 								>
@@ -417,8 +428,8 @@
 					<Button
 						variant="secondary"
 						size="sm"
-						disabled={offset === 0 || loading}
-						onclick={() => gotoPage(Math.max(0, offset - PAGE_SIZE))}
+						disabled={currentPage === 1 || loading}
+						onclick={() => gotoPage(Math.max(1, currentPage - 1))}
 					>
 						Prev
 					</Button>
@@ -427,7 +438,7 @@
 						variant="secondary"
 						size="sm"
 						disabled={currentPage >= totalPages || loading}
-						onclick={() => gotoPage(offset + PAGE_SIZE)}
+						onclick={() => gotoPage(currentPage + 1)}
 					>
 						Next
 					</Button>

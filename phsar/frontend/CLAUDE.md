@@ -61,7 +61,7 @@ deliberate absence of a global 401 handler, both argued at the throw site.
 | Ratings + watchlist maths | `utils/ratingStats.ts`, `utils/watchlistStats.ts` — pure, unit-tested, and the reason there is no per-user stats endpoint |
 | Charts | `utils/chartTheme.ts`, `utils/chartColors.ts`, `echarts.ts` |
 | Share | `utils/shareContent.ts`, `utils/shareImage.ts` |
-| Navigation | `utils/navigation.ts` — `buildDetailHref` and the closed `DetailOrigin` set |
+| Navigation | `utils/navigation.ts` — `buildDetailHref` and the closed `DetailOrigin` set. `utils/scrollFocus.ts` rides on it: the `?focus=` anchor a back link returns to, and why the scroll is held rather than timed |
 | Returning after a login | `utils/returnTo.ts` (the `?next=` param and its validation) and `utils/resumeSession.ts` (the `phsar.resume` filter stash). Mind the import graph — `resumeSession`'s header states the cycle it must not close, and the root layout carries the side-effect import that avoids it |
 | Theme | `themes.ts` with `app.css` |
 

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, getContext } from 'svelte';
 	import { page } from '$app/state';
+	import { consumeFocus, revealFocused } from '$lib/utils/scrollFocus';
 	import { api, ApiError } from '$lib/api';
 	import { ensureRatingScores } from '$lib/stores/ratingScores';
 	import { userSettings } from '$lib/stores/userSettings';
@@ -63,6 +64,15 @@
 	});
 
 	let isEmpty = $derived(items !== null && items.length === 0);
+
+	// Centre the row a back link came from — the ratings page's twin, for the reasons
+	// stated there.
+	let revealed = false;
+	$effect(() => {
+		if (revealed || loading || !items) return;
+		revealed = true;
+		revealFocused(consumeFocus(page.url));
+	});
 
 	// Statistics data is hoisted to the page (not the stats tab) so switching grid <-> stats
 	// doesn't refetch /ratings/scores or recompute the summary. Fetched lazily the first time

@@ -4,6 +4,7 @@
 	import { api, ApiError } from '$lib/api';
 	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, formatEpisodeCount, formatAiringStatus, cleanDescription, resolveTitle, resolveSubtitles, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
+	import { FOCUS_PARAM } from '$lib/utils/scrollFocus';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -60,6 +61,9 @@
 	let searchToken = $derived(page.url.searchParams.get('q'));
 	let fromParam = $derived(page.url.searchParams.get('from') as DetailOrigin | null);
 	let jobUuid = $derived(page.url.searchParams.get('job'));
+	// This page IS the card that was clicked, so its own uuid is the anchor unless a
+	// deeper hop already named one — see `utils/scrollFocus`.
+	let focusUuid = $derived(page.url.searchParams.get(FOCUS_PARAM) ?? page.url.searchParams.get('uuid'));
 
 	let cleanedDescription = $derived(media?.description ? cleanDescription(media.description) : null);
 	// OR with userRating prevents a brief blur flash after rating: the local
@@ -145,7 +149,7 @@
 	{:else if error}
 		<div class="text-center text-destructive py-20">{error}</div>
 	{:else if media}
-		<BackLink {searchToken} {fromParam} {jobUuid} />
+		<BackLink {searchToken} {fromParam} {jobUuid} {focusUuid} />
 
 		<div class="relative rounded-xl overflow-hidden">
 			{#if media.cover_image && !coverFailed}
@@ -345,12 +349,12 @@
 				<p class="text-muted-foreground {media.sibling_media.length ? 'mb-3' : ''}">
 					Part of anime:
 					<a
-						href={buildDetailHref('anime', media.anime_uuid, { q: searchToken, from: fromParam, job: jobUuid })}
+						href={buildDetailHref('anime', media.anime_uuid, { q: searchToken, from: fromParam, job: jobUuid, focus: focusUuid })}
 						class="text-primary font-medium hover:underline"
 					>{resolveTitle(media.anime_title, media.anime_name_eng, media.anime_name_jap, nameLanguage)}</a>
 				</p>
 				{#if media.sibling_media.length}
-					<RelatedMediaCarousel siblings={media.sibling_media} currentPosition={media.current_position} {searchToken} {fromParam} {jobUuid} />
+					<RelatedMediaCarousel siblings={media.sibling_media} currentPosition={media.current_position} {searchToken} {fromParam} {jobUuid} {focusUuid} />
 				{:else}
 					<p class="text-muted-foreground/70 text-sm mt-2">No other media in this anime</p>
 				{/if}
