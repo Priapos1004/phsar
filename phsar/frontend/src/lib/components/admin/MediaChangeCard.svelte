@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { Badge } from '$lib/components/ui/badge';
 	import { ExternalLink } from 'lucide-svelte';
-	import { formatRelationType, isRatingField, resolveTitle } from '$lib/utils/formatString';
+	import { formatRelationType, isRatingField } from '$lib/utils/formatString';
+	import { mediaChangeTitle, TONE_RANK, type ChangeTone as Tone } from '$lib/utils/mediaChangeSort';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import { userSettings } from '$lib/stores/userSettings';
 	import type { UpdateSweepMediaChange, UpdateSweepFieldChange, UpdateSweepM2MDrift } from '$lib/types/api';
@@ -12,28 +13,16 @@
 	let { change }: Props = $props();
 
 	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
-	// Media's own name fields only — falling back to the parent anime's
-	// alt-title (e.g. for sub-episode rows MAL didn't give a name_eng)
-	// loses season-specific suffix information ("Dr. Stone: New World"
-	// would render as just "Dr. Stone"). When media.name_eng is null,
-	// resolveTitle falls back to media's romaji `title`, which always
-	// carries the season suffix.
-	let mediaTitleDisplay = $derived(
-		resolveTitle(
-			change.media_title,
-			change.media_name_eng,
-			change.media_name_jap,
-			nameLanguage,
-		),
-	);
+	// Shared with the sort's A→Z tiebreak, which is defined as "the title
+	// the card prints" — see the helper for why it uses media's own name
+	// fields only.
+	let mediaTitleDisplay = $derived(mediaChangeTitle(change, nameLanguage));
 
-	// Five tones for visual differentiation among field categories.
-	// `rating` is split out from the rest of the dynamic bucket because
-	// score / scored_by churn hourly on popular anime — keeping them in
-	// the same amber band as episodes/airing_status would drown the
-	// genuine signal under vote-count noise.
-	type Tone = 'rating' | 'dynamic' | 'static' | 'genre' | 'studio';
-
+	// One border colour per field category. `rating` is split out from the
+	// rest of the dynamic bucket because score / scored_by churn hourly on
+	// popular anime — keeping them in the same amber band as
+	// episodes/airing_status would drown the genuine signal under
+	// vote-count noise.
 	const TONE_BORDER: Record<Tone, string> = {
 		rating: 'border-l-zinc-500/60',
 		dynamic: 'border-l-amber-400/60',
@@ -132,24 +121,17 @@
 		any_change: 'Not auto-applied — studio drift never auto-applies.',
 	};
 
-	// Sort tone groups so the noteworthy buckets (dynamic / static /
-	// genre / studio) surface first; the noisy `rating` bucket lands at
-	// the bottom of every card so the eye doesn't get drawn there first.
-	const TONE_ORDER: Record<Tone, number> = {
-		dynamic: 0,
-		static: 1,
-		genre: 2,
-		studio: 3,
-		rating: 4,
-	};
-
+	// Row order is the list's rank order (`TONE_RANK`), so a card's rows read
+	// in the same priority its position in the list was decided by — and the
+	// noisy `rating` bucket, last there, lands at the bottom of every card so
+	// the eye isn't drawn to it first.
 	let rows = $derived.by<DiffRow[]>(() => {
 		const out: DiffRow[] = [];
 		for (const f of change.dynamic) out.push(scalarRow(f, dynamicTone(f.field)));
 		for (const f of change.static) out.push(scalarRow(f, 'static'));
 		if (change.genre_drift) out.push(tagsetRow(change.genre_drift));
 		if (change.studio_drift) out.push(tagsetRow(change.studio_drift));
-		return out.sort((a, b) => TONE_ORDER[a.tone] - TONE_ORDER[b.tone]);
+		return out.sort((a, b) => TONE_RANK[a.tone] - TONE_RANK[b.tone]);
 	});
 </script>
 

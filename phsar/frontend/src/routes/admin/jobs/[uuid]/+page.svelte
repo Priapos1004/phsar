@@ -96,7 +96,7 @@
 			];
 			return haystacks.some((h) => h?.toLowerCase().includes(q));
 		});
-		return sortMediaChanges(filtered);
+		return sortMediaChanges(filtered, nameLanguage);
 	});
 
 	const FILTER_CHIPS: { key: Filter; label: string; tooltip: string }[] = [
@@ -326,15 +326,22 @@
 			     summary it had gathered, so a failed job still renders real counters and
 			     failure lists beside its error banner. A new card here follows the same
 			     rule — gate it on its own field, not on the job having succeeded. -->
-			{#if v2Summary && (v2Summary.anime_umbrella_changes?.length ?? 0) > 0}
+			{#if v2Summary?.anime_umbrella_changes?.length}
+				{@const umbrellaChanges = v2Summary.anime_umbrella_changes}
 				<Card.Root>
 					<Card.Header>
-						<h2 class="text-lg font-semibold text-card-foreground">Anime changes</h2>
+						<h2 class="text-lg font-semibold text-card-foreground">
+							Anime changes ({umbrellaChanges.length})
+						</h2>
 					</Card.Header>
-					<Card.Content class="space-y-3">
-						{#each v2Summary.anime_umbrella_changes ?? [] as change (change.anime_uuid)}
-							<AnimeUmbrellaCard {change} />
-						{/each}
+					<Card.Content>
+						<!-- Capped like the failure lists above, so umbrella diffs can't
+						     push Media changes off-screen. -->
+						<div class="max-h-72 space-y-3 overflow-y-auto pr-1">
+							{#each umbrellaChanges as change (change.anime_uuid)}
+								<AnimeUmbrellaCard {change} />
+							{/each}
+						</div>
 					</Card.Content>
 				</Card.Root>
 			{/if}
