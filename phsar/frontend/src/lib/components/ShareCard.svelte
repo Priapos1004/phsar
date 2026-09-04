@@ -208,7 +208,7 @@
 			     exist. Unrated axes and pills render greyed. -->
 			<div class="flex flex-1 flex-col justify-center gap-2">
 				<AttributeRadar ratings={body.ratings} {onReady} />
-				<AttributeBadges ratings={body.ratings} layout="wrap" />
+				<AttributeBadges ratings={body.ratings} media={body.media} layout="wrap" />
 			</div>
 		{:else}
 			<!-- Facts band across the card's full width rather than beside the cover: in the

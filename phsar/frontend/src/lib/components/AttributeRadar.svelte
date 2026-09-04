@@ -3,6 +3,7 @@
 	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr } from '$lib/types/api';
 	import { getThemedChartColorPalette } from '$lib/utils/chartColors';
 	import { chartTooltipStyle } from '$lib/utils/chartTheme';
+	import { optionLabel } from '$lib/utils/ratingAttributes';
 	import type { RatingOut, RatingScoreItem } from '$lib/types/api';
 
 	interface Props {
@@ -64,10 +65,7 @@
 							: best,
 					Object.entries(scoreMap)[0] as [string, number],
 				);
-				closestLabels.push(
-					RATING_ATTRIBUTE_OPTIONS[key].options.find((o) => o.value === closest[0])?.label ??
-						closest[0],
-				);
+				closestLabels.push(optionLabel(key, closest[0]));
 			} else {
 				avgs.push(0);
 				closestLabels.push(null);

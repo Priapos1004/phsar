@@ -1,15 +1,19 @@
 <script lang="ts">
 	import { ChevronDown, ChevronUp } from 'lucide-svelte';
-	import type { RatingOut } from '$lib/types/api';
+	import type { AnimeMediaItem, RatingOut } from '$lib/types/api';
 	import AttributeRadar from '$lib/components/AttributeRadar.svelte';
 	import AttributeBadges from '$lib/components/AttributeBadges.svelte';
 	import AttributeDetailBars from '$lib/components/AttributeDetailBars.svelte';
 
 	interface Props {
 		ratings: RatingOut[];
+		/** Only the pills need it — the radar and the detail bars treat every rating
+		 *  alike. Required, not optional: without it every pill degrades to reading
+		 *  every rating in fetch order. */
+		media: AnimeMediaItem[];
 	}
 
-	let { ratings }: Props = $props();
+	let { ratings, media }: Props = $props();
 
 	let detailsExpanded = $state(false);
 </script>
@@ -24,7 +28,7 @@
 			<AttributeRadar {ratings} />
 		</div>
 		<div class="md:w-1/2 flex justify-center items-center">
-			<AttributeBadges {ratings} />
+			<AttributeBadges {ratings} {media} />
 		</div>
 	</div>
 

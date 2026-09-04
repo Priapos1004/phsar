@@ -82,6 +82,8 @@ export type ShareCardBody =
 			statusLine: string | null;
 			/** N ratings at anime grain, exactly one at media grain — feeds radar + pills. */
 			ratings: RatingOut[];
+			/** The anime's media, for the pills. Absent at media grain. */
+			media?: AnimeMediaItem[];
 	  }
 	| {
 			kind: 'info';
@@ -408,6 +410,6 @@ export function animeRatingCard(
 		headerLabel: RATING_LABEL,
 		coverUrl,
 		metaLines,
-		body: { kind: 'rating', score: meanScore(ratings), ratingStep, statusLine, ratings },
+		body: { kind: 'rating', score: meanScore(ratings), ratingStep, statusLine, ratings, media: anime.media },
 	};
 }

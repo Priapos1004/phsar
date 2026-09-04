@@ -91,7 +91,7 @@
 
 		{#if hasAttributes}
 			<Separator />
-			<RatingsOverviewAttributes {ratings} />
+			<RatingsOverviewAttributes {ratings} {media} />
 		{/if}
 
 		{#if notesInOrder.length > 0}
