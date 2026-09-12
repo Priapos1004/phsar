@@ -404,6 +404,14 @@ export interface WatchlistItem {
 	anime_season_name: string | null;
 	anime_season_year: number | null;
 	mal_id: number;
+	// Readiness inputs — `utils/watchlistReady` is the only reader. The franchise pair is
+	// per-anime (identical on every entry of one anime) and covers main-story media the
+	// user never watchlisted, which is why it can't be derived from these entries.
+	airing_status: string;
+	watch_status: WatchStatus | null;
+	franchise_airing: boolean;
+	/** `year * 10 + season rank` of the franchise's earliest announced season. */
+	franchise_upcoming_key: number | null;
 	genres: string[];
 	studios: string[];
 	total_watch_time: number | null;

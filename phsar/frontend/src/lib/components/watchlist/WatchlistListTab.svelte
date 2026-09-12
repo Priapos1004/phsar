@@ -3,7 +3,8 @@
 	import WatchlistPriorityGrid from './WatchlistPriorityGrid.svelte';
 	import WatchlistTable from './WatchlistTable.svelte';
 	import { watchlistFilter } from '$lib/stores/watchlistFilter';
-	import { filterByPriority, filterByTags, sortRows, toAnimeRows, toMediaRows, type WatchlistSortKey } from '$lib/utils/watchlistStats';
+	import { filterByPriority, filterByReadiness, filterByTags, sortRows, toAnimeRows, toMediaRows, type WatchlistSortKey } from '$lib/utils/watchlistStats';
+	import { statusByAnime } from '$lib/utils/watchlistReady';
 	import type { WatchlistItem } from '$lib/types/api';
 
 	interface Props {
@@ -13,14 +14,32 @@
 
 	let { items, nameLanguage }: Props = $props();
 
-	// Filter (union of selected lists) first, normalize to rows at the chosen grain,
-	// then filter by the selected priority bands (on the row's displayed priority — for
-	// the anime grain that's the anime's most-urgent media priority).
-	let filtered = $derived(filterByTags(items, $watchlistFilter.tagUuids));
+	// One clock for the whole page, captured at mount: the verdict and the media-grain
+	// narrowing must agree on what "next season" is, and two `new Date()` calls in one
+	// render pass could straddle a boundary. A season boundary crossed mid-session
+	// therefore waits for the next load, which is the right trade against a timer nobody
+	// would ever see fire.
+	const now = new Date();
+
+	// Off the UNFILTERED set — see `statusByAnime` for why it cannot be the filtered one.
+	let statuses = $derived(statusByAnime(items, now));
+
+	// Filter (union of selected lists, then readiness) first, normalize to rows at the
+	// chosen grain, then filter by the selected priority bands (on the row's displayed
+	// priority — for the anime grain that's the anime's most-urgent media priority).
+	let filtered = $derived(
+		filterByReadiness(
+			filterByTags(items, $watchlistFilter.tagUuids),
+			statuses,
+			$watchlistFilter.readiness,
+			$watchlistFilter.grain,
+			now,
+		),
+	);
 	let rows = $derived(
 		filterByPriority(
 			$watchlistFilter.grain === 'anime'
-				? toAnimeRows(filtered, nameLanguage)
+				? toAnimeRows(filtered, nameLanguage, statuses)
 				: toMediaRows(filtered, nameLanguage),
 			$watchlistFilter.priorities,
 		),

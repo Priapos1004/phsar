@@ -1,38 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import type { WatchlistItem } from '$lib/types/api';
+import { watchlistItem as item } from './fixtures/watchlistItem';
 import { filterByPriority, filterByTags, sortRows, toAnimeRows, toMediaRows, toPriorityBands, watchlistSummary } from '$lib/utils/watchlistStats';
 
-function item(overrides: Partial<WatchlistItem>): WatchlistItem {
-	return {
-		uuid: overrides.uuid ?? crypto.randomUUID(),
-		media_uuid: overrides.media_uuid ?? crypto.randomUUID(),
-		anime_uuid: overrides.anime_uuid ?? 'anime-1',
-		media_title: overrides.media_title ?? 'M',
-		media_name_eng: null,
-		media_name_jap: null,
-		anime_title: overrides.anime_title ?? 'A',
-		anime_name_eng: null,
-		anime_name_jap: null,
-		media_cover_image: null,
-		anime_cover_image: null,
-		priority: overrides.priority ?? 3,
-		note: overrides.note ?? null,
-		tag_uuid: overrides.tag_uuid ?? 'tag-a',
-		tag_name: overrides.tag_name ?? 'A',
-		tag_color: overrides.tag_color ?? '#000000',
-		relation_type: 'main',
-		anime_season_name: null,
-		anime_season_year: null,
-		mal_id: overrides.mal_id ?? 1,
-		genres: overrides.genres ?? [],
-		studios: overrides.studios ?? [],
-		total_watch_time: overrides.total_watch_time ?? null,
-		created_at: overrides.created_at ?? '2024-01-01T00:00:00Z',
-		modified_at: '2024-01-01T00:00:00Z',
-		...overrides,
-	};
-}
-
+const NO_STATUSES = new Map<string, never>();
 const LANG = 'english' as const;
 
 describe('filterByTags', () => {
@@ -90,7 +60,7 @@ describe('toAnimeRows', () => {
 	];
 
 	it('aggregates media into one row per anime with a main/side breakdown', () => {
-		const rows = toAnimeRows(items, LANG);
+		const rows = toAnimeRows(items, LANG, NO_STATUSES);
 		expect(rows).toHaveLength(2);
 		const a1 = rows.find((r) => r.key === 'a1')!;
 		expect(a1.mediaCount).toBe(2);
@@ -104,7 +74,7 @@ describe('toAnimeRows', () => {
 			item({ anime_uuid: 'x', note: null }),
 			item({ anime_uuid: 'x', note: 'b' }),
 		];
-		const x = toAnimeRows(withNotes, LANG).find((r) => r.key === 'x')!;
+		const x = toAnimeRows(withNotes, LANG, NO_STATUSES).find((r) => r.key === 'x')!;
 		expect(x.noteCount).toBe(2);
 		expect(x.note).toBeNull(); // the single-note field isn't used at anime grain
 		expect(x.noteTexts).toEqual(['a', 'b']); // texts are carried for the tooltip
@@ -116,7 +86,7 @@ describe('toAnimeRows', () => {
 			item({ anime_uuid: 'x', note: 'winter-2020', anime_season_name: 'Winter', anime_season_year: 2020, mal_id: 9 }),
 			item({ anime_uuid: 'x', note: 'spring-2020', anime_season_name: 'Spring', anime_season_year: 2020, mal_id: 3 }),
 		];
-		const x = toAnimeRows(notes, LANG).find((r) => r.key === 'x')!;
+		const x = toAnimeRows(notes, LANG, NO_STATUSES).find((r) => r.key === 'x')!;
 		expect(x.noteTexts).toEqual(['winter-2020', 'spring-2020', 'fall-2021']);
 	});
 
@@ -126,7 +96,7 @@ describe('toAnimeRows', () => {
 	});
 
 	it('uses the most-urgent (min) priority and distinct tag colors (gradient source)', () => {
-		const a1 = toAnimeRows(items, LANG).find((r) => r.key === 'a1')!;
+		const a1 = toAnimeRows(items, LANG, NO_STATUSES).find((r) => r.key === 'a1')!;
 		expect(a1.priority).toBe(1);
 		expect(a1.colors).toEqual(['#111', '#222']); // two distinct tags → gradient
 		expect(a1.tagLabel).toBe('2 lists');
@@ -182,6 +152,7 @@ describe('sortRows', () => {
 				item({ anime_uuid: 'z', anime_title: 'Z', note: null }),
 			],
 			LANG,
+			NO_STATUSES,
 		);
 		expect(sortRows(noteRows, 'note', 'desc').map((r) => r.noteCount)).toEqual([2, 1, 0]);
 	});

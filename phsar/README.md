@@ -331,6 +331,7 @@ phsar/
 │   │   │       ├── shareImage.ts
 │   │   │       ├── spoilerFrontier.ts
 │   │   │       ├── watchlist.ts
+│   │   │       ├── watchlistReady.ts
 │   │   │       └── watchlistStats.ts
 │   │   ├── routes/
 │   │   │   ├── +layout.svelte
@@ -366,7 +367,8 @@ phsar/
 │   │       ├── setup.ts
 │   │       ├── SpoilerGuardTest.svelte
 │   │       ├── fixtures/
-│   │       │   └── jwt.ts
+│   │       │   ├── jwt.ts
+│   │       │   └── watchlistItem.ts
 │   │       ├── admin-jobs-filter.test.ts
 │   │       ├── admin-jobs-poll.test.ts
 │   │       ├── api-download.test.ts
@@ -412,6 +414,7 @@ phsar/
 │   │       ├── spoiler-guard.test.ts
 │   │       ├── studio-links.test.ts
 │   │       ├── toast.test.ts
+│   │       ├── watchlist-ready.test.ts
 │   │       └── watchlist-stats.test.ts
 │   ├── static/
 │   │   ├── apple-touch-icon.png

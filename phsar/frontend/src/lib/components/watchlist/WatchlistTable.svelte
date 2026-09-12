@@ -2,7 +2,7 @@
 	import { ArrowUp, ArrowDown, StickyNote } from 'lucide-svelte';
 	import { formatShortDate } from '$lib/utils/formatString';
 	import { rowClickNavigate } from '$lib/utils/navigation';
-	import { priorityLabel, PRIORITY_ACCENT, tagGradient, joinNoteTexts } from '$lib/utils/watchlist';
+	import { priorityLabel, PRIORITY_ACCENT, tagGradient, joinNoteTexts, READY_BADGE } from '$lib/utils/watchlist';
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import * as cls from '$lib/styles/classes';
 	import type { WatchlistRow, WatchlistSortKey } from '$lib/utils/watchlistStats';
@@ -48,6 +48,7 @@
 		</thead>
 		<tbody>
 			{#each rows as row (row.key)}
+				{@const badge = row.readyStatus ? READY_BADGE[row.readyStatus] : undefined}
 				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 				<tr data-focus-uuid={row.detailUuid} class="group border-b border-border/60 last:border-0 hover:bg-muted/40 transition-colors cursor-pointer" onclick={(e) => rowClickNavigate(e, row.href)}>
 					<td class="px-3 py-2">
@@ -59,6 +60,15 @@
 						<a href={row.href} class="text-card-foreground group-hover:text-primary font-medium">{row.title}</a>
 						{#if row.subtitle}<span class="ml-1.5 text-xs text-muted-foreground">{row.subtitle}</span>{/if}
 						{#if row.mainSide}<span class="ml-1.5 text-xs text-muted-foreground">({row.mainSide})</span>{/if}
+						<!-- Inline rather than its own column: a Ready column would be blank at media
+						     grain and would move the fixed right-hand columns, which the note above
+						     keeps still across a grain toggle. -->
+						{#if badge}
+							<!-- On the trigger span itself, for the reason given in WatchlistCard. -->
+							<Tooltip text={badge.title} class="ml-1.5 inline-block align-middle {cls.readyPill} {badge.class}">
+								{badge.label}
+							</Tooltip>
+						{/if}
 					</td>
 					<td class="px-3 py-2 text-center whitespace-nowrap font-medium {PRIORITY_ACCENT[row.priority].text}">
 						{priorityLabel(row.priority)}

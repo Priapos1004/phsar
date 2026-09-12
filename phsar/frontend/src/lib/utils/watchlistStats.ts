@@ -7,6 +7,7 @@ import { formatRelationType, resolveTitle } from '$lib/utils/formatString';
 import { priorityLabel } from '$lib/utils/watchlist';
 import { MAIN_RELATIONS, mainSideLabel } from '$lib/utils/relations';
 import { SEASON_ORDER } from '$lib/utils/getSeason';
+import { isAvailable, isReady, matchesFilter, type ReadyFilterKey, type ReadyStatus } from '$lib/utils/watchlistReady';
 import type { WatchlistItem } from '$lib/types/api';
 
 export type WatchlistView = 'grid' | 'table';
@@ -43,6 +44,11 @@ export interface WatchlistRow {
 	 *  row, the anime's tally for an anime row. Drives the table's Note column. */
 	noteCount: number;
 	mediaCount: number;
+	/** The anime's readiness verdict, or null at media grain — the verdict is about a
+	 *  franchise, so repeating it on each of its entries would say nothing per card.
+	 *  Raw state, not a label: `utils/watchlist.READY_BADGE` renders it, the same split
+	 *  as `priority` and `PRIORITY_ACCENT`. */
+	readyStatus: ReadyStatus | null;
 	createdAt: string;
 }
 
@@ -58,6 +64,31 @@ export function filterByTags(items: WatchlistItem[], tagUuids: string[]): Watchl
 	if (tagUuids.length === 0) return items;
 	const set = new Set(tagUuids);
 	return items.filter((i) => set.has(i.tag_uuid));
+}
+
+/**
+ * Keep entries whose anime falls under one of the selected readiness chips. Empty
+ * selection = all, the same union convention as the tag and priority filters.
+ *
+ * `statuses` must come from `statusByAnime` over the UNFILTERED set — see its note on
+ * why the verdict can't be recomputed per filtered view.
+ *
+ * `grain` is a parameter because the media grain narrows a ready anime further; the
+ * feature doc has the rule.
+ */
+export function filterByReadiness(
+	items: WatchlistItem[],
+	statuses: Map<string, ReadyStatus>,
+	selected: ReadyFilterKey[],
+	grain: WatchlistGrain,
+	now: Date = new Date(),
+): WatchlistItem[] {
+	if (selected.length === 0) return items;
+	return items.filter((i) => {
+		const status = statuses.get(i.anime_uuid);
+		if (!status || !matchesFilter(status, selected)) return false;
+		return grain === 'anime' || !isReady(status) || isAvailable(i, now);
+	});
 }
 
 /** One row per media entry. */
@@ -79,13 +110,22 @@ export function toMediaRows(items: WatchlistItem[], lang: NameLanguage): Watchli
 		noteTexts: [], // media grain uses `note`; noteTexts is the anime-grain aggregate
 		noteCount: i.note ? 1 : 0,
 		mediaCount: 1,
+		readyStatus: null,
 		createdAt: i.created_at,
 	}));
 }
 
 /** One row per anime, aggregating its watchlisted media: most-urgent (min) priority,
- *  distinct tag colors (→ gradient when >1), and the media count. */
-export function toAnimeRows(items: WatchlistItem[], lang: NameLanguage): WatchlistRow[] {
+ *  distinct tag colors (→ gradient when >1), the media count, and the readiness badge.
+ *
+ *  `statuses` is passed in rather than derived from `items` because `items` here is
+ *  already tag- and priority-filtered, and the verdict has to read the whole watchlist
+ *  (`statusByAnime`). An anime missing from the map simply gets no badge. */
+export function toAnimeRows(
+	items: WatchlistItem[],
+	lang: NameLanguage,
+	statuses: Map<string, ReadyStatus>,
+): WatchlistRow[] {
 	// A noted media, carrying the fields the anime-page media table sorts by so the
 	// tooltip lists notes in the same (chronological) order the user sees them there.
 	interface NotedMedia {
@@ -141,6 +181,7 @@ export function toAnimeRows(items: WatchlistItem[], lang: NameLanguage): Watchli
 		noteTexts: noted.slice().sort(byChronoKey).map((n) => n.note),
 		noteCount: noted.length,
 		mediaCount: count,
+		readyStatus: statuses.get(i.anime_uuid) ?? null,
 		createdAt: earliest,
 	}));
 }

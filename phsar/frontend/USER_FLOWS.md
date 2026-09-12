@@ -397,20 +397,30 @@ The charts replay their build-up animation every time you open the tab, not just
 `/watchlist` is your plan-to-watch hub (v0.15.0). It's media-level under the hood but the UI groups entries by **lists** ("list" is the user-facing term for a tag). Restricted (guest) users see a "Watchlists aren't available for guest accounts" notice instead — they can't write watchlists.
 
 ### 9.1 Tab Navigation
-- Two tabs via a `?tab=` query param: **Watchlists** (`watchlists`, default — your entries) and **Lists** (`tags` — list management). An unknown/missing value falls back to `watchlists`.
+- Tabs via a `?tab=` query param: **Watchlists** (`watchlists`, default — your entries), **Statistics** (`stats`) and **Lists** (`tags` — list management). An unknown/missing value falls back to `watchlists`.
 - The Watchlists tab loads one `GET /watchlist/items` fetch (a wide per-entry projection) on mount; both grains and both views derive from it client-side. It stays mounted (scroll preserved); the Lists tab mounts on demand.
 - Filter state survives a hard refresh and a round-trip to an anime or media detail page, which also returns to the entry you opened (7.6); leaving `/watchlist` for any other page resets the value filters, keeping the view + grain choice. State is per browser tab and is discarded on logout or a user switch.
 - Page states: loading, an unauthenticated prompt (sign-in link), an error state with a retry, and an empty state ("Your watchlist is empty" → browse link).
 
 ### 9.2 Watchlists Tab (entries)
 - **Grain toggle** (anime / media, default **anime**):
-  - **Anime**: one card/row per anime, aggregating its watchlisted media — most-urgent (min) priority, the distinct list colors (solid, or a gradient when the anime spans lists), a media count, and an "X main · Y side" subtitle.
-  - **Media**: one card/row per entry — the media's own list color, relation-type label, and note indicator.
+  - **Anime**: one card/row per anime, aggregating its watchlisted media — most-urgent (min) priority, the distinct list colors (solid, or a gradient when the anime spans lists), a media count, an "X main · Y side" subtitle, and a **readiness badge** (9.2.1).
+  - **Media**: one card/row per entry — the media's own list color, relation-type label, and note indicator. No readiness badge: the verdict describes a franchise, not one entry.
 - **View toggle** (grid / table pills):
-  - **Grid** (default): cards grouped under **priority bands** (High / Medium / Low), each band headed by a colored dot + the priority word + a per-grain count ("N anime" / "N media"). An order arrow flips whether High or Low sits on top; within a band, cards are title-sorted. Each card shows the cover (media covers are spoiler-guarded; anime covers never are), a list-color dot (tooltip = list name, or "N lists"), and a note indicator (media grain: the note text on hover; anime grain: a count badge whose hover lists each noted media's note, one per line, in media-table (chronological) order).
+  - **Grid** (default): cards grouped under **priority bands** (High / Medium / Low, High always on top), each band headed by a colored dot + the priority word + a per-grain count ("N anime" / "N media"). Within a band, cards are title-sorted. Each card shows the cover (media covers are spoiler-guarded; anime covers never are), a list-color dot (tooltip = list name, or "N lists"), and a note indicator (media grain: the note text on hover; anime grain: a count badge whose hover lists each noted media's note, one per line, in media-table (chronological) order).
   - **Table**: sortable columns (list-color dot, title, priority, **Note**, added date); clicking a header toggles the sort — the Note column sorts by note count (media grain: noted first; anime grain: most-noted first) and its cell hover reveals the note text(s). Hovering a row highlights the title link. Whole-row click navigates to the detail page (preserving new-tab / inner-link clicks).
-- **List filter**: a multi-select **union** of lists ("show me these lists combined") — an empty selection = all. A deleted list is auto-pruned from the selection. "Clear all" resets it.
+- **Priority**, **Status** (9.2.1) and **Lists** ("show me these lists combined") each filter as a multi-select **union** where an empty selection = all; "Clear all" resets them together. A deleted list is auto-pruned from the Lists selection.
 - Cards/rows link to the media or anime detail page with `?from=watchlist` (→ "Back to watchlist").
+
+#### 9.2.1 Readiness ("can I start this tonight?")
+Every anime gets a verdict from its watchlisted media, its ratings and what the rest of its franchise is doing. The rules — and why an entry counts as watchable, blocking or neither — are in [docs/features/readiness.md](../../docs/features/readiness.md).
+
+- **Ready** carries no badge: an unbadged card is the ordinary case, so a badge marks only what is worth a second look.
+- **Hot** — airing now or returning next season, so you can't binge it whole yet.
+- **Waiting** — everything listed is watched and the rest hasn't aired.
+- **Standalone** — ready despite ongoing franchise content, because one listed entry is long enough to watch on its own.
+
+The **Status** filter chips are Ready (which also admits Standalone), Hot and Waiting. A verdict never changes with the other filters — it reads your whole watchlist for that anime — so selecting a list changes what you see, never whether something is ready. Under Ready, the media grain shows only the entries you could play now (an already-rated one stays, as a rewatch); under Hot or Waiting every entry stays.
 
 ### 9.3 Lists Tab (list/tag management)
 - **Create**: a name field (≤50 chars) + a color picker (a color circle → a dialog with a hexagon color wheel + an editable hex field, so any color is reachable; the default list's reserved orange is blocked so a custom list can't impersonate it) + "Add". Duplicate names are rejected ("You already have a list named …").
