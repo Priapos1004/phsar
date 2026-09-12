@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import case, delete, func, select, update
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -14,9 +14,78 @@ from app.daos.media_projections import (
     media_studio_names,
 )
 from app.models.anime import Anime
-from app.models.media import Media
+from app.models.media import MAIN_STORY_RELATIONS, SEASON_ORDER, Media
+from app.models.ratings import Ratings, WatchStatus
 from app.models.tag import Tag
 from app.models.watchlist import Watchlist
+from app.services.relation_classifier import (
+    AIRING_STATUS_CURRENTLY_AIRING,
+    AIRING_STATUS_NOT_YET_AIRED,
+)
+
+# Sortable season key: `year * 10 + rank`, so (2026, Fall) > (2026, Summer) and
+# (2027, Winter) > both with one integer comparison. The SQL twin of
+# `filter_service.chronological_media_key`'s first two components; the frontend builds
+# the same key for "next season" and compares, which keeps the season arithmetic in
+# one place instead of passing a moving cutoff down into SQL.
+#
+# No `else_`: every SeasonType has a WHEN, and `check_season_parts_both_or_none` makes
+# a year without a season unstorable, so no fallback is reachable. Defaulting to NULL
+# rather than a rank of 0 is still the better shape for a season added to the enum
+# later — it drops out of the MIN instead of sorting ahead of Winter. Unreachable
+# today, so no test separates the two.
+#
+# Spelled as explicit WHEN comparisons rather than `case(mapping, value=...)`: the
+# shorthand binds its keys untyped, and asyncpg refuses `seasontype = varchar`. Same
+# form as `search_filters._score_weight_case`, for the same reason.
+_SEASON_KEY = Media.anime_season_year * 10 + case(
+    *[(Media.anime_season_name == season, rank) for season, rank in SEASON_ORDER.items()],
+)
+
+
+def _franchise_signals(anime_id_scope, user_id: int):
+    """Per-anime "is new content coming?" signals over the WHOLE franchise, as a
+    subquery to LEFT JOIN on `anime_id`.
+
+    This is the one thing the watchlist page cannot answer from the user's own
+    entries: whether the anime has main-story content airing now or announced soon
+    that the user did NOT watchlist. Starting a franchise with an unlisted sequel
+    already airing means catching up and then waiting, which is what the readiness
+    filter exists to avoid.
+
+    The scopes are deliberate:
+
+    - **Main story only** (`MAIN_STORY_RELATIONS`) — an upcoming OVA, movie or recap
+      is not a season you wait for, so it must not park the whole franchise.
+    - **Airing ignores media the user dropped.** If they bailed on the season that is
+      airing, they are not waiting for it. `IS DISTINCT FROM` rather than `!=` so an
+      unrated media (NULL) still counts as blocking. The upcoming half needs no such
+      guard: a not-yet-aired media can never carry a rating (`CannotRateUnairedError`).
+
+    Scoped to the anime ids the user actually watchlisted, for the reason spelled out
+    in `media_projections._name_agg` — grouped once over a bounded set, not correlated
+    per row and not over the whole catalogue.
+    """
+    return (
+        select(
+            Media.anime_id.label("anime_id"),
+            func.bool_or(
+                (Media.airing_status == AIRING_STATUS_CURRENTLY_AIRING)
+                & Ratings.watch_status.is_distinct_from(WatchStatus.dropped)
+            ).label("franchise_airing"),
+            func.min(_SEASON_KEY)
+            .filter(Media.airing_status == AIRING_STATUS_NOT_YET_AIRED)
+            .label("franchise_upcoming_key"),
+        )
+        .select_from(Media)
+        .outerjoin(Ratings, (Ratings.media_id == Media.id) & (Ratings.user_id == user_id))
+        .where(
+            Media.anime_id.in_(anime_id_scope),
+            Media.relation_type.in_(MAIN_STORY_RELATIONS),
+        )
+        .group_by(Media.anime_id)
+        .subquery()
+    )
 
 
 class WatchlistDAO(BaseDAO[Watchlist]):
@@ -102,10 +171,16 @@ class WatchlistDAO(BaseDAO[Watchlist]):
         projection IS the field list, and a rename here is a rename of the DTO
         contract. (`Tag.uuid`/`Tag.name` collide with Media's and Anime's too, so
         they carry `tag_*` labels for the same reason.)
+
+        The readiness columns are the media's own `airing_status`, the caller's
+        `watch_status` on it, and the `_franchise_signals` pair — the only values
+        here that read media OUTSIDE the user's watchlist.
         """
         media_scope = select(Watchlist.media_id).where(Watchlist.user_id == user_id)
+        anime_scope = select(Media.anime_id).where(Media.id.in_(media_scope))
         genres = media_genre_names(media_scope)
         studios = media_studio_names(media_scope)
+        franchise = _franchise_signals(anime_scope, user_id)
         stmt = (
             select(
                 Watchlist.uuid,
@@ -120,19 +195,30 @@ class WatchlistDAO(BaseDAO[Watchlist]):
                 Media.relation_type,
                 Media.anime_season_name,
                 Media.anime_season_year,
+                Media.airing_status,
                 Media.mal_id,
-                # The canonical hybrid, not raw episodes x duration — watchlist
-                # media are unwatched, so the full runtime IS the queued time.
+                # The canonical hybrid, not raw episodes x duration.
                 Media.total_watch_time.label("total_watch_time"),
+                # NULL when the user has never rated this media. The readiness filter
+                # reads it to tell a rewatch from fresh content; `unique_user_media_rating`
+                # makes the join 0-or-1, so it can't fan the row set out.
+                Ratings.watch_status.label("watch_status"),
                 *anime_identity_columns(),
                 genres.c.genres,
                 studios.c.studios,
+                # COALESCE for the LEFT JOIN miss — an anime whose only watchlisted
+                # media is side content has no main story, so no franchise row.
+                # Absent evidence of upcoming content, nothing blocks.
+                func.coalesce(franchise.c.franchise_airing, False).label("franchise_airing"),
+                franchise.c.franchise_upcoming_key,
             )
             .join(Tag, Tag.id == Watchlist.tag_id)
             .join(Media, Media.id == Watchlist.media_id)
             .join(Anime, Anime.id == Media.anime_id)
+            .outerjoin(Ratings, (Ratings.media_id == Media.id) & (Ratings.user_id == user_id))
             .outerjoin(genres, genres.c.media_id == Media.id)
             .outerjoin(studios, studios.c.media_id == Media.id)
+            .outerjoin(franchise, franchise.c.anime_id == Media.anime_id)
             .where(Watchlist.user_id == user_id)
             .order_by(*recency_order(Watchlist))
         )

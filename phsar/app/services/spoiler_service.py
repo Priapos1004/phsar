@@ -30,7 +30,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.media import Media, RelationType
+from app.models.media import MAIN_STORY_RELATIONS, Media
 from app.models.ratings import Ratings
 from app.models.user_visible_media import UserVisibleMedia
 from app.models.users import RoleType, Users
@@ -40,14 +40,10 @@ from app.services.filter_service import chronological_media_key
 logger = logging.getLogger(__name__)
 
 
-# Relation types that act as spoiler-frontier anchors. `main` is the
-# canonical backbone; `alternative_version` covers retellings that
-# extend or diverge from the canonical story (Evangelion Rebuild
-# Movies, Hokuto no Ken alts) so each gates the next.
-_ANCHOR_TYPES = frozenset({
-    RelationType.Main.value,
-    RelationType.AlternativeVersion.value,
-})
+# Relation types that act as spoiler-frontier anchors — each gates the next.
+# `MAIN_STORY_RELATIONS` (models/media.py) is the shared definition and argues which
+# types belong.
+_ANCHOR_TYPES = MAIN_STORY_RELATIONS
 
 
 class _MediaEntry(NamedTuple):

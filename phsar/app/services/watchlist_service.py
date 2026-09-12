@@ -61,6 +61,7 @@ def _to_item(w: Row) -> WatchlistItem:
     # str-enums → the DTO fields are plain `str`.
     data["relation_type"] = w.relation_type.value
     data["anime_season_name"] = w.anime_season_name.value if w.anime_season_name else None
+    data["watch_status"] = w.watch_status.value if w.watch_status else None
     # A media with no genres/studios has no aggregate row, so the LEFT JOIN
     # yields NULL rather than an empty array.
     data["genres"] = w.genres or []

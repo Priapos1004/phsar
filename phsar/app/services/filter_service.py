@@ -10,7 +10,7 @@ from app.daos.search_filters import (
     weighted_mean_votes_expr,
 )
 from app.daos.studio_dao import StudioDAO
-from app.models.media import Media
+from app.models.media import SEASON_ORDER, Media
 from app.schemas.genre_schema import GenreOut
 from app.schemas.media_filter_schema import ViewType
 
@@ -19,8 +19,6 @@ logger = logging.getLogger(__name__)
 media_dao = MediaDAO()
 genre_dao = GenreDAO()
 studio_dao = StudioDAO()
-
-SEASON_ORDER = {"Winter": 1, "Spring": 2, "Summer": 3, "Fall": 4}
 
 
 def chronological_media_key(

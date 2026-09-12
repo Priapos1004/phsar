@@ -82,14 +82,21 @@ class WatchlistItem(BaseModel):
     anime_season_name: str | None
     anime_season_year: int | None
     mal_id: int
+    # --- Readiness inputs; `WatchlistDAO._franchise_signals` argues their scopes ---
+    # This media's own state, and the caller's rating on it (None = never rated).
+    airing_status: str
+    watch_status: str | None
+    # Per-anime, not per-entry: is anything airing now, and the earliest announced
+    # season as a sortable `year * 10 + season rank` (None when nothing upcoming is
+    # dated). The client compares that key against the one it builds for next season.
+    franchise_airing: bool
+    franchise_upcoming_key: int | None
     # Per-media genres + studios (aggregated arrays from get_all_for_items) so the
     # Statistics subtab can tally top genres/studios client-side off this one fetch.
     genres: list[str]
     studios: list[str]
-    # For the Statistics "queued time" figure: the Media.total_watch_time hybrid
-    # (episodes × duration_seconds). Watchlist media are unwatched and have no
-    # hold/dropped partials, so the full runtime IS the queued time — reuse the
-    # canonical property instead of shipping the two factors for the client to multiply.
+    # The Media.total_watch_time hybrid (episodes × duration_seconds) — reused rather
+    # than shipping the two factors for the client to multiply.
     total_watch_time: int | None
     created_at: datetime
     modified_at: datetime
