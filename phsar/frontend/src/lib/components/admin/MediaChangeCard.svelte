@@ -173,10 +173,14 @@
 			<tbody>
 				{#each rows as row (row.tone + ':' + row.field)}
 					<tr class="border-t border-border/30 border-l-2 align-top {TONE_BORDER[row.tone]}">
-						<td class="py-1.5 pl-3 pr-3 font-mono text-xs text-card-foreground">{row.field}</td>
+						<td class="py-1.5 pl-3 pr-3 font-mono text-xs text-card-foreground break-words">{row.field}</td>
 						{#if row.kind === 'scalar'}
-							<td class="py-1.5 pr-3 text-card-foreground/80 truncate" title={row.old}>{row.old}</td>
-							<td class="py-1.5 pr-3 text-card-foreground tabular-nums truncate" title={row.new}>
+							<!-- break-words, not truncate: on a URL diff (cover_image) the
+							     tail is the part that changed, so clipping it hides exactly
+							     what the row exists to show. Short values are unaffected —
+							     break-words only breaks a string that can't otherwise fit. -->
+							<td class="py-1.5 pr-3 text-card-foreground/80 break-words">{row.old}</td>
+							<td class="py-1.5 pr-3 text-card-foreground tabular-nums break-words">
 								{row.new}
 								{#if row.delta}
 									<span class="ml-1 text-xs {row.delta.startsWith('+') ? 'text-emerald-400' : 'text-destructive'}">({row.delta})</span>
