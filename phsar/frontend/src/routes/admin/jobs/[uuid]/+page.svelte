@@ -202,6 +202,17 @@
 						{/if}
 					</div>
 					<p class="text-xs text-muted-foreground mt-1 break-words">{failure.error_message}</p>
+					{#if failure.gone_media_mal_id}
+						<!-- A 404 means MAL deleted the entry, so this failure raised a
+						     delete candidate instead of being a retryable blip. Linking
+						     out beats a second card restating the error already above. -->
+						<a
+							href="/admin?tab=curation"
+							class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-violet-300 hover:underline"
+						>
+							🗑 Gone from MAL — delete candidate raised. Review curation →
+						</a>
+					{/if}
 				</div>
 			{/snippet}
 
@@ -213,7 +224,9 @@
 						</h2>
 						<p class="text-sm text-muted-foreground">
 							Anime selected by the sweep but skipped because the MAL refresh raised.
-							They keep their old <code>last_checked_at</code> so the next sweep retries them.
+							They keep their old <code>last_checked_at</code> so the next sweep retries
+							them — except a 404, which means MAL deleted the entry: that one raises a
+							delete candidate and backs off instead of retrying nightly forever.
 						</p>
 					</Card.Header>
 					<Card.Content>

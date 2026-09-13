@@ -22,8 +22,10 @@ import math
 from datetime import date, datetime, timedelta, timezone
 from typing import NamedTuple
 
-from sqlalchemy import delete
+import httpx
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.daos.anime_dao import SWEEP_STABILIZE_THRESHOLD, AnimeDAO
@@ -48,6 +50,7 @@ from app.models.media_relation_edges import MediaRelationEdges
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
 from app.schemas.search_schema import AttachToExistingAction
+from app.services import delete_candidate_service
 from app.services.anime_relation_service import (
     reclassify_anime,
     umbrella_diff_to_log_entry,
@@ -110,6 +113,29 @@ class Step1Failure(NamedTuple):
     name_jap: str | None
     error_category: str | None
     error_message: str
+    # Set only when the failure was a 404 on one specific media, i.e. MAL
+    # deleted that entry. The dispatcher needs the identity to raise a delete
+    # candidate and stamp the backoff, and the savepoint has already rolled
+    # back by then, so it cannot re-read the instance — the id travels here.
+    gone_media_id: int | None = None
+    gone_media_mal_id: int | None = None
+
+
+class MediaGoneUpstreamError(Exception):
+    """MAL returned 404 for this media's id — the entry was deleted upstream.
+
+    Carries the media identity out of `_refresh_one_anime`'s per-media loop so
+    the dispatcher can act on it after the savepoint rolls back. A plain
+    HTTPStatusError would only carry the URL, and parsing an id back out of a
+    query string to decide whether to delete a catalogue row is not a thing to
+    build a destructive path on.
+    """
+
+    def __init__(self, media_id: int, mal_id: int, original: Exception):
+        self.media_id = media_id
+        self.mal_id = mal_id
+        self.original = original
+        super().__init__(str(original) or original.__class__.__name__)
 
 
 class ProbeFailure(NamedTuple):
@@ -187,6 +213,24 @@ async def user_scrape_dispatcher(session: AsyncSession, job: Job) -> dict:
             f"user_scrape payload must include query or mal_id, got {payload!r}",
         )
 
+    # Blacklist gate, BEFORE the BFS. `mal_scraper.search_title` subtracts the
+    # seed from its excluded-ids set (the seed has to be fetchable or a seeded
+    # scrape could never start), so the BFS itself will happily fetch and save a
+    # blacklisted id. The content gates downstream only catch the ones with a
+    # content reason — Hentai, Music, PV — so anything blacklisted by admin
+    # curation would sail straight back into the catalogue.
+    #
+    # The postmortem at the bottom of this function runs the same lookup, but
+    # it cannot replace this one: it only fires when the BFS produced nothing,
+    # and an admin-blacklisted entry is otherwise ordinary content that the BFS
+    # would happily save. The two cover different moments — this one a mal_id
+    # blacklisted before the run, that one a mal_id the BFS blacklisted during
+    # it.
+    if seed_mal_id is not None:
+        unwanted = await MediaUnwantedDAO().get_by_mal_id(session, seed_mal_id)
+        if unwanted is not None:
+            raise AnimeFilteredOutError(unwanted.title, unwanted.reason)
+
     progress = ProgressReporter(job.id)
 
     await progress.update(stage="Fetching", force=True)
@@ -214,13 +258,18 @@ async def user_scrape_dispatcher(session: AsyncSession, job: Job) -> dict:
         attached_count = await _route_attach_actions(session, attach_actions)
 
     if not results and not attached_count:
-        # Empty BFS result + no attach happened. Three distinct causes
-        # worth surfacing — the cron path's error_message is the only
-        # post-mortem record (system jobs don't appear in the bell), so
-        # distinguishing them saves the next admin from wondering
-        # whether MAL is broken, dropping a PV, or returning a
-        # malformed graph.
+        # Empty BFS result + no attach happened. The distinct causes are worth
+        # surfacing — the cron path's error_message is the only post-mortem
+        # record (system jobs don't appear in the bell), so distinguishing them
+        # saves the next admin from wondering whether MAL is broken, dropping a
+        # PV, or returning a malformed graph.
+        #
         if seed_mal_id is not None:
+            # Still needed despite the pre-BFS gate above, and for a different
+            # case: that gate catches a mal_id blacklisted BEFORE this run,
+            # while this catches one the BFS itself just blacklisted, having
+            # fetched the seed and classified it as Music/PV/CM/Hentai. The row
+            # did not exist when the gate ran.
             unwanted = await MediaUnwantedDAO().get_by_mal_id(session, seed_mal_id)
             if unwanted is not None:
                 raise AnimeFilteredOutError(unwanted.title, unwanted.reason)
@@ -311,7 +360,7 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
         stage="Refreshing", items_total=total, items_done=0, force=True,
     )
 
-    # AsyncSession is not concurrency-safe; all three queries share `session`.
+    # AsyncSession is not concurrency-safe; these queries share `session`.
     media_ids = await MediaDAO().get_all_mal_ids(session)
     anime_ids = await AnimeDAO().get_all_mal_ids(session)
     unwanted_ids = await MediaUnwantedDAO().get_all_mal_ids(session)
@@ -346,6 +395,10 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     # rating). Each entry: {anime_uuid, title, name_eng, name_jap, mal_ids}.
     # The mal_ids were blacklisted so they can't be re-added.
     hentai_removed_log: list[dict] = []
+    # Delete candidates raised this run, across both detectors (a MAL 404 mid-
+    # sweep, and the low-signal pass at the end). Surfaced as a counter so the
+    # Jobs Log can tint the row — nothing is deleted here, the admin decides.
+    delete_candidates_raised = 0
     # Track which existing anime had new media attached so we can re-run
     # merge detection on them at sweep end — a tier-3 anime whose probe
     # pulled in a new sibling franchise (Vigilante-shape) may now bridge
@@ -385,7 +438,8 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
         counters + the per-anime failure list the detail page renders instead
         of only the header error banner. v7 (v0.14.14) adds `hentai_removed`
         (+ `counters.hentai_removed_count`) for anime deleted mid-sweep on a
-        Hentai flip."""
+        Hentai flip. v8 adds `counters.delete_candidates_raised` +
+        `step1_failures[].gone_media_*` for entries MAL 404'd."""
         return {
             # v5 (v0.14.8): counters go media-grained. `media_refreshed` is the
             # headline workload (individual media touched); `anime_touched` is
@@ -408,6 +462,10 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
                 "step1_failed": step1_failed,
                 # v7 (v0.14.14): anime deleted for flipping to Hentai.
                 "hentai_removed_count": len(hentai_removed_log),
+                # v8: delete candidates raised this run across both detectors.
+                # Nothing was deleted — this is a queue depth the admin has to
+                # act on, which is why the Jobs Log tints the row for it.
+                "delete_candidates_raised": delete_candidates_raised,
             },
             "media_changes": media_changes_log,
             "anime_umbrella_changes": anime_umbrella_changes_log,
@@ -449,6 +507,10 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
                 step1_failed += 1
                 step1_failures.append(step1._asdict())
                 await progress.update(items_done=media_refreshed)
+                if step1.gone_media_id is not None:
+                    delete_candidates_raised += await _handle_media_gone_upstream(
+                        session, step1,
+                    )
                 # Circuit breaker: a run of upstream failures means MAL is down,
                 # not that one row is bad. Bail before burning the retry budget
                 # on every remaining anime (~30s–11min each) while maintenance
@@ -589,6 +651,20 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
             logger.exception("Spoiler cache recompute failed after sweep")
             cache_recompute_failed = True
 
+    # Low-signal detection, coalesced at sweep end like merge detection above:
+    # it is one catalogue-wide query with no MAL calls, and the sweep is the
+    # only thing that changes what it would find (a refresh can move a media
+    # over or under the vote floor). Soft-warn — the catalogue work has already
+    # committed, and a detection failure must not fail an otherwise-clean sweep.
+    try:
+        delete_candidates_raised += (
+            await delete_candidate_service.detect_low_signal_candidates(session)
+        )
+        await session.commit()
+    except Exception:
+        logger.exception("Post-sweep low-signal delete detection failed")
+        await session.rollback()
+
     # Coalesced at sweep end: the relaxed drift policy applies studio
     # removals per-anime above, any of which can strand a Studio row with
     # no media links. One DELETE here keeps the taxonomy self-cleaning each
@@ -650,19 +726,94 @@ async def _try_step1_refresh(
             "Sweep failed to refresh anime %s (%s); skipping",
             anime_id_for_log, anime_title_for_log,
         )
+        # Unwrap so the recorded message stays the underlying httpx one (the
+        # admin reads the URL + status out of it) and classify_error sees the
+        # real exception type. A 404 is deliberately NOT upstream_outage: it
+        # must neither trip nor reset the circuit breaker.
+        gone = exc if isinstance(exc, MediaGoneUpstreamError) else None
+        underlying = gone.original if gone is not None else exc
         return Step1Failure(
             anime_uuid=anime_uuid_for_log,
             title=anime_title_for_log,
             name_eng=anime_name_eng_for_log,
             name_jap=anime_name_jap_for_log,
-            error_category=classify_error(exc),
+            error_category=classify_error(underlying),
             # str(exc) is empty for some httpx errors — fall back to the
             # class name so the log row is never blank. Truncate: a sustained
             # MAL outage fails every selected anime, and some httpx/SQLAlchemy
             # reprs are multi-KB — capped so up to JOBS_SWEEP_MAX_PER_RUN of
             # them can't bloat the single result_summary JSONB row.
-            error_message=(str(exc) or exc.__class__.__name__)[:500],
+            error_message=(str(underlying) or underlying.__class__.__name__)[:500],
+            gone_media_id=gone.media_id if gone is not None else None,
+            gone_media_mal_id=gone.mal_id if gone is not None else None,
         )
+
+
+async def _handle_media_gone_upstream(
+    session: AsyncSession, failure: Step1Failure,
+) -> int:
+    """MAL 404'd this media. Raise a delete candidate and stop re-checking it
+    nightly. Returns how many candidates landed (0 or 1).
+
+    Two things happen here, and the second is the bug fix rather than the
+    feature. Step 1's savepoint rolled back, so `MediaFreshness.last_checked_at`
+    was never stamped — which leaves the row permanently past its due window,
+    re-failing every single night forever. Stamping it drops the media to the
+    long-tail cadence: the failure stops costing a MAL call a night, and if MAL
+    ever restores the entry the next check picks it back up with no admin
+    action.
+
+    This is deliberately scoped to 404 alone. Stamping on any failure would let
+    a MAL outage silently back the whole catalogue off to a 90-day cadence in
+    one night, which is exactly the failure the circuit breaker exists to bound.
+
+    Runs OUTSIDE the savepoint (the caller is past the rollback), and commits
+    its own work — a later anime raising and rolling back must not take this
+    with it. Never raises: a bookkeeping failure must not abort a sweep that is
+    otherwise succeeding.
+    """
+    try:
+        # One read, serving both halves. `Media.freshness` is lazy="raise" like
+        # every other relationship, so the sidecar is loaded explicitly here
+        # rather than faulted in later. The instance the sweep held is expired
+        # by the rollback, which is why this re-reads at all.
+        media = (
+            await session.execute(
+                select(Media)
+                .where(Media.id == failure.gone_media_id)
+                .options(selectinload(Media.freshness))
+            )
+        ).scalars().first()
+        if media is None:
+            return 0
+        raised = await delete_candidate_service.raise_sweep_404_candidate(
+            session, media,
+        )
+        # reset=False advances the stability counter as well as the timestamp,
+        # and that half is load-bearing: the stabilizing tier is a bare
+        # `stable_check_count < 3` with no staleness term, so a media still
+        # inside it is due every night no matter how recently it was checked.
+        # Stamping the clock alone would not stop the nightly retry for a media
+        # that 404s soon after it was first scraped.
+        _advance_media_freshness(
+            media, media_changed=False, is_media_airing=False,
+            now=datetime.now(timezone.utc),
+        )
+        await session.commit()
+    except Exception:
+        logger.exception(
+            "Failed to record delete candidate for gone media mal_id=%s",
+            failure.gone_media_mal_id,
+        )
+        await session.rollback()
+        return 0
+    if raised:
+        logger.info(
+            "MAL 404 on media mal_id=%s — raised a delete candidate and backed "
+            "its refresh off to the long-tail window",
+            failure.gone_media_mal_id,
+        )
+    return 1 if raised else 0
 
 
 async def _try_step2_probe(
@@ -763,7 +914,17 @@ async def _refresh_one_anime(
     media_changes: list[dict] = []
 
     for media in media_to_refresh:
-        raw = await scraper.refresh_anime(media.mal_id)
+        try:
+            raw = await scraper.refresh_anime(media.mal_id)
+        except httpx.HTTPStatusError as exc:
+            # 404 is the one refresh failure that is about this row rather than
+            # about MAL: the entry was deleted upstream and will never come
+            # back on its own. Re-raise typed so the dispatcher can identify
+            # WHICH media died — everything else propagates unchanged and stays
+            # an ordinary retryable failure.
+            if exc.response.status_code == 404:
+                raise MediaGoneUpstreamError(media.id, media.mal_id, exc) from exc
+            raise
         raw_payloads[media.mal_id] = raw
         payload = scraper.extract_information(raw)
 

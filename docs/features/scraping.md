@@ -93,6 +93,9 @@ what the upcoming sweep targets.
 - **`title=None`** — skipped silently. MAL routinely leaves the romanization field
   null on freshly-announced donghua and PV stubs and fills it in within hours; a
   `<mal_id:NNNN>` placeholder would pollute `media_unwanted` and block rediscovery.
+- **Anything an admin blacklisted** (`media_unwanted` reason `Admin curation`) —
+  rejected *before* the BFS runs, unlike the cases above. Why it has to be
+  before: [curation](curation.md).
 
 ## BFS and TERMINAL nodes
 

@@ -948,11 +948,12 @@ async def test_curation_pending_counts_shape(client, admin_auth_headers):
     resp = await client.get(CURATION_COUNTS_URL, headers=admin_auth_headers)
     assert resp.status_code == 200
     data = resp.json()
-    assert set(data.keys()) == {"merge", "split"}
-    assert isinstance(data["merge"], int)
-    assert isinstance(data["split"], int)
-    assert data["merge"] >= 0
-    assert data["split"] >= 0
+    # Exact key set: the bell sums every field into its unseen badge, so a kind
+    # added here without the bell learning about it under-counts silently.
+    assert set(data.keys()) == {"merge", "split", "delete"}
+    for kind in ("merge", "split", "delete"):
+        assert isinstance(data[kind], int)
+        assert data[kind] >= 0
 
 
 @pytest.mark.asyncio

@@ -12,7 +12,7 @@
 	import { ChevronRight } from 'lucide-svelte';
 	import { JOB_KIND_LABELS, SEASON_SWEEP_KINDS, formatJobDuration, formatJobKind, formatShortDateTime } from '$lib/utils/formatString';
 	import { STATUS_BADGE } from '$lib/utils/jobBadges';
-	import { hentaiRemoved, payloadSummary, probeAttachedMedia, rowTintClass, unknownGenreTags } from '$lib/utils/jobSummary';
+	import { deleteCandidatesRaised, hentaiRemoved, payloadSummary, probeAttachedMedia, rowTintClass, unknownGenreTags } from '$lib/utils/jobSummary';
 	import { jobsFilter, sanitizeKind, sanitizeStatus } from '$lib/stores/adminJobsFilter';
 	import { consumeFocus, revealFocused } from '$lib/utils/scrollFocus';
 	import type { AdminJobResponse, AdminJobsPage, JobKind, JobStatus } from '$lib/types/api';
@@ -303,9 +303,10 @@
 								{@const unknownTags = unknownGenreTags(row)}
 								{@const probeMedia = probeAttachedMedia(row)}
 								{@const hentaiCount = hentaiRemoved(row)}
+								{@const deleteCandidates = deleteCandidatesRaised(row)}
 								<tr
 									data-focus-uuid={row.uuid}
-									class="border-b border-border/50 align-top {clickable ? 'cursor-pointer hover:bg-muted/20 transition-colors' : ''} {rowTintClass(hentaiCount, unknownTags.length, probeMedia)}"
+									class="border-b border-border/50 align-top {clickable ? 'cursor-pointer hover:bg-muted/20 transition-colors' : ''} {rowTintClass(hentaiCount, unknownTags.length, probeMedia, deleteCandidates)}"
 									{...(clickable ? clickableNavProps(row.uuid) : {})}
 								>
 									<td class="py-2 pr-2 w-6">

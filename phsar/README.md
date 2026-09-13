@@ -28,6 +28,7 @@ phsar/
 │   │   ├── anime_dao.py
 │   │   ├── base_dao.py
 │   │   ├── base_mal_id_dao.py
+│   │   ├── delete_candidate_dao.py
 │   │   ├── genre_dao.py
 │   │   ├── job_dao.py
 │   │   ├── media_dao.py
@@ -52,6 +53,7 @@ phsar/
 │   │   ├── anime_freshness.py
 │   │   ├── anime_search.py
 │   │   ├── base.py
+│   │   ├── delete_candidate.py
 │   │   ├── genre.py
 │   │   ├── job.py
 │   │   ├── media.py
@@ -76,6 +78,7 @@ phsar/
 │   ├── routers/
 │   │   ├── admin.py
 │   │   ├── admin_completion.py
+│   │   ├── admin_delete.py
 │   │   ├── admin_jobs.py
 │   │   ├── admin_merge.py
 │   │   ├── admin_split.py
@@ -127,6 +130,7 @@ phsar/
 │       ├── backup_dispatcher.py
 │       ├── backup_service.py
 │       ├── completion_service.py
+│       ├── delete_candidate_service.py
 │       ├── export_service.py
 │       ├── filter_service.py
 │       ├── job_submission_service.py
@@ -191,6 +195,7 @@ phsar/
 │   │   │   │   ├── BulkRateDialog.svelte
 │   │   │   │   ├── BulkWatchlistDialog.svelte
 │   │   │   │   ├── DangerZone.svelte
+│   │   │   │   ├── DeleteCandidatesCard.svelte
 │   │   │   │   ├── DeleteWatchHistoryToggle.svelte
 │   │   │   │   ├── DoubleRangeSlider.svelte
 │   │   │   │   ├── EChart.svelte
@@ -452,6 +457,7 @@ phsar/
     │   ├── conftest.py
     │   ├── test_admin.py
     │   ├── test_admin_completion.py
+    │   ├── test_admin_delete.py
     │   ├── test_admin_nightly.py
     │   ├── test_admin_seasonal.py
     │   ├── test_admin_sweep.py
@@ -485,6 +491,7 @@ phsar/
         ├── test_backup_service.py
         ├── test_backup_subprocess_failures.py
         ├── test_base_dao_min_max.py
+        ├── test_delete_candidate_service.py
         ├── test_job_dao.py
         ├── test_job_worker.py
         ├── test_mal_scraper.py

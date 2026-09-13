@@ -4,6 +4,7 @@ import {
 	unknownGenreTags,
 	probeAttachedMedia,
 	hentaiRemoved,
+	deleteCandidatesRaised,
 	rowTintClass,
 } from '$lib/utils/jobSummary';
 import type { AdminJobResponse, JobKind, JobResultSummary, JobStatus } from '$lib/types/api';
@@ -170,10 +171,31 @@ describe('row-level signals', () => {
 		expect(hentaiRemoved(v7)).toBe(1);
 	});
 
-	it('rowTintClass is single-winner: hentai > unknown tags > probe', () => {
-		expect(rowTintClass(1, 5, 3)).toContain('rose');
-		expect(rowTintClass(0, 5, 3)).toContain('amber');
-		expect(rowTintClass(0, 0, 3)).toContain('blue');
-		expect(rowTintClass(0, 0, 0)).toBe('');
+	it('rowTintClass is single-winner: hentai > delete > unknown tags > probe', () => {
+		// Each case keeps every LOWER-priority signal set, so a rank that
+		// silently stopped winning would fall through to the next tint rather
+		// than pass by accident.
+		expect(rowTintClass(1, 5, 3, 2)).toContain('rose');
+		expect(rowTintClass(0, 5, 3, 2)).toContain('violet');
+		expect(rowTintClass(0, 5, 3, 0)).toContain('amber');
+		expect(rowTintClass(0, 0, 3, 0)).toContain('blue');
+		expect(rowTintClass(0, 0, 0, 0)).toBe('');
+	});
+
+	it('deleteCandidatesRaised reads the v8 counter and 0-defaults before it', () => {
+		const v8 = row({
+			kind: 'update_sweep',
+			version: 8,
+			result_summary: { counters: { delete_candidates_raised: 3 } } as JobResultSummary,
+		});
+		expect(deleteCandidatesRaised(v8)).toBe(3);
+		// A pre-v8 row simply omits the key — that must read as 0, not NaN.
+		const v7 = row({
+			kind: 'update_sweep',
+			version: 7,
+			result_summary: { counters: { hentai_removed_count: 1 } } as JobResultSummary,
+		});
+		expect(deleteCandidatesRaised(v7)).toBe(0);
+		expect(deleteCandidatesRaised(row({ kind: 'update_sweep' }))).toBe(0);
 	});
 });

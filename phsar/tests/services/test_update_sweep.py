@@ -27,6 +27,7 @@ from app.daos.anime_dao import AnimeDAO
 from app.exceptions import TransientUpstreamError
 from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
+from app.models.delete_candidate import DeleteCandidate, DeleteCandidateStatus
 from app.models.genre import Genre, GenreType
 from app.models.media import Media, MediaType, SeasonType
 from app.models.media_freshness import MediaFreshness
@@ -65,6 +66,7 @@ class _FakeScraper:
         search_title_error_for_seed: int | None = None,
         error_for_all: BaseException | None = None,
         error_504_for_mal_ids: set[int] | None = None,
+        error_404_for_mal_ids: set[int] | None = None,
     ):
         self._payloads = payloads_by_mal_id
         self._error_for = error_for_mal_id
@@ -77,6 +79,10 @@ class _FakeScraper:
         # can assert the breaker still carries the gathered stats. The 504
         # shape is what classify_error tags `upstream_outage` (breaker-tripping).
         self._error_504_for = error_504_for_mal_ids or set()
+        # Media MAL has deleted. Unlike the 504 set this is permanent, so
+        # the sweep raises a delete candidate and backs the row off instead
+        # of retrying it every night.
+        self._error_404_for = error_404_for_mal_ids or set()
         self.refresh_calls: list[int] = []
         self._search_title_returns = search_title_returns or {}
         self._search_title_error_for_seed = search_title_error_for_seed
@@ -94,6 +100,8 @@ class _FakeScraper:
             raise self._error_for_all
         if mal_id in self._error_504_for:
             raise _http_504()
+        if mal_id in self._error_404_for:
+            raise _http_404()
         if self._error_for is not None and mal_id == self._error_for:
             raise RuntimeError(f"simulated MAL failure for {mal_id}")
         return self._payloads[mal_id]
@@ -1596,6 +1604,31 @@ class _RecordingProgressReporter:
             type(self).last_items_done = items_done
 
 
+@pytest.fixture(autouse=True)
+async def _clean_delete_candidates():
+    """Remove every delete_candidates row a test created.
+
+    Autouse, and not opt-in like `tracked_anime`, because the rows are not all
+    the test's own doing: the dispatcher's low-signal pass runs catalogue-wide
+    at sweep end, so it ignores the patched `select_due_media_for_sweep` and
+    raises candidates against whatever REAL anime the developer's DB holds.
+    Every other write in this module is scoped to the test's synthetic rows.
+
+    Deleting by id-watermark rather than by mal_id because the pass picks its
+    own targets — the test cannot enumerate them up front. `tracked_anime`
+    can't cover it either: `delete_candidates.media_id` is ON DELETE SET NULL
+    by design, so the row deliberately OUTLIVES the anime cascade.
+    """
+    async with async_session_maker() as s:
+        high_water = (
+            await s.execute(select(func.coalesce(func.max(DeleteCandidate.id), 0)))
+        ).scalar_one()
+    yield
+    async with async_session_maker() as s:
+        await s.execute(delete(DeleteCandidate).where(DeleteCandidate.id > high_water))
+        await s.commit()
+
+
 @pytest.fixture
 async def tracked_anime():
     """Yields a list to which tests append anime ids; teardown deletes
@@ -1675,6 +1708,14 @@ def _patch_select_due(monkeypatch, anime_ids: list[int]) -> None:
     monkeypatch.setattr(AnimeDAO, "select_due_media_for_sweep", fake_select)
 
 
+def _returning(value):
+    """A stand-in for an async dependency the test wants neutralised, not
+    observed — hence a plain stub rather than an AsyncMock."""
+    async def _stub(*_args, **_kwargs):
+        return value
+    return _stub
+
+
 async def _run_dispatcher_harness(
     monkeypatch,
     fake_scraper,
@@ -1682,6 +1723,7 @@ async def _run_dispatcher_harness(
     *,
     patch_probe: bool = False,
     job_id: int = 999,
+    low_signal_raises: int = 0,
 ):
     """Bundles the four monkeypatches the per-test dispatcher setup blocks
     duplicate (MalScraper factory, ProgressReporter, AnimeDAO selection,
@@ -1691,7 +1733,19 @@ async def _run_dispatcher_harness(
     Returns `(summary, attach_calls, recompute_calls)` — the latter two
     are the lists populated by `_patch_probe_pipeline` when patch_probe=True
     (None otherwise) so tests can assert on attach/recompute call counts.
+
+    `low_signal_raises` stubs the end-of-sweep low-signal detection. Unlike
+    every other write in a sweep, that pass is catalogue-wide — it ignores the
+    patched `select_due_media_for_sweep` and runs against whatever the
+    developer's DB happens to hold, so a real call makes
+    `counters.delete_candidates_raised` depend on the local catalogue and lands
+    rows for anime no test owns. Stubbed to 0 by default; pass a number to
+    simulate the pass finding some.
     """
+    monkeypatch.setattr(
+        "app.services.delete_candidate_service.detect_low_signal_candidates",
+        _returning(low_signal_raises),
+    )
     monkeypatch.setattr(
         "app.services.scrape_dispatcher.MalScraper", lambda: fake_scraper,
     )
@@ -1851,12 +1905,139 @@ async def test_dispatcher_isolates_failures_per_anime(tracked_anime, monkeypatch
     assert anime_by_id[a2_id].freshness.last_checked_at == old
 
 
-def _http_504() -> httpx.HTTPStatusError:
-    """A 504 the same shape MalScraper reraises on a sustained MAL outage
-    (classify_error tags any httpx 5xx as `upstream_outage`)."""
+@pytest.mark.asyncio
+async def test_404_raises_a_delete_candidate_and_backs_the_row_off(
+    tracked_anime, monkeypatch,
+):
+    """MAL deleted this entry. Two things have to happen, and the second is a
+    bug fix rather than a feature: a candidate is raised for an admin to review,
+    AND the media's freshness clock is stamped.
+
+    Without the stamp the step-1 savepoint rolls back, `last_checked_at` never
+    moves, and the row stays permanently past its due window — re-failing every
+    single night forever.
+    """
+    a_id = await _real_seed(
+        mal_id=-8500,
+        last_checked_at=datetime.now(timezone.utc) - timedelta(days=30),
+        stable_check_count=3,
+    )
+    tracked_anime.append(a_id)
+    fake = _FakeScraper({}, error_404_for_mal_ids={-8500 * 100})
+
+    summary, _, _ = await _run_dispatcher_harness(
+        monkeypatch, fake, [a_id], job_id=8500,
+    )
+
+    assert summary["counters"]["step1_failed"] == 1
+    assert summary["counters"]["delete_candidates_raised"] == 1
+    # The failure entry carries the media identity so the detail page can tie
+    # the 404 to the candidate it raised.
+    failure = summary["step1_failures"][0]
+    assert failure["gone_media_mal_id"] == -8500 * 100
+    assert "404" in failure["error_message"]
+    # A 404 is not an outage — it must not trip or reset the circuit breaker.
+    assert failure["error_category"] is None
+
+    async with async_session_maker() as s:
+        candidate = (
+            await s.execute(
+                select(DeleteCandidate).where(DeleteCandidate.mal_id == -8500 * 100)
+            )
+        ).scalars().one()
+        assert candidate.status == DeleteCandidateStatus.pending
+        assert candidate.detected_by == "sweep_404"
+        # Nothing was deleted — that is the admin's call.
+        assert candidate.media_id is not None
+
+        freshness = (
+            await s.execute(
+                select(MediaFreshness).where(MediaFreshness.media_id == candidate.media_id)
+            )
+        ).scalars().one()
+        assert freshness.last_checked_at > datetime.now(timezone.utc) - timedelta(minutes=5), (
+            "a 404 must stamp the freshness clock, or the row re-fails nightly forever"
+        )
+
+
+@pytest.mark.asyncio
+async def test_low_signal_pass_feeds_the_same_counter(tracked_anime, monkeypatch):
+    """`delete_candidates_raised` is the sum of BOTH detectors, not just the
+    404 path — the Jobs Log tint gates on it, so a sweep that only found
+    low-signal entries still has to tint."""
+    a_id = await _real_seed(
+        mal_id=-8502,
+        last_checked_at=datetime.now(timezone.utc) - timedelta(days=30),
+        stable_check_count=3,
+    )
+    tracked_anime.append(a_id)
+    fake = _FakeScraper({-8502 * 100: _payload()})
+
+    summary, _, _ = await _run_dispatcher_harness(
+        monkeypatch, fake, [a_id], job_id=8502, low_signal_raises=2,
+    )
+
+    assert summary["counters"]["step1_failed"] == 0
+    assert summary["counters"]["delete_candidates_raised"] == 2
+
+
+@pytest.mark.asyncio
+async def test_504_neither_raises_a_candidate_nor_stamps_the_clock(
+    tracked_anime, monkeypatch,
+):
+    """The regression that matters most. A 504 is MAL being down, not this row
+    being dead — backing off on one would let an outage silently push the whole
+    catalogue to a 90-day cadence in a single night, and raising candidates
+    would queue the entire catalogue up for deletion."""
+    stale = datetime.now(timezone.utc) - timedelta(days=30)
+    a_id = await _real_seed(mal_id=-8501, last_checked_at=stale, stable_check_count=3)
+    tracked_anime.append(a_id)
+    fake = _FakeScraper({}, error_504_for_mal_ids={-8501 * 100})
+
+    summary, _, _ = await _run_dispatcher_harness(
+        monkeypatch, fake, [a_id], job_id=8501,
+    )
+
+    assert summary["counters"]["step1_failed"] == 1
+    assert summary["counters"]["delete_candidates_raised"] == 0
+    assert summary["step1_failures"][0]["gone_media_mal_id"] is None
+
+    async with async_session_maker() as s:
+        assert (
+            await s.execute(
+                select(DeleteCandidate).where(DeleteCandidate.mal_id == -8501 * 100)
+            )
+        ).scalars().first() is None
+        media = (
+            await s.execute(select(Media).where(Media.mal_id == -8501 * 100))
+        ).scalars().one()
+        freshness = (
+            await s.execute(
+                select(MediaFreshness).where(MediaFreshness.media_id == media.id)
+            )
+        ).scalars().one()
+        assert freshness.last_checked_at == stale, (
+            "an outage must leave the clock alone so the row retries next sweep"
+        )
+
+
+def _http_error(status: int, phrase: str) -> httpx.HTTPStatusError:
+    """The shape MalScraper reraises an upstream HTTP error in.
+
+    The status is the whole point of the two call sites: `classify_error` tags
+    429/5xx as `upstream_outage` (breaker-tripping) and leaves a 404 uncategorised,
+    because a 404 is about that one row rather than about MAL."""
     request = httpx.Request("GET", "https://api.myanimelist.net/v2/anime/1")
-    response = httpx.Response(504, request=request)
-    return httpx.HTTPStatusError("504 Gateway Timeout", request=request, response=response)
+    response = httpx.Response(status, request=request)
+    return httpx.HTTPStatusError(phrase, request=request, response=response)
+
+
+def _http_404() -> httpx.HTTPStatusError:
+    return _http_error(404, "404 Not Found")
+
+
+def _http_504() -> httpx.HTTPStatusError:
+    return _http_error(504, "504 Gateway Timeout")
 
 
 @pytest.mark.asyncio

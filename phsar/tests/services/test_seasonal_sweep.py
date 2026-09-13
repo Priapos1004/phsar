@@ -374,6 +374,52 @@ async def test_dispatcher_skips_entries_with_missing_mal_id(
 
 
 @pytest.mark.asyncio
+async def test_user_scrape_rejects_a_pre_blacklisted_seed_before_the_bfs(
+    tracked_unwanted, monkeypatch,
+):
+    """An admin-blacklisted mal_id must never reach the BFS.
+
+    `mal_scraper.search_title` subtracts the seed from its excluded-ids set, so
+    the BFS would fetch and save it — and unlike Music/PV/Hentai, an entry
+    removed by admin curation is ordinary content that no downstream gate
+    rejects. Asserting the BFS was never CALLED is the point: a test that only
+    checked the raised error would still pass if the scrape ran first.
+    """
+    seed_mal_id = -7712
+    async with async_session_maker() as s:
+        s.add(MediaUnwanted(
+            mal_id=seed_mal_id, title="Curated Out", reason="Admin curation",
+        ))
+        await s.commit()
+    tracked_unwanted.append(seed_mal_id)
+
+    called = False
+
+    async def fake_handle(db, query=None, progress=None, seed_mal_id=None):
+        nonlocal called
+        called = True
+        return _empty_extended()
+
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.handle_search_mal_api_results", fake_handle,
+    )
+    monkeypatch.setattr(
+        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+    )
+
+    job = type("FakeJob", (), {
+        "id": 7712,
+        "payload": {"query": "Curated Out", "mal_id": seed_mal_id},
+    })()
+    async with async_session_maker() as session:
+        with pytest.raises(AnimeFilteredOutError) as exc_info:
+            await user_scrape_dispatcher(session, job)
+
+    assert called is False, "the blacklist gate must run BEFORE the BFS"
+    assert exc_info.value.reason == "Admin curation"
+
+
+@pytest.mark.asyncio
 async def test_user_scrape_raises_filtered_out_when_seed_in_unwanted(
     tracked_unwanted, monkeypatch,
 ):

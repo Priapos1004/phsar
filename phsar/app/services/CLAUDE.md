@@ -9,8 +9,9 @@ there is one copy to keep correct.
 | `mal_scraper.py` | [scraping](../../../docs/features/scraping.md) |
 | `search_service.py` — BFS output → save/attach/merge decisions | [scraping](../../../docs/features/scraping.md), [relations](../../../docs/features/relations.md) |
 | `relation_classifier.py`, `anime_relation_service.py` | [relations](../../../docs/features/relations.md) |
-| `merge_detection_service.py`, `merge_candidate_service.py` | [relations](../../../docs/features/relations.md) |
-| `split_candidate_service.py` (and `seeders/split_candidate_backfiller.py`) | [relations](../../../docs/features/relations.md) |
+| `merge_detection_service.py`, `merge_candidate_service.py` | [relations](../../../docs/features/relations.md), [curation](../../../docs/features/curation.md) |
+| `split_candidate_service.py` (and `seeders/split_candidate_backfiller.py`) | [relations](../../../docs/features/relations.md), [curation](../../../docs/features/curation.md) |
+| `delete_candidate_service.py` | [curation](../../../docs/features/curation.md) |
 | `job_worker.py`, `progress_reporter.py`, `job_submission_service.py` | [jobs](../../../docs/features/jobs.md) |
 | `scrape_dispatcher.py`, `seasonal_sweep_dispatcher.py` | [jobs](../../../docs/features/jobs.md) |
 | `backup_dispatcher.py`, `backup_service.py` | [backups](../../../docs/features/backups.md) |

@@ -36,12 +36,12 @@ that carry an area's reasoning; it is not an inventory of the tree.
 | Rating form | `RatingCard.svelte` (the watch-state guards), `ScoreDial`, `AttributeSelect`, `RatingNeighbors`, `BulkRateDialog` |
 | Attribute viz | `AttributeRadar` and `AttributeBadges` — the share card renders both unchanged, so each carries a prop existing only for that. `AttributeBadges` takes `media` on top. All three read `$lib/utils/ratingAttributes`, which owns the aggregation rules and the shared counting. `AttributeDetailBars` is page-only |
 | Watchlist | `WatchlistBookmarkIcon` (the mask gradient), `WatchlistDialog`, `BulkWatchlistDialog`, and `watchlist/` for the page's own tabs |
-| Admin | `admin/`, plus `BackupsCard`, `MergeCandidatesCard`, `SplitCandidatesCard`. The job-detail page argues its own case in `src/routes/admin/jobs/[uuid]/+page.svelte` |
+| Admin | `admin/`, plus `BackupsCard`, `MergeCandidatesCard`, `SplitCandidatesCard`, `DeleteCandidatesCard`. The job-detail page argues its own case in `src/routes/admin/jobs/[uuid]/+page.svelte` |
 | Session + status | `SessionTimeoutBanner` with `$lib/utils/sessionTimeout.ts`, `MaintenanceBanner`, `JobBell`, `Toast`/`ToastHost` |
 | Search | `SearchBar.svelte`, and `src/routes/search/+page.svelte` for which filters survive an anime↔media switch |
 
 Several of these render a verdict the backend owns — restorability, cycle membership,
-merge and split candidates, sibling order — and must not recompute it; the relevant
+merge, split and delete candidates, sibling order — and must not recompute it; the relevant
 [feature doc](../../docs/features/) carries the contract. The trap in that group is
 `admin/SweepTiersCard.svelte`, which argues at its bucket list why its tiers are not
 the similarly-named ones in [jobs](../../docs/features/jobs.md).

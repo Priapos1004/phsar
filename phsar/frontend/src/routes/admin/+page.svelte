@@ -5,6 +5,7 @@
 	import BackupsCard from '$lib/components/BackupsCard.svelte';
 	import MergeCandidatesCard from '$lib/components/MergeCandidatesCard.svelte';
 	import SplitCandidatesCard from '$lib/components/SplitCandidatesCard.svelte';
+	import DeleteCandidatesCard from '$lib/components/DeleteCandidatesCard.svelte';
 	import CompletionStatusCard from '$lib/components/admin/CompletionStatusCard.svelte';
 	import AdminJobsLogTab from '$lib/components/admin/AdminJobsLogTab.svelte';
 	import AdminOverviewTab from '$lib/components/admin/AdminOverviewTab.svelte';
@@ -73,6 +74,7 @@
 	<div class:hidden={active !== 'curation'} class="space-y-6">
 		<MergeCandidatesCard currentUsername={getUsername() ?? ''} />
 		<SplitCandidatesCard currentUsername={getUsername() ?? ''} />
+		<DeleteCandidatesCard currentUsername={getUsername() ?? ''} />
 	</div>
 	<div class:hidden={active !== 'completion'}>
 		<CompletionStatusCard />

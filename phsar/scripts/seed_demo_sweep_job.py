@@ -2,14 +2,16 @@
 admin job-detail page (`/admin/jobs/[uuid]`) and the Jobs Log without
 waiting for a real nightly sweep.
 
-Builds a v7 `result_summary` populated from REAL catalog rows (so every
+Builds a v8 `result_summary` populated from REAL catalog rows (so every
 anime/media link resolves) covering every surface the v0.14.9 + v0.14.14
 changes touched: the counters grid, the "Anime changes" + "Media changes"
 cards (incl. genre/studio drift), the scrollable Failed-refresh / Failed-probe
 lists (~10 failures), the "Attached via probe" card (Tensei Slime + siblings),
 the v7 "Removed (Hentai)" card (with --hentai), the progress-divergence notice,
-and the Jobs Log amber (unknown-genre-tags) / blue (probe-attach) / rose
-(hentai-removed) row tints.
+and the Jobs Log row tints — amber (unknown-genre-tags), blue (probe-attach),
+violet (delete-candidates-raised, with --delete-candidates) and rose
+(hentai-removed). The tints are single-winner in that order reversed: rose
+outranks violet outranks amber outranks blue.
 
 Dry-runs by default; pass --apply to insert. `--delete` removes any
 previously-seeded demo job (matched on the payload marker) so re-running
@@ -20,6 +22,7 @@ Usage:
     python -m scripts.seed_demo_sweep_job              # dry-run (prints plan)
     python -m scripts.seed_demo_sweep_job --apply       # insert the demo job
     python -m scripts.seed_demo_sweep_job --hentai --apply   # + Removed (Hentai) card
+    python -m scripts.seed_demo_sweep_job --delete-candidates --apply  # violet tint
     python -m scripts.seed_demo_sweep_job --delete --apply   # remove it
 """
 
@@ -73,8 +76,9 @@ def _media_change(a: Anime, m, *, dynamic=None, static=None, genre_drift=None,
 
 def _build_summary(
     animes: list[Anime], *, include_genre_tags: bool = True, include_hentai: bool = False,
+    include_delete_candidates: bool = False,
 ) -> dict:
-    """Compose a v7 result_summary from real catalog rows. `animes` is a
+    """Compose a v8 result_summary from real catalog rows. `animes` is a
     pool of anime (media eager-loaded); roles are sliced off it so every
     uuid links to a live page.
 
@@ -85,7 +89,11 @@ def _build_summary(
     `include_hentai=True` adds a couple of `hentai_removed` entries so the v7
     "Removed (Hentai)" card + the rose Jobs Log tint render. Opt-in because the
     rose tint OUTRANKS amber + blue — with it on, the row is always rose, so
-    the other tints can't be evaluated on the same seeded job."""
+    the other tints can't be evaluated on the same seeded job.
+
+    `include_delete_candidates=True` sets `counters.delete_candidates_raised`
+    so the v8 violet tint renders. Opt-in for the same reason as hentai — see
+    the tint precedence in the module docstring."""
     # --- probe attachments: Tensei Slime (if present) + two siblings ---
     slime = next((a for a in animes if a.mal_id == 37430), None)
     attach_pool = [a for a in animes if a.media][:6]
@@ -221,6 +229,8 @@ def _build_summary(
         "orphaned_studios_removed": 4,
         "step1_failed": len(step1_failures),
         "hentai_removed_count": len(hentai_removed),
+        # v8, opt-in like --hentai — see the module docstring for why.
+        "delete_candidates_raised": 3 if include_delete_candidates else 0,
     }
     return {
         "counters": counters,
@@ -237,7 +247,10 @@ def _build_summary(
     }
 
 
-async def main(apply: bool, do_delete: bool, include_genre_tags: bool, include_hentai: bool) -> None:
+async def main(
+    apply: bool, do_delete: bool, include_genre_tags: bool, include_hentai: bool,
+    include_delete_candidates: bool,
+) -> None:
     async with async_session_maker() as session:
         # Scope --delete to our own demo rows: the unique marker AND the kind
         # we seed, so a future marker-key collision can't sweep unrelated jobs.
@@ -266,10 +279,11 @@ async def main(apply: bool, do_delete: bool, include_genre_tags: bool, include_h
 
         summary = _build_summary(
             animes, include_genre_tags=include_genre_tags, include_hentai=include_hentai,
+            include_delete_candidates=include_delete_candidates,
         )
         items_total = summary.pop("_items_total")
         c = summary["counters"]
-        print("Demo update_sweep v7 result_summary:")
+        print("Demo update_sweep v8 result_summary:")
         print(f"  media_refreshed={c['media_refreshed']} (items {c['media_refreshed']}/{items_total} — divergence notice)")
         print(f"  step1_failures={len(summary['step1_failures'])}  probe_failures={len(summary['probe_failures'])}")
         print(f"  probe_attached_anime={len(summary['probe_attached_anime'])} "
@@ -280,6 +294,7 @@ async def main(apply: bool, do_delete: bool, include_genre_tags: bool, include_h
               f"unknown_genre_tags={summary['unknown_genre_tags']}")
         print(f"  hentai_removed={len(summary['hentai_removed'])}: "
               f"{[e['title'] for e in summary['hentai_removed']]}")
+        print(f"  delete_candidates_raised={c['delete_candidates_raised']}")
 
         if not apply:
             print("\n(dry-run — pass --apply to insert the job)")
@@ -316,6 +331,12 @@ if __name__ == "__main__":
              "probe-attach tint show in isolation",
     )
     p.add_argument(
+        "--delete-candidates", action="store_true",
+        help="set counters.delete_candidates_raised so the v8 violet Jobs Log "
+             "tint renders. Opt-in because violet OUTRANKS amber/blue, so it "
+             "masks those tints on the same row (and rose still outranks it).",
+    )
+    p.add_argument(
         "--hentai", action="store_true",
         help="add hentai-removed entries so the v7 'Removed (Hentai)' card + rose "
              "Jobs Log tint render. Opt-in: the rose tint outranks amber/blue, so it "
@@ -325,4 +346,5 @@ if __name__ == "__main__":
     asyncio.run(main(
         apply=args.apply, do_delete=args.delete,
         include_genre_tags=not args.no_genre_tags, include_hentai=args.hentai,
+        include_delete_candidates=args.delete_candidates,
     ))

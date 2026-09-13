@@ -520,6 +520,41 @@ export interface SplitBackfillResult {
 	inserted: number;
 }
 
+// Admin — Delete candidates
+/** One row in the Delete Candidates queue. Unlike its merge/split siblings this
+ *  describes a MEDIA, not an anime, and every field is a verdict the backend
+ *  computed — the card renders it and must not re-derive it. */
+export interface DeleteCandidateListItem {
+	uuid: string;
+	/** "sweep_404" (MAL deleted the entry) or "low_signal" (never gained traction). */
+	detected_by: string;
+	created_at: string;
+	/** Set only in the dismissed-decisions list; null for pending rows. */
+	dismissed_at: string | null;
+	/** Identity snapshot — survives the deletion this row records. */
+	mal_id: number;
+	title: string;
+	name_eng: string | null;
+	name_jap: string | null;
+	/** Null once the media has been deleted, which is what tells the card
+	 *  there is nothing left to link to. */
+	media_uuid: string | null;
+	anime_title: string | null;
+	/** Franchise size. 1 means deleting this media deletes the anime too. */
+	anime_media_count: number;
+	/** Null on a sweep_404 row — the entry is gone upstream, so its last-known
+	 *  vote count would only mislead. */
+	scored_by: number | null;
+	media_type: string | null;
+	/** What users lose. Both cascade on media deletion with nothing else warning. */
+	rating_count: number;
+	watchlist_count: number;
+}
+
+export interface DeleteBackfillResult {
+	inserted: number;
+}
+
 // Admin — Registration tokens
 export interface RegistrationTokenListItem {
 	uuid: string;
@@ -690,6 +725,10 @@ export interface UpdateSweepStep1Failure {
 	name_jap?: string | null;
 	error_category: string | null;
 	error_message: string;
+	// v8+, and only on a 404 — the media MAL deleted. Its presence is what tells
+	// the detail page this failure raised a delete candidate rather than being a
+	// retryable blip. Absent on every probe failure and every pre-v8 row.
+	gone_media_mal_id?: number | null;
 }
 
 // One step-2 relations probe that raised and was skipped (v5+ update_sweep).
@@ -883,4 +922,5 @@ export interface AdminJobsPage {
 export interface CurationPendingCounts {
 	merge: number;
 	split: number;
+	delete: number;
 }

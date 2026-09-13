@@ -61,7 +61,14 @@ JOB_KIND_VERSIONS: dict[JobKind, int] = {
     # Hentai: {anime_uuid, title, name_eng, name_jap, mal_ids}). Net-new keys
     # with safe defaults; bumped (like v4/v6) so the frontend renders a
     # genuinely-empty v7 list distinctly from a pre-v7 row that never tracked it.
-    JobKind.update_sweep: 7,
+    # v8 adds `counters.delete_candidates_raised` (delete candidates the sweep
+    # raised — a MAL 404 mid-sweep, plus the end-of-sweep low-signal pass) and
+    # `step1_failures[].gone_media_id` / `.gone_media_mal_id`, set only on the
+    # 404 entries so the detail page can link a failure to the candidate it
+    # raised. Net-new keys with safe defaults; bumped like v4/v6/v7 so the Jobs
+    # Log can tell a genuine zero from a pre-v8 row that never counted them —
+    # the row tint gates on version >= 8.
+    JobKind.update_sweep: 8,
     # Both season sweeps come off ONE dispatcher and so write one shape:
     # {season_entries, new_entries_enqueued, dedup_skipped, season_year, season_name}.
     # The season pair is additive with a safe default and the frontend gates on its

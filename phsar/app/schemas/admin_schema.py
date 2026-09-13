@@ -132,9 +132,64 @@ class SplitCandidateListItem(BaseModel):
 
 
 class DeleteDecisionRequest(BaseModel):
-    """Body for deleting a dismissed merge/split decision so it can resurface.
-    `confirm` must equal the caller's username (mirrors backup restore)."""
+    """Body for deleting a dismissed merge/split/delete decision so it can
+    resurface. `confirm` must equal the caller's username (mirrors backup
+    restore)."""
     confirm: str
+
+
+class DeleteCandidateListItem(BaseModel):
+    """One row in the admin Delete Candidates queue.
+
+    Unlike its merge/split siblings this describes a MEDIA, not an anime, and
+    every field is a snapshot the backend computed — the card renders the
+    verdict and must not re-derive it.
+
+    `anime_title` / `anime_media_count` are the franchise context, and
+    `rating_count` / `watchlist_count` the user-data pre-flight. What each is for:
+    `docs/features/curation.md`.
+    """
+    uuid: str
+    detected_by: str
+    created_at: datetime
+    # Set only in the dismissed-decisions list; None for pending rows.
+    dismissed_at: datetime | None = None
+    # Identity snapshot. Survives the deletion this row records, so a resolved
+    # row still renders after its media is gone.
+    mal_id: int
+    title: str
+    name_eng: str | None = None
+    name_jap: str | None = None
+    # Null once the media has been deleted (ON DELETE SET NULL), which is also
+    # what tells the card there is nothing left to link to.
+    media_uuid: str | None = None
+    anime_title: str | None = None
+    anime_media_count: int = 0
+    # Why it was flagged. Both are null on a `sweep_404` row — the media is
+    # gone upstream, so its last-known vote count says nothing useful.
+    scored_by: int | None = None
+    media_type: str | None = None
+    rating_count: int = 0
+    watchlist_count: int = 0
+
+
+class DeleteCandidateRemoveRequest(BaseModel):
+    """Body for applying a delete candidate. `confirm` must equal the caller's
+    username — this destroys catalogue rows and cascades to any ratings,
+    watchlist entries and watch history hanging off them.
+
+    `blacklist` records the mal_id in `media_unwanted` so no later sweep, probe
+    or scrape re-adds it. Defaults false — see `docs/features/curation.md` for
+    why that asymmetry is deliberate.
+    """
+    confirm: str
+    blacklist: bool = False
+
+
+class DeleteBackfillResult(BaseModel):
+    """Returned by the manual re-detect trigger for DeleteCandidates.
+    `inserted` counts newly-raised rows; idempotent on no-change reruns."""
+    inserted: int
 
 
 class SplitResult(BaseModel):
@@ -287,6 +342,7 @@ class CurationPendingCounts(BaseModel):
     intentionally returns just the counts — no candidate detail."""
     merge: int
     split: int
+    delete: int
 
 
 class ExpiryPreset(int, Enum):

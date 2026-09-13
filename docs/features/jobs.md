@@ -142,6 +142,10 @@ by at least `_SCORE_STABILITY_THRESHOLD` (0.05 on the weighted score
 without it a single new vote per night on a million-vote anime resets the counter
 forever. None↔value transitions bypass it — first votes arriving is structural.
 
+**A 404 is the one failure that doesn't retry** — it stamps the freshness clock
+and raises a delete candidate instead of re-selecting next sweep. Why, and what
+the queue does with it: [curation](curation.md).
+
 **Circuit breaker**: per-anime isolation is right for one bad row and catastrophic
 when MAL is entirely down, since every anime then pays the full retry budget while
 maintenance is held. The dispatcher counts *consecutive* step-1 failures

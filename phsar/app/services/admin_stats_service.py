@@ -14,6 +14,7 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.anime_dao import AnimeDAO
+from app.daos.delete_candidate_dao import DeleteCandidateDAO
 from app.daos.merge_candidate_dao import MergeCandidateDAO
 from app.daos.split_candidate_dao import SplitCandidateDAO
 from app.daos.tag_dao import TagDAO
@@ -36,6 +37,7 @@ from app.schemas.admin_schema import (
 )
 
 anime_dao = AnimeDAO()
+delete_candidate_dao = DeleteCandidateDAO()
 merge_candidate_dao = MergeCandidateDAO()
 split_candidate_dao = SplitCandidateDAO()
 watchlist_dao = WatchlistDAO()
@@ -237,9 +239,10 @@ async def get_overview_stats(db: AsyncSession) -> AdminOverviewStats:
 
 async def get_curation_pending_counts(db: AsyncSession) -> CurationPendingCounts:
     """Sequential awaits, not asyncio.gather: AsyncSession can't multiplex
-    concurrent ops on one session (see .claude/rules/backend.md). Both queries
-    are sub-millisecond pending-only COUNTs, so the cost is irrelevant."""
+    concurrent ops on one session (see .claude/rules/backend.md). Every query
+    is a sub-millisecond pending-only COUNT, so the cost is irrelevant."""
     return CurationPendingCounts(
         merge=await merge_candidate_dao.count_pending(db),
         split=await split_candidate_dao.count_pending(db),
+        delete=await delete_candidate_dao.count_pending(db),
     )

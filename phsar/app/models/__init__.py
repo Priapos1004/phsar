@@ -2,6 +2,7 @@ from app.models.anime import Anime
 from app.models.anime_completion import AnimeCompletion
 from app.models.anime_freshness import AnimeFreshness
 from app.models.anime_search import AnimeSearch
+from app.models.delete_candidate import DeleteCandidate
 from app.models.genre import Genre
 from app.models.job import Job
 from app.models.media import Media

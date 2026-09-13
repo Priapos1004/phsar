@@ -37,6 +37,7 @@ that touches its area, before settling on an approach.
 |---|---|
 | [scraping](docs/features/scraping.md) | MAL API v2 client, BFS, rate limiting, value translation, skip rules |
 | [relations](docs/features/relations.md) | Two-pass classifier, substance gate, split detection, merge signals |
+| [curation](docs/features/curation.md) | The admin merge/split/delete queues: candidate lifecycle, sticky dismissal, what deleting costs, blacklisting |
 | [jobs](docs/features/jobs.md) | Worker, job kinds, due-tiers, `result_summary` versioning, the sweeps |
 | [search](docs/features/search.md) | Embeddings, ranking, anime-view filters, main-story scoring |
 | [backups](docs/features/backups.md) | Dump/restore, retention pools, the restorability verdict |
@@ -143,7 +144,7 @@ several `admin_*` modules). The live contract is FastAPI's own
 | `/library`, `/filters` | recent additions; filter options + genres + the search-token pair |
 | `/save`, `/seed` | internal save + seed entry points (not frontend-consumed) |
 | `/maintenance` | public status for the pre-warning banner |
-| `/admin*` | stats, jobs log, backups, registration tokens, merge/split/completion curation, cron schedulers |
+| `/admin*` | stats, jobs log, backups, registration tokens, merge/split/delete/completion curation, cron schedulers |
 
 **`services/`** — business logic as module-level async functions; long-lived
 stateful components are classes. Per-service notes in

@@ -131,12 +131,33 @@ export function hentaiRemoved(row: AdminJobResponse): number {
 	return num(counters?.hentai_removed_count);
 }
 
+/** v8+ sweeps report how many delete candidates they raised — media MAL 404'd
+ * plus the end-of-sweep low-signal pass. Nothing was deleted: this is queue
+ * depth waiting on an admin decision, which is why it tints the row.
+ * Pre-v8 rows omit the counter → 0 → no tint. */
+export function deleteCandidatesRaised(row: AdminJobResponse): number {
+	const counters = row.result_summary?.counters as Record<string, unknown> | undefined;
+	return num(counters?.delete_candidates_raised);
+}
+
 /** Mutually-exclusive row tint in priority order: hentai-removal (rose,
- * destructive) > unknown-genre-tags (amber, needs seeding) > probe-attach
- * (blue, informational). The row sublines are additive (each renders
- * independently); only the background tint is single-winner. */
-export function rowTintClass(hentaiCount: number, unknownTagCount: number, probeMedia: number): string {
+ * destructive) > delete-candidates (violet, needs a decision) > unknown-genre-
+ * tags (amber, needs seeding) > probe-attach (blue, informational).
+ *
+ * Violet outranks amber because a pending destructive decision is worth more of
+ * the admin's attention than a seeder chore, and sits below rose because rose
+ * reports something already carried out rather than something still to do.
+ *
+ * The row sublines are additive (each renders independently); only the
+ * background tint is single-winner. */
+export function rowTintClass(
+	hentaiCount: number,
+	unknownTagCount: number,
+	probeMedia: number,
+	deleteCandidates: number,
+): string {
 	if (hentaiCount > 0) return 'bg-rose-500/15 border-l-2 border-l-rose-400';
+	if (deleteCandidates > 0) return 'bg-violet-500/15 border-l-2 border-l-violet-400';
 	if (unknownTagCount > 0) return 'bg-amber-500/15 border-l-2 border-l-amber-400';
 	if (probeMedia > 0) return 'bg-blue-500/10 border-l-2 border-l-blue-400';
 	return '';
