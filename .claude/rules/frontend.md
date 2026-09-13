@@ -1,6 +1,6 @@
 ---
 description: Frontend conventions — runes, theme tokens, shared components, tooltip and chart mechanics, dialog sizing, route titles, restricted accounts, and UI copy.
-paths: "phsar/frontend/src/**/*"
+paths: "phsar/frontend/**"
 ---
 
 # Frontend rules

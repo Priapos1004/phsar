@@ -22,6 +22,11 @@ beside this file; doc placement lives in `docs.md`.
 - **Don't push after committing.** Stop at the commit. The user controls push
   timing so they can tag first, batch several commits, or hold one back —
   an auto-push also fires CI mid-stream.
+- **The user's visual verdict gates the docs.** On a UI-touching change it is a
+  precondition for entering `/ship`, not a step inside it — the placement that
+  survives the pipeline never being started. Their feedback routinely changes the
+  behaviour the docs would have described, so prose written ahead of it gets
+  reverted. How to hand off is in `frontend.md`.
 
 ## Commit blocks
 
