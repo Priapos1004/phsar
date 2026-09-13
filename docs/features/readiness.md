@@ -64,8 +64,9 @@ and there is nothing to wait for.
 
 ## The verdict
 
-Let **W** be the user's watchlisted media for one anime, **F** the anime's whole main
-story — including media they never listed.
+Let **W** be the user's watchlisted media for one anime **on the selected lists**, **F**
+the anime's whole main story — including media they never listed. W narrows with the Lists
+chips and F never does, which is what the scoping rule below turns on.
 
 **A — is there something to watch?**
 
@@ -80,7 +81,10 @@ deliberately kept on the list is a **rewatch**, and a rewatch is watchable.
 **B1 — nothing in W is airing or imminent.**
 
 No exemption. Listing a season means you want it, so you would hit the wait; a
-`dropped` rating does not release it, and the escape hatch is to unlist it.
+`dropped` rating does not release it. The escape hatches: unlist it, or move it to a list
+you are not looking at. The second only works for a season you dropped — B2 catches any
+other airing season wherever it is parked, since `franchise_airing` reads the franchise
+and excludes only dropped media.
 
 **B2 — nothing in F is airing or imminent.**
 
@@ -132,8 +136,16 @@ unaired entry is the answer.
 under Ready rather than taking a chip of its own; `CHIP_OF` in `watchlistReady` is where
 that mapping lives.
 
-**The list and priority chips never change a verdict.** It is computed over the
-unfiltered entry set — `statusByAnime` argues why.
+**The Lists chips scope a verdict; the priority and watchtime chips cannot.** The verdict
+answers "can I start this, from what is on the lists I'm looking at?", on the same premise
+the watchtime sum follows (USER_FLOWS §9.2.2) — so the same anime can read Hot on one list
+and Ready on another. Priority and watchtime are excluded by
+construction rather than by rule: both filter *rows*, which already carry their badge.
+`buildWatchlistView` owns that ordering.
+
+The consequence worth naming: a short side story alone on a list cannot borrow the
+standalone exemption from a 50-hour entry the selection does not include, so the runtime
+shown beside a badge always agrees with it.
 
 ## Where it is computed
 

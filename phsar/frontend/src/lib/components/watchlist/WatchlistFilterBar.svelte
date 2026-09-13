@@ -104,9 +104,9 @@
 			</div>
 
 			<!-- Readiness: a multi-select union like Priority and Lists, over the same verdicts
-			     the anime-grain badges show. The verdict spans a whole franchise, so it is
-			     deliberately NOT scoped by the Lists chips beside it
-			     (utils/watchlistReady.statusByAnime). -->
+			     the anime-grain badges show. The Lists chips beside it SCOPE these verdicts
+			     while Priority and Watchtime cannot; the order in
+			     utils/watchlistStats.buildWatchlistView decides which. -->
 			<div class="space-y-1.5">
 				<div class="flex h-7 items-center"><Label class={labelCls}>Status</Label></div>
 				<div class={chipGroup}>

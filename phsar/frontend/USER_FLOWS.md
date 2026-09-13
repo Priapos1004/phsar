@@ -420,7 +420,9 @@ Every anime gets a verdict from its watchlisted media, its ratings and what the 
 - **Waiting** — everything listed is watched and the rest hasn't aired.
 - **Standalone** — ready despite ongoing franchise content, because one listed entry is long enough to watch on its own.
 
-The **Status** filter chips are Ready (which also admits Standalone), Hot and Waiting. A verdict never changes with the other filters — it reads your whole watchlist for that anime — so selecting a list changes what you see, never whether something is ready. Under Ready, the media grain shows only the entries you could play now (an already-rated one stays, as a rewatch); under Hot or Waiting every entry stays.
+The **Status** filter chips are Ready (which also admits Standalone), Hot and Waiting. Under Ready, the media grain shows only the entries you could play now (an already-rated one stays, as a rewatch); under Hot or Waiting every entry stays.
+
+Selecting a **list** judges the anime on what is on that list, so the same anime can read Standalone under one and Hot under another. Selecting a **priority** or a **watchtime** band never moves a verdict.
 
 #### 9.2.2 Watchtime ("how big a commitment is this?")
 Every card and row carries the runtime of what you have listed, shown to two units (`4h`,

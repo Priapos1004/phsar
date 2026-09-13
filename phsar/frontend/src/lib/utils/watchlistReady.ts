@@ -76,6 +76,10 @@ export function animeStatus(items: WatchlistItem[], now: Date = new Date()): Rea
 
 	// Only the main story can park a franchise — an upcoming OVA, movie or recap is not
 	// a season you wait for. (The franchise columns are filtered the same way in SQL.)
+	//
+	// List-scoping leaves this near-redundant with B2 (readiness.md says why). Kept general
+	// rather than narrowed to the one case it still decides alone — a dropped season — so
+	// the rule reads here without leaning entirely on a SQL column's semantics.
 	const nothingListedPending = !media.some(
 		({ item, cls }) =>
 			MAIN_RELATIONS.has(item.relation_type) && (cls === 'airing' || cls === 'soon'),
@@ -99,10 +103,9 @@ export function animeStatus(items: WatchlistItem[], now: Date = new Date()): Rea
 /**
  * Every anime's verdict, keyed by `anime_uuid`.
  *
- * Build it from the UNFILTERED entry set and pass it down — that is what makes the
- * verdict independent of the list and priority chips. Computing it per filtered view
- * instead would let parking an airing season on a separate list silently unblock the
- * franchise, and the same anime would flip verdict as chips toggle.
+ * Build it from the **tag-filtered** entries. Every caller must hand it the same entry set
+ * it then filters and renders; `buildWatchlistView` is where that pairing lives, and
+ * `readiness.md` has what the scoping moves and what it leaves alone.
  */
 export function statusByAnime(
 	items: WatchlistItem[],

@@ -336,6 +336,33 @@ async def test_franchise_airing_over_media_outside_the_watchlist(
     assert item["franchise_airing"] is blocks
 
 
+async def test_franchise_airing_counts_media_the_user_watchlisted(
+    client, user_auth_headers, listed, db_session
+):
+    """A LISTED airing season must report through `franchise_airing` too.
+
+    The client's list-scoped readiness verdict leans on this: B1 stops seeing an airing
+    season parked on a list you are not looking at, and only this column still blocks it
+    (readiness.md, B1/B2). Narrow `anime_scope`, or exclude already-watchlisted media here,
+    and that hazard returns with the frontend suite green — its fixtures set
+    `franchise_airing` by hand, so they pin the column's value and never its scope.
+    """
+    tag_uuid = await _default_tag_uuid(client, user_auth_headers)
+    airing = Media(**media_kwargs(
+        listed.anime_id, -64003, title="Listed S2",
+        airing_status="Currently Airing", relation_type=RelationType.Main,
+    ))
+    db_session.add(airing)
+    await db_session.flush()
+    resp = await client.put(
+        f"/watchlist/media/{airing.uuid}", json={"tag_uuid": tag_uuid}, headers=user_auth_headers
+    )
+    assert resp.status_code == 200, resp.text
+
+    item = await _watchlist_items(client, user_auth_headers, listed, db_session)
+    assert item["franchise_airing"] is True
+
+
 async def test_anime_with_no_main_story_reports_not_blocked(client, user_auth_headers, db_session):
     """Watchlist a side story in an anime that has no main story at all, and the
     franchise subquery produces no row for it — a LEFT JOIN miss, not a False.

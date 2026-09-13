@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { watchlistItem as item } from './fixtures/watchlistItem';
-import { filterByPriority, filterByTags, filterByWatchtime, sortRows, toAnimeRows, toMediaRows, toPriorityBands, watchlistSummary, watchtimeBucket, WATCHTIME_CUTS, watchtimeDisplay, type WatchtimeKey } from '$lib/utils/watchlistStats';
+import { watchlistItem as item, NOW } from './fixtures/watchlistItem';
+import { buildWatchlistView, filterByPriority, filterByTags, filterByWatchtime, sortRows, toAnimeRows, toMediaRows, toPriorityBands, watchlistSummary, watchtimeBucket, WATCHTIME_CUTS, watchtimeDisplay, type WatchtimeKey } from '$lib/utils/watchlistStats';
 import { watchtimeTint, WATCHTIME_FILTERS } from '$lib/utils/watchlist';
+import { DEFAULT_WATCHLIST_FILTER, type WatchlistFilterState } from '$lib/stores/watchlistFilter';
 
 const NO_STATUSES = new Map<string, never>();
 const LANG = 'english' as const;
@@ -333,6 +334,72 @@ describe('sortRows', () => {
 		// Same priority → title-ascending both ways (Alpha before Beta), not reversed by dir.
 		expect(sortRows(tied, 'priority', 'asc').map((r) => r.title)).toEqual(['Alpha', 'Beta']);
 		expect(sortRows(tied, 'priority', 'desc').map((r) => r.title)).toEqual(['Alpha', 'Beta']);
+	});
+});
+
+describe('buildWatchlistView', () => {
+	// The ORDER of the pipeline, which is the only reason it is a function rather than a
+	// `$derived` chain in WatchlistListTab. Each of these fails on a reordering that every
+	// other suite in this file would pass.
+	const view = (items: ReturnType<typeof item>[], f: Partial<WatchlistFilterState> = {}) =>
+		buildWatchlistView(items, { ...DEFAULT_WATCHLIST_FILTER, ...f }, LANG, NOW);
+
+	// One anime across two lists: a long main entry, and a short side story whose own list
+	// cannot support the standalone exemption. The franchise is airing.
+	const split = [
+		item({
+			anime_uuid: 'x',
+			tag_uuid: 'main',
+			franchise_airing: true,
+			total_watch_time: 60 * H,
+			priority: 1,
+		}),
+		item({
+			anime_uuid: 'x',
+			tag_uuid: 'extras',
+			franchise_airing: true,
+			relation_type: 'side_story',
+			total_watch_time: 30 * 60,
+			priority: 3,
+		}),
+	];
+	const verdict = (f: Partial<WatchlistFilterState>) => view(split, f).rows[0]?.readyStatus;
+
+	it('scopes the verdict to the selected lists', () => {
+		// Fails if `statusByAnime` is fed the raw items instead of the tag-filtered ones.
+		// Also the standalone half of readiness.md's scoping table, and the symptom that
+		// prompted it: the side story's list cannot borrow the long entry's exemption, so
+		// the badge stops contradicting the runtime rendered beside it.
+		expect(verdict({ tagUuids: ['main'] })).toBe('standalone');
+		expect(verdict({ tagUuids: ['extras'] })).toBe('hot');
+		expect(verdict({})).toBe('standalone'); // no selection = the whole watchlist
+	});
+
+	it('does not let the priority or watchtime chips move a verdict', () => {
+		// Both are ROW filters, applied after the badge is stamped, so the aggregate row
+		// carries the most urgent priority and the summed runtime — neither chip below
+		// matches it, and a row filter can only drop a row, never re-judge it.
+		//
+		// The two empty expectations are the guard: hoisting either filter above
+		// `toAnimeRows` would leave the 30-minute priority-3 side story judging the anime
+		// alone, and each would then yield one Hot row instead of none.
+		expect(verdict({ priorities: [1] })).toBe('standalone');
+		expect(view(split, { priorities: [3] }).rows).toHaveLength(0);
+		expect(view(split, { watchtime: ['short'] }).rows).toHaveLength(0);
+	});
+
+	it('sums an anime row over the selected lists, matching the badge beside it', () => {
+		// The asymmetry that started this: the runtime followed the Lists chips while the
+		// verdict did not, so a card could read "30m" next to a Standalone badge.
+		expect(view(split, { tagUuids: ['extras'] }).rows[0].watchSeconds).toBe(30 * 60);
+		expect(view(split, { tagUuids: ['main'] }).rows[0].watchSeconds).toBe(60 * H);
+	});
+
+	it('sorts only the table copy, leaving the grid rows for the priority bands', () => {
+		const rows = [item({ anime_uuid: 'b', media_title: 'Beta' }), item({ anime_uuid: 'a', media_title: 'Alpha' })];
+		const built = view(rows, { grain: 'media', sort: 'title', sortDir: 'asc' });
+		expect(built.tableRows.map((r) => r.title)).toEqual(['Alpha', 'Beta']);
+		expect(built.rows.map((r) => r.title)).toEqual(['Beta', 'Alpha']);
 	});
 });
 

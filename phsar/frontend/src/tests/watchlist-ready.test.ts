@@ -1,10 +1,7 @@
 // The readiness rules, case by case. docs/features/readiness.md carries the same table
 // in prose; this is the executable copy, and the one that fails when a rule moves.
-//
-// Every test fixes `now` to Summer 2026, so "next season" is Fall 2026 and the horizon
-// never depends on when the suite runs.
 import { describe, it, expect } from 'vitest';
-import { watchlistItem as item } from './fixtures/watchlistItem';
+import { watchlistItem as item, NOW } from './fixtures/watchlistItem';
 import {
 	animeStatus,
 	isAvailable,
@@ -13,10 +10,8 @@ import {
 	statusByAnime,
 	STANDALONE_SECONDS,
 } from '$lib/utils/watchlistReady';
-import { filterByReadiness } from '$lib/utils/watchlistStats';
+import { filterByReadiness, filterByTags } from '$lib/utils/watchlistStats';
 import { nextSeasonKey, seasonKey } from '$lib/utils/getSeason';
-
-const NOW = new Date('2026-08-15T00:00:00Z'); // Summer 2026 → next season is Fall 2026
 
 const aired = (o = {}) => item({ airing_status: 'Finished Airing', ...o });
 const airing = (o = {}) => item({ airing_status: 'Currently Airing', ...o });
@@ -202,15 +197,61 @@ describe('filterByReadiness', () => {
 		expect(kept.some((i) => i.airing_status === 'Currently Airing')).toBe(true);
 	});
 
-	it('judges an anime on its whole watchlist, not the visible subset', () => {
-		// The airing season sits on a different list. Filtering to the other list must not
-		// make the franchise look ready — otherwise parking blockers elsewhere unblocks it.
+	it('drops an entry whose anime is missing from the map', () => {
+		// No verdict is not a passing verdict — the chip filters it out rather than showing it.
+		expect(filterByReadiness(all, new Map(), ['ready'], 'anime', NOW)).toHaveLength(0);
+	});
+});
+
+describe('the verdict is scoped to the selected lists', () => {
+	// `buildWatchlistView` hands `statusByAnime` the tag-filtered entries, so an anime can
+	// read differently under two selections. These cover what that moves and what it does
+	// not — through the real `filterByTags`, so they exercise the match production runs.
+	const onList = (items: ReturnType<typeof item>[], tag: string) =>
+		statusByAnime(filterByTags(items, [tag]), NOW).get('x');
+
+	it('does not unblock a franchise whose airing season sits on another list', () => {
+		// The hazard scoping had to clear. B1 narrows away here and B2 catches it instead,
+		// so the verdict does not move — readiness.md B1/B2 for why the column still reports.
 		const spread = [
-			aired({ anime_uuid: 'x', tag_uuid: 'binge' }),
-			airing({ anime_uuid: 'x', tag_uuid: 'ongoing' }),
+			aired({ anime_uuid: 'x', tag_uuid: 'binge', franchise_airing: true }),
+			airing({ anime_uuid: 'x', tag_uuid: 'ongoing', franchise_airing: true }),
 		];
-		const full = statusByAnime(spread, NOW);
-		const visible = spread.filter((i) => i.tag_uuid === 'binge');
-		expect(filterByReadiness(visible, full, ['ready'], 'anime', NOW)).toHaveLength(0);
+		expect(statusByAnime(spread, NOW).get('x')).toBe('hot');
+		expect(onList(spread, 'binge')).toBe('hot');
+	});
+
+	it('releases a season you dropped once it is parked on another list', () => {
+		// B1 has no dropped exemption, but `franchise_airing` does — so this is the one case
+		// where B1 narrowing is observable, B2 having nothing left to block with. The second
+		// escape hatch beside unlisting it.
+		const bailed = [
+			aired({ anime_uuid: 'x', tag_uuid: 'binge' }),
+			airing({ anime_uuid: 'x', tag_uuid: 'gave-up', watch_status: 'dropped' }),
+		];
+		expect(statusByAnime(bailed, NOW).get('x')).toBe('hot');
+		expect(onList(bailed, 'binge')).toBe('ready');
+	});
+
+	it('reads a list of finished seasons as a rewatch when the sequel is parked elsewhere', () => {
+		// A is scoped too. Across the whole watchlist the announced sequel means "nothing new
+		// to watch"; on the list you selected there is a finished season, and a rewatch is
+		// watchable. The franchise key is set and genuinely far off, so B2 is not what allows
+		// this — A narrowing is.
+		const parked = [
+			aired({
+				anime_uuid: 'x',
+				tag_uuid: 'done',
+				watch_status: 'completed',
+				franchise_upcoming_key: seasonKey('Winter', 2028),
+			}),
+			unaired('Winter', 2028, {
+				anime_uuid: 'x',
+				tag_uuid: 'later',
+				franchise_upcoming_key: seasonKey('Winter', 2028),
+			}),
+		];
+		expect(statusByAnime(parked, NOW).get('x')).toBe('waiting');
+		expect(onList(parked, 'done')).toBe('ready');
 	});
 });

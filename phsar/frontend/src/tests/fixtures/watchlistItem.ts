@@ -1,8 +1,13 @@
 import type { WatchlistItem } from '$lib/types/api';
 
+/** The clock every watchlist suite fixes, so "next season" is Fall 2026 and no horizon
+ *  depends on when the suite runs. Shared for the same reason as the builder below: two
+ *  copies are two things that have to move together. */
+export const NOW = new Date('2026-08-15T00:00:00Z');
+
 /** A `/watchlist/items` entry with every field defaulted, so a test states only the
- *  fields it is about. Shared by the stats and readiness suites — a 25-field builder
- *  copied per suite is one that drifts when the DTO gains a field. */
+ *  fields it is about. Shared by the stats and readiness suites — a builder copied per
+ *  suite is one that drifts when the DTO gains a field. */
 export function watchlistItem(overrides: Partial<WatchlistItem> = {}): WatchlistItem {
 	return {
 		uuid: crypto.randomUUID(),

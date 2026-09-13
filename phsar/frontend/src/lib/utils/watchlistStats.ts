@@ -7,13 +7,28 @@ import { formatDurationCompact, formatRelationType, resolveTitle } from '$lib/ut
 import { priorityLabel, watchtimeTint } from '$lib/utils/watchlist';
 import { MAIN_RELATIONS, mainSideLabel } from '$lib/utils/relations';
 import { SEASON_ORDER } from '$lib/utils/getSeason';
-import { isAvailable, isReady, matchesFilter, type ReadyFilterKey, type ReadyStatus } from '$lib/utils/watchlistReady';
+import { isAvailable, isReady, matchesFilter, statusByAnime, type ReadyFilterKey, type ReadyStatus } from '$lib/utils/watchlistReady';
 import type { WatchlistItem } from '$lib/types/api';
 
 export type WatchlistView = 'grid' | 'table';
 export type WatchlistGrain = 'anime' | 'media';
 export type WatchlistSortKey = 'title' | 'priority' | 'date' | 'note' | 'time';
 export type NameLanguage = 'english' | 'japanese' | 'romaji';
+
+/** Every list-tab control, in one object. It lives here rather than with the store that
+ *  holds it because `buildWatchlistView` takes it and the store already draws its field
+ *  types from this module — the other direction would be a cycle, and the store is
+ *  reachable from the root layout, so it must not pull this module into every entry chunk. */
+export interface WatchlistFilterState {
+	view: WatchlistView;
+	grain: WatchlistGrain; // anime (default, aggregated) vs media (one card per entry)
+	tagUuids: string[]; // multi-select union — [] = all tags
+	priorities: number[]; // multi-select union of priority bands — [] = all
+	readiness: ReadyFilterKey[]; // multi-select union of readiness verdicts — [] = all
+	watchtime: WatchtimeKey[]; // multi-select union of size bands — [] = all
+	sort: WatchlistSortKey; // table column sort
+	sortDir: 'asc' | 'desc';
+}
 
 /** The three size bands a row falls into, ascending. */
 export type WatchtimeKey = 'short' | 'medium' | 'long';
@@ -104,8 +119,9 @@ export function filterByTags(items: WatchlistItem[], tagUuids: string[]): Watchl
  * Keep entries whose anime falls under one of the selected readiness chips. Empty
  * selection = all, the same union convention as the tag and priority filters.
  *
- * `statuses` must come from `statusByAnime` over the UNFILTERED set — see its note on
- * why the verdict can't be recomputed per filtered view.
+ * `statuses` must come from `statusByAnime` over the SAME entries passed here — the
+ * tag-filtered set, per `buildWatchlistView`. A map built over a wider set would admit
+ * entries on a verdict their own list doesn't support.
  *
  * `grain` is a parameter because the media grain narrows a ready anime further; the
  * feature doc has the rule.
@@ -154,9 +170,10 @@ export function toMediaRows(items: WatchlistItem[], lang: NameLanguage): Watchli
 /** One row per anime, aggregating its watchlisted media: most-urgent (min) priority,
  *  distinct tag colors (→ gradient when >1), the media count, and the readiness badge.
  *
- *  `statuses` is passed in rather than derived from `items` because `items` here is
- *  already tag- and priority-filtered, and the verdict has to read the whole watchlist
- *  (`statusByAnime`). An anime missing from the map simply gets no badge. */
+ *  `statuses` is passed in rather than derived from `items` so it is the same map
+ *  `filterByReadiness` judged on, computed once — deriving it here would re-judge the
+ *  set that filter already narrowed, and a chip could then change its own input. An
+ *  anime missing from the map simply gets no badge. */
 export function toAnimeRows(
 	items: WatchlistItem[],
 	lang: NameLanguage,
@@ -347,6 +364,38 @@ export function sortRows(rows: WatchlistRow[], key: WatchlistSortKey, dir: 'asc'
 		if (cmp !== 0) return sign * cmp;
 		return byTitle(a, b);
 	});
+}
+
+/**
+ * The list tab's pipeline, from the raw `/watchlist/items` fetch to what the grid and the
+ * table render. A function rather than a `$derived` chain in the component because **the
+ * order is the design** — which chips reach a readiness verdict is decided by the sequence
+ * below and nothing else — and an order expressed in a component is reachable by no test.
+ * `readiness.md` states the rule; this function's suite guards it.
+ *
+ * `now` is required, not defaulted: the verdict and the media-grain narrowing must agree on
+ * what "next season" is, so the caller captures one clock.
+ */
+export function buildWatchlistView(
+	items: WatchlistItem[],
+	filter: WatchlistFilterState,
+	lang: NameLanguage,
+	now: Date,
+): { rows: WatchlistRow[]; tableRows: WatchlistRow[] } {
+	const tagged = filterByTags(items, filter.tagUuids);
+	const statuses = statusByAnime(tagged, now);
+	const filtered = filterByReadiness(tagged, statuses, filter.readiness, filter.grain, now);
+	const allRows =
+		filter.grain === 'anime' ? toAnimeRows(filtered, lang, statuses) : toMediaRows(filtered, lang);
+	const rows = filterByWatchtime(filterByPriority(allRows, filter.priorities), filter.watchtime);
+	return {
+		rows,
+		// A getter, so the grid never pays for a sort it discards — it bands `rows` itself,
+		// and a flat sort would override the within-band title order it renders.
+		get tableRows() {
+			return sortRows(rows, filter.sort, filter.sortDir);
+		},
+	};
 }
 
 // ── Statistics subtab (v0.15.1) ──────────────────────────────────────────────

@@ -1,4 +1,4 @@
-import type { WatchlistGrain, WatchlistSortKey, WatchlistView, WatchtimeKey } from '$lib/utils/watchlistStats';
+import type { WatchlistSortKey, WatchtimeKey, WatchlistFilterState } from '$lib/utils/watchlistStats';
 import type { ReadyFilterKey } from '$lib/utils/watchlistReady';
 import {
 	createPersistedFilter,
@@ -8,21 +8,11 @@ import {
 	pickNumbers,
 	pickStrings,
 	VIEW_KEYS,
-	type Direction,
 } from './persistedFilter';
 
 export type WatchlistTabKey = 'watchlists' | 'tags' | 'stats';
 
-export interface WatchlistFilterState {
-	view: WatchlistView;
-	grain: WatchlistGrain; // anime (default, aggregated) vs media (one card per entry)
-	tagUuids: string[]; // multi-select union — [] = all tags
-	priorities: number[]; // multi-select union of priority bands — [] = all
-	readiness: ReadyFilterKey[]; // multi-select union of readiness verdicts — [] = all
-	watchtime: WatchtimeKey[]; // multi-select union of size bands — [] = all
-	sort: WatchlistSortKey; // table column sort
-	sortDir: Direction;
-}
+export type { WatchlistFilterState };
 
 export const DEFAULT_WATCHLIST_FILTER: WatchlistFilterState = {
 	view: 'grid',
