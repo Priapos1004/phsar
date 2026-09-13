@@ -407,9 +407,9 @@ The charts replay their build-up animation every time you open the tab, not just
   - **Anime**: one card/row per anime, aggregating its watchlisted media — most-urgent (min) priority, the distinct list colors (solid, or a gradient when the anime spans lists), a media count, an "X main · Y side" subtitle, and a **readiness badge** (9.2.1).
   - **Media**: one card/row per entry — the media's own list color, relation-type label, and note indicator. No readiness badge: the verdict describes a franchise, not one entry.
 - **View toggle** (grid / table pills):
-  - **Grid** (default): cards grouped under **priority bands** (High / Medium / Low, High always on top), each band headed by a colored dot + the priority word + a per-grain count ("N anime" / "N media"). Within a band, cards are title-sorted. Each card shows the cover (media covers are spoiler-guarded; anime covers never are), a list-color dot (tooltip = list name, or "N lists"), and a note indicator (media grain: the note text on hover; anime grain: a count badge whose hover lists each noted media's note, one per line, in media-table (chronological) order).
-  - **Table**: sortable columns (list-color dot, title, priority, **Note**, added date); clicking a header toggles the sort — the Note column sorts by note count (media grain: noted first; anime grain: most-noted first) and its cell hover reveals the note text(s). Hovering a row highlights the title link. Whole-row click navigates to the detail page (preserving new-tab / inner-link clicks).
-- **Priority**, **Status** (9.2.1) and **Lists** ("show me these lists combined") each filter as a multi-select **union** where an empty selection = all; "Clear all" resets them together. A deleted list is auto-pruned from the Lists selection.
+  - **Grid** (default): cards grouped under **priority bands** (High / Medium / Low, High always on top), each band headed by a colored dot + the priority word + a per-grain count ("N anime" / "N media"). Within a band, cards are title-sorted. Each card shows the cover (media covers are spoiler-guarded; anime covers never are), a list-color dot (tooltip = list name, or "N lists"), a note indicator (media grain: the note text on hover; anime grain: a count badge whose hover lists each noted media's note, one per line, in media-table (chronological) order), and a runtime badge in the cover's bottom-right (9.2.2).
+  - **Table**: sortable columns (list-color dot, title, priority, **Time** (9.2.2), **Note**, added date); clicking a header toggles the sort — the Note column sorts by note count (media grain: noted first; anime grain: most-noted first) and its cell hover reveals the note text(s). Hovering a row highlights the title link. Whole-row click navigates to the detail page (preserving new-tab / inner-link clicks).
+- **Priority**, **Status** (9.2.1), **Watchtime** (9.2.2) and **Lists** ("show me these lists combined") each filter as a multi-select **union** where an empty selection = all; "Clear all" resets them together. A deleted list is auto-pruned from the Lists selection.
 - Cards/rows link to the media or anime detail page with `?from=watchlist` (→ "Back to watchlist").
 
 #### 9.2.1 Readiness ("can I start this tonight?")
@@ -421,6 +421,22 @@ Every anime gets a verdict from its watchlisted media, its ratings and what the 
 - **Standalone** — ready despite ongoing franchise content, because one listed entry is long enough to watch on its own.
 
 The **Status** filter chips are Ready (which also admits Standalone), Hot and Waiting. A verdict never changes with the other filters — it reads your whole watchlist for that anime — so selecting a list changes what you see, never whether something is ready. Under Ready, the media grain shows only the entries you could play now (an already-rated one stays, as a rewatch); under Hot or Waiting every entry stays.
+
+#### 9.2.2 Watchtime ("how big a commitment is this?")
+Every card and row carries the runtime of what you have listed, shown to two units (`4h`,
+`4h 23m`, `1d 2h`) — as a badge on the cover in the grid, as the **Time** column in the
+table. The anime grain **sums** its watchlisted media; the media grain shows that entry's
+own.
+
+- The **Watchtime** chips band it as `< 5h`, `5–10h` and `> 10h` — roughly one evening, a
+  season or two, and a long haul.
+- **`+` means "at least"** (`8h 40m+`): some of the anime's listed media have no runtime
+  yet, so the sum is a lower bound.
+- **N/A** — nothing listed has a known runtime, which in practice is the open-ended shows.
+  These match no chip, so they show with no selection and hide under any, and they sort
+  last whichever way the Time column points.
+- A watchtime **follows the Lists chips**: picking a list re-sums to it, because splitting
+  a franchise across lists means you plan to watch those groups separately.
 
 ### 9.3 Lists Tab (list/tag management)
 - **Create**: a name field (≤50 chars) + a color picker (a color circle → a dialog with a hexagon color wheel + an editable hex field, so any color is reachable; the default list's reserved orange is blocked so a custom list can't impersonate it) + "Add". Duplicate names are rejected ("You already have a list named …").

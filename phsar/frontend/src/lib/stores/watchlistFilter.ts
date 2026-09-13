@@ -1,4 +1,4 @@
-import type { WatchlistGrain, WatchlistSortKey, WatchlistView } from '$lib/utils/watchlistStats';
+import type { WatchlistGrain, WatchlistSortKey, WatchlistView, WatchtimeKey } from '$lib/utils/watchlistStats';
 import type { ReadyFilterKey } from '$lib/utils/watchlistReady';
 import {
 	createPersistedFilter,
@@ -19,6 +19,7 @@ export interface WatchlistFilterState {
 	tagUuids: string[]; // multi-select union — [] = all tags
 	priorities: number[]; // multi-select union of priority bands — [] = all
 	readiness: ReadyFilterKey[]; // multi-select union of readiness verdicts — [] = all
+	watchtime: WatchtimeKey[]; // multi-select union of size bands — [] = all
 	sort: WatchlistSortKey; // table column sort
 	sortDir: Direction;
 }
@@ -29,6 +30,7 @@ export const DEFAULT_WATCHLIST_FILTER: WatchlistFilterState = {
 	tagUuids: [],
 	priorities: [],
 	readiness: [],
+	watchtime: [],
 	sort: 'priority',
 	sortDir: 'asc',
 };
@@ -40,6 +42,7 @@ const SORT_KEYS: Record<WatchlistSortKey, true> = {
 	priority: true,
 	date: true,
 	note: true,
+	time: true,
 };
 // The three priority bands, inlined rather than derived from
 // `utils/watchlist.PRIORITY_OPTIONS`: this store is reachable from the ROOT
@@ -54,6 +57,9 @@ const PRIORITY_VALUES: readonly number[] = [1, 2, 3];
 // PRIORITY_VALUES: this store is reachable from the ROOT layout, and that import chain
 // would pull the readiness rules into every route's entry chunk, /login included.
 const READINESS_KEYS: Record<ReadyFilterKey, true> = { ready: true, hot: true, waiting: true };
+// Spelled out for the same reason as the key sets above. Only VALUES are the hazard — the
+// `import type` at the top is erased before it reaches the bundler.
+const WATCHTIME_KEYS: Record<WatchtimeKey, true> = { short: true, medium: true, long: true };
 
 // `tagUuids` needs no key set here: WatchlistFilterBar already prunes uuids
 // that aren't in the loaded `tags` store, so a rehydrated filter pointing at a
@@ -68,6 +74,9 @@ function sanitize(raw: Record<string, unknown>): WatchlistFilterState {
 		// offer would filter everything out with no way to clear it from the UI.
 		readiness: pickStrings(raw.readiness).filter((k): k is ReadyFilterKey =>
 			Object.hasOwn(READINESS_KEYS, k),
+		),
+		watchtime: pickStrings(raw.watchtime).filter((k): k is WatchtimeKey =>
+			Object.hasOwn(WATCHTIME_KEYS, k),
 		),
 		sort: pickKey(raw.sort, SORT_KEYS, DEFAULT_WATCHLIST_FILTER.sort),
 		sortDir: pickKey(raw.sortDir, DIRECTION_KEYS, DEFAULT_WATCHLIST_FILTER.sortDir),

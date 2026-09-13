@@ -3,8 +3,8 @@
 // card per anime, aggregating its watchlisted media — gradient bookmark when it spans
 // tags). Both grains normalize to a `WatchlistRow` so one grid/card/table serves both.
 import { buildDetailHref } from '$lib/utils/navigation';
-import { formatRelationType, resolveTitle } from '$lib/utils/formatString';
-import { priorityLabel } from '$lib/utils/watchlist';
+import { formatDurationCompact, formatRelationType, resolveTitle } from '$lib/utils/formatString';
+import { priorityLabel, watchtimeTint } from '$lib/utils/watchlist';
 import { MAIN_RELATIONS, mainSideLabel } from '$lib/utils/relations';
 import { SEASON_ORDER } from '$lib/utils/getSeason';
 import { isAvailable, isReady, matchesFilter, type ReadyFilterKey, type ReadyStatus } from '$lib/utils/watchlistReady';
@@ -12,8 +12,33 @@ import type { WatchlistItem } from '$lib/types/api';
 
 export type WatchlistView = 'grid' | 'table';
 export type WatchlistGrain = 'anime' | 'media';
-export type WatchlistSortKey = 'title' | 'priority' | 'date' | 'note';
+export type WatchlistSortKey = 'title' | 'priority' | 'date' | 'note' | 'time';
 export type NameLanguage = 'english' | 'japanese' | 'romaji';
+
+/** The three size bands a row falls into, ascending. */
+export type WatchtimeKey = 'short' | 'medium' | 'long';
+
+/** Upper bounds (exclusive) of the two lower bands; anything at or above `medium` is long.
+ *  5h is one 12-episode cour at ~25 min — the point a season stops being a single evening
+ *  — and 10h is two. The chip labels spell the same numbers as prose, so a test pins the
+ *  two spellings together rather than a comment asking for it. */
+export const WATCHTIME_CUTS: Record<'short' | 'medium', number> = {
+	short: 5 * 3600,
+	medium: 10 * 3600,
+};
+
+/** Which band a row's runtime falls in, or null when it is unknown.
+ *
+ *  Null is not a fourth band and not "zero": an open-ended show has no episode count, so
+ *  `total_watch_time` is null and any bucket would be a guess. Returning null keeps such a
+ *  row out of every chip, the same way readiness lets a null runtime never clear its
+ *  threshold. */
+export function watchtimeBucket(seconds: number | null): WatchtimeKey | null {
+	if (seconds === null || seconds <= 0) return null;
+	if (seconds < WATCHTIME_CUTS.short) return 'short';
+	if (seconds < WATCHTIME_CUTS.medium) return 'medium';
+	return 'long';
+}
 
 export interface WatchlistRow {
 	key: string;
@@ -49,6 +74,15 @@ export interface WatchlistRow {
 	 *  Raw state, not a label: `utils/watchlist.READY_BADGE` renders it, the same split
 	 *  as `priority` and `PRIORITY_ACCENT`. */
 	readyStatus: ReadyStatus | null;
+	/** Summed runtime of the entries this row aggregates, or null when none of them has a
+	 *  known length. SUMMED — not the per-media maximum `watchlistReady.STANDALONE_SECONDS`
+	 *  takes. The two ask different questions: that one asks whether a single entry is a
+	 *  commitment on its own, this one asks how long the thing you listed is. */
+	watchSeconds: number | null;
+	/** Some of the row's entries have a known length and some do not, so `watchSeconds` is
+	 *  a lower bound and renders as `8h 40m+`. Always false at media grain — a single media
+	 *  is either known or not. */
+	watchPartial: boolean;
 	createdAt: string;
 }
 
@@ -111,6 +145,8 @@ export function toMediaRows(items: WatchlistItem[], lang: NameLanguage): Watchli
 		noteCount: i.note ? 1 : 0,
 		mediaCount: 1,
 		readyStatus: null,
+		watchSeconds: i.total_watch_time,
+		watchPartial: false, // one media: its length is known or it is not
 		createdAt: i.created_at,
 	}));
 }
@@ -143,13 +179,15 @@ export function toAnimeRows(
 		main: number;
 		side: number;
 		noted: NotedMedia[];
+		seconds: number; // Σ of the KNOWN runtimes only
+		unknown: number; // entries whose runtime is null
 		earliest: string;
 	}
 	const byAnime = new Map<string, Acc>();
 	for (const i of items) {
 		let a = byAnime.get(i.anime_uuid);
 		if (!a) {
-			a = { item: i, priority: i.priority, colors: [], seenTags: new Set(), count: 0, main: 0, side: 0, noted: [], earliest: i.created_at };
+			a = { item: i, priority: i.priority, colors: [], seenTags: new Set(), count: 0, main: 0, side: 0, noted: [], seconds: 0, unknown: 0, earliest: i.created_at };
 			byAnime.set(i.anime_uuid, a);
 		}
 		a.priority = Math.min(a.priority, i.priority);
@@ -160,10 +198,14 @@ export function toAnimeRows(
 		a.count++;
 		if (MAIN_RELATIONS.has(i.relation_type)) a.main++;
 		else a.side++;
+		// Split rather than `?? 0`: a partial sum has to stay distinguishable from a
+		// complete one, which is what earns the row its `+`.
+		if (i.total_watch_time === null) a.unknown++;
+		else a.seconds += i.total_watch_time;
 		if (i.note) a.noted.push({ note: i.note, year: i.anime_season_year, season: i.anime_season_name, mal_id: i.mal_id });
 		if (i.created_at < a.earliest) a.earliest = i.created_at;
 	}
-	return [...byAnime.values()].map(({ item: i, priority, colors, count, main, side, noted, earliest }) => ({
+	return [...byAnime.values()].map(({ item: i, priority, colors, count, main, side, noted, seconds, unknown, earliest }) => ({
 		key: i.anime_uuid,
 		detailUuid: i.anime_uuid,
 		href: buildDetailHref('anime', i.anime_uuid, { from: 'watchlist' }),
@@ -182,6 +224,10 @@ export function toAnimeRows(
 		noteCount: noted.length,
 		mediaCount: count,
 		readyStatus: statuses.get(i.anime_uuid) ?? null,
+		// A known runtime is always > 0 (the backend maps MAL's 0 episodes/duration to
+		// NULL), so `seconds > 0` is exactly "at least one entry's length is known".
+		watchSeconds: seconds > 0 ? seconds : null,
+		watchPartial: unknown > 0 && seconds > 0,
 		createdAt: earliest,
 	}));
 }
@@ -208,6 +254,48 @@ export function filterByPriority(rows: WatchlistRow[], priorities: number[]): Wa
 	if (priorities.length === 0) return rows;
 	const set = new Set(priorities);
 	return rows.filter((r) => set.has(r.priority));
+}
+
+/**
+ * How a row's runtime renders — label, both tints, and the explanation it needs (or null
+ * when the number speaks for itself). Single-sourced so the grid card and the table cannot
+ * word it or punctuate it differently; each then takes the tint its surface calls for.
+ *
+ * `+` marks a lower bound. The copy names the runtime rather than either factor behind it,
+ * because a null means the episode count OR the average episode length is missing, and
+ * naming one sends people looking for a number that is often already there.
+ */
+export function watchtimeDisplay(
+	seconds: number | null,
+	partial: boolean,
+): { label: string; hint: string | null; fill: string; text: string } {
+	const tint = watchtimeTint(watchtimeBucket(seconds));
+	if (seconds === null) {
+		return { label: 'N/A', hint: 'No watchtime yet — the episode count or episode length is still unknown', ...tint };
+	}
+	return {
+		label: formatDurationCompact(seconds) + (partial ? '+' : ''),
+		hint: partial ? 'At least this long — some listed entries have no watchtime yet' : null,
+		...tint,
+	};
+}
+
+/**
+ * Keep only rows whose size band is in the selected set. Empty = all, the same union as
+ * every other watchlist chip group.
+ *
+ * Applied AFTER row normalization, like `filterByPriority` and unlike `filterByReadiness`,
+ * because it reads the row's aggregated runtime. That is also what scopes it to the
+ * selected lists: the rows come from the already tag-filtered entries, so an anime's time
+ * covers exactly the entries its media count and main/side split cover.
+ */
+export function filterByWatchtime(rows: WatchlistRow[], selected: WatchtimeKey[]): WatchlistRow[] {
+	if (selected.length === 0) return rows;
+	const set = new Set(selected);
+	return rows.filter((r) => {
+		const bucket = watchtimeBucket(r.watchSeconds);
+		return bucket !== null && set.has(bucket);
+	});
 }
 
 /** Within-band order + the stable, direction-independent sort tiebreak: rows by title ascending. */
@@ -241,6 +329,18 @@ export function sortRows(rows: WatchlistRow[], key: WatchlistSortKey, dir: 'asc'
 		else if (key === 'priority') cmp = a.priority - b.priority;
 		else if (key === 'date') cmp = a.createdAt.localeCompare(b.createdAt);
 		else if (key === 'note') cmp = a.noteCount - b.noteCount;
+		else if (key === 'time') {
+			// An unknown runtime is missing data, not a short show, so it sorts last in BOTH
+			// directions — returning here bypasses the `sign *` below, which would otherwise
+			// parade every N/A row to the top the moment the direction flips.
+			if (a.watchSeconds === null || b.watchSeconds === null) {
+				if (a.watchSeconds === b.watchSeconds) return byTitle(a, b);
+				return a.watchSeconds === null ? 1 : -1;
+			}
+			// `8h+` is strictly more than `8h`, so on an exact tie the partial flag is part
+			// of the magnitude and flips with the direction — unlike the title tiebreak.
+			cmp = a.watchSeconds - b.watchSeconds || Number(a.watchPartial) - Number(b.watchPartial);
+		}
 		// Direction applies to the primary key only; the title tiebreak stays ascending so
 		// rows that tie on the primary keep a stable order when the direction flips (mirrors
 		// the ratings table's un-signed tiebreak).

@@ -5,11 +5,10 @@
 	import { Label } from '$lib/components/ui/label';
 	import GrainToggle from '$lib/components/GrainToggle.svelte';
 	import Tooltip from '$lib/components/Tooltip.svelte';
-	import type { ReadyFilterKey } from '$lib/utils/watchlistReady';
-	import { watchlistFilter } from '$lib/stores/watchlistFilter';
+	import { watchlistFilter, type WatchlistFilterState } from '$lib/stores/watchlistFilter';
 	import { tags } from '$lib/stores/tags';
 	import { contrastText } from '$lib/utils/color';
-	import { PRIORITY_ACCENT, PRIORITY_OPTIONS, READY_FILTERS } from '$lib/utils/watchlist';
+	import { PRIORITY_ACCENT, PRIORITY_OPTIONS, READY_FILTERS, WATCHTIME_FILTERS } from '$lib/utils/watchlist';
 	import * as cls from '$lib/styles/classes';
 
 	// Prune deleted tags from the selection so a filter that pointed at a now-deleted
@@ -22,34 +21,27 @@
 		}
 	});
 
-	function toggleTag(uuid: string) {
-		watchlistFilter.update((f) => ({
-			...f,
-			tagUuids: f.tagUuids.includes(uuid) ? f.tagUuids.filter((t) => t !== uuid) : [...f.tagUuids, uuid],
-		}));
+	// Every chip group is the same union: an empty array means "all", and clicking flips one
+	// value in or out. Named once so "Clear all" and the active-filter check derive from the
+	// same list — a group added to the toggles but forgotten in `clearFilters` is a filter
+	// the user cannot switch off, and nothing type-checks that omission.
+	const UNION_FIELDS = ['tagUuids', 'priorities', 'readiness', 'watchtime'] as const;
+	// `satisfies`, not a cast: a group listed above but missing here is a compile error.
+	const CLEARED = { tagUuids: [], priorities: [], readiness: [], watchtime: [] } satisfies Pick<
+		WatchlistFilterState,
+		(typeof UNION_FIELDS)[number]
+	>;
+
+	function toggle<K extends (typeof UNION_FIELDS)[number]>(key: K, value: WatchlistFilterState[K][number]) {
+		watchlistFilter.update((f) => {
+			const current = f[key] as WatchlistFilterState[K][number][];
+			return { ...f, [key]: current.includes(value) ? current.filter((x) => x !== value) : [...current, value] };
+		});
 	}
 
-	function togglePriority(p: number) {
-		watchlistFilter.update((f) => ({
-			...f,
-			priorities: f.priorities.includes(p) ? f.priorities.filter((x) => x !== p) : [...f.priorities, p],
-		}));
-	}
-
-	function toggleReadiness(k: ReadyFilterKey) {
-		watchlistFilter.update((f) => ({
-			...f,
-			readiness: f.readiness.includes(k) ? f.readiness.filter((x) => x !== k) : [...f.readiness, k],
-		}));
-	}
-
-	let hasActiveFilters = $derived(
-		$watchlistFilter.tagUuids.length > 0 ||
-			$watchlistFilter.priorities.length > 0 ||
-			$watchlistFilter.readiness.length > 0,
-	);
+	let hasActiveFilters = $derived(UNION_FIELDS.some((k) => $watchlistFilter[k].length > 0));
 	function clearFilters() {
-		watchlistFilter.update((f) => ({ ...f, tagUuids: [], priorities: [], readiness: [] }));
+		watchlistFilter.update((f) => ({ ...f, ...CLEARED }));
 	}
 
 	const PILL_ON = 'border-primary bg-primary/15 text-primary font-medium';
@@ -57,8 +49,8 @@
 	const pill = 'px-3.5 py-1.5 rounded-full text-sm border transition-colors inline-flex items-center gap-1.5';
 	const labelCls = 'text-muted-foreground text-xs uppercase tracking-wide';
 
-	// The three filter groups share one chip shape and one unselected state; only the
-	// selected fill differs (priority band accent / readiness hue / the list's own color).
+	// Every filter group shares one chip shape and one unselected state; only the selected
+	// fill differs.
 	// `CHIP_OFF` matches the ratings page's chips, so the sibling pages stay parallel.
 	const chip = 'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-1.5 border border-transparent';
 	const CHIP_OFF = 'bg-muted text-card-foreground/70 hover:bg-muted/70';
@@ -100,7 +92,7 @@
 						<button
 							class="{chip} {on ? `${acc.dot} text-white shadow-sm` : CHIP_OFF}"
 							aria-pressed={on}
-							onclick={() => togglePriority(opt.value)}
+							onclick={() => toggle('priorities', opt.value)}
 						>
 							<!-- Dot stays visible and switches color (white on the selected accent-filled
 							     chip, the accent color when unselected) — mirrors the Lists filter chips. -->
@@ -126,7 +118,29 @@
 									{...props}
 									class="{chip} {on ? `${opt.class} shadow-sm` : CHIP_OFF}"
 									aria-pressed={on}
-									onclick={() => toggleReadiness(opt.key)}
+									onclick={() => toggle('readiness', opt.key)}
+								>
+									{opt.label}
+								</button>
+							{/snippet}
+						</Tooltip>
+					{/each}
+				</div>
+			</div>
+
+			<!-- Watchtime: a union like the rest, over the size band each row's badge shows. -->
+			<div class="space-y-1.5">
+				<div class="flex h-7 items-center"><Label class={labelCls}>Watchtime</Label></div>
+				<div class={chipGroup}>
+					{#each WATCHTIME_FILTERS as opt (opt.key)}
+						{@const on = $watchlistFilter.watchtime.includes(opt.key)}
+						<Tooltip text={opt.title}>
+							{#snippet trigger(props)}
+								<button
+									{...props}
+									class="{chip} {on ? `${opt.fill} shadow-sm` : CHIP_OFF}"
+									aria-pressed={on}
+									onclick={() => toggle('watchtime', opt.key)}
 								>
 									{opt.label}
 								</button>
@@ -147,7 +161,7 @@
 							class="{chip} {on ? 'shadow-sm' : CHIP_OFF}"
 							aria-pressed={on}
 							style={on ? `background:${tag.color}; border-color:${tag.color}; color:${contrast}` : ''}
-							onclick={() => toggleTag(tag.uuid)}
+							onclick={() => toggle('tagUuids', tag.uuid)}
 						>
 							<!-- Selected: dot uses the pill's contrast color so a white/yellow list stays
 								 visible; unselected: the list color with a faint border. -->

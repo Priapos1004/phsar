@@ -3,7 +3,7 @@
 	import WatchlistPriorityGrid from './WatchlistPriorityGrid.svelte';
 	import WatchlistTable from './WatchlistTable.svelte';
 	import { watchlistFilter } from '$lib/stores/watchlistFilter';
-	import { filterByPriority, filterByReadiness, filterByTags, sortRows, toAnimeRows, toMediaRows, type WatchlistSortKey } from '$lib/utils/watchlistStats';
+	import { filterByPriority, filterByReadiness, filterByTags, filterByWatchtime, sortRows, toAnimeRows, toMediaRows, type WatchlistSortKey } from '$lib/utils/watchlistStats';
 	import { statusByAnime } from '$lib/utils/watchlistReady';
 	import type { WatchlistItem } from '$lib/types/api';
 
@@ -24,9 +24,10 @@
 	// Off the UNFILTERED set — see `statusByAnime` for why it cannot be the filtered one.
 	let statuses = $derived(statusByAnime(items, now));
 
-	// Filter (union of selected lists, then readiness) first, normalize to rows at the
-	// chosen grain, then filter by the selected priority bands (on the row's displayed
-	// priority — for the anime grain that's the anime's most-urgent media priority).
+	// Two stages, and the split is load-bearing. ITEMS are filtered first (lists, then
+	// readiness), then normalized to rows at the chosen grain, then ROW filters apply — on
+	// the values each row displays, which for an anime are aggregates of whatever survived
+	// stage one. Why that ordering matters is on `filterByWatchtime`.
 	let filtered = $derived(
 		filterByReadiness(
 			filterByTags(items, $watchlistFilter.tagUuids),
@@ -36,13 +37,13 @@
 			now,
 		),
 	);
+	let allRows = $derived(
+		$watchlistFilter.grain === 'anime'
+			? toAnimeRows(filtered, nameLanguage, statuses)
+			: toMediaRows(filtered, nameLanguage),
+	);
 	let rows = $derived(
-		filterByPriority(
-			$watchlistFilter.grain === 'anime'
-				? toAnimeRows(filtered, nameLanguage, statuses)
-				: toMediaRows(filtered, nameLanguage),
-			$watchlistFilter.priorities,
-		),
+		filterByWatchtime(filterByPriority(allRows, $watchlistFilter.priorities), $watchlistFilter.watchtime),
 	);
 	let tableRows = $derived(sortRows(rows, $watchlistFilter.sort, $watchlistFilter.sortDir));
 

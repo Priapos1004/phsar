@@ -2,6 +2,7 @@
 import { buildColorWheel } from './color';
 import * as cls from '$lib/styles/classes';
 import type { ReadyFilterKey, ReadyStatus } from './watchlistReady';
+import type { WatchtimeKey } from './watchlistStats';
 
 export const PRIORITY_OPTIONS = [
 	{ value: 1, label: 'High' },
@@ -87,6 +88,32 @@ export const READY_FILTERS: (ReadyBadge & { key: ReadyFilterKey })[] = [
 	{ key: 'hot', ...READY_BADGE.hot! },
 	{ key: 'waiting', ...READY_BADGE.waiting! },
 ];
+
+// One teal ramped by weight, so a long anime is spottable without reading the number. Teal
+// because it collides with no `.theme-*` primary; not `scoreColor`'s ramp, which means
+// "how good" and tops out on the theme primary; not the priority accents `PRIORITY_ACCENT`
+// owns one chip group over.
+//
+// `fill` and `text` are the SAME shade per band — the card badge needs a background to sit
+// on artwork, the table column has none to fight. One line each because they must not
+// drift, and `tests/watchlist-stats` walks the pair.
+//
+// Labels are the bounds themselves rather than Short/Medium/Long: the chip is the only
+// place a threshold is stated to the user, and "Medium" would need a legend.
+export const WATCHTIME_FILTERS: { key: WatchtimeKey; label: string; fill: string; text: string; title: string }[] = [
+	{ key: 'short', label: '< 5h', fill: 'bg-teal-400 text-white', text: 'text-teal-400', title: 'Under 5 hours — about a 12-episode season or less' },
+	{ key: 'medium', label: '5–10h', fill: 'bg-teal-600 text-white', text: 'text-teal-600', title: 'Five to ten hours — one or two seasons' },
+	{ key: 'long', label: '> 10h', fill: 'bg-teal-800 text-white', text: 'text-teal-800', title: 'Over 10 hours — a long haul' },
+];
+
+/** A band's two renderings, or the neutral pair when the runtime is unknown — N/A is
+ *  absence of data, not a fourth size. */
+export function watchtimeTint(bucket: WatchtimeKey | null): { fill: string; text: string } {
+	const f = WATCHTIME_FILTERS.find((x) => x.key === bucket);
+	// Colour only, like every other tint here — the call site composes `readyPill` for the
+	// box, so returning `mutedPill` would emit that box's classes twice.
+	return f ? { fill: f.fill, text: f.text } : { fill: 'bg-muted text-muted-foreground', text: 'text-muted-foreground' };
+}
 
 // The color a new custom list starts on — taken straight from a wheel cell (a vivid blue)
 // so it's always pre-selected in the picker AND clickable again to restore. A hardcoded hex
