@@ -144,8 +144,10 @@ def _build_summary(
     umb_pool = list(fail_pool[13:16])
     anime_umbrella_changes = []
     field_sets = [
-        [{"field": "cover_image", "old": "https://cdn.myanimelist.net/images/anime/old.jpg",
-          "new": "https://cdn.myanimelist.net/images/anime/new.jpg"}],
+        # Covers are pinned to `.webp` (see docs/features/scraping.md), so a
+        # realistic diff uses it on both sides.
+        [{"field": "cover_image", "old": "https://cdn.myanimelist.net/images/anime/old.webp",
+          "new": "https://cdn.myanimelist.net/images/anime/new.webp"}],
         [{"field": "description", "old": "An old synopsis.", "new": "A revised, longer synopsis."}],
         [{"field": "title", "old": "Old Romaji Title", "new": "New Romaji Title"},
          {"field": "name_eng", "old": "Old English", "new": "New English"}],

@@ -60,9 +60,9 @@
 		     table auto-sizes to its content and a `max-w-*` on a <td> is only a
 		     hint the algorithm may ignore — a long cover_image URL then pushes
 		     the whole table outside this card. `break-words` rather than
-		     `truncate` because on a URL diff the tail is the part that changed
-		     (.webp -> .jpg), so clipping it hides exactly what the row exists
-		     to show. -->
+		     `truncate` because a cover_image diff differs only in the CDN path
+		     segment mid-URL, so clipping to a width hides exactly what the row
+		     exists to show. -->
 		<table class="w-full text-sm table-fixed">
 			<colgroup>
 				<col class="w-40" />

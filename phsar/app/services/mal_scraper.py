@@ -203,6 +203,16 @@ def _mal_date_to_iso(value: str | None) -> str | None:
     return d.isoformat() if d else None
 
 
+def _normalize_cover_url(url: str | None) -> str | None:
+    """Pin a MAL cover to its `.webp` derivative — see `docs/features/scraping.md`
+    (Value translation). Scoped to `/images/anime/` because that is the only path
+    whose `.webp` derivative is known to exist; a `.jpg` anywhere else passes
+    through untouched."""
+    if url and url.endswith(".jpg") and "/images/anime/" in url:
+        return url.removesuffix(".jpg") + ".webp"
+    return url
+
+
 def catalog_season_name(season: str) -> str:
     """MAL's lowercase season name → the catalog's `SeasonType` spelling ("fall" → "Fall").
 
@@ -482,7 +492,7 @@ class MalScraper:
             "age_rating": _AGE_RATING_MAP.get(anime.get("rating")),
             "description": MalScraper._clean_synopsis(anime.get("synopsis")),
             "original_source": _SOURCE_MAP.get(anime.get("source"), anime.get("source")),
-            "cover_image": (anime.get("main_picture") or {}).get("large"),
+            "cover_image": _normalize_cover_url((anime.get("main_picture") or {}).get("large")),
             "score": anime.get("mean"),
             "scored_by": scored_by,
             "episodes": anime.get("num_episodes") or None,

@@ -75,6 +75,11 @@ against the stored format.
 - `duration_seconds` comes from `average_episode_duration` (exact per-episode
   seconds). The legacy `duration` display string is always None; the frontend
   renders from `duration_seconds` via `formatDuration`.
+- **Cover URLs pin to `.webp`.** MAL answers the same `/images/anime/` path with
+  `.jpg` or `.webp` depending on which backend replies, so an unnormalized
+  `main_picture.large` makes every sweep log a `cover_image` diff that is not a
+  cover change; `.webp` is also the ~3x smaller derivative. Only that path is
+  rewritten — it is the one whose `.webp` derivative is known to exist.
 
 `catalog_season_name` is the single owner of the MAL-lowercase → `SeasonType`
 vocabulary boundary; `next_season(year, season)` rolls a season forward, which is

@@ -694,6 +694,32 @@ def test_extract_information_translates_mal_enums():
     assert info["original_source"] == "Light novel"
 
 
+def test_extract_information_pins_cover_extension_to_webp():
+    """MAL v2 answers the same CDN path with a non-deterministic extension
+    depending on which backend serves it, so the two payload forms must
+    extract to the SAME cover_image. That equality is what stops a sweep
+    logging a cover change on every anime every night."""
+    path = "https://cdn.myanimelist.net/images/anime/1244/138851l"
+    scraper = MalScraper()
+
+    as_jpg = _make_anime(1, "X") | {"main_picture": {"large": f"{path}.jpg"}}
+    as_webp = _make_anime(1, "X") | {"main_picture": {"large": f"{path}.webp"}}
+
+    assert scraper.extract_information(as_jpg)["cover_image"] == f"{path}.webp"
+    assert scraper.extract_information(as_webp)["cover_image"] == f"{path}.webp"
+
+
+def test_extract_information_leaves_a_url_off_the_cover_path_alone():
+    """Guards the `/images/anime/` half of the anchor: drop it and a `.jpg` on
+    any other path rewrites. The real Jikan-era `/img/sp/icon/` placeholder
+    cannot serve as this guard — it is `.png`, so it survives any extension rule
+    and separates no implementations."""
+    off_path = "https://example/cover.jpg"
+    obj = _make_anime(1, "X") | {"main_picture": {"large": off_path}}
+
+    assert MalScraper().extract_information(obj)["cover_image"] == off_path
+
+
 def test_mal_date_to_iso_handles_partial_dates():
     """MAL emits partial dates (`YYYY`, `YYYY-MM`) for older/imprecise
     records; the missing month/day fill with 01."""
