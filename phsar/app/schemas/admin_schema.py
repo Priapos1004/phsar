@@ -131,13 +131,6 @@ class SplitCandidateListItem(BaseModel):
     clusters: list[SplitClusterPreview]
 
 
-class DeleteDecisionRequest(BaseModel):
-    """Body for deleting a dismissed merge/split/delete decision so it can
-    resurface. `confirm` must equal the caller's username (mirrors backup
-    restore)."""
-    confirm: str
-
-
 class DeleteCandidateListItem(BaseModel):
     """One row in the admin Delete Candidates queue.
 

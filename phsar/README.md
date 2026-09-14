@@ -384,6 +384,7 @@ phsar/
 │   │       ├── chart-theme.test.ts
 │   │       ├── color.test.ts
 │   │       ├── completion-status-card.test.ts
+│   │       ├── dismissed-decisions-section.test.ts
 │   │       ├── filter-lifecycle.test.ts
 │   │       ├── format-string.test.ts
 │   │       ├── genre-badges.test.ts

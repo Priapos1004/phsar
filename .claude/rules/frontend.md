@@ -1,5 +1,5 @@
 ---
-description: Frontend conventions — runes, theme tokens, shared components, tooltip and chart mechanics, dialog sizing, route titles, restricted accounts, and UI copy.
+description: Frontend conventions — runes, theme tokens, shared components, tooltip and chart mechanics, confirm tiers for destructive actions, dialog sizing, route titles, restricted accounts, and UI copy.
 paths: "phsar/frontend/**"
 ---
 
@@ -118,6 +118,30 @@ on-card toggle — muted track, solid thumb — and belongs on the white card su
 toggle on the dark page surface is a border-fill pill instead (`GrainToggle`, the
 ratings view pills). Same job, different surface, deliberately two components:
 unifying them makes one of the two illegible against its own background.
+
+## A destructive action's confirm is tiered by what it costs to undo
+
+Three mechanisms, and the tier is chosen by the cost of being wrong, not by how
+destructive the verb sounds:
+
+| Undoing it costs | Use |
+|---|---|
+| nothing — the state simply comes back | **click-to-arm in place**: first click re-labels and reddens the control, a second within ~3s confirms, auto-disarm after |
+| a little — redoing the work by hand | **inline confirm/cancel pair** beside the row |
+| nothing can undo it | **type-to-confirm dialog** — the admin's username, or the account password outside admin — repeating at the point of decision what will be destroyed |
+
+The arm-in-place mechanism lives in `CompletionStatusCard` and
+`DismissedDecisionsSection`; copy whichever is closer rather than re-deriving the
+timer.
+
+**Arming a text button needs a width floor.** The icon-button case gets
+no-reflow for free — a fixed square swapping one glyph for another — but a
+confirm label is usually *shorter* than the idle one ("Sure?" vs "Resurface"),
+so a plain swap reflows the row. Give it a `min-w-*` sized to the wider label.
+
+**Gate the API at the same tier.** A confirmation the frontend could fill in on
+the user's behalf is not a control, and it reads to the next person as though one
+exists — so an ungated action's endpoint takes no confirmation argument at all.
 
 ## Dialog children that cannot shrink
 

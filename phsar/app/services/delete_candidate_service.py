@@ -129,16 +129,13 @@ async def dismiss(db: AsyncSession, uuid: UUID) -> None:
     await db.commit()
 
 
-async def delete_decision(
-    db: AsyncSession, uuid: UUID, confirm: str, username: str
-) -> None:
+async def delete_decision(db: AsyncSession, uuid: UUID) -> None:
     """Delete a DISMISSED candidate so its mal_id leaves the detectors' skip-set
-    and resurfaces on the next detection. Username-gated like backup restore.
-    Only dismissed rows are deletable — pending rows belong to the live queue,
-    and a deleted row is the audit record of a removal, which must not be
-    erasable from the UI."""
-    if confirm != username:
-        raise CurationConfirmationMismatchError()
+    and resurfaces on the next detection. Only dismissed rows are deletable —
+    pending rows belong to the live queue, and a deleted row is the audit record
+    of a removal, which must not be erasable from the UI.
+
+    Not username-gated — see the confirm tiers in `.claude/rules/frontend.md`."""
     candidate = await delete_candidate_dao.get_by_uuid(db, uuid)
     if candidate is None or candidate.status != DeleteCandidateStatus.dismissed:
         raise DeleteCandidateNotFoundError(str(uuid))

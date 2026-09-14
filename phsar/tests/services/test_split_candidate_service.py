@@ -11,7 +11,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.exceptions import (
-    CurationConfirmationMismatchError,
     SplitCandidateAlreadyResolvedError,
     SplitCandidateNotFoundError,
     SplitCandidateStaleError,
@@ -291,17 +290,14 @@ async def test_list_dismissed_rebuilds_cluster_preview_with_timestamp(db_session
 
 
 @pytest.mark.asyncio
-async def test_split_delete_decision_username_gate(db_session):
-    """delete_decision refuses a mismatched confirmation, then deletes the
-    dismissed row on a match so its signature can resurface."""
+async def test_split_delete_decision_resurfaces_the_signature(db_session):
+    """delete_decision deletes the dismissed row so its cluster signature can
+    resurface on the next detection."""
     _, _, candidate_uuid = await _make_bnha_with_vigilante_candidate(db_session)
     await dismiss(db_session, candidate_uuid)
-
-    with pytest.raises(CurationConfirmationMismatchError):
-        await delete_decision(db_session, candidate_uuid, confirm="nope", username="admin")
     assert any(it.uuid == str(candidate_uuid) for it in await list_dismissed(db_session))
 
-    await delete_decision(db_session, candidate_uuid, confirm="admin", username="admin")
+    await delete_decision(db_session, candidate_uuid)
     row = (await db_session.execute(
         select(SplitCandidate).where(SplitCandidate.uuid == candidate_uuid)
     )).scalars().first()
@@ -313,4 +309,4 @@ async def test_split_delete_decision_rejects_non_dismissed(db_session):
     """A pending split candidate isn't deletable via delete_decision."""
     _, _, candidate_uuid = await _make_bnha_with_vigilante_candidate(db_session)
     with pytest.raises(SplitCandidateNotFoundError):
-        await delete_decision(db_session, candidate_uuid, confirm="admin", username="admin")
+        await delete_decision(db_session, candidate_uuid)

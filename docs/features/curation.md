@@ -29,9 +29,12 @@ just rejected, every night, forever.
 
 The consequence is that un-dismissing means **deleting the decision**, not
 flipping it back: once the row is gone the identity leaves the skip-set and the
-next detection re-raises it naturally. That path is username-gated, the same gate
-as a backup restore, and accepts only `dismissed` rows — a `pending` row belongs
-to the live queue, and an applied one is an audit record.
+next detection re-raises it naturally. It accepts only `dismissed` rows — a
+`pending` row belongs to the live queue, and an applied one is an audit record.
+
+**Resurfacing is deliberately ungated** beyond admin, unlike the destructive
+curation actions: it frees a decision rather than destroying anything, so a
+confirmation would have nothing to protect.
 
 Merge is the exception to that table: applying one deletes anime B, whose cascade
 ([relations](relations.md)) takes the candidate row with it. So there is no

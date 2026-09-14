@@ -72,8 +72,8 @@
 		<RegistrationTokensCard />
 	</div>
 	<div class:hidden={active !== 'curation'} class="space-y-6">
-		<MergeCandidatesCard currentUsername={getUsername() ?? ''} />
-		<SplitCandidatesCard currentUsername={getUsername() ?? ''} />
+		<MergeCandidatesCard />
+		<SplitCandidatesCard />
 		<DeleteCandidatesCard currentUsername={getUsername() ?? ''} />
 	</div>
 	<div class:hidden={active !== 'completion'}>

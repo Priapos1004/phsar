@@ -15,7 +15,6 @@ from sqlalchemy.orm import selectinload
 
 from app.daos.merge_candidate_dao import MergeCandidateDAO
 from app.exceptions import (
-    CurationConfirmationMismatchError,
     InvalidMergeKeepError,
     MergeCandidateAlreadyResolvedError,
     MergeCandidateNotFoundError,
@@ -146,16 +145,14 @@ async def list_dismissed(db: AsyncSession) -> list[MergeCandidateListItem]:
     ]
 
 
-async def delete_decision(
-    db: AsyncSession, uuid: UUID, confirm: str, username: str
-) -> None:
+async def delete_decision(db: AsyncSession, uuid: UUID) -> None:
     """Delete a DISMISSED merge candidate so the pair leaves the detector's
     skip-set and resurfaces as pending on the next detection (sweep or the
-    Re-detect button). Username-gated like backup restore. Only dismissed
-    rows are deletable here — pending rows belong to the live queue, and
-    merged rows no longer exist (cascade-deleted with anime B)."""
-    if confirm != username:
-        raise CurationConfirmationMismatchError()
+    Re-detect button). Only dismissed rows are deletable here — pending rows
+    belong to the live queue, and merged rows no longer exist (cascade-deleted
+    with anime B).
+
+    Not username-gated — see the confirm tiers in `.claude/rules/frontend.md`."""
     candidate = await merge_candidate_dao.get_by_uuid(db, uuid)
     if candidate is None or candidate.status != MergeCandidateStatus.dismissed:
         raise MergeCandidateNotFoundError(str(uuid))

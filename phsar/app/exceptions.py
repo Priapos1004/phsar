@@ -603,9 +603,8 @@ class DeleteCandidateAlreadyResolvedError(PhsarBaseError):
 
 class CurationConfirmationMismatchError(PhsarBaseError):
     """Raised when a curation confirmation string does not match the caller's
-    username. Two gates use it: deleting a dismissed merge/split/delete decision
-    so it can resurface, and applying a delete candidate (which destroys
-    catalogue rows and any user ratings hanging off them)."""
+    username. Guards applying a delete candidate, which destroys catalogue rows
+    and the user data cascading off them."""
     status_code = 400
 
     def __init__(self):

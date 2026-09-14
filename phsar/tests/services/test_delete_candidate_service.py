@@ -220,13 +220,10 @@ async def test_delete_decision_only_accepts_dismissed_rows(db_session):
     candidate = await _candidate_for(db_session, media)
 
     with pytest.raises(DeleteCandidateNotFoundError):
-        await delete_decision(db_session, candidate.uuid, confirm=ADMIN, username=ADMIN)
+        await delete_decision(db_session, candidate.uuid)
 
     await dismiss(db_session, candidate.uuid)
-    with pytest.raises(CurationConfirmationMismatchError):
-        await delete_decision(db_session, candidate.uuid, confirm="wrong", username=ADMIN)
-
-    await delete_decision(db_session, candidate.uuid, confirm=ADMIN, username=ADMIN)
+    await delete_decision(db_session, candidate.uuid)
     assert await DeleteCandidateDAO().get_by_uuid(db_session, candidate.uuid) is None
 
 

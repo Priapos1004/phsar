@@ -637,7 +637,7 @@ own.
 - Each card has a collapsible **"Dismissed decisions (N)"** section at the bottom (shared `DismissedDecisionsSection` component). Collapsed by default; the list is lazy-fetched (`GET /admin/{merge,split,delete}-candidates/dismissed`) the first time it's expanded, so the common pending view never pays for the history.
 - Newest dismissal first. Merge rows show `A ↔ B` + detector + match %; split rows show the source anime + "would split off: <member titles>" per cluster; delete rows show the title + mal_id + detector. Each row shows when it was dismissed.
 - The counter and list stay fresh: dismissing a new candidate in the card above bumps `curationRefresh`, which the section subscribes to and re-fetches (if already expanded) — no stale `(N)`.
-- **Resurface**: each row has a "Resurface" button → a username-gated confirm dialog (type the admin username, mirroring backup restore). On confirm it `POST`s `/{uuid}/delete`, removes the row, then re-runs the card's detection so the freed candidate re-flags as pending immediately (rather than waiting for the nightly sweep). Only `dismissed` rows are deletable; merged rows no longer exist and deleting a split-status row wouldn't undo the split.
+- **Resurface**: each row has a "Resurface" button that arms in place — the first click turns it red and re-labels it "Sure?", a second click within ~3s confirms, and it auto-disarms after that. On confirm it `POST`s `/{uuid}/delete` with no body, removes the row, then re-runs the card's detection so the freed candidate re-flags as pending immediately (rather than waiting for the nightly sweep). Only `dismissed` rows are deletable; merged rows no longer exist and deleting a split-status row wouldn't undo the split.
 - The detector itself is invisible to non-admin users; nothing about it surfaces outside this card.
 
 ### 12.9 Completion tab (Story Completion)
@@ -705,19 +705,19 @@ own.
 | `/admin/merge-candidates/{uuid}/dismiss` | POST | Admin page Merge Candidates card (mark as reviewed-not-duplicate) |
 | `/admin/merge-candidates/backfill` | POST | Admin page Merge Candidates card "Re-run detection" — re-runs existing × existing detection without a container restart (post-restore workflow) |
 | `/admin/merge-candidates/dismissed` | GET | Merge Candidates card's dismissed-decisions section (list previously dismissed rows) |
-| `/admin/merge-candidates/{uuid}/delete` | POST | Dismissed-decisions section — permanently forget a dismissal (username confirmation) |
+| `/admin/merge-candidates/{uuid}/delete` | POST | Dismissed-decisions section — forget a dismissal so the candidate can resurface (click-to-arm, no body) |
 | `/admin/split-candidates` | GET | Admin page Split Candidates card (list pending disjoint-franchise rows) |
 | `/admin/split-candidates/{uuid}/split` | POST | Admin page Split Candidates card (split clusters into separate anime, re-parent media) |
 | `/admin/split-candidates/{uuid}/dismiss` | POST | Admin page Split Candidates card (mark as reviewed-keep-bundled) |
 | `/admin/split-candidates/backfill` | POST | Admin page Split Candidates card "Re-run detection" — re-runs disjoint-franchise detection across the catalog |
 | `/admin/split-candidates/dismissed` | GET | Split Candidates card's dismissed-decisions section (list previously dismissed rows) |
-| `/admin/split-candidates/{uuid}/delete` | POST | Dismissed-decisions section — permanently forget a dismissal (username confirmation) |
+| `/admin/split-candidates/{uuid}/delete` | POST | Dismissed-decisions section — forget a dismissal so the candidate can resurface (click-to-arm, no body) |
 | `/admin/delete-candidates` | GET | Admin page Delete Candidates card (list entries proposed for removal) |
 | `/admin/delete-candidates/{uuid}/remove` | POST | Admin page Delete Candidates card — delete the media (and its anime if it was the last one), optionally blacklisting the MAL id (username confirmation) |
 | `/admin/delete-candidates/{uuid}/dismiss` | POST | Admin page Delete Candidates card (mark as reviewed-keep-it) |
 | `/admin/delete-candidates/backfill` | POST | Admin page Delete Candidates card "Re-run detection" — re-runs the low-signal pass across the catalog |
 | `/admin/delete-candidates/dismissed` | GET | Delete Candidates card's dismissed-decisions section (list previously dismissed rows) |
-| `/admin/delete-candidates/{uuid}/delete` | POST | Dismissed-decisions section — permanently forget a dismissal (username confirmation) |
+| `/admin/delete-candidates/{uuid}/delete` | POST | Dismissed-decisions section — forget a dismissal so the candidate can resurface (click-to-arm, no body) |
 | `/admin/finished-anime` | GET | Admin Completion tab (list story-complete anime) |
 | `/admin/finished-anime/{uuid}` | POST | Admin Completion tab (mark anime story-complete) |
 | `/admin/finished-anime/{uuid}` | DELETE | Admin Completion tab (remove story-complete flag) |

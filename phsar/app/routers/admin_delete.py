@@ -100,12 +100,7 @@ async def list_dismissed_delete_candidates(db: AsyncSession = Depends(get_db)):
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def delete_delete_decision(
-    uuid: UUID,
-    data: admin_schema.DeleteDecisionRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_admin),
+    uuid: UUID, db: AsyncSession = Depends(get_db),
 ):
-    """Delete a dismissed decision (username-gated) so it can resurface."""
-    await delete_candidate_service.delete_decision(
-        db, uuid, confirm=data.confirm, username=current_user.username,
-    )
+    """Delete a dismissed decision so it can resurface on the next detection."""
+    await delete_candidate_service.delete_decision(db, uuid)

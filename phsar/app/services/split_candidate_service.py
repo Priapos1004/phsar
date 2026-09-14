@@ -29,7 +29,6 @@ from sqlalchemy.orm import selectinload
 from app.daos.merge_candidate_dao import MergeCandidateDAO
 from app.daos.split_candidate_dao import SplitCandidateDAO
 from app.exceptions import (
-    CurationConfirmationMismatchError,
     SplitCandidateAlreadyResolvedError,
     SplitCandidateNotFoundError,
     SplitCandidateStaleError,
@@ -165,16 +164,14 @@ async def list_dismissed(db: AsyncSession) -> list[SplitCandidateListItem]:
     ]
 
 
-async def delete_decision(
-    db: AsyncSession, uuid: UUID, confirm: str, username: str
-) -> None:
+async def delete_decision(db: AsyncSession, uuid: UUID) -> None:
     """Delete a DISMISSED split candidate so its cluster signature leaves the
     sticky-dismissal history and re-detection resurfaces it as pending (sweep
-    or the Re-detect button). Username-gated like backup restore. Only
-    dismissed rows are deletable — pending rows belong to the live queue, and
-    deleting a split-status row wouldn't undo an executed split."""
-    if confirm != username:
-        raise CurationConfirmationMismatchError()
+    or the Re-detect button). Only dismissed rows are deletable — pending rows
+    belong to the live queue, and deleting a split-status row wouldn't undo an
+    executed split.
+
+    Not username-gated — see the confirm tiers in `.claude/rules/frontend.md`."""
     candidate = await split_candidate_dao.get_by_uuid(db, uuid)
     if candidate is None or candidate.status != SplitCandidateStatus.dismissed:
         raise SplitCandidateNotFoundError(str(uuid))

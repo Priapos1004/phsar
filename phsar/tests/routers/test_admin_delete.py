@@ -1,14 +1,16 @@
-"""Delete-candidate endpoint contract: role gating and the confirm gate.
+"""Delete-candidate endpoint contract: role gating, and which actions are gated
+beyond it.
 
 Service-level lifecycle coverage lives in
 `tests/services/test_delete_candidate_service.py`. What this file pins is the
-part only the router owns — that every endpoint is admin-only, and that the
-destructive one refuses without a matching username even for an admin.
+part only the router owns — that every endpoint is admin-only, that `/remove`
+additionally wants the username typed, and that resurfacing deliberately does
+not.
 
 The gating assertions matter more here than on the sibling curation routers:
 `admin_delete.py` binds `require_admin` once on the APIRouter, so a handler
-added with a plain `@router.post(...)` inherits it — but the two endpoints that
-need `current_user` re-declare the dependency, and getting that wrong is how an
+added with a plain `@router.post(...)` inherits it — but `/remove` re-declares
+the dependency to reach `current_user`, and getting that wrong is how an
 endpoint ends up authenticated but not admin-gated.
 """
 
@@ -133,6 +135,30 @@ async def test_dismiss_then_appears_in_the_dismissed_list(
     # And it is gone from the live queue.
     pending = (await client.get(DELETE_URL, headers=admin_auth_headers)).json()
     assert all(r["uuid"] != str(candidate.uuid) for r in pending)
+
+
+@pytest.mark.asyncio
+async def test_resurfacing_a_decision_needs_no_confirmation(
+    client, admin_auth_headers, db_session,
+):
+    """Resurfacing frees a decision rather than destroying anything, so it is
+    gated only by the router's admin dependency — no username body.
+
+    Asserting an EMPTY body succeeds is the point: a route that still declared a
+    required model would 422 here, which is what would happen if the frontend's
+    arm-in-place button were shipped against a gated endpoint."""
+    candidate = await _seed_candidate(db_session, mal_id=-9606)
+    await client.post(f"{DELETE_URL}/{candidate.uuid}/dismiss", headers=admin_auth_headers)
+
+    resp = await client.post(
+        f"{DELETE_URL}/{candidate.uuid}/delete", headers=admin_auth_headers,
+    )
+
+    assert resp.status_code == 204
+    dismissed = (
+        await client.get(f"{DELETE_URL}/dismissed", headers=admin_auth_headers)
+    ).json()
+    assert all(r["uuid"] != str(candidate.uuid) for r in dismissed)
 
 
 @pytest.mark.asyncio

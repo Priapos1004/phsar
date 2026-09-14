@@ -313,7 +313,6 @@
 			kind="delete"
 			listUrl="/admin/delete-candidates/dismissed"
 			basePath="/admin/delete-candidates"
-			{currentUsername}
 			onResurfaced={handleRedetect}
 		>
 			{#snippet row(item: DeleteCandidateListItem)}

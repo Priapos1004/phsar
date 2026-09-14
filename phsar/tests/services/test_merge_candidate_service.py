@@ -12,7 +12,6 @@ import pytest
 from sqlalchemy import select
 
 from app.exceptions import (
-    CurationConfirmationMismatchError,
     InvalidMergeKeepError,
     MergeCandidateNotFoundError,
 )
@@ -466,18 +465,14 @@ async def test_list_dismissed_excludes_pending_and_stamps_dismissed_at(db_sessio
 
 
 @pytest.mark.asyncio
-async def test_delete_decision_username_gate_then_resurfaces(db_session):
-    """delete_decision refuses a mismatched confirmation, then hard-deletes
-    the dismissed row on a match (so re-detection can resurface the pair)."""
+async def test_delete_decision_resurfaces_the_pair(db_session):
+    """delete_decision hard-deletes the dismissed row so re-detection can
+    resurface the pair."""
     _, _, _, _, candidate_uuid = await _make_pair(db_session, a_mal=90711, b_mal=90712)
     await dismiss(db_session, candidate_uuid)
-
-    with pytest.raises(CurationConfirmationMismatchError):
-        await delete_decision(db_session, candidate_uuid, confirm="nope", username="admin")
-    # Untouched after the failed gate.
     assert any(it.uuid == str(candidate_uuid) for it in await list_dismissed(db_session))
 
-    await delete_decision(db_session, candidate_uuid, confirm="admin", username="admin")
+    await delete_decision(db_session, candidate_uuid)
     row = (await db_session.execute(
         select(MergeCandidate).where(MergeCandidate.uuid == candidate_uuid)
     )).scalars().first()
@@ -490,7 +485,7 @@ async def test_delete_decision_rejects_non_dismissed(db_session):
     live queue, not the dismissed history."""
     _, _, _, _, candidate_uuid = await _make_pair(db_session, a_mal=90721, b_mal=90722)
     with pytest.raises(MergeCandidateNotFoundError):
-        await delete_decision(db_session, candidate_uuid, confirm="admin", username="admin")
+        await delete_decision(db_session, candidate_uuid)
     row = (await db_session.execute(
         select(MergeCandidate).where(MergeCandidate.uuid == candidate_uuid)
     )).scalars().first()
