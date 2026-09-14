@@ -49,6 +49,9 @@ doc is the easiest place to slip into narrating releases. "v0.14.8 made X
 media-level" tells a reader nothing about what X does now and forces them to
 replay every delta to find out.
 
+**An addition is as long as what it joins.** The entries already in a section are
+the budget for a new one, so read them before writing rather than after.
+
 ## Compound-docs
 
 Structure is in [compound-docs/TEMPLATE.md](../../compound-docs/TEMPLATE.md);
