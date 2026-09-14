@@ -114,19 +114,22 @@ gate would stop.
 There is deliberately no un-blacklist UI. `BaseDAO.delete_all_by_field` is the
 primitive if one is ever wanted.
 
-### A 404 stops re-failing
+### A 404 stops re-checking
 
 Every other refresh failure leaves `MediaFreshness.last_checked_at` untouched, so
-the media re-selects next sweep and retries. A 404 is the one failure that is
-permanent, so it stamps the clock instead, dropping the row to the long-tail
-window.
+the media re-selects next sweep and retries. A 404 is permanent, so it stamps the
+clock instead, dropping the row to the long-tail window. Without the stamp the
+media stays permanently past its due window and burns a MAL call every single
+night.
 
-Without that, the media stays permanently past its due window and re-fails every
-single night, burning a MAL call and an entry in the failure list forever. The
-stamp also advances the stability counter, which is the load-bearing half: the
-stabilizing tier is a bare `stable_check_count < 3` with no staleness term, so a
-recently-scraped media would otherwise stay due nightly no matter what the clock
-says.
+The stamp also advances the stability counter, which is the load-bearing half:
+the stabilizing tier is a bare `stable_check_count < 3` with no staleness term,
+so a recently-scraped media would otherwise stay due nightly no matter what the
+clock says.
+
+**Raising the candidate and stamping the clock are atomic** — both land in the
+savepoint the refresh already holds for that anime, so the queue can never be
+missing an entry whose clock was moved.
 
 It is scoped to 404 alone. A 5xx, a 429 or a timeout is MAL being down, and
 backing off on those would let one bad night push the whole catalogue to a 90-day
@@ -144,8 +147,8 @@ up with no admin action.
 - **The Jobs Log** tints a sweep row when it raised delete candidates. The tints
   are single-winner; `rowTintClass` owns the ranking and its reasoning, and
   USER_FLOWS §12.1c owns what the admin sees.
-- **The job detail page** links a 404 failure row straight to the curation tab
-  rather than restating it in a card of its own.
+- **The job detail page** lists the sweep's 404s in a card of their own;
+  USER_FLOWS §12.1d owns what the admin sees.
 
 ---
 

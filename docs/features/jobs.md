@@ -142,9 +142,13 @@ by at least `_SCORE_STABILITY_THRESHOLD` (0.05 on the weighted score
 without it a single new vote per night on a million-vote anime resets the counter
 forever. None↔value transitions bypass it — first votes arriving is structural.
 
-**A 404 is the one failure that doesn't retry** — it stamps the freshness clock
-and raises a delete candidate instead of re-selecting next sweep. Why, and what
-the queue does with it: [curation](curation.md).
+**A 404 is not a refresh failure.** The refresh loop handles it and carries on to
+the next media rather than raising, so one dead entry in a franchise of dozens
+costs that franchise nothing. It neither trips nor resets the circuit breaker —
+MAL answered. A dead media stays in `anime.media` until an admin acts on it, so
+it also stays a relations-probe seed; the probe skips a seed MAL no longer has
+instead of failing the run over it. What the queue does with it:
+[curation](curation.md).
 
 **Circuit breaker**: per-anime isolation is right for one bad row and catastrophic
 when MAL is entirely down, since every anime then pays the full retry budget while
@@ -192,8 +196,8 @@ transactions, throttled to 0.5s with a `force=True` bypass for stage changes —
 otherwise a tight BFS loop opens hundreds of sessions a second.
 
 Sweep progress is **media-grained** (`items_total = len(due_media)`), because
-media are the real MAL-call unit. The end gap is exactly the media of
-step-1-failed anime.
+media are the real MAL-call unit. The end gap is exactly the media that were
+selected but never refreshed.
 
 ---
 

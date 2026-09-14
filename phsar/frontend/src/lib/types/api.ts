@@ -725,9 +725,9 @@ export interface UpdateSweepStep1Failure {
 	name_jap?: string | null;
 	error_category: string | null;
 	error_message: string;
-	// v8+, and only on a 404 — the media MAL deleted. Its presence is what tells
-	// the detail page this failure raised a delete candidate rather than being a
-	// retryable blip. Absent on every probe failure and every pre-v8 row.
+	// v8 rows only, and only on a 404 — the media MAL deleted. Those rows record
+	// a 404 as a refresh failure, so the identity rides the failure entry; v9+
+	// rows carry it in `gone_upstream` instead. Absent on every probe failure.
 	gone_media_mal_id?: number | null;
 }
 
@@ -757,6 +757,24 @@ export interface UpdateSweepHentaiRemoved {
 	mal_ids: number[];
 }
 
+// One media MAL 404'd mid-sweep (v9+ update_sweep) — deleted upstream, so the
+// sweep stamped its refresh clock and queued it for the admin instead of
+// retrying nightly. Nothing is deleted: `candidate_raised` is false when an
+// admin had already dismissed this mal_id. Carries its parent anime's identity
+// so the card can name the franchise without a second fetch.
+export interface UpdateSweepGoneUpstream {
+	anime_uuid: string;
+	anime_title: string;
+	anime_name_eng?: string | null;
+	anime_name_jap?: string | null;
+	media_uuid: string;
+	media_title: string;
+	media_name_eng?: string | null;
+	media_name_jap?: string | null;
+	media_mal_id: number;
+	candidate_raised: boolean;
+}
+
 // update_sweep result_summary v2+ shape. v1 rows omit these fields
 // entirely — renderers must check `row.version >= 2` before reading.
 // `unknown_genre_tags` is v3+; v2 rows don't carry it (the Jobs Log
@@ -773,6 +791,9 @@ export interface UpdateSweepResultSummary extends JobResultSummary {
 	probe_attached_anime?: UpdateSweepProbeAttached[];
 	// v7+: anime deleted this sweep for flipping to Hentai.
 	hentai_removed?: UpdateSweepHentaiRemoved[];
+	// v9+: media MAL 404'd this sweep. Pre-v9 rows carried these on the
+	// matching `step1_failures[]` entry instead.
+	gone_upstream?: UpdateSweepGoneUpstream[];
 	merge_detect_failed?: boolean;
 	cache_recompute_failed?: boolean;
 }

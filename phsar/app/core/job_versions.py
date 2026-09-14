@@ -68,7 +68,18 @@ JOB_KIND_VERSIONS: dict[JobKind, int] = {
     # raised. Net-new keys with safe defaults; bumped like v4/v6/v7 so the Jobs
     # Log can tell a genuine zero from a pre-v8 row that never counted them —
     # the row tint gates on version >= 8.
-    JobKind.update_sweep: 8,
+    # v9 moves a MAL 404 out of the failure path entirely. It is handled in
+    # the per-media refresh loop instead of raising, so it no longer fails its
+    # anime (siblings refresh normally) and no longer appears in
+    # `step1_failures[]` — the removed `.gone_media_id` / `.gone_media_mal_id`
+    # keys are what force this bump rather than the convention v4/v6/v7/v8
+    # followed. Replaced by top-level `gone_upstream[]`: one entry per dead
+    # media, {anime_uuid, anime_title, anime_name_eng, anime_name_jap,
+    # media_uuid, media_title, media_name_eng, media_name_jap, media_mal_id,
+    # candidate_raised}. No paired counter — `counters.delete_candidates_raised`
+    # (v8) still carries what the Jobs Log tints on, and the detail card reads
+    # the list's own length.
+    JobKind.update_sweep: 9,
     # Both season sweeps come off ONE dispatcher and so write one shape:
     # {season_entries, new_entries_enqueued, dedup_skipped, season_year, season_name}.
     # The season pair is additive with a safe default and the frontend gates on its
@@ -108,6 +119,7 @@ LIST_OMITTED_SUMMARY_KEYS: tuple[str, ...] = (
     "probe_failures",          # update_sweep v5
     "probe_attached_anime",    # update_sweep v6
     "hentai_removed",          # update_sweep v7
+    "gone_upstream",           # update_sweep v9
 )
 
 

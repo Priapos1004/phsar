@@ -24,7 +24,7 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.db import async_session_maker
 from app.daos.anime_dao import AnimeDAO
-from app.exceptions import TransientUpstreamError
+from app.exceptions import MalIdNotFoundError, TransientUpstreamError
 from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
 from app.models.delete_candidate import DeleteCandidate, DeleteCandidateStatus
@@ -125,6 +125,13 @@ class _FakeScraper:
             and seed_mal_id == self._search_title_error_for_seed
         ):
             raise RuntimeError(f"simulated MAL outage during BFS for seed {seed_mal_id}")
+        if seed_mal_id in self._error_404_for:
+            # What the real seed fetch raises for a deleted id: `search_title`
+            # passes `seed_mal_id`, so MAL's 404 comes back from the exact-id
+            # path as MalIdNotFoundError — NOT the AnimeNotFoundError a fuzzy
+            # `q=` miss raises. The two are siblings, so the probe's seed
+            # handler has to name both.
+            raise MalIdNotFoundError(seed_mal_id)
         return self._search_title_returns.get(seed_mal_id, ([], {}, set()))
 
 
@@ -1909,13 +1916,14 @@ async def test_dispatcher_isolates_failures_per_anime(tracked_anime, monkeypatch
 async def test_404_raises_a_delete_candidate_and_backs_the_row_off(
     tracked_anime, monkeypatch,
 ):
-    """MAL deleted this entry. Two things have to happen, and the second is a
-    bug fix rather than a feature: a candidate is raised for an admin to review,
-    AND the media's freshness clock is stamped.
+    """MAL deleted this entry. Two things have to happen: a candidate is raised
+    for an admin to review, AND the media's freshness clock is stamped.
 
-    Without the stamp the step-1 savepoint rolls back, `last_checked_at` never
-    moves, and the row stays permanently past its due window — re-failing every
-    single night forever.
+    Without the stamp `last_checked_at` never moves and the row stays
+    permanently past its due window — re-checking every single night forever.
+
+    A 404 is NOT a refresh failure: the anime's refresh succeeds around it, so
+    `step1_failed` stays 0 and the entry surfaces in `gone_upstream` instead.
     """
     a_id = await _real_seed(
         mal_id=-8500,
@@ -1929,15 +1937,27 @@ async def test_404_raises_a_delete_candidate_and_backs_the_row_off(
         monkeypatch, fake, [a_id], job_id=8500,
     )
 
-    assert summary["counters"]["step1_failed"] == 1
+    assert summary["counters"]["step1_failed"] == 0
+    assert summary["step1_failures"] == []
     assert summary["counters"]["delete_candidates_raised"] == 1
-    # The failure entry carries the media identity so the detail page can tie
-    # the 404 to the candidate it raised.
-    failure = summary["step1_failures"][0]
-    assert failure["gone_media_mal_id"] == -8500 * 100
-    assert "404" in failure["error_message"]
-    # A 404 is not an outage — it must not trip or reset the circuit breaker.
-    assert failure["error_category"] is None
+    # The entry carries the media identity so the detail page can list which
+    # entries died without a round trip back to /media.
+    gone = summary["gone_upstream"][0]
+    assert gone["media_mal_id"] == -8500 * 100
+    assert gone["candidate_raised"] is True
+    assert gone["anime_uuid"] and gone["media_uuid"]
+    # Nothing was refreshed — the one due media is dead, so the anime doesn't
+    # count as touched either.
+    assert summary["counters"]["media_refreshed"] == 0
+    assert summary["counters"]["anime_touched"] == 0
+    # The probe still runs and still SUCCEEDS. It seeds off `anime.media`, so
+    # the dead media stays a seed until an admin acts on the candidate — long
+    # after the 404 itself stops being news. The seed handler has to absorb
+    # that, or every later sweep touching this anime fails its probe and leaves
+    # AnimeFreshness unstamped, and the franchise stops discovering sequels.
+    assert fake.search_title_calls == [-8500 * 100]
+    assert summary["counters"]["probe_failed"] == 0
+    assert summary["probe_failures"] == []
 
     async with async_session_maker() as s:
         candidate = (
@@ -1958,6 +1978,78 @@ async def test_404_raises_a_delete_candidate_and_backs_the_row_off(
         assert freshness.last_checked_at > datetime.now(timezone.utc) - timedelta(minutes=5), (
             "a 404 must stamp the freshness clock, or the row re-fails nightly forever"
         )
+
+
+@pytest.mark.asyncio
+async def test_404_on_one_media_leaves_its_siblings_refreshed(
+    tracked_anime, monkeypatch,
+):
+    """A 404 is about ONE row, so it must not cost the rest of the franchise
+    its refresh — a dead entry among a detective franchise's dozens would
+    otherwise freeze the whole umbrella every night.
+
+    Sibling ordering matters: the dead media is added FIRST (lower id →
+    refreshed first), so a regression that aborts on the 404 stops before the
+    survivor is ever reached. With the survivor first, the loop would have
+    refreshed it before dying and the savepoint rollback would be what the
+    assertion caught instead — a different bug.
+    """
+    old = datetime.now(timezone.utc) - timedelta(days=30)
+    m_gone, m_alive = -8503 * 100, -8503 * 100 + 1
+    async with async_session_maker() as s:
+        anime = Anime(mal_id=-8503, title="A-8503")
+        s.add(anime)
+        await s.flush()
+        gone_media = Media(**media_kwargs(anime_id=anime.id, mal_id=m_gone))
+        alive_media = Media(**media_kwargs(
+            anime_id=anime.id, mal_id=m_alive,
+            score=7.5, scored_by=1000, episodes=12, aired_to=date(2020, 6, 30),
+        ))
+        s.add_all([gone_media, alive_media])
+        await s.flush()  # one round-trip; add-order fixes the ids
+        s.add(MediaFreshness(
+            media_id=gone_media.id, last_checked_at=old, stable_check_count=3,
+        ))
+        s.add(MediaFreshness(
+            media_id=alive_media.id, last_checked_at=old, stable_check_count=3,
+        ))
+        s.add(AnimeFreshness(
+            anime_id=anime.id, last_checked_at=old, stable_check_count=3,
+        ))
+        await s.commit()
+        a_id, alive_id = anime.id, alive_media.id
+    tracked_anime.append(a_id)
+
+    # The survivor's payload carries a moved score, so its refresh is a real
+    # diff — a sibling that merely "was not rolled back" could pass on an empty
+    # refresh, but a committed field change cannot.
+    fake = _FakeScraper(
+        {m_alive: _payload(score=8.9)}, error_404_for_mal_ids={m_gone},
+    )
+    summary, _, _ = await _run_dispatcher_harness(
+        monkeypatch, fake, [a_id], job_id=8503,
+    )
+
+    # The 404 is not a failure, and the survivor did the work.
+    assert summary["counters"]["step1_failed"] == 0
+    assert summary["counters"]["media_refreshed"] == 1  # the survivor only
+    assert summary["counters"]["anime_touched"] == 1
+    assert summary["counters"]["media_with_dynamic_changes"] == 1
+    assert len(summary["gone_upstream"]) == 1
+    assert summary["gone_upstream"][0]["media_mal_id"] == m_gone
+
+    async with async_session_maker() as s:
+        alive = (await s.execute(
+            select(Media).where(Media.id == alive_id)
+        )).scalars().one()
+        alive_fresh = (await s.execute(
+            select(MediaFreshness).where(MediaFreshness.media_id == alive_id)
+        )).scalars().one()
+    # The crux: the sibling's refresh must COMMIT — both the field diff and the
+    # freshness stamp. A 404 that raises across the shared savepoint loses both.
+    assert alive.score == 8.9
+    assert alive_fresh.last_checked_at > old
+    assert alive_fresh.stable_check_count == 0  # volatile change reset it
 
 
 @pytest.mark.asyncio
@@ -2000,7 +2092,9 @@ async def test_504_neither_raises_a_candidate_nor_stamps_the_clock(
 
     assert summary["counters"]["step1_failed"] == 1
     assert summary["counters"]["delete_candidates_raised"] == 0
-    assert summary["step1_failures"][0]["gone_media_mal_id"] is None
+    # An outage is a failure, not a departure — it must not land in the list
+    # that feeds the delete queue and the "Gone from MAL" card.
+    assert summary["gone_upstream"] == []
 
     async with async_session_maker() as s:
         assert (
