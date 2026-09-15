@@ -16,7 +16,7 @@ Ask: **what breaks if this is missing?**
 | Couldn't say how a subsystem behaves across the modules it spans | `docs/features/<topic>.md` | read while planning work in that area |
 | Couldn't say what a screen does for the user | `phsar/frontend/USER_FLOWS.md` | read while changing UI behaviour |
 | Would re-litigate a settled trade-off | `compound-docs/` | on demand |
-| Describes one module's current shape | docstring, or nearest nested `CLAUDE.md` | with the code |
+| Describes one module's current shape (a migration describes a transition instead — `database.md`) | docstring, or nearest nested `CLAUDE.md` | with the code |
 | A feature decision not yet built, or the version table | `docs/ROADMAP.md` | on demand |
 
 The two rows that overlap in practice are the feature doc and USER_FLOWS, because

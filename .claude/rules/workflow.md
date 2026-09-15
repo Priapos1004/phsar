@@ -86,10 +86,10 @@ docs. Describe the change on its own terms.
 - **Present tense, not history.** State the current rule and its constraint —
   "it must stay X, because the obvious alternative Y does Z". Not "was
   superlinear before v0.15.4", not before/after numbers, not migration ids.
-  Those belong in `compound-docs/`, commit messages, and PR bodies, which are
-  dated and frozen; a living doc accumulates that narration every release and
-  nobody prunes it. A durable *characteristic* ("~30 ms per encode, ~0.1 ms on
-  a hit") is a current constraint and stays.
+  Those belong in writing that is dated and read as a record of its moment
+  rather than a description of the present; a living doc accumulates that
+  narration every release and nobody prunes it. A durable *characteristic*
+  ("~30 ms per encode, ~0.1 ms on a hit") is a current constraint and stays.
   Self-check before committing: grep added lines for `was `, `were `, `used to`,
   `previously`, `replaced`, `until v`.
 - **Don't write counts that go stale.** "the five docs without a version",
