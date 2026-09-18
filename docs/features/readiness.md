@@ -56,8 +56,13 @@ you wait for. Two hand-kept twins carry the set: `MAIN_RELATIONS` on the client 
 `MAIN_STORY_RELATIONS` in the backend, which filters the franchise columns. It is the
 same set the spoiler frontier anchors on, see [spoilers](spoilers.md).
 
-This carries further than it first looks, because the classifier files a franchise's
-separate continuities as side stories too (see [relations](relations.md)). An
+**Unless W holds no main story at all**, in which case the side content you did list
+governs it — otherwise an anime whose single listed entry is an airing OVA passes on a
+technicality and reads ready while that entry is still going out. W only: F is the whole
+franchise and always has a main story, so the franchise columns never fall back.
+
+The main-story rule carries further than it first looks, because the classifier files a
+franchise's separate continuities as side stories too (see [relations](relations.md)). An
 anthology — Digimon, Gundam, Precure — can have a new series airing while the entry
 you listed stays plainly ready, since the airing series continues a different story
 and there is nothing to wait for.

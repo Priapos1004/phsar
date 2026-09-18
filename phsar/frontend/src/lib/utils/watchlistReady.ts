@@ -43,8 +43,8 @@ export function mediaClass(item: WatchlistItem, now: Date = new Date()): MediaCl
 	if (item.airing_status === AIRING) return 'airing';
 	const key = seasonKey(item.anime_season_name, item.anime_season_year);
 	if (key === null) return 'tba';
-	// `<=`, not `===`: a title still marked unaired whose season has already started is
-	// a scrape that hasn't caught up. Treating it as imminent is the safe read.
+	// `<=`, not `===` — a season already under way still counts as imminent.
+	// `readiness.md` owns why.
 	return key <= nextSeasonKey(now) ? 'soon' : 'later';
 }
 
@@ -74,15 +74,11 @@ export function animeStatus(items: WatchlistItem[], now: Date = new Date()): Rea
 	);
 	const somethingToWatch = !waitingOnUnaired || hasFreshContent;
 
-	// Only the main story can park a franchise — an upcoming OVA, movie or recap is not
-	// a season you wait for. (The franchise columns are filtered the same way in SQL.)
-	//
-	// List-scoping leaves this near-redundant with B2 (readiness.md says why). Kept general
-	// rather than narrowed to the one case it still decides alone — a dropped season — so
-	// the rule reads here without leaning entirely on a SQL column's semantics.
-	const nothingListedPending = !media.some(
-		({ item, cls }) =>
-			MAIN_RELATIONS.has(item.relation_type) && (cls === 'airing' || cls === 'soon'),
+	// Main story decides, falling back to everything listed when none of it is main
+	// story. `readiness.md` owns why, and why B2 does not fall back with it.
+	const governing = media.filter(({ item }) => MAIN_RELATIONS.has(item.relation_type));
+	const nothingListedPending = !(governing.length ? governing : media).some(
+		({ cls }) => cls === 'airing' || cls === 'soon',
 	);
 
 	// Per-anime, so identical on every entry; an empty list never reaches here.

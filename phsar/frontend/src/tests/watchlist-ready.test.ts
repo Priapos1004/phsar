@@ -93,6 +93,23 @@ describe('animeStatus — the case table', () => {
 			[aired(), unaired('Fall', 2026, { relation_type: 'side_story' })],
 			'ready',
 		],
+		// ...but only because a main-story entry is listed alongside it to govern.
+		// The three below are the no-main-story fallback; `readiness.md` owns why.
+		[
+			'an airing side story blocks when it is the only thing listed',
+			[airing({ relation_type: 'side_story' })],
+			'hot',
+		],
+		[
+			'an upcoming side story blocks when it is the only thing listed',
+			[unaired('Fall', 2026, { relation_type: 'side_story' })],
+			'hot',
+		],
+		[
+			'a finished side story alone is still ready',
+			[aired({ relation_type: 'side_story' })],
+			'ready',
+		],
 
 		// B2 — the franchise, including media never listed.
 		['an unlisted sequel airing now blocks', [aired({ franchise_airing: true })], 'hot'],
@@ -195,6 +212,21 @@ describe('filterByReadiness', () => {
 		const kept = filterByReadiness(all, statuses, ['hot'], 'media', NOW);
 		expect(kept).toHaveLength(2);
 		expect(kept.some((i) => i.airing_status === 'Currently Airing')).toBe(true);
+	});
+
+	it('does not let a lone airing side story vanish on a grain toggle', () => {
+		// The two grains must agree. A `ready` verdict here would show at anime grain
+		// and vanish at media grain, because the media narrowing rejects `airing` —
+		// same data, same chip, opposite answers. Blocking it is what aligns them, and
+		// the narrowing never applies to a non-ready verdict, so `isAvailable` needs
+		// no change.
+		const lone = [airing({ anime_uuid: 'ova', relation_type: 'side_story' })];
+		const verdict = statusByAnime(lone, NOW);
+		expect(verdict.get('ova')).toBe('hot');
+		for (const grain of ['anime', 'media'] as const) {
+			expect(filterByReadiness(lone, verdict, ['ready'], grain, NOW)).toHaveLength(0);
+			expect(filterByReadiness(lone, verdict, ['hot'], grain, NOW)).toHaveLength(1);
+		}
 	});
 
 	it('drops an entry whose anime is missing from the map', () => {
