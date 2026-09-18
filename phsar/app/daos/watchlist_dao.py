@@ -14,14 +14,16 @@ from app.daos.media_projections import (
     media_studio_names,
 )
 from app.models.anime import Anime
-from app.models.media import MAIN_STORY_RELATIONS, SEASON_ORDER, Media
+from app.models.media import (
+    AIRING_STATUS_CURRENTLY_AIRING,
+    AIRING_STATUS_NOT_YET_AIRED,
+    MAIN_STORY_RELATIONS,
+    SEASON_ORDER,
+    Media,
+)
 from app.models.ratings import Ratings, WatchStatus
 from app.models.tag import Tag
 from app.models.watchlist import Watchlist
-from app.services.relation_classifier import (
-    AIRING_STATUS_CURRENTLY_AIRING,
-    AIRING_STATUS_NOT_YET_AIRED,
-)
 
 # Sortable season key: `year * 10 + rank`, so (2026, Fall) > (2026, Summer) and
 # (2027, Winter) > both with one integer comparison. The SQL twin of

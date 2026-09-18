@@ -340,3 +340,101 @@ async def test_lists_report_user_data_and_franchise_context(db_session):
     await dismiss(db_session, candidate.uuid)
     dismissed = await list_dismissed(db_session)
     assert next(i for i in dismissed if i.uuid == str(candidate.uuid)).dismissed_at is not None
+
+async def test_a_deleted_row_does_not_blind_detection_to_a_re_added_entry(db_session):
+    """The off-by-default blacklist checkbox is only safe because a re-added entry
+    comes back to this queue. A `deleted` row is an audit record, and nothing in the
+    API or the UI can clear it — so if it suppressed detection too, declining to
+    blacklist would strand the entry in the catalogue permanently: no queue row, and
+    no way to raise one. Blacklisting, not the audit row, is what makes it stay gone.
+    """
+    anime = await _make_anime_with_media(db_session, mal_base=971300, count=1)
+    media = (await _media_for(db_session, anime.id))[0]
+    candidate = await _candidate_for(db_session, media)
+    await remove(
+        db_session, candidate.uuid,
+        confirm=ADMIN, username=ADMIN, blacklist=False,
+    )
+    resolved = await DeleteCandidateDAO().get_by_uuid(db_session, candidate.uuid)
+    assert resolved.status == DeleteCandidateStatus.deleted
+
+    # MAL re-lists it and a scrape brings the same mal_id back on a fresh anime.
+    readded = Anime(mal_id=971399, title="A971399")
+    db_session.add(readded)
+    await db_session.flush()
+    db_session.add(Media(**media_kwargs(
+        readded.id, 971300, title="M971300-readded", relation_type=RelationType.Main,
+        score=None, scored_by=2, aired_from=date.today() - timedelta(days=800),
+    )))
+    await db_session.flush()
+
+    await detect_low_signal_candidates(db_session)
+    statuses = {
+        row.status
+        for row in (
+            await db_session.execute(
+                select(DeleteCandidate).where(DeleteCandidate.mal_id == 971300)
+            )
+        ).scalars().all()
+    }
+    assert DeleteCandidateStatus.pending in statuses, (
+        "a deleted audit row must not suppress rediscovery of a re-added entry"
+    )
+
+
+async def test_removing_a_media_recomputes_the_surviving_animes_spoiler_cache(
+    db_session, monkeypatch,
+):
+    """Removal is media-grained, so a surviving anime's frontier moves: the entries
+    after the deleted one become reachable. Every other catalogue-mutating path
+    recomputes, and a stale cache here is not self-healing — the startup backfill
+    only seeds users who have no rows at all.
+    """
+    from app.services import delete_candidate_service
+
+    recomputed: list[set[int]] = []
+
+    async def _spy(_db, anime_ids):
+        recomputed.append(set(anime_ids))
+
+    monkeypatch.setattr(
+        delete_candidate_service, "refresh_spoiler_cache_for_anime_ids", _spy
+    )
+
+    anime = await _make_anime_with_media(db_session, mal_base=971400, count=3)
+    media = (await _media_for(db_session, anime.id))[1]
+    candidate = await _candidate_for(db_session, media)
+    await remove(
+        db_session, candidate.uuid,
+        confirm=ADMIN, username=ADMIN, blacklist=False,
+    )
+
+    assert recomputed == [{anime.id}]
+
+
+async def test_removing_the_last_media_skips_the_recompute(db_session, monkeypatch):
+    """An emptied anime takes every `user_visible_media` row with it through the
+    cascade, so there is nothing left to recompute — the same reason
+    `_remove_hentai_anime` skips it. Asserted so the guard can't quietly become an
+    unconditional call that recomputes an anime that no longer exists.
+    """
+    from app.services import delete_candidate_service
+
+    called: list[set[int]] = []
+
+    async def _spy(_db, anime_ids):
+        called.append(set(anime_ids))
+
+    monkeypatch.setattr(
+        delete_candidate_service, "refresh_spoiler_cache_for_anime_ids", _spy
+    )
+
+    anime = await _make_anime_with_media(db_session, mal_base=971500, count=1)
+    media = (await _media_for(db_session, anime.id))[0]
+    candidate = await _candidate_for(db_session, media)
+    await remove(
+        db_session, candidate.uuid,
+        confirm=ADMIN, username=ADMIN, blacklist=False,
+    )
+
+    assert called == []

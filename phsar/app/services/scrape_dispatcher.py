@@ -43,7 +43,13 @@ from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
 from app.models.genre import Genre
 from app.models.job import Job
-from app.models.media import Media, MediaType, RelationType, SeasonType
+from app.models.media import (
+    AIRING_STATUS_CURRENTLY_AIRING,
+    Media,
+    MediaType,
+    RelationType,
+    SeasonType,
+)
 from app.models.media_freshness import MediaFreshness
 from app.models.media_genre import MediaGenre
 from app.models.media_relation_edges import MediaRelationEdges
@@ -67,10 +73,7 @@ from app.services.merge_detection_service import (
     find_cross_anime_relation_pairs,
 )
 from app.services.progress_reporter import ProgressReporter
-from app.services.relation_classifier import (
-    AIRING_STATUS_CURRENTLY_AIRING,
-    classify_and_stamp,
-)
+from app.services.relation_classifier import classify_and_stamp
 from app.services.save_service import attach_search_result_to_anime, save_search_results
 from app.services.search_service import handle_search_mal_api_results
 from app.services.spoiler_service import refresh_spoiler_cache_for_anime_ids
@@ -645,6 +648,10 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
         except Exception:
             logger.exception("Spoiler cache recompute failed after sweep")
             cache_recompute_failed = True
+            # Same reason as the cross-link block above: a failed statement marks
+            # the session pending-rollback, and the low-signal pass immediately
+            # below would inherit it and be logged as its own failure.
+            await session.rollback()
 
     # Low-signal detection, coalesced at sweep end like merge detection above:
     # it is one catalogue-wide query with no MAL calls, and the sweep is the
@@ -652,10 +659,12 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     # over or under the vote floor). Soft-warn — the catalogue work has already
     # committed, and a detection failure must not fail an otherwise-clean sweep.
     try:
-        delete_candidates_raised += (
-            await delete_candidate_service.detect_low_signal_candidates(session)
+        low_signal_raised = await delete_candidate_service.detect_low_signal_candidates(
+            session
         )
         await session.commit()
+        # After the commit: a rolled-back insert must not be counted.
+        delete_candidates_raised += low_signal_raised
     except Exception:
         logger.exception("Post-sweep low-signal delete detection failed")
         await session.rollback()

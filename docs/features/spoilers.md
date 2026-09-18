@@ -46,14 +46,14 @@ Three recompute paths:
 |---|---|
 | Rating change | that (user, anime) |
 | Registration, startup backfill | that user, whole catalogue |
-| Catalogue mutation — save, sweep, merge, split | the changed anime, across all non-restricted users |
+| Catalogue mutation — any service that changes an anime's media set | the changed anime, across all non-restricted users |
 
 The third is scoped rather than whole-catalogue. The frontier is per-anime and the
 cache keys on media id, and media ids only move *between the named anime* on merge
 or split — so scoping is sufficient, and the cost is O(users × changed) rather than
 O(users × everything). Each call site passes the set it already tracks: save passes
 its new anime, the sweep its probe-attached anime, merge the survivor, split the
-source plus the new rows.
+source plus the new rows, a curation delete the anime that survived it.
 
 The anime detail page computes the frontier locally rather than reading the cache,
 so it reflects a rating made moments ago. The media detail page reads the cached

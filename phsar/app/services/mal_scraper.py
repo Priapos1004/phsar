@@ -21,8 +21,8 @@ from app.exceptions import (
     MalIdNotFoundError,
     TransientUpstreamError,
 )
+from app.models.media import AIRING_STATUS_NOT_YET_AIRED
 from app.services.relation_classifier import (
-    AIRING_STATUS_NOT_YET_AIRED,
     anchor_tier,
     build_classifier_nodes,
     classify_anime_relations,

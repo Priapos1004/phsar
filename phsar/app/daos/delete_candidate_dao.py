@@ -8,11 +8,14 @@ from sqlalchemy.orm import selectinload
 
 from app.daos.base_dao import recency_order
 from app.daos.base_mal_id_dao import MalIdDAO
-from app.models.delete_candidate import DeleteCandidate, DeleteCandidateStatus
-from app.models.media import Media
+from app.models.delete_candidate import (
+    LIVE_DECISION_STATUSES,
+    DeleteCandidate,
+    DeleteCandidateStatus,
+)
+from app.models.media import AIRING_STATUS_FINISHED_AIRING, Media
 from app.models.ratings import Ratings
 from app.models.watchlist import Watchlist
-from app.services.relation_classifier import AIRING_STATUS_FINISHED_AIRING
 
 # Detection thresholds for the low-signal pass. Hardcoded rather than settings:
 # the admin reviews every row this raises, so a wrong threshold only changes how
@@ -35,18 +38,61 @@ LOW_SIGNAL_MAX_SCORED_BY = 50
 LOW_SIGNAL_MIN_AGE_YEARS = 1
 
 
+def _mal_ids_with_status(statuses):
+    """mal_ids carrying a candidate in any of `statuses`.
+
+    Uncorrelated on purpose. An `EXISTS` correlated against `Media` is only
+    pulled up into an anti-join from a top-level AND; the sweep negates its
+    version inside an `or_()` arm, where it would instead stay a SubPlan
+    re-executed per row, against a predicate no index covers (both indexes here
+    are partial on `status = 'pending'`). As a plain sublink Postgres hashes it
+    once per statement.
+
+    Keyed on the identity snapshot rather than `media_id`, which would miss both
+    an applied row — the FK is nulled so the audit outlives the media — and a
+    re-scraped entry, which returns under a new id. Both `mal_id` columns are
+    NOT NULL, so `NOT IN` carries no null trap.
+    """
+    return select(DeleteCandidate.mal_id).where(DeleteCandidate.status.in_(statuses))
+
+
+def live_decision_mal_ids():
+    """What the detectors skip: a decision still in force, so re-detection does
+    not re-raise what an admin already ruled on."""
+    return _mal_ids_with_status(LIVE_DECISION_STATUSES)
+
+
+def awaiting_review_mal_ids():
+    """What the sweep's airing tier skips — deliberately narrower than the
+    detectors' set. `pending` means nobody has ruled yet, and refreshing a media
+    whose fate is an open question is the work being deferred. `dismissed` means
+    the admin ruled *keep it*, which is a statement about deletion, not about
+    scheduling — so it hands the media straight back to the nightly tier. The
+    cost of that is a dead-but-kept airing entry re-404ing nightly; the fix for
+    it is a scrape-side `gone_upstream` flag, not a broader read of this table.
+    """
+    return _mal_ids_with_status((DeleteCandidateStatus.pending,))
+
+
 class DeleteCandidateDAO(MalIdDAO[DeleteCandidate]):
     """`MalIdDAO`, not plain `BaseDAO`: the row's identity snapshot carries a
-    `mal_id`, so the base class's `get_by_mal_id` serves the 404 detector's
-    any-status check for free — the same base `MediaUnwantedDAO`, `MediaDAO` and
-    `AnimeDAO` sit on.
-
-    That check is what makes a dismissal stick — the pending index is partial, so
-    nothing else stops the next 404 re-raising a row an admin chose to keep.
+    `mal_id`, so the base class's `get_by_mal_id` serves lookups by MAL identity —
+    the same base `MediaUnwantedDAO`, `MediaDAO` and `AnimeDAO` sit on. Detection
+    does not use it directly; see `LIVE_DECISION_STATUSES`.
     """
 
     def __init__(self):
         super().__init__(DeleteCandidate)
+
+    async def has_live_decision(self, db: AsyncSession, mal_id: int) -> bool:
+        """Whether a decision on this mal_id is still in force. Not
+        `get_by_mal_id`, which spans `deleted` too — see
+        `LIVE_DECISION_STATUSES`."""
+        return await db.scalar(
+            select(live_decision_mal_ids().where(
+                DeleteCandidate.mal_id == mal_id
+            ).exists())
+        )
 
     async def get_by_uuid(self, db: AsyncSession, uuid: UUID) -> DeleteCandidate | None:
         return await self.get_by_field(db, uuid=uuid)
@@ -239,12 +285,7 @@ class DeleteCandidateDAO(MalIdDAO[DeleteCandidate]):
             .having(func.count(Media.id) == 1)
             .scalar_subquery()
         )
-        already_seen = (
-            select(DeleteCandidate.id)
-            .where(DeleteCandidate.mal_id == Media.mal_id)
-            .correlate(Media)
-            .exists()
-        )
+        already_seen = Media.mal_id.in_(live_decision_mal_ids())
         stmt = (
             select(Media)
             .where(
@@ -252,8 +293,13 @@ class DeleteCandidateDAO(MalIdDAO[DeleteCandidate]):
                 Media.score.is_(None),
                 Media.scored_by < LOW_SIGNAL_MAX_SCORED_BY,
                 Media.airing_status == AIRING_STATUS_FINISHED_AIRING,
+                # Bound, not interpolated: the constant is module-scope today, so
+                # an f-string is safe today and stops being safe the moment it
+                # comes from anywhere else.
                 Media.aired_from
-                < func.now() - text(f"interval '{LOW_SIGNAL_MIN_AGE_YEARS} years'"),
+                < func.now() - text("make_interval(years => :min_age_years)").bindparams(
+                    min_age_years=LOW_SIGNAL_MIN_AGE_YEARS
+                ),
                 ~already_seen,
             )
             .order_by(Media.scored_by.asc(), Media.id.asc())

@@ -9,6 +9,7 @@ from sqlalchemy.orm import aliased, selectinload
 
 from app.daos.base_dao import recency_order
 from app.daos.base_mal_id_dao import MalIdDAO
+from app.daos.delete_candidate_dao import awaiting_review_mal_ids
 from app.daos.search_filters import (
     apply_anime_having_filters,
     apply_anime_pre_filters,
@@ -19,13 +20,12 @@ from app.daos.search_filters import (
 )
 from app.models.anime import Anime
 from app.models.anime_search import AnimeSearch
-from app.models.media import Media, RelationType
+from app.models.media import AIRING_STATUS_CURRENTLY_AIRING, Media, RelationType
 from app.models.media_freshness import MediaFreshness
 from app.models.media_genre import MediaGenre
 from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
-from app.services.relation_classifier import AIRING_STATUS_CURRENTLY_AIRING
 from app.services.vector_embedding_service import generate_query_embedding
 
 logger = logging.getLogger(__name__)
@@ -303,6 +303,9 @@ class AnimeDAO(MalIdDAO[Anime]):
              premiered over SWEEP_ARCHIVAL_AGE_YEARS ago and its MAL metadata has
              effectively frozen. One predicate, per-row window.
 
+        Tier 1 additionally excludes media awaiting a delete decision; the
+        reason is on the predicate.
+
         Eager-loads the parent Anime AND its FULL media set (+ anime
         freshness) because `reclassify_anime(anime)` and the relations
         probe read `anime.media`, and `lazy="raise"` is global. SQLAlchemy's
@@ -335,7 +338,11 @@ class AnimeDAO(MalIdDAO[Anime]):
             # 7-day staleness; `due_long_tail` is the safety net, whose window is
             # 90 or 180 days depending on the media's own premiere age (see the atom).
             .where(or_(
-                atoms.airing_now,
+                # Gated on curation because nothing else can reach this tier: a
+                # media MAL already 404'd keeps its stored status, and with no
+                # staleness term the freshness stamp has nothing to move. Tier 1
+                # only — the tiers below are what still pick the row up.
+                and_(atoms.airing_now, Media.mal_id.notin_(awaiting_review_mal_ids())),
                 atoms.still_stabilizing,
                 and_(atoms.due_weekly, atoms.recent_main),
                 atoms.due_long_tail,

@@ -44,6 +44,15 @@ class DeleteCandidateStatus(str, enum.Enum):
     deleted = "deleted"
 
 
+# The statuses that suppress re-detection: a decision still under review. `deleted`
+# is deliberately not one — it is an audit record nothing can clear, so counting it
+# would suppress detection forever; `curation.md` owns why that matters.
+#
+# Here rather than in the DAO because the sweep's due-media query reads it too, to
+# stop re-fetching a media that is already waiting on an admin.
+LIVE_DECISION_STATUSES = (DeleteCandidateStatus.pending, DeleteCandidateStatus.dismissed)
+
+
 class DeleteCandidate(BaseModel):
     __tablename__ = "delete_candidates"
 

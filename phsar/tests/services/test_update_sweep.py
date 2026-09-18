@@ -1212,6 +1212,59 @@ async def test_tier_currently_airing_always_selected(db_session):
 
 
 @pytest.mark.asyncio
+async def test_a_pending_delete_candidate_drops_a_media_off_the_airing_tier(db_session):
+    """The airing tier carries no staleness term, so neither the 404 timestamp nor
+    the stability counter can back a dead entry off it — a media MAL already 404'd
+    would be re-selected, and re-404'd, every night. Seeded as Currently Airing
+    precisely because that is the tier no clock reaches; a Finished Airing row would
+    pass this under a plain staleness fix and prove nothing.
+
+    Two boundaries, and each is a separate decision:
+      - only tier 1 is gated, so the media drops to the 90-day window rather than
+        out of the sweep, and a restored entry is still noticed;
+      - only `pending` gates, so dismissing — which rules on deletion, not on
+        scheduling — hands it straight back to the nightly tier.
+    """
+    from app.models.delete_candidate import DeleteCandidate, DeleteCandidateStatus
+
+    a = await _seed_anime(
+        db_session, mal_id=-7101,
+        last_checked_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        stable_check_count=10, airing_status="Currently Airing",
+    )
+    assert a.id in await _select_due_ids(db_session), "airing media start out due"
+
+    media = (await db_session.execute(
+        select(Media).where(Media.anime_id == a.id)
+    )).scalars().one()
+    candidate = DeleteCandidate(
+        media_id=media.id, mal_id=media.mal_id, title=media.title,
+        detected_by="sweep_404", status=DeleteCandidateStatus.pending,
+    )
+    db_session.add(candidate)
+    await db_session.flush()
+    assert a.id not in await _select_due_ids(db_session)
+
+    # Still reachable by staleness: the back-off is nightly -> 90 days, not removal.
+    freshness = (await db_session.execute(
+        select(MediaFreshness).where(MediaFreshness.media_id == media.id)
+    )).scalars().one()
+    freshness.last_checked_at = datetime.now(timezone.utc) - timedelta(days=120)
+    await db_session.flush()
+    assert a.id in await _select_due_ids(db_session), (
+        "the long-tail tier must still reach it, or a restored entry never self-heals"
+    )
+
+    # And a ruling of "keep it" returns it to tier 1 even while fresh.
+    freshness.last_checked_at = datetime.now(timezone.utc) - timedelta(hours=1)
+    candidate.status = DeleteCandidateStatus.dismissed
+    await db_session.flush()
+    assert a.id in await _select_due_ids(db_session), (
+        "dismissing rules on deletion, not on scheduling"
+    )
+
+
+@pytest.mark.asyncio
 async def test_tier_stable_under_threshold_selected(db_session):
     """Media-level stabilize threshold is 3: stable_check_count < 3 is
     selected, == 3 is not."""

@@ -11,7 +11,7 @@ from app.exceptions import (
     RatingNotFoundError,
     RewatchNotAllowedError,
 )
-from app.models.media import Media
+from app.models.media import AIRING_STATUS_NOT_YET_AIRED, Media
 from app.models.ratings import Ratings, WatchStatus
 from app.schemas.media_filter_schema import SearchType
 from app.schemas.rating_schema import (
@@ -26,7 +26,6 @@ from app.schemas.rating_schema import (
 from app.services import media_service
 from app.services.filter_service import select_note_target_index
 from app.services.media_search_service import media_to_dict
-from app.services.relation_classifier import AIRING_STATUS_NOT_YET_AIRED
 from app.services.spoiler_service import recompute_visibility_for_anime
 from app.services.vector_embedding_service import (
     create_rating_embedding,

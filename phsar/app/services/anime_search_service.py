@@ -8,7 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.anime_dao import AnimeDAO
 from app.exceptions import AnimeNotFoundByUuidError
-from app.models.media import RELATION_SCORE_WEIGHTS, Media
+from app.models.media import (
+    AIRING_STATUS_CURRENTLY_AIRING,
+    AIRING_STATUS_FINISHED_AIRING,
+    AIRING_STATUS_NOT_YET_AIRED,
+    RELATION_SCORE_WEIGHTS,
+    SEASON_ORDER,
+    Media,
+)
 from app.schemas.anime_schema import (
     AnimeDetail,
     AnimeMediaItem,
@@ -17,12 +24,7 @@ from app.schemas.anime_schema import (
     RelationTypeSummary,
 )
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
-from app.services.filter_service import SEASON_ORDER, chronological_media_key
-from app.services.relation_classifier import (
-    AIRING_STATUS_CURRENTLY_AIRING,
-    AIRING_STATUS_FINISHED_AIRING,
-    AIRING_STATUS_NOT_YET_AIRED,
-)
+from app.services.filter_service import chronological_media_key
 
 logger = logging.getLogger(__name__)
 

@@ -7,6 +7,9 @@ from app.models.anime import Anime
 from app.models.genre import Genre
 from app.models.media import (
     AGE_RATING_MAP,
+    AIRING_STATUS_CURRENTLY_AIRING,
+    AIRING_STATUS_FINISHED_AIRING,
+    AIRING_STATUS_NOT_YET_AIRED,
     RELATION_SCORE_WEIGHTS,
     Media,
     SeasonType,
@@ -16,11 +19,6 @@ from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
-from app.services.relation_classifier import (
-    AIRING_STATUS_CURRENTLY_AIRING,
-    AIRING_STATUS_FINISHED_AIRING,
-    AIRING_STATUS_NOT_YET_AIRED,
-)
 
 logger = logging.getLogger(__name__)
 

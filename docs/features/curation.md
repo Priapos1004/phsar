@@ -23,9 +23,17 @@ How the relation graph produces the merge and split signals is in
 
 **A dismissal is sticky, and the row itself is the mechanism.** Each detector
 pre-fetches the identities it has already seen — merge by anime pair, split by
-cluster signature, delete by mal_id — *regardless of status*, and skips them
-before computing any signal. Without that, the next run re-raises what the admin
-just rejected, every night, forever.
+cluster signature, delete by mal_id — and skips them before computing any signal.
+Without that, the next run re-raises what the admin just rejected, every night,
+forever.
+
+**The delete detectors skip a *live* decision only** — `pending` or `dismissed`.
+An applied row is an audit record that nothing in the API or the UI can clear, so
+counting it in the skip-set would let a single removal blind both detectors to
+that mal_id permanently: a re-added entry could never come back to the queue, and
+no admin action could raise it. That is what the off-by-default blacklist
+checkbox below rests on — blacklisting, not the audit row, is what makes a
+removal stay gone.
 
 The consequence is that un-dismissing means **deleting the decision**, not
 flipping it back: once the row is gone the identity leaves the skip-set and the
@@ -75,7 +83,10 @@ entry, while a 404 on a standalone film removes the anime with it. An anime-grai
 queue could only express the second.
 
 When the anime survives, the surviving set is **reclassified** — the deleted media
-may have been the anchor, and `anime.mal_id` tracks the anchor's mal_id.
+may have been the anchor, and `anime.mal_id` tracks the anchor's mal_id — and its
+**spoiler cache is recomputed** ([spoilers](spoilers.md)), since dropping one entry
+moves what its siblings reveal. An emptied anime needs neither — the cascade takes
+its cache rows with it.
 
 ### What deletion costs
 
@@ -126,6 +137,10 @@ The stamp also advances the stability counter, which is the load-bearing half:
 the stabilizing tier is a bare `stable_check_count < 3` with no staleness term,
 so a recently-scraped media would otherwise stay due nightly no matter what the
 clock says.
+
+**No stamp reaches the airing tier**, so a media awaiting a decision is dropped from
+it instead ([jobs](jobs.md) has the tier and why). Only `pending` gates: dismissing
+rules on deletion, not on scheduling, so it hands the media straight back.
 
 **Raising the candidate and stamping the clock are atomic** — both land in the
 savepoint the refresh already holds for that anime, so the queue can never be

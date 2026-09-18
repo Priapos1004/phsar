@@ -22,6 +22,7 @@ from app.models.delete_candidate import DeleteCandidate, DeleteCandidateStatus
 from app.models.media import Media
 from app.schemas.admin_schema import DeleteCandidateListItem
 from app.services.anime_relation_service import reclassify_anime
+from app.services.spoiler_service import refresh_spoiler_cache_for_anime_ids
 from app.services.unwanted_media_service import create_unwanted_media
 
 logger = logging.getLogger(__name__)
@@ -121,8 +122,8 @@ async def list_dismissed(db: AsyncSession) -> list[DeleteCandidateListItem]:
 async def dismiss(db: AsyncSession, uuid: UUID) -> None:
     """Mark a candidate as reviewed-and-kept. No other DB mutation.
 
-    The row itself is the suppression: both detectors skip any mal_id that
-    already has a row, so this decision holds until it is explicitly deleted.
+    The row itself is the suppression: both detectors skip any mal_id carrying a
+    live decision, so this holds until the dismissal is explicitly deleted.
     """
     candidate = await _ensure_pending(db, uuid)
     candidate.status = DeleteCandidateStatus.dismissed
@@ -163,6 +164,8 @@ async def remove(
        and `anime.mal_id` tracks the anchor's mal_id — skipping this leaves the
        umbrella pointing at a row that no longer exists.
 
+    5. Recompute a surviving anime's spoiler cache, after the commit.
+
     Orphaned studio rows are left to the sweep's existing `delete_orphaned`
     pass rather than duplicated here.
     """
@@ -194,6 +197,7 @@ async def remove(
     title = media.title if media is not None else candidate.title
     ratings = watchlist = 0
     remaining: int | None = None
+    anime_id: int | None = None
 
     if blacklist:
         await create_unwanted_media(db, {(mal_id, title, BLACKLIST_REASON)})
@@ -245,6 +249,18 @@ async def remove(
     # backstop for media deleted by any other path.
     candidate.media_id = None
     await db.commit()
+
+    # Only when the anime survived — an emptied one had its cache rows taken by the
+    # cascade, which is why `_remove_hentai_anime` skips this entirely.
+    # Post-commit and soft, like merge and split: the deletion is already durable,
+    # and a recompute failure must not 5xx an admin into retrying a resolved
+    # candidate. The nightly sweep's recompute is the backstop.
+    if remaining:
+        try:
+            await refresh_spoiler_cache_for_anime_ids(db, {anime_id})
+        except Exception:
+            logger.exception("Spoiler cache recompute failed after curation delete")
+
     logger.info(
         "Deleted media mal_id=%s (%s) via curation — blacklisted=%s, "
         "anime %s, destroyed %s ratings + %s watchlist entries",
@@ -259,8 +275,8 @@ async def detect_low_signal_candidates(db: AsyncSession) -> int:
     """Raise a candidate for every standalone entry that never gained MAL
     traction. Returns how many were newly raised. Caller commits.
 
-    Idempotent twice over: the query's NOT EXISTS skips any mal_id that already
-    has a row in any status, and the partial unique index catches a racer.
+    Idempotent twice over: the query's NOT EXISTS skips any mal_id carrying a
+    live decision, and the partial unique index catches a racer.
     """
     inserted = await delete_candidate_dao.upsert_pending(
         db,
@@ -276,12 +292,12 @@ async def raise_sweep_404_candidate(db: AsyncSession, media: Media) -> bool:
     """Raise a candidate for a media MAL returned 404 for. Returns whether one
     landed. Caller commits.
 
-    The any-status lookup is not redundant with the insert's ON CONFLICT: that
+    The live-decision lookup is not redundant with the insert's ON CONFLICT: that
     index is partial on `status = 'pending'`, so it would happily add a second
     pending row for a mal_id an admin had already dismissed. This is what makes
     that dismissal stick against a nightly 404.
     """
-    if await delete_candidate_dao.get_by_mal_id(db, media.mal_id) is not None:
+    if await delete_candidate_dao.has_live_decision(db, media.mal_id):
         return False
     return await delete_candidate_dao.upsert_pending(
         db, [media], DETECTED_BY_SWEEP_404

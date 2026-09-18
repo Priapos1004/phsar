@@ -85,6 +85,15 @@ class SeasonType(str, enum.Enum):
 # the catalog's title-cased one.
 SEASON_ORDER = {SeasonType.Winter: 1, SeasonType.Spring: 2, SeasonType.Summer: 3, SeasonType.Fall: 4}
 
+# The sentinel `media.airing_status` values MAL returns. Here, beside the column
+# that stores them, for the same reason as SEASON_ORDER above: both layers read
+# them, and four DAOs filtering on `airing_status` should not have to import up
+# into `services/` to name their own column's values. `relation_classifier` still
+# owns what they *mean* — the substance gate reads them via _METADATA_PENDING_STATUSES.
+AIRING_STATUS_CURRENTLY_AIRING = "Currently Airing"
+AIRING_STATUS_FINISHED_AIRING = "Finished Airing"
+AIRING_STATUS_NOT_YET_AIRED = "Not yet aired"
+
 # Define ordered mapping to ensure correct prefix priority
 AGE_RATING_MAP = [
     ("PG-13", 13),   # Must come before PG

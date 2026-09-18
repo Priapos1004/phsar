@@ -309,11 +309,15 @@
 			</div>
 		{/if}
 
+		<!-- onResurfaced refreshes rather than re-detecting: `/backfill` runs the
+		     low-signal pass only, so resurfacing a `sweep_404` decision would report
+		     "No new candidates found" and read as a failure. Resurfacing clears the
+		     dismissal; what brings the row back is the next detection to reach it. -->
 		<DismissedDecisionsSection
 			kind="delete"
 			listUrl="/admin/delete-candidates/dismissed"
 			basePath="/admin/delete-candidates"
-			onResurfaced={handleRedetect}
+			onResurfaced={refreshCandidates}
 		>
 			{#snippet row(item: DeleteCandidateListItem)}
 				<div class="min-w-0">

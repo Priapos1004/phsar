@@ -104,10 +104,18 @@ test on the media row plus its freshness sidecar:
 
 | Tier | Selects |
 |---|---|
-| airing now | `airing_status = 'Currently Airing'` |
+| airing now | `airing_status = 'Currently Airing'`, minus media awaiting a delete decision |
 | stabilizing | `stable_check_count < SWEEP_STABILIZE_THRESHOLD` (3) |
 | recent main | a main entry with a recent premiere, weekly |
 | long tail | everything else, on a per-row window |
+
+The airing tier carries an exclusion the others do not need: it has no staleness term
+*and* nothing a refresh can advance, so a media MAL has already 404'd would be
+re-selected every night forever — its stored status can no longer change, and the
+stabilizing tier, which is equally clockless, at least drains as its counter rises. The
+exclusion is scoped to that tier, so such a media falls through to the long-tail window
+rather than out of the sweep. Only a `pending` decision gates — dismissing one rules on
+deletion, not on scheduling, so it returns the media here ([curation](curation.md)).
 
 The long tail uses a **per-row window rather than a fifth tier**: one `CASE`
 compares `last_checked` against `SWEEP_ARCHIVAL_DAYS` (180) for media premiered over

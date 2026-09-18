@@ -44,7 +44,7 @@ async def rerun_delete_detection(db: AsyncSession = Depends(get_db)):
     """Re-run the low-signal pass on demand. The sweep runs it nightly, but a
     restore doesn't bounce the container, so a freshly-restored catalogue would
     otherwise show an empty queue until the next sweep. Idempotent: mal_ids
-    already flagged (any status) are skipped.
+    carrying a live decision are skipped.
 
     The 404 detector is not re-runnable here — it only observes what a live MAL
     refresh returns, so it belongs to the sweep.
