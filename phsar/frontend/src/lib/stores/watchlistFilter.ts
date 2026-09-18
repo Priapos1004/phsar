@@ -78,7 +78,9 @@ function sanitize(raw: Record<string, unknown>): WatchlistFilterState {
 // the URL, and these survive the watchlists↔tags tab switch without re-threading.
 export const watchlistFilter = createPersistedFilter<WatchlistFilterState>({
 	key: 'phsar.filter.watchlist',
-	version: 1,
+	// Bump on any field addition or sort-value change: a stale payload is discarded,
+	// not migrated.
+	version: 2,
 	defaults: DEFAULT_WATCHLIST_FILTER,
 	sanitize,
 });

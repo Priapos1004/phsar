@@ -30,6 +30,16 @@
      88% weight oklch hue-interpolation dragged the result toward red on the green/blue
      themes. oklab has no hue channel, so white's neutral a/b let the primary's hue win. */
   --tooltip-surface: color-mix(in oklab, var(--color-popover) 88%, var(--primary));
+  /* The focus-flash sweep's band colour, a token for the same reason the tooltip
+     surface is one: this file's minifier emits a color-mix fallback by duplicating
+     the rule that holds it, so an inline mix duplicates the whole `tr.focus-flash`
+     rule. Declared here, the fallback collapses onto one declaration.
+     It does NOT soften that fallback — where color-mix() is unsupported the token
+     resolves to a solid var(--primary), a harder band than intended. Unfixable at
+     this layer (a custom property accepts the mix as valid, so a preceding
+     translucent declaration never wins); the lever is Vite's `cssTarget`, which is
+     what asks for the fallback arm at all. */
+  --focus-sweep-tint: color-mix(in oklab, var(--primary) 34%, transparent);
 }
 
 @theme inline {
@@ -201,7 +211,7 @@ tr.focus-flash {
   background-image: linear-gradient(
     100deg,
     transparent 28%,
-    color-mix(in oklab, var(--primary) 34%, transparent) 50%,
+    var(--focus-sweep-tint) 50%,
     transparent 72%
   );
   background-repeat: no-repeat;

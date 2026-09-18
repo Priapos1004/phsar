@@ -10,6 +10,7 @@
     import { resetAllPersistedFilters } from '$lib/stores/persistedFilter';
     import { applyFilterLifecycle } from '$lib/utils/filterLifecycle';
     import { captureReturnTarget, clearResume } from '$lib/utils/resumeSession';
+    import { isAuthPage } from '$lib/utils/returnTo';
     import { afterNavigate } from '$app/navigation';
     import { onMount, setContext } from 'svelte';
     import { jwtDecode } from 'jwt-decode';
@@ -199,11 +200,11 @@
       <!-- Idle-timeout warning sits above maintenance — a "you're about to be
            signed out" countdown is more urgent than a future-window notice.
            Only runs while authenticated and off the auth pages. -->
-      {#if isAuthenticated && page.url.pathname !== '/login' && page.url.pathname !== '/register'}
+      {#if isAuthenticated && !isAuthPage(page.url.pathname)}
         <SessionTimeoutBanner onExpire={() => (showExpiryDialog = true)} />
       {/if}
       <MaintenanceBanner />
-      {#if page.url.pathname !== '/login' && page.url.pathname !== '/register'}
+      {#if !isAuthPage(page.url.pathname)}
         <NavBar
           {isAuthenticated}
           {username}
