@@ -1,0 +1,6 @@
+# CPU-only torch, installed before requirements.txt so sentence-transformers resolves
+# against this wheel instead of pulling the default CUDA build (~890 MB vs ~190 MB).
+# Lives in its own file because the Dockerfile and the test workflow both need the
+# exact same pin, and a copy in each drifts with nothing to catch it.
+--index-url https://download.pytorch.org/whl/cpu
+torch==2.11.0+cpu

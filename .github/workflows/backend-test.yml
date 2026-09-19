@@ -1,11 +1,20 @@
 name: Backend Tests
 
 on:
+  # Scoped on push, whole on pull_request. Root CLAUDE.md's "## CI" section owns why.
   push:
+    paths:
+      - 'phsar/**'
+      - '!phsar/frontend/**'
+      - '.github/workflows/backend-test.yml'
   pull_request:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   test:
@@ -51,17 +60,16 @@ jobs:
       with:
         python-version: '3.12'
         cache: 'pip'
+        # Default is **/requirements.txt, which would leave the torch pin out of
+        # the key — bumping it would hit a stale cache and re-pull the wheel forever.
+        cache-dependency-path: phsar/requirements*.txt
 
-    # Match the Dockerfile: install CPU-only torch from the PyTorch CPU
-    # index BEFORE requirements.txt, so sentence-transformers doesn't
-    # pull the default CUDA torch wheel (~890 MB vs ~190 MB CPU). CI has
-    # no GPU; the CUDA build was dead weight that bloated the pip cache
-    # to ~2.5 GiB per branch and blew the Actions cache budget.
+    # Before requirements.txt; the file it installs explains why.
     - name: Install CPU-only torch
-      run: pip install --index-url https://download.pytorch.org/whl/cpu torch==2.11.0+cpu
+      run: pip install -r requirements-torch.txt
 
     - name: Install dependencies
-      run: pip install -r requirements.txt
+      run: pip install -r requirements.txt -r requirements-dev.txt
 
     # The pg17 service container needs a matching pg17 client: ubuntu-latest
     # ships postgresql-client-16, and pg_dump refuses to dump a newer server

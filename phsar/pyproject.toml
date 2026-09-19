@@ -1,4 +1,10 @@
 [tool.ruff]
+# Bind the version here rather than only in requirements-dev.txt, because that file
+# governs only what CI and a fresh dev install get. review-gate.sh runs whatever
+# `ruff` is on the developer's PATH, so without this a green local gate can still
+# land findings in CI. Ruff enforces this itself and fails loudly on a mismatch.
+required-version = ">=0.16,<0.17"
+
 # Paths to exclude
 exclude = [
     "alembic/versions",

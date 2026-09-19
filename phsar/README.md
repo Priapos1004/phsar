@@ -441,7 +441,9 @@ phsar/
 ├── alembic.ini
 ├── pyproject.toml
 ├── pytest.ini
-├── requirements.txt
+├── requirements-dev.txt    # test + lint tooling, never in the image
+├── requirements-torch.txt  # CPU torch pin, shared with the Dockerfile
+├── requirements.txt        # runtime — installed into the image
 ├── scripts/
 │   ├── audit_cross_franchise.py
 │   ├── audit_relation_backfill.py

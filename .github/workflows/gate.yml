@@ -1,0 +1,26 @@
+name: Commit Gate
+
+on:
+  push:
+    paths:
+      - '.claude/**'
+      - '.github/workflows/gate.yml'
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  # Root CLAUDE.md's "## CI" section owns why this is its own workflow.
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Test the commit gate
+      run: .claude/hooks/test-gate.sh

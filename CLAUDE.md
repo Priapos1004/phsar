@@ -85,6 +85,11 @@ alembic revision --autogenerate -m "Describe change"
 alembic upgrade head
 ```
 
+Dependencies are split by who installs them: the image takes `requirements.txt`
+(runtime) and `requirements-torch.txt` (the CPU torch pin, shared with the
+Dockerfile), and never `requirements-dev.txt` (test and lint tooling). Install
+commands are in [README.md](README.md).
+
 Dev DB helper scripts (audit, inspect, find, delete) live under `phsar/scripts/` — see [phsar/scripts/CLAUDE.md](phsar/scripts/CLAUDE.md) for the full list. Read-only by default; mutating scripts require `--apply`.
 
 ### Frontend
@@ -239,7 +244,7 @@ Self-hosted on a Coolify-managed VM. Images are built in GitHub Actions and pull
 
 ### Services
 
-- **`phsar/Dockerfile`** — multi-stage backend. CPU-only torch from the pytorch CPU index; sentence-transformers model baked into `/opt/st-cache`; runs as non-root `phsar` (UID 1000); `/backups` created and chowned at build time so a bind-mounted host dir matches. `docker/entrypoint.sh` applies Alembic migrations before exec'ing uvicorn.
+- **`phsar/Dockerfile`** — multi-stage backend. CPU-only torch via `requirements-torch.txt`; sentence-transformers model baked into `/opt/st-cache`; runs as non-root `phsar` (UID 1000); `/backups` created and chowned at build time so a bind-mounted host dir matches. `docker/entrypoint.sh` applies Alembic migrations before exec'ing uvicorn.
 - **`phsar/frontend/Dockerfile`** — bun build → `node:22-slim` via SvelteKit `adapter-node`.
 - **`docker-compose.yml`** (repo root) — all three containers; local parity smoke-testing only, not day-to-day dev.
 
@@ -285,10 +290,23 @@ and `POST /admin/jobs/schedule-{sweep,seasonal,upcoming}?delay_minutes=N`.
 
 ## CI
 
-- **Backend Lint** (`backend-lint.yml`): `ruff check .` in `phsar/` — every push/PR
-- **Backend Tests** (`backend-test.yml`): `pytest` against a pgvector service container — every push/PR. Also runs **`alembic check`**, which guards two things at once: that models and migrations agree (an index or column declared in only one is what makes the next `--autogenerate` propose a destructive diff), and that the chain still replays from empty. It needs its own throwaway `migrationcheck` DB brought up by `alembic upgrade head` — run against the test DB it would compare `create_all`'s metadata to a schema built from that same metadata, and pass however far the migrations had drifted
-- **Frontend Check** (`frontend-check.yml`): `bun run check` + `bun run test` — every push/PR
-- **Build & Push Images** (`build-images.yml`): builds + pushes to ghcr.io — tag push (`v*`) or manual dispatch
+Every workflow below except the image build and CodeQL gates a pull request. Each is
+**scoped on push and whole on pull request**: a push runs only the part of the repo it touched, a pull request runs
+everything. The PR side has to stay unfiltered, because a skipped job never reports a
+status and a required check that never reports blocks the merge indefinitely.
+
+A push to a branch that already has a PR therefore runs both — the `concurrency`
+groups cancel superseded runs *within* an event, but push and `pull_request` carry
+different `github.ref` values and so never collapse into each other. That overlap is
+the price of pre-PR feedback. Cancelling is disabled on `main`, where it would leave
+the branch the README badges track sitting on a cancelled status.
+
+- **Backend Lint** (`backend-lint.yml`): `ruff check .` in `phsar/`
+- **Backend Tests** (`backend-test.yml`): `pytest` against a pgvector service container. Also runs **`alembic check`**, which guards two things at once: that models and migrations agree (an index or column declared in only one is what makes the next `--autogenerate` propose a destructive diff), and that the chain still replays from empty. It needs its own throwaway `migrationcheck` DB brought up by `alembic upgrade head` — run against the test DB it would compare `create_all`'s metadata to a schema built from that same metadata, and pass however far the migrations had drifted
+- **Frontend Check** (`frontend-check.yml`): `bun run check` + `bun run test` + `bun run build`. The build step is not redundant with the type check — `svelte-check` reads sources, and only a real adapter-node build proves the bundle still comes out
+- **Commit Gate** (`gate.yml`): `.claude/hooks/test-gate.sh`, on `.claude/**`. Its own workflow because the suite needs no project toolchain — it drives the hook against the checked-out tree on whatever the runner ships — and because a red result here means something other than a lint failure
+- **Build & Push Images** (`build-images.yml`): builds + pushes to ghcr.io — tag push (`v*`) or manual dispatch. No cancellation: a tag build must never be superseded
+- **CodeQL**: GitHub **default setup** — configured in repo settings, with no file in `.github/workflows/`. Alerts are triaged through `/review-comments`. Not a required check, because its context names are GitHub-managed
 
 ## Linting Config (pyproject.toml)
 

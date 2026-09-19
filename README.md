@@ -1,8 +1,8 @@
 # phsar
 
-[![Backend Lint](https://github.com/Priapos1004/phsar/actions/workflows/backend-lint.yml/badge.svg)](https://github.com/Priapos1004/phsar/actions/workflows/backend-lint.yml)
-[![Backend Tests](https://github.com/Priapos1004/phsar/actions/workflows/backend-test.yml/badge.svg)](https://github.com/Priapos1004/phsar/actions/workflows/backend-test.yml)
-[![Frontend Check](https://github.com/Priapos1004/phsar/actions/workflows/frontend-check.yml/badge.svg)](https://github.com/Priapos1004/phsar/actions/workflows/frontend-check.yml)
+[![Backend Lint](https://github.com/Priapos1004/phsar/actions/workflows/backend-lint.yml/badge.svg?branch=main)](https://github.com/Priapos1004/phsar/actions/workflows/backend-lint.yml)
+[![Backend Tests](https://github.com/Priapos1004/phsar/actions/workflows/backend-test.yml/badge.svg?branch=main)](https://github.com/Priapos1004/phsar/actions/workflows/backend-test.yml)
+[![Frontend Check](https://github.com/Priapos1004/phsar/actions/workflows/frontend-check.yml/badge.svg?branch=main)](https://github.com/Priapos1004/phsar/actions/workflows/frontend-check.yml)
 
 Repository for Code of phsar website + backend.
 
@@ -17,10 +17,18 @@ conda activate phsar
 
 ### Install necessary libraries in environment
 
-Run the following command in the `phsar/` folder of this repository:
+Run the following commands in the `phsar/` folder of this repository:
 
 ```
+pip install -r requirements-torch.txt   # CPU-only torch, before the rest
 pip install -r requirements.txt
+```
+
+`requirements.txt` is runtime-only. To run the tests or the linter, add the
+tooling as well:
+
+```
+pip install -r requirements-dev.txt
 ```
 
 ## Setup local database (recommended way)

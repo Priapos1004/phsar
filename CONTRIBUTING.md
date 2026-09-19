@@ -7,7 +7,7 @@ Thank you for your interest in contributing to Phsar! This project is licensed u
 1. **Fork** the repository
 2. **Clone** your fork and create a new branch from `main`
 3. **Set up** the development environment (see [README](README.md) + [phsar/README.md](phsar/README.md) for the full walkthrough):
-   - Backend: create the conda env (`conda create -yn phsar python=3.12 && conda activate phsar`), then `cd phsar && pip install -r requirements.txt`
+   - Backend: create the conda env (`conda create -yn phsar python=3.12 && conda activate phsar`), then `cd phsar` and install `requirements-torch.txt`, `requirements.txt` and `requirements-dev.txt`
    - Frontend: `cd phsar/frontend && bun install`
    - Database: start a PostgreSQL container with pgvector (see [phsar/README.md](phsar/README.md)) — it must be running for the app and the backend tests
 4. **Create a `.env` file** in `phsar/` (see README for required variables)
