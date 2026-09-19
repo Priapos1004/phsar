@@ -21,6 +21,12 @@ How the relation graph produces the merge and split signals is in
 | `dismissed` | reviewed and rejected — the proposal was wrong |
 | `merged` / `split` / `deleted` | applied |
 
+**A candidate resolves once.** Every resolver re-reads the row under a lock before
+branching on its status, so two admins acting on the same candidate produce one
+decision and the loser is refused, rather than a row whose status disagrees with
+what was done to the catalogue. That row is the only record of which decision won,
+so it has to be the one that actually ran.
+
 **A dismissal is sticky, and the row itself is the mechanism.** Each detector
 pre-fetches the identities it has already seen — merge by anime pair, split by
 cluster signature, delete by mal_id — and skips them before computing any signal.

@@ -492,9 +492,11 @@ phsar/
         ├── test_backup_service.py
         ├── test_backup_subprocess_failures.py
         ├── test_base_dao_min_max.py
+        ├── test_curation_row_locks.py
         ├── test_delete_candidate_service.py
         ├── test_job_dao.py
         ├── test_job_worker.py
+        ├── test_jobs_scrape_index.py
         ├── test_mal_scraper.py
         ├── test_merge_candidate_service.py
         ├── test_merge_detection.py

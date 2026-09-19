@@ -431,7 +431,8 @@ table. The anime grain **sums** its watchlisted media; the media grain shows tha
 own.
 
 - The **Watchtime** chips band it as `< 5h`, `5–10h` and `> 10h` — roughly one evening, a
-  season or two, and a long haul.
+  season or two, and a long haul. The bounds are literal, so a title of exactly 5h or
+  exactly 10h answers the middle chip and neither outer one.
 - **`+` means "at least"** (`8h 40m+`): some of the anime's listed media have no runtime
   yet, so the sum is a lower bound.
 - **N/A** — nothing listed has a known runtime, which in practice is the open-ended shows.

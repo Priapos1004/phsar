@@ -40,7 +40,7 @@ BLACKLIST_REASON = "Admin curation"
 
 
 async def _ensure_pending(db: AsyncSession, uuid: UUID) -> DeleteCandidate:
-    candidate = await delete_candidate_dao.get_by_uuid(db, uuid)
+    candidate = await delete_candidate_dao.get_for_resolve(db, uuid)
     if candidate is None:
         raise DeleteCandidateNotFoundError(str(uuid))
     if candidate.status != DeleteCandidateStatus.pending:
@@ -137,7 +137,7 @@ async def delete_decision(db: AsyncSession, uuid: UUID) -> None:
     of a removal, which must not be erasable from the UI.
 
     Not username-gated — see the confirm tiers in `.claude/rules/frontend.md`."""
-    candidate = await delete_candidate_dao.get_by_uuid(db, uuid)
+    candidate = await delete_candidate_dao.get_for_resolve(db, uuid)
     if candidate is None or candidate.status != DeleteCandidateStatus.dismissed:
         raise DeleteCandidateNotFoundError(str(uuid))
     await delete_candidate_dao.delete(db, candidate)

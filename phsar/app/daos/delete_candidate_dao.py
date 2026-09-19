@@ -94,8 +94,9 @@ class DeleteCandidateDAO(MalIdDAO[DeleteCandidate]):
             ).exists())
         )
 
-    async def get_by_uuid(self, db: AsyncSession, uuid: UUID) -> DeleteCandidate | None:
-        return await self.get_by_field(db, uuid=uuid)
+    async def get_for_resolve(self, db: AsyncSession, uuid: UUID) -> DeleteCandidate | None:
+        """Row-locked — see "A candidate resolves once" in docs/features/curation.md."""
+        return await self.get_by_field(db, uuid=uuid, for_update=True)
 
     async def count_pending(self, db: AsyncSession) -> int:
         """Cheap status='pending' count for the admin bell's pinned reminder,

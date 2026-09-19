@@ -134,7 +134,7 @@ async def list_pending(db: AsyncSession) -> list[SplitCandidateListItem]:
 
 
 async def _ensure_pending(db: AsyncSession, uuid: UUID) -> SplitCandidate:
-    candidate = await split_candidate_dao.get_by_uuid(db, uuid)
+    candidate = await split_candidate_dao.get_for_resolve(db, uuid)
     if candidate is None:
         raise SplitCandidateNotFoundError(str(uuid))
     if candidate.status != SplitCandidateStatus.pending:
@@ -172,7 +172,7 @@ async def delete_decision(db: AsyncSession, uuid: UUID) -> None:
     executed split.
 
     Not username-gated — see the confirm tiers in `.claude/rules/frontend.md`."""
-    candidate = await split_candidate_dao.get_by_uuid(db, uuid)
+    candidate = await split_candidate_dao.get_for_resolve(db, uuid)
     if candidate is None or candidate.status != SplitCandidateStatus.dismissed:
         raise SplitCandidateNotFoundError(str(uuid))
     await split_candidate_dao.delete(db, candidate)

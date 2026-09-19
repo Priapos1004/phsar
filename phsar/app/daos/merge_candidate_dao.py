@@ -25,10 +25,9 @@ class MergeCandidateDAO(BaseDAO[MergeCandidate]):
     def __init__(self):
         super().__init__(MergeCandidate)
 
-    async def get_by_uuid(self, db: AsyncSession, uuid: UUID) -> MergeCandidate | None:
-        stmt = select(MergeCandidate).where(MergeCandidate.uuid == uuid)
-        result = await db.execute(stmt)
-        return result.scalars().first()
+    async def get_for_resolve(self, db: AsyncSession, uuid: UUID) -> MergeCandidate | None:
+        """Row-locked — see "A candidate resolves once" in docs/features/curation.md."""
+        return await self.get_by_field(db, uuid=uuid, for_update=True)
 
     async def count_pending(self, db: AsyncSession) -> int:
         """Cheap status='pending' count for the admin bell's pinned

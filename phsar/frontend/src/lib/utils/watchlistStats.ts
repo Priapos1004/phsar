@@ -33,10 +33,10 @@ export interface WatchlistFilterState {
 /** The three size bands a row falls into, ascending. */
 export type WatchtimeKey = 'short' | 'medium' | 'long';
 
-/** Upper bounds (exclusive) of the two lower bands; anything at or above `medium` is long.
- *  5h is one 12-episode cour at ~25 min — the point a season stops being a single evening
- *  — and 10h is two. The chip labels spell the same numbers as prose, so a test pins the
- *  two spellings together rather than a comment asking for it. */
+/** The two band boundaries, in seconds. 5h is one 12-episode cour at ~25 min — the point a
+ *  season stops being a single evening — and 10h is two. The chip labels spell the same
+ *  numbers as prose, so a test pins the two spellings together rather than a comment asking
+ *  for it. */
 export const WATCHTIME_CUTS: Record<'short' | 'medium', number> = {
 	short: 5 * 3600,
 	medium: 10 * 3600,
@@ -50,8 +50,10 @@ export const WATCHTIME_CUTS: Record<'short' | 'medium', number> = {
  *  threshold. */
 export function watchtimeBucket(seconds: number | null): WatchtimeKey | null {
 	if (seconds === null || seconds <= 0) return null;
+	// Asymmetric on purpose: "> 10h" shown on a 10-hour title is a bug, so the upper cut is
+	// inclusive where the lower one is not.
 	if (seconds < WATCHTIME_CUTS.short) return 'short';
-	if (seconds < WATCHTIME_CUTS.medium) return 'medium';
+	if (seconds <= WATCHTIME_CUTS.medium) return 'medium';
 	return 'long';
 }
 

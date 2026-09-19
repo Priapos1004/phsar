@@ -37,8 +37,8 @@ keeps current, so it is correct the instant they are.
 |---|---|---|---|
 | **aired** | `airing_status = 'Finished Airing'` | ✅ | no |
 | **airing** | `airing_status = 'Currently Airing'` | partly | **yes** |
-| **soon** | not yet aired, season at or before next season | no | **yes** |
-| **later** | not yet aired, season beyond next | no | no |
+| **soon** | not yet aired, season is next season or earlier | no | **yes** |
+| **later** | not yet aired, season is beyond next | no | no |
 | **tba** | not yet aired, no announced season | no | no |
 
 **Derived from the season, never from `aired_from`.** MAL often gives only a year for an
@@ -47,9 +47,9 @@ day-precision premiere it does not have. The season comes from MAL's own `start_
 is authoritative where the two disagree, and is present in exactly the same rows as the
 date, so consulting the date buys no coverage.
 
-**At or before next season, not exactly next.** A title still marked unaired whose
-season has already started is a scrape that has not caught up; treating it as imminent
-is the safe read.
+**An overdue season still counts as soon.** A title whose season has already started but
+is still marked unaired is a scrape that has not caught up, not a title that skipped its
+slot; treating it as imminent is the safe read.
 
 **Only main-story media can block** — an upcoming OVA, movie or recap is not a season
 you wait for. Two hand-kept twins carry the set: `MAIN_RELATIONS` on the client and

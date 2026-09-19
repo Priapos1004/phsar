@@ -25,60 +25,22 @@ from app.models.job import Job, JobKind
 
 JOB_KIND_VERSIONS: dict[JobKind, int] = {
     JobKind.user_scrape: 1,
-    # v2 bumps result_summary to a `{counters, media_changes,
-    # anime_umbrella_changes}` shape — flat aggregate counters and the
-    # bell-shaped genre/studio drift aggregates were dropped.
-    # v3 relaxes the genre/studio apply policy (additions + removals
-    # now auto-apply; unknown genre tags are still skipped but
-    # surfaced via top-level `unknown_genre_tags`). M2M drift `kind`
-    # values changed from {additions_applied, additions_unknown,
-    # removal_or_replacement, any_change} to {applied,
-    # applied_with_unknowns}.
-    # v4 adds `counters.step1_failed` + top-level `step1_failures[]`
-    # (anime skipped because step-1 refresh raised). These are net-new
-    # keys with safe defaults, so by the bump rules above they wouldn't
-    # require a bump — but we bump anyway so the frontend can tell a v4
-    # `step1_failed: 0` (genuinely zero) from a v3 row that never tracked
-    # it (rendered "—", not a misleading 0).
-    # v5 (v0.14.8) converts the sweep from anime-level to media-level
-    # refresh. Counters go media-grained: `anime_refreshed` -> media_refreshed,
-    # plus new `anime_touched` (distinct anime with >=1 media refreshed) and
-    # `media_skipped_fresh` (present-but-not-due media); the
-    # anime_with_dynamic/static_changes pair is dropped (an anime is no
-    # longer the work unit — media_with_* carries the signal). Also adds
-    # top-level `probe_failures[]` (symmetric to step1_failures[]). The
-    # rename + removals force the bump (net-new keys alone wouldn't); the
-    # frontend keeps v2/v3/v4 parsers so historical rows still render.
-    # v6 (v0.14.9) adds `counters.probe_attached_media_count` + top-level
-    # `probe_attached_anime[]` (per-anime list of media the relations probe
-    # attached: {anime_uuid, title, media: [{media_uuid, title}, ...]}).
-    # Net-new keys with safe defaults wouldn't force a bump, but — like the
-    # v4 step1_failed bump — we bump so the frontend can tell a genuinely
-    # empty v6 list from a pre-v6 row that never tracked it (the "Attached
-    # via probe" card + Jobs Log blue tint gate on version >= 6).
-    # v7 (v0.14.14) adds `counters.hentai_removed_count` + top-level
-    # `hentai_removed[]` (anime deleted mid-sweep because MAL flipped them to
-    # Hentai: {anime_uuid, title, name_eng, name_jap, mal_ids}). Net-new keys
-    # with safe defaults; bumped (like v4/v6) so the frontend renders a
-    # genuinely-empty v7 list distinctly from a pre-v7 row that never tracked it.
-    # v8 adds `counters.delete_candidates_raised` (delete candidates the sweep
-    # raised — a MAL 404 mid-sweep, plus the end-of-sweep low-signal pass) and
-    # `step1_failures[].gone_media_id` / `.gone_media_mal_id`, set only on the
-    # 404 entries so the detail page can link a failure to the candidate it
-    # raised. Net-new keys with safe defaults; bumped like v4/v6/v7 so the Jobs
-    # Log can tell a genuine zero from a pre-v8 row that never counted them —
-    # the row tint gates on version >= 8.
-    # v9 moves a MAL 404 out of the failure path entirely. It is handled in
-    # the per-media refresh loop instead of raising, so it no longer fails its
-    # anime (siblings refresh normally) and no longer appears in
-    # `step1_failures[]` — the removed `.gone_media_id` / `.gone_media_mal_id`
-    # keys are what force this bump rather than the convention v4/v6/v7/v8
-    # followed. Replaced by top-level `gone_upstream[]`: one entry per dead
-    # media, {anime_uuid, anime_title, anime_name_eng, anime_name_jap,
-    # media_uuid, media_title, media_name_eng, media_name_jap, media_mal_id,
-    # candidate_raised}. No paired counter — `counters.delete_candidates_raised`
-    # (v8) still carries what the Jobs Log tints on, and the detail card reads
-    # the list's own length.
+    # Entry shapes are typed in the frontend's `types/api.ts`.
+    #   v2  `{counters, media_changes, anime_umbrella_changes}`; flat aggregates gone
+    #   v3  top-level `unknown_genre_tags`; drift `kind` is {applied, applied_with_unknowns}
+    #   v4  `counters.step1_failed` + `step1_failures[]`
+    #   v5  counters go media-grained (`media_refreshed`, `anime_touched`,
+    #       `media_skipped_fresh`); the `anime_with_*` pair is gone; `probe_failures[]`
+    #   v6  `counters.probe_attached_media_count` + `probe_attached_anime[]`
+    #   v7  `counters.hentai_removed_count` + `hentai_removed[]`
+    #   v8  `counters.delete_candidates_raised`
+    #   v9  a MAL 404 stops failing its anime: `gone_upstream[]` replaces the
+    #       `step1_failures[].gone_media_*` keys, so siblings refresh normally
+    #
+    # A version whose only change is net-new keys bumps anyway, against the
+    # rules above, and that is the one thing worth knowing about this list: a
+    # reader must be able to tell a genuine zero or empty list from a row too
+    # old to have counted at all.
     JobKind.update_sweep: 9,
     # Both season sweeps come off ONE dispatcher and so write one shape:
     # {season_entries, new_entries_enqueued, dedup_skipped, season_year, season_name}.

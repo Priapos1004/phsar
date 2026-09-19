@@ -44,9 +44,18 @@ class BaseDAO(Generic[T]):
         result = await db.execute(select(self.model).filter_by(id=id))
         return result.scalars().first()
 
-    async def get_by_field(self, db: AsyncSession, **kwargs) -> T | None:
-        result = await db.execute(select(self.model).filter_by(**kwargs))
-        return result.scalars().first()
+    async def get_by_field(
+        self, db: AsyncSession, *, for_update: bool = False, **kwargs
+    ) -> T | None:
+        """`for_update=True` takes a row lock, for a caller about to read a
+        column, branch on it and write it back. The lock is held until that
+        caller commits, so it defaults off and only a caller whose own name
+        says it is resolving should pass it — a plain read must never
+        serialize behind one."""
+        stmt = select(self.model).filter_by(**kwargs)
+        if for_update:
+            stmt = stmt.with_for_update()
+        return (await db.execute(stmt)).scalars().first()
 
     async def create(self, db: AsyncSession, obj: T) -> T:
         db.add(obj)

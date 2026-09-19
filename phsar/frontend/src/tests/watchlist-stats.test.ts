@@ -150,9 +150,10 @@ describe('watchtimeBucket', () => {
 	it.each([
 		[1, 'short'],
 		[5 * H - 1, 'short'],
-		[5 * H, 'medium'], // a boundary belongs to the band above it
+		[5 * H, 'medium'],
 		[10 * H - 1, 'medium'],
-		[10 * H, 'long'],
+		[10 * H, 'medium'],
+		[10 * H + 1, 'long'],
 		[30 * H, 'long'],
 	])('buckets %i seconds as %s', (seconds, expected) => {
 		expect(watchtimeBucket(seconds)).toBe(expected);

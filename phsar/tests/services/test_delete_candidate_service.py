@@ -224,7 +224,7 @@ async def test_delete_decision_only_accepts_dismissed_rows(db_session):
 
     await dismiss(db_session, candidate.uuid)
     await delete_decision(db_session, candidate.uuid)
-    assert await DeleteCandidateDAO().get_by_uuid(db_session, candidate.uuid) is None
+    assert await DeleteCandidateDAO().get_by_field(db_session, uuid=candidate.uuid) is None
 
 
 async def test_dismissed_mal_id_is_not_re_raised_by_detection(db_session):
@@ -355,7 +355,7 @@ async def test_a_deleted_row_does_not_blind_detection_to_a_re_added_entry(db_ses
         db_session, candidate.uuid,
         confirm=ADMIN, username=ADMIN, blacklist=False,
     )
-    resolved = await DeleteCandidateDAO().get_by_uuid(db_session, candidate.uuid)
+    resolved = await DeleteCandidateDAO().get_by_field(db_session, uuid=candidate.uuid)
     assert resolved.status == DeleteCandidateStatus.deleted
 
     # MAL re-lists it and a scrape brings the same mal_id back on a fresh anime.

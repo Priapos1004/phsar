@@ -100,7 +100,7 @@ async def list_pending(db: AsyncSession) -> list[MergeCandidateListItem]:
 
 
 async def _ensure_pending(db: AsyncSession, uuid: UUID) -> MergeCandidate:
-    candidate = await merge_candidate_dao.get_by_uuid(db, uuid)
+    candidate = await merge_candidate_dao.get_for_resolve(db, uuid)
     if candidate is None:
         raise MergeCandidateNotFoundError(str(uuid))
     if candidate.status != MergeCandidateStatus.pending:
@@ -153,7 +153,7 @@ async def delete_decision(db: AsyncSession, uuid: UUID) -> None:
     with anime B).
 
     Not username-gated — see the confirm tiers in `.claude/rules/frontend.md`."""
-    candidate = await merge_candidate_dao.get_by_uuid(db, uuid)
+    candidate = await merge_candidate_dao.get_for_resolve(db, uuid)
     if candidate is None or candidate.status != MergeCandidateStatus.dismissed:
         raise MergeCandidateNotFoundError(str(uuid))
     await merge_candidate_dao.delete(db, candidate)
