@@ -17,8 +17,6 @@
         MergeCandidateListItem,
     } from '$lib/types/api';
 
-    let { currentUsername = '' }: { currentUsername?: string } = $props();
-
     let nameLanguage = $derived($userSettings?.name_language ?? 'english');
 
     let candidates = $state<MergeCandidateListItem[]>([]);
@@ -301,7 +299,6 @@
             kind="merge"
             listUrl="/admin/merge-candidates/dismissed"
             basePath="/admin/merge-candidates"
-            {currentUsername}
             onResurfaced={handleRedetect}
         >
             {#snippet row(item: MergeCandidateListItem)}

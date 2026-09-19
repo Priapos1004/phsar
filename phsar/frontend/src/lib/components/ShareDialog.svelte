@@ -41,9 +41,12 @@
 		 *  toggle between. Guests are simply the case that is always null. */
 		rating: ShareVariantContent | null;
 		info: ShareVariantContent;
+		/** Absolute deep link to this title, offered to the share sheet alongside the PNG.
+		 *  Built by the grain wrapper via `absoluteDetailUrl`, which argues its shape. */
+		shareUrl: string;
 	}
 
-	let { open = $bindable(), title, subtitle, noun, rating, info }: Props = $props();
+	let { open = $bindable(), title, subtitle, noun, rating, info, shareUrl }: Props = $props();
 
 	/**
 	 * Ceiling on waiting for the card to paint. Reachable on the rating card, not just a hang
@@ -235,7 +238,7 @@
 		sharing = true;
 		error = '';
 		try {
-			await shareFile(preview.file, title);
+			await shareFile(preview.file, title, shareUrl);
 		} catch {
 			// On iOS the Save button is collapsed into this one, so "save instead" would
 			// point at a button that doesn't exist there.
@@ -322,14 +325,16 @@
 			</div>
 
 			<!-- Only the how-to-save sentence is platform-specific; the privacy promise is a
-			     standing line with one home, so a reword can't land in just one branch. -->
+			     standing line with one home, so a reword can't land in just one branch. It
+			     still holds now a link travels with the picture: the link opens the app, and
+			     the app asks whoever follows it to sign in. -->
 			<p class="text-sm text-muted-foreground">
 				{#if sheetOnly}
 					Pick "Save Image" to add it to your Photos, or an app to send it straight away.
 				{:else}
 					Saved as a picture, so you can send it in any messenger.
 				{/if}
-				Nothing is published online.
+				Nothing is published online — a shared link only opens for people with an account.
 			</p>
 		</div>
 	</Dialog.Content>

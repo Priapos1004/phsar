@@ -102,6 +102,20 @@ describe('groupByAnime', () => {
 	});
 });
 
+// The uuid each grain's detail link and scroll-back anchor is keyed by, and the
+// `{#each}` key of both ratings views — a wrong one silently breaks the return
+// scroll and, at media grain, collides two rows of the same anime.
+describe('detailUuid', () => {
+	it('is the media uuid at media grain and the anime uuid at anime grain', () => {
+		const items = [
+			item({ media_uuid: 'm1', anime_uuid: 'A', rating: 8 }),
+			item({ media_uuid: 'm2', anime_uuid: 'A', rating: 6 }),
+		];
+		expect(toMediaRows(items).map((r) => r.detailUuid)).toEqual(['m1', 'm2']);
+		expect(groupByAnime(items).map((r) => r.detailUuid)).toEqual(['A']);
+	});
+});
+
 describe('toMediaRows', () => {
 	it('emits one row per media carrying media identity + the grain marker', () => {
 		const rows = toMediaRows([

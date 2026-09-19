@@ -146,9 +146,14 @@ calling `detect_merge_candidates` with an empty `new_anime_ids`, which makes tha
 call relation-link only.
 
 A `seen_pairs` pre-fetch short-circuits already-flagged and admin-resolved pairs
-before any signal is computed, so a dismissal survives re-detection everywhere.
+before any signal is computed — the pair-shaped instance of the skip-set every
+queue uses, described in [curation](curation.md).
 
 ## Executing a merge or split
+
+What a candidate's lifecycle looks like — pending, dismissal and its stickiness,
+un-dismissing — is in [curation](curation.md), alongside the delete queue that
+shares it. What is specific to these two:
 
 Each pending merge candidate carries `pending_reclassifications` — the per-media
 changes that *would* land (substance-gate demotions, alt-version labels, anchor
@@ -171,7 +176,7 @@ the results — a freshly-split franchise may match an existing parallel row.
 
 **Rating safety**: media UUIDs are stable across re-parenting, so every
 `Ratings.media_id` stays attached to the same media. Only the anime aggregation
-shifts.
+shifts. Deleting a media has no such safety — see [curation](curation.md).
 
 ---
 

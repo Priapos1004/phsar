@@ -96,7 +96,7 @@
 			];
 			return haystacks.some((h) => h?.toLowerCase().includes(q));
 		});
-		return sortMediaChanges(filtered);
+		return sortMediaChanges(filtered, nameLanguage);
 	});
 
 	const FILTER_CHIPS: { key: Filter; label: string; tooltip: string }[] = [
@@ -149,14 +149,18 @@
 				{#if job.items_total != null && job.items_done < job.items_total}
 					<Notice>
 						{#if job.version >= 5}
-							<!-- v5: media-grained progress. The gap is media skipped because
-							     their anime failed step-1 refresh; probe failures don't widen
-							     it (their media committed) — see the Failed-probe card. -->
+							<!-- v5: media-grained progress. The gap is every selected media
+							     that wasn't refreshed, and it has more than one cause — a
+							     failed step-1 refresh, a MAL 404, an anime removed mid-sweep.
+							     Each owns a card below that says whether it retries, so the
+							     notice only sizes the gap rather than naming causes it would
+							     fall behind on. Probe failures never widen it: their media
+							     committed. -->
 							<p>
 								Refreshed <strong>{job.items_done}</strong> of
 								<strong>{job.items_total}</strong> due media —
-								{job.items_total - job.items_done} skipped because their anime failed step-1 refresh.
-								See “Failed refresh” below; they retry next sweep.
+								{job.items_total - job.items_done} selected but not refreshed.
+								The cards below account for them.
 							</p>
 						{:else}
 							<p>
@@ -202,6 +206,20 @@
 						{/if}
 					</div>
 					<p class="text-xs text-muted-foreground mt-1 break-words">{failure.error_message}</p>
+					{#if failure.gone_media_mal_id}
+						<!-- Gated on the field, not the version: v9+ rows carry their
+						     404s in `gone_upstream` instead, so this never fires there
+						     without needing to know the boundary. -->
+						<a
+							href="/admin?tab=curation"
+							class="group mt-2 inline-flex items-center gap-1 text-xs font-medium text-violet-300"
+						>
+							<span aria-hidden="true">🗑</span>
+							<span class="group-hover:underline">
+								Gone from MAL — delete candidate raised. Review curation →
+							</span>
+						</a>
+					{/if}
 				</div>
 			{/snippet}
 
@@ -213,7 +231,9 @@
 						</h2>
 						<p class="text-sm text-muted-foreground">
 							Anime selected by the sweep but skipped because the MAL refresh raised.
-							They keep their old <code>last_checked_at</code> so the next sweep retries them.
+							They keep their old <code>last_checked_at</code> so the next sweep retries
+							them — except a 404, which means MAL deleted the entry: that one raises a
+							delete candidate and backs off instead of retrying nightly forever.
 						</p>
 					</Card.Header>
 					<Card.Content>
@@ -317,6 +337,66 @@
 				</Card.Root>
 			{/if}
 
+			<!-- Sits beside "Removed (Hentai)": both report a row that left the
+			     catalogue mid-sweep. Violet rather than rose, matching the Jobs Log
+			     tint for delete candidates — rose reports something already carried
+			     out, violet something still waiting on the admin. The media titles
+			     link out (unlike the Hentai card's) because nothing is deleted yet:
+			     the rows are still in the catalog for the admin to look at. -->
+			{#if v2Summary && (v2Summary.gone_upstream?.length ?? 0) > 0}
+				<Card.Root>
+					<Card.Header>
+						<h2 class="text-lg font-semibold text-card-foreground">
+							Gone from MAL ({v2Summary.gone_upstream?.length})
+						</h2>
+						<p class="text-sm text-muted-foreground">
+							These entries now 404 on MAL — deleted upstream. Each is queued for
+							review and has stopped being re-checked nightly. Nothing has been
+							deleted from the catalog.
+						</p>
+						<!-- Underline the label only: the emoji is decorative, and a struck
+						     line through it reads as a rendering glitch rather than a link. -->
+						<a
+							href="/admin?tab=curation"
+							class="group mt-2 inline-flex w-fit items-center gap-1 text-xs font-medium text-violet-300"
+						>
+							<span aria-hidden="true">🗑</span>
+							<span class="group-hover:underline">Review curation →</span>
+						</a>
+					</Card.Header>
+					<Card.Content>
+						<div class="max-h-72 space-y-2 overflow-y-auto pr-1">
+							{#each v2Summary.gone_upstream ?? [] as gone (gone.media_uuid)}
+								<div class="rounded-md border border-violet-500/40 bg-violet-500/5 p-3 text-sm">
+									<div class="flex items-center justify-between gap-3 flex-wrap">
+										<a
+											href={buildDetailHref('media', gone.media_uuid, { from: 'job', job: uuid })}
+											class="font-medium text-card-foreground hover:underline"
+										>
+											{resolveTitle(gone.media_title, gone.media_name_eng, gone.media_name_jap, nameLanguage)}
+										</a>
+										<span class="text-[10px] uppercase tracking-wider text-violet-300">
+											mal {gone.media_mal_id}
+										</span>
+									</div>
+									<p class="mt-1 text-xs text-muted-foreground">
+										<a
+											href={buildDetailHref('anime', gone.anime_uuid, { from: 'job', job: uuid })}
+											class="hover:underline"
+										>
+											{resolveTitle(gone.anime_title, gone.anime_name_eng, gone.anime_name_jap, nameLanguage)}
+										</a>
+										{#if !gone.candidate_raised}
+											· already reviewed — no new candidate
+										{/if}
+									</p>
+								</div>
+							{/each}
+						</div>
+					</Card.Content>
+				</Card.Root>
+			{/if}
+
 			<!-- Anime changes sit ABOVE Media changes: a sweep produces a handful of anime
 			     rows against 300+ media diffs, so the reverse order buries them past the
 			     point anyone scrolls.
@@ -326,15 +406,22 @@
 			     summary it had gathered, so a failed job still renders real counters and
 			     failure lists beside its error banner. A new card here follows the same
 			     rule — gate it on its own field, not on the job having succeeded. -->
-			{#if v2Summary && (v2Summary.anime_umbrella_changes?.length ?? 0) > 0}
+			{#if v2Summary?.anime_umbrella_changes?.length}
+				{@const umbrellaChanges = v2Summary.anime_umbrella_changes}
 				<Card.Root>
 					<Card.Header>
-						<h2 class="text-lg font-semibold text-card-foreground">Anime changes</h2>
+						<h2 class="text-lg font-semibold text-card-foreground">
+							Anime changes ({umbrellaChanges.length})
+						</h2>
 					</Card.Header>
-					<Card.Content class="space-y-3">
-						{#each v2Summary.anime_umbrella_changes ?? [] as change (change.anime_uuid)}
-							<AnimeUmbrellaCard {change} />
-						{/each}
+					<Card.Content>
+						<!-- Capped like the failure lists above, so umbrella diffs can't
+						     push Media changes off-screen. -->
+						<div class="max-h-72 space-y-3 overflow-y-auto pr-1">
+							{#each umbrellaChanges as change (change.anime_uuid)}
+								<AnimeUmbrellaCard {change} />
+							{/each}
+						</div>
 					</Card.Content>
 				</Card.Root>
 			{/if}

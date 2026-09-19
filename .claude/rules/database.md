@@ -38,6 +38,16 @@ without its sidecar still queries correctly.
 Inline columns stay right for fields the API legitimately exposes (`media.score`,
 `media.airing_status`) and for the `BaseModel` timestamps.
 
+## A bare calendar date is a `Date` column
+
+A value the upstream publishes with no time of day is `Date` (`media.aired_from`
+/ `aired_to`). `DateTime` has to invent a time and a zone, and the invented
+midnight then reads as real precision to every consumer downstream.
+
+Retyping one needs `USING (col AT TIME ZONE 'UTC')::date`, because a bare
+`timestamptz::date` resolves through the session `TimeZone` and shifts every
+value a day west of Greenwich.
+
 ## Indexes must be declared in the model, not only the migration
 
 An index present in a migration but absent from the model's module-scope
@@ -51,3 +61,16 @@ staleness predicate is a `coalesce` across a joined table, so it isn't sargable,
 and the `ORDER BY` sits on the nullable side of a LEFT JOIN), and it would be worse
 than inert: it would be the only indexed *mutable* column on the sidecar, turning
 every sweep write into a non-HOT update.
+
+## A migration docstring is frozen, so it may narrate
+
+It is dated and read as a record of its moment, so `workflow.md`'s present-tense
+rule does not reach it — and neither does the count rule: a row count in one is a
+snapshot of the database that revision runs against, not a fact anyone must keep
+true.
+
+Say what it did to the rows and why that could not wait for the normal path to
+converge them. Don't restate a standing value it happens to cite — a tunable's
+default, a threshold — link to the doc that owns it: the frozen copy outlives the
+rule it described and then contradicts it, and editing a landed migration is the
+only repair.

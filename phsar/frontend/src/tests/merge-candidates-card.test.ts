@@ -27,7 +27,7 @@ function makeCandidate(): MergeCandidateListItem {
 			media_count: 1,
 			studios: ['Studio Alpha'],
 			earliest_year: 2010,
-			earliest_aired_from: '2010-04-01T00:00:00Z',
+			earliest_aired_from: '2010-04-01',
 			rating_count: 0,
 		},
 		anime_b: {
@@ -38,7 +38,7 @@ function makeCandidate(): MergeCandidateListItem {
 			media_count: 2,
 			studios: ['Studio Beta'],
 			earliest_year: 2018,
-			earliest_aired_from: '2018-10-01T00:00:00Z',
+			earliest_aired_from: '2018-10-01',
 			rating_count: 0,
 		},
 		pending_reclassifications: [],

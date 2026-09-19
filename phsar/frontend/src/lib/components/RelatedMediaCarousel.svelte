@@ -21,9 +21,10 @@
 		searchToken?: string | null;
 		fromParam?: DetailOrigin | null;
 		jobUuid?: string | null;
+		focusUuid?: string | null;
 	}
 
-	let { siblings, currentPosition, searchToken = null, fromParam = null, jobUuid = null }: Props = $props();
+	let { siblings, currentPosition, searchToken = null, fromParam = null, jobUuid = null, focusUuid = null }: Props = $props();
 
 	let imgFailed = $state<Record<string, boolean>>({});
 
@@ -59,7 +60,7 @@
 	{#each siblings as sibling, i}
 		{#if i === currentPosition}{@render hereMarker()}{/if}
 		<a
-			href={buildDetailHref('media', sibling.uuid, { q: searchToken, from: fromParam, job: jobUuid })}
+			href={buildDetailHref('media', sibling.uuid, { q: searchToken, from: fromParam, job: jobUuid, focus: focusUuid })}
 			class="snap-start shrink-0 w-40 transition duration-200 transform hover:scale-[1.03]"
 		>
 			<Card.Root class="h-full {cls.cardGlass}">

@@ -1,9 +1,12 @@
 <script lang="ts">
     import { goto } from '$app/navigation';
+    import { page } from '$app/state';
     import { token } from '$lib/stores/auth';
     import { fly } from 'svelte/transition';
     import { api, ApiError } from '$lib/api';
     import type { TokenResponse } from '$lib/types/api';
+    import { describeReturn, safeReturnPath, urlWithNext } from '$lib/utils/returnTo';
+    import { landAfterAuth } from '$lib/utils/resumeSession';
     import { Button } from '$lib/components/ui/button';
     import { Input } from '$lib/components/ui/input';
     import { Label } from '$lib/components/ui/label';
@@ -14,6 +17,9 @@
     const USERNAME_MAX = 32;
     const PASSWORD_MIN = 8;
     const PASSWORD_MAX = 128;
+
+    // Carried here by the login page's Register link, which argues why.
+    let next = $derived(safeReturnPath(page.url.searchParams.get('next'), page.url.origin));
 
     let registrationToken = $state('');
     let username = $state('');
@@ -57,7 +63,9 @@
                 password,
             });
             token.set(data.access_token);
-            goto('/');
+            // A brand-new account never matches a stash owner, so landAfterAuth is
+            // also what stops it inheriting the previous user's filters.
+            goto(landAfterAuth(data.access_token, next), { replaceState: true });
         } catch (err) {
             if (err instanceof ApiError) {
                 error = err.detail;
@@ -82,6 +90,11 @@
                 <h2 class="text-2xl font-bold text-center text-card-foreground">Register</h2>
             </Card.Header>
             <Card.Content>
+                {#if next}
+                    <p class="mb-4 text-center text-sm text-muted-foreground">
+                        After registering you'll be taken to {describeReturn(next)}.
+                    </p>
+                {/if}
                 <form onsubmit={handleRegister} class="space-y-4">
                     <div class="space-y-2">
                         <Label for="registration-token">Registration Token</Label>
@@ -156,7 +169,8 @@
                     <div class="mt-4 text-center text-destructive text-sm">{error}</div>
                 {/if}
                 <p class="mt-4 text-center text-sm text-muted-foreground">
-                    Already have an account? <a href="/login" class="text-primary hover:underline">Login</a>
+                    Already have an account?
+                    <a href={urlWithNext('/login', next)} class="text-primary hover:underline">Login</a>
                 </p>
             </Card.Content>
         </Card.Root>

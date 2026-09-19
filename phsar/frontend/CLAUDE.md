@@ -34,14 +34,14 @@ that carry an area's reasoning; it is not an inventory of the tree.
 | Charts | `EChart.svelte` — the wrapper, and where the measurement and animation constraints are written down. Then `echarts.ts`, `$lib/utils/chartTheme.ts`, and `ratings/` for the charts themselves |
 | Share card | `ShareDialog.svelte` (the capture), `ShareCard.svelte` (the layout budget, and which CSS the rasterizer reproduces), `$lib/utils/shareContent.ts` (what a card may and may not say), `$lib/utils/shareImage.ts` |
 | Rating form | `RatingCard.svelte` (the watch-state guards), `ScoreDial`, `AttributeSelect`, `RatingNeighbors`, `BulkRateDialog` |
-| Attribute viz | `AttributeRadar` and `AttributeBadges` — the share card renders both unchanged, so each carries one prop that exists only for that. `AttributeDetailBars` is page-only |
+| Attribute viz | `AttributeRadar` and `AttributeBadges` — the share card renders both unchanged, so each carries a prop existing only for that. `AttributeBadges` takes `media` on top. All three read `$lib/utils/ratingAttributes`, which owns the aggregation rules and the shared counting. `AttributeDetailBars` is page-only |
 | Watchlist | `WatchlistBookmarkIcon` (the mask gradient), `WatchlistDialog`, `BulkWatchlistDialog`, and `watchlist/` for the page's own tabs |
-| Admin | `admin/`, plus `BackupsCard`, `MergeCandidatesCard`, `SplitCandidatesCard`. The job-detail page argues its own case in `src/routes/admin/jobs/[uuid]/+page.svelte` |
+| Admin | `admin/`, plus `BackupsCard`, `MergeCandidatesCard`, `SplitCandidatesCard`, `DeleteCandidatesCard`. The job-detail page argues its own case in `src/routes/admin/jobs/[uuid]/+page.svelte` |
 | Session + status | `SessionTimeoutBanner` with `$lib/utils/sessionTimeout.ts`, `MaintenanceBanner`, `JobBell`, `Toast`/`ToastHost` |
 | Search | `SearchBar.svelte`, and `src/routes/search/+page.svelte` for which filters survive an anime↔media switch |
 
 Several of these render a verdict the backend owns — restorability, cycle membership,
-merge and split candidates, sibling order — and must not recompute it; the relevant
+merge, split and delete candidates, sibling order — and must not recompute it; the relevant
 [feature doc](../../docs/features/) carries the contract. The trap in that group is
 `admin/SweepTiersCard.svelte`, which argues at its bucket list why its tiers are not
 the similarly-named ones in [jobs](../../docs/features/jobs.md).
@@ -55,13 +55,14 @@ deliberate absence of a global 401 handler, both argued at the throw site.
 | Area | Start here |
 |---|---|
 | Stores | `stores/` — each file's header carries its own lifecycle. The two that catch people: `ratingScores.ts` is a real cache, so every rating write has to invalidate it, and `filterOptions.ts` is catalogue-global and deliberately survives a logout |
-| Filter persistence | `stores/persistedFilter.ts` — the factory, its version envelope, and the reset registry — under every section's filter store. `utils/filterLifecycle.ts` decides *when* a section resets |
+| Filter persistence | `stores/persistedFilter.ts` — the factory, its version envelope, and the reset/snapshot/restore registry — under every section's filter store. `utils/filterLifecycle.ts` decides *when* a section resets; [navigation](../../docs/features/navigation.md) covers the rule |
 | Per-user cleanup | `clearPerUserStores` in `routes/+layout.svelte`; anything keyed to *which* user belongs in it |
 | Formatting | `utils/formatString.ts`, where the score rounding and step-awareness rules live |
-| Ratings + watchlist maths | `utils/ratingStats.ts`, `utils/watchlistStats.ts` — pure, unit-tested, and the reason there is no per-user stats endpoint |
+| Ratings + watchlist maths | `utils/ratingStats.ts`, `utils/watchlistStats.ts` — pure, unit-tested, and the reason there is no per-user stats endpoint. `buildWatchlistView` is the list tab's filter→verdict→rows pipeline; its header states why the order is load-bearing |
 | Charts | `utils/chartTheme.ts`, `utils/chartColors.ts`, `echarts.ts` |
 | Share | `utils/shareContent.ts`, `utils/shareImage.ts` |
-| Navigation | `utils/navigation.ts` — `buildDetailHref` and the closed `DetailOrigin` set |
+| Navigation | `utils/navigation.ts` — `buildDetailHref` and the closed `DetailOrigin` set; `utils/scrollFocus.ts` for the `?focus=` scroll anchor. How the carriers fit together is [navigation](../../docs/features/navigation.md) |
+| Returning after a login | `utils/returnTo.ts` (the `?next=` param and its validation) and `utils/resumeSession.ts` (the `phsar.resume` filter stash). Mind the import graph — `resumeSession`'s header states the cycle it must not close, and the root layout carries the side-effect import that avoids it. Why the two are split: [navigation](../../docs/features/navigation.md) |
 | Theme | `themes.ts` with `app.css` |
 
 ## The rest of the tree

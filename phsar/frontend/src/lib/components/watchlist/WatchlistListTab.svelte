@@ -3,7 +3,7 @@
 	import WatchlistPriorityGrid from './WatchlistPriorityGrid.svelte';
 	import WatchlistTable from './WatchlistTable.svelte';
 	import { watchlistFilter } from '$lib/stores/watchlistFilter';
-	import { filterByPriority, filterByTags, sortRows, toAnimeRows, toMediaRows, type WatchlistSortKey } from '$lib/utils/watchlistStats';
+	import { buildWatchlistView, type WatchlistSortKey } from '$lib/utils/watchlistStats';
 	import type { WatchlistItem } from '$lib/types/api';
 
 	interface Props {
@@ -13,19 +13,14 @@
 
 	let { items, nameLanguage }: Props = $props();
 
-	// Filter (union of selected lists) first, normalize to rows at the chosen grain,
-	// then filter by the selected priority bands (on the row's displayed priority — for
-	// the anime grain that's the anime's most-urgent media priority).
-	let filtered = $derived(filterByTags(items, $watchlistFilter.tagUuids));
-	let rows = $derived(
-		filterByPriority(
-			$watchlistFilter.grain === 'anime'
-				? toAnimeRows(filtered, nameLanguage)
-				: toMediaRows(filtered, nameLanguage),
-			$watchlistFilter.priorities,
-		),
-	);
-	let tableRows = $derived(sortRows(rows, $watchlistFilter.sort, $watchlistFilter.sortDir));
+	// One clock for the whole page, captured at mount: the verdict and the media-grain
+	// narrowing must agree on what "next season" is, and two `new Date()` calls in one
+	// render pass could straddle a boundary. A season boundary crossed mid-session
+	// therefore waits for the next load, which is the right trade against a timer nobody
+	// would ever see fire.
+	const now = new Date();
+
+	let view = $derived(buildWatchlistView(items, $watchlistFilter, nameLanguage, now));
 
 	// date + note lead with the "most" (newest / most-noted) on first click; the rest ascend.
 	const defaultDir = (key: WatchlistSortKey): 'asc' | 'desc' => (key === 'date' || key === 'note' ? 'desc' : 'asc');
@@ -40,10 +35,10 @@
 
 <WatchlistFilterBar />
 
-{#if rows.length === 0}
+{#if view.rows.length === 0}
 	<div class="py-12 text-center text-white/50">No watchlist entries match these filters.</div>
 {:else if $watchlistFilter.view === 'table'}
-	<WatchlistTable rows={tableRows} sort={$watchlistFilter.sort} sortDir={$watchlistFilter.sortDir} {onSort} />
+	<WatchlistTable rows={view.tableRows} sort={$watchlistFilter.sort} sortDir={$watchlistFilter.sortDir} {onSort} />
 {:else}
-	<WatchlistPriorityGrid {rows} grain={$watchlistFilter.grain} />
+	<WatchlistPriorityGrid rows={view.rows} grain={$watchlistFilter.grain} />
 {/if}

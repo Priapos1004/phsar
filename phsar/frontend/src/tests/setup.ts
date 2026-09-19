@@ -31,6 +31,7 @@ vi.mock('$app/navigation', () => ({
 	beforeNavigate: vi.fn(),
 	afterNavigate: vi.fn(),
 	onNavigate: vi.fn(),
+	replaceState: vi.fn(),
 }));
 
 // Mock $app/environment

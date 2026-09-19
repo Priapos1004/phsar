@@ -1,12 +1,14 @@
 <script lang="ts">
 	import { onMount, getContext } from 'svelte';
 	import { page } from '$app/state';
+	import { consumeFocus, revealFocused } from '$lib/utils/scrollFocus';
 	import { api, ApiError } from '$lib/api';
 	import { ensureRatingScores } from '$lib/stores/ratingScores';
 	import { userSettings } from '$lib/stores/userSettings';
 	import type { WatchlistItem, RatingScoreItem } from '$lib/types/api';
 	import type { WatchlistTabKey } from '$lib/stores/watchlistFilter';
 	import { watchlistSummary, type WatchlistSummary } from '$lib/utils/watchlistStats';
+	import { loginUrlReturningTo } from '$lib/utils/returnTo';
 	import TabNav from '$lib/components/TabNav.svelte';
 	import WatchlistListTab from '$lib/components/watchlist/WatchlistListTab.svelte';
 	import WatchlistTagsTab from '$lib/components/watchlist/WatchlistTagsTab.svelte';
@@ -62,6 +64,15 @@
 	});
 
 	let isEmpty = $derived(items !== null && items.length === 0);
+
+	// Centre the row a back link came from — the ratings page's twin, for the reasons
+	// stated there.
+	let revealed = false;
+	$effect(() => {
+		if (revealed || loading || !items) return;
+		revealed = true;
+		revealFocused(consumeFocus(page.url));
+	});
 
 	// Statistics data is hoisted to the page (not the stats tab) so switching grid <-> stats
 	// doesn't refetch /ratings/scores or recompute the summary. Fetched lazily the first time
@@ -132,7 +143,8 @@
 			{:else if unauthenticated}
 				<div class="py-12 text-center space-y-3">
 					<p class="text-white/70">Sign in to see your watchlist.</p>
-					<Button href="/login">Sign in</Button>
+					<!-- Route only, for the reason given at the ratings page's twin. -->
+					<Button href={loginUrlReturningTo(page.url)}>Sign in</Button>
 				</div>
 			{:else if error}
 				<Notice>{error} <button class="underline" onclick={load}>Try again</button></Notice>

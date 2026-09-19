@@ -25,6 +25,10 @@ export interface AnimeRatingRow {
 	 * then links to the media detail page and keys on this. Absent in the anime
 	 * grain (one aggregated row per anime). */
 	media_uuid?: string;
+	/** The uuid this row's detail page is keyed by — `media_uuid` at media grain,
+	 *  `anime_uuid` at anime grain. Stated once here rather than re-derived at each
+	 *  card, row and `{#each}` key; mirrors `WatchlistRow.detailUuid`. */
+	detailUuid: string;
 	title: string;
 	name_eng: string | null;
 	name_jap: string | null;
@@ -104,6 +108,7 @@ export function groupByAnime(items: RatingScoreItem[]): AnimeRatingRow[] {
 		const first = members[0];
 		rows.push({
 			anime_uuid,
+			detailUuid: anime_uuid,
 			title: first.anime_title,
 			name_eng: first.anime_name_eng,
 			name_jap: first.anime_name_jap,
@@ -136,6 +141,7 @@ export function toMediaRows(items: RatingScoreItem[]): AnimeRatingRow[] {
 		return {
 			anime_uuid: m.anime_uuid,
 			media_uuid: m.media_uuid,
+			detailUuid: m.media_uuid,
 			title: m.media_title,
 			name_eng: m.media_name_eng,
 			name_jap: m.media_name_jap,

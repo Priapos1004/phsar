@@ -11,6 +11,7 @@
 	import * as cls from '$lib/styles/classes';
 	import MediaInfo from '$lib/components/MediaInfo.svelte';
 	import SkeletonCard from '$lib/components/SkeletonMediaInfo.svelte';
+	import { consumeFocus, pageCovering, revealFocused } from '$lib/utils/scrollFocus';
 
 	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
 
@@ -27,22 +28,27 @@
 	let decodedParams: Partial<MediaSearchFilters> = $state({});
 	let searchToken = $derived(page.url.searchParams.get('q'));
 
-	let visibleCount = $state(20);
+	/** One "Show More" step, and the initial cut. */
+	const PAGE_STEP = 20;
+
+	let visibleCount = $state(PAGE_STEP);
 	let loadRequestId = 0;
 
 	let currentResults = $derived(viewType === 'anime' ? animeResults : mediaResults);
 
 	function showMore() {
-		visibleCount = Math.min(visibleCount + 20, currentResults.length);
+		visibleCount = Math.min(visibleCount + PAGE_STEP, currentResults.length);
 	}
 
+	// Reads the `searchToken` derived above, never `page.url` directly. A derived only
+	// notifies when its VALUE changes, so stripping `?focus=` after a return re-derives
+	// the same token and this does not fire — reloading there would refetch and collapse
+	// the expansion the return had just restored.
 	$effect(() => {
-		const tokenParam = page.url.searchParams.get('q');
+		hasToken = !!searchToken;
 
-		hasToken = !!tokenParam;
-
-		if (tokenParam) {
-			loadSearchParamsFromToken(tokenParam);
+		if (searchToken) {
+			loadSearchParamsFromToken(searchToken);
 		} else {
 			// No search token → browse: run an empty (no query, no filters) search in the default
 			// view so the page shows ranked results instead of a blank state. Reading defaultView
@@ -100,12 +106,31 @@
 				if (requestId !== undefined && requestId !== loadRequestId) return;
 				mediaResults = results;
 			}
-			visibleCount = 20;
+			visibleCount = PAGE_STEP;
 		} catch (err) {
 			if (requestId !== undefined && requestId !== loadRequestId) return;
 			error = err instanceof Error ? err.message : 'An unexpected error occurred';
 		}
 	}
+
+	// Restore the card a back link came from: expand past the "Show More" cut far
+	// enough to render it, then centre it. The whole result set arrives in one request
+	// and is sliced client-side, so this is an integer, not another fetch.
+	//
+	// Gated on results rather than on the load resolving, because the skeleton grid
+	// renders ABOVE the results for as long as `isLoading` holds — centring while it
+	// is still there scrolls to a position its removal then shifts.
+	let revealed = false;
+	$effect(() => {
+		if (revealed || isLoading || !currentResults.length) return;
+		revealed = true;
+		const uuid = consumeFocus(page.url);
+		if (!uuid) return;
+		const index = currentResults.findIndex((r) => r.uuid === uuid);
+		if (index < 0) return;
+		visibleCount = pageCovering(index, PAGE_STEP, visibleCount);
+		revealFocused(uuid);
+	});
 
 	function handleSearch(params: MediaSearchFilters) {
 		navigateToSearch({ ...params, view_type: viewType });
@@ -124,7 +149,7 @@
 		mediaResults = [];
 		animeResults = [];
 		error = '';
-		visibleCount = 20;
+		visibleCount = PAGE_STEP;
 		// Partial clear: carry the directly-applicable filters (query + categorical lists +
 		// score) through the new token and drop the rest, so toggling level keeps your broad
 		// filtering without dragging over view-specific ranges that don't translate.

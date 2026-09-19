@@ -3,6 +3,8 @@ import { get } from 'svelte/store';
 import { token } from '$lib/stores/auth';
 import { bumpMaintenanceRefresh } from '$lib/stores/maintenance';
 import { triggerBlobDownload } from '$lib/utils/download';
+import { isAuthPage } from '$lib/utils/returnTo';
+import { captureReturnTarget } from '$lib/utils/resumeSession';
 
 class ApiError extends Error {
 	status: number;
@@ -43,6 +45,13 @@ async function handleResponse<T>(res: Response): Promise<T> {
 		}
 		if (maintenance) {
 			// Backend is gated during a maintenance window (sweep or restore).
+			// The window is short, so where the user was is worth carrying through
+			// the forced sign-out — captured before token.set(null), as that helper
+			// requires.
+			const returnTo =
+				typeof window !== 'undefined' && !isAuthPage(window.location.pathname)
+					? captureReturnTarget(new URL(window.location.href))
+					: null;
 			// Bump the banner store so it refetches /maintenance/status in
 			// ms instead of waiting out the banner's poll interval — needed for
 			// the case where the user is already token-less (login submit),
@@ -50,9 +59,7 @@ async function handleResponse<T>(res: Response): Promise<T> {
 			// fire its subscriber.
 			token.set(null);
 			bumpMaintenanceRefresh();
-			if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-				window.location.href = '/login';
-			}
+			if (returnTo) window.location.href = returnTo;
 		}
 		// A plain 401 deliberately gets no global handler — it just throws for the
 		// caller to deal with. Redirecting here would break the idle-timeout flow:

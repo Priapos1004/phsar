@@ -14,7 +14,7 @@ the exact payload it wants without rebuilding a full MAL response.
 
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 import pytest
@@ -24,9 +24,10 @@ from sqlalchemy.orm import selectinload
 from app.core.config import settings
 from app.core.db import async_session_maker
 from app.daos.anime_dao import AnimeDAO
-from app.exceptions import TransientUpstreamError
+from app.exceptions import MalIdNotFoundError, TransientUpstreamError
 from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
+from app.models.delete_candidate import DeleteCandidate, DeleteCandidateStatus
 from app.models.genre import Genre, GenreType
 from app.models.media import Media, MediaType, SeasonType
 from app.models.media_freshness import MediaFreshness
@@ -65,6 +66,7 @@ class _FakeScraper:
         search_title_error_for_seed: int | None = None,
         error_for_all: BaseException | None = None,
         error_504_for_mal_ids: set[int] | None = None,
+        error_404_for_mal_ids: set[int] | None = None,
     ):
         self._payloads = payloads_by_mal_id
         self._error_for = error_for_mal_id
@@ -77,6 +79,10 @@ class _FakeScraper:
         # can assert the breaker still carries the gathered stats. The 504
         # shape is what classify_error tags `upstream_outage` (breaker-tripping).
         self._error_504_for = error_504_for_mal_ids or set()
+        # Media MAL has deleted. Unlike the 504 set this is permanent, so
+        # the sweep raises a delete candidate and backs the row off instead
+        # of retrying it every night.
+        self._error_404_for = error_404_for_mal_ids or set()
         self.refresh_calls: list[int] = []
         self._search_title_returns = search_title_returns or {}
         self._search_title_error_for_seed = search_title_error_for_seed
@@ -94,6 +100,8 @@ class _FakeScraper:
             raise self._error_for_all
         if mal_id in self._error_504_for:
             raise _http_504()
+        if mal_id in self._error_404_for:
+            raise _http_404()
         if self._error_for is not None and mal_id == self._error_for:
             raise RuntimeError(f"simulated MAL failure for {mal_id}")
         return self._payloads[mal_id]
@@ -117,6 +125,13 @@ class _FakeScraper:
             and seed_mal_id == self._search_title_error_for_seed
         ):
             raise RuntimeError(f"simulated MAL outage during BFS for seed {seed_mal_id}")
+        if seed_mal_id in self._error_404_for:
+            # What the real seed fetch raises for a deleted id: `search_title`
+            # passes `seed_mal_id`, so MAL's 404 comes back from the exact-id
+            # path as MalIdNotFoundError — NOT the AnimeNotFoundError a fuzzy
+            # `q=` miss raises. The two are siblings, so the probe's seed
+            # handler has to name both.
+            raise MalIdNotFoundError(seed_mal_id)
         return self._search_title_returns.get(seed_mal_id, ([], {}, set()))
 
 
@@ -125,7 +140,10 @@ def _payload(
     scored_by: int = 1000,
     episodes: int | None = 12,
     airing_status: str = "Finished Airing",
-    aired_to: str | None = "2020-06-30T00:00:00+00:00",
+    aired_to: str | None = "2020-06-30",
+    # Defaults off: the media fixtures below are undated, so a real value here
+    # would make the self-heal fire and add an entry to every sink assertion.
+    aired_from: str | None = None,
 ) -> dict:
     return {
         "score": score,
@@ -133,6 +151,7 @@ def _payload(
         "episodes": episodes,
         "airing_status": airing_status,
         "aired_to": aired_to,
+        "aired_from": aired_from,
     }
 
 
@@ -142,11 +161,19 @@ def _payload(
 
 
 def test_diff_no_change_returns_false():
+    """Asserting the sink is EMPTY, not just that `changed` is False: the
+    `aired_from` heal deliberately never flips `changed`, so a parser returning
+    the wrong type would rewrite the column and flood result_summary on every
+    sweep with this test still green."""
     media = Media(**media_kwargs(anime_id=1, mal_id=1, score=7.5, scored_by=1000, episodes=12,
         airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_from=date(2020, 4, 1),
+        aired_to=date(2020, 6, 30),
     ))
-    assert _apply_media_diff(media, _payload()) is False
+    sink: list[dict] = []
+
+    assert _apply_media_diff(media, _payload(aired_from="2020-04-01"), diff_sink=sink) is False
+    assert sink == []
 
 
 def test_diff_sink_captures_dynamic_field_changes():
@@ -156,7 +183,7 @@ def test_diff_sink_captures_dynamic_field_changes():
     media = Media(**media_kwargs(
         anime_id=1, mal_id=1, score=7.5, scored_by=1000, episodes=12,
         airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     ))
     sink: list[dict] = []
     _apply_media_diff(
@@ -170,23 +197,22 @@ def test_diff_sink_captures_dynamic_field_changes():
     assert captured["episodes"] == (12, 13)
 
 
-def test_diff_sink_serializes_datetime_to_iso_string():
-    """aired_to is a datetime — JSONB serialization via json.dumps would
-    crash if we stuffed the raw object into result_summary. Regression
-    guard for the datetime-in-diff-sink serialization blocker."""
+def test_diff_sink_serializes_date_to_iso_string():
+    """aired_to is a date — JSONB serialization via json.dumps would
+    crash if we stuffed the raw object into result_summary."""
     media = Media(**media_kwargs(
         anime_id=1, mal_id=1, score=7.5, scored_by=1000, episodes=12,
         airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     ))
     sink: list[dict] = []
     _apply_media_diff(
         media,
-        _payload(aired_to="2021-06-30T00:00:00+00:00"),
+        _payload(aired_to="2021-06-30"),
         diff_sink=sink,
     )
     captured = {e["field"]: (e["old"], e["new"]) for e in sink}
-    assert captured["aired_to"] == ("2020-06-30T00:00:00+00:00", "2021-06-30T00:00:00+00:00")
+    assert captured["aired_to"] == ("2020-06-30", "2021-06-30")
     # The whole sink must json-serialize cleanly — same call json.dumps
     # makes inside SQLAlchemy's JSONB serializer.
     json.dumps(sink)
@@ -205,7 +231,7 @@ def test_diff_sink_skipped_when_none():
 def test_diff_score_change_returns_true():
     media = Media(**media_kwargs(anime_id=1, mal_id=1, score=7.5, scored_by=1000, episodes=12,
         airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     ))
     assert _apply_media_diff(media, _payload(score=8.0)) is True
     assert media.score == 8.0
@@ -227,9 +253,9 @@ def test_diff_small_vote_drift_below_threshold_returns_false():
     delta is essentially zero — must not reset the stability counter."""
     media = Media(**media_kwargs(anime_id=1, mal_id=1, score=8.5, scored_by=5_000_000, episodes=12,
         airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     ))
-    payload = _payload(score=8.5, scored_by=5_000_001, episodes=12, aired_to="2020-06-30T00:00:00+00:00")
+    payload = _payload(score=8.5, scored_by=5_000_001, episodes=12, aired_to="2020-06-30")
     assert _apply_media_diff(media, payload) is False
     # But the value is still written through — data freshness.
     assert media.scored_by == 5_000_001
@@ -239,7 +265,7 @@ def test_diff_borderline_score_change_below_threshold_returns_false():
     """+0.005 score on 1k votes — weighted delta ~0.015, below 0.05."""
     media = Media(**media_kwargs(anime_id=1, mal_id=1, score=7.500, scored_by=1000, episodes=12,
         airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     ))
     payload = _payload(score=7.505, scored_by=1000)
     assert _apply_media_diff(media, payload) is False
@@ -264,7 +290,7 @@ def test_diff_refuses_to_clobber_airing_status_with_none():
     defensive) must not blow up the row."""
     media = Media(**media_kwargs(anime_id=1, mal_id=1, score=7.5, scored_by=1000, episodes=12,
         airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     ))
     payload = _payload()
     payload["airing_status"] = None
@@ -278,7 +304,7 @@ def test_diff_refuses_to_clobber_score_with_omitted_field():
     means MAL omitted the field — refuse to overwrite a populated count."""
     media = Media(**media_kwargs(anime_id=1, mal_id=1, score=8.5, scored_by=5_000_000, episodes=12,
         airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     ))
     payload = _payload(score=None, scored_by=0)
     assert _apply_media_diff(media, payload) is False
@@ -292,10 +318,10 @@ def test_diff_refuses_to_clobber_aired_to_with_none():
     the same None-guard every sibling volatile field carries."""
     media = Media(**media_kwargs(anime_id=1, mal_id=1, score=7.5, scored_by=1000, episodes=12,
         airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     ))
     assert _apply_media_diff(media, _payload(aired_to=None)) is False
-    assert media.aired_to == datetime(2020, 6, 30, tzinfo=timezone.utc)
+    assert media.aired_to == date(2020, 6, 30)
 
 
 # ---------------------------------------------------------------------------
@@ -800,7 +826,7 @@ async def test_refresh_increments_counter_when_unchanged(db_session):
         freshness=AnimeFreshness(last_checked_at=datetime.now(timezone.utc) - timedelta(days=1), stable_check_count=5),
         media_freshness=MediaFreshness(last_checked_at=datetime.now(timezone.utc) - timedelta(days=1)),
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     )
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper({media_mal_id: _payload()})
@@ -821,7 +847,7 @@ async def test_refresh_resets_counter_on_score_change(db_session):
         freshness=AnimeFreshness(last_checked_at=datetime.now(timezone.utc) - timedelta(days=1), stable_check_count=7),
         media_freshness=MediaFreshness(last_checked_at=datetime.now(timezone.utc) - timedelta(days=1)),
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     )
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper({media_mal_id: _payload(score=8.0)})
@@ -866,7 +892,7 @@ async def test_refresh_bumps_last_checked_even_when_unchanged(db_session):
         freshness=AnimeFreshness(last_checked_at=old_anime_ts, stable_check_count=10),
         media_freshness=MediaFreshness(last_checked_at=old_media_ts),
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     )
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper({media_mal_id: _payload()})
@@ -891,7 +917,7 @@ async def test_refresh_rewrites_relation_edges_from_full_payload(db_session):
         freshness=AnimeFreshness(last_checked_at=datetime.now(timezone.utc) - timedelta(days=1)),
         media_freshness=MediaFreshness(last_checked_at=datetime.now(timezone.utc) - timedelta(days=1)),
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     )
     # Seed an existing sidecar with one stale edge; the detail payload
     # returns two anime relations, so the rewrite should replace this.
@@ -930,7 +956,7 @@ async def test_refresh_creates_missing_sidecars_defensively(db_session):
         db_session, mal_id_a=-9005, mal_id_m=-9105,
         freshness=None, media_freshness=None,
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     )
     assert anime.freshness is None
     assert anime.media[0].freshness is None
@@ -958,7 +984,7 @@ async def test_refresh_hentai_genre_removes_anime_and_blacklists(db_session):
     anime = await _build_anime_with_one_media(
         db_session, mal_id_a=-9310, mal_id_m=-9410,
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     )
     media_mal_id = anime.media[0].mal_id
     anime_uuid = str(anime.uuid)
@@ -991,7 +1017,7 @@ async def test_refresh_hentai_rx_rating_without_genre_tag_removes(db_session):
     anime = await _build_anime_with_one_media(
         db_session, mal_id_a=-9311, mal_id_m=-9411,
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     )
     media_mal_id = anime.media[0].mal_id
     scraper = _FakeScraper(
@@ -1021,7 +1047,7 @@ async def test_refresh_non_hentai_is_not_removed(db_session):
             last_checked_at=datetime.now(timezone.utc) - timedelta(days=1),
         ),
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     )
     anime_id = anime.id
     media_mal_id = anime.media[0].mal_id
@@ -1045,7 +1071,7 @@ async def test_refresh_advances_per_media_stability_counter(db_session):
             stable_check_count=4,
         ),
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     )
     media_mal_id = anime.media[0].mal_id
 
@@ -1089,7 +1115,7 @@ async def test_refresh_only_touches_due_media(db_session):
             stable_check_count=8,
         ),
         score=7.5, scored_by=1000, episodes=12, airing_status="Finished Airing",
-        aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+        aired_to=date(2020, 6, 30),
     )
     # Add a stable sibling NOT in the due set. It stays out of the
     # eager-loaded anime.media collection (added after the build query), so
@@ -1130,7 +1156,7 @@ async def test_refresh_only_touches_due_media(db_session):
 async def _seed_anime(
     db_session, *, mal_id: int, last_checked_at: datetime | None,
     stable_check_count: int = 5, airing_status: str = "Finished Airing",
-    aired_from: datetime | None = None, relation_type=None,
+    aired_from: date | None = None, relation_type=None,
 ):
     """Insert anime + one media + a media_freshness row. Defaults avoid
     every tier (stable=5 so not stabilizing, last_checked=recent, finished,
@@ -1186,6 +1212,59 @@ async def test_tier_currently_airing_always_selected(db_session):
 
 
 @pytest.mark.asyncio
+async def test_a_pending_delete_candidate_drops_a_media_off_the_airing_tier(db_session):
+    """The airing tier carries no staleness term, so neither the 404 timestamp nor
+    the stability counter can back a dead entry off it — a media MAL already 404'd
+    would be re-selected, and re-404'd, every night. Seeded as Currently Airing
+    precisely because that is the tier no clock reaches; a Finished Airing row would
+    pass this under a plain staleness fix and prove nothing.
+
+    Two boundaries, and each is a separate decision:
+      - only tier 1 is gated, so the media drops to the 90-day window rather than
+        out of the sweep, and a restored entry is still noticed;
+      - only `pending` gates, so dismissing — which rules on deletion, not on
+        scheduling — hands it straight back to the nightly tier.
+    """
+    from app.models.delete_candidate import DeleteCandidate, DeleteCandidateStatus
+
+    a = await _seed_anime(
+        db_session, mal_id=-7101,
+        last_checked_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        stable_check_count=10, airing_status="Currently Airing",
+    )
+    assert a.id in await _select_due_ids(db_session), "airing media start out due"
+
+    media = (await db_session.execute(
+        select(Media).where(Media.anime_id == a.id)
+    )).scalars().one()
+    candidate = DeleteCandidate(
+        media_id=media.id, mal_id=media.mal_id, title=media.title,
+        detected_by="sweep_404", status=DeleteCandidateStatus.pending,
+    )
+    db_session.add(candidate)
+    await db_session.flush()
+    assert a.id not in await _select_due_ids(db_session)
+
+    # Still reachable by staleness: the back-off is nightly -> 90 days, not removal.
+    freshness = (await db_session.execute(
+        select(MediaFreshness).where(MediaFreshness.media_id == media.id)
+    )).scalars().one()
+    freshness.last_checked_at = datetime.now(timezone.utc) - timedelta(days=120)
+    await db_session.flush()
+    assert a.id in await _select_due_ids(db_session), (
+        "the long-tail tier must still reach it, or a restored entry never self-heals"
+    )
+
+    # And a ruling of "keep it" returns it to tier 1 even while fresh.
+    freshness.last_checked_at = datetime.now(timezone.utc) - timedelta(hours=1)
+    candidate.status = DeleteCandidateStatus.dismissed
+    await db_session.flush()
+    assert a.id in await _select_due_ids(db_session), (
+        "dismissing rules on deletion, not on scheduling"
+    )
+
+
+@pytest.mark.asyncio
 async def test_tier_stable_under_threshold_selected(db_session):
     """Media-level stabilize threshold is 3: stable_check_count < 3 is
     selected, == 3 is not."""
@@ -1209,7 +1288,7 @@ async def test_tier_recent_main_weekly_selected(db_session):
         db_session, mal_id=-7004, stable_check_count=10,
         last_checked_at=datetime.now(timezone.utc) - timedelta(days=8),
         relation_type=RelationType.Main,
-        aired_from=datetime.now(timezone.utc) - timedelta(days=730),  # 2y ago
+        aired_from=date.today() - timedelta(days=730),  # 2y ago
     )
     assert recent_main.id in await _select_due_ids(db_session)
 
@@ -1224,7 +1303,7 @@ async def test_tier_old_main_excluded_from_weekly(db_session):
         db_session, mal_id=-7005, stable_check_count=10,
         last_checked_at=datetime.now(timezone.utc) - timedelta(days=8),
         relation_type=RelationType.Main,
-        aired_from=datetime.now(timezone.utc) - timedelta(days=365 * 7),
+        aired_from=date.today() - timedelta(days=365 * 7),
     )
     assert old_main.id not in await _select_due_ids(db_session)
 
@@ -1236,7 +1315,7 @@ async def test_tier_long_tail_selected(db_session):
     tier) is not. Dated 2y back so both sit in the 90-day cohort — the undated
     and archival cohorts have their own tests."""
     now = datetime.now(timezone.utc)
-    two_years = now - timedelta(days=730)
+    two_years = date.today() - timedelta(days=730)
     due = await _seed_anime(
         db_session, mal_id=-7006, stable_check_count=10,
         last_checked_at=now - timedelta(days=100), aired_from=two_years,
@@ -1256,7 +1335,7 @@ async def test_tier_archival_waits_for_the_180_day_net(db_session):
     against the 180-day window, not the 90-day one — so a 100d-stale archival
     row is NOT due while a 200d-stale one is."""
     now = datetime.now(timezone.utc)
-    twelve_years = now - timedelta(days=365 * 12)
+    twelve_years = date.today() - timedelta(days=365 * 12)
     not_yet = await _seed_anime(
         db_session, mal_id=-7020, stable_check_count=10,
         last_checked_at=now - timedelta(days=100), aired_from=twelve_years,
@@ -1329,6 +1408,7 @@ async def test_count_by_sweep_tier_priority_buckets_each_anime_once(db_session):
     """
     from app.models.media import RelationType
     now = datetime.now(timezone.utc)
+    today = date.today()
     baseline = await AnimeDAO().count_by_sweep_tier_priority(db_session)
 
     await _seed_anime(  # airing wins over stable<3 -> airing_now
@@ -1342,13 +1422,13 @@ async def test_count_by_sweep_tier_priority_buckets_each_anime_once(db_session):
         db_session, mal_id=-7103, stable_check_count=10,
         last_checked_at=now - timedelta(days=8),
         relation_type=RelationType.Main,
-        aired_from=now - timedelta(days=365),
+        aired_from=today - timedelta(days=365),
     )
     await _seed_anime(  # recent main, RECENTLY SWEPT (1h) -> weekly_cycle
         db_session, mal_id=-7104, stable_check_count=10,
         last_checked_at=now - timedelta(hours=1),
         relation_type=RelationType.Main,
-        aired_from=now - timedelta(days=365),
+        aired_from=today - timedelta(days=365),
     )
     await _seed_anime(  # no recent main, recently checked -> long_cycle
         db_session, mal_id=-7105, stable_check_count=10,
@@ -1361,7 +1441,7 @@ async def test_count_by_sweep_tier_priority_buckets_each_anime_once(db_session):
     await _seed_anime(  # every media premiered 12y ago -> archival_cycle
         db_session, mal_id=-7107, stable_check_count=10,
         last_checked_at=now - timedelta(hours=1),
-        aired_from=now - timedelta(days=365 * 12),
+        aired_from=today - timedelta(days=365 * 12),
     )
     await db_session.flush()
 
@@ -1393,6 +1473,7 @@ async def test_anime_tier_is_media_rollup_not_anime_probe_counter(db_session):
     with the media card (anime weekly_cycle while all media stabilizing)."""
     from app.models.media import RelationType
     now = datetime.now(timezone.utc)
+    today = date.today()
     baseline = await AnimeDAO().count_by_sweep_tier_priority(db_session)
 
     anime = Anime(mal_id=-7301, title="A-7301")
@@ -1400,7 +1481,7 @@ async def test_anime_tier_is_media_rollup_not_anime_probe_counter(db_session):
     await db_session.flush()
     media = Media(**media_kwargs(
         anime_id=anime.id, mal_id=-730100,
-        relation_type=RelationType.Main, aired_from=now - timedelta(days=365),
+        relation_type=RelationType.Main, aired_from=today - timedelta(days=365),
     ))
     db_session.add(media)
     await db_session.flush()
@@ -1476,6 +1557,7 @@ async def test_count_media_by_sweep_tier_priority_buckets_each_media_once(db_ses
     don't skew bucket attribution."""
     from app.models.media import RelationType
     now = datetime.now(timezone.utc)
+    today = date.today()
     baseline = await AnimeDAO().count_media_by_sweep_tier_priority(db_session)
 
     await _seed_anime(  # airing wins over stable<3 -> airing_now
@@ -1488,14 +1570,14 @@ async def test_count_media_by_sweep_tier_priority_buckets_each_media_once(db_ses
     await _seed_anime(  # recent main, stable -> weekly_cycle
         db_session, mal_id=-7203, stable_check_count=10,
         last_checked_at=now - timedelta(hours=1),
-        relation_type=RelationType.Main, aired_from=now - timedelta(days=365),
+        relation_type=RelationType.Main, aired_from=today - timedelta(days=365),
     )
     await _seed_anime(  # no recent main, stable, undated -> long_cycle
         db_session, mal_id=-7204, stable_check_count=10, last_checked_at=now,
     )
     await _seed_anime(  # premiered 12y ago -> archival_cycle
         db_session, mal_id=-7205, stable_check_count=10, last_checked_at=now,
-        aired_from=now - timedelta(days=365 * 12),
+        aired_from=today - timedelta(days=365 * 12),
     )
     await db_session.flush()
 
@@ -1582,6 +1664,31 @@ class _RecordingProgressReporter:
             type(self).last_items_done = items_done
 
 
+@pytest.fixture(autouse=True)
+async def _clean_delete_candidates():
+    """Remove every delete_candidates row a test created.
+
+    Autouse, and not opt-in like `tracked_anime`, because the rows are not all
+    the test's own doing: the dispatcher's low-signal pass runs catalogue-wide
+    at sweep end, so it ignores the patched `select_due_media_for_sweep` and
+    raises candidates against whatever REAL anime the developer's DB holds.
+    Every other write in this module is scoped to the test's synthetic rows.
+
+    Deleting by id-watermark rather than by mal_id because the pass picks its
+    own targets — the test cannot enumerate them up front. `tracked_anime`
+    can't cover it either: `delete_candidates.media_id` is ON DELETE SET NULL
+    by design, so the row deliberately OUTLIVES the anime cascade.
+    """
+    async with async_session_maker() as s:
+        high_water = (
+            await s.execute(select(func.coalesce(func.max(DeleteCandidate.id), 0)))
+        ).scalar_one()
+    yield
+    async with async_session_maker() as s:
+        await s.execute(delete(DeleteCandidate).where(DeleteCandidate.id > high_water))
+        await s.commit()
+
+
 @pytest.fixture
 async def tracked_anime():
     """Yields a list to which tests append anime ids; teardown deletes
@@ -1661,6 +1768,14 @@ def _patch_select_due(monkeypatch, anime_ids: list[int]) -> None:
     monkeypatch.setattr(AnimeDAO, "select_due_media_for_sweep", fake_select)
 
 
+def _returning(value):
+    """A stand-in for an async dependency the test wants neutralised, not
+    observed — hence a plain stub rather than an AsyncMock."""
+    async def _stub(*_args, **_kwargs):
+        return value
+    return _stub
+
+
 async def _run_dispatcher_harness(
     monkeypatch,
     fake_scraper,
@@ -1668,6 +1783,7 @@ async def _run_dispatcher_harness(
     *,
     patch_probe: bool = False,
     job_id: int = 999,
+    low_signal_raises: int = 0,
 ):
     """Bundles the four monkeypatches the per-test dispatcher setup blocks
     duplicate (MalScraper factory, ProgressReporter, AnimeDAO selection,
@@ -1677,7 +1793,19 @@ async def _run_dispatcher_harness(
     Returns `(summary, attach_calls, recompute_calls)` — the latter two
     are the lists populated by `_patch_probe_pipeline` when patch_probe=True
     (None otherwise) so tests can assert on attach/recompute call counts.
+
+    `low_signal_raises` stubs the end-of-sweep low-signal detection. Unlike
+    every other write in a sweep, that pass is catalogue-wide — it ignores the
+    patched `select_due_media_for_sweep` and runs against whatever the
+    developer's DB happens to hold, so a real call makes
+    `counters.delete_candidates_raised` depend on the local catalogue and lands
+    rows for anime no test owns. Stubbed to 0 by default; pass a number to
+    simulate the pass finding some.
     """
+    monkeypatch.setattr(
+        "app.services.delete_candidate_service.detect_low_signal_candidates",
+        _returning(low_signal_raises),
+    )
     monkeypatch.setattr(
         "app.services.scrape_dispatcher.MalScraper", lambda: fake_scraper,
     )
@@ -1837,12 +1965,226 @@ async def test_dispatcher_isolates_failures_per_anime(tracked_anime, monkeypatch
     assert anime_by_id[a2_id].freshness.last_checked_at == old
 
 
-def _http_504() -> httpx.HTTPStatusError:
-    """A 504 the same shape MalScraper reraises on a sustained MAL outage
-    (classify_error tags any httpx 5xx as `upstream_outage`)."""
+@pytest.mark.asyncio
+async def test_404_raises_a_delete_candidate_and_backs_the_row_off(
+    tracked_anime, monkeypatch,
+):
+    """MAL deleted this entry. Two things have to happen: a candidate is raised
+    for an admin to review, AND the media's freshness clock is stamped.
+
+    Without the stamp `last_checked_at` never moves and the row stays
+    permanently past its due window — re-checking every single night forever.
+
+    A 404 is NOT a refresh failure: the anime's refresh succeeds around it, so
+    `step1_failed` stays 0 and the entry surfaces in `gone_upstream` instead.
+    """
+    a_id = await _real_seed(
+        mal_id=-8500,
+        last_checked_at=datetime.now(timezone.utc) - timedelta(days=30),
+        stable_check_count=3,
+    )
+    tracked_anime.append(a_id)
+    fake = _FakeScraper({}, error_404_for_mal_ids={-8500 * 100})
+
+    summary, _, _ = await _run_dispatcher_harness(
+        monkeypatch, fake, [a_id], job_id=8500,
+    )
+
+    assert summary["counters"]["step1_failed"] == 0
+    assert summary["step1_failures"] == []
+    assert summary["counters"]["delete_candidates_raised"] == 1
+    # The entry carries the media identity so the detail page can list which
+    # entries died without a round trip back to /media.
+    gone = summary["gone_upstream"][0]
+    assert gone["media_mal_id"] == -8500 * 100
+    assert gone["candidate_raised"] is True
+    assert gone["anime_uuid"] and gone["media_uuid"]
+    # Nothing was refreshed — the one due media is dead, so the anime doesn't
+    # count as touched either.
+    assert summary["counters"]["media_refreshed"] == 0
+    assert summary["counters"]["anime_touched"] == 0
+    # The probe still runs and still SUCCEEDS. It seeds off `anime.media`, so
+    # the dead media stays a seed until an admin acts on the candidate — long
+    # after the 404 itself stops being news. The seed handler has to absorb
+    # that, or every later sweep touching this anime fails its probe and leaves
+    # AnimeFreshness unstamped, and the franchise stops discovering sequels.
+    assert fake.search_title_calls == [-8500 * 100]
+    assert summary["counters"]["probe_failed"] == 0
+    assert summary["probe_failures"] == []
+
+    async with async_session_maker() as s:
+        candidate = (
+            await s.execute(
+                select(DeleteCandidate).where(DeleteCandidate.mal_id == -8500 * 100)
+            )
+        ).scalars().one()
+        assert candidate.status == DeleteCandidateStatus.pending
+        assert candidate.detected_by == "sweep_404"
+        # Nothing was deleted — that is the admin's call.
+        assert candidate.media_id is not None
+
+        freshness = (
+            await s.execute(
+                select(MediaFreshness).where(MediaFreshness.media_id == candidate.media_id)
+            )
+        ).scalars().one()
+        assert freshness.last_checked_at > datetime.now(timezone.utc) - timedelta(minutes=5), (
+            "a 404 must stamp the freshness clock, or the row re-fails nightly forever"
+        )
+
+
+@pytest.mark.asyncio
+async def test_404_on_one_media_leaves_its_siblings_refreshed(
+    tracked_anime, monkeypatch,
+):
+    """A 404 is about ONE row, so it must not cost the rest of the franchise
+    its refresh — a dead entry among a detective franchise's dozens would
+    otherwise freeze the whole umbrella every night.
+
+    Sibling ordering matters: the dead media is added FIRST (lower id →
+    refreshed first), so a regression that aborts on the 404 stops before the
+    survivor is ever reached. With the survivor first, the loop would have
+    refreshed it before dying and the savepoint rollback would be what the
+    assertion caught instead — a different bug.
+    """
+    old = datetime.now(timezone.utc) - timedelta(days=30)
+    m_gone, m_alive = -8503 * 100, -8503 * 100 + 1
+    async with async_session_maker() as s:
+        anime = Anime(mal_id=-8503, title="A-8503")
+        s.add(anime)
+        await s.flush()
+        gone_media = Media(**media_kwargs(anime_id=anime.id, mal_id=m_gone))
+        alive_media = Media(**media_kwargs(
+            anime_id=anime.id, mal_id=m_alive,
+            score=7.5, scored_by=1000, episodes=12, aired_to=date(2020, 6, 30),
+        ))
+        s.add_all([gone_media, alive_media])
+        await s.flush()  # one round-trip; add-order fixes the ids
+        s.add(MediaFreshness(
+            media_id=gone_media.id, last_checked_at=old, stable_check_count=3,
+        ))
+        s.add(MediaFreshness(
+            media_id=alive_media.id, last_checked_at=old, stable_check_count=3,
+        ))
+        s.add(AnimeFreshness(
+            anime_id=anime.id, last_checked_at=old, stable_check_count=3,
+        ))
+        await s.commit()
+        a_id, alive_id = anime.id, alive_media.id
+    tracked_anime.append(a_id)
+
+    # The survivor's payload carries a moved score, so its refresh is a real
+    # diff — a sibling that merely "was not rolled back" could pass on an empty
+    # refresh, but a committed field change cannot.
+    fake = _FakeScraper(
+        {m_alive: _payload(score=8.9)}, error_404_for_mal_ids={m_gone},
+    )
+    summary, _, _ = await _run_dispatcher_harness(
+        monkeypatch, fake, [a_id], job_id=8503,
+    )
+
+    # The 404 is not a failure, and the survivor did the work.
+    assert summary["counters"]["step1_failed"] == 0
+    assert summary["counters"]["media_refreshed"] == 1  # the survivor only
+    assert summary["counters"]["anime_touched"] == 1
+    assert summary["counters"]["media_with_dynamic_changes"] == 1
+    assert len(summary["gone_upstream"]) == 1
+    assert summary["gone_upstream"][0]["media_mal_id"] == m_gone
+
+    async with async_session_maker() as s:
+        alive = (await s.execute(
+            select(Media).where(Media.id == alive_id)
+        )).scalars().one()
+        alive_fresh = (await s.execute(
+            select(MediaFreshness).where(MediaFreshness.media_id == alive_id)
+        )).scalars().one()
+    # The crux: the sibling's refresh must COMMIT — both the field diff and the
+    # freshness stamp. A 404 that raises across the shared savepoint loses both.
+    assert alive.score == 8.9
+    assert alive_fresh.last_checked_at > old
+    assert alive_fresh.stable_check_count == 0  # volatile change reset it
+
+
+@pytest.mark.asyncio
+async def test_low_signal_pass_feeds_the_same_counter(tracked_anime, monkeypatch):
+    """`delete_candidates_raised` is the sum of BOTH detectors, not just the
+    404 path — the Jobs Log tint gates on it, so a sweep that only found
+    low-signal entries still has to tint."""
+    a_id = await _real_seed(
+        mal_id=-8502,
+        last_checked_at=datetime.now(timezone.utc) - timedelta(days=30),
+        stable_check_count=3,
+    )
+    tracked_anime.append(a_id)
+    fake = _FakeScraper({-8502 * 100: _payload()})
+
+    summary, _, _ = await _run_dispatcher_harness(
+        monkeypatch, fake, [a_id], job_id=8502, low_signal_raises=2,
+    )
+
+    assert summary["counters"]["step1_failed"] == 0
+    assert summary["counters"]["delete_candidates_raised"] == 2
+
+
+@pytest.mark.asyncio
+async def test_504_neither_raises_a_candidate_nor_stamps_the_clock(
+    tracked_anime, monkeypatch,
+):
+    """The regression that matters most. A 504 is MAL being down, not this row
+    being dead — backing off on one would let an outage silently push the whole
+    catalogue to a 90-day cadence in a single night, and raising candidates
+    would queue the entire catalogue up for deletion."""
+    stale = datetime.now(timezone.utc) - timedelta(days=30)
+    a_id = await _real_seed(mal_id=-8501, last_checked_at=stale, stable_check_count=3)
+    tracked_anime.append(a_id)
+    fake = _FakeScraper({}, error_504_for_mal_ids={-8501 * 100})
+
+    summary, _, _ = await _run_dispatcher_harness(
+        monkeypatch, fake, [a_id], job_id=8501,
+    )
+
+    assert summary["counters"]["step1_failed"] == 1
+    assert summary["counters"]["delete_candidates_raised"] == 0
+    # An outage is a failure, not a departure — it must not land in the list
+    # that feeds the delete queue and the "Gone from MAL" card.
+    assert summary["gone_upstream"] == []
+
+    async with async_session_maker() as s:
+        assert (
+            await s.execute(
+                select(DeleteCandidate).where(DeleteCandidate.mal_id == -8501 * 100)
+            )
+        ).scalars().first() is None
+        media = (
+            await s.execute(select(Media).where(Media.mal_id == -8501 * 100))
+        ).scalars().one()
+        freshness = (
+            await s.execute(
+                select(MediaFreshness).where(MediaFreshness.media_id == media.id)
+            )
+        ).scalars().one()
+        assert freshness.last_checked_at == stale, (
+            "an outage must leave the clock alone so the row retries next sweep"
+        )
+
+
+def _http_error(status: int, phrase: str) -> httpx.HTTPStatusError:
+    """The shape MalScraper reraises an upstream HTTP error in.
+
+    The status is the whole point of the two call sites: `classify_error` tags
+    429/5xx as `upstream_outage` (breaker-tripping) and leaves a 404 uncategorised,
+    because a 404 is about that one row rather than about MAL."""
     request = httpx.Request("GET", "https://api.myanimelist.net/v2/anime/1")
-    response = httpx.Response(504, request=request)
-    return httpx.HTTPStatusError("504 Gateway Timeout", request=request, response=response)
+    response = httpx.Response(status, request=request)
+    return httpx.HTTPStatusError(phrase, request=request, response=response)
+
+
+def _http_404() -> httpx.HTTPStatusError:
+    return _http_error(404, "404 Not Found")
+
+
+def _http_504() -> httpx.HTTPStatusError:
+    return _http_error(504, "504 Gateway Timeout")
 
 
 @pytest.mark.asyncio
@@ -1958,7 +2300,7 @@ async def test_dispatcher_partial_anime_failure_rolls_back_media_freshness(
         ok_media = Media(**media_kwargs(
             anime_id=anime.id, mal_id=m_ok,
             score=7.5, scored_by=1000, episodes=12,
-            aired_to=datetime(2020, 6, 30, tzinfo=timezone.utc),
+            aired_to=date(2020, 6, 30),
         ))
         fail_media = Media(**media_kwargs(anime_id=anime.id, mal_id=m_fail))
         s.add_all([ok_media, fail_media])

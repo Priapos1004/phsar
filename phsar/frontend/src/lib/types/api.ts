@@ -318,6 +318,9 @@ export interface AnimeDetail extends AnimeAggregatedBase {
 	 * over the anime's main entries only (Main + AlternativeVersion), matching
 	 * avg_score / avg_scored_by. */
 	score_top_percent: number | null;
+	/** Latest `aired_to` among the currently-airing media, as `"2026-09-21"`.
+	 * Null unless MAL has published an end date for one of them. */
+	airing_until: string | null;
 	media: AnimeMediaItem[];
 }
 
@@ -401,6 +404,14 @@ export interface WatchlistItem {
 	anime_season_name: string | null;
 	anime_season_year: number | null;
 	mal_id: number;
+	// Readiness inputs — `utils/watchlistReady` is the only reader. The franchise pair is
+	// per-anime (identical on every entry of one anime) and covers main-story media the
+	// user never watchlisted, which is why it can't be derived from these entries.
+	airing_status: string;
+	watch_status: WatchStatus | null;
+	franchise_airing: boolean;
+	/** `year * 10 + season rank` of the franchise's earliest announced season. */
+	franchise_upcoming_key: number | null;
 	genres: string[];
 	studios: string[];
 	total_watch_time: number | null;
@@ -506,6 +517,41 @@ export interface SplitResult {
 }
 
 export interface SplitBackfillResult {
+	inserted: number;
+}
+
+// Admin — Delete candidates
+/** One row in the Delete Candidates queue. Unlike its merge/split siblings this
+ *  describes a MEDIA, not an anime, and every field is a verdict the backend
+ *  computed — the card renders it and must not re-derive it. */
+export interface DeleteCandidateListItem {
+	uuid: string;
+	/** "sweep_404" (MAL deleted the entry) or "low_signal" (never gained traction). */
+	detected_by: string;
+	created_at: string;
+	/** Set only in the dismissed-decisions list; null for pending rows. */
+	dismissed_at: string | null;
+	/** Identity snapshot — survives the deletion this row records. */
+	mal_id: number;
+	title: string;
+	name_eng: string | null;
+	name_jap: string | null;
+	/** Null once the media has been deleted, which is what tells the card
+	 *  there is nothing left to link to. */
+	media_uuid: string | null;
+	anime_title: string | null;
+	/** Franchise size. 1 means deleting this media deletes the anime too. */
+	anime_media_count: number;
+	/** Null on a sweep_404 row — the entry is gone upstream, so its last-known
+	 *  vote count would only mislead. */
+	scored_by: number | null;
+	media_type: string | null;
+	/** What users lose. Both cascade on media deletion with nothing else warning. */
+	rating_count: number;
+	watchlist_count: number;
+}
+
+export interface DeleteBackfillResult {
 	inserted: number;
 }
 
@@ -679,6 +725,10 @@ export interface UpdateSweepStep1Failure {
 	name_jap?: string | null;
 	error_category: string | null;
 	error_message: string;
+	// v8 rows only, and only on a 404 — the media MAL deleted. Those rows record
+	// a 404 as a refresh failure, so the identity rides the failure entry; v9+
+	// rows carry it in `gone_upstream` instead. Absent on every probe failure.
+	gone_media_mal_id?: number | null;
 }
 
 // One step-2 relations probe that raised and was skipped (v5+ update_sweep).
@@ -707,6 +757,24 @@ export interface UpdateSweepHentaiRemoved {
 	mal_ids: number[];
 }
 
+// One media MAL 404'd mid-sweep (v9+ update_sweep) — deleted upstream, so the
+// sweep stamped its refresh clock and queued it for the admin instead of
+// retrying nightly. Nothing is deleted: `candidate_raised` is false when an
+// admin had already dismissed this mal_id. Carries its parent anime's identity
+// so the card can name the franchise without a second fetch.
+export interface UpdateSweepGoneUpstream {
+	anime_uuid: string;
+	anime_title: string;
+	anime_name_eng?: string | null;
+	anime_name_jap?: string | null;
+	media_uuid: string;
+	media_title: string;
+	media_name_eng?: string | null;
+	media_name_jap?: string | null;
+	media_mal_id: number;
+	candidate_raised: boolean;
+}
+
 // update_sweep result_summary v2+ shape. v1 rows omit these fields
 // entirely — renderers must check `row.version >= 2` before reading.
 // `unknown_genre_tags` is v3+; v2 rows don't carry it (the Jobs Log
@@ -723,6 +791,9 @@ export interface UpdateSweepResultSummary extends JobResultSummary {
 	probe_attached_anime?: UpdateSweepProbeAttached[];
 	// v7+: anime deleted this sweep for flipping to Hentai.
 	hentai_removed?: UpdateSweepHentaiRemoved[];
+	// v9+: media MAL 404'd this sweep. Pre-v9 rows carried these on the
+	// matching `step1_failures[]` entry instead.
+	gone_upstream?: UpdateSweepGoneUpstream[];
 	merge_detect_failed?: boolean;
 	cache_recompute_failed?: boolean;
 }
@@ -797,6 +868,9 @@ export interface AdminCatalogStats {
 
 export interface AdminJobKindStats {
 	kind: JobKind;
+	// How far back this kind's counts reach. Render it; never assume a
+	// window shared with the other kinds.
+	window_days: number;
 	succeeded: number;
 	failed: number;
 	retryable_failed: number;
@@ -840,7 +914,7 @@ export interface AdminSweepTierBreakdown {
 
 export interface AdminOverviewStats {
 	catalog: AdminCatalogStats;
-	jobs_7d: AdminJobsStats;
+	jobs: AdminJobsStats;
 	activity_7d: AdminActivityStats;
 	watchlist: AdminWatchlistStats;
 	// `sweep_tiers` = anime cycle-membership; `media_sweep_tiers` = the same
@@ -869,4 +943,5 @@ export interface AdminJobsPage {
 export interface CurationPendingCounts {
 	merge: number;
 	split: number;
+	delete: number;
 }

@@ -8,7 +8,7 @@ reads through the live catalog, so inserts share the unique-mal_id
 namespace.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -99,14 +99,14 @@ async def test_dry_run_reports_diff_without_writing(db_session, monkeypatch):
             {"mal_id": -2759, "title": "Evangelion 1.0: You Are (Not) Alone",
              "media_type": MediaType.Movie, "relation_type": RelationType.Main,
              "episodes": 1, "duration_seconds": 5400,
-             "aired_from": datetime(2007, 9, 1, tzinfo=timezone.utc),
+             "aired_from": date(2007, 9, 1),
              "scored_by": 600_000,
              "edges": [[-30, "alternative_version"], [2760, "sequel"]]},
             # Original 1995 TV — currently MISCLASSIFIED as SideStory.
             {"mal_id": -30, "title": "Neon Genesis Evangelion",
              "media_type": MediaType.TV, "relation_type": RelationType.SideStory,
              "episodes": 26, "duration_seconds": 1440,
-             "aired_from": datetime(1995, 10, 4, tzinfo=timezone.utc),
+             "aired_from": date(1995, 10, 4),
              "scored_by": 1_200_000,
              "edges": [[-2759, "alternative_version"]]},
         ],
@@ -144,7 +144,7 @@ async def test_apply_rewrites_anchor_and_reclassifies(db_session, monkeypatch):
             {"mal_id": -2759, "title": "Evangelion 1.0: You Are (Not) Alone",
              "media_type": MediaType.Movie, "relation_type": RelationType.Main,
              "episodes": 1, "duration_seconds": 5400,
-             "aired_from": datetime(2007, 9, 1, tzinfo=timezone.utc),
+             "aired_from": date(2007, 9, 1),
              "scored_by": 600_000,
              "cover_image": "https://example/rebuild.jpg",
              "description": "Rebuild description",
@@ -153,7 +153,7 @@ async def test_apply_rewrites_anchor_and_reclassifies(db_session, monkeypatch):
             {"mal_id": -30, "title": "Neon Genesis Evangelion",
              "media_type": MediaType.TV, "relation_type": RelationType.SideStory,
              "episodes": 26, "duration_seconds": 1440,
-             "aired_from": datetime(1995, 10, 4, tzinfo=timezone.utc),
+             "aired_from": date(1995, 10, 4),
              "scored_by": 1_200_000,
              "cover_image": "https://example/originaltv.jpg",
              "description": "Original TV description",
@@ -198,7 +198,7 @@ async def test_idempotent_no_op_on_clean_catalog(db_session, monkeypatch):
             {"mal_id": -100, "title": "Solo Show",
              "media_type": MediaType.TV, "relation_type": RelationType.Main,
              "episodes": 12, "duration_seconds": 1440,
-             "aired_from": datetime(2020, 1, 1, tzinfo=timezone.utc),
+             "aired_from": date(2020, 1, 1),
              "scored_by": 10_000, "edges": []},
         ],
     )
@@ -237,12 +237,12 @@ async def test_lazy_fetch_populates_missing_edges(db_session, monkeypatch):
             {"mal_id": -200, "title": "Test Show",
              "media_type": MediaType.TV, "relation_type": RelationType.Main,
              "episodes": 12, "duration_seconds": 1440,
-             "aired_from": datetime(2020, 1, 1, tzinfo=timezone.utc),
+             "aired_from": date(2020, 1, 1),
              "scored_by": 10_000, "edges": [], "last_fetched_at": None},
             {"mal_id": -201, "title": "Test Show S2",
              "media_type": MediaType.TV, "relation_type": RelationType.Main,
              "episodes": 12, "duration_seconds": 1440,
-             "aired_from": datetime(2021, 1, 1, tzinfo=timezone.utc),
+             "aired_from": date(2021, 1, 1),
              "scored_by": 8_000, "edges": [], "last_fetched_at": None},
         ],
     )
@@ -286,7 +286,7 @@ async def test_zero_relations_sidecar_does_not_refetch(db_session, monkeypatch):
             {"mal_id": -900, "title": "Standalone Movie",
              "media_type": MediaType.Movie, "relation_type": RelationType.Main,
              "duration_seconds": 5400, "scored_by": 5000,
-             "aired_from": datetime(2018, 1, 1, tzinfo=timezone.utc),
+             "aired_from": date(2018, 1, 1),
              "edges": [], "last_fetched_at": None},
         ],
     )
@@ -333,7 +333,7 @@ async def test_per_anime_failure_does_not_abort_loop(db_session, monkeypatch):
             {"mal_id": -700, "title": "Bad", "media_type": MediaType.Movie,
              "relation_type": RelationType.Main, "duration_seconds": 5400,
              "scored_by": 1000,
-             "aired_from": datetime(2019, 1, 1, tzinfo=timezone.utc),
+             "aired_from": date(2019, 1, 1),
              "edges": [], "last_fetched_at": None},
         ],
     )
@@ -344,7 +344,7 @@ async def test_per_anime_failure_does_not_abort_loop(db_session, monkeypatch):
             {"mal_id": -701, "title": "Good", "media_type": MediaType.TV,
              "relation_type": RelationType.Main, "episodes": 12,
              "duration_seconds": 1440, "scored_by": 5000,
-             "aired_from": datetime(2020, 1, 1, tzinfo=timezone.utc),
+             "aired_from": date(2020, 1, 1),
              "edges": []},
         ],
     )

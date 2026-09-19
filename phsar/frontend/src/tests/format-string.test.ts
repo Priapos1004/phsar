@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { formatNumber, formatDuration, formatDurationCompact, formatDecimalDigits, clampAndSnapScore, roundScore, formatScore, formatScoreWithStep, escapeHtml } from '$lib/utils/formatString';
+import { describe, it, expect, vi } from 'vitest';
+import { formatNumber, formatDuration, formatDurationCompact, formatDecimalDigits, clampAndSnapScore, roundScore, formatScore, formatScoreWithStep, escapeHtml, formatAirDate, formatAiringStatus, airingStatusParts } from '$lib/utils/formatString';
 
 describe('formatNumber', () => {
 	it('formats integers with commas', () => {
@@ -217,5 +217,84 @@ describe('escapeHtml', () => {
 
 	it('leaves plain text untouched', () => {
 		expect(escapeHtml('Fullmetal Alchemist: Brotherhood')).toBe('Fullmetal Alchemist: Brotherhood');
+	});
+});
+
+describe('formatAirDate', () => {
+	// Asserting the rendered value under a faked TZ would NOT catch a regression to
+	// string-parsing (see rules/frontend.md for the hazard): Node reads
+	// TZ once at startup, and CI runs UTC where both implementations agree. So the
+	// assertion is on the path — no Date is built by PARSING a string. Building one
+	// from numeric parts is fine, and is what the implementation does.
+	it('never parses a string through Date, so no viewer timezone can shift it', () => {
+		const RealDate = globalThis.Date;
+		const constructed: unknown[][] = [];
+		vi.stubGlobal(
+			'Date',
+			class extends RealDate {
+				constructor(...args: unknown[]) {
+					constructed.push(args);
+					// @ts-expect-error — forwarding a variadic Date construction
+					super(...args);
+				}
+			},
+		);
+		expect(formatAirDate('2026-09-21', new RealDate('2026-06-01T00:00:00Z'))).toBe('Sep 21');
+		vi.unstubAllGlobals();
+
+		expect(constructed.filter((args) => typeof args[0] === 'string')).toEqual([]);
+	});
+
+	it('drops the year when it is the current one, keeps it otherwise', () => {
+		const now = new Date('2026-06-01T00:00:00Z');
+		expect(formatAirDate('2026-09-21', now)).toBe('Sep 21');
+		expect(formatAirDate('2027-03-15', now)).toBe('Mar 15, 2027');
+	});
+
+	it('returns the raw value rather than throwing on a shape it cannot read', () => {
+		expect(formatAirDate('not-a-date')).toBe('not-a-date');
+		expect(formatAirDate('2026-13-01')).toBe('2026-13-01');
+	});
+});
+
+describe('formatAiringStatus', () => {
+	it('places the end date beside the status, not after the upcoming suffix', () => {
+		expect(formatAiringStatus('Currently Airing', true, '2026-09-19')).toBe(
+			'Currently Airing until Sep 19 + upcoming content',
+		);
+		expect(formatAiringStatus('Currently Airing', false, '2026-09-19')).toBe(
+			'Currently Airing until Sep 19',
+		);
+	});
+
+	it('shows no date for finished or unaired titles even when one is passed', () => {
+		expect(formatAiringStatus('Finished Airing', false, '2011-01-01')).toBe('Finished Airing');
+		expect(formatAiringStatus('Not yet aired', false, '2027-01-01')).toBe('Not yet aired');
+	});
+
+	it('is unchanged for the callers that pass no date', () => {
+		expect(formatAiringStatus('Currently Airing', false)).toBe('Currently Airing');
+		expect(formatAiringStatus('Currently Airing', true)).toBe('Currently Airing + upcoming content');
+		expect(formatAiringStatus('Finished Airing', true)).toBe('upcoming content');
+		expect(formatAiringStatus('Finished Airing', false)).toBe('Finished Airing');
+		expect(formatAiringStatus('Not yet aired', true)).toBe('Not yet aired');
+	});
+});
+
+describe('airingStatusParts', () => {
+	// The joined behaviour is covered through formatAiringStatus above; what only
+	// the parts form can show is that the qualifier is separable at all, which is
+	// what lets the badge move it without breaking the phrase.
+	it('keeps the qualifier separable from the status it qualifies', () => {
+		expect(airingStatusParts('Currently Airing', true, '2026-09-19')).toEqual({
+			main: 'Currently Airing until Sep 19',
+			upcoming: '+ upcoming content',
+		});
+		// "upcoming content" is the whole phrase here, not a qualifier on a status,
+		// so there is nothing to split and it must stay on the first line.
+		expect(airingStatusParts('Finished Airing', true)).toEqual({
+			main: 'upcoming content',
+			upcoming: null,
+		});
 	});
 });

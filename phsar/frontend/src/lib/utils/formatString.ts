@@ -209,13 +209,41 @@ export function isSeasonRange(start: string | null, end: string | null): boolean
 	return !!start && !!end && start !== end;
 }
 
-/**
- * Format an airing status string, appending "+ upcoming" when applicable.
- */
-export function formatAiringStatus(status: string, hasUpcoming: boolean): string {
-	if (status === 'Not yet aired') return status;
-	if (status === 'Finished Airing') return hasUpcoming ? 'upcoming content' : status;
-	return hasUpcoming ? `${status} + upcoming content` : status;
+/** The airing status as two claims rather than one string: the status itself,
+ *  and a qualifier on it. Separate so a caller can place them independently. */
+export interface AiringStatusParts {
+	/** The status, carrying its end date when one applies. */
+	main: string;
+	/** Announced content beyond what is airing, or null. */
+	upcoming: string | null;
+}
+
+export function airingStatusParts(
+	status: string,
+	hasUpcoming: boolean,
+	until?: string | null,
+): AiringStatusParts {
+	if (status === 'Not yet aired') return { main: status, upcoming: null };
+	if (status === 'Finished Airing') {
+		return { main: hasUpcoming ? 'upcoming content' : status, upcoming: null };
+	}
+	// `until` qualifies "Currently Airing", so it belongs beside it — "Currently
+	// Airing until Sep 19 + upcoming content", never trailing the suffix, which
+	// would read as though the upcoming content ends on that date. Returning
+	// early above is also what keeps the date off finished and unaired titles,
+	// where MAL's padded partial dates make a day-precision render a lie.
+	const main = until ? `${status} until ${formatAirDate(until)}` : status;
+	return { main, upcoming: hasUpcoming ? '+ upcoming content' : null };
+}
+
+/** The single-line form, for every surface that renders the status as one string. */
+export function formatAiringStatus(
+	status: string,
+	hasUpcoming: boolean,
+	until?: string | null,
+): string {
+	const { main, upcoming } = airingStatusParts(status, hasUpcoming, until);
+	return upcoming ? `${main} ${upcoming}` : main;
 }
 
 /**
@@ -228,6 +256,28 @@ export function cleanDescription(text: string): string {
 		.replace(/\s*\[Written by MAL Rewrite\]\s*/g, '')
 		.replace(/\s*[\(\[]\s*Source\s*:[^\)\]]*[\)\]]\s*$/i, '')
 		.trim();
+}
+
+/**
+ * Render a bare `YYYY-MM-DD` the API sends as a calendar date.
+ *
+ * Built from the numeric parts and read back at `timeZone: 'UTC'`, so no viewer's
+ * zone can shift it.
+ *
+ * The year is dropped when it matches the current one — a show airing now almost
+ * always ends inside it, and "until Sep 21" is the shorter read.
+ */
+export function formatAirDate(ymd: string, now: Date = new Date()): string {
+	const [year, month, day] = ymd.split('-').map(Number);
+	// Range-checked because `Date.UTC` rolls over rather than rejecting — month 13
+	// would silently render as the following January.
+	if (!year || !month || !day || month > 12 || day > 31) return ymd;
+	return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString('en-US', {
+		timeZone: 'UTC',
+		month: 'short',
+		day: 'numeric',
+		...(year === now.getFullYear() ? {} : { year: 'numeric' }),
+	});
 }
 
 export function formatShortDate(iso: string): string {

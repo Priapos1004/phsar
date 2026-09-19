@@ -104,10 +104,18 @@ test on the media row plus its freshness sidecar:
 
 | Tier | Selects |
 |---|---|
-| airing now | `airing_status = 'Currently Airing'` |
+| airing now | `airing_status = 'Currently Airing'`, minus media awaiting a delete decision |
 | stabilizing | `stable_check_count < SWEEP_STABILIZE_THRESHOLD` (3) |
 | recent main | a main entry with a recent premiere, weekly |
 | long tail | everything else, on a per-row window |
+
+The airing tier carries an exclusion the others do not need: it has no staleness term
+*and* nothing a refresh can advance, so a media MAL has already 404'd would be
+re-selected every night forever — its stored status can no longer change, and the
+stabilizing tier, which is equally clockless, at least drains as its counter rises. The
+exclusion is scoped to that tier, so such a media falls through to the long-tail window
+rather than out of the sweep. Only a `pending` decision gates — dismissing one rules on
+deletion, not on scheduling, so it returns the media here ([curation](curation.md)).
 
 The long tail uses a **per-row window rather than a fifth tier**: one `CASE`
 compares `last_checked` against `SWEEP_ARCHIVAL_DAYS` (180) for media premiered over
@@ -141,6 +149,14 @@ by at least `_SCORE_STABILITY_THRESHOLD` (0.05 on the weighted score
 `score * log10(scored_by + 1)`), else climbs. The threshold matters because
 without it a single new vote per night on a million-vote anime resets the counter
 forever. None↔value transitions bypass it — first votes arriving is structural.
+
+**A 404 is not a refresh failure.** The refresh loop handles it and carries on to
+the next media rather than raising, so one dead entry in a franchise of dozens
+costs that franchise nothing. It neither trips nor resets the circuit breaker —
+MAL answered. A dead media stays in `anime.media` until an admin acts on it, so
+it also stays a relations-probe seed; the probe skips a seed MAL no longer has
+instead of failing the run over it. What the queue does with it:
+[curation](curation.md).
 
 **Circuit breaker**: per-anime isolation is right for one bad row and catastrophic
 when MAL is entirely down, since every anime then pays the full retry budget while
@@ -188,8 +204,8 @@ transactions, throttled to 0.5s with a `force=True` bypass for stage changes —
 otherwise a tight BFS loop opens hundreds of sessions a second.
 
 Sweep progress is **media-grained** (`items_total = len(due_media)`), because
-media are the real MAL-call unit. The end gap is exactly the media of
-step-1-failed anime.
+media are the real MAL-call unit. The end gap is exactly the media that were
+selected but never refreshed.
 
 ---
 

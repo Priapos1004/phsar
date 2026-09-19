@@ -63,14 +63,14 @@ describe('applyFilterLifecycle', () => {
 	beforeEach(() => {
 		ratingsFilter.set({ ...DEFAULT_RATINGS_FILTER, view: 'table', genres: ['Action'] });
 		watchlistFilter.set({ ...DEFAULT_WATCHLIST_FILTER, priorities: [1] });
-		jobsFilter.set({ kind: 'backup', status: 'failed' });
+		jobsFilter.set({ kind: 'backup', status: 'failed', page: 3 });
 	});
 
 	it('keeps every filter across a detour to a media detail page', () => {
 		applyFilterLifecycle('/media');
 		expect(get(ratingsFilter).genres).toEqual(['Action']);
 		expect(get(watchlistFilter).priorities).toEqual([1]);
-		expect(get(jobsFilter)).toEqual({ kind: 'backup', status: 'failed' });
+		expect(get(jobsFilter)).toEqual({ kind: 'backup', status: 'failed', page: 3 });
 	});
 
 	it('keeps the ratings filter when coming back from the detail page', () => {
@@ -91,9 +91,11 @@ describe('applyFilterLifecycle', () => {
 		expect(get(ratingsFilter).genres).toEqual([]);
 	});
 
-	it('keeps the admin filter across a job detail hop', () => {
+	// The page rides the filter, so the hop that has to preserve the filter is the
+	// same one that has to land the admin back on the page they left.
+	it('keeps the admin filter and page across a job detail hop', () => {
 		applyFilterLifecycle('/admin/jobs/abc-123');
-		expect(get(jobsFilter)).toEqual({ kind: 'backup', status: 'failed' });
+		expect(get(jobsFilter)).toEqual({ kind: 'backup', status: 'failed', page: 3 });
 	});
 
 	it('clears the section left behind on a cross-section hop', () => {

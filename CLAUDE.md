@@ -20,6 +20,7 @@ the places below, each with one job.
 | `backend.md` — layering, async session, exceptions | backend / test / script Python |
 | `database.md` — models, sidecars, indexes, migrations | models / DAOs / alembic |
 | `frontend.md` — runes, tokens, tooltips, dialogs, guests | any frontend source file |
+| `tests.md` — proving a test guards, teardown, what jsdom can't assert | backend or frontend test files |
 | `authoring-rules.md` — how to write a rule, a rubric or a skill, and prove it runs | editing any `.md` under `.claude/` |
 
 **`.claude/agents/`** — the rubrics a pipeline fans out to, one per reviewer.
@@ -36,10 +37,13 @@ that touches its area, before settling on an approach.
 |---|---|
 | [scraping](docs/features/scraping.md) | MAL API v2 client, BFS, rate limiting, value translation, skip rules |
 | [relations](docs/features/relations.md) | Two-pass classifier, substance gate, split detection, merge signals |
+| [curation](docs/features/curation.md) | The admin merge/split/delete queues: candidate lifecycle, sticky dismissal, what deleting costs, blacklisting |
 | [jobs](docs/features/jobs.md) | Worker, job kinds, due-tiers, `result_summary` versioning, the sweeps |
 | [search](docs/features/search.md) | Embeddings, ranking, anime-view filters, main-story scoring |
 | [backups](docs/features/backups.md) | Dump/restore, retention pools, the restorability verdict |
 | [spoilers](docs/features/spoilers.md) | Frontier algorithm, visibility cache |
+| [readiness](docs/features/readiness.md) | "Can I start this tonight?" — media temporal classes, the per-anime verdict, the standalone rule |
+| [navigation](docs/features/navigation.md) | What survives leaving a page and coming back: route, origin, scroll position, filters — and when each resets |
 
 **`compound-docs/`** — why something changed, dated and frozen; feature docs say how
 it works now. [INDEX.md](compound-docs/INDEX.md) lists them by subsystem and by date.
@@ -140,7 +144,7 @@ several `admin_*` modules). The live contract is FastAPI's own
 | `/library`, `/filters` | recent additions; filter options + genres + the search-token pair |
 | `/save`, `/seed` | internal save + seed entry points (not frontend-consumed) |
 | `/maintenance` | public status for the pre-warning banner |
-| `/admin*` | stats, jobs log, backups, registration tokens, merge/split/completion curation, cron schedulers |
+| `/admin*` | stats, jobs log, backups, registration tokens, merge/split/delete/completion curation, cron schedulers |
 
 **`services/`** — business logic as module-level async functions; long-lived
 stateful components are classes. Per-service notes in

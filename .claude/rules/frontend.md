@@ -1,6 +1,6 @@
 ---
-description: Frontend conventions — runes, theme tokens, shared components, tooltip and chart mechanics, dialog sizing, route titles, restricted accounts, and UI copy.
-paths: "phsar/frontend/src/**/*"
+description: Frontend conventions — runes, theme tokens, shared components, tooltip and chart mechanics, confirm tiers for destructive actions, dialog sizing, route titles, restricted accounts, and UI copy.
+paths: "phsar/frontend/**"
 ---
 
 # Frontend rules
@@ -17,6 +17,25 @@ paths: "phsar/frontend/src/**/*"
   place: `MaintenanceBanner` (routing through `api.ts` would trip its own 503 handler
   and log the user out) and `shareImage.ts` (fetches cover bytes from MAL's CDN, not
   from this API).
+
+## An animated `color-mix()` can vanish from the production bundle
+
+In **`app.css`**, a `color-mix()` inside `@keyframes` takes the whole keyframe block
+with it: that file's minifier pass emits `color-mix` fallbacks by duplicating the
+**rule** holding them, and a keyframe block cannot be duplicated, so it drops the
+block instead. The animation then interpolates from whatever the element already
+had. Name the colour on `:root` and animate `var(--that)` — `--tooltip-surface` is
+the shape.
+
+**Not a blanket ban**: component `<style>` blocks run a different pipeline and keep
+theirs today (`AttributeBadges`' `pill-burst` ships whole). That difference is build
+configuration, not a language rule, so it is worth re-checking rather than trusting.
+
+Checking means **reading the emitted CSS** — `bun run check`, `bun run test` and
+`bun run build` are all green either way, because the build succeeds and simply
+emits less than you wrote. Any animation verified only against `bun run dev` is
+unverified. `styles/classes.ts` records the other transformation step that mangles
+`color-mix`: the share-card rasterizer.
 
 ## Shared components
 
@@ -79,6 +98,19 @@ Any user-facing title goes through `resolveTitle(title, name_eng, name_jap, name
 The romaji `title` is the fallback *inside* that helper, never the thing you render
 directly — a raw `title` silently ignores the user's setting.
 
+## A timestamp and a calendar date use different formatters
+
+Which formatter a value takes is decided by its wire shape, not by its name. A
+**timestamp** — a Pydantic `datetime`, carrying a time and a zone — is an instant:
+`formatShortDate` / `formatShortDateTime`, rendered in the viewer's zone. A
+**calendar date** — a Pydantic `date`, arriving bare as `"2026-09-21"`:
+`formatAirDate`, and never `new Date()` on one, which parses as UTC midnight and
+renders a day early west of Greenwich.
+
+Picking wrong is silent, wrong for only some viewers, and invisible to a suite
+running in UTC, so guard it by asserting the value never reaches `Date` rather
+than by asserting what it rendered.
+
 ## A toggle's surface decides its component
 
 The exception to "prefer changing the component" above. `SegmentedControl` is the
@@ -86,6 +118,30 @@ on-card toggle — muted track, solid thumb — and belongs on the white card su
 toggle on the dark page surface is a border-fill pill instead (`GrainToggle`, the
 ratings view pills). Same job, different surface, deliberately two components:
 unifying them makes one of the two illegible against its own background.
+
+## A destructive action's confirm is tiered by what it costs to undo
+
+Three mechanisms, and the tier is chosen by the cost of being wrong, not by how
+destructive the verb sounds:
+
+| Undoing it costs | Use |
+|---|---|
+| nothing — the state simply comes back | **click-to-arm in place**: first click re-labels and reddens the control, a second within ~3s confirms, auto-disarm after |
+| a little — redoing the work by hand | **inline confirm/cancel pair** beside the row |
+| nothing can undo it | **type-to-confirm dialog** — the admin's username, or the account password outside admin — repeating at the point of decision what will be destroyed |
+
+The arm-in-place mechanism lives in `CompletionStatusCard` and
+`DismissedDecisionsSection`; copy whichever is closer rather than re-deriving the
+timer.
+
+**Arming a text button needs a width floor.** The icon-button case gets
+no-reflow for free — a fixed square swapping one glyph for another — but a
+confirm label is usually *shorter* than the idle one ("Sure?" vs "Resurface"),
+so a plain swap reflows the row. Give it a `min-w-*` sized to the wider label.
+
+**Gate the API at the same tier.** A confirmation the frontend could fill in on
+the user's behalf is not a control, and it reads to the next person as though one
+exists — so an ungated action's endpoint takes no confirmation argument at all.
 
 ## Dialog children that cannot shrink
 
@@ -106,6 +162,29 @@ fallback to leave in place.
 A **detail** page's title is its subject, not its route: bind it through
 `resolveTitle` (above) and fall back to a generic `Anime — Phsar` / `Media — Phsar`
 only while loading.
+
+## A departure for /login carries where it came from
+
+Never a bare `'/login'` literal. Every involuntary exit is expected to round-trip, and
+a literal is how the next one silently stops doing it — nothing fails for a path that
+was simply never captured.
+
+| Leaving because | Use |
+|---|---|
+| the session died, or the backend refused | `captureReturnTarget(url)` — stashes the filters *and* returns the URL |
+| the page's own fetch failed and the user clicks "Sign in" | `loginUrlReturningTo(url)` — a plain href, so route only |
+| the user **chose** to go: signing out, deleting the account | bare `/login`, plus `clearResume()` |
+
+`captureReturnTarget` owns the ordering that makes the stash correct, so call it
+**before** `token.set(null)` and never re-assemble its parts at a call site.
+
+A deliberate departure stays bare: the next person at this browser is not owed the
+last person's page.
+
+Consuming a `next` goes through `safeReturnPath`, always — it is a URL anyone can hand
+a user, so an off-origin value is an open redirect pointed at someone who has just
+typed their password. `landAfterAuth` is the only thing that should decide where a
+successful sign-in lands; a plainer `goto` there silently drops that check.
 
 ## Restricted accounts lose the action, not the affordance
 

@@ -72,14 +72,31 @@ export function isSessionLive(exp: number | null | undefined, now: number): bool
  *
  * Here rather than at each call site because "an unparseable token has no
  * claims" is one rule, and both the navigation guard and the session tick need
- * it. (The root layout's *other* decode reads `sub`/`role`, a different
- * question, and stays where it is.)
+ * it. (The root layout decodes `sub` AND `role` together to set up a session —
+ * a different question, and it stays where it is.)
  */
 export function expFromToken(raw: string): number | undefined {
 	try {
 		return jwtDecode<{ exp?: number }>(raw).exp;
 	} catch {
 		return undefined;
+	}
+}
+
+/**
+ * Read the `sub` claim off a raw JWT, or null if it can't be read.
+ *
+ * Beside `expFromToken` under the same rule. Read by the redirect sites, which
+ * stamp the outgoing user onto the resume stash while the token is still in
+ * hand — including the guard's case, where the token is already expired but its
+ * claims are still the honest record of whose session just ended.
+ */
+export function subFromToken(raw: string | null): string | null {
+	if (!raw) return null;
+	try {
+		return jwtDecode<{ sub?: string }>(raw).sub ?? null;
+	} catch {
+		return null;
 	}
 }
 

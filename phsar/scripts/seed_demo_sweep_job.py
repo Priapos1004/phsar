@@ -2,14 +2,21 @@
 admin job-detail page (`/admin/jobs/[uuid]`) and the Jobs Log without
 waiting for a real nightly sweep.
 
-Builds a v7 `result_summary` populated from REAL catalog rows (so every
-anime/media link resolves) covering every surface the v0.14.9 + v0.14.14
-changes touched: the counters grid, the "Anime changes" + "Media changes"
-cards (incl. genre/studio drift), the scrollable Failed-refresh / Failed-probe
-lists (~10 failures), the "Attached via probe" card (Tensei Slime + siblings),
-the v7 "Removed (Hentai)" card (with --hentai), the progress-divergence notice,
-and the Jobs Log amber (unknown-genre-tags) / blue (probe-attach) / rose
-(hentai-removed) row tints.
+Builds a `result_summary` at the current update_sweep version populated from
+REAL catalog rows (so every anime/media link resolves), covering every surface
+the job-detail page renders: the counters grid, the "Anime changes" + "Media
+changes" cards (incl. genre/studio drift), the scrollable Failed-refresh /
+Failed-probe lists (~10 failures), the "Attached via probe" card (Tensei Slime
++ siblings), the "Gone from MAL" card, the "Removed (Hentai)" card (with
+--hentai), the progress-divergence notice, and the Jobs Log row tints — amber
+(unknown-genre-tags), blue (probe-attach), violet (delete-candidates-raised,
+with --delete-candidates) and rose (hentai-removed). The tints are
+single-winner in that order reversed: rose outranks violet outranks amber
+outranks blue.
+
+`make_job` stamps the row from `JOB_KIND_VERSIONS`, so the summary this builds
+must carry every key that version's renderers gate on — a shape lagging the
+registry seeds a row claiming a version it cannot exercise.
 
 Dry-runs by default; pass --apply to insert. `--delete` removes any
 previously-seeded demo job (matched on the payload marker) so re-running
@@ -20,6 +27,7 @@ Usage:
     python -m scripts.seed_demo_sweep_job              # dry-run (prints plan)
     python -m scripts.seed_demo_sweep_job --apply       # insert the demo job
     python -m scripts.seed_demo_sweep_job --hentai --apply   # + Removed (Hentai) card
+    python -m scripts.seed_demo_sweep_job --delete-candidates --apply  # violet tint
     python -m scripts.seed_demo_sweep_job --delete --apply   # remove it
 """
 
@@ -31,7 +39,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import selectinload
 
 from app.core.db import async_session_maker
-from app.core.job_versions import make_job
+from app.core.job_versions import JOB_KIND_VERSIONS, make_job
 from app.models.anime import Anime
 from app.models.job import Job, JobKind, JobStatus
 
@@ -49,32 +57,41 @@ def _anime_ref(a: Anime) -> dict:
     }
 
 
+def _refs(a: Anime, m) -> dict:
+    """The anime+media identity block, written once so the summary shapes that
+    carry it verbatim cannot drift apart."""
+    return {
+        "anime_uuid": str(a.uuid),
+        "anime_title": a.title,
+        "anime_name_eng": a.name_eng,
+        "anime_name_jap": a.name_jap,
+        "media_uuid": str(m.uuid),
+        "media_title": m.title,
+        "media_name_eng": m.name_eng,
+        "media_name_jap": m.name_jap,
+        "media_mal_id": m.mal_id,
+    }
+
+
 def _media_change(a: Anime, m, *, dynamic=None, static=None, genre_drift=None,
                   studio_drift=None) -> dict:
     return {
+        **_refs(a, m),
         "static": static or [],
         "dynamic": dynamic or [],
         "anime_id": a.id,
         "media_id": m.id,
-        "anime_uuid": str(a.uuid),
-        "media_uuid": str(m.uuid),
-        "anime_title": a.title,
         "genre_drift": genre_drift,
-        "media_title": m.title,
-        "media_mal_id": m.mal_id,
         "studio_drift": studio_drift,
-        "anime_name_eng": a.name_eng,
-        "anime_name_jap": a.name_jap,
-        "media_name_eng": m.name_eng,
-        "media_name_jap": m.name_jap,
         "media_relation_type": m.relation_type.value if m.relation_type else "main",
     }
 
 
 def _build_summary(
     animes: list[Anime], *, include_genre_tags: bool = True, include_hentai: bool = False,
+    include_delete_candidates: bool = False,
 ) -> dict:
-    """Compose a v7 result_summary from real catalog rows. `animes` is a
+    """Compose a result_summary from real catalog rows. `animes` is a
     pool of anime (media eager-loaded); roles are sliced off it so every
     uuid links to a live page.
 
@@ -82,10 +99,15 @@ def _build_summary(
     the Jobs Log row gets NO amber tint — letting the blue probe-attach tint
     (which amber otherwise outranks) show in isolation.
 
-    `include_hentai=True` adds a couple of `hentai_removed` entries so the v7
-    "Removed (Hentai)" card + the rose Jobs Log tint render. Opt-in because the
-    rose tint OUTRANKS amber + blue — with it on, the row is always rose, so
-    the other tints can't be evaluated on the same seeded job."""
+    `include_hentai=True` adds a couple of `hentai_removed` entries so the
+    "Removed (Hentai)" card renders. Opt-in because its tint masks the others
+    on the same row — see the module docstring.
+
+    `include_delete_candidates=True` flips most of the `gone_upstream` entries
+    to `candidate_raised`, which is what `counters.delete_candidates_raised`
+    counts and what the violet tint gates on. Opt-in for the same reason. The
+    "Gone from MAL" card itself is NOT opt-in: it carries no tint, so nothing
+    is masked by always rendering it."""
     # --- probe attachments: Tensei Slime (if present) + two siblings ---
     slime = next((a for a in animes if a.mal_id == 37430), None)
     attach_pool = [a for a in animes if a.media][:6]
@@ -136,8 +158,10 @@ def _build_summary(
     umb_pool = list(fail_pool[13:16])
     anime_umbrella_changes = []
     field_sets = [
-        [{"field": "cover_image", "old": "https://cdn.myanimelist.net/images/anime/old.jpg",
-          "new": "https://cdn.myanimelist.net/images/anime/new.jpg"}],
+        # Covers are pinned to `.webp` (see docs/features/scraping.md), so a
+        # realistic diff uses it on both sides.
+        [{"field": "cover_image", "old": "https://cdn.myanimelist.net/images/anime/old.webp",
+          "new": "https://cdn.myanimelist.net/images/anime/new.webp"}],
         [{"field": "description", "old": "An old synopsis.", "new": "A revised, longer synopsis."}],
         [{"field": "title", "old": "Old Romaji Title", "new": "New Romaji Title"},
          {"field": "name_eng", "old": "Old English", "new": "New English"}],
@@ -203,6 +227,16 @@ def _build_summary(
                 "mal_ids": [m.mal_id for m in a.media],
             })
 
+    # --- gone upstream: media that 404'd on MAL (see JOB_KIND_VERSIONS v9) ---
+    gone_upstream = [
+        {**_refs(a, a.media[-1]), "candidate_raised": include_delete_candidates}
+        for a in fail_pool[18:21] if a.media
+    ]
+    # One entry stays unraised so the card's "already reviewed" variant renders
+    # alongside the raised ones instead of needing a second seeded job.
+    if gone_upstream:
+        gone_upstream[-1]["candidate_raised"] = False
+
     media_refreshed = 500
     # Make items_done < items_total so the progress-divergence notice renders:
     # the gap is the media of the 10 step-1-failed anime.
@@ -221,6 +255,8 @@ def _build_summary(
         "orphaned_studios_removed": 4,
         "step1_failed": len(step1_failures),
         "hentai_removed_count": len(hentai_removed),
+        # Derived so the tint can never claim more than the card shows.
+        "delete_candidates_raised": sum(g["candidate_raised"] for g in gone_upstream),
     }
     return {
         "counters": counters,
@@ -229,6 +265,7 @@ def _build_summary(
         "step1_failures": step1_failures,
         "probe_failures": probe_failures,
         "probe_attached_anime": probe_attached_anime,
+        "gone_upstream": gone_upstream,
         "hentai_removed": hentai_removed,
         "unknown_genre_tags": ["Workplace", "Crime"] if include_genre_tags else [],
         "merge_detect_failed": False,
@@ -237,7 +274,10 @@ def _build_summary(
     }
 
 
-async def main(apply: bool, do_delete: bool, include_genre_tags: bool, include_hentai: bool) -> None:
+async def main(
+    apply: bool, do_delete: bool, include_genre_tags: bool, include_hentai: bool,
+    include_delete_candidates: bool,
+) -> None:
     async with async_session_maker() as session:
         # Scope --delete to our own demo rows: the unique marker AND the kind
         # we seed, so a future marker-key collision can't sweep unrelated jobs.
@@ -266,10 +306,11 @@ async def main(apply: bool, do_delete: bool, include_genre_tags: bool, include_h
 
         summary = _build_summary(
             animes, include_genre_tags=include_genre_tags, include_hentai=include_hentai,
+            include_delete_candidates=include_delete_candidates,
         )
         items_total = summary.pop("_items_total")
         c = summary["counters"]
-        print("Demo update_sweep v7 result_summary:")
+        print(f"Demo update_sweep v{JOB_KIND_VERSIONS[JobKind.update_sweep]} result_summary:")
         print(f"  media_refreshed={c['media_refreshed']} (items {c['media_refreshed']}/{items_total} — divergence notice)")
         print(f"  step1_failures={len(summary['step1_failures'])}  probe_failures={len(summary['probe_failures'])}")
         print(f"  probe_attached_anime={len(summary['probe_attached_anime'])} "
@@ -280,6 +321,22 @@ async def main(apply: bool, do_delete: bool, include_genre_tags: bool, include_h
               f"unknown_genre_tags={summary['unknown_genre_tags']}")
         print(f"  hentai_removed={len(summary['hentai_removed'])}: "
               f"{[e['title'] for e in summary['hentai_removed']]}")
+        print(f"  gone_upstream={len(summary['gone_upstream'])}: "
+              f"{[e['media_title'] for e in summary['gone_upstream']]}")
+        print(f"  delete_candidates_raised={c['delete_candidates_raised']}")
+
+        # The roles are sliced off one pool at fixed offsets and then filtered
+        # to anime that have media, so a thin or media-sparse catalog yields an
+        # empty list rather than an error — and an empty card reads as a broken
+        # renderer. Checking the built lists catches that however the slicing
+        # later changes; a catalog-size floor would only restate the offsets.
+        blank = [
+            k for k in ("step1_failures", "probe_attached_anime", "gone_upstream")
+            if not summary[k]
+        ]
+        if blank:
+            print(f"\n⚠ empty, so their cards won't render: {', '.join(blank)} "
+                  f"— seed more anime to exercise them.")
 
         if not apply:
             print("\n(dry-run — pass --apply to insert the job)")
@@ -316,13 +373,18 @@ if __name__ == "__main__":
              "probe-attach tint show in isolation",
     )
     p.add_argument(
+        "--delete-candidates", action="store_true",
+        help="raise candidates on the gone-upstream entries so the violet Jobs "
+             "Log tint renders. Opt-in: it masks the other tints on the same row",
+    )
+    p.add_argument(
         "--hentai", action="store_true",
-        help="add hentai-removed entries so the v7 'Removed (Hentai)' card + rose "
-             "Jobs Log tint render. Opt-in: the rose tint outranks amber/blue, so it "
-             "masks the other tints on the same row",
+        help="add hentai-removed entries so the 'Removed (Hentai)' card + rose "
+             "Jobs Log tint render. Opt-in: it masks the other tints on the same row",
     )
     args = p.parse_args()
     asyncio.run(main(
         apply=args.apply, do_delete=args.delete,
         include_genre_tags=not args.no_genre_tags, include_hentai=args.hentai,
+        include_delete_candidates=args.delete_candidates,
     ))

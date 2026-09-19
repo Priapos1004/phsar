@@ -28,6 +28,7 @@ phsar/
 │   │   ├── anime_dao.py
 │   │   ├── base_dao.py
 │   │   ├── base_mal_id_dao.py
+│   │   ├── delete_candidate_dao.py
 │   │   ├── genre_dao.py
 │   │   ├── job_dao.py
 │   │   ├── media_dao.py
@@ -52,6 +53,7 @@ phsar/
 │   │   ├── anime_freshness.py
 │   │   ├── anime_search.py
 │   │   ├── base.py
+│   │   ├── delete_candidate.py
 │   │   ├── genre.py
 │   │   ├── job.py
 │   │   ├── media.py
@@ -76,6 +78,7 @@ phsar/
 │   ├── routers/
 │   │   ├── admin.py
 │   │   ├── admin_completion.py
+│   │   ├── admin_delete.py
 │   │   ├── admin_jobs.py
 │   │   ├── admin_merge.py
 │   │   ├── admin_split.py
@@ -127,6 +130,7 @@ phsar/
 │       ├── backup_dispatcher.py
 │       ├── backup_service.py
 │       ├── completion_service.py
+│       ├── delete_candidate_service.py
 │       ├── export_service.py
 │       ├── filter_service.py
 │       ├── job_submission_service.py
@@ -191,6 +195,7 @@ phsar/
 │   │   │   │   ├── BulkRateDialog.svelte
 │   │   │   │   ├── BulkWatchlistDialog.svelte
 │   │   │   │   ├── DangerZone.svelte
+│   │   │   │   ├── DeleteCandidatesCard.svelte
 │   │   │   │   ├── DeleteWatchHistoryToggle.svelte
 │   │   │   │   ├── DoubleRangeSlider.svelte
 │   │   │   │   ├── EChart.svelte
@@ -314,6 +319,7 @@ phsar/
 │   │   │       ├── getSeason.ts
 │   │   │       ├── index.ts
 │   │   │       ├── jobBadges.ts
+│   │   │       ├── jobHealth.ts
 │   │   │       ├── jobSummary.ts
 │   │   │       ├── mediaChangeSort.ts
 │   │   │       ├── navigation.ts
@@ -321,12 +327,16 @@ phsar/
 │   │   │       ├── ratingNeighbors.ts
 │   │   │       ├── ratingStats.ts
 │   │   │       ├── relations.ts
+│   │   │       ├── resumeSession.ts
+│   │   │       ├── returnTo.ts
+│   │   │       ├── scrollFocus.ts
 │   │   │       ├── search.ts
 │   │   │       ├── sessionTimeout.ts
 │   │   │       ├── shareContent.ts
 │   │   │       ├── shareImage.ts
 │   │   │       ├── spoilerFrontier.ts
 │   │   │       ├── watchlist.ts
+│   │   │       ├── watchlistReady.ts
 │   │   │       └── watchlistStats.ts
 │   │   ├── routes/
 │   │   │   ├── +layout.svelte
@@ -361,20 +371,26 @@ phsar/
 │   │   └── tests/
 │   │       ├── setup.ts
 │   │       ├── SpoilerGuardTest.svelte
+│   │       ├── fixtures/
+│   │       │   ├── jwt.ts
+│   │       │   └── watchlistItem.ts
 │   │       ├── admin-jobs-filter.test.ts
 │   │       ├── admin-jobs-poll.test.ts
 │   │       ├── api-download.test.ts
+│   │       ├── attribute-aggregate.test.ts
 │   │       ├── auth-store.test.ts
 │   │       ├── backup-status.test.ts
 │   │       ├── backups-card.test.ts
 │   │       ├── chart-theme.test.ts
 │   │       ├── color.test.ts
 │   │       ├── completion-status-card.test.ts
+│   │       ├── dismissed-decisions-section.test.ts
 │   │       ├── filter-lifecycle.test.ts
 │   │       ├── format-string.test.ts
 │   │       ├── genre-badges.test.ts
 │   │       ├── job-bell.test.ts
 │   │       ├── job-detail-counters.test.ts
+│   │       ├── job-health.test.ts
 │   │       ├── job-summary.test.ts
 │   │       ├── layout-guard.test.ts
 │   │       ├── library-add.test.ts
@@ -391,6 +407,9 @@ phsar/
 │   │       ├── rating-neighbors.test.ts
 │   │       ├── rating-scores-store.test.ts
 │   │       ├── rating-stats.test.ts
+│   │       ├── resume-session.test.ts
+│   │       ├── return-to.test.ts
+│   │       ├── scroll-focus.test.ts
 │   │       ├── searchbar.test.ts
 │   │       ├── segmented-control.test.ts
 │   │       ├── session-timeout.test.ts
@@ -401,6 +420,7 @@ phsar/
 │   │       ├── spoiler-guard.test.ts
 │   │       ├── studio-links.test.ts
 │   │       ├── toast.test.ts
+│   │       ├── watchlist-ready.test.ts
 │   │       └── watchlist-stats.test.ts
 │   ├── static/
 │   │   ├── apple-touch-icon.png
@@ -438,6 +458,7 @@ phsar/
     │   ├── conftest.py
     │   ├── test_admin.py
     │   ├── test_admin_completion.py
+    │   ├── test_admin_delete.py
     │   ├── test_admin_nightly.py
     │   ├── test_admin_seasonal.py
     │   ├── test_admin_sweep.py
@@ -471,8 +492,11 @@ phsar/
         ├── test_backup_service.py
         ├── test_backup_subprocess_failures.py
         ├── test_base_dao_min_max.py
+        ├── test_curation_row_locks.py
+        ├── test_delete_candidate_service.py
         ├── test_job_dao.py
         ├── test_job_worker.py
+        ├── test_jobs_scrape_index.py
         ├── test_mal_scraper.py
         ├── test_merge_candidate_service.py
         ├── test_merge_detection.py

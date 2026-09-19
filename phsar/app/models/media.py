@@ -3,7 +3,7 @@ import enum
 from sqlalchemy import (
     CheckConstraint,
     Column,
-    DateTime,
+    Date,
     Enum,
     Float,
     ForeignKey,
@@ -35,11 +35,25 @@ class RelationType(str, enum.Enum):
     AlternativeVersion = "alternative_version"
 
 
+# The story-advancing set. `main` is the canonical backbone; `alternative_version`
+# covers retellings that extend or diverge from it (Evangelion Rebuild, Hokuto no Ken
+# alts). Every question that turns on "does this advance the story" reads this set —
+# what the spoiler frontier anchors on, what the MAL score averages over, which
+# relations the watchlist's readiness filter treats as a season worth waiting for.
+#
+# A frozenset of enum MEMBERS, which `in` and `.in_()` both take — and because
+# RelationType is a str-enum hashing by value, a plain `"main"` from a flat projection
+# matches too, so no caller needs a `.value` conversion.
+MAIN_STORY_RELATIONS = frozenset({RelationType.Main, RelationType.AlternativeVersion})
+
 # Per-relation-type weights for the anime-level MAL "quality score" (the displayed
 # avg score/votes AND the "Top N%" pill/search ranking, which share these inputs).
-# An anime's score reflects its MAIN STORY: Main + AlternativeVersion (the spoiler
-# frontier's story-advancing anchor set — see spoiler_service._ANCHOR_TYPES); side
-# stories and recaps (Summary) are excluded (weight 0).
+# An anime's score reflects its MAIN STORY (`MAIN_STORY_RELATIONS`); side stories and
+# recaps are excluded (weight 0).
+#
+# Deliberately spelled out rather than derived from that set: this is the scoring dial
+# alone, and a weight given to side stories here must not also change what
+# `MAIN_STORY_RELATIONS` admits. Same answer today, different questions.
 #
 # This map is the SINGLE source of truth: the SQL twin (weighted_mean_*_expr in
 # daos/search_filters.py) and the Python twin (anime_search_service
@@ -60,6 +74,25 @@ class SeasonType(str, enum.Enum):
     Spring = "Spring"
     Summer = "Summer"
     Fall   = "Fall"
+
+
+# Chronological rank of a season within its year. Lives beside the enum rather than in
+# one of its consumers because both layers need it: services sort by it in Python, the
+# watchlist DAO builds a SQL CASE from it. Keyed by members, but the str-enum hashes by
+# value, so a caller holding a plain `"Fall"` looks up just as well.
+#
+# Distinct from `mal_scraper._SEASON_ORDER`, the lowercase MAL/URL vocabulary; this is
+# the catalog's title-cased one.
+SEASON_ORDER = {SeasonType.Winter: 1, SeasonType.Spring: 2, SeasonType.Summer: 3, SeasonType.Fall: 4}
+
+# The sentinel `media.airing_status` values MAL returns. Here, beside the column
+# that stores them, for the same reason as SEASON_ORDER above: both layers read
+# them, and four DAOs filtering on `airing_status` should not have to import up
+# into `services/` to name their own column's values. `relation_classifier` still
+# owns what they *mean* — the substance gate reads them via _METADATA_PENDING_STATUSES.
+AIRING_STATUS_CURRENTLY_AIRING = "Currently Airing"
+AIRING_STATUS_FINISHED_AIRING = "Finished Airing"
+AIRING_STATUS_NOT_YET_AIRED = "Not yet aired"
 
 # Define ordered mapping to ensure correct prefix priority
 AGE_RATING_MAP = [
@@ -92,8 +125,8 @@ class Media(BaseModel):
     anime_season_name = Column(Enum(SeasonType), nullable=True)
     anime_season_year = Column(Integer, nullable=True)
     airing_status = Column(String, nullable=False)
-    aired_from = Column(DateTime(timezone=True), nullable=True)
-    aired_to = Column(DateTime(timezone=True), nullable=True)
+    aired_from = Column(Date, nullable=True)
+    aired_to = Column(Date, nullable=True)
     duration = Column(String, nullable=True)
     duration_seconds = Column(Integer, nullable=True)
 
@@ -191,6 +224,11 @@ Index(
 )
 # Composite for the recent-main tier: anime_id groups, relation_type selects
 # Main, aired_from is the range bound.
+#
+# Its first two columns also serve `watchlist_dao._franchise_signals`, which asks the
+# same "this anime's main story" question without the date bound — so narrowing this
+# index (making it partial on `relation_type = 'Main'`, say) would cost the watchlist
+# page its access path too, not just the sweep's.
 Index(
     "ix_media_main_aired_from",
     Media.anime_id,

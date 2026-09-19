@@ -1,5 +1,8 @@
 // Shared watchlist constants, used by the dialogs, the overview grid, and the Tags tab.
 import { buildColorWheel } from './color';
+import * as cls from '$lib/styles/classes';
+import type { ReadyFilterKey, ReadyStatus } from './watchlistReady';
+import type { WatchtimeKey } from './watchlistStats';
 
 export const PRIORITY_OPTIONS = [
 	{ value: 1, label: 'High' },
@@ -34,6 +37,83 @@ export const PRIORITY_ACCENT: Record<number, { text: string; dot: string }> = {
 	2: { text: 'text-amber-400', dot: 'bg-amber-500' },
 	3: { text: 'text-sky-400', dot: 'bg-sky-500' },
 };
+
+// How each readiness verdict renders on an anime-grain card/row, keyed by `ReadyStatus`
+// so adding a verdict is a type error here until it is given a look. `ready` maps to
+// undefined — no badge. Tints come from `styles/classes`, with the rest of the badge
+// palette. The rules that produce these verdicts live in `utils/watchlistReady`.
+interface ReadyBadge {
+	label: string;
+	class: string;
+	title: string;
+}
+
+export const READY_BADGE: Record<ReadyStatus, ReadyBadge | undefined> = {
+	ready: undefined,
+	standalone: {
+		label: 'Standalone',
+		class: cls.badgeReadyStandalone,
+		title: 'Long enough to watch on its own, even with the franchise still going',
+	},
+	hot: {
+		label: 'Hot',
+		class: cls.badgeReadyHot,
+		title: "Airing now or returning next season — you can't binge it whole yet",
+	},
+	waiting: {
+		label: 'Waiting',
+		class: cls.badgeReadyWaiting,
+		title: "Everything listed is watched — the rest hasn't aired",
+	},
+};
+
+// The Status filter chips, selected-state styling included. Two of them describe the same
+// verdict a badge does, so they read their wording AND their tint off it rather than
+// restating either — a chip and the cards it admits must not explain or colour that
+// verdict differently.
+//
+// A selected chip's fill is one of those fixed hues rather than `bg-primary`: a theme
+// token is whatever the active theme makes it, so under the Ocean theme a primary-filled
+// chip and a blue one are the same chip twice.
+//
+// Ready has no badge and borrows Standalone's green — it is the chip that admits
+// standalone anime, so the two read as one family.
+export const READY_FILTERS: (ReadyBadge & { key: ReadyFilterKey })[] = [
+	{
+		key: 'ready',
+		label: 'Ready',
+		title: 'Something to watch now, with no season airing or due next season',
+		class: cls.badgeReadyStandalone,
+	},
+	{ key: 'hot', ...READY_BADGE.hot! },
+	{ key: 'waiting', ...READY_BADGE.waiting! },
+];
+
+// One teal ramped by weight, so a long anime is spottable without reading the number. Teal
+// because it collides with no `.theme-*` primary; not `scoreColor`'s ramp, which means
+// "how good" and tops out on the theme primary; not the priority accents `PRIORITY_ACCENT`
+// owns one chip group over.
+//
+// `fill` and `text` are the SAME shade per band — the card badge needs a background to sit
+// on artwork, the table column has none to fight. One line each because they must not
+// drift, and `tests/watchlist-stats` walks the pair.
+//
+// Labels are the bounds themselves rather than Short/Medium/Long: the chip is the only
+// place a threshold is stated to the user, and "Medium" would need a legend.
+export const WATCHTIME_FILTERS: { key: WatchtimeKey; label: string; fill: string; text: string; title: string }[] = [
+	{ key: 'short', label: '< 5h', fill: 'bg-teal-400 text-white', text: 'text-teal-400', title: 'Under 5 hours — about a 12-episode season or less' },
+	{ key: 'medium', label: '5–10h', fill: 'bg-teal-600 text-white', text: 'text-teal-600', title: 'Five to ten hours — one or two seasons' },
+	{ key: 'long', label: '> 10h', fill: 'bg-teal-800 text-white', text: 'text-teal-800', title: 'Over 10 hours — a long haul' },
+];
+
+/** A band's two renderings, or the neutral pair when the runtime is unknown — N/A is
+ *  absence of data, not a fourth size. */
+export function watchtimeTint(bucket: WatchtimeKey | null): { fill: string; text: string } {
+	const f = WATCHTIME_FILTERS.find((x) => x.key === bucket);
+	// Colour only, like every other tint here — the call site composes `readyPill` for the
+	// box, so returning `mutedPill` would emit that box's classes twice.
+	return f ? { fill: f.fill, text: f.text } : { fill: 'bg-muted text-muted-foreground', text: 'text-muted-foreground' };
+}
 
 // The color a new custom list starts on — taken straight from a wheel cell (a vivid blue)
 // so it's always pre-selected in the picker AND clickable again to restore. A hardcoded hex

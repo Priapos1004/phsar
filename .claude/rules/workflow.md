@@ -22,6 +22,11 @@ beside this file; doc placement lives in `docs.md`.
 - **Don't push after committing.** Stop at the commit. The user controls push
   timing so they can tag first, batch several commits, or hold one back —
   an auto-push also fires CI mid-stream.
+- **The user's visual verdict gates the docs.** On a UI-touching change it is a
+  precondition for entering `/ship`, not a step inside it — the placement that
+  survives the pipeline never being started. Their feedback routinely changes the
+  behaviour the docs would have described, so prose written ahead of it gets
+  reverted. How to hand off is in `frontend.md`.
 
 ## Commit blocks
 
@@ -81,10 +86,10 @@ docs. Describe the change on its own terms.
 - **Present tense, not history.** State the current rule and its constraint —
   "it must stay X, because the obvious alternative Y does Z". Not "was
   superlinear before v0.15.4", not before/after numbers, not migration ids.
-  Those belong in `compound-docs/`, commit messages, and PR bodies, which are
-  dated and frozen; a living doc accumulates that narration every release and
-  nobody prunes it. A durable *characteristic* ("~30 ms per encode, ~0.1 ms on
-  a hit") is a current constraint and stays.
+  Those belong in writing that is dated and read as a record of its moment
+  rather than a description of the present; a living doc accumulates that
+  narration every release and nobody prunes it. A durable *characteristic*
+  ("~30 ms per encode, ~0.1 ms on a hit") is a current constraint and stays.
   Self-check before committing: grep added lines for `was `, `were `, `used to`,
   `previously`, `replaced`, `until v`.
 - **Don't write counts that go stale.** "the five docs without a version",

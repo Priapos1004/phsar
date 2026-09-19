@@ -1,5 +1,6 @@
 import logging
 from collections import Counter
+from datetime import date
 from typing import TypedDict
 from uuid import UUID
 
@@ -7,7 +8,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.anime_dao import AnimeDAO
 from app.exceptions import AnimeNotFoundByUuidError
-from app.models.media import RELATION_SCORE_WEIGHTS, Media
+from app.models.media import (
+    AIRING_STATUS_CURRENTLY_AIRING,
+    AIRING_STATUS_FINISHED_AIRING,
+    AIRING_STATUS_NOT_YET_AIRED,
+    RELATION_SCORE_WEIGHTS,
+    SEASON_ORDER,
+    Media,
+)
 from app.schemas.anime_schema import (
     AnimeDetail,
     AnimeMediaItem,
@@ -16,12 +24,7 @@ from app.schemas.anime_schema import (
     RelationTypeSummary,
 )
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
-from app.services.filter_service import SEASON_ORDER, chronological_media_key
-from app.services.relation_classifier import (
-    AIRING_STATUS_CURRENTLY_AIRING,
-    AIRING_STATUS_FINISHED_AIRING,
-    AIRING_STATUS_NOT_YET_AIRED,
-)
+from app.services.filter_service import chronological_media_key
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +51,22 @@ def _compute_airing_status(statuses: list[str]) -> tuple[str, bool]:
 
     show_upcoming = has_upcoming and (has_current or has_finished)
     return primary, show_upcoming
+
+
+def _compute_airing_until(media_list: list[Media]) -> date | None:
+    """The latest `aired_to` among the media airing right now.
+
+    MAX rather than MIN: with two seasons in flight the badge claims "the airing
+    content runs until X", which the earlier date would understate. Usually None
+    — MAL leaves `end_date` unset until a finale is announced.
+
+    Kept out of `_compute_anime_aggregates` because that TypedDict is spread into
+    `AnimeSearchResult` as well."""
+    ends = [
+        m.aired_to for m in media_list
+        if m.airing_status == AIRING_STATUS_CURRENTLY_AIRING and m.aired_to is not None
+    ]
+    return max(ends) if ends else None
 
 
 def _compute_season_range(
@@ -245,6 +264,7 @@ async def get_anime_detail(db: AsyncSession, anime_uuid: UUID) -> AnimeDetail:
         cover_image=anime.cover_image,
         is_finished=anime.completion is not None,
         score_top_percent=score_top_percent,
+        airing_until=_compute_airing_until(media_list),
         media=media_items,
         **agg,
     )

@@ -66,14 +66,28 @@
 	const sessionStart = readOrInitSessionTimestamp(BELL_LOGIN_KEY);
 
 	let jobs = $state<Job[]>([]);
-	// Pinned admin reminder: pending merge + split candidates. Polled
+	// Pinned admin reminder: pending merge + split + delete candidates. Polled
 	// alongside /jobs/mine when isAdmin, otherwise stays at 0. The badge
 	// counts (pending - already-acknowledged) so a fresh login surfaces
 	// the work, opening the bell clears it, and later-arriving candidates
 	// re-bump.
-	let curationCounts = $state<CurationPendingCounts>({ merge: 0, split: 0 });
+	let curationCounts = $state<CurationPendingCounts>({ merge: 0, split: 0, delete: 0 });
 	let curationSeenCount = $state(loadCurationSeen());
-	let totalPending = $derived(curationCounts.merge + curationCounts.split);
+	let totalPending = $derived(
+		curationCounts.merge + curationCounts.split + curationCounts.delete,
+	);
+	// Built here rather than as inline {#if} chains in the markup: each kind
+	// would otherwise need its own value block plus a separator condition to
+	// place the commas. Here a new kind is one array entry.
+	let curationParts = $derived(
+		[
+			{ n: curationCounts.merge, word: 'merge' },
+			{ n: curationCounts.split, word: 'split' },
+			{ n: curationCounts.delete, word: 'deletion' },
+		]
+			.filter((p) => p.n > 0)
+			.map((p) => `${p.n} ${p.word}${p.n === 1 ? '' : 's'}`),
+	);
 	let unseenCuration = $derived(Math.max(0, totalPending - curationSeenCount));
 	// UUID-based "seen" tracking: storing finished_at would couple "seen"
 	// detection to client-server clock alignment. UUIDs are stable.
@@ -481,7 +495,7 @@
 		{/if}
 	</DropdownMenu.Trigger>
 	<DropdownMenu.Content class="w-80 p-0 overflow-hidden" align="end">
-		{#if isAdmin && (curationCounts.merge > 0 || curationCounts.split > 0)}
+		{#if isAdmin && totalPending > 0}
 			<a
 				href="/admin?tab=curation"
 				class="flex items-center gap-2 px-3 py-2 border-b hover:bg-primary/10 transition"
@@ -490,7 +504,7 @@
 				<div class="flex-1 min-w-0">
 					<div class="text-sm font-medium text-card-foreground">Admin tasks</div>
 					<div class="text-xs text-muted-foreground">
-						{#if curationCounts.merge > 0}{curationCounts.merge} merge{curationCounts.merge === 1 ? '' : 's'}{/if}{#if curationCounts.merge > 0 && curationCounts.split > 0}, {/if}{#if curationCounts.split > 0}{curationCounts.split} split{curationCounts.split === 1 ? '' : 's'}{/if} pending
+						{curationParts.join(', ')} pending
 					</div>
 				</div>
 				<ChevronRight class="w-4 h-4 shrink-0 text-muted-foreground" />

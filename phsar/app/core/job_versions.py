@@ -25,43 +25,23 @@ from app.models.job import Job, JobKind
 
 JOB_KIND_VERSIONS: dict[JobKind, int] = {
     JobKind.user_scrape: 1,
-    # v2 bumps result_summary to a `{counters, media_changes,
-    # anime_umbrella_changes}` shape — flat aggregate counters and the
-    # bell-shaped genre/studio drift aggregates were dropped.
-    # v3 relaxes the genre/studio apply policy (additions + removals
-    # now auto-apply; unknown genre tags are still skipped but
-    # surfaced via top-level `unknown_genre_tags`). M2M drift `kind`
-    # values changed from {additions_applied, additions_unknown,
-    # removal_or_replacement, any_change} to {applied,
-    # applied_with_unknowns}.
-    # v4 adds `counters.step1_failed` + top-level `step1_failures[]`
-    # (anime skipped because step-1 refresh raised). These are net-new
-    # keys with safe defaults, so by the bump rules above they wouldn't
-    # require a bump — but we bump anyway so the frontend can tell a v4
-    # `step1_failed: 0` (genuinely zero) from a v3 row that never tracked
-    # it (rendered "—", not a misleading 0).
-    # v5 (v0.14.8) converts the sweep from anime-level to media-level
-    # refresh. Counters go media-grained: `anime_refreshed` -> media_refreshed,
-    # plus new `anime_touched` (distinct anime with >=1 media refreshed) and
-    # `media_skipped_fresh` (present-but-not-due media); the
-    # anime_with_dynamic/static_changes pair is dropped (an anime is no
-    # longer the work unit — media_with_* carries the signal). Also adds
-    # top-level `probe_failures[]` (symmetric to step1_failures[]). The
-    # rename + removals force the bump (net-new keys alone wouldn't); the
-    # frontend keeps v2/v3/v4 parsers so historical rows still render.
-    # v6 (v0.14.9) adds `counters.probe_attached_media_count` + top-level
-    # `probe_attached_anime[]` (per-anime list of media the relations probe
-    # attached: {anime_uuid, title, media: [{media_uuid, title}, ...]}).
-    # Net-new keys with safe defaults wouldn't force a bump, but — like the
-    # v4 step1_failed bump — we bump so the frontend can tell a genuinely
-    # empty v6 list from a pre-v6 row that never tracked it (the "Attached
-    # via probe" card + Jobs Log blue tint gate on version >= 6).
-    # v7 (v0.14.14) adds `counters.hentai_removed_count` + top-level
-    # `hentai_removed[]` (anime deleted mid-sweep because MAL flipped them to
-    # Hentai: {anime_uuid, title, name_eng, name_jap, mal_ids}). Net-new keys
-    # with safe defaults; bumped (like v4/v6) so the frontend renders a
-    # genuinely-empty v7 list distinctly from a pre-v7 row that never tracked it.
-    JobKind.update_sweep: 7,
+    # Entry shapes are typed in the frontend's `types/api.ts`.
+    #   v2  `{counters, media_changes, anime_umbrella_changes}`; flat aggregates gone
+    #   v3  top-level `unknown_genre_tags`; drift `kind` is {applied, applied_with_unknowns}
+    #   v4  `counters.step1_failed` + `step1_failures[]`
+    #   v5  counters go media-grained (`media_refreshed`, `anime_touched`,
+    #       `media_skipped_fresh`); the `anime_with_*` pair is gone; `probe_failures[]`
+    #   v6  `counters.probe_attached_media_count` + `probe_attached_anime[]`
+    #   v7  `counters.hentai_removed_count` + `hentai_removed[]`
+    #   v8  `counters.delete_candidates_raised`
+    #   v9  a MAL 404 stops failing its anime: `gone_upstream[]` replaces the
+    #       `step1_failures[].gone_media_*` keys, so siblings refresh normally
+    #
+    # A version whose only change is net-new keys bumps anyway, against the
+    # rules above, and that is the one thing worth knowing about this list: a
+    # reader must be able to tell a genuine zero or empty list from a row too
+    # old to have counted at all.
+    JobKind.update_sweep: 9,
     # Both season sweeps come off ONE dispatcher and so write one shape:
     # {season_entries, new_entries_enqueued, dedup_skipped, season_year, season_name}.
     # The season pair is additive with a safe default and the frontend gates on its
@@ -101,6 +81,7 @@ LIST_OMITTED_SUMMARY_KEYS: tuple[str, ...] = (
     "probe_failures",          # update_sweep v5
     "probe_attached_anime",    # update_sweep v6
     "hentai_removed",          # update_sweep v7
+    "gone_upstream",           # update_sweep v9
 )
 
 

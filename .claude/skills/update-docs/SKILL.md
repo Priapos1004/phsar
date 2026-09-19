@@ -83,8 +83,7 @@ Review what changed in the current work session and update all affected document
   index entry, not a changelog: the reasoning, the rejected alternatives and the
   measurements belong in the release's compound-doc, which `INDEX.md` already
   makes reachable. Rows creep because each release adds "just one more clause"
-  and nobody re-reads the table as a whole, so check the new row against its
-  neighbours before writing it.
+  and nobody re-reads the table as a whole.
 - **Never put a measurement in a row.** Numbers like "~21,000 tokens → ~4,700"
   or "7× faster" are true on the day and rot silently after, because nothing
   re-measures them. State them once in the compound-doc, where the date and the

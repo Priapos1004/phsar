@@ -2,10 +2,10 @@
 	import { ArrowUp, ArrowDown, StickyNote } from 'lucide-svelte';
 	import { formatShortDate } from '$lib/utils/formatString';
 	import { rowClickNavigate } from '$lib/utils/navigation';
-	import { priorityLabel, PRIORITY_ACCENT, tagGradient, joinNoteTexts } from '$lib/utils/watchlist';
+	import { priorityLabel, PRIORITY_ACCENT, tagGradient, joinNoteTexts, READY_BADGE } from '$lib/utils/watchlist';
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import * as cls from '$lib/styles/classes';
-	import type { WatchlistRow, WatchlistSortKey } from '$lib/utils/watchlistStats';
+	import { watchtimeDisplay, type WatchlistRow, type WatchlistSortKey } from '$lib/utils/watchlistStats';
 
 	interface Props {
 		rows: WatchlistRow[];
@@ -22,6 +22,9 @@
 	const COLS: { key: WatchlistSortKey; label: string; align: 'left' | 'right' | 'center'; width?: string }[] = [
 		{ key: 'title', label: 'Title', align: 'left', width: 'w-full' },
 		{ key: 'priority', label: 'Priority', align: 'center' },
+		// Time earns a column where the readiness pill did not (see its note below): it is
+		// populated at BOTH grains, so it never empties out or shifts the columns beside it.
+		{ key: 'time', label: 'Time', align: 'right' },
 		{ key: 'note', label: 'Note', align: 'center', width: 'w-16' },
 		{ key: 'date', label: 'Added', align: 'right' },
 	];
@@ -48,8 +51,10 @@
 		</thead>
 		<tbody>
 			{#each rows as row (row.key)}
+				{@const badge = row.readyStatus ? READY_BADGE[row.readyStatus] : undefined}
+				{@const watch = watchtimeDisplay(row.watchSeconds, row.watchPartial)}
 				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-				<tr class="group border-b border-border/60 last:border-0 hover:bg-muted/40 transition-colors cursor-pointer" onclick={(e) => rowClickNavigate(e, row.href)}>
+				<tr data-focus-uuid={row.detailUuid} class="group border-b border-border/60 last:border-0 hover:bg-muted/40 transition-colors cursor-pointer" onclick={(e) => rowClickNavigate(e, row.href)}>
 					<td class="px-3 py-2">
 						<Tooltip text={row.tagLabel}>
 							<span class="block size-3.5 rounded-full" style="background:{tagGradient(row.colors)}"></span>
@@ -59,9 +64,27 @@
 						<a href={row.href} class="text-card-foreground group-hover:text-primary font-medium">{row.title}</a>
 						{#if row.subtitle}<span class="ml-1.5 text-xs text-muted-foreground">{row.subtitle}</span>{/if}
 						{#if row.mainSide}<span class="ml-1.5 text-xs text-muted-foreground">({row.mainSide})</span>{/if}
+						<!-- Inline rather than its own column: a Ready column would be blank at media
+						     grain and would move the fixed right-hand columns, which the note above
+						     keeps still across a grain toggle. -->
+						{#if badge}
+							<!-- On the trigger span itself, for the reason given in WatchlistCard. -->
+							<Tooltip text={badge.title} class="ml-1.5 inline-block align-middle {cls.readyPill} {badge.class}">
+								{badge.label}
+							</Tooltip>
+						{/if}
 					</td>
 					<td class="px-3 py-2 text-center whitespace-nowrap font-medium {PRIORITY_ACCENT[row.priority].text}">
 						{priorityLabel(row.priority)}
+					</td>
+					<!-- Tinted text, not the card's pill: a pill is only as wide as its own text, so
+					     a column of them tears along the aligned edge. Same band, same source. -->
+					<td class="px-3 py-2 text-right whitespace-nowrap font-medium {watch.text}">
+						{#if watch.hint}
+							<Tooltip text={watch.hint}>{watch.label}</Tooltip>
+						{:else}
+							{watch.label}
+						{/if}
 					</td>
 					<td class="px-3 py-2 text-center">
 						{#if row.note}

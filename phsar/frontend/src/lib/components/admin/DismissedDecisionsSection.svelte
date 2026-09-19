@@ -1,12 +1,11 @@
 <script lang="ts" generics="T extends { uuid: string; dismissed_at: string | null }">
 	import { api, ApiError } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import * as Dialog from '$lib/components/ui/dialog';
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { ChevronRight, ChevronDown, RotateCcw } from 'lucide-svelte';
 	import { bumpCurationRefresh, curationRefresh, onBump } from '$lib/stores/jobs';
 	import { formatShortDateTime } from '$lib/utils/formatString';
+	import { onDestroy } from 'svelte';
 	import type { Snippet } from 'svelte';
 
 	interface Props {
@@ -16,8 +15,6 @@
 		listUrl: string;
 		/** Base path; delete POSTs to `${basePath}/${uuid}/delete`. */
 		basePath: string;
-		/** Admin username for the confirm gate (empty disables the delete button). */
-		currentUsername: string;
 		/** Per-row renderer the parent card supplies. */
 		row: Snippet<[T]>;
 		/**
@@ -27,7 +24,7 @@
 		 */
 		onResurfaced?: () => void | Promise<void>;
 	}
-	let { kind, listUrl, basePath, currentUsername, row, onResurfaced }: Props = $props();
+	let { kind, listUrl, basePath, row, onResurfaced }: Props = $props();
 
 	// Keep the dismissed list (and its counter) fresh: any curation action —
 	// a dismiss in the parent card, a delete here, or a re-detect that flagged
@@ -42,10 +39,16 @@
 	let items = $state<T[]>([]);
 	let error = $state('');
 
-	let deleteUuid = $state<string | null>(null);
-	let confirmInput = $state('');
-	let deleting = $state(false);
+	// First rung of the confirm ladder in rules/frontend.md.
+	const ARM_TIMEOUT_MS = 3000;
+	let armedUuid = $state<string | null>(null);
+	let armTimer: ReturnType<typeof setTimeout> | undefined;
+	let deletingUuid = $state<string | null>(null);
 	let deleteError = $state('');
+
+	let resurfaceHint = $derived(
+		`Delete this dismissal so the ${kind} can resurface on the next detection`,
+	);
 
 	async function toggle() {
 		expanded = !expanded;
@@ -65,20 +68,31 @@
 		}
 	}
 
-	function openDelete(uuid: string) {
-		deleteUuid = uuid;
-		confirmInput = '';
-		deleteError = '';
+	function disarm() {
+		clearTimeout(armTimer);
+		armedUuid = null;
 	}
 
-	async function handleDelete() {
-		if (!deleteUuid || confirmInput !== currentUsername) return;
-		deleting = true;
+	function requestDelete(uuid: string) {
+		if (armedUuid === uuid) {
+			disarm();
+			void handleDelete(uuid);
+			return;
+		}
+		clearTimeout(armTimer);
+		deleteError = '';
+		armedUuid = uuid;
+		armTimer = setTimeout(() => (armedUuid = null), ARM_TIMEOUT_MS);
+	}
+
+	onDestroy(() => clearTimeout(armTimer));
+
+	async function handleDelete(uuid: string) {
+		deletingUuid = uuid;
 		deleteError = '';
 		try {
-			await api.post(`${basePath}/${deleteUuid}/delete`, { confirm: confirmInput });
-			items = items.filter((it) => it.uuid !== deleteUuid);
-			deleteUuid = null;
+			await api.post(`${basePath}/${uuid}/delete`, {});
+			items = items.filter((it) => it.uuid !== uuid);
 			bumpCurationRefresh();
 			// Resurface now: re-run detection so the freed candidate re-flags
 			// as pending and the parent's pending list refreshes immediately,
@@ -87,7 +101,7 @@
 		} catch (err) {
 			deleteError = err instanceof ApiError ? err.detail : 'Failed to delete decision';
 		} finally {
-			deleting = false;
+			deletingUuid = null;
 		}
 	}
 </script>
@@ -110,8 +124,12 @@
 		{:else if items.length === 0}
 			<p class="text-xs text-muted-foreground mt-2">No dismissed {kind} decisions.</p>
 		{:else}
+			{#if deleteError}
+				<p class="text-xs text-destructive mt-2">{deleteError}</p>
+			{/if}
 			<div class="space-y-2 mt-2">
 				{#each items as item (item.uuid)}
+					{@const armed = armedUuid === item.uuid}
 					<div class="rounded border bg-muted/20 px-3 py-2 flex items-start justify-between gap-3">
 						<div class="min-w-0 space-y-1">
 							{@render row(item)}
@@ -121,16 +139,20 @@
 								</p>
 							{/if}
 						</div>
-						<Tooltip text="Delete this dismissal so the {kind} can resurface on the next detection">
+						<Tooltip text={armed ? 'Click again to confirm' : resurfaceHint}>
 							{#snippet trigger(props)}
 								<Button
 									{...props}
 									variant="ghost"
 									size="sm"
-									class="shrink-0"
-									onclick={() => openDelete(item.uuid)}
+									disabled={deletingUuid !== null}
+									class="shrink-0 min-w-[7.5rem] {armed
+										? 'text-destructive hover:text-destructive'
+										: ''}"
+									onclick={() => requestDelete(item.uuid)}
 								>
-									<RotateCcw class="size-4 mr-1" /> Resurface
+									<RotateCcw class="size-4 mr-1" />
+									{armed ? 'Sure?' : 'Resurface'}
 								</Button>
 							{/snippet}
 						</Tooltip>
@@ -141,38 +163,3 @@
 	{/if}
 </div>
 
-<Dialog.Root open={deleteUuid !== null} onOpenChange={(open) => { if (!open) deleteUuid = null; }}>
-	<Dialog.Content class="sm:max-w-md">
-		<Dialog.Header>
-			<Dialog.Title class="text-destructive">Delete dismissed decision</Dialog.Title>
-			<Dialog.Description>
-				This removes the dismissal so the {kind} candidate can resurface on the next
-				detection — run “Re-detect” to resurface it now, or wait for the nightly sweep.
-				To confirm, type your admin username (<strong>{currentUsername}</strong>) below.
-			</Dialog.Description>
-		</Dialog.Header>
-		<Input
-			bind:value={confirmInput}
-			placeholder={currentUsername}
-			disabled={!currentUsername || deleting}
-			onkeydown={(e: KeyboardEvent) => {
-				if (e.key === 'Enter' && confirmInput === currentUsername) handleDelete();
-			}}
-		/>
-		{#if deleteError}
-			<p class="text-sm text-destructive">{deleteError}</p>
-		{/if}
-		<Dialog.Footer>
-			<Button variant="secondary" onclick={() => (deleteUuid = null)} disabled={deleting}>
-				Cancel
-			</Button>
-			<Button
-				variant="destructive"
-				onclick={handleDelete}
-				disabled={deleting || !currentUsername || confirmInput !== currentUsername}
-			>
-				{deleting ? 'Deleting…' : 'Delete decision'}
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>

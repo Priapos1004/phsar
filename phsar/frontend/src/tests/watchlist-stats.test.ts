@@ -1,39 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import type { WatchlistItem } from '$lib/types/api';
-import { filterByPriority, filterByTags, sortRows, toAnimeRows, toMediaRows, toPriorityBands, watchlistSummary } from '$lib/utils/watchlistStats';
+import { watchlistItem as item, NOW } from './fixtures/watchlistItem';
+import { buildWatchlistView, filterByPriority, filterByTags, filterByWatchtime, sortRows, toAnimeRows, toMediaRows, toPriorityBands, watchlistSummary, watchtimeBucket, WATCHTIME_CUTS, watchtimeDisplay, type WatchtimeKey } from '$lib/utils/watchlistStats';
+import { watchtimeTint, WATCHTIME_FILTERS } from '$lib/utils/watchlist';
+import { DEFAULT_WATCHLIST_FILTER, type WatchlistFilterState } from '$lib/stores/watchlistFilter';
 
-function item(overrides: Partial<WatchlistItem>): WatchlistItem {
-	return {
-		uuid: overrides.uuid ?? crypto.randomUUID(),
-		media_uuid: overrides.media_uuid ?? crypto.randomUUID(),
-		anime_uuid: overrides.anime_uuid ?? 'anime-1',
-		media_title: overrides.media_title ?? 'M',
-		media_name_eng: null,
-		media_name_jap: null,
-		anime_title: overrides.anime_title ?? 'A',
-		anime_name_eng: null,
-		anime_name_jap: null,
-		media_cover_image: null,
-		anime_cover_image: null,
-		priority: overrides.priority ?? 3,
-		note: overrides.note ?? null,
-		tag_uuid: overrides.tag_uuid ?? 'tag-a',
-		tag_name: overrides.tag_name ?? 'A',
-		tag_color: overrides.tag_color ?? '#000000',
-		relation_type: 'main',
-		anime_season_name: null,
-		anime_season_year: null,
-		mal_id: overrides.mal_id ?? 1,
-		genres: overrides.genres ?? [],
-		studios: overrides.studios ?? [],
-		total_watch_time: overrides.total_watch_time ?? null,
-		created_at: overrides.created_at ?? '2024-01-01T00:00:00Z',
-		modified_at: '2024-01-01T00:00:00Z',
-		...overrides,
-	};
-}
-
+const NO_STATUSES = new Map<string, never>();
 const LANG = 'english' as const;
+const H = 3600;
 
 describe('filterByTags', () => {
 	const items = [item({ tag_uuid: 'a' }), item({ tag_uuid: 'b' }), item({ tag_uuid: 'c' })];
@@ -68,6 +41,10 @@ describe('toMediaRows', () => {
 		expect(rows[0].mainSide).toBeNull(); // main/side is an anime-grain concept
 		expect(rows[0].colors).toEqual(['#111']);
 		expect(rows[0].spoilerMediaUuid).not.toBeNull();
+		// `key` is the ENTRY uuid at this grain, so the detail link and the scroll-back
+		// anchor need the media uuid stated separately.
+		expect(rows[0].detailUuid).toBe(rows[0].spoilerMediaUuid);
+		expect(rows[0].detailUuid).not.toBe(rows[0].key);
 	});
 
 	it('flags note presence per media (noteCount 0/1)', () => {
@@ -86,7 +63,7 @@ describe('toAnimeRows', () => {
 	];
 
 	it('aggregates media into one row per anime with a main/side breakdown', () => {
-		const rows = toAnimeRows(items, LANG);
+		const rows = toAnimeRows(items, LANG, NO_STATUSES);
 		expect(rows).toHaveLength(2);
 		const a1 = rows.find((r) => r.key === 'a1')!;
 		expect(a1.mediaCount).toBe(2);
@@ -100,7 +77,7 @@ describe('toAnimeRows', () => {
 			item({ anime_uuid: 'x', note: null }),
 			item({ anime_uuid: 'x', note: 'b' }),
 		];
-		const x = toAnimeRows(withNotes, LANG).find((r) => r.key === 'x')!;
+		const x = toAnimeRows(withNotes, LANG, NO_STATUSES).find((r) => r.key === 'x')!;
 		expect(x.noteCount).toBe(2);
 		expect(x.note).toBeNull(); // the single-note field isn't used at anime grain
 		expect(x.noteTexts).toEqual(['a', 'b']); // texts are carried for the tooltip
@@ -112,7 +89,7 @@ describe('toAnimeRows', () => {
 			item({ anime_uuid: 'x', note: 'winter-2020', anime_season_name: 'Winter', anime_season_year: 2020, mal_id: 9 }),
 			item({ anime_uuid: 'x', note: 'spring-2020', anime_season_name: 'Spring', anime_season_year: 2020, mal_id: 3 }),
 		];
-		const x = toAnimeRows(notes, LANG).find((r) => r.key === 'x')!;
+		const x = toAnimeRows(notes, LANG, NO_STATUSES).find((r) => r.key === 'x')!;
 		expect(x.noteTexts).toEqual(['winter-2020', 'spring-2020', 'fall-2021']);
 	});
 
@@ -122,11 +99,147 @@ describe('toAnimeRows', () => {
 	});
 
 	it('uses the most-urgent (min) priority and distinct tag colors (gradient source)', () => {
-		const a1 = toAnimeRows(items, LANG).find((r) => r.key === 'a1')!;
+		const a1 = toAnimeRows(items, LANG, NO_STATUSES).find((r) => r.key === 'a1')!;
 		expect(a1.priority).toBe(1);
 		expect(a1.colors).toEqual(['#111', '#222']); // two distinct tags → gradient
 		expect(a1.tagLabel).toBe('2 lists');
 		expect(a1.spoilerMediaUuid).toBeNull(); // anime covers aren't spoiler-guarded
+	});
+
+	it('sums the runtimes of its entries', () => {
+		const rows = toAnimeRows(
+			[
+				item({ anime_uuid: 'x', total_watch_time: 4 * H }),
+				item({ anime_uuid: 'x', total_watch_time: 5 * H }),
+			],
+			LANG,
+			NO_STATUSES,
+		);
+		expect(rows[0].watchSeconds).toBe(9 * H);
+		expect(rows[0].watchPartial).toBe(false);
+	});
+
+	it('marks the sum partial when only some entries have a known runtime', () => {
+		const rows = toAnimeRows(
+			[
+				item({ anime_uuid: 'x', total_watch_time: 4 * H }),
+				item({ anime_uuid: 'x', total_watch_time: 4 * H }),
+				item({ anime_uuid: 'x', total_watch_time: null }), // an unlisted-length movie
+			],
+			LANG,
+			NO_STATUSES,
+		);
+		// A lower bound, not a total — the card renders it as "8h+".
+		expect(rows[0].watchSeconds).toBe(8 * H);
+		expect(rows[0].watchPartial).toBe(true);
+	});
+
+	it('has no runtime at all when every entry is unknown', () => {
+		const rows = toAnimeRows(
+			[item({ anime_uuid: 'x', total_watch_time: null }), item({ anime_uuid: 'x', total_watch_time: null })],
+			LANG,
+			NO_STATUSES,
+		);
+		// Null, not 0 — nothing is known, so there is no lower bound to advertise either.
+		expect(rows[0].watchSeconds).toBeNull();
+		expect(rows[0].watchPartial).toBe(false);
+	});
+});
+
+describe('watchtimeBucket', () => {
+	it.each([
+		[1, 'short'],
+		[5 * H - 1, 'short'],
+		[5 * H, 'medium'],
+		[10 * H - 1, 'medium'],
+		[10 * H, 'medium'],
+		[10 * H + 1, 'long'],
+		[30 * H, 'long'],
+	])('buckets %i seconds as %s', (seconds, expected) => {
+		expect(watchtimeBucket(seconds)).toBe(expected);
+	});
+
+	it('gives an unknown runtime no bucket at all', () => {
+		// Not a fourth band and emphatically not "short": an open-ended show has no episode
+		// count, so any band would be a guess.
+		expect(watchtimeBucket(null)).toBeNull();
+		expect(watchtimeBucket(0)).toBeNull();
+	});
+});
+
+describe('WATCHTIME_FILTERS tints', () => {
+	it('renders every band from one teal shade on both surfaces', () => {
+		// The fill and the text are two literals — Tailwind scans source, so neither can be
+		// composed from a shared shade — which leaves them free to drift a step apart and
+		// look like a rendering bug rather than a typo. Sitting on one line is not a guard;
+		// this is.
+		for (const f of WATCHTIME_FILTERS) {
+			expect(f.fill, `${f.key} fill`).toMatch(/^bg-[a-z]+-\d+\b/);
+			expect(f.text, `${f.key} text`).toMatch(/^text-[a-z]+-\d+$/);
+			expect(f.text.match(/\d+/)![0], `${f.key} shade`).toBe(f.fill.match(/\d+/)![0]);
+		}
+	});
+
+	it('states the same thresholds in its labels that the buckets use', () => {
+		// The labels are prose ("< 5h"), the cuts are seconds — one number spelled two ways,
+		// so a moved threshold has to move both or the chip lies about what it selects.
+		const h = (k: 'short' | 'medium') => WATCHTIME_CUTS[k] / 3600;
+		expect(WATCHTIME_FILTERS.map((f) => f.label)).toEqual([`< ${h('short')}h`, `${h('short')}\u2013${h('medium')}h`, `> ${h('medium')}h`]);
+	});
+
+	it('gives the three bands three distinct shades', () => {
+		const shades = WATCHTIME_FILTERS.map((f) => f.text.match(/\d+/)![0]);
+		expect(new Set(shades).size).toBe(WATCHTIME_FILTERS.length);
+	});
+});
+
+describe('watchtimeDisplay', () => {
+	it('labels a known runtime, a lower bound, and an unknown one', () => {
+		expect(watchtimeDisplay(8 * H, false).label).toBe('8h');
+		expect(watchtimeDisplay(8 * H, true).label).toBe('8h+');
+		expect(watchtimeDisplay(null, false).label).toBe('N/A');
+	});
+
+	it('explains only the readings a bare number cannot carry', () => {
+		// Each hint mounts a Tooltip, and each Tooltip its own Provider, so a plain duration
+		// has to come back with nothing to say.
+		expect(watchtimeDisplay(8 * H, false).hint).toBeNull();
+		expect(watchtimeDisplay(8 * H, true).hint).not.toBeNull();
+		expect(watchtimeDisplay(null, false).hint).not.toBeNull();
+	});
+
+	it('keeps an unknown runtime off the band ramp entirely', () => {
+		// Both surfaces fall back to neutral, or absence of data would read as a size.
+		for (const surface of ['fill', 'text'] as const) {
+			expect(watchtimeDisplay(null, false)[surface]).toBe(watchtimeTint(null)[surface]);
+			expect(watchtimeTint(null)[surface]).not.toBe(watchtimeTint('short')[surface]);
+		}
+	});
+});
+
+describe('filterByWatchtime', () => {
+	const rows = toMediaRows(
+		[
+			item({ media_title: 'Short', total_watch_time: 2 * H }),
+			item({ media_title: 'Medium', total_watch_time: 7 * H }),
+			item({ media_title: 'Long', total_watch_time: 20 * H }),
+			item({ media_title: 'Unknown', total_watch_time: null }),
+		],
+		LANG,
+	);
+
+	it('returns all when no band is selected', () => {
+		expect(filterByWatchtime(rows, [])).toHaveLength(4);
+	});
+
+	it('returns the union of selected bands', () => {
+		expect(filterByWatchtime(rows, ['short', 'long']).map((r) => r.title).sort()).toEqual(['Long', 'Short']);
+	});
+
+	it('drops an unknown runtime under every selection', () => {
+		for (const selected of [['short'], ['medium'], ['long']] as WatchtimeKey[][]) {
+			expect(filterByWatchtime(rows, selected).map((r) => r.title)).not.toContain('Unknown');
+		}
 	});
 });
 
@@ -178,8 +291,40 @@ describe('sortRows', () => {
 				item({ anime_uuid: 'z', anime_title: 'Z', note: null }),
 			],
 			LANG,
+			NO_STATUSES,
 		);
 		expect(sortRows(noteRows, 'note', 'desc').map((r) => r.noteCount)).toEqual([2, 1, 0]);
+	});
+
+	it('sorts by runtime, with an unknown one last in BOTH directions', () => {
+		const timed = toMediaRows(
+			[
+				item({ media_title: 'B', total_watch_time: 8 * H }),
+				item({ media_title: 'A', total_watch_time: 2 * H }),
+				item({ media_title: 'U', total_watch_time: null }),
+			],
+			LANG,
+		);
+		expect(sortRows(timed, 'time', 'asc').map((r) => r.title)).toEqual(['A', 'B', 'U']);
+		// Unknown is missing data, not a long show — flipping the direction must not lift it.
+		expect(sortRows(timed, 'time', 'desc').map((r) => r.title)).toEqual(['B', 'A', 'U']);
+	});
+
+	it('breaks an exact runtime tie with the partial flag', () => {
+		// `8h+` is strictly more than `8h`, so it sorts after on ascending. Named so the title
+		// tiebreak points the other way: without the partial flag the ascending pass would
+		// read ['Alpha', 'Zulu'], so this assertion genuinely separates the two.
+		const rows = toAnimeRows(
+			[
+				item({ anime_uuid: 'p', anime_title: 'Alpha', total_watch_time: 8 * H }),
+				item({ anime_uuid: 'p', anime_title: 'Alpha', total_watch_time: null }),
+				item({ anime_uuid: 'e', anime_title: 'Zulu', total_watch_time: 8 * H }),
+			],
+			LANG,
+			NO_STATUSES,
+		);
+		expect(sortRows(rows, 'time', 'asc').map((r) => r.title)).toEqual(['Zulu', 'Alpha']);
+		expect(sortRows(rows, 'time', 'desc').map((r) => r.title)).toEqual(['Alpha', 'Zulu']);
 	});
 
 	it('keeps ties in a stable (title-ascending) order when the direction flips', () => {
@@ -190,6 +335,72 @@ describe('sortRows', () => {
 		// Same priority → title-ascending both ways (Alpha before Beta), not reversed by dir.
 		expect(sortRows(tied, 'priority', 'asc').map((r) => r.title)).toEqual(['Alpha', 'Beta']);
 		expect(sortRows(tied, 'priority', 'desc').map((r) => r.title)).toEqual(['Alpha', 'Beta']);
+	});
+});
+
+describe('buildWatchlistView', () => {
+	// The ORDER of the pipeline, which is the only reason it is a function rather than a
+	// `$derived` chain in WatchlistListTab. Each of these fails on a reordering that every
+	// other suite in this file would pass.
+	const view = (items: ReturnType<typeof item>[], f: Partial<WatchlistFilterState> = {}) =>
+		buildWatchlistView(items, { ...DEFAULT_WATCHLIST_FILTER, ...f }, LANG, NOW);
+
+	// One anime across two lists: a long main entry, and a short side story whose own list
+	// cannot support the standalone exemption. The franchise is airing.
+	const split = [
+		item({
+			anime_uuid: 'x',
+			tag_uuid: 'main',
+			franchise_airing: true,
+			total_watch_time: 60 * H,
+			priority: 1,
+		}),
+		item({
+			anime_uuid: 'x',
+			tag_uuid: 'extras',
+			franchise_airing: true,
+			relation_type: 'side_story',
+			total_watch_time: 30 * 60,
+			priority: 3,
+		}),
+	];
+	const verdict = (f: Partial<WatchlistFilterState>) => view(split, f).rows[0]?.readyStatus;
+
+	it('scopes the verdict to the selected lists', () => {
+		// Fails if `statusByAnime` is fed the raw items instead of the tag-filtered ones.
+		// Also the standalone half of readiness.md's scoping table, and the symptom that
+		// prompted it: the side story's list cannot borrow the long entry's exemption, so
+		// the badge stops contradicting the runtime rendered beside it.
+		expect(verdict({ tagUuids: ['main'] })).toBe('standalone');
+		expect(verdict({ tagUuids: ['extras'] })).toBe('hot');
+		expect(verdict({})).toBe('standalone'); // no selection = the whole watchlist
+	});
+
+	it('does not let the priority or watchtime chips move a verdict', () => {
+		// Both are ROW filters, applied after the badge is stamped, so the aggregate row
+		// carries the most urgent priority and the summed runtime — neither chip below
+		// matches it, and a row filter can only drop a row, never re-judge it.
+		//
+		// The two empty expectations are the guard: hoisting either filter above
+		// `toAnimeRows` would leave the 30-minute priority-3 side story judging the anime
+		// alone, and each would then yield one Hot row instead of none.
+		expect(verdict({ priorities: [1] })).toBe('standalone');
+		expect(view(split, { priorities: [3] }).rows).toHaveLength(0);
+		expect(view(split, { watchtime: ['short'] }).rows).toHaveLength(0);
+	});
+
+	it('sums an anime row over the selected lists, matching the badge beside it', () => {
+		// The asymmetry that started this: the runtime followed the Lists chips while the
+		// verdict did not, so a card could read "30m" next to a Standalone badge.
+		expect(view(split, { tagUuids: ['extras'] }).rows[0].watchSeconds).toBe(30 * 60);
+		expect(view(split, { tagUuids: ['main'] }).rows[0].watchSeconds).toBe(60 * H);
+	});
+
+	it('sorts only the table copy, leaving the grid rows for the priority bands', () => {
+		const rows = [item({ anime_uuid: 'b', media_title: 'Beta' }), item({ anime_uuid: 'a', media_title: 'Alpha' })];
+		const built = view(rows, { grain: 'media', sort: 'title', sortDir: 'asc' });
+		expect(built.tableRows.map((r) => r.title)).toEqual(['Alpha', 'Beta']);
+		expect(built.rows.map((r) => r.title)).toEqual(['Beta', 'Alpha']);
 	});
 });
 

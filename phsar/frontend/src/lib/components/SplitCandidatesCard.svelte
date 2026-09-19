@@ -17,8 +17,6 @@
         SplitResult,
     } from '$lib/types/api';
 
-    let { currentUsername = '' }: { currentUsername?: string } = $props();
-
     let nameLanguage = $derived($userSettings?.name_language ?? 'english');
 
     let candidates = $state<SplitCandidateListItem[]>([]);
@@ -289,7 +287,6 @@
             kind="split"
             listUrl="/admin/split-candidates/dismissed"
             basePath="/admin/split-candidates"
-            {currentUsername}
             onResurfaced={handleRedetect}
         >
             {#snippet row(item: SplitCandidateListItem)}

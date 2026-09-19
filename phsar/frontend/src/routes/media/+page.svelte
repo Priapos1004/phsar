@@ -2,8 +2,9 @@
 	import { page } from '$app/state';
 	import { getContext } from 'svelte';
 	import { api, ApiError } from '$lib/api';
-	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, formatEpisodeCount, cleanDescription, resolveTitle, resolveSubtitles, formatRelationType, formatMediaType } from '$lib/utils/formatString';
+	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, formatEpisodeCount, formatAiringStatus, cleanDescription, resolveTitle, resolveSubtitles, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
+	import { FOCUS_PARAM } from '$lib/utils/scrollFocus';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -60,6 +61,9 @@
 	let searchToken = $derived(page.url.searchParams.get('q'));
 	let fromParam = $derived(page.url.searchParams.get('from') as DetailOrigin | null);
 	let jobUuid = $derived(page.url.searchParams.get('job'));
+	// This page IS the card that was clicked, so its own uuid is the anchor unless a
+	// deeper hop already named one — see `utils/scrollFocus`.
+	let focusUuid = $derived(page.url.searchParams.get(FOCUS_PARAM) ?? page.url.searchParams.get('uuid'));
 
 	let cleanedDescription = $derived(media?.description ? cleanDescription(media.description) : null);
 	// OR with userRating prevents a brief blur flash after rating: the local
@@ -145,7 +149,7 @@
 	{:else if error}
 		<div class="text-center text-destructive py-20">{error}</div>
 	{:else if media}
-		<BackLink {searchToken} {fromParam} {jobUuid} />
+		<BackLink {searchToken} {fromParam} {jobUuid} {focusUuid} />
 
 		<div class="relative rounded-xl overflow-hidden">
 			{#if media.cover_image && !coverFailed}
@@ -187,9 +191,11 @@
 								{resolveTitle(media.title, media.name_eng, media.name_jap, nameLanguage)}
 							</h1>
 							{#if media.airing_status === 'Currently Airing'}
-								<span class="inline-flex items-center gap-1.5 mt-1.5 px-2.5 py-1 rounded-md font-semibold bg-green-100 text-green-800 border border-green-200">
+								<!-- Structurally the anime hero's badge. The media grain has no
+								     upcoming-content qualifier, so there is only ever one part. -->
+								<span class="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-1.5 px-2.5 py-1 rounded-md font-semibold bg-green-100 text-green-800 border border-green-200">
 									<span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-									{media.airing_status}
+									<span>{formatAiringStatus(media.airing_status, false, media.aired_to)}</span>
 								</span>
 							{:else if media.airing_status === 'Not yet aired'}
 								<span class="inline-block mt-1.5 px-2.5 py-1 rounded-md font-semibold bg-yellow-100 text-yellow-800 border border-yellow-200">
@@ -343,12 +349,12 @@
 				<p class="text-muted-foreground {media.sibling_media.length ? 'mb-3' : ''}">
 					Part of anime:
 					<a
-						href={buildDetailHref('anime', media.anime_uuid, { q: searchToken, from: fromParam, job: jobUuid })}
+						href={buildDetailHref('anime', media.anime_uuid, { q: searchToken, from: fromParam, job: jobUuid, focus: focusUuid })}
 						class="text-primary font-medium hover:underline"
 					>{resolveTitle(media.anime_title, media.anime_name_eng, media.anime_name_jap, nameLanguage)}</a>
 				</p>
 				{#if media.sibling_media.length}
-					<RelatedMediaCarousel siblings={media.sibling_media} currentPosition={media.current_position} {searchToken} {fromParam} {jobUuid} />
+					<RelatedMediaCarousel siblings={media.sibling_media} currentPosition={media.current_position} {searchToken} {fromParam} {jobUuid} {focusUuid} />
 				{:else}
 					<p class="text-muted-foreground/70 text-sm mt-2">No other media in this anime</p>
 				{/if}

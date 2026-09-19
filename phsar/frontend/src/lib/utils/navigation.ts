@@ -3,6 +3,8 @@ import type { MediaSearchFilters } from '$lib/utils/search';
 import { api, ApiError } from '$lib/api';
 import type { SearchTokenResponse } from '$lib/types/api';
 import { token } from '$lib/stores/auth';
+import { captureReturnTarget } from '$lib/utils/resumeSession';
+import { FOCUS_PARAM } from '$lib/utils/scrollFocus';
 
 /** Whole-row click → navigate, shared by the ratings + watchlist tables. Preserves
  * native new-tab (modifier / middle click) and lets a real `<a>` inside the row handle
@@ -28,6 +30,10 @@ export interface DetailHrefOptions {
      * to that specific `/admin/jobs/[uuid]` row (the admin came from a sweep
      * audit). Propagated on anime↔media jumps like `q`/`from`. */
     job?: string | null;
+    /** Uuid of the list item this detour started from, so the back button can
+     * scroll it into view — see `utils/scrollFocus`. Propagated on anime↔media
+     * jumps like `q`/`from`. */
+    focus?: string | null;
 }
 
 /** The two detail grains, and therefore the two top-level detail routes
@@ -47,7 +53,20 @@ export function buildDetailHref(
     if (opts?.q) params.set('q', opts.q);
     if (opts?.from) params.set('from', opts.from);
     if (opts?.job) params.set('job', opts.job);
+    if (opts?.focus) params.set(FOCUS_PARAM, opts.focus);
     return `/${type}?${params.toString()}`;
+}
+
+/**
+ * The absolute, shareable form of a detail link — what goes to a share sheet.
+ *
+ * Deliberately **bare**: it carries none of the params recording how the *sharer*
+ * arrived, which mean nothing to a recipient, and the search token alone is ~1400
+ * characters of noise in a chat. Built from the uuid for that reason rather than
+ * read off the address bar, which is carrying all of them.
+ */
+export function absoluteDetailUrl(type: DetailType, uuid: string, origin: string): string {
+    return `${origin}${buildDetailHref(type, uuid)}`;
 }
 
 /** Jump to an anime-view search filtered to a single studio ("other anime from this
@@ -67,8 +86,12 @@ export async function navigateToSearch(params: MediaSearchFilters) {
         goto(`/search?q=${encodeURIComponent(data.token)}`);
     } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
+            // Captured before the clear, as captureReturnTarget requires — the
+            // caller may well be the ratings page's own chart, whose filters are
+            // worth coming back to.
+            const target = captureReturnTarget(new URL(window.location.href));
             token.set(null);
-            window.location.href = '/login';
+            window.location.href = target;
         } else {
             console.error('Search navigation failed:', err);
         }

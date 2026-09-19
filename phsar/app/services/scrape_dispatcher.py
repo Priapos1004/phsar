@@ -19,9 +19,10 @@ helpers and is purely a discovery pass that hands off to user_scrape.
 
 import logging
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import NamedTuple
 
+import httpx
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,19 +36,27 @@ from app.exceptions import (
     AnimeFilteredOutError,
     AnimeNotFoundError,
     MainMediaNotFoundError,
+    MalIdNotFoundError,
     TransientUpstreamError,
 )
 from app.models.anime import Anime
 from app.models.anime_freshness import AnimeFreshness
 from app.models.genre import Genre
 from app.models.job import Job
-from app.models.media import Media, MediaType, RelationType, SeasonType
+from app.models.media import (
+    AIRING_STATUS_CURRENTLY_AIRING,
+    Media,
+    MediaType,
+    RelationType,
+    SeasonType,
+)
 from app.models.media_freshness import MediaFreshness
 from app.models.media_genre import MediaGenre
 from app.models.media_relation_edges import MediaRelationEdges
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
 from app.schemas.search_schema import AttachToExistingAction
+from app.services import delete_candidate_service
 from app.services.anime_relation_service import (
     reclassify_anime,
     umbrella_diff_to_log_entry,
@@ -56,7 +65,7 @@ from app.services.job_worker import ERROR_CATEGORY_UPSTREAM_OUTAGE, classify_err
 from app.services.mal_scraper import (
     MalScraper,
     is_hentai,
-    parse_mal_datetime,
+    parse_mal_date,
     parse_relation_edges,
 )
 from app.services.merge_detection_service import (
@@ -64,10 +73,7 @@ from app.services.merge_detection_service import (
     find_cross_anime_relation_pairs,
 )
 from app.services.progress_reporter import ProgressReporter
-from app.services.relation_classifier import (
-    AIRING_STATUS_CURRENTLY_AIRING,
-    classify_and_stamp,
-)
+from app.services.relation_classifier import classify_and_stamp
 from app.services.save_service import attach_search_result_to_anime, save_search_results
 from app.services.search_service import handle_search_mal_api_results
 from app.services.spoiler_service import refresh_spoiler_cache_for_anime_ids
@@ -93,6 +99,12 @@ class RefreshResult(NamedTuple):
     # Per-media diff entries already annotated with anime context so the
     # dispatcher just extends its log — no post-hoc mutation needed.
     media_changes: list[dict]
+    # Media MAL 404'd during this refresh: deleted upstream, so already
+    # stamped + queued for review inside the savepoint. Reporting only —
+    # the dispatcher logs them and discounts them from the refresh
+    # counters, it does not act on them. Same annotated-dict convention as
+    # `media_changes`; see the 404 branch in `_refresh_one_anime`.
+    gone_upstream: list[dict]
 
 
 class Step1Failure(NamedTuple):
@@ -187,6 +199,24 @@ async def user_scrape_dispatcher(session: AsyncSession, job: Job) -> dict:
             f"user_scrape payload must include query or mal_id, got {payload!r}",
         )
 
+    # Blacklist gate, BEFORE the BFS. `mal_scraper.search_title` subtracts the
+    # seed from its excluded-ids set (the seed has to be fetchable or a seeded
+    # scrape could never start), so the BFS itself will happily fetch and save a
+    # blacklisted id. The content gates downstream only catch the ones with a
+    # content reason — Hentai, Music, PV — so anything blacklisted by admin
+    # curation would sail straight back into the catalogue.
+    #
+    # The postmortem at the bottom of this function runs the same lookup, but
+    # it cannot replace this one: it only fires when the BFS produced nothing,
+    # and an admin-blacklisted entry is otherwise ordinary content that the BFS
+    # would happily save. The two cover different moments — this one a mal_id
+    # blacklisted before the run, that one a mal_id the BFS blacklisted during
+    # it.
+    if seed_mal_id is not None:
+        unwanted = await MediaUnwantedDAO().get_by_mal_id(session, seed_mal_id)
+        if unwanted is not None:
+            raise AnimeFilteredOutError(unwanted.title, unwanted.reason)
+
     progress = ProgressReporter(job.id)
 
     await progress.update(stage="Fetching", force=True)
@@ -214,13 +244,18 @@ async def user_scrape_dispatcher(session: AsyncSession, job: Job) -> dict:
         attached_count = await _route_attach_actions(session, attach_actions)
 
     if not results and not attached_count:
-        # Empty BFS result + no attach happened. Three distinct causes
-        # worth surfacing — the cron path's error_message is the only
-        # post-mortem record (system jobs don't appear in the bell), so
-        # distinguishing them saves the next admin from wondering
-        # whether MAL is broken, dropping a PV, or returning a
-        # malformed graph.
+        # Empty BFS result + no attach happened. The distinct causes are worth
+        # surfacing — the cron path's error_message is the only post-mortem
+        # record (system jobs don't appear in the bell), so distinguishing them
+        # saves the next admin from wondering whether MAL is broken, dropping a
+        # PV, or returning a malformed graph.
+        #
         if seed_mal_id is not None:
+            # Still needed despite the pre-BFS gate above, and for a different
+            # case: that gate catches a mal_id blacklisted BEFORE this run,
+            # while this catches one the BFS itself just blacklisted, having
+            # fetched the seed and classified it as Music/PV/CM/Hentai. The row
+            # did not exist when the gate ran.
             unwanted = await MediaUnwantedDAO().get_by_mal_id(session, seed_mal_id)
             if unwanted is not None:
                 raise AnimeFilteredOutError(unwanted.title, unwanted.reason)
@@ -304,14 +339,14 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     # Progress is media-grained: items_total is the due-media workload (the
     # real MAL-call/time unit), items_done tracks refreshed media. Commits
     # happen per anime, so the bar advances in per-anime chunks. The
-    # items_done < items_total gap at the end is exactly the media belonging
-    # to anime whose step-1 refresh failed (surfaced on the detail page).
+    # items_done < items_total gap at the end is exactly the media that were
+    # selected but never refreshed (surfaced on the detail page).
     total = len(due_media)
     await progress.update(
         stage="Refreshing", items_total=total, items_done=0, force=True,
     )
 
-    # AsyncSession is not concurrency-safe; all three queries share `session`.
+    # AsyncSession is not concurrency-safe; these queries share `session`.
     media_ids = await MediaDAO().get_all_mal_ids(session)
     anime_ids = await AnimeDAO().get_all_mal_ids(session)
     unwanted_ids = await MediaUnwantedDAO().get_all_mal_ids(session)
@@ -330,8 +365,8 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     umbrella_reclassed = 0
     probe_succeeded = 0
     probe_failed = 0
-    # Anime selected but skipped because step 1 raised (MAL outage, 404,
-    # etc.). Counted + listed in result_summary so a sweep that drops a
+    # Anime selected but skipped because step 1 raised (a MAL outage, a bad
+    # response). Counted + listed in result_summary so a sweep that drops a
     # chunk of its workload is visible instead of reading as fully clean.
     step1_failed = 0
     step1_failures: list[dict] = []
@@ -346,6 +381,13 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     # rating). Each entry: {anime_uuid, title, name_eng, name_jap, mal_ids}.
     # The mal_ids were blacklisted so they can't be re-added.
     hentai_removed_log: list[dict] = []
+    # Delete candidates raised this run, across both detectors (a MAL 404 mid-
+    # sweep, and the low-signal pass at the end). Surfaced as a counter so the
+    # Jobs Log can tint the row — nothing is deleted here, the admin decides.
+    delete_candidates_raised = 0
+    # Media MAL 404'd mid-sweep. Each entry carries its own + its parent
+    # anime's identity so the detail page can list them without a round trip.
+    gone_upstream_log: list[dict] = []
     # Track which existing anime had new media attached so we can re-run
     # merge detection on them at sweep end — a tier-3 anime whose probe
     # pulled in a new sibling franchise (Vigilante-shape) may now bridge
@@ -379,13 +421,12 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     orphaned_studios_removed = 0
 
     def build_result_summary() -> dict:
-        """Assemble the v7 result_summary from the loop accumulators (read via
+        """Assemble the result_summary from the loop accumulators (read via
         closure). Called at the normal end-of-sweep return AND at the circuit-
         breaker abort, so a failed sweep still carries the media_refreshed
         counters + the per-anime failure list the detail page renders instead
-        of only the header error banner. v7 (v0.14.14) adds `hentai_removed`
-        (+ `counters.hentai_removed_count`) for anime deleted mid-sweep on a
-        Hentai flip."""
+        of only the header error banner. `JOB_KIND_VERSIONS` in
+        `core/job_versions.py` records which shape each version writes."""
         return {
             # v5 (v0.14.8): counters go media-grained. `media_refreshed` is the
             # headline workload (individual media touched); `anime_touched` is
@@ -408,6 +449,10 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
                 "step1_failed": step1_failed,
                 # v7 (v0.14.14): anime deleted for flipping to Hentai.
                 "hentai_removed_count": len(hentai_removed_log),
+                # v8: delete candidates raised this run across both detectors.
+                # Nothing was deleted — this is a queue depth the admin has to
+                # act on, which is why the Jobs Log tints the row for it.
+                "delete_candidates_raised": delete_candidates_raised,
             },
             "media_changes": media_changes_log,
             "anime_umbrella_changes": anime_umbrella_changes_log,
@@ -425,6 +470,9 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
             # {anime_uuid, title, name_eng, name_jap, mal_ids}. The detail page
             # lists them; the Jobs Log surfaces the count.
             "hentai_removed": hentai_removed_log,
+            # Media MAL 404'd this sweep — deleted upstream, so stamped and
+            # queued for the admin rather than retried.
+            "gone_upstream": gone_upstream_log,
             # Deduplicated across every media in this sweep. The Jobs Log
             # tints rows when this is non-empty so the admin can spot which
             # sweeps need a seeder update without drilling into details.
@@ -454,7 +502,7 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
                 # on every remaining anime (~30s–11min each) while maintenance
                 # is held — raising fails the job (retryable) and clears the
                 # maintenance flag at once instead of hours later. A non-upstream
-                # failure (e.g. a stray 404) neither trips nor resets the breaker.
+                # failure neither trips nor resets the breaker.
                 if step1.error_category == ERROR_CATEGORY_UPSTREAM_OUTAGE:
                     consecutive_upstream_failures += 1
                     if (
@@ -493,9 +541,21 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
             # already advanced); they won't re-refresh next sweep, so dropping
             # them from the counters would undercount real work.
             sidecar_touched_anime_ids.append(anime.id)
-            anime_touched += 1
-            media_refreshed += len(media_to_refresh)
+            # Media MAL 404'd were checked but not refreshed, so they widen the
+            # progress gap rather than the counters — and an anime whose every
+            # due media died did no work at all.
+            refreshed_here = len(media_to_refresh) - len(step1.gone_upstream)
+            if refreshed_here:
+                anime_touched += 1
+            media_refreshed += refreshed_here
             media_skipped_fresh += len(anime.media) - len(media_to_refresh)
+            gone_upstream_log.extend(step1.gone_upstream)
+            # Off the flag, not the list length: a re-404 of a mal_id an admin
+            # already dismissed raises nothing, and this counter is what tints
+            # the Jobs Log row.
+            delete_candidates_raised += sum(
+                entry["candidate_raised"] for entry in step1.gone_upstream
+            )
             for entry in step1.media_changes:
                 media_changes_log.append(entry)
                 if entry["dynamic"]:
@@ -588,6 +648,26 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
         except Exception:
             logger.exception("Spoiler cache recompute failed after sweep")
             cache_recompute_failed = True
+            # Same reason as the cross-link block above: a failed statement marks
+            # the session pending-rollback, and the low-signal pass immediately
+            # below would inherit it and be logged as its own failure.
+            await session.rollback()
+
+    # Low-signal detection, coalesced at sweep end like merge detection above:
+    # it is one catalogue-wide query with no MAL calls, and the sweep is the
+    # only thing that changes what it would find (a refresh can move a media
+    # over or under the vote floor). Soft-warn — the catalogue work has already
+    # committed, and a detection failure must not fail an otherwise-clean sweep.
+    try:
+        low_signal_raised = await delete_candidate_service.detect_low_signal_candidates(
+            session
+        )
+        await session.commit()
+        # After the commit: a rolled-back insert must not be counted.
+        delete_candidates_raised += low_signal_raised
+    except Exception:
+        logger.exception("Post-sweep low-signal delete detection failed")
+        await session.rollback()
 
     # Coalesced at sweep end: the relaxed drift policy applies studio
     # removals per-anime above, any of which can strand a Studio row with
@@ -622,7 +702,8 @@ async def _try_step1_refresh(
     anime was skipped and why in `result_summary.step1_failures`. The
     failure unit stays per-anime (one savepoint over its due media) — the
     counter is media-grained but a raising media still rolls back its
-    siblings' refresh in this savepoint.
+    siblings' refresh in this savepoint. A 404 never reaches here; it is
+    handled inside the loop.
 
     Uses SAVEPOINT (`begin_nested`) instead of session-level rollback —
     `session.rollback()` would expire every eager-loaded instance the
@@ -761,9 +842,57 @@ async def _refresh_one_anime(
     volatile_changed = False
     raw_payloads: dict[int, dict] = {}
     media_changes: list[dict] = []
+    gone_upstream: list[dict] = []
 
     for media in media_to_refresh:
-        raw = await scraper.refresh_anime(media.mal_id)
+        try:
+            raw = await scraper.refresh_anime(media.mal_id)
+        except httpx.HTTPStatusError as exc:
+            # 404 is the one refresh failure that is about this row rather than
+            # about MAL: the entry was deleted upstream and will never come back
+            # on its own. So it is handled here and the loop carries on — a dead
+            # entry in a franchise with dozens of media must not cost its
+            # siblings their refresh. Everything else propagates and stays an
+            # ordinary retryable failure that rolls this anime's savepoint back.
+            if exc.response.status_code != 404:
+                raise
+            # Both writes land inside the savepoint that already owns this row,
+            # so they are atomic with each other. Splitting them would allow a
+            # stamped clock with nothing in the queue — the media would then go
+            # quiet for the whole long-tail window with no record for the admin.
+            raised = await delete_candidate_service.raise_sweep_404_candidate(
+                session, media,
+            )
+            # reset=False advances the stability counter as well as the
+            # timestamp, and that half is load-bearing: the stabilizing tier is
+            # a bare `stable_check_count < 3` with no staleness term, so a media
+            # still inside it is due every night no matter how recently it was
+            # checked. Stamping the clock alone would not stop the nightly retry
+            # for a media that 404s soon after it was first scraped.
+            _advance_media_freshness(
+                media, media_changed=False, is_media_airing=False, now=now,
+            )
+            logger.info(
+                "MAL 404 on media mal_id=%s — %s and backed its refresh off to "
+                "the long-tail window",
+                media.mal_id,
+                "raised a delete candidate" if raised
+                else "left the existing curation decision alone",
+            )
+            gone_upstream.append({
+                "anime_uuid": str(anime.uuid),
+                "anime_title": anime.title,
+                "anime_name_eng": anime.name_eng,
+                "anime_name_jap": anime.name_jap,
+                "media_uuid": str(media.uuid),
+                "media_title": media.title,
+                "media_name_eng": media.name_eng,
+                "media_name_jap": media.name_jap,
+                "media_mal_id": media.mal_id,
+                # False when a dismissal already exists for this mal_id.
+                "candidate_raised": raised,
+            })
+            continue
         raw_payloads[media.mal_id] = raw
         payload = scraper.extract_information(raw)
 
@@ -865,6 +994,7 @@ async def _refresh_one_anime(
         is_currently_airing=is_currently_airing,
         umbrella_diff=umbrella_diff,
         media_changes=media_changes,
+        gone_upstream=gone_upstream,
     )
 
 
@@ -972,7 +1102,15 @@ async def _probe_relations_for_anime(
                 seed_mal_id=seed_mal_id,
                 seed_payload=raw_payloads.get(seed_mal_id),
             )
-        except AnimeNotFoundError:
+        except (AnimeNotFoundError, MalIdNotFoundError):
+            # Both mean the seed is gone, and the probe path raises the second:
+            # it passes `seed_mal_id`, so MAL's 404 comes back from the exact-id
+            # fetch. They are siblings under PermanentPhsarError, not parent and
+            # child, so catching one does not catch the other. A seed stays in
+            # `anime.media` until an admin acts on its delete candidate, so
+            # missing this re-fails the probe on every sweep that touches the
+            # anime — and a failed probe leaves AnimeFreshness unstamped, so the
+            # franchise stops discovering new sequels entirely.
             logger.warning(
                 "Probe seed mal_id=%d for anime %s disappeared from MAL; skipping seed",
                 seed_mal_id, anime.title,
@@ -1033,7 +1171,7 @@ _EMBEDDING_TEXT_FIELDS = ("title", "name_eng", "name_jap", "other_names", "descr
 # back to weekly polling over a duration typo. All None-guarded in the loop below
 # so a MAL omission never nulls a populated value. media_type, anime_season_name
 # and aired_from are self-healed too but need special handling (enum coercion /
-# datetime parse) so they live outside this tuple.
+# date parse) so they live outside this tuple.
 _METADATA_NONTEXT_FIELDS = (
     "cover_image", "age_rating", "original_source",
     "duration_seconds", "anime_season_year", "mal_url",
@@ -1048,12 +1186,11 @@ _VALID_SEASON_NAMES = frozenset(s.value for s in SeasonType)
 
 
 def _jsonable(value: object) -> object:
-    """Coerce values into a JSONB-safe shape for the diff sink. Datetime
-    is the one type the volatile-field bucket emits that Python's default
-    json encoder rejects (the JSONB column's serializer goes through
-    `json.dumps`). All other field types in result_summary are already
-    primitive/list/dict."""
-    if isinstance(value, datetime):
+    """Coerce values into a JSONB-safe shape for the diff sink. Date-valued
+    captures are the only ones Python's default json encoder rejects (the JSONB
+    column's serializer goes through `json.dumps`); every other field in
+    result_summary is already primitive/list/dict."""
+    if isinstance(value, date):
         return value.isoformat()
     return value
 
@@ -1366,7 +1503,7 @@ def _apply_media_diff(
     # None-guarded like every sibling volatile field: a transient MAL
     # response that omits end_date on a finished media must not null a
     # populated aired_to (and reset its stability counter).
-    new_aired_to = parse_mal_datetime(payload.get("aired_to"))
+    new_aired_to = parse_mal_date(payload.get("aired_to"))
     if new_aired_to is not None and media.aired_to != new_aired_to:
         _capture("aired_to", media.aired_to, new_aired_to)
         media.aired_to = new_aired_to
@@ -1377,7 +1514,7 @@ def _apply_media_diff(
     # but do NOT flip `changed`: a premiere-date correction is a rare
     # structural fix, not the volatile churn the stability counter tracks.
     # None-guarded so a MAL omission never nulls a populated premiere date.
-    new_aired_from = parse_mal_datetime(payload.get("aired_from"))
+    new_aired_from = parse_mal_date(payload.get("aired_from"))
     if new_aired_from is not None and media.aired_from != new_aired_from:
         _capture("aired_from", media.aired_from, new_aired_from)
         media.aired_from = new_aired_from

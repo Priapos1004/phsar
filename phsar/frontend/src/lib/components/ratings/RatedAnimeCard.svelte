@@ -26,7 +26,7 @@
 	);
 </script>
 
-<a {href} class="group block transition duration-200 hover:-translate-y-0.5">
+<a {href} data-focus-uuid={row.detailUuid} class="group block transition duration-200 hover:-translate-y-0.5">
 	<div class="{cls.cardGlass} rounded-xl overflow-hidden border border-border h-full flex flex-col shadow-sm group-hover:shadow-md group-hover:ring-1 group-hover:ring-primary/40 transition">
 		<div class="relative">
 			{#if row.cover_image && !imgFailed}

@@ -1,8 +1,7 @@
 """DAO for SplitCandidate — admin queue surfacing disjoint-franchise
 contamination flagged by `find_disjoint_franchises`.
 
-Sibling to MergeCandidateDAO. The interface mirrors merge_candidate's
-admin workflow (`upsert_pending` / `list_pending_with_anime` / `get_by_uuid`)
+Sibling to MergeCandidateDAO, whose admin workflow the interface mirrors,
 but the table shape is asymmetric — one anime + JSONB clusters payload —
 so the queries don't share a base.
 """
@@ -36,11 +35,11 @@ class SplitCandidateDAO(BaseDAO[SplitCandidate]):
     def __init__(self):
         super().__init__(SplitCandidate)
 
-    async def get_by_uuid(
+    async def get_for_resolve(
         self, db: AsyncSession, uuid: UUID
     ) -> SplitCandidate | None:
-        stmt = select(SplitCandidate).where(SplitCandidate.uuid == uuid)
-        return (await db.execute(stmt)).scalars().first()
+        """Row-locked — see "A candidate resolves once" in docs/features/curation.md."""
+        return await self.get_by_field(db, uuid=uuid, for_update=True)
 
     async def count_pending(self, db: AsyncSession) -> int:
         """Cheap status='pending' count for the admin bell's pinned

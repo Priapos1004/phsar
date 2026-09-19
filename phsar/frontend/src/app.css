@@ -30,6 +30,16 @@
      88% weight oklch hue-interpolation dragged the result toward red on the green/blue
      themes. oklab has no hue channel, so white's neutral a/b let the primary's hue win. */
   --tooltip-surface: color-mix(in oklab, var(--color-popover) 88%, var(--primary));
+  /* The focus-flash sweep's band colour, a token for the same reason the tooltip
+     surface is one: this file's minifier emits a color-mix fallback by duplicating
+     the rule that holds it, so an inline mix duplicates the whole `tr.focus-flash`
+     rule. Declared here, the fallback collapses onto one declaration.
+     It does NOT soften that fallback — where color-mix() is unsupported the token
+     resolves to a solid var(--primary), a harder band than intended. Unfixable at
+     this layer (a custom property accepts the mix as valid, so a preceding
+     translucent declaration never wins); the lever is Vite's `cssTarget`, which is
+     what asks for the fallback arm at all. */
+  --focus-sweep-tint: color-mix(in oklab, var(--primary) 34%, transparent);
 }
 
 @theme inline {
@@ -160,6 +170,53 @@ body {
 
 a {
   @apply outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm;
+}
+
+/* The ring a card takes on a back-button return. */
+@keyframes focus-flash {
+  from { box-shadow: 0 0 0 3px var(--ring); }
+  to { box-shadow: 0 0 0 3px transparent; }
+}
+
+/* Travels the highlight across the row. `background-size` is 3× the row, so the
+   band sits off one end at each edge of the range and the sweep both enters and
+   leaves cleanly; 100% → 0% runs it left to right (a percentage position slides the
+   image the opposite way it counts up). */
+@keyframes focus-flash-sweep {
+  from { background-position: 100% 0; }
+  to { background-position: 0% 0; }
+}
+
+/* The landing flash on a back-button return — `utils/scrollFocus` adds this class to
+   the card or row it just centred, so the eye finds it without the page having moved
+   under the user. Written out here rather than as a utility string because that module
+   is where the class name lives, and Tailwind's scanner cannot see it there.
+
+   Each surface gets exactly one animation, and the two are selected apart rather than
+   one overriding the other — `scrollFocus.ts` clears the class on the first
+   `animationend`, which is only correct while that holds. */
+.focus-flash:not(tr) {
+  @apply rounded-xl;
+  animation: focus-flash 3s ease-out;
+}
+
+/* A row in a collapsed table paints no box-shadow, so the ring never reaches one.
+   A row DOES paint a background image, so it takes a highlight travelling its length
+   instead — and only that: a wash over the whole row reads as a flat block, and it
+   would bury the Jobs Log status tints the row already carries.
+
+   The band is broad and only a little brighter than the surface on purpose: a
+   narrow, high-contrast one crosses as a flicker rather than as a wash going past. */
+tr.focus-flash {
+  background-image: linear-gradient(
+    100deg,
+    transparent 28%,
+    var(--focus-sweep-tint) 50%,
+    transparent 72%
+  );
+  background-repeat: no-repeat;
+  background-size: 300% 100%;
+  animation: focus-flash-sweep 1.6s ease-out;
 }
 
 @custom-variant data-open {

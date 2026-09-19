@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 
 import pytest
 
@@ -8,6 +9,7 @@ from app.models.media import Media, MediaType, RelationType, SeasonType
 from app.models.media_genre import MediaGenre
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
+from app.schemas.anime_schema import AnimeDetail, AnimeSearchResult
 from tests._helpers import media_kwargs
 
 
@@ -210,3 +212,47 @@ async def test_anime_detail_restricted_user(client, restricted_user_auth_headers
     response = await client.get(f"/media/anime/{anime.uuid}", headers=restricted_user_auth_headers)
     assert response.status_code == 200
     assert response.json()["title"] == "Detail Test Anime"
+
+
+async def test_anime_detail_airing_until_is_none_without_an_end_date(
+    client, user_auth_headers, anime_for_detail,
+):
+    """With no end date the hero must render the bare status rather than a
+    dangling separator — the common case for an airing show."""
+    anime = anime_for_detail["anime"]
+    response = await client.get(f"/media/anime/{anime.uuid}", headers=user_auth_headers)
+
+    assert response.json()["airing_status"] == "Currently Airing"
+    assert response.json()["airing_until"] is None
+
+
+async def test_anime_detail_airing_until_is_the_latest_airing_media(
+    client, user_auth_headers, db_session,
+):
+    """The finished media's later end date is ignored: it says nothing about
+    what is airing now, so it must not win the MAX."""
+    anime = Anime(mal_id=88200, title="Airing Until Anime")
+    db_session.add(anime)
+    await db_session.flush()
+    db_session.add_all([
+        Media(**media_kwargs(anime.id, 88201,
+            airing_status="Currently Airing", aired_to=date(2026, 9, 21))),
+        Media(**media_kwargs(anime.id, 88202,
+            airing_status="Currently Airing", aired_to=date(2026, 12, 24))),
+        Media(**media_kwargs(anime.id, 88203,
+            airing_status="Finished Airing", aired_to=date(2027, 3, 1))),
+    ])
+    await db_session.flush()
+
+    response = await client.get(f"/media/anime/{anime.uuid}", headers=user_auth_headers)
+
+    assert response.json()["airing_until"] == "2026-12-24"
+
+
+def test_anime_search_card_carries_no_air_date():
+    """`airing_until` is detail-only. Asserted against the schema rather than a
+    live search response: the search payload is fetched in bulk and the cards
+    deliberately carry no dates, so the thing to pin is that the field sits on
+    `AnimeDetail` and not on the aggregate both responses share."""
+    assert "airing_until" in AnimeDetail.model_fields
+    assert "airing_until" not in AnimeSearchResult.model_fields

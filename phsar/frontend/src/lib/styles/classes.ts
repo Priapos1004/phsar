@@ -30,6 +30,16 @@ export const badgeUnaired = 'bg-yellow-100 text-yellow-800 border-yellow-200';
 export const badgeUpcoming = 'bg-blue-100 text-blue-800 border-blue-200';
 export const badgeFinished = 'bg-muted text-muted-foreground border-transparent';
 
+// Watchlist readiness, on the anime cards and the Status filter chips. Distinct HUES
+// rather than shades of one: green for "go", orange for "there's a wait ahead", blue for
+// "announced, not out" (the reading `badgeUpcoming` above already gives blue). Grey is
+// not available to them — `mutedPill` sits right beside the badge, and an unselected chip
+// is already `bg-muted`, so a grey "on" state reads as a slightly darker grey.
+// Borderless: these compose with `readyPill`, whose box has no border.
+export const badgeReadyStandalone = 'bg-emerald-100 text-emerald-800';
+export const badgeReadyHot = 'bg-orange-100 text-orange-800';
+export const badgeReadyWaiting = 'bg-blue-100 text-blue-800';
+
 // "How you rated similar titles" comparison badges: a neighbor's attribute
 // vs your current selection. Green = neighbor higher, red = neighbor lower (quality attrs),
 // blue = differs (categorical), warm cream = matches your pick exactly, and neutral keeps the
@@ -68,7 +78,14 @@ export const heroIconButtonDisabled = 'opacity-50 cursor-not-allowed';
 // Small muted "pill" for a secondary label under a card title (main/side breakdown,
 // relation type) — shared by the ratings + watchlist grid cards so they can't drift.
 // Layout margin (e.g. `mt-auto`) is composed at the call site.
-export const mutedPill = 'w-fit rounded bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground';
+// The two pills sit side by side under a card title, so they share one box literally
+// rather than by agreement — any difference in padding, radius or border would show up
+// as a height mismatch. No border on either: adding one to `readyPill` alone makes it 2px
+// taller than the pill beside it.
+const pillBox = 'w-fit rounded px-1.5 py-0.5 text-[11px]';
+export const mutedPill = `${pillBox} bg-muted text-muted-foreground`;
+// Tint composed at the call site from `READY_BADGE` (utils/watchlist).
+export const readyPill = `${pillBox} font-medium`;
 
 // Ghost/icon button tinted destructive (delete, clear-filters, discard) — the hover keeps the
 // destructive color and adds a faint destructive wash. Composed with any layout classes at the site.

@@ -81,12 +81,7 @@ async def list_dismissed_merge_candidates(db: AsyncSession = Depends(get_db)):
     status_code=status.HTTP_204_NO_CONTENT,
 )
 async def delete_merge_decision(
-    uuid: UUID,
-    data: admin_schema.DeleteDecisionRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user=Depends(require_admin),
+    uuid: UUID, db: AsyncSession = Depends(get_db),
 ):
-    """Delete a dismissed decision (username-gated) so it can resurface."""
-    await merge_candidate_service.delete_decision(
-        db, uuid, confirm=data.confirm, username=current_user.username,
-    )
+    """Delete a dismissed decision so it can resurface on the next detection."""
+    await merge_candidate_service.delete_decision(db, uuid)

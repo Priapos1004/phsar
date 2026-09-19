@@ -19,6 +19,8 @@ existing catalog without changing implementation.
 from collections import defaultdict, deque
 from typing import TypedDict
 
+from app.models.media import AIRING_STATUS_NOT_YET_AIRED
+
 
 class ClassifierNode(TypedDict):
     media_type: str | None
@@ -40,16 +42,6 @@ class DisjointFranchise(TypedDict):
     # and by the Conan-exclusion heuristic in find_disjoint_franchises.
     bridge_edges: list[tuple[int, int, str]]
 
-
-# Sentinel media.airing_status values MAL returns. Defined here (the
-# pure, DB-less module) so they live with the substance gate that
-# interprets them (see _METADATA_PENDING_STATUSES). Consumers import them
-# directly from here. They can't live in mal_scraper: relation_classifier
-# would have to import them back, and mal_scraper already imports from
-# this module (that reverse import would cycle).
-AIRING_STATUS_CURRENTLY_AIRING = "Currently Airing"
-AIRING_STATUS_FINISHED_AIRING = "Finished Airing"
-AIRING_STATUS_NOT_YET_AIRED = "Not yet aired"
 
 # Statuses where NULL episode/duration is "MAL hasn't published it yet",
 # not "this entry is too thin to be canonical". A not-yet-aired sequel

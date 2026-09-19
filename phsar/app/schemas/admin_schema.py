@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from enum import Enum
 from typing import Literal
 from uuid import UUID
@@ -38,7 +38,7 @@ class MergeCandidateAnimeSummary(BaseModel):
     media_count: int
     studios: list[str]
     earliest_year: int | None = None
-    earliest_aired_from: datetime | None = None
+    earliest_aired_from: date | None = None
     rating_count: int = 0
 
 
@@ -131,10 +131,58 @@ class SplitCandidateListItem(BaseModel):
     clusters: list[SplitClusterPreview]
 
 
-class DeleteDecisionRequest(BaseModel):
-    """Body for deleting a dismissed merge/split decision so it can resurface.
-    `confirm` must equal the caller's username (mirrors backup restore)."""
+class DeleteCandidateListItem(BaseModel):
+    """One row in the admin Delete Candidates queue.
+
+    Unlike its merge/split siblings this describes a MEDIA, not an anime, and
+    every field is a snapshot the backend computed — the card renders the
+    verdict and must not re-derive it.
+
+    `anime_title` / `anime_media_count` are the franchise context, and
+    `rating_count` / `watchlist_count` the user-data pre-flight. What each is for:
+    `docs/features/curation.md`.
+    """
+    uuid: str
+    detected_by: str
+    created_at: datetime
+    # Set only in the dismissed-decisions list; None for pending rows.
+    dismissed_at: datetime | None = None
+    # Identity snapshot. Survives the deletion this row records, so a resolved
+    # row still renders after its media is gone.
+    mal_id: int
+    title: str
+    name_eng: str | None = None
+    name_jap: str | None = None
+    # Null once the media has been deleted (ON DELETE SET NULL), which is also
+    # what tells the card there is nothing left to link to.
+    media_uuid: str | None = None
+    anime_title: str | None = None
+    anime_media_count: int = 0
+    # Why it was flagged. Both are null on a `sweep_404` row — the media is
+    # gone upstream, so its last-known vote count says nothing useful.
+    scored_by: int | None = None
+    media_type: str | None = None
+    rating_count: int = 0
+    watchlist_count: int = 0
+
+
+class DeleteCandidateRemoveRequest(BaseModel):
+    """Body for applying a delete candidate. `confirm` must equal the caller's
+    username — this destroys catalogue rows and cascades to any ratings,
+    watchlist entries and watch history hanging off them.
+
+    `blacklist` records the mal_id in `media_unwanted` so no later sweep, probe
+    or scrape re-adds it. Defaults false — see `docs/features/curation.md` for
+    why that asymmetry is deliberate.
+    """
     confirm: str
+    blacklist: bool = False
+
+
+class DeleteBackfillResult(BaseModel):
+    """Returned by the manual re-detect trigger for DeleteCandidates.
+    `inserted` counts newly-raised rows; idempotent on no-change reruns."""
+    inserted: int
 
 
 class SplitResult(BaseModel):
@@ -190,17 +238,21 @@ class CatalogStats(BaseModel):
 
 
 class JobKindStats(BaseModel):
-    """Per-kind breakdown of jobs created in the last 7 days. `failed`
-    counts both retryable and permanent failures; `retryable_failed` is
-    a subset showing how many of those `failed` rows could still recover
-    (so admin can spot user_scrape jobs stuck on transient MAL outages
-    vs. permanently-dead deterministic failures).
+    """Per-kind breakdown of recently-created jobs. `failed` counts both
+    retryable and permanent failures; `retryable_failed` is a subset
+    showing how many of those `failed` rows could still recover (so admin
+    can spot user_scrape jobs stuck on transient MAL outages vs.
+    permanently-dead deterministic failures).
+
+    `window_days` is how far back this kind's counts reach, sized per kind
+    by `JOB_HEALTH_WINDOW_DAYS` in `admin_stats_service`.
 
     The `user_scrape` row counts user-initiated submissions only; the
     seasonal-sweep children that share kind=user_scrape but have
     requested_by_user_id=NULL are excluded so their failure rate
     (Music/PV/etc. filtering) doesn't dilute the user-facing signal."""
     kind: str
+    window_days: int
     succeeded: int
     failed: int
     retryable_failed: int
@@ -264,7 +316,9 @@ class WatchlistStats(BaseModel):
 
 class AdminOverviewStats(BaseModel):
     catalog: CatalogStats
-    jobs_7d: JobsStats
+    # Unsuffixed because job health windows each kind separately — the window
+    # is per row. `activity_7d` beside it really is one 7-day window.
+    jobs: JobsStats
     activity_7d: ActivityStats
     watchlist: WatchlistStats
     # `sweep_tiers` is the anime-membership breakdown (every anime's cycle
@@ -281,6 +335,7 @@ class CurationPendingCounts(BaseModel):
     intentionally returns just the counts — no candidate detail."""
     merge: int
     split: int
+    delete: int
 
 
 class ExpiryPreset(int, Enum):

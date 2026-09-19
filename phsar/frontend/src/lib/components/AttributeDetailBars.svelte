@@ -1,6 +1,7 @@
 <script lang="ts">
-	import { RATING_ATTRIBUTE_OPTIONS, getRatingAttr, isAttrRated } from '$lib/types/api';
+	import { RATING_ATTRIBUTE_OPTIONS } from '$lib/types/api';
 	import { getThemedChartColorPalette } from '$lib/utils/chartColors';
+	import { tally } from '$lib/utils/ratingAttributes';
 	import type { RatingOut, RatingScoreItem } from '$lib/types/api';
 
 	interface Props {
@@ -24,16 +25,7 @@
 		const result: AttrDistribution[] = [];
 
 		for (const [key, config] of Object.entries(RATING_ATTRIBUTE_OPTIONS)) {
-			const counts = new Map<string, number>();
-			let totalSet = 0;
-
-			for (const r of ratings) {
-				const val = getRatingAttr(r, key);
-				if (isAttrRated(val)) {
-					counts.set(val!, (counts.get(val!) ?? 0) + 1);
-					totalSet++;
-				}
-			}
+			const { counts, n: totalSet } = tally(ratings, key);
 
 			const visibleEntries = config.options
 				.map((opt) => ({ value: opt.value, label: opt.label, count: counts.get(opt.value) ?? 0 }))

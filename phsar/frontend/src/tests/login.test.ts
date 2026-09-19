@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
+import { goto } from '$app/navigation';
+import { page } from '$app/state';
 import LoginPage from '../routes/login/+page.svelte';
+import { fakeJwt } from './fixtures/jwt';
 
 // Mock the auth store
 vi.mock('$lib/stores/auth', async () => {
@@ -8,11 +11,34 @@ vi.mock('$lib/stores/auth', async () => {
 	return { token: writable(null) };
 });
 
+const tokenFor = (sub: string) => fakeJwt({ sub, role: 'user' });
+
+/** Point the mocked `page` at a /login URL, optionally carrying a `next`. */
+function atLoginUrl(next?: string) {
+	const url = new URL('http://localhost:5173/login');
+	if (next) url.searchParams.set('next', next);
+	(page as { url: URL }).url = url;
+}
+
+/** Fill the form and submit, with the server answering `sub`'s token. */
+async function signIn(sub = 'sam') {
+	globalThis.fetch = vi.fn().mockResolvedValueOnce({
+		ok: true,
+		json: () => Promise.resolve({ access_token: tokenFor(sub) }),
+	});
+	render(LoginPage);
+	await fireEvent.input(screen.getByLabelText('Username'), { target: { value: sub } });
+	await fireEvent.input(screen.getByLabelText('Password'), { target: { value: 'secret' } });
+	await fireEvent.click(screen.getByRole('button', { name: 'Login' }));
+}
+
 describe('Login page', () => {
 	const originalFetch = globalThis.fetch;
 
 	beforeEach(() => {
 		vi.restoreAllMocks();
+		sessionStorage.clear();
+		atLoginUrl();
 	});
 
 	afterEach(() => {
@@ -99,5 +125,74 @@ describe('Login page', () => {
 				})
 			);
 		});
+	});
+});
+
+describe('Login page — returning to where the user was', () => {
+	const originalFetch = globalThis.fetch;
+
+	beforeEach(() => {
+		vi.restoreAllMocks();
+		sessionStorage.clear();
+		atLoginUrl();
+	});
+
+	afterEach(() => {
+		globalThis.fetch = originalFetch;
+	});
+
+	it('goes home when there is no next', async () => {
+		await signIn();
+		// replaceState throughout: browser-back must not return to a form the
+		// user has already passed.
+		await vi.waitFor(() => expect(goto).toHaveBeenCalledWith('/', { replaceState: true }));
+	});
+
+	it('returns to a valid next', async () => {
+		atLoginUrl('/anime?uuid=abc&from=watchlist');
+		await signIn();
+		await vi.waitFor(() =>
+			expect(goto).toHaveBeenCalledWith('/anime?uuid=abc&from=watchlist', { replaceState: true }),
+		);
+	});
+
+	// One representative off-origin value — that the page really routes `next`
+	// through the validator. return-to.test.ts owns the full rejection set.
+	it('ignores an off-origin next and goes home', async () => {
+		atLoginUrl('https://evil.example/steal');
+		await signIn();
+		await vi.waitFor(() => expect(goto).toHaveBeenCalledWith('/', { replaceState: true }));
+	});
+
+	// Likewise one case for the verdict coupling; resume-session.test.ts owns the
+	// foreign/stale/none matrix behind it.
+	it('drops next when the stash belongs to another user', async () => {
+		sessionStorage.setItem(
+			'phsar.resume',
+			JSON.stringify({ v: 1, owner: 'alex', at: Date.now(), filters: {} }),
+		);
+		atLoginUrl('/watchlist?tab=stats');
+		await signIn('sam');
+		await vi.waitFor(() => expect(goto).toHaveBeenCalledWith('/', { replaceState: true }));
+	});
+
+	it('names the destination so a link recipient knows why they got a form', async () => {
+		atLoginUrl('/anime?uuid=abc');
+		render(LoginPage);
+		expect(screen.getByText(/After signing in you'll be taken to the anime page/)).toBeInTheDocument();
+	});
+
+	it('says nothing when the user simply came to sign in', () => {
+		render(LoginPage);
+		expect(screen.queryByText(/After signing in/)).not.toBeInTheDocument();
+	});
+
+	it('carries next across to the register link', () => {
+		atLoginUrl('/anime?uuid=abc');
+		render(LoginPage);
+		expect(screen.getByRole('link', { name: 'Register' })).toHaveAttribute(
+			'href',
+			`/register?next=${encodeURIComponent('/anime?uuid=abc')}`,
+		);
 	});
 });

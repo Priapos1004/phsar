@@ -7,7 +7,7 @@ same side-by-side anime card, so a future field addition (e.g.
 airing_status) lands in one place.
 """
 
-from datetime import datetime
+from datetime import date
 
 from app.models.anime import Anime
 from app.schemas.admin_schema import MergeCandidateAnimeSummary
@@ -19,7 +19,7 @@ def summarize_anime(anime: Anime, rating_count: int) -> MergeCandidateAnimeSumma
     relationships ensures this surfaces fast if missed."""
     studio_names: set[str] = set()
     years: list[int] = []
-    aired_from_dates: list[datetime] = []
+    aired_from_dates: list[date] = []
     for media in anime.media:
         for ms in media.media_studio:
             studio_names.add(ms.studio.name)

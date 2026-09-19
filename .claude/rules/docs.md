@@ -14,9 +14,15 @@ Ask: **what breaks if this is missing?**
 | Can't run or navigate the project | root `CLAUDE.md` | always |
 | Would write code violating an invariant | `.claude/rules/<topic>.md` | when matching files are touched |
 | Couldn't say how a subsystem behaves across the modules it spans | `docs/features/<topic>.md` | read while planning work in that area |
+| Couldn't say what a screen does for the user | `phsar/frontend/USER_FLOWS.md` | read while changing UI behaviour |
 | Would re-litigate a settled trade-off | `compound-docs/` | on demand |
-| Describes one module's current shape | docstring, or nearest nested `CLAUDE.md` | with the code |
+| Describes one module's current shape (a migration describes a transition instead — `database.md`) | docstring, or nearest nested `CLAUDE.md` | with the code |
 | A feature decision not yet built, or the version table | `docs/ROADMAP.md` | on demand |
+
+The two rows that overlap in practice are the feature doc and USER_FLOWS, because
+one feature reaches both: the feature doc owns the **mechanism across modules**,
+USER_FLOWS owns **what the user sees**. Written from opposite ends, the same
+feature belongs in both — the same sentence belongs in neither.
 
 **No fact appears in two rows.** Cross-references are links, never restatements.
 A doc that explains something *and then* says "see X for details" is both a copy
@@ -42,6 +48,9 @@ The authoring style in `workflow.md` applies, and applies hardest here: a living
 doc is the easiest place to slip into narrating releases. "v0.14.8 made X
 media-level" tells a reader nothing about what X does now and forces them to
 replay every delta to find out.
+
+**An addition is as long as what it joins.** The entries already in a section are
+the budget for a new one, so read them before writing rather than after.
 
 ## Compound-docs
 

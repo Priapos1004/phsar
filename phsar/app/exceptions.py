@@ -582,10 +582,29 @@ class SplitCandidateStaleError(PhsarBaseError):
         super().__init__(f"Split candidate is stale: {reason}. Re-run detection.")
 
 
+class DeleteCandidateNotFoundError(PhsarBaseError):
+    """Raised when a delete candidate UUID doesn't resolve."""
+    status_code = 404
+
+    def __init__(self, uuid: str):
+        message = f"Delete candidate not found: '{uuid}'."
+        super().__init__(message)
+
+
+class DeleteCandidateAlreadyResolvedError(PhsarBaseError):
+    """Raised when admin tries to remove or dismiss a candidate that's
+    already in a terminal state."""
+    status_code = 409
+
+    def __init__(self, status: str):
+        message = f"Delete candidate is already {status} — cannot resolve again."
+        super().__init__(message)
+
+
 class CurationConfirmationMismatchError(PhsarBaseError):
-    """Raised when the delete-decision confirmation string does not match the
-    caller's username (the username gate on deleting a dismissed merge/split
-    decision so it can resurface)."""
+    """Raised when a curation confirmation string does not match the caller's
+    username. Guards applying a delete candidate, which destroys catalogue rows
+    and the user data cascading off them."""
     status_code = 400
 
     def __init__(self):

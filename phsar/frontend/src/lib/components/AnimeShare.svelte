@@ -9,9 +9,11 @@
 	 * component also means a page can't wire the button and forget the dialog. The strings
 	 * themselves live in `utils/shareContent` so they're pure and testable.
 	 */
+	import { page } from '$app/state';
 	import ShareButton from '$lib/components/ShareButton.svelte';
 	import ShareDialog from '$lib/components/ShareDialog.svelte';
 	import { resolveTitle } from '$lib/utils/formatString';
+	import { absoluteDetailUrl } from '$lib/utils/navigation';
 	import { animeInfoCard, animeRatingCard } from '$lib/utils/shareContent';
 	import type { AnimeDetail, NameLanguage, RatingOut } from '$lib/types/api';
 
@@ -30,6 +32,7 @@
 	let hasRating = $derived(ratings.length > 0);
 	let rating = $derived(hasRating ? animeRatingCard(anime, ratings, ratingStep) : null);
 	let info = $derived(animeInfoCard(anime));
+	let shareUrl = $derived(absoluteDetailUrl('anime', anime.uuid, page.url.origin));
 </script>
 
 <!-- Never disabled. Sharing an anime you haven't watched is the point of the info card — it's
@@ -51,4 +54,5 @@
 	noun="anime"
 	{rating}
 	{info}
+	{shareUrl}
 />

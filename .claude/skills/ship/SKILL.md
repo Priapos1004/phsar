@@ -28,7 +28,11 @@ Classify the change set — it decides which steps below apply:
 
 ## 1. Frontend work stops for a human first
 
-If frontend files changed, **stop here** and say: *"Ready for your visual review —
+If frontend files changed, the user's visual verdict must **already be in** (see
+"Ask first" in [workflow.md](../../rules/workflow.md)). This step is the second catch,
+not the rule.
+
+If it has not happened yet, **stop here** and say: *"Ready for your visual review —
 here's what to check: …"*, listing the affected routes/components.
 
 `/simplify` judges design quality, not whether the page is right: spacing, contrast,

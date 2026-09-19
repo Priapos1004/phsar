@@ -9,6 +9,8 @@
     import { clearRatingScores } from '$lib/stores/ratingScores';
     import { resetAllPersistedFilters } from '$lib/stores/persistedFilter';
     import { applyFilterLifecycle } from '$lib/utils/filterLifecycle';
+    import { captureReturnTarget, clearResume } from '$lib/utils/resumeSession';
+    import { isAuthPage } from '$lib/utils/returnTo';
     import { afterNavigate } from '$app/navigation';
     import { onMount, setContext } from 'svelte';
     import { jwtDecode } from 'jwt-decode';
@@ -164,13 +166,25 @@
       }
     });
 
-    async function handleLogout() {
+    async function farewellThenLeaveTo(target: string) {
       signingOut = true;
       token.set(null);
       // Brief themed farewell — the sakura-ring screen acts as a soft transition
       // from the authenticated app back to /login instead of an abrupt hard nav.
       await new Promise(resolve => setTimeout(resolve, 1500));
-      window.location.href = '/login';
+      window.location.href = target;
+    }
+
+    // Two exits, opposite memories, so they cannot share one handler: a session
+    // that lapsed should resume where it stopped, while signing out is a
+    // deliberate "done here".
+    function handleSessionExpired() {
+      void farewellThenLeaveTo(captureReturnTarget(page.url));
+    }
+
+    function handleLogout() {
+      clearResume();
+      void farewellThenLeaveTo('/login');
     }
 </script>
 
@@ -186,11 +200,11 @@
       <!-- Idle-timeout warning sits above maintenance — a "you're about to be
            signed out" countdown is more urgent than a future-window notice.
            Only runs while authenticated and off the auth pages. -->
-      {#if isAuthenticated && page.url.pathname !== '/login' && page.url.pathname !== '/register'}
+      {#if isAuthenticated && !isAuthPage(page.url.pathname)}
         <SessionTimeoutBanner onExpire={() => (showExpiryDialog = true)} />
       {/if}
       <MaintenanceBanner />
-      {#if page.url.pathname !== '/login' && page.url.pathname !== '/register'}
+      {#if !isAuthPage(page.url.pathname)}
         <NavBar
           {isAuthenticated}
           {username}
@@ -211,5 +225,5 @@
          too so the two never overlap. -->
     <ToastHost />
 
-    <TokenExpiryDialog open={showExpiryDialog} onLogin={handleLogout} />
+    <TokenExpiryDialog open={showExpiryDialog} onLogin={handleSessionExpired} />
 {/if}

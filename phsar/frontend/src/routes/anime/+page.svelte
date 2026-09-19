@@ -2,8 +2,9 @@
 	import { page } from '$app/state';
 	import { getContext } from 'svelte';
 	import { api, ApiError } from '$lib/api';
-	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, formatAiringStatus, formatEpisodeCount, isSeasonRange, resolveTitle, resolveSubtitles, decimalPlaces, roundScore, formatRelationType, formatMediaType } from '$lib/utils/formatString';
+	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, airingStatusParts, formatEpisodeCount, isSeasonRange, resolveTitle, resolveSubtitles, decimalPlaces, roundScore, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
+	import { FOCUS_PARAM } from '$lib/utils/scrollFocus';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Button } from '$lib/components/ui/button';
@@ -244,6 +245,9 @@
 	let searchToken = $derived(page.url.searchParams.get('q'));
 	let fromParam = $derived(page.url.searchParams.get('from') as DetailOrigin | null);
 	let jobUuid = $derived(page.url.searchParams.get('job'));
+	// This page IS the card that was clicked, so its own uuid is the anchor unless a
+	// deeper hop already named one — see `utils/scrollFocus`.
+	let focusUuid = $derived(page.url.searchParams.get(FOCUS_PARAM) ?? page.url.searchParams.get('uuid'));
 
 	let cleanedDescription = $derived(anime?.description ? cleanDescription(anime.description) : null);
 
@@ -253,8 +257,12 @@
 		anime ? computeVisibleMediaUuids(anime.media, ratedMediaUuids) : new Set<string>()
 	);
 
-	let displayStatus = $derived(
-		anime ? formatAiringStatus(anime.airing_status, anime.has_upcoming) : ''
+	// Only the Currently Airing badge can carry a qualifier, so every other branch
+	// renders `main` alone — there is no joined form to keep.
+	let statusParts = $derived(
+		anime
+			? airingStatusParts(anime.airing_status, anime.has_upcoming, anime.airing_until)
+			: { main: '', upcoming: null }
 	);
 
 	let allSelected = $derived(anime ? selectedUuids.size === anime.media.length : false);
@@ -335,7 +343,7 @@
 	}
 
 	function mediaHref(item: AnimeMediaItem): string {
-		return buildDetailHref('media', item.uuid, { q: searchToken, from: fromParam, job: jobUuid });
+		return buildDetailHref('media', item.uuid, { q: searchToken, from: fromParam, job: jobUuid, focus: focusUuid });
 	}
 
 	function imgFailed(e: Event) {
@@ -362,7 +370,7 @@
 	{:else if error}
 		<div class="text-center text-destructive py-20">{error}</div>
 	{:else if anime}
-		<BackLink {searchToken} {fromParam} {jobUuid} />
+		<BackLink {searchToken} {fromParam} {jobUuid} {focusUuid} />
 
 		<!-- Hero section -->
 		<div class="relative rounded-xl overflow-hidden">
@@ -403,21 +411,26 @@
 								{resolveTitle(anime.title, anime.name_eng, anime.name_jap, nameLanguage)}
 							</h1>
 							{#if anime.airing_status === 'Currently Airing'}
-								<span class="inline-flex items-center gap-1.5 mt-1.5 px-2.5 py-1 rounded-md font-semibold bg-green-100 text-green-800 border border-green-200">
+								<!-- The qualifier is its own item so a wrap moves it whole, landing the
+								     break before the `+` rather than inside the phrase. -->
+								<span class="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5 mt-1.5 px-2.5 py-1 rounded-md font-semibold bg-green-100 text-green-800 border border-green-200">
 									<span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
-									{displayStatus}
+									<span>{statusParts.main}</span>
+									{#if statusParts.upcoming}
+										<span class="whitespace-nowrap">{statusParts.upcoming}</span>
+									{/if}
 								</span>
 							{:else if anime.airing_status === 'Not yet aired'}
 								<span class="inline-block mt-1.5 px-2.5 py-1 rounded-md font-semibold bg-yellow-100 text-yellow-800 border border-yellow-200">
-									{displayStatus}
+									{statusParts.main}
 								</span>
 							{:else if anime.has_upcoming}
 								<span class="inline-block mt-1.5 px-2.5 py-1 rounded-md font-semibold bg-blue-100 text-blue-800 border border-blue-200">
-									{displayStatus}
+									{statusParts.main}
 								</span>
 							{:else}
 								<span class="inline-block mt-1.5 px-2.5 py-1 rounded-md font-medium bg-muted text-muted-foreground">
-									{displayStatus}
+									{statusParts.main}
 								</span>
 							{/if}
 							{#if anime.is_finished}

@@ -67,12 +67,19 @@ against the stored format.
 - Relation labels normalize via `normalize_relation` (lowercase, spaces →
   underscores) plus a `spin_off` → `spin-off` alias, so a sweep re-fetch doesn't
   rewrite every spin-off edge.
-- **Partial dates** (`YYYY`, `YYYY-MM`, common on older records) fill missing
-  month/day with `01` at midnight UTC, matching how dates are stored — otherwise
-  every sweep re-fetch diffs the date spuriously.
+- **Air dates carry no time.** MAL publishes `start_date` / `end_date` as bare
+  `YYYY-MM-DD`, and `_mal_date_to_iso` stores that form unchanged. **Partial
+  dates** (`YYYY`, `YYYY-MM`, common on older records) fill the missing
+  month/day with `01`; that padding is not recoverable, so a stored
+  `2011-01-01` may mean "sometime in 2011".
 - `duration_seconds` comes from `average_episode_duration` (exact per-episode
   seconds). The legacy `duration` display string is always None; the frontend
   renders from `duration_seconds` via `formatDuration`.
+- **Cover URLs pin to `.webp`.** MAL answers the same `/images/anime/` path with
+  `.jpg` or `.webp` depending on which backend replies, so an unnormalized
+  `main_picture.large` makes every sweep log a `cover_image` diff that is not a
+  cover change; `.webp` is also the ~3x smaller derivative. Only that path is
+  rewritten — it is the one whose `.webp` derivative is known to exist.
 
 `catalog_season_name` is the single owner of the MAL-lowercase → `SeasonType`
 vocabulary boundary; `next_season(year, season)` rolls a season forward, which is
@@ -91,6 +98,9 @@ what the upcoming sweep targets.
 - **`title=None`** — skipped silently. MAL routinely leaves the romanization field
   null on freshly-announced donghua and PV stubs and fills it in within hours; a
   `<mal_id:NNNN>` placeholder would pollute `media_unwanted` and block rediscovery.
+- **Anything an admin blacklisted** (`media_unwanted` reason `Admin curation`) —
+  rejected *before* the BFS runs, unlike the cases above. Why it has to be
+  before: [curation](curation.md).
 
 ## BFS and TERMINAL nodes
 

@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { canShareFiles, fetchImageAsDataUri, isIosLike, shareFileName } from '$lib/utils/shareImage';
+import {
+	canShareFiles,
+	fetchImageAsDataUri,
+	isIosLike,
+	sharePayload,
+	shareFileName,
+} from '$lib/utils/shareImage';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -68,6 +74,43 @@ describe('canShareFiles', () => {
 	it('is true when the platform accepts the PNG', () => {
 		vi.stubGlobal('navigator', { share: vi.fn(), canShare: vi.fn().mockReturnValue(true) });
 		expect(canShareFiles(png)).toBe(true);
+	});
+});
+
+describe('sharePayload', () => {
+	const png = new File([''], 'a.png', { type: 'image/png' });
+	const URL_ = 'https://phsar.test/anime?uuid=abc';
+
+	it('carries the link when the platform accepts files and url together', () => {
+		vi.stubGlobal('navigator', { share: vi.fn(), canShare: vi.fn().mockReturnValue(true) });
+		expect(sharePayload(png, 'Title', URL_)).toEqual({ files: [png], title: 'Title', url: URL_ });
+	});
+
+	// The card is what the user built and previewed. A platform that refuses the
+	// combination gets the file — a silently dropped PNG is the worse trade.
+	it('keeps the file and drops the link when the platform refuses both', () => {
+		vi.stubGlobal('navigator', { share: vi.fn(), canShare: vi.fn().mockReturnValue(false) });
+		expect(sharePayload(png, 'Title', URL_)).toEqual({ files: [png], title: 'Title' });
+	});
+
+	it('asks canShare about the exact payload rather than assuming per-platform', () => {
+		const canShare = vi.fn().mockReturnValue(true);
+		vi.stubGlobal('navigator', { share: vi.fn(), canShare });
+		sharePayload(png, 'Title', URL_);
+		expect(canShare).toHaveBeenCalledWith({ files: [png], title: 'Title', url: URL_ });
+	});
+
+	it.each([
+		['no url is offered', undefined],
+		['the url is null', null],
+	])('omits url when %s', (_label, url) => {
+		vi.stubGlobal('navigator', { share: vi.fn(), canShare: vi.fn().mockReturnValue(true) });
+		expect(sharePayload(png, 'Title', url)).toEqual({ files: [png], title: 'Title' });
+	});
+
+	it('degrades to the file alone where canShare does not exist', () => {
+		vi.stubGlobal('navigator', { share: vi.fn() });
+		expect(sharePayload(png, 'Title', URL_)).toEqual({ files: [png], title: 'Title' });
 	});
 });
 

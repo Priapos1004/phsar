@@ -6,7 +6,7 @@ is fail-loud — see MergeMalIdConflictError.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import date
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -15,7 +15,6 @@ from sqlalchemy.orm import selectinload
 
 from app.daos.merge_candidate_dao import MergeCandidateDAO
 from app.exceptions import (
-    CurationConfirmationMismatchError,
     InvalidMergeKeepError,
     MergeCandidateAlreadyResolvedError,
     MergeCandidateNotFoundError,
@@ -45,17 +44,13 @@ logger = logging.getLogger(__name__)
 merge_candidate_dao = MergeCandidateDAO()
 
 
-_AIRED_FROM_NULL_SENTINEL = datetime.max.replace(tzinfo=timezone.utc)
+_AIRED_FROM_NULL_SENTINEL = date.max
 
 
 def _rank_key(summary: MergeCandidateAnimeSummary, anime_id: int) -> tuple:
     """Sort key for the recommended-keep ordering: earliest aired_from
     ASC (NULL sorts last), rating_count DESC, anime_id ASC as the stable
-    fallback.
-
-    Sentinel must be tz-aware because Media.aired_from is DateTime(timezone=True);
-    mixing naive datetime.max with aware values raises TypeError on comparison.
-    """
+    fallback."""
     return (
         summary.earliest_aired_from or _AIRED_FROM_NULL_SENTINEL,
         -summary.rating_count,
@@ -105,7 +100,7 @@ async def list_pending(db: AsyncSession) -> list[MergeCandidateListItem]:
 
 
 async def _ensure_pending(db: AsyncSession, uuid: UUID) -> MergeCandidate:
-    candidate = await merge_candidate_dao.get_by_uuid(db, uuid)
+    candidate = await merge_candidate_dao.get_for_resolve(db, uuid)
     if candidate is None:
         raise MergeCandidateNotFoundError(str(uuid))
     if candidate.status != MergeCandidateStatus.pending:
@@ -150,17 +145,15 @@ async def list_dismissed(db: AsyncSession) -> list[MergeCandidateListItem]:
     ]
 
 
-async def delete_decision(
-    db: AsyncSession, uuid: UUID, confirm: str, username: str
-) -> None:
+async def delete_decision(db: AsyncSession, uuid: UUID) -> None:
     """Delete a DISMISSED merge candidate so the pair leaves the detector's
     skip-set and resurfaces as pending on the next detection (sweep or the
-    Re-detect button). Username-gated like backup restore. Only dismissed
-    rows are deletable here — pending rows belong to the live queue, and
-    merged rows no longer exist (cascade-deleted with anime B)."""
-    if confirm != username:
-        raise CurationConfirmationMismatchError()
-    candidate = await merge_candidate_dao.get_by_uuid(db, uuid)
+    Re-detect button). Only dismissed rows are deletable here — pending rows
+    belong to the live queue, and merged rows no longer exist (cascade-deleted
+    with anime B).
+
+    Not username-gated — see the confirm tiers in `.claude/rules/frontend.md`."""
+    candidate = await merge_candidate_dao.get_for_resolve(db, uuid)
     if candidate is None or candidate.status != MergeCandidateStatus.dismissed:
         raise MergeCandidateNotFoundError(str(uuid))
     await merge_candidate_dao.delete(db, candidate)

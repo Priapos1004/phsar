@@ -1,4 +1,5 @@
-import type { WatchlistGrain, WatchlistSortKey, WatchlistView } from '$lib/utils/watchlistStats';
+import type { WatchlistSortKey, WatchtimeKey, WatchlistFilterState } from '$lib/utils/watchlistStats';
+import type { ReadyFilterKey } from '$lib/utils/watchlistReady';
 import {
 	createPersistedFilter,
 	DIRECTION_KEYS,
@@ -7,25 +8,19 @@ import {
 	pickNumbers,
 	pickStrings,
 	VIEW_KEYS,
-	type Direction,
 } from './persistedFilter';
 
 export type WatchlistTabKey = 'watchlists' | 'tags' | 'stats';
 
-export interface WatchlistFilterState {
-	view: WatchlistView;
-	grain: WatchlistGrain; // anime (default, aggregated) vs media (one card per entry)
-	tagUuids: string[]; // multi-select union — [] = all tags
-	priorities: number[]; // multi-select union of priority bands — [] = all
-	sort: WatchlistSortKey; // table column sort
-	sortDir: Direction;
-}
+export type { WatchlistFilterState };
 
 export const DEFAULT_WATCHLIST_FILTER: WatchlistFilterState = {
 	view: 'grid',
 	grain: 'anime',
 	tagUuids: [],
 	priorities: [],
+	readiness: [],
+	watchtime: [],
 	sort: 'priority',
 	sortDir: 'asc',
 };
@@ -37,12 +32,24 @@ const SORT_KEYS: Record<WatchlistSortKey, true> = {
 	priority: true,
 	date: true,
 	note: true,
+	time: true,
 };
 // The three priority bands, inlined rather than derived from
 // `utils/watchlist.PRIORITY_OPTIONS`: this store is reachable from the ROOT
 // layout (via filterLifecycle), and that import chain pulls `utils/color`'s
 // wheel builder into every route's entry chunk — including /login.
 const PRIORITY_VALUES: readonly number[] = [1, 2, 3];
+// A key set rather than an array, like SORT_KEYS above: TypeScript checks it covers the
+// union, so adding a chip without listing it here is a compile error rather than a filter
+// value that silently vanishes on rehydration.
+//
+// Spelled out rather than derived from `READY_FILTERS` for the same reason as
+// PRIORITY_VALUES: this store is reachable from the ROOT layout, and that import chain
+// would pull the readiness rules into every route's entry chunk, /login included.
+const READINESS_KEYS: Record<ReadyFilterKey, true> = { ready: true, hot: true, waiting: true };
+// Spelled out for the same reason as the key sets above. Only VALUES are the hazard — the
+// `import type` at the top is erased before it reaches the bundler.
+const WATCHTIME_KEYS: Record<WatchtimeKey, true> = { short: true, medium: true, long: true };
 
 // `tagUuids` needs no key set here: WatchlistFilterBar already prunes uuids
 // that aren't in the loaded `tags` store, so a rehydrated filter pointing at a
@@ -53,6 +60,14 @@ function sanitize(raw: Record<string, unknown>): WatchlistFilterState {
 		grain: pickKey(raw.grain, GRAIN_KEYS, DEFAULT_WATCHLIST_FILTER.grain),
 		tagUuids: pickStrings(raw.tagUuids),
 		priorities: pickNumbers(raw.priorities).filter((p) => PRIORITY_VALUES.includes(p)),
+		// Whitelisted like the priority bands — a rehydrated key the chips no longer
+		// offer would filter everything out with no way to clear it from the UI.
+		readiness: pickStrings(raw.readiness).filter((k): k is ReadyFilterKey =>
+			Object.hasOwn(READINESS_KEYS, k),
+		),
+		watchtime: pickStrings(raw.watchtime).filter((k): k is WatchtimeKey =>
+			Object.hasOwn(WATCHTIME_KEYS, k),
+		),
 		sort: pickKey(raw.sort, SORT_KEYS, DEFAULT_WATCHLIST_FILTER.sort),
 		sortDir: pickKey(raw.sortDir, DIRECTION_KEYS, DEFAULT_WATCHLIST_FILTER.sortDir),
 	};
@@ -63,7 +78,9 @@ function sanitize(raw: Record<string, unknown>): WatchlistFilterState {
 // the URL, and these survive the watchlists↔tags tab switch without re-threading.
 export const watchlistFilter = createPersistedFilter<WatchlistFilterState>({
 	key: 'phsar.filter.watchlist',
-	version: 1,
+	// Bump on any field addition or sort-value change: a stale payload is discarded,
+	// not migrated.
+	version: 2,
 	defaults: DEFAULT_WATCHLIST_FILTER,
 	sanitize,
 });
