@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import MergeCandidatesCard from '../lib/components/MergeCandidatesCard.svelte';
 import type { MergeCandidateListItem } from '../lib/types/api';
+import { jsonResponse } from './fixtures/response';
 
 vi.mock('$lib/stores/auth', async () => {
 	const { writable } = await import('svelte/store');
@@ -43,14 +44,6 @@ function makeCandidate(): MergeCandidateListItem {
 		},
 		pending_reclassifications: [],
 	};
-}
-
-function jsonResponse(body: unknown, status = 200): Response {
-	return {
-		ok: status >= 200 && status < 300,
-		status,
-		json: () => Promise.resolve(body),
-	} as Response;
 }
 
 describe('MergeCandidatesCard', () => {

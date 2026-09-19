@@ -373,6 +373,7 @@ phsar/
 │   │       ├── SpoilerGuardTest.svelte
 │   │       ├── fixtures/
 │   │       │   ├── jwt.ts
+│   │       │   ├── response.ts
 │   │       │   └── watchlistItem.ts
 │   │       ├── admin-jobs-filter.test.ts
 │   │       ├── admin-jobs-poll.test.ts
@@ -416,6 +417,7 @@ phsar/
 │   │       ├── share-card.test.ts
 │   │       ├── share-content.test.ts
 │   │       ├── share-image.test.ts
+│   │       ├── split-candidates-card.test.ts
 │   │       ├── spoiler-frontier.test.ts
 │   │       ├── spoiler-guard.test.ts
 │   │       ├── studio-links.test.ts
@@ -463,7 +465,9 @@ phsar/
     │   ├── test_admin_delete.py
     │   ├── test_admin_nightly.py
     │   ├── test_admin_seasonal.py
+    │   ├── test_admin_split.py
     │   ├── test_admin_sweep.py
+    │   ├── test_admin_upcoming.py
     │   ├── test_anime_detail.py
     │   ├── test_auth.py
     │   ├── test_compression.py
@@ -472,6 +476,7 @@ phsar/
     │   ├── test_filters_token.py
     │   ├── test_health.py
     │   ├── test_jobs.py
+    │   ├── test_library.py
     │   ├── test_maintenance.py
     │   ├── test_media_detail.py
     │   ├── test_rating_scores.py
@@ -479,15 +484,18 @@ phsar/
     │   ├── test_save.py
     │   ├── test_search_anime.py
     │   ├── test_search_anime_filters.py
+    │   ├── test_search_mal.py
     │   ├── test_search_media.py
     │   ├── test_search_ranking.py
     │   ├── test_search_ratings.py
+    │   ├── test_seeder.py
     │   ├── test_user_flows_endpoints.py
     │   ├── test_user_settings.py
     │   └── test_watchlist.py
     ├── seeders/
     │   ├── test_embedding_backfiller.py
-    │   └── test_relation_backfiller.py
+    │   ├── test_relation_backfiller.py
+    │   └── test_split_candidate_backfiller.py
     └── services/
         ├── test_anime_service.py
         ├── test_backup_jobs.py
