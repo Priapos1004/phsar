@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 media_dao = MediaDAO()
 
 
-def media_title_texts(media: Media) -> list[str]:
+def media_title_texts(media: Media) -> list[str | None]:
     """Build the list of title texts for embedding generation from a Media
     object (parallel to `anime_search_service.anime_title_texts`)."""
     return [media.title, media.name_eng, media.name_jap, *(media.other_names or [])]
@@ -47,8 +47,8 @@ def media_to_dict(media: Media) -> dict:
         "aired_to": media.aired_to,
         "duration": media.duration,
         "duration_seconds": media.duration_seconds,
-        "genres": [g.genre.name for g in media.media_genre],
-        "studio": [s.studio.name for s in media.media_studio],
+        "genres": [g.genre.name for g in media.media_genre if g.genre is not None],
+        "studio": [s.studio.name for s in media.media_studio if s.studio is not None],
         "anime_uuid": media.anime.uuid,
         "anime_title": media.anime.title,
         "anime_name_eng": media.anime.name_eng,

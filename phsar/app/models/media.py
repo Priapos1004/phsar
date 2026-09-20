@@ -95,7 +95,7 @@ class SeasonType(str, enum.Enum):
 #
 # Distinct from `mal_scraper._SEASON_ORDER`, the lowercase MAL/URL vocabulary; this is
 # the catalog's title-cased one.
-SEASON_ORDER = {SeasonType.Winter: 1, SeasonType.Spring: 2, SeasonType.Summer: 3, SeasonType.Fall: 4}
+SEASON_ORDER: dict[str, int] = {SeasonType.Winter: 1, SeasonType.Spring: 2, SeasonType.Summer: 3, SeasonType.Fall: 4}
 
 # The sentinel `media.airing_status` values MAL returns. Here, beside the column
 # that stores them, for the same reason as SEASON_ORDER above: both layers read

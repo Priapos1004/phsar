@@ -73,7 +73,7 @@ class RatingDAO(BaseDAO[Ratings]):
             .options(selectinload(Ratings.rating_search))
         )
         result = await db.execute(stmt)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def get_rated_media_ids(
         self, db: AsyncSession, user_id: int, media_ids: list[int]
@@ -121,7 +121,7 @@ class RatingDAO(BaseDAO[Ratings]):
             .options(*self._eager_load_options())
         )
         result = await db.execute(stmt)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def get_by_user_and_anime_uuid(
         self, db: AsyncSession, user_id: int, anime_uuid: UUID
@@ -134,7 +134,7 @@ class RatingDAO(BaseDAO[Ratings]):
             .options(*self._eager_load_options())
         )
         result = await db.execute(stmt)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def get_all_by_user(
         self, db: AsyncSession, user_id: int, limit: int = 50, offset: int = 0
@@ -149,7 +149,7 @@ class RatingDAO(BaseDAO[Ratings]):
             .offset(offset)
         )
         result = await db.execute(stmt)
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def get_all_for_score_items(self, db: AsyncSession, user_id: int) -> list[Row]:
         """All of a user's ratings as a FLAT projection of scalars — `Row`s, not
@@ -203,7 +203,7 @@ class RatingDAO(BaseDAO[Ratings]):
             .where(Ratings.user_id == user_id)
             .order_by(*recency_order(Ratings))
         )
-        return (await db.execute(stmt)).all()
+        return list((await db.execute(stmt)).all())
 
     async def search_ratings_with_filters(
         self,

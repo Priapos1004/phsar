@@ -195,6 +195,8 @@ async def upsert_rating(
 
     # Re-fetch with eager loading for media/anime relationships needed by _rating_to_out
     rating = await rating_dao.get_by_uuid_and_user(db, uuid, user_id)
+    if rating is None:
+        raise RatingNotFoundError(str(uuid))
     return (await _ratings_to_out(db, user_id, [rating]))[0]
 
 

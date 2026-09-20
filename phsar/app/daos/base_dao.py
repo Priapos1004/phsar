@@ -75,7 +75,7 @@ class BaseDAO(Generic[T]):
         if field is None:
             raise FieldDoesNotExistError(field_name, self.model.__name__)
         result = await db.execute(select(self.model).where(field.in_(values)))
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def delete_all_by_field(self, db: AsyncSession, field_name: str, values: list) -> None:
         if not values:

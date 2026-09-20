@@ -256,6 +256,8 @@ async def remove(
     # and a recompute failure must not 5xx an admin into retrying a resolved
     # candidate. The nightly sweep's recompute is the backstop.
     if remaining:
+        # Narrowing only: anime_id is set in the same branch that computed `remaining`.
+        assert anime_id is not None
         try:
             await refresh_spoiler_cache_for_anime_ids(db, {anime_id})
         except Exception:

@@ -49,6 +49,7 @@ class BackfillDiff(ReclassifyDiff):
 class BackfillSummary(TypedDict):
     anime_scanned: int
     anime_changed: int
+    anime_failed: int
     media_reclassified: int
     anchor_changes: int
     diffs: list[BackfillDiff]
@@ -101,6 +102,7 @@ async def backfill_relations(
     summary: BackfillSummary = {
         "anime_scanned": len(all_anime),
         "anime_changed": 0,
+        "anime_failed": 0,
         "media_reclassified": 0,
         "anchor_changes": 0,
         "diffs": [],
@@ -182,7 +184,6 @@ async def backfill_relations(
                     "Backfiller failed on anime id=%d %r — skipping",
                     anime_id_for_log, anime_title_for_log,
                 )
-                summary.setdefault("anime_failed", 0)
                 summary["anime_failed"] += 1
 
     if summary["anime_changed"]:

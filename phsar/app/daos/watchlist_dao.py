@@ -123,7 +123,7 @@ class WatchlistDAO(BaseDAO[Watchlist]):
         stmt = select(Watchlist).where(
             Watchlist.user_id == user_id, Watchlist.media_id.in_(media_ids)
         )
-        return (await db.execute(stmt)).scalars().all()
+        return list((await db.execute(stmt)).scalars().all())
 
     async def get_by_media_uuid_and_user(self, db: AsyncSession, media_uuid: UUID, user_id: int) -> Watchlist | None:
         stmt = (
@@ -144,7 +144,7 @@ class WatchlistDAO(BaseDAO[Watchlist]):
             .where(Watchlist.uuid.in_(uuids), Watchlist.user_id == user_id)
             .options(*self._eager_load_options())
         )
-        return (await db.execute(stmt)).scalars().all()
+        return list((await db.execute(stmt)).scalars().all())
 
     async def get_by_user_and_anime_uuid(
         self, db: AsyncSession, user_id: int, anime_uuid: UUID
@@ -156,7 +156,7 @@ class WatchlistDAO(BaseDAO[Watchlist]):
             .where(Anime.uuid == anime_uuid, Watchlist.user_id == user_id)
             .options(*self._eager_load_options())
         )
-        return (await db.execute(stmt)).scalars().all()
+        return list((await db.execute(stmt)).scalars().all())
 
     async def get_all_for_items(self, db: AsyncSession, user_id: int) -> list[Row]:
         """All of a user's watchlist entries as a FLAT projection of scalars —
@@ -224,7 +224,7 @@ class WatchlistDAO(BaseDAO[Watchlist]):
             .where(Watchlist.user_id == user_id)
             .order_by(*recency_order(Watchlist))
         )
-        return (await db.execute(stmt)).all()
+        return list((await db.execute(stmt)).all())
 
     # --- All-users aggregates (admin Overview; no per-user breakdown) ---
 
@@ -269,7 +269,7 @@ class WatchlistDAO(BaseDAO[Watchlist]):
             .join(Anime, Anime.id == Media.anime_id)
             .where(Watchlist.user_id == user_id)
         )
-        return (await db.execute(stmt)).all()
+        return list((await db.execute(stmt)).all())
 
     async def bulk_delete_by_user_and_media_ids(
         self, db: AsyncSession, user_id: int, media_ids: list[int]

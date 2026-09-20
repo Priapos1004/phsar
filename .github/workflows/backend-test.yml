@@ -135,5 +135,8 @@ jobs:
         # already at head from `create_all`; this only writes the version row.
         alembic stamp head
 
+    - name: Type check
+      run: mypy
+
     - name: Run tests
       run: pytest --tb=short -q

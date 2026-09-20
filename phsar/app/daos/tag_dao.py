@@ -28,7 +28,7 @@ class TagDAO(BaseDAO[Tag]):
             .where(Tag.user_id == user_id)
             .order_by(Tag.is_default.desc(), Tag.name.asc())
         )
-        return result.scalars().all()
+        return list(result.scalars().all())
 
     async def count_by_user(self, db: AsyncSession, user_id: int) -> int:
         result = await db.execute(

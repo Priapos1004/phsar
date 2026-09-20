@@ -70,6 +70,9 @@ uvicorn app.main:app --reload
 ruff check .
 ruff check . --fix    # auto-fix
 
+# Type check (configured in pyproject.toml)
+mypy
+
 # Tests (requires running PostgreSQL container)
 pytest
 pytest tests/routers/test_auth.py           # single file
@@ -303,15 +306,17 @@ the price of pre-PR feedback. Cancelling is disabled on `main`, where it would l
 the branch the README badges track sitting on a cancelled status.
 
 - **Backend Lint** (`backend-lint.yml`): `ruff check .` in `phsar/`
-- **Backend Tests** (`backend-test.yml`): `pytest` against a pgvector service container. Also runs **`alembic check`**, which guards two things at once: that models and migrations agree (an index or column declared in only one is what makes the next `--autogenerate` propose a destructive diff), and that the chain still replays from empty. It needs its own throwaway `migrationcheck` DB brought up by `alembic upgrade head` — run against the test DB it would compare `create_all`'s metadata to a schema built from that same metadata, and pass however far the migrations had drifted
+- **Backend Tests** (`backend-test.yml`): `mypy` then `pytest` against a pgvector service container — the type check lives in this job because it needs SQLAlchemy's and Pydantic's own types, which only this job installs. Also runs **`alembic check`**, which guards two things at once: that models and migrations agree (an index or column declared in only one is what makes the next `--autogenerate` propose a destructive diff), and that the chain still replays from empty. It needs its own throwaway `migrationcheck` DB brought up by `alembic upgrade head` — run against the test DB it would compare `create_all`'s metadata to a schema built from that same metadata, and pass however far the migrations had drifted
 - **Frontend Check** (`frontend-check.yml`): `bun run check` + `bun run test` + `bun run build`. The build step is not redundant with the type check — `svelte-check` reads sources, and only a real adapter-node build proves the bundle still comes out
 - **Commit Gate** (`gate.yml`): `.claude/hooks/test-gate.sh`, on `.claude/**`. Its own workflow because the suite needs no project toolchain — it drives the hook against the checked-out tree on whatever the runner ships — and because a red result here means something other than a lint failure
 - **Build & Push Images** (`build-images.yml`): builds + pushes to ghcr.io — tag push (`v*`) or manual dispatch. No cancellation: a tag build must never be superseded
 - **CodeQL**: GitHub **default setup** — configured in repo settings, with no file in `.github/workflows/`. Alerts are triaged through `/review-comments`. Not a required check, because its context names are GitHub-managed
 
-## Linting Config (pyproject.toml)
+## Lint and type config (pyproject.toml)
 
-Ruff runs a curated ruleset, not the defaults: `select = ["E4","E7","E9","F","I","UP","B","SIM","C4","RUF","RET","ASYNC"]`, with `RUF001`–`RUF003` and `ASYNC240` ignored. `alembic/versions` and `__init__.py` are excluded.
+Ruff runs a curated ruleset, not the defaults: `select = ["E4","E7","E9","F","I","UP","B","SIM","C4","RUF","RET","ASYNC"]`, with `RUF001`–`RUF003` and `ASYNC240` ignored. `alembic/versions` and `__init__.py` are excluded. `required-version` is pinned here too, so an out-of-range ruff fails loudly instead of linting differently.
+
+mypy's settings sit in the same file, with the reasoning beside them. Its suppression discipline is an invariant and lives in [.claude/rules/backend.md](.claude/rules/backend.md).
 
 ## Test Config
 

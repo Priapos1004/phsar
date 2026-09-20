@@ -124,11 +124,17 @@ async def upsert_watchlist(
                 raise
             # Lost the race — the row now exists; apply our fields as an update.
             existing = await watchlist_dao.get_by_user_and_media(db, user_id, media_id)
+            if existing is None:
+                # Created and deleted again between the flush and this read. Nothing
+                # to update, and the original violation is the honest error.
+                raise
             _apply_fields(existing, data, tag_id)
             entry_uuid = existing.uuid
             await db.commit()
 
     fresh = await watchlist_dao.get_by_uuid_and_user(db, entry_uuid, user_id)
+    if fresh is None:
+        raise WatchlistNotFoundError(str(entry_uuid))
     return _to_out(fresh)
 
 

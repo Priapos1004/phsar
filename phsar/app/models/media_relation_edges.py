@@ -9,7 +9,7 @@ See `MediaFreshness` for the broader sidecar rationale.
 """
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import DateTime, ForeignKey, Integer
 from sqlalchemy.dialects.postgresql import JSONB
@@ -31,9 +31,12 @@ class MediaRelationEdges(BaseModel):
         unique=True,
     )
     # List of [target_mal_id, normalized_relation] pairs. `target_mal_id`
-    # may point outside the local catalog (BFS frontier) — no FK. A list, not a
-    # tuple: JSONB round-trips it as one either way.
-    edges: Mapped[list[list[int | str]]] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
+    # may point outside the local catalog (BFS frontier) — no FK. Typed loosely
+    # on purpose: each pair is positionally (int, str), which a list annotation
+    # cannot express — `list[int | str]` types the union rather than the
+    # positions, so every unpack downstream becomes `int | str` and needs a cast. A
+    # list rather than a tuple because JSONB round-trips it as one either way.
+    edges: Mapped[list[list[Any]]] = mapped_column(JSONB, nullable=False, default=list, server_default="[]")
     # Last time the edges were synced from MAL (lifespan backfill,
     # save_service, or update_sweep step 1). NULL means never fetched;
     # the backfiller's gate uses this to distinguish "we got back an

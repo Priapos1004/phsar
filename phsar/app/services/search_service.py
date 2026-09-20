@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.daos.media_dao import MediaDAO
 from app.daos.media_unwanted_dao import MediaUnwantedDAO
 from app.exceptions import MainMediaNotFoundError
+from app.schemas.media_schema import MediaUnconnected
 from app.schemas.search_schema import (
     AttachToExistingAction,
     SearchResultDB,
@@ -71,7 +72,12 @@ async def search_mal_api(
         cross_link_mal_ids = cross_link_mal_ids - unwanted_mal_ids
 
         nodes = build_classifier_nodes(related_anime_graph, all_info)
+        if not nodes:
+            # The only case where the classifier reports no anchor, and there is
+            # nothing in an empty graph to build a result from.
+            continue
         classifications, anime_mal_id = classify_anime_relations(nodes, edges)
+        assert anime_mal_id is not None
         for mal_id, relation_type in classifications.items():
             related_anime_graph[mal_id]["relation_type"] = relation_type
 
@@ -134,7 +140,7 @@ async def search_mal_api(
                 all_info.get(anime_mal_id, {}).get("scored_by"),
             )
 
-        unconnected_media_list = []
+        unconnected_media_list: list[MediaUnconnected] = []
         for mal_id, relation_info in related_anime_graph.items():
             media = media_unconnected_from_info(
                 all_info[mal_id], relation_type=relation_info["relation_type"],

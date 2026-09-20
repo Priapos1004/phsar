@@ -236,7 +236,7 @@ def anime_genre_majority_relation(genre_names: list[str] | None = None):
     )
     if genre_names:
         genre_counts = genre_counts.where(Genre.name.in_(set(genre_names)))
-    genre_counts = genre_counts.group_by(Media.anime_id, Genre.name).subquery()
+    genre_counts_sq = genre_counts.group_by(Media.anime_id, Genre.name).subquery()
 
     media_totals = (
         select(
@@ -247,9 +247,9 @@ def anime_genre_majority_relation(genre_names: list[str] | None = None):
     ).subquery()
 
     return (
-        select(genre_counts.c.anime_id, genre_counts.c.genre_name)
-        .join(media_totals, media_totals.c.anime_id == genre_counts.c.anime_id)
-        .where(genre_counts.c.genre_count * 2 > media_totals.c.total)
+        select(genre_counts_sq.c.anime_id, genre_counts_sq.c.genre_name)
+        .join(media_totals, media_totals.c.anime_id == genre_counts_sq.c.anime_id)
+        .where(genre_counts_sq.c.genre_count * 2 > media_totals.c.total)
     ).subquery()
 
 

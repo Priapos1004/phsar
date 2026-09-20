@@ -19,7 +19,7 @@ Thank you for your interest in contributing to Phsar! This project is licensed u
 2. Make your changes. If you change a SQLAlchemy model, generate a migration:
    `cd phsar && alembic revision --autogenerate -m "Describe change"` then `alembic upgrade head`
 3. Run the checks before committing (the DB container must be running for `pytest`):
-   - Backend: `cd phsar && ruff check . && pytest`
+   - Backend: `cd phsar && ruff check . && mypy && pytest`
    - Frontend: `cd phsar/frontend && bun run check && bun run test`
 4. Commit with clear, descriptive messages
 5. Push and open a pull request against `main`
@@ -39,7 +39,7 @@ there is a single copy to keep correct:
 Two async rules in `backend.md` will bite you specifically: every ORM relationship is
 `lazy="raise"`, and `asyncio.gather` must never span coroutines sharing one `AsyncSession`.
 
-**Linting**: Ruff, configured in `pyproject.toml` — `ruff check .` and `ruff check . --fix`.
+**Linting and types**: Ruff and mypy, both configured in `pyproject.toml` — commands in step 3 above, plus `ruff check . --fix` to auto-fix. CI runs both, so a red check here is a red check there.
 
 ## Architecture reference & tooling
 

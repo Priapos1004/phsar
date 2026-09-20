@@ -34,7 +34,9 @@ if TYPE_CHECKING:
 class SplitCandidateStatus(str, enum.Enum):
     pending = "pending"
     dismissed = "dismissed"
-    split = "split"
+    # Shadows str.split, which a str-enum inherits. The value is stored in the
+    # DB, so renaming the member would be a data migration for a naming clash.
+    split = "split"  # type: ignore[assignment]
 
 
 class SplitCandidate(BaseModel):

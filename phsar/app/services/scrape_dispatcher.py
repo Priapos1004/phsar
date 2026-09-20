@@ -58,6 +58,7 @@ from app.models.studio import Studio
 from app.schemas.search_schema import AttachToExistingAction
 from app.services import delete_candidate_service
 from app.services.anime_relation_service import (
+    ReclassifyDiff,
     reclassify_anime,
     umbrella_diff_to_log_entry,
 )
@@ -95,7 +96,7 @@ class RefreshResult(NamedTuple):
     is_currently_airing: bool
     # Full ReclassifyDiff (or None if nothing drifted) — bool umbrella-
     # drift is derivable from this, so the NamedTuple doesn't carry both.
-    umbrella_diff: dict | None
+    umbrella_diff: ReclassifyDiff | None
     # Per-media diff entries already annotated with anime context so the
     # dispatcher just extends its log — no post-hoc mutation needed.
     media_changes: list[dict]
@@ -266,6 +267,7 @@ async def user_scrape_dispatcher(session: AsyncSession, job: Job) -> dict:
         # Reached only when seed_mal_id is None (handled above).
         # `query` is guaranteed truthy here — the dispatcher entry-check
         # raises ValueError when both are missing.
+        assert query is not None
         raise AnimeNotFoundError(query)
 
     # "Done" while the row is still status='running' is brief — the worker
@@ -1349,7 +1351,7 @@ async def _apply_genre_diff(
     v2 audit log makes silent rewrites safer because rollback is now a
     matter of reading the relevant job's per-media diff.
     """
-    current = {mg.genre.name for mg in media.media_genre}
+    current = {mg.genre.name for mg in media.media_genre if mg.genre is not None}
     new = set(payload.get("genres") or [])
     if current == new:
         return None
@@ -1391,7 +1393,7 @@ async def _apply_studio_diff(
     haven't seen before — studios are a discovered taxonomy (co-pro
     credits, outsourced animation studios surface after airing), not a
     curated seed list like genres."""
-    current = {ms.studio.name for ms in media.media_studio}
+    current = {ms.studio.name for ms in media.media_studio if ms.studio is not None}
     new = set(payload.get("studio") or [])
     if current == new:
         return None

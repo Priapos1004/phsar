@@ -23,6 +23,7 @@ def _resolve_name(
     """Return localized name if it differs from romaji title, else None."""
     if language == NameLanguage.romaji:
         return None
+    resolved: str | None
     if language == NameLanguage.japanese and name_jap:
         resolved = name_jap
     elif language == NameLanguage.english and name_eng:
@@ -151,6 +152,8 @@ async def fetch_export_data(
 
     # Collect all media objects keyed by media_id
     all_media: dict[int, Media] = {}
+    r: Ratings | None
+    w: Watchlist | None
     for r in ratings:
         all_media[r.media_id] = r.media
     for w in watchlist_entries:

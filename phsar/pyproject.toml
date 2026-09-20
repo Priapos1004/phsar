@@ -37,3 +37,19 @@ extend-immutable-calls = [
     "fastapi.File",
     "fastapi.Security",
 ]
+[tool.mypy]
+python_version = "3.12"
+files = ["app"]
+# pydantic.mypy teaches mypy that BaseSettings fields arrive from the environment
+# and how the response DTOs construct; without it a third of the output is false
+# positives about arguments the framework supplies. Not the SQLAlchemy plugin — the
+# ORM is typed through `Mapped[]`, which needs none.
+plugins = ["pydantic.mypy"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+# Imports app/ makes that carry no types. mypy errors on a new one, so this list
+# cannot silently fall behind.
+[[tool.mypy.overrides]]
+module = ["pgvector.*", "jose.*", "passlib.*"]
+ignore_missing_imports = true

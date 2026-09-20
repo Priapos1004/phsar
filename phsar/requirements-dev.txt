@@ -1,6 +1,7 @@
 # Test and lint tooling. Deliberately does NOT `-r requirements.txt`: the lint job
 # installs this file alone, and pulling the runtime tree would drag in
 # sentence-transformers and with it the torch wheel, turning a ~10s job into minutes.
+mypy==2.3.1
 pytest==9.0.3
 pytest-asyncio==1.3.0
 pytest-cov==7.1.0

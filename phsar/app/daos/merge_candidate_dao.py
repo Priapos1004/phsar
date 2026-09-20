@@ -138,7 +138,7 @@ class MergeCandidateDAO(BaseDAO[MergeCandidate]):
             .group_by(Media.anime_id)
         )
         result = await db.execute(stmt)
-        return dict(result.all())
+        return dict(result.tuples().all())
 
     async def get_existing_pairs(self, db: AsyncSession) -> set[tuple[int, int]]:
         """Returns every (a_id, b_id) pair that already has a row, regardless
