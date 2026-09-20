@@ -1,23 +1,35 @@
 import enum
+from datetime import date
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     CheckConstraint,
-    Column,
     Date,
     Enum,
     Float,
     ForeignKey,
     Index,
     Integer,
+    SQLColumnExpression,
     String,
     case,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.hybrid import hybrid_property
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
+
+if TYPE_CHECKING:
+    from app.models.anime import Anime
+    from app.models.media_freshness import MediaFreshness
+    from app.models.media_genre import MediaGenre
+    from app.models.media_relation_edges import MediaRelationEdges
+    from app.models.media_search import MediaSearch
+    from app.models.media_studio import MediaStudio
+    from app.models.ratings import Ratings
+    from app.models.watchlist import Watchlist
 
 
 class MediaType(str, enum.Enum):
@@ -106,32 +118,32 @@ AGE_RATING_MAP = [
 class Media(BaseModel):
     __tablename__ = "media"
 
-    anime_id = Column(Integer, ForeignKey("anime.id", ondelete="CASCADE"), nullable=False, index=True)
-    mal_id = Column(Integer, nullable=False, unique=True)
-    mal_url = Column(String, nullable=False)
-    title = Column(String, nullable=False)
-    name_eng = Column(String)
-    name_jap = Column(String)
-    other_names = Column(JSONB, default=list)
-    media_type = Column(Enum(MediaType), nullable=False)
-    relation_type = Column(Enum(RelationType), nullable=False)
-    age_rating = Column(String)
-    description = Column(String)
-    original_source = Column(String)
-    cover_image = Column(String)
-    score = Column(Float, nullable=True)
-    scored_by = Column(Integer, nullable=False)
-    episodes = Column(Integer, nullable=True)
-    anime_season_name = Column(Enum(SeasonType), nullable=True)
-    anime_season_year = Column(Integer, nullable=True)
-    airing_status = Column(String, nullable=False)
-    aired_from = Column(Date, nullable=True)
-    aired_to = Column(Date, nullable=True)
-    duration = Column(String, nullable=True)
-    duration_seconds = Column(Integer, nullable=True)
+    anime_id: Mapped[int] = mapped_column(Integer, ForeignKey("anime.id", ondelete="CASCADE"), nullable=False, index=True)
+    mal_id: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    mal_url: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    name_eng: Mapped[str | None] = mapped_column(String)
+    name_jap: Mapped[str | None] = mapped_column(String)
+    other_names: Mapped[list[str] | None] = mapped_column(JSONB, default=list)
+    media_type: Mapped[MediaType] = mapped_column(Enum(MediaType), nullable=False)
+    relation_type: Mapped[RelationType] = mapped_column(Enum(RelationType), nullable=False)
+    age_rating: Mapped[str | None] = mapped_column(String)
+    description: Mapped[str | None] = mapped_column(String)
+    original_source: Mapped[str | None] = mapped_column(String)
+    cover_image: Mapped[str | None] = mapped_column(String)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    scored_by: Mapped[int] = mapped_column(Integer, nullable=False)
+    episodes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    anime_season_name: Mapped[SeasonType | None] = mapped_column(Enum(SeasonType), nullable=True)
+    anime_season_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    airing_status: Mapped[str] = mapped_column(String, nullable=False)
+    aired_from: Mapped[date | None] = mapped_column(Date, nullable=True)
+    aired_to: Mapped[date | None] = mapped_column(Date, nullable=True)
+    duration: Mapped[str | None] = mapped_column(String, nullable=True)
+    duration_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     @hybrid_property
-    def age_rating_numeric(self):
+    def age_rating_numeric(self) -> int | None:
         """Returns numeric age rating based on MAL's age rating strings."""
         if not self.age_rating:
             return None
@@ -142,8 +154,12 @@ class Media(BaseModel):
                 return value
         return None
 
-    @age_rating_numeric.expression
-    def age_rating_numeric(cls):
+    # `inplace.expression` on a differently-named function, not a second
+    # `def age_rating_numeric`: the two-same-names form reads as a redefinition to
+    # every type checker. The hybrid still publishes under the property's name.
+    @age_rating_numeric.inplace.expression
+    @classmethod
+    def _age_rating_numeric_expression(cls) -> SQLColumnExpression[int | None]:
         """SQL expression to compute numeric age rating using prefix matching."""
         return case(
             *[(cls.age_rating.startswith(prefix), value) for prefix, value in AGE_RATING_MAP],
@@ -151,13 +167,14 @@ class Media(BaseModel):
         )
 
     @hybrid_property
-    def total_watch_time(self):
+    def total_watch_time(self) -> int | None:
         if self.episodes and self.duration_seconds:
             return self.episodes * self.duration_seconds
         return None
 
-    @total_watch_time.expression
-    def total_watch_time(cls):
+    @total_watch_time.inplace.expression
+    @classmethod
+    def _total_watch_time_expression(cls) -> SQLColumnExpression[int | None]:
         return case(
             (
                 (cls.episodes.isnot(None) & cls.duration_seconds.isnot(None)),
@@ -179,14 +196,14 @@ class Media(BaseModel):
     )
 
     # Relationships
-    anime = relationship("Anime", back_populates="media", lazy="raise")
-    ratings = relationship("Ratings", back_populates="media", cascade="all, delete-orphan", lazy="raise")
-    watchlist = relationship("Watchlist", back_populates="media", cascade="all, delete-orphan", lazy="raise")
-    media_genre = relationship("MediaGenre", back_populates="media", cascade="all, delete-orphan", lazy="raise")
-    media_studio = relationship("MediaStudio", back_populates="media", cascade="all, delete-orphan", lazy="raise")
-    media_search = relationship("MediaSearch", back_populates="media", cascade="all, delete-orphan", lazy="raise")
+    anime: Mapped["Anime"] = relationship("Anime", back_populates="media", lazy="raise")
+    ratings: Mapped[list["Ratings"]] = relationship("Ratings", back_populates="media", cascade="all, delete-orphan", lazy="raise")
+    watchlist: Mapped[list["Watchlist"]] = relationship("Watchlist", back_populates="media", cascade="all, delete-orphan", lazy="raise")
+    media_genre: Mapped[list["MediaGenre"]] = relationship("MediaGenre", back_populates="media", cascade="all, delete-orphan", lazy="raise")
+    media_studio: Mapped[list["MediaStudio"]] = relationship("MediaStudio", back_populates="media", cascade="all, delete-orphan", lazy="raise")
+    media_search: Mapped[list["MediaSearch"]] = relationship("MediaSearch", back_populates="media", cascade="all, delete-orphan", lazy="raise")
     # One-to-one freshness sidecar. See AnimeFreshness for rationale.
-    freshness = relationship(
+    freshness: Mapped["MediaFreshness | None"] = relationship(
         "MediaFreshness",
         back_populates="media",
         cascade="all, delete-orphan",
@@ -194,7 +211,7 @@ class Media(BaseModel):
         lazy="raise",
     )
     # One-to-one MAL relation-edges sidecar. See MediaRelationEdges for rationale.
-    relation_edges = relationship(
+    relation_edges: Mapped["MediaRelationEdges | None"] = relationship(
         "MediaRelationEdges",
         back_populates="media",
         cascade="all, delete-orphan",

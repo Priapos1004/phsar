@@ -9,8 +9,7 @@ import asyncio
 
 import pytest
 from sqlalchemy import delete
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core import maintenance
 from app.core.config import settings
@@ -100,7 +99,7 @@ async def db_session(db_engine):
     """
     async with db_engine.connect() as conn:
         trans = await conn.begin()
-        async_session = sessionmaker(bind=conn, class_=AsyncSession, expire_on_commit=False)
+        async_session = async_sessionmaker(bind=conn, expire_on_commit=False)
         try:
             async with async_session() as session:
                 yield session

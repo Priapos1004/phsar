@@ -1,16 +1,18 @@
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 
-from sqlalchemy import delete, distinct, func, inspect, select
+from sqlalchemy import UnaryExpression, delete, distinct, func, inspect, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import DeclarativeMeta
 from sqlalchemy.sql.sqltypes import Float, Integer, Numeric
 
 from app.exceptions import FieldDoesNotExistError, NonNumericFieldError
+from app.models.base import BaseModel
 
-T = TypeVar("T", bound=DeclarativeMeta)  # any SQLAlchemy model
+# BaseModel rather than Base: `recency_order` and `get_by_id` read `model.id`,
+# which only BaseModel declares.
+T = TypeVar("T", bound=BaseModel)
 
 
-def recency_order(model, column: str = "modified_at") -> tuple:
+def recency_order(model: type[BaseModel], column: str = "modified_at") -> tuple[UnaryExpression[Any], UnaryExpression[Any]]:
     """`(<column> DESC, id DESC)` — newest-first WITH a primary-key tiebreak.
 
     Every newest-first ordering needs the tiebreak, because the timestamps tie by

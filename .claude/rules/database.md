@@ -18,6 +18,26 @@ case for a pure cache table. Treat that as the exception that needs arguing, not
 the default — and if a new table has the same case, raise it rather than deciding
 alone.
 
+## A column is `Mapped[T] = mapped_column(...)`, and the annotation follows the DDL
+
+Not the intent. A column without `nullable=False` is nullable, so its annotation takes
+`| None` **even where the value is logically required** — `media_genre` and
+`media_studio` hold FKs in exactly that state, and tightening them is a migration, not
+an annotation fix.
+
+Pass the Core type explicitly (`mapped_column(Float, nullable=True)`, never bare).
+Given the type, SQLAlchemy never consults the annotation to build the column, so a
+wrong annotation stays a typing bug instead of becoming a DDL one.
+
+Relationships take `Mapped[list["X"]]` or `Mapped["X"]` / `Mapped["X | None"]` by
+whether the FK is nullable — read it off the mapper rather than guessing. Targets
+belong in a `TYPE_CHECKING` block unless the module is already imported at runtime.
+
+A `@hybrid_property` and its SQL twin must not share a name — the second `def` reads
+as a redefinition. Use `@X.inplace.expression` on a `_x_expression` classmethod, and
+keep the SQL side an expression: `base_dao.get_min_max` and `filter_service` reach it
+through `getattr(model, name)`.
+
 ## Operational state goes in a 1:1 sidecar
 
 When adding tracking or audit state — `last_checked_at`, sweep counters, freshness
@@ -55,6 +75,10 @@ An index present in a migration but absent from the model's module-scope
 migration-only index silently loses its query the access path it exists for.
 `alembic check` in CI is the guard — it must both agree with the models and replay
 from empty.
+
+**It is a partial guard.** Nullability, column types, indexes and FK constraints fail
+loudly; `server_default`, Python-side `default` and `onupdate` are not compared at all,
+so dropping one ships green. Review those by eye whenever column definitions move.
 
 Do **not** index a sidecar's `last_checked_at`. The planner could not use it (the
 staleness predicate is a `coalesce` across a joined table, so it isn't sargable,

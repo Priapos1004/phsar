@@ -22,10 +22,10 @@ key a later sweep would rediscover on and the key `media_unwanted` blocks on.
 """
 
 import enum
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     Boolean,
-    Column,
     Enum,
     ForeignKey,
     Index,
@@ -33,9 +33,12 @@ from sqlalchemy import (
     String,
     text,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
+
+if TYPE_CHECKING:
+    from app.models.media import Media
 
 
 class DeleteCandidateStatus(str, enum.Enum):
@@ -58,7 +61,7 @@ class DeleteCandidate(BaseModel):
 
     # Nullable + SET NULL: see the module docstring. Null means "the media this
     # row describes has already been removed", which is the normal end state.
-    media_id = Column(
+    media_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("media.id", ondelete="SET NULL"),
         nullable=True,
@@ -67,24 +70,24 @@ class DeleteCandidate(BaseModel):
 
     # Identity snapshot, written at detection time. The only thing left once the
     # media row is gone.
-    mal_id = Column(Integer, nullable=False)
-    title = Column(String, nullable=False)
-    name_eng = Column(String, nullable=True)
-    name_jap = Column(String, nullable=True)
+    mal_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    name_eng: Mapped[str | None] = mapped_column(String, nullable=True)
+    name_jap: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # String, not Enum, so adding a future detector doesn't need a migration.
     # Mirrors merge_candidates.detected_by.
-    detected_by = Column(String(32), nullable=False)  # "sweep_404", "low_signal"
-    status = Column(
+    detected_by: Mapped[str] = mapped_column(String(32), nullable=False)  # "sweep_404", "low_signal"
+    status: Mapped[DeleteCandidateStatus] = mapped_column(
         Enum(DeleteCandidateStatus),
         nullable=False,
         default=DeleteCandidateStatus.pending,
     )
     # The admin's blacklist choice, not a cache of `media_unwanted`: the two are
     # separately mutable and this one is the record of what was decided here.
-    blacklisted = Column(Boolean, nullable=False, server_default=text("false"))
+    blacklisted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
 
-    media = relationship("Media", foreign_keys=[media_id], lazy="raise")
+    media: Mapped["Media | None"] = relationship("Media", foreign_keys=[media_id], lazy="raise")
 
     __table_args__ = (
         # One LIVE candidate per mal_id, so re-running detection is idempotent

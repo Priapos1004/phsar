@@ -16,7 +16,10 @@ DB level; deleting a *rating* does NOT touch events unless the user opts in (see
 is only ever read via grouped count queries in `WatchEventDAO`, never traversed.
 """
 
-from sqlalchemy import Column, DateTime, ForeignKey, Index, Integer, func
+from datetime import datetime
+
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, func
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import BaseModel
 
@@ -24,11 +27,11 @@ from app.models.base import BaseModel
 class WatchEvent(BaseModel):
     __tablename__ = "watch_events"
 
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    media_id = Column(Integer, ForeignKey("media.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    media_id: Mapped[int] = mapped_column(Integer, ForeignKey("media.id", ondelete="CASCADE"), nullable=False)
     # The watch/completion moment. Defaults to now() for live events; settable so a
     # backfill can stamp the originating rating's created_at.
-    watched_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    watched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
 # (user_id, media_id) drives the derived watched_count lookups — the only shape

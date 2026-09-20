@@ -1,14 +1,10 @@
-from typing import Generic, TypeVar
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import DeclarativeMeta
 
-from app.daos.base_dao import BaseDAO
+from app.daos.base_dao import BaseDAO, T
 
-T = TypeVar("T", bound=DeclarativeMeta)
 
-class MalIdDAO(BaseDAO[T], Generic[T]):
+class MalIdDAO(BaseDAO[T]):
     """
     DAO for models that have a 'mal_id' field.
     """
@@ -21,5 +17,7 @@ class MalIdDAO(BaseDAO[T], Generic[T]):
         """
         Get all mal_id values currently stored in the database for this model.
         """
-        result = await db.execute(select(self.model.mal_id))
+        # BaseModel has no mal_id. A mapped mixin could declare one, but that is
+        # four model files and an `alembic check` run to delete one suppression.
+        result = await db.execute(select(self.model.mal_id))  # type: ignore[attr-defined]
         return result.scalars().all()

@@ -8,7 +8,8 @@ This is a cache table — no uuid/timestamps needed. Uses a simple
 composite primary key for fast bulk delete + insert.
 """
 
-from sqlalchemy import Column, ForeignKey, Index, Integer, UniqueConstraint
+from sqlalchemy import ForeignKey, Index, Integer, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
 
@@ -19,9 +20,9 @@ class UserVisibleMedia(Base):
     # No index=True — the PK's own unique btree already covers it. This table
     # doesn't inherit BaseModel, so it needs the rule stated separately; see the
     # note on BaseModel.id.
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    media_id = Column(Integer, ForeignKey("media.id", ondelete="CASCADE"), nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    media_id: Mapped[int] = mapped_column(Integer, ForeignKey("media.id", ondelete="CASCADE"), nullable=False)
 
     __table_args__ = (
         UniqueConstraint("user_id", "media_id", name="uq_user_visible_media"),

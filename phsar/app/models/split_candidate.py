@@ -19,12 +19,16 @@ anime (merge-survivor reparent, manual delete) cleans up the row.
 """
 
 import enum
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Column, Enum, ForeignKey, Index, Integer, String, text
+from sqlalchemy import Enum, ForeignKey, Index, Integer, String, text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
+
+if TYPE_CHECKING:
+    from app.models.anime import Anime
 
 
 class SplitCandidateStatus(str, enum.Enum):
@@ -36,7 +40,7 @@ class SplitCandidateStatus(str, enum.Enum):
 class SplitCandidate(BaseModel):
     __tablename__ = "split_candidates"
 
-    anime_id = Column(
+    anime_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("anime.id", ondelete="CASCADE"),
         nullable=False,
@@ -45,18 +49,18 @@ class SplitCandidate(BaseModel):
     # JSONB list of DisjointFranchise dicts (see relation_classifier.py).
     # Each entry holds member_mal_ids, substance_member_mal_ids,
     # suggested_anchor_mal_id, bridge_edges.
-    clusters = Column(JSONB, nullable=False)
-    status = Column(
+    clusters: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[SplitCandidateStatus] = mapped_column(
         Enum(SplitCandidateStatus),
         nullable=False,
         default=SplitCandidateStatus.pending,
     )
     # String, not Enum, so adding a future detector (e.g. "manual") doesn't
     # need a migration. Mirrors merge_candidates.detected_by convention.
-    detected_by = Column(String(32), nullable=False)  # "scrape", "backfill", "merge_survivor"
-    notes = Column(String, nullable=True)
+    detected_by: Mapped[str] = mapped_column(String(32), nullable=False)  # "scrape", "backfill", "merge_survivor"
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    anime = relationship("Anime", foreign_keys=[anime_id], lazy="raise")
+    anime: Mapped["Anime"] = relationship("Anime", foreign_keys=[anime_id], lazy="raise")
 
     __table_args__ = (
         # Admin list scans pending only; partial keeps the index tiny as

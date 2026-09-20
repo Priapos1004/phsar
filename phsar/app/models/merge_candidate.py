@@ -1,8 +1,8 @@
 import enum
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     CheckConstraint,
-    Column,
     Enum,
     Float,
     ForeignKey,
@@ -12,9 +12,12 @@ from sqlalchemy import (
     UniqueConstraint,
     text,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
+
+if TYPE_CHECKING:
+    from app.models.anime import Anime
 
 
 class MergeCandidateStatus(str, enum.Enum):
@@ -28,23 +31,23 @@ class MergeCandidate(BaseModel):
 
     # Detector is responsible for ordering: anime_a_id < anime_b_id so the
     # unique constraint collapses (A,B) and (B,A) into one row.
-    anime_a_id = Column(Integer, ForeignKey("anime.id", ondelete="CASCADE"), nullable=False)
-    anime_b_id = Column(Integer, ForeignKey("anime.id", ondelete="CASCADE"), nullable=False)
+    anime_a_id: Mapped[int] = mapped_column(Integer, ForeignKey("anime.id", ondelete="CASCADE"), nullable=False)
+    anime_b_id: Mapped[int] = mapped_column(Integer, ForeignKey("anime.id", ondelete="CASCADE"), nullable=False)
 
-    similarity_score = Column(Float, nullable=False)
+    similarity_score: Mapped[float] = mapped_column(Float, nullable=False)
 
     # String, not Enum, so adding a future detector ('description_overlap',
     # 'shared_mal_id', ...) doesn't need a migration.
-    detected_by = Column(String(32), nullable=False)
-    status = Column(
+    detected_by: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[MergeCandidateStatus] = mapped_column(
         Enum(MergeCandidateStatus),
         nullable=False,
         default=MergeCandidateStatus.pending,
     )
-    notes = Column(String, nullable=True)
+    notes: Mapped[str | None] = mapped_column(String, nullable=True)
 
-    anime_a = relationship("Anime", foreign_keys=[anime_a_id], lazy="raise")
-    anime_b = relationship("Anime", foreign_keys=[anime_b_id], lazy="raise")
+    anime_a: Mapped["Anime"] = relationship("Anime", foreign_keys=[anime_a_id], lazy="raise")
+    anime_b: Mapped["Anime"] = relationship("Anime", foreign_keys=[anime_b_id], lazy="raise")
 
     __table_args__ = (
         UniqueConstraint("anime_a_id", "anime_b_id", name="uq_merge_candidates_pair"),

@@ -160,7 +160,8 @@ DAOs own the vector, aggregation and filtering queries. `search_filters.py` hold
 filter/order helpers and `media_projections.py` the shared wide-projection columns.
 Query invariants are in [.claude/rules/database.md](.claude/rules/database.md).
 
-**`models/`** — SQLAlchemy ORM. Alongside the canonical tables sit the deliberate
+**`models/`** — SQLAlchemy ORM, 2.0 declarative style (`Mapped[T] = mapped_column(...)`
+on a `DeclarativeBase` root). Alongside the canonical tables sit the deliberate
 shapes covered by `rules/database.md`: **1:1 sidecars** for operational state
 (`anime_freshness`, `media_freshness`, `media_relation_edges`, `anime_completion`),
 **search tables** holding pgvector embeddings (`anime_search`, `media_search`,

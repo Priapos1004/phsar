@@ -1,8 +1,8 @@
 import enum
+from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     CheckConstraint,
-    Column,
     Enum,
     Float,
     ForeignKey,
@@ -11,9 +11,14 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
+
+if TYPE_CHECKING:
+    from app.models.media import Media
+    from app.models.rating_search import RatingSearch
+    from app.models.users import Users
 
 
 class Pace(str, enum.Enum):
@@ -100,11 +105,11 @@ class Ratings(BaseModel):
     __tablename__ = "ratings"
 
     # Rating: float between 0 and 10
-    rating = Column(Float, nullable=False)
+    rating: Mapped[float] = mapped_column(Float, nullable=False)
 
     # Foreign Key Media and Users
-    media_id = Column(Integer, ForeignKey("media.id", ondelete="CASCADE"), nullable=False)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    media_id: Mapped[int] = mapped_column(Integer, ForeignKey("media.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
     __table_args__ = (
         UniqueConstraint('user_id', 'media_id', name='unique_user_media_rating'),
@@ -112,13 +117,13 @@ class Ratings(BaseModel):
     )
 
     # Optional note field
-    note = Column(String(1000), nullable=True)
+    note: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
     # Number of episodes watched (relevant for on_hold / dropped)
-    episodes_watched = Column(Integer, nullable=True)
+    episodes_watched: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Watch status — completed / on_hold / dropped (replaced the `dropped` boolean in v0.14.10)
-    watch_status = Column(
+    watch_status: Mapped[WatchStatus] = mapped_column(
         Enum(WatchStatus),
         nullable=False,
         default=WatchStatus.completed,
@@ -126,22 +131,22 @@ class Ratings(BaseModel):
     )
 
     # Rating attributes (all optional) — keep RATING_ATTRIBUTE_FIELDS in sync
-    pace = Column(Enum(Pace), nullable=True)
-    animation_quality = Column(Enum(AnimationQuality), nullable=True)
-    has_3d_animation = Column(Enum(ThreeDAnimation), nullable=True)
-    watched_format = Column(Enum(WatchedFormat), nullable=True)
-    fan_service = Column(Enum(FanService), nullable=True)
-    dialogue_quality = Column(Enum(DialogueQuality), nullable=True)
-    character_depth = Column(Enum(CharacterDepth), nullable=True)
-    ending_type = Column(Enum(EndingType), nullable=True)
-    ending_quality = Column(Enum(EndingQuality), nullable=True)
-    story_quality = Column(Enum(StoryQuality), nullable=True)
-    originality = Column(Enum(Originality), nullable=True)
+    pace: Mapped[Pace | None] = mapped_column(Enum(Pace), nullable=True)
+    animation_quality: Mapped[AnimationQuality | None] = mapped_column(Enum(AnimationQuality), nullable=True)
+    has_3d_animation: Mapped[ThreeDAnimation | None] = mapped_column(Enum(ThreeDAnimation), nullable=True)
+    watched_format: Mapped[WatchedFormat | None] = mapped_column(Enum(WatchedFormat), nullable=True)
+    fan_service: Mapped[FanService | None] = mapped_column(Enum(FanService), nullable=True)
+    dialogue_quality: Mapped[DialogueQuality | None] = mapped_column(Enum(DialogueQuality), nullable=True)
+    character_depth: Mapped[CharacterDepth | None] = mapped_column(Enum(CharacterDepth), nullable=True)
+    ending_type: Mapped[EndingType | None] = mapped_column(Enum(EndingType), nullable=True)
+    ending_quality: Mapped[EndingQuality | None] = mapped_column(Enum(EndingQuality), nullable=True)
+    story_quality: Mapped[StoryQuality | None] = mapped_column(Enum(StoryQuality), nullable=True)
+    originality: Mapped[Originality | None] = mapped_column(Enum(Originality), nullable=True)
 
     # Relationships
-    media = relationship("Media", back_populates="ratings", lazy="raise")
-    users = relationship("Users", back_populates="ratings", lazy="raise")
-    rating_search = relationship("RatingSearch", back_populates="rating", cascade="all, delete-orphan", uselist=False, lazy="raise")
+    media: Mapped["Media"] = relationship("Media", back_populates="ratings", lazy="raise")
+    users: Mapped["Users"] = relationship("Users", back_populates="ratings", lazy="raise")
+    rating_search: Mapped["RatingSearch | None"] = relationship("RatingSearch", back_populates="rating", cascade="all, delete-orphan", uselist=False, lazy="raise")
 
 # Module-level constant — keep in sync with attribute columns above
 RATING_ATTRIBUTE_FIELDS: tuple[str, ...] = (
