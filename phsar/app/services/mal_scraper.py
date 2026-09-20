@@ -363,7 +363,7 @@ class MalScraper:
         self.client: httpx.AsyncClient | None = None
         self.timeout = httpx.Timeout(connect=5.0, read=120.0, write=10.0, pool=5.0)
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "MalScraper":
         # Every MAL v2 request carries the client-id header; public data needs
         # no OAuth. The header is set on the client so it can't be forgotten
         # on an individual call.
@@ -382,8 +382,12 @@ class MalScraper:
         )
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):
-        await self.client.aclose()
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        # Unreachable when None — __aexit__ only runs if __aenter__ returned. Skip
+        # rather than raise like _get does: an exception here would mask whatever
+        # is already propagating.
+        if self.client is not None:
+            await self.client.aclose()
 
     @classmethod
     async def _wait_for_rate_limit(cls) -> None:

@@ -53,10 +53,12 @@ one. That is why a handler invoking one ends in a bare `db.commit()`.
 
 ## It has to type-check
 
-mypy checks what is annotated: `disallow_untyped_defs` is off, so a function with no
-annotations at all has its body skipped — which is why adding a return type to an old
-function can surface errors nothing is checking. Model-side annotation rules live in
-`database.md`; what matters here is what the service and DAO layers do with them.
+Annotations are not demanded — `disallow_untyped_defs` is off. Annotate where the type
+tells a reader or the checker something; skip it where it would only restate the
+obvious. **Always annotate a return value other code binds**, though: an unannotated
+return makes the binder `Any`, which silently unchecks every method called on it, even
+the fully typed ones. Model-side rules live in `database.md`; what matters here is what
+the service and DAO layers do with them.
 
 **There is no per-module error suppression, and adding some is not the fix.** The
 config carries no `ignore_errors`, so a module cannot be quietly excluded. A

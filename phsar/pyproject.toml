@@ -45,6 +45,9 @@ files = ["app"]
 # positives about arguments the framework supplies. Not the SQLAlchemy plugin — the
 # ORM is typed through `Mapped[]`, which needs none.
 plugins = ["pydantic.mypy"]
+# Prospective: without this, the next function written without annotations takes
+# its whole body outside the checker, silently.
+check_untyped_defs = true
 warn_unused_ignores = true
 warn_redundant_casts = true
 
