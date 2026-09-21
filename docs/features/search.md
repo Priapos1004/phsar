@@ -111,6 +111,19 @@ the displayed number, the ranking and the "Top N%" pill from drifting apart.
 `total_episodes`, `total_watch_time`, `media_count` and genre majority stay over
 **all** media.
 
+## The caller's own ratings
+
+Media-view results carry `is_rated` (`MediaSearchResult`), so a hit can show that
+the caller already rated it. It is filled after the search query, from one indexed
+lookup over the page of hits — bounded by the result limit, and deliberately not
+threaded into `daos/search_filters.py`, which knows nothing about a user and must
+keep it that way: the anime query's GROUP BY and the "a filter never rescopes the
+aggregates" invariant both depend on that.
+
+The anime grain has no equivalent field. Its counterpart is the per-anime coverage
+tier from `/ratings/coverage`, which the client indexes by anime uuid — see the
+Ratings section of [services/CLAUDE.md](../../phsar/app/services/CLAUDE.md).
+
 ## Ordering media within an anime
 
 `filter_service.chronological_media_key(season_year, season_name, mal_id)` is the

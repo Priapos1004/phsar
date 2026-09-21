@@ -48,6 +48,17 @@ class MediaConnected(MediaUnconnected):
     age_rating_numeric: int | None
 
 
+class MediaSearchResult(MediaConnected):
+    """A media search hit, plus whether the caller has already rated it.
+
+    A subclass rather than a field on `MediaConnected`, because the schemas that
+    inherit that class would then carry a defaulted `is_rated=False` asserting
+    something untrue — flatly wrong on a media detail page for a media the caller
+    rated, and wrong by construction on a rated-media search result.
+    """
+    is_rated: bool
+
+
 class MediaSibling(BaseModel):
     """Lightweight media representation for the related media carousel."""
     uuid: UUID

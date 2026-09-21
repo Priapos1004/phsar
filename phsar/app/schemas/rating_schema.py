@@ -1,4 +1,5 @@
 from datetime import datetime
+from enum import Enum
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -187,6 +188,24 @@ class RatingSearchFilters(MediaSearchFilters):
 class SpoilerVisibility(BaseModel):
     """Media UUIDs that are visible (not spoiler-protected) for the current user."""
     visible_media_uuids: list[UUID]
+
+
+class CoverageTier(str, Enum):
+    """How completely one user has rated one anime, over the media that can carry a
+    rating at all (`Media.is_rateable`).
+
+    `main` and `all` are completion tiers — every media in scope `completed`, so a
+    dropped or on-hold one holds the anime at `some`. Which tier a set of counts
+    earns is `rating_service._coverage_tier`.
+    """
+    some = "some"
+    main = "main"
+    all = "all"
+
+
+class AnimeRatingCoverage(BaseModel):
+    anime_uuid: UUID
+    tier: CoverageTier
 
 
 class RatedMediaResult(MediaConnected, RatingAttributes):

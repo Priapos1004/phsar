@@ -1,7 +1,7 @@
 import logging
 from uuid import UUID
 
-from sqlalchemy import and_, delete, select
+from sqlalchemy import and_, delete, func, select
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -15,12 +15,12 @@ from app.daos.media_projections import (
 )
 from app.daos.search_filters import apply_media_filters, apply_vector_ordering
 from app.models.anime import Anime
-from app.models.media import Media
+from app.models.media import MAIN_STORY_RELATIONS, Media
 from app.models.media_genre import MediaGenre
 from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
 from app.models.rating_search import RatingSearch
-from app.models.ratings import Ratings
+from app.models.ratings import Ratings, WatchStatus
 from app.schemas.media_filter_schema import SearchType
 from app.schemas.rating_schema import RatingAttributes, RatingSearchFilters
 from app.services.vector_embedding_service import generate_query_embedding
@@ -79,14 +79,50 @@ class RatingDAO(BaseDAO[Ratings]):
         self, db: AsyncSession, user_id: int, media_ids: list[int]
     ) -> list[int]:
         """Which of the given media the user actually has a rating for. Scalar projection
-        (no ORM rows / embeddings) — used to scope an opt-in watch-history wipe to media
-        whose rating is being deleted."""
+        (no ORM rows / embeddings) — scopes an opt-in watch-history wipe to the media
+        whose rating is being deleted, and flags the caller's own hits in media search."""
         if not media_ids:
             return []
         stmt = select(self.model.media_id).where(
             self.model.user_id == user_id, self.model.media_id.in_(media_ids)
         )
         return list((await db.execute(stmt)).scalars().all())
+
+    async def get_anime_coverage(self, db: AsyncSession, user_id: int) -> list[Row]:
+        """Per-anime counts behind the rated-coverage tier, for every anime the user
+        has rated at least one media of. The counts, not the tier — `rating_service`
+        turns them into one.
+
+        Scoped to the anime the user has actually rated — bounded by their library,
+        not the catalogue — for the reason spelled out in
+        `media_projections._name_agg`. That scope is also what keeps untouched anime
+        out of the response, pinned by `test_untouched_anime_is_absent_from_the_response`.
+        `unique_user_media_rating` makes the outer join 0-or-1, so it cannot fan the
+        media rows out and every count stays a count of media.
+        """
+        rated_anime = select(Media.anime_id).join(
+            Ratings, (Ratings.media_id == Media.id) & (Ratings.user_id == user_id)
+        )
+        rateable = Media.is_rateable
+        is_main = Media.relation_type.in_(MAIN_STORY_RELATIONS)
+        # NULL for an unrated media, and a NULL filter predicate excludes the row —
+        # which is exactly the "not completed" reading we want.
+        completed = Ratings.watch_status == WatchStatus.completed
+        stmt = (
+            select(
+                Anime.uuid.label("anime_uuid"),
+                func.count().filter(rateable).label("n_all"),
+                func.count().filter(rateable & completed).label("done_all"),
+                func.count().filter(rateable & is_main).label("n_main"),
+                func.count().filter(rateable & is_main & completed).label("done_main"),
+            )
+            .select_from(Media)
+            .join(Anime, Anime.id == Media.anime_id)
+            .outerjoin(Ratings, (Ratings.media_id == Media.id) & (Ratings.user_id == user_id))
+            .where(Media.anime_id.in_(rated_anime))
+            .group_by(Anime.uuid)
+        )
+        return list((await db.execute(stmt)).all())
 
     async def bulk_delete_by_user_and_media_ids(
         self, db: AsyncSession, user_id: int, media_ids: list[int]

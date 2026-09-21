@@ -4,15 +4,17 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.media_dao import MediaDAO
+from app.daos.rating_dao import RatingDAO
 from app.exceptions import MediaNotFoundError
 from app.models.media import Media
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
-from app.schemas.media_schema import MediaConnected, MediaDetail, MediaSibling
+from app.schemas.media_schema import MediaDetail, MediaSearchResult, MediaSibling
 from app.services.filter_service import chronological_media_key
 
 logger = logging.getLogger(__name__)
 
 media_dao = MediaDAO()
+rating_dao = RatingDAO()
 
 
 def media_title_texts(media: Media) -> list[str | None]:
@@ -60,17 +62,14 @@ def media_to_dict(media: Media) -> dict:
     }
 
 
-def map_media_to_connected(media: Media) -> MediaConnected:
-    return MediaConnected(**media_to_dict(media))
-
-
 async def search_media_by_query(
     db: AsyncSession,
     query: str,
     filters: MediaSearchFilters,
     search_type: SearchType,
+    user_id: int,
     visible_media_ids: set[int] | None = None,
-) -> list[MediaConnected]:
+) -> list[MediaSearchResult]:
     logger.info(f"Query: {query}")
     logger.info(f"Filters: {filters.model_dump()}")
     logger.info(f"Search type: {search_type}")
@@ -83,8 +82,12 @@ async def search_media_by_query(
         visible_media_ids=visible_media_ids,
     )
 
-    # Map to MediaConnected Pydantic models
-    return [map_media_to_connected(m) for m in media_list]
+    # Filled after the search, not inside it — see "The caller's own ratings" in
+    # docs/features/search.md for why it stays out of `daos/search_filters`.
+    rated_ids = set(await rating_dao.get_rated_media_ids(db, user_id, [m.id for m in media_list]))
+    return [
+        MediaSearchResult(**media_to_dict(m), is_rated=m.id in rated_ids) for m in media_list
+    ]
 
 
 def _media_to_sibling(media: Media) -> MediaSibling:

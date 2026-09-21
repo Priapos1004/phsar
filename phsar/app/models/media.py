@@ -182,7 +182,29 @@ class Media(BaseModel):
             ),
             else_=None  # Changeable default value for total_watch_time = None
         )
-    
+
+    @hybrid_property
+    def is_rateable(self) -> bool:
+        """Whether this media can carry a rating at all — episode 1 has to have aired.
+
+        One definition in both dialects, because it is needed in each:
+        `rating_service._upsert_single_rating` refuses a *fresh* rating on anything
+        else, and the rated-coverage counts in `RatingDAO.get_anime_coverage` scope
+        their denominator to it. A tier must never be able to promise a state the
+        rating endpoint would reject.
+
+        Excluding the one refused status rather than listing the ones it accepts is
+        deliberate: `mal_scraper` maps the statuses it knows and passes anything
+        else through verbatim, so an unrecognised future value reads as rateable
+        rather than silently becoming un-rateable everywhere at once.
+        """
+        return self.airing_status != AIRING_STATUS_NOT_YET_AIRED
+
+    @is_rateable.inplace.expression
+    @classmethod
+    def _is_rateable_expression(cls) -> SQLColumnExpression[bool]:
+        return cls.airing_status != AIRING_STATUS_NOT_YET_AIRED
+
     __table_args__ = (
         CheckConstraint(
             "anime_season_year >= 1900 AND anime_season_year <= 2200",

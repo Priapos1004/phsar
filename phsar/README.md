@@ -480,6 +480,7 @@ phsar/
     │   ├── test_library.py
     │   ├── test_maintenance.py
     │   ├── test_media_detail.py
+    │   ├── test_rating_coverage.py
     │   ├── test_rating_scores.py
     │   ├── test_ratings.py
     │   ├── test_save.py
@@ -513,6 +514,7 @@ phsar/
         ├── test_merge_detection.py
         ├── test_merge_preservation.py
         ├── test_progress_reporter.py
+        ├── test_rating_coverage.py
         ├── test_relation_classifier.py
         ├── test_save_service.py
         ├── test_score_percentile.py

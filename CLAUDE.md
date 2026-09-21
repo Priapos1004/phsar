@@ -145,7 +145,7 @@ several `admin_*` modules). The live contract is FastAPI's own
 | `/auth` | login, register, validate, refresh (sliding session) |
 | `/search` | `/media` per-entry, `/anime` aggregated, `/ratings` note search, `/mal` |
 | `/media` | media + anime detail |
-| `/ratings` | rating CRUD, rewatch, scores projection, spoiler visibility |
+| `/ratings` | rating CRUD, rewatch, scores projection, rated coverage, spoiler visibility |
 | `/watchlist` | entries + lists (a "list" is a tag) |
 | `/users` | settings, export, account deletion |
 | `/jobs` | user-triggered scrapes, own-job polling |

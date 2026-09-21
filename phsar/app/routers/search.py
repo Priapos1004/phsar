@@ -22,7 +22,7 @@ from app.models.ratings import (
 from app.models.user_settings import SpoilerLevel
 from app.schemas.anime_schema import AnimeSearchResult
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
-from app.schemas.media_schema import MediaConnected
+from app.schemas.media_schema import MediaSearchResult
 from app.schemas.rating_schema import RatedMediaResult, RatingSearchFilters
 from app.schemas.search_schema import SearchResultDB
 from app.services.anime_search_service import search_anime_by_query
@@ -143,7 +143,7 @@ async def search_mal(
     return result.search_result_db_list
 
 
-@router.get("/media", response_model=list[MediaConnected])
+@router.get("/media", response_model=list[MediaSearchResult])
 async def search_media(
     query: str = Query(default="", description="The search query string (e.g., anime title)."),
     search_type: SearchType = Query(default=SearchType.TITLE, description="The way to search by: title or description."),
@@ -165,6 +165,7 @@ async def search_media(
         query=query,
         filters=filters,
         search_type=search_type,
+        user_id=current_user.id,
         visible_media_ids=visible_media_ids,
     )
 
