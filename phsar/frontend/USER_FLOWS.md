@@ -188,6 +188,7 @@ Each media search result card shows:
 - Genre tags, media type tag, relation type tag
 - Total watch time
 - A colored bookmark icon when the media is on your watchlist (tinted to its list's color)
+- A **rated band** in the theme colour around the card edge when you have rated this media. A media is rated or it isn't, so it never shows the gold or obsidian of 5.3
 - Clicking navigates to `/media?uuid=<uuid>` (with `&q=<token>` preserved for back navigation)
 
 ### 5.2 Anime Card (anime view)
@@ -202,7 +203,21 @@ Each anime search result card shows:
 - Media type badges with counts (e.g., "TV: 3", "Movie: 1")
 - Total watch time (summed across media)
 - A colored bookmark icon when any of the anime's media is on your watchlist — solid for one list, a gradient when it spans several
+- A **rated band** around the card edge showing how much of the anime you have rated — see 5.3
 - Clicking navigates to `/anime?uuid=<uuid>` (with `&q=<token>` preserved)
+
+### 5.3 Rated-coverage marking
+
+Both card types carry how much of the title you have rated, drawn on the **card**
+— cover art varies too much for a mark on it to stay legible, and anything
+overlaying an image reads as part of it. Three tiers: the **theme colour** for
+partly rated, **gold** for the main story done, **obsidian** for everything done.
+Which tier a title earns is in [ratings.md](../../docs/features/ratings.md).
+
+A band inside the card edge fades toward the middle, over a crisp outer ring.
+Gold and obsidian are fixed colours, not theme tokens, so they mean the same
+thing under every theme. Guests and restricted users see no marking — neither
+can rate.
 
 ---
 
@@ -380,6 +395,7 @@ Each anime search result card shows:
   - **Grid** (default): cards grouped under score-band dividers (by integer score), each band labeled + score-colored with a count. An order arrow flips whether the highest or lowest band sits on top.
   - **Table**: sortable columns (title, your score, MAL, Δ, genres, status, date); clicking a header toggles the sort; scrolls horizontally on narrow widths.
 - Each card/row links to the anime detail page; multi-media anime show a "N rated" indicator and a watch-status mix.
+- Grid cards carry the **rated-coverage** marking of 5.3, but only its two metal tiers: every anime here is rated by definition, so "partly rated" would mark the whole grid and say nothing. A marked card tints its footer as well as its edge — on a grid of near-identical covers the edge alone is easy to scan past.
 - **Filter bar**: genre filter with an any/all match toggle, season filter, and age-rating chips; a "Clear all" button appears when any value filter is active. Filter options are the union of values present in your ratings (no extra fetch).
 
 ### 8.3 Statistics Tab
@@ -666,6 +682,7 @@ own.
 | `/media/anime/{uuid}` | GET | Anime detail page load |
 | `/media/{uuid}` | GET | Media detail page load |
 | `/ratings/scores` | GET | The `/ratings` page, the watchlist Statistics subtab, and the rating-consistency panel — one shared session-cached fetch (`ratingScores` store), invalidated by any rating write |
+| `/ratings/coverage` | GET | Layout auth + after any rating write — per-anime rated-coverage tiers (`ratingCoverage` store) for the card marking in 5.3 |
 | `/ratings/media/{uuid}` | GET | Media detail page load (fetch user's rating) |
 | `/ratings/anime/{uuid}` | GET | Anime detail page load (fetch user's ratings for all media) |
 | `/ratings/media/{uuid}` | PUT | Create or update a rating |

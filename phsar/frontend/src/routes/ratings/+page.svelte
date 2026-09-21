@@ -4,6 +4,7 @@
 	import { consumeFocus, revealFocused } from '$lib/utils/scrollFocus';
 	import { ApiError } from '$lib/api';
 	import { ensureRatingScores } from '$lib/stores/ratingScores';
+	import { ensureRatingCoverage } from '$lib/stores/ratingCoverage';
 	import { userSettings } from '$lib/stores/userSettings';
 	import type { RatingScoreItem } from '$lib/types/api';
 	import type { RatingsTabKey } from '$lib/components/ratings/types';
@@ -39,6 +40,7 @@
 		error = '';
 		unauthenticated = false;
 		try {
+			void ensureRatingCoverage();
 			items = await ensureRatingScores();
 		} catch (e) {
 			if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {

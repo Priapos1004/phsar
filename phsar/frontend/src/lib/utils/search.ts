@@ -1,5 +1,5 @@
 import { api } from '$lib/api';
-import type { AnimeSearchResult, MediaConnected } from '$lib/types/api';
+import type { AnimeSearchResult, MediaSearchResult } from '$lib/types/api';
 
 export interface MediaSearchFilters {
 	query: string;
@@ -64,8 +64,8 @@ function buildSearchParams(params: MediaSearchFilters): URLSearchParams {
 	return searchParams;
 }
 
-export async function fetchSearchResults(params: MediaSearchFilters): Promise<MediaConnected[]> {
-	return api.get<MediaConnected[]>('/search/media', { params: buildSearchParams(params) });
+export async function fetchSearchResults(params: MediaSearchFilters): Promise<MediaSearchResult[]> {
+	return api.get<MediaSearchResult[]>('/search/media', { params: buildSearchParams(params) });
 }
 
 export async function fetchAnimeSearchResults(params: MediaSearchFilters): Promise<AnimeSearchResult[]> {

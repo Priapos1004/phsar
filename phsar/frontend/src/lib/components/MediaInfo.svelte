@@ -9,6 +9,8 @@
 	import WatchlistBookmarkIcon from '$lib/components/WatchlistBookmarkIcon.svelte';
 	import { visibleMediaSet } from '$lib/stores/spoilerVisibility';
 	import { watchlistTags, watchlistAnimeColors } from '$lib/stores/watchlist';
+	import { ratingCoverage } from '$lib/stores/ratingCoverage';
+	import { COVERAGE_STYLE } from '$lib/utils/ratingCoverage';
 	import type { RelationTypeSummary, MediaTypeSummary } from '$lib/types/api';
 
 	interface Props {
@@ -29,6 +31,10 @@
 		watchtime?: string | null;
 		imageUrl?: string | null;
 		media_uuid: string;
+		/** Media-only: the caller has rated this entry (`MediaSearchResult.is_rated`).
+		 *  The anime grain reads its tier from the coverage store instead — only the
+		 *  anime grain has a denominator to be a fraction of. */
+		is_rated?: boolean;
 		searchToken?: string | null;
 		fromParam?: DetailOrigin | null;
 		/**
@@ -48,7 +54,7 @@
 		has_upcoming = false, age_rating_numeric = null,
 		genres = null, media_type = null, media_types = null,
 		relation_type = null, relation_types = null, watchtime = null,
-		imageUrl = null, media_uuid,
+		imageUrl = null, media_uuid, is_rated = false,
 		searchToken = null, fromParam = null, is_finished = false,
 	}: Props = $props();
 
@@ -68,6 +74,19 @@
 			? ($watchlistTags.get(media_uuid) ? [$watchlistTags.get(media_uuid)!.tag_color] : [])
 			: ($watchlistAnimeColors.get(media_uuid) ?? [])
 	);
+	// Rated-coverage marking. An anime card shows how much of the anime is rated (the
+	// store is keyed by anime uuid, which is what `media_uuid` holds in that view);
+	// a media card is binary, so it only ever reaches the base tier.
+	let coverage = $derived.by(() => {
+		const tier = info_type === 'anime' ? $ratingCoverage.get(media_uuid) : is_rated ? 'some' : undefined;
+		return tier ? COVERAGE_STYLE[tier] : null;
+	});
+	let coverageRing = $derived(
+		coverage
+			? `box-shadow:0 0 0 2px ${coverage.edge}` +
+				(coverage.hairline ? `, 0 0 0 3.5px ${coverage.hairline}` : '')
+			: undefined
+	);
 </script>
 
 <a
@@ -75,7 +94,30 @@
 	data-focus-uuid={media_uuid}
 	class="block transition duration-200 transform hover:scale-[1.015]"
 >
-	<Card.Root class="h-full bg-card/80 backdrop-blur">
+	<!-- An inline box-shadow, which beats Card.Root's own `ring-1` utility
+	     (Tailwind implements a ring as a box-shadow too) — deliberately, since
+	     that ring is static and nothing animates it. -->
+	<Card.Root class="relative h-full bg-card/80 backdrop-blur" style={coverageRing}>
+		{#if coverage}
+			<!--
+				The band that carries the tier, inside the crisp ring: two mask layers,
+				one fading in from the left and right edges and one from top and bottom.
+				`mask-composite` defaults to `add`, so their union hugs all four edges and
+				falls off toward the middle of the card, strongest in the corners.
+
+				Held opaque for the outer slice rather than fading both ways — a band
+				soft on both sides reads as a glow rather than as an edge.
+
+				Named rather than aria-hidden: the band is the only thing carrying the
+				coverage state on a search card.
+			-->
+			<div
+				class="coverage-band"
+				style:background={coverage.band}
+				role="img"
+				aria-label={coverage.label}
+			></div>
+		{/if}
 		<Card.Content class="flex gap-4">
 			<SpoilerGuard visible={isCoverVisible} mode="image">
 				{#if imageUrl && !imgFailed}
@@ -163,3 +205,21 @@
 		</Card.Content>
 	</Card.Root>
 </a>
+
+<style>
+	.coverage-band {
+		position: absolute;
+		inset: 0;
+		pointer-events: none;
+		border-radius: inherit;
+		--band-w: 11px;
+		--band-solid: calc(var(--band-w) * 0.3);
+		/* Named once: the falloff shape is one edit, not four in lockstep. */
+		--band-stops: #000 0, #000 var(--band-solid), transparent var(--band-w),
+			transparent calc(100% - var(--band-w)), #000 calc(100% - var(--band-solid)), #000 100%;
+		--band-mask: linear-gradient(to right, var(--band-stops)),
+			linear-gradient(to bottom, var(--band-stops));
+		-webkit-mask-image: var(--band-mask);
+		mask-image: var(--band-mask);
+	}
+</style>

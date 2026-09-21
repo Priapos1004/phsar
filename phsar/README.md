@@ -296,6 +296,7 @@ phsar/
 │   │   │   │   ├── jobs.ts
 │   │   │   │   ├── maintenance.ts
 │   │   │   │   ├── persistedFilter.ts
+│   │   │   │   ├── ratingCoverage.ts
 │   │   │   │   ├── ratingScores.ts
 │   │   │   │   ├── ratingsFilter.ts
 │   │   │   │   ├── spoilerVisibility.ts
@@ -325,6 +326,7 @@ phsar/
 │   │   │       ├── mediaChangeSort.ts
 │   │   │       ├── navigation.ts
 │   │   │       ├── ratingAttributes.ts
+│   │   │       ├── ratingCoverage.ts
 │   │   │       ├── ratingNeighbors.ts
 │   │   │       ├── ratingStats.ts
 │   │   │       ├── relations.ts
@@ -405,6 +407,8 @@ phsar/
 │   │       ├── navigation.test.ts
 │   │       ├── persisted-filter.test.ts
 │   │       ├── rating-attributes.test.ts
+│   │       ├── rating-coverage-store.test.ts
+│   │       ├── rating-coverage.test.ts
 │   │       ├── rating-modal.test.ts
 │   │       ├── rating-neighbors.test.ts
 │   │       ├── rating-scores-store.test.ts

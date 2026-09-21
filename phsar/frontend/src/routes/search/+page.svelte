@@ -2,12 +2,14 @@
 	import SearchBar from '$lib/components/SearchBar.svelte';
 	import { page } from '$app/state';
 	import { fetchSearchResults, fetchAnimeSearchResults } from '$lib/utils/search';
+	import { getContext } from 'svelte';
+	import { ensureRatingCoverage } from '$lib/stores/ratingCoverage';
 	import type { MediaSearchFilters } from '$lib/utils/search';
 	import { navigateToSearch } from '$lib/utils/navigation';
 	import { formatDuration, formatSeason, formatSeasonRange, resolveTitle } from '$lib/utils/formatString';
 	import { api } from '$lib/api';
 	import { userSettings } from '$lib/stores/userSettings';
-	import type { MediaConnected, AnimeSearchResult } from '$lib/types/api';
+	import type { MediaSearchResult, AnimeSearchResult } from '$lib/types/api';
 	import * as cls from '$lib/styles/classes';
 	import MediaInfo from '$lib/components/MediaInfo.svelte';
 	import SkeletonCard from '$lib/components/SkeletonMediaInfo.svelte';
@@ -15,7 +17,8 @@
 
 	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
 
-	let mediaResults: MediaConnected[] = $state([]);
+	const getUserRole = getContext<() => string | null>('userRole');
+	let mediaResults: MediaSearchResult[] = $state([]);
 	let animeResults: AnimeSearchResult[] = $state([]);
 	let isLoading = $state(false);
 	let error = $state('');
@@ -96,6 +99,11 @@
 	}
 
 	async function loadSearchResults(params: MediaSearchFilters, requestId?: number) {
+		// Anime view only, and never for the one role that 403s on it — the media
+		// view reads `is_rated` off each hit and never touches the store, and the
+		// layout's rule is that a request known to fail shouldn't be sent.
+		// Unawaited: the tiers decorate cards, so they must not hold results back.
+		if (viewType === 'anime' && getUserRole?.() !== 'restricted_user') void ensureRatingCoverage();
 		try {
 			if (viewType === 'anime') {
 				const results = await fetchAnimeSearchResults(params);
@@ -245,7 +253,7 @@
 						relation_type={result.relation_type}
 						watchtime={result.total_watch_time !== null ? formatDuration(result.total_watch_time) : null}
 						imageUrl={result.cover_image}
-
+						is_rated={result.is_rated}
 						media_uuid={result.uuid}
 						{searchToken}
 					/>

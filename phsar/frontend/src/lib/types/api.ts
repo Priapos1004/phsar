@@ -49,6 +49,20 @@ export interface MediaConnected {
 	age_rating_numeric: number | null;
 }
 
+// A media-view search hit: MediaConnected plus whether the caller has rated it.
+export interface MediaSearchResult extends MediaConnected {
+	is_rated: boolean;
+}
+
+// How completely the caller has rated one anime (GET /ratings/coverage). Tiers and
+// what earns each are in docs/features/ratings.md.
+export type CoverageTier = 'some' | 'main' | 'all';
+
+export interface AnimeRatingCoverage {
+	anime_uuid: string;
+	tier: CoverageTier;
+}
+
 // Genre name + description (GET /filters/genres) — powers genre-badge tooltips
 export interface GenreOut {
 	name: string;
