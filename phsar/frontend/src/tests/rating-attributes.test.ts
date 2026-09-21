@@ -47,9 +47,9 @@ describe('compareAttribute', () => {
 	});
 
 	it('compares quality attributes by ordinal position (higher/lower)', () => {
-		// animation_quality order: bad < normal < good < very_good
+		// animation_quality order: low < normal < good < very_good
 		expect(compareAttribute('animation_quality', 'very_good', 'good')).toBe('higher');
-		expect(compareAttribute('animation_quality', 'bad', 'good')).toBe('lower');
+		expect(compareAttribute('animation_quality', 'low', 'good')).toBe('lower');
 		// ending_quality order: unsatisfying < neutral < satisfying < very_satisfying
 		expect(compareAttribute('ending_quality', 'very_satisfying', 'neutral')).toBe('higher');
 		expect(compareAttribute('ending_quality', 'unsatisfying', 'satisfying')).toBe('lower');

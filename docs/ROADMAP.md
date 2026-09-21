@@ -18,7 +18,7 @@ Once all features are discussed, this becomes the basis for GitHub issues and mi
 | `episodes_watched` | Integer | no | Auto-filled on "completed" if total known; nullable for unknown ep counts; backfilled by data update pipeline |
 | `note` | String | no | Anime-wide notes go on one media (first/last selected) |
 | `pace` | Enum | no | slow / normal / fast |
-| `animation_quality` | Enum | no | bad / normal / good / very_good |
+| `animation_quality` | Enum | no | low / normal / good / very_good |
 | `has_3d_animation` | Enum | no | none / partial / full |
 | `watched_format` | Enum | no | sub / dub / both |
 | `fan_service` | Enum | no | none / rare / medium / heavy |

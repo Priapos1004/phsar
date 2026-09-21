@@ -27,7 +27,7 @@ class Pace(str, enum.Enum):
     fast = "fast"
 
 class AnimationQuality(str, enum.Enum):
-    bad = "bad"
+    low = "low"
     normal = "normal"
     good = "good"
     very_good = "very_good"
