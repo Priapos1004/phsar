@@ -121,8 +121,8 @@ keep it that way: the anime query's GROUP BY and the "a filter never rescopes th
 aggregates" invariant both depend on that.
 
 The anime grain has no equivalent field. Its counterpart is the per-anime coverage
-tier from `/ratings/coverage`, which the client indexes by anime uuid — see the
-Ratings section of [services/CLAUDE.md](../../phsar/app/services/CLAUDE.md).
+tier from `/ratings/coverage`, which the client indexes by anime uuid — see
+[ratings.md](ratings.md).
 
 ## Ordering media within an anime
 

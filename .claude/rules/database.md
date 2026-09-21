@@ -38,6 +38,14 @@ as a redefinition. Use `@X.inplace.expression` on a `_x_expression` classmethod,
 keep the SQL side an expression: `base_dao.get_min_max` and `filter_service` reach it
 through `getattr(model, name)`.
 
+## Newest-first ordering carries a tiebreak
+
+Newest-first ordering always goes through `base_dao.recency_order(model)`, which
+appends a primary-key tiebreak. Not optional polish — the timestamps tie by
+construction, and the helper's docstring says how they tie and what breaks without
+it. Pinned by `test_get_items_orders_tied_rows_by_id_desc`, whose docstring says why
+it asserts the intended order rather than that repeated calls agree.
+
 ## Operational state goes in a 1:1 sidecar
 
 When adding tracking or audit state — `last_checked_at`, sweep counters, freshness

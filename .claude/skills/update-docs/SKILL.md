@@ -20,7 +20,7 @@ Review what changed in the current work session and update all affected document
 - Update "Configuration" when new env vars are added.
 
 ### 1b. `docs/features/*.md` — how each subsystem works TODAY
-**Purpose:** One doc per subsystem, spanning the modules it touches: `scraping`, `relations`, `jobs`, `search`, `backups`, `spoilers`.
+**Purpose:** One doc per subsystem, spanning the modules it touches. The index table in root `CLAUDE.md` is the list — read it rather than assuming which subsystems have one.
 **When to update:** Any change to how one of those subsystems behaves — new step in a pipeline, changed threshold, new job kind, altered ranking or filtering, changed retention or verdict logic.
 **Be careful:**
 - **These are the OWNER of cross-module behaviour.** If a fact belongs to a subsystem, it goes here, not into a per-tree `CLAUDE.md` and not into root `CLAUDE.md`. Those link to it instead.
@@ -31,11 +31,11 @@ Review what changed in the current work session and update all affected document
 ### 2. Per-tree `CLAUDE.md` files (loaded contextually when Claude Code works in that subtree)
 **Purpose:** Notes for things that live only in that subtree, layered on top of the root file.
 **Locations:**
-- `phsar/app/services/CLAUDE.md` — services with no feature doc of their own (auth/settings/tokens, ratings, watchlist + tags, export), plus the pointer table to `docs/features/`
+- `phsar/app/services/CLAUDE.md` — services with no feature doc of their own (auth/settings/tokens, watchlist + tags, export), plus the pointer table to `docs/features/`
 - `phsar/frontend/CLAUDE.md` — frontend component / store / util conventions, theme system, route map
 - `phsar/scripts/CLAUDE.md` — dev DB helper scripts catalog (read-only vs. mutating, when to use each)
 **Be careful:**
-- **Do not write subsystem rationale back into `services/CLAUDE.md`.** Scraping, relations, jobs, search, backups and spoilers moved to `docs/features/`; that file keeps a pointer table and only the services no feature doc covers.
+- **Do not write subsystem rationale back into `services/CLAUDE.md`.** Any subsystem with a row in that file's pointer table is written up in `docs/features/`; the file keeps the table and only the services no feature doc covers.
 **When to update:** Changes inside the corresponding subtree that affect rationale or conventions — new services/components/scripts, changed patterns in that tree, new utilities, removed/renamed modules.
 **Be careful:**
 - These are loaded by Claude Code automatically when working in their subtree, so they're the FIRST place future sessions learn local conventions. Skipping an update here means the next session has to re-derive context from source.

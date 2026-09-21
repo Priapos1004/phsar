@@ -191,13 +191,9 @@ class SpoilerVisibility(BaseModel):
 
 
 class CoverageTier(str, Enum):
-    """How completely one user has rated one anime, over the media that can carry a
-    rating at all (`Media.is_rateable`).
-
-    `main` and `all` are completion tiers — every media in scope `completed`, so a
-    dropped or on-hold one holds the anime at `some`. Which tier a set of counts
-    earns is `rating_service._coverage_tier`.
-    """
+    """How completely one user has rated one anime. What each tier means is in
+    docs/features/ratings.md; `rating_service._coverage_tier` is what picks one
+    from a set of counts."""
     some = "some"
     main = "main"
     all = "all"
