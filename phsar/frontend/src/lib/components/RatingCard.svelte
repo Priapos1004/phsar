@@ -23,6 +23,7 @@
 	import * as cls from '$lib/styles/classes';
 	import { ChevronDown, ChevronUp, Star, Pencil, Trash2, RotateCcw } from 'lucide-svelte';
 	import { invalidateRatingScores } from '$lib/stores/ratingScores';
+	import { UNKNOWN_EPISODES_CAP } from '$lib/utils/ratingLimits';
 
 	interface Props {
 		mediaUuid: string;
@@ -52,10 +53,6 @@
 		airingStatus,
 	}: Props = $props();
 
-	// Generous cap for the episodes field when the catalog has no episode total — a
-	// still-airing long-runner (One Piece is ~1100) stays well under this. Mirrors
-	// UNKNOWN_EPISODES_CAP in backend rating_service.py (which clamps server-side too).
-	const UNKNOWN_EPISODES_CAP = 2000;
 	// A not-yet-aired media can't have been watched, so a fresh rating is blocked
 	// (an existing rating, an edge, is still editable below).
 	let notYetAired = $derived(airingStatus === 'Not yet aired');

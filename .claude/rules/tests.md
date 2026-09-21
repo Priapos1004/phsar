@@ -20,6 +20,11 @@ the test survives deleting the rule it was written for.
 Where a test genuinely cannot separate two implementations, **say so** rather
 than leaving it looking like coverage.
 
+**A selector that finds nothing whether the code works or not is not a check.**
+Svelte omits an attribute whose value is `null`, so `querySelector('[data-x]')`
+returns null both when the element is absent and when it rendered unmarked.
+Assert the element — a class or a role — and read the attribute off that.
+
 ## Where the invariant is "this path is never taken", assert on the path
 
 Spy the call that must not happen, rather than the output it would have produced.

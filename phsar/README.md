@@ -327,6 +327,7 @@ phsar/
 │   │   │       ├── navigation.ts
 │   │   │       ├── ratingAttributes.ts
 │   │   │       ├── ratingCoverage.ts
+│   │   │       ├── ratingLimits.ts
 │   │   │       ├── ratingNeighbors.ts
 │   │   │       ├── ratingStats.ts
 │   │   │       ├── relations.ts

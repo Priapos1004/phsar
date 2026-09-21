@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import RatingCard from '$lib/components/RatingCard.svelte';
 import { api } from '$lib/api';
+import { UNKNOWN_EPISODES_CAP } from '$lib/utils/ratingLimits';
 import type { RatingOut } from '$lib/types/api';
 
 vi.mock('$lib/api', () => ({
@@ -178,5 +179,26 @@ describe('RatingCard', () => {
 		});
 
 		expect(screen.queryByText('Rewatch')).not.toBeInTheDocument();
+	});
+});
+
+describe('episodes cap', () => {
+	it('caps the episodes input at UNKNOWN_EPISODES_CAP when the total is unknown', async () => {
+		// The backend's parity test asserts the two constants are EQUAL; it cannot see
+		// whether this component still reads its own. Without this, swapping
+		// `episodesMax` for a literal leaves both suites green and the caps drift.
+		render(RatingCard, {
+			props: {
+				mediaUuid: 'media-uuid-1',
+				totalEpisodes: null,
+				existingRating: null,
+				onSaved: vi.fn(),
+				onDeleted: vi.fn()
+			}
+		});
+		await fireEvent.click(screen.getByText('Rate This'));
+		const episodes = document.querySelector('input[type="number"]') as HTMLInputElement;
+		expect(episodes).not.toBeNull();
+		expect(episodes.max).toBe(String(UNKNOWN_EPISODES_CAP));
 	});
 });

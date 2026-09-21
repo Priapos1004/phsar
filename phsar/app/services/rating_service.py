@@ -42,8 +42,9 @@ watch_event_dao = WatchEventDAO()
 _EXCLUDE_BULK = {"media_uuids"}
 
 # Upper bound for episodes_watched when the media has no published episode total (a
-# still-airing long-runner like One Piece, ~1100). Keep in sync with UNKNOWN_EPISODES_CAP
-# in frontend RatingCard.svelte (the client clamps on input; this is the server backstop).
+# still-airing long-runner like One Piece, ~1100). Twinned with UNKNOWN_EPISODES_CAP in
+# frontend `utils/ratingLimits.ts`; `test_unknown_episodes_cap_matches_the_client` holds
+# the two equal, so this is a checked pair rather than a "keep in sync" comment.
 UNKNOWN_EPISODES_CAP = 2000
 
 
