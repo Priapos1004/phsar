@@ -12,6 +12,7 @@ from app.models.tag import Tag
 from app.models.watchlist import Watchlist
 from app.schemas.watchlist_schema import (
     TagMini,
+    WatchlistAnimeEntries,
     WatchlistBulkCreate,
     WatchlistCreate,
     WatchlistItem,
@@ -145,9 +146,22 @@ async def get_watchlist_for_media(db: AsyncSession, user_id: int, media_uuid: UU
     return _to_out(entry)
 
 
-async def get_watchlist_for_anime(db: AsyncSession, user_id: int, anime_uuid: UUID) -> list[WatchlistOut]:
+async def get_watchlist_for_anime(
+    db: AsyncSession, user_id: int, anime_uuid: UUID
+) -> WatchlistAnimeEntries:
+    """An anime's entries plus the media a bulk note would land on — everything a
+    bulk-update form needs to show what it is about to change, without re-deriving
+    `select_note_target_index`. Why that matters is in `services/CLAUDE.md`."""
     entries = await watchlist_dao.get_by_user_and_anime_uuid(db, user_id, anime_uuid)
-    return [_to_out(e) for e in entries]
+    media_list = [e.media for e in entries]
+    target = (
+        media_list[select_note_target_index(media_list, latest=False)].uuid
+        if media_list
+        else None
+    )
+    return WatchlistAnimeEntries(
+        entries=[_to_out(e) for e in entries], note_target_media_uuid=target
+    )
 
 
 async def delete_watchlist(db: AsyncSession, user_id: int, media_uuid: UUID) -> None:
@@ -170,17 +184,28 @@ async def _bulk_write(
     otherwise raise on access. Returns the entry uuids in media_ids order."""
     existing = await watchlist_dao.get_by_user_and_media_ids(db, user_id, media_ids)
     existing_by_media = {e.media_id: e for e in existing}
+    # An omitted `note` means "leave the notes alone", which a plain `None` cannot say —
+    # the field defaults to None, so the two are indistinguishable by value. This is what
+    # lets a caller move an anime between lists without naming a note, and it is why the
+    # client never has to predict `note_index`: only a request that actually carries a
+    # note rewrites one.
+    note_given = "note" in data.model_fields_set
 
     entries_in_order: list[Watchlist] = []
     for i, media_id in enumerate(media_ids):
         entry = existing_by_media.get(media_id)
         if entry:
+            prior_note = entry.note
             _apply_fields(entry, data, tag_id)
         else:
+            prior_note = None
             entry = _new_entry(user_id, media_id, tag_id, data)
             db.add(entry)
-        # _apply_fields set note = data.note; override so only the first main keeps it.
-        entry.note = data.note if i == note_index else None
+        # _apply_fields set note = data.note on every entry; override so at most the note
+        # target carries it. Everything else keeps the note it already had — a bulk write
+        # is also how a whole anime changes list or priority, and clearing there would
+        # erase notes the request never mentioned. A new entry has none to keep.
+        entry.note = data.note if note_given and i == note_index else prior_note
         entries_in_order.append(entry)
 
     # One flush for the whole batch (uuid is a Python-side default, populated on flush);
@@ -200,7 +225,8 @@ async def bulk_upsert_watchlist(
     none are main. The mirror of bulk rating, which places its note on the *last* main —
     a watchlist note ("start here / heads up") belongs on the earliest season, a rating
     note ("my take") on the latest. Ordered by intrinsic media order, so it's invariant to
-    request/click order. Every other entry has its note cleared to None.
+    request/click order. Every other entry keeps whatever note it already had, and a
+    request that omits `note` entirely leaves every note untouched.
 
     Idempotent like the single upsert: a repeated media_uuid in one request is de-duped
     (else two rows for one (user, media) would trip the constraint), and if a competing

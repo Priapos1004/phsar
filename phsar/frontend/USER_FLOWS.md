@@ -241,7 +241,7 @@ can rate.
 - Age rating badge (max across media), genre badges (strict majority rule) — hovering a genre badge shows its description when one is seeded
 - Stats grid: total episodes, media count, season range, total watch time
 - Studio names — each is a button linking to an anime-view search filtered to that studio ("other anime from this studio")
-- **Watchlist bookmark** (disabled, not hidden, for restricted users): outline when none of the anime's media are listed, filled/gradient (colored by the lists in play) when some are. Clicking it when empty opens a bulk-add dialog (adds all **main** media — Main + AlternativeVersion — with an optional "Include side stories" checkbox that offers side stories only, not summaries/recaps); clicking it when populated opens a guarded "Remove from watchlist?" dialog that clears all of this anime's watchlisted media
+- **Watchlist bookmark** (disabled, not hidden, for restricted users): outline when none of the anime's media are listed, filled/gradient (colored by the lists in play) when some are. Clicking it when empty opens a bulk-add dialog (adds all **main** media — Main + AlternativeVersion — with an optional "Include side stories" checkbox that offers side stories only, not summaries/recaps). Clicking it when populated opens the same dialog in **update** mode over exactly the media already listed — prefilled with their list, priority and note, so a whole anime moves between lists or priorities in one step. Removal lives inside that dialog as a click-to-arm button (first click relabels to "Sure?", a second within ~3s clears all of this anime's watchlisted media). When the listed media don't share one list or priority, the dialog says how many of each they span and preselects neither, so saving can't silently demote one of them
 - **Share** icon, immediately left of the bookmark: opens the share dialog (see 6.7). **Never disabled** — when you've rated any of this anime's media it offers your rating card, and when you haven't (including on a guest account, which can't rate at all) it offers the info card instead, since telling someone about a show you haven't watched is the case that card exists for
 
 ### 6.3 Synopsis
@@ -259,7 +259,7 @@ can rate.
   - "Delete Ratings" button appears when any selected media have existing ratings
   - **Rate** opens BulkRateDialog: score circle + slider, note (applied to the chronologically-last main media — the order the media table shows, not click order), collapsible attributes grid (each attribute clearable via a ✕), and the same "How you rated similar titles" panel as the media page (bulk is anime-scoped, so neighbors come from other anime). Not-yet-aired media in the selection are excluded from the rating with a yellow warning (they stay selected, since the selection also feeds the future watchlist); if every selected media is not-yet-aired, Save is disabled. Overwrite warning shown if any selected media already rated. On save: exits select mode, shows "Note Added" info dialog naming which media received the note.
   - **Delete Ratings** opens a destructive confirmation dialog. When any selected media have recorded watches, the dialog offers an "Also delete watch history" checkbox showing how many have watches (and how many were watched more than once); kept by default. Submits `POST /ratings/bulk-delete?delete_watch_history=`
-  - **Watchlist** opens BulkWatchlistDialog: pick a list + priority + note (list + priority apply to every selected media; the note goes on the chronologically-first main media only — the mirror of bulk rating's last-main note), with an overwrite warning when any selection is already listed. On save it exits select mode; the row bookmarks reflect the change
+  - **Watchlist** opens BulkWatchlistDialog: pick a list + priority + note (list + priority apply to every selected media; the note goes on the chronologically-first main media only — the mirror of bulk rating's last-main note, and every other media keeps its own note), with an overwrite warning when any selection is already listed. Selected media that are already listed prefill the form, so re-saving to a different list keeps their priority instead of resetting it. On save it exits select mode; the row bookmarks reflect the change
   - **Remove from Watchlist** opens a guarded confirm dialog and removes exactly the selected media that were on the watchlist (the bulk-delete silently skips the rest)
   - "Cancel" exits select mode and clears selection
 
@@ -701,7 +701,8 @@ own.
 | `/watchlist/media/{media_uuid}` | GET | WatchlistDialog (load the existing entry, if any) |
 | `/watchlist/media/{media_uuid}` | PUT | Media page / dialog (create or update a watchlist entry) |
 | `/watchlist/media/{media_uuid}` | DELETE | Media page / dialog (remove a watchlist entry) |
-| `/watchlist/bulk` | PUT | Anime page bulk add (hero add-all + media-table select-mode) |
+| `/watchlist/anime/{anime_uuid}` | GET | BulkWatchlistDialog (prefill: this anime's entries + which media a bulk note lands on) |
+| `/watchlist/bulk` | PUT | Anime page bulk add/update (hero bookmark + media-table select-mode) |
 | `/watchlist/bulk-delete` | POST | Anime page bulk remove (hero remove-all + media-table select-mode) |
 | `/users/settings` | GET | Layout auth (fetch user settings) |
 | `/users/settings` | PUT | Settings page (update preferences) |

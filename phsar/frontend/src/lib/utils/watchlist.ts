@@ -14,6 +14,29 @@ export function priorityLabel(p: number): string {
 	return PRIORITY_OPTIONS.find((o) => o.value === p)?.label ?? 'Low';
 }
 
+/** What a bulk dialog can prefill from the entries it is about to rewrite.
+ *
+ *  A field comes back set only when every entry already agrees on it; when they
+ *  diverge it is `undefined` and the dialog asks the user to pick, because a bulk
+ *  write applies one value to all and silently picking a winner is how an entry's
+ *  priority gets downgraded on its way to another list. The counts drive the
+ *  heads-up copy ("these span 2 lists"). */
+export function uniformEntryFields(entries: { priority: number; tag: { uuid: string } }[]): {
+	tagUuid?: string;
+	priority?: number;
+	tagCount: number;
+	priorityCount: number;
+} {
+	const tagUuids = new Set(entries.map((e) => e.tag.uuid));
+	const priorities = new Set(entries.map((e) => e.priority));
+	return {
+		tagUuid: tagUuids.size === 1 ? [...tagUuids][0] : undefined,
+		priority: priorities.size === 1 ? [...priorities][0] : undefined,
+		tagCount: tagUuids.size,
+		priorityCount: priorities.size,
+	};
+}
+
 // Join an anime's per-media notes for the grid/table hover tooltip: one note per line with a
 // divider rule between them. Single-sourced so the grid card + table render the same tooltip
 // (both pair it with `contentClass="whitespace-pre-line"` so the newlines actually break).

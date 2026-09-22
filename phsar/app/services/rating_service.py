@@ -382,6 +382,9 @@ async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCr
     the whole anime with one note,' and the note belongs on the most recent season — the
     last row in the media table — not whatever was selected last (selection order is
     arbitrary, so the ordering keys on intrinsic media properties, not request order).
+    Bulk *watchlist* deliberately does the opposite and preserves the notes it does not
+    target, because there it is also how a whole anime changes list or priority; here
+    there is no such second gesture, so clearing stays right.
 
     Bulk rating is a whole-anime 'I finished this' action: every selected media is written
     as `completed` with its full episode count, pinned per-media below. Per-media watch

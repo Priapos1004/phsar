@@ -395,6 +395,13 @@ export interface WatchlistOut {
 	modified_at: string;
 }
 
+/** GET /watchlist/anime/{uuid} — an anime's entries plus the media a bulk note lands
+ *  on. Read the target; never re-derive it (the backend owns that rule). */
+export interface WatchlistAnimeEntries {
+	entries: WatchlistOut[];
+	note_target_media_uuid: string | null;
+}
+
 // Wide projection (GET /watchlist/items) — the overview page's single fetch;
 // list + grid both derive from it client-side.
 export interface WatchlistItem {

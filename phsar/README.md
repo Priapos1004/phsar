@@ -386,6 +386,7 @@ phsar/
 │   │       ├── auth-store.test.ts
 │   │       ├── backup-status.test.ts
 │   │       ├── backups-card.test.ts
+│   │       ├── bulk-watchlist-dialog.test.ts
 │   │       ├── chart-theme.test.ts
 │   │       ├── color.test.ts
 │   │       ├── completion-status-card.test.ts
@@ -429,7 +430,8 @@ phsar/
 │   │       ├── studio-links.test.ts
 │   │       ├── toast.test.ts
 │   │       ├── watchlist-ready.test.ts
-│   │       └── watchlist-stats.test.ts
+│   │       ├── watchlist-stats.test.ts
+│   │       └── watchlist-uniform-entries.test.ts
 │   ├── static/
 │   │   ├── apple-touch-icon.png
 │   │   ├── favicon-192x192.png

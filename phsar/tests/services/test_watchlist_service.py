@@ -161,8 +161,11 @@ async def test_get_for_anime(db_session):
             db_session, user.id, m.uuid, WatchlistCreate(tag_uuid=default.uuid),
         )
     anime_uuid = media[0].anime.uuid
-    entries = await watchlist_service.get_watchlist_for_anime(db_session, user.id, anime_uuid)
-    assert len(entries) == 2
+    out = await watchlist_service.get_watchlist_for_anime(db_session, user.id, anime_uuid)
+    assert len(out.entries) == 2
+    # The note target is named for the caller — _setup's media are all main, so the
+    # earliest (lowest mal_id, no seasons set) wins.
+    assert out.note_target_media_uuid == media[0].uuid
 
 
 # --- Bulk ---
@@ -170,7 +173,7 @@ async def test_get_for_anime(db_session):
 async def test_bulk_upsert_note_on_first_main_invariant_to_order(db_session):
     """Bulk note lands on the chronologically-FIRST main media (mirror of bulk rating's
     last-main), invariant to request order; priority still applies to every entry, and
-    every non-target entry's note is cleared."""
+    the entries this write creates start with no note of their own."""
     user = await make_user(db_session)
     default = await tag_service.create_default_tag(db_session, user.id)
     anime = Anime(mal_id=-80100, title="A-80100")
@@ -244,6 +247,59 @@ async def test_bulk_upsert_updates_existing(db_session):
     assert len(out) == 2
     assert all(o.priority == 3 for o in out)  # existing one updated too
     assert await _watchlisted_uuids(db_session, user.id) == {m.uuid for m in media}
+
+
+async def test_bulk_upsert_keeps_notes_on_entries_it_does_not_target(db_session):
+    """Moving an anime between lists must not erase notes. Bulk write is the only path
+    that changes a whole anime's list/priority, so clearing every non-target note (right
+    for a fresh add, where there is nothing to clear) would silently destroy notes the
+    user set per-media on the way through."""
+    user, default, media = await _setup(db_session, media_count=3)
+    other = await tag_service.create_tag(db_session, user.id, TagCreate(name="Later", color="#abcdef"))
+    # Notes on two entries: one on the media the bulk note targets (the first main —
+    # _setup's media are all main, so the earliest mal_id wins), one on a later media.
+    for m, note in ((media[0], "target note"), (media[2], "keep me")):
+        await watchlist_service.upsert_watchlist(
+            db_session, user.id, m.uuid, WatchlistCreate(tag_uuid=default.uuid, note=note),
+        )
+
+    out = await watchlist_service.bulk_upsert_watchlist(
+        db_session, user.id,
+        WatchlistBulkCreate(
+            media_uuids=[m.uuid for m in media], tag_uuid=other.uuid, priority=1,
+            note="target note",
+        ),
+    )
+
+    by_uuid = {o.media_uuid: o for o in out}
+    assert by_uuid[media[2].uuid].note == "keep me"  # untouched by a list move
+    assert by_uuid[media[0].uuid].note == "target note"  # the note target still takes it
+    assert by_uuid[media[1].uuid].note is None  # created by this write, no note to keep
+    assert all(o.tag.uuid == other.uuid and o.priority == 1 for o in out)
+
+
+async def test_bulk_upsert_without_a_note_leaves_every_note_alone(db_session):
+    """Changing only list/priority must not disturb notes. The client cannot predict
+    which media the note lands on without re-deriving select_note_target_index, and a
+    wrong guess rewrites the wrong entry — so omitting `note` means "leave them", which
+    a plain null cannot express (the field defaults to None)."""
+    user, default, media = await _setup(db_session, media_count=3)
+    other = await tag_service.create_tag(db_session, user.id, TagCreate(name="Later", color="#abcdef"))
+    for m, note in ((media[0], "note A"), (media[2], "note B")):
+        await watchlist_service.upsert_watchlist(
+            db_session, user.id, m.uuid, WatchlistCreate(tag_uuid=default.uuid, priority=3, note=note),
+        )
+
+    # No `note` key at all — the shape the dialog sends when the field is untouched.
+    out = await watchlist_service.bulk_upsert_watchlist(
+        db_session, user.id,
+        WatchlistBulkCreate(media_uuids=[m.uuid for m in media], tag_uuid=other.uuid, priority=1),
+    )
+
+    by_uuid = {o.media_uuid: o for o in out}
+    assert by_uuid[media[0].uuid].note == "note A"
+    assert by_uuid[media[2].uuid].note == "note B"
+    assert all(o.tag.uuid == other.uuid and o.priority == 1 for o in out)  # the move still applied
 
 
 async def test_bulk_delete(db_session):

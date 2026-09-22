@@ -155,6 +155,11 @@ class WatchlistDAO(BaseDAO[Watchlist]):
             .join(Anime, Media.anime_id == Anime.id)
             .where(Anime.uuid == anime_uuid, Watchlist.user_id == user_id)
             .options(*self._eager_load_options())
+            # Chronological, mal_id breaking ties — the SQL twin of
+            # `filter_service.chronological_media_key`, so a caller walking these rows
+            # sees the same order as the media table. NULLS LAST because that key maps a
+            # missing year to 9999, putting an undated media at the end.
+            .order_by(_SEASON_KEY.nulls_last(), Media.mal_id)
         )
         return list((await db.execute(stmt)).scalars().all())
 

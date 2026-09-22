@@ -183,6 +183,80 @@ async def test_delete_entry(client, user_auth_headers, test_media):
     assert tags["entries"] == []
 
 
+async def test_anime_entries_name_the_media_a_bulk_note_lands_on(client, user_auth_headers, db_session):
+    """The note target travels with the entries, and agrees with where a bulk write
+    actually puts the note. A client deriving it instead would prefill an edit box from
+    one entry and have the write replace another's note."""
+    anime = Anime(mal_id=-63200, title="WL Note Target")
+    db_session.add(anime)
+    await db_session.flush()
+    # The target is the earliest MAIN; an earlier side story must not win it.
+    later_main = Media(**media_kwargs(anime.id, -63201, title="Later Main", relation_type=RelationType.Main,
+                                      anime_season_name=SeasonType.Spring, anime_season_year=2022))
+    earliest_main = Media(**media_kwargs(anime.id, -63202, title="Earliest Main", relation_type=RelationType.Main,
+                                         anime_season_name=SeasonType.Winter, anime_season_year=2020))
+    earlier_side = Media(**media_kwargs(anime.id, -63203, title="Earlier Side", relation_type=RelationType.SideStory,
+                                        anime_season_name=SeasonType.Fall, anime_season_year=2019))
+    db_session.add_all([later_main, earliest_main, earlier_side])
+    await db_session.flush()
+
+    tag_uuid = await _default_tag_uuid(client, user_auth_headers)
+    media = [later_main, earliest_main, earlier_side]
+    resp = await client.put(
+        "/watchlist/bulk",
+        json={"media_uuids": [str(m.uuid) for m in media], "tag_uuid": tag_uuid,
+              "priority": 2, "note": "start here"},
+        headers=user_auth_headers,
+    )
+    assert resp.status_code == 200
+    wrote_to = {e["media_uuid"] for e in resp.json() if e["note"] == "start here"}
+
+    resp = await client.get(f"/watchlist/anime/{anime.uuid}", headers=user_auth_headers)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["note_target_media_uuid"] == str(earliest_main.uuid)
+    assert wrote_to == {body["note_target_media_uuid"]}  # named target == written target
+    # Rows come back chronologically, so any caller walking them sees the media-table order.
+    assert [e["media_uuid"] for e in body["entries"]] == [
+        str(earlier_side.uuid), str(earliest_main.uuid), str(later_main.uuid)
+    ]
+
+
+async def test_bulk_upsert_over_the_wire_without_note_keeps_every_note(client, user_auth_headers, db_session):
+    """The dialog's list/priority-only request shape: no `note` key at all. Pydantic must
+    read that as unset rather than as null, or a whole anime changing list loses the notes
+    on every media it carries."""
+    anime = Anime(mal_id=-63100, title="WL Note Keep")
+    db_session.add(anime)
+    await db_session.flush()
+    s1 = Media(**media_kwargs(anime.id, -63101, title="S1", relation_type=RelationType.Main,
+                              anime_season_name=SeasonType.Winter, anime_season_year=2020))
+    s2 = Media(**media_kwargs(anime.id, -63102, title="S2", relation_type=RelationType.Main,
+                              anime_season_name=SeasonType.Spring, anime_season_year=2022))
+    db_session.add_all([s1, s2])
+    await db_session.flush()
+
+    tag_uuid = await _default_tag_uuid(client, user_auth_headers)
+    for m, note in ((s1, "note A"), (s2, "note B")):
+        resp = await client.put(
+            f"/watchlist/media/{m.uuid}",
+            json={"tag_uuid": tag_uuid, "priority": 3, "note": note},
+            headers=user_auth_headers,
+        )
+        assert resp.status_code == 200
+
+    resp = await client.put(
+        "/watchlist/bulk",
+        json={"media_uuids": [str(s1.uuid), str(s2.uuid)], "tag_uuid": tag_uuid, "priority": 1},
+        headers=user_auth_headers,
+    )
+    assert resp.status_code == 200
+    by_uuid = {e["media_uuid"]: e for e in resp.json()}
+    assert by_uuid[str(s1.uuid)]["note"] == "note A"
+    assert by_uuid[str(s2.uuid)]["note"] == "note B"
+    assert all(e["priority"] == 1 for e in resp.json())
+
+
 async def test_bulk_upsert_note_on_first_main(client, user_auth_headers, db_session):
     """Bulk note lands on the chronologically-first main media only; priority applies to
     all. Invariant to request order (scrambled submission)."""

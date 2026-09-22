@@ -118,7 +118,7 @@ async def delete_watchlist(
     await watchlist_service.delete_watchlist(db, current_user.id, media_uuid)
 
 
-@router.get("/anime/{anime_uuid}", response_model=list[watchlist_schema.WatchlistOut])
+@router.get("/anime/{anime_uuid}", response_model=watchlist_schema.WatchlistAnimeEntries)
 async def get_watchlist_for_anime(
     anime_uuid: UUID,
     db: AsyncSession = Depends(get_db),
