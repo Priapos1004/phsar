@@ -131,7 +131,8 @@ path — uvicorn/HTTP, the cron and admin endpoints, and the `job_worker` loop w
 its maintenance-flag bracketing — so it validates something the deployed app
 never does.
 
-Boot `uvicorn app.main:app` from `phsar/` (conda env `phsar`) and wait for
-`/health`. The cron-authed schedulers take `Authorization: Bearer $JOBS_CRON_TOKEN`;
+Boot `uvicorn app.main:app` from `phsar/`, with the dev environment from
+`README.md` active, and wait for `/health`. The cron-authed schedulers take
+`Authorization: Bearer $JOBS_CRON_TOKEN`;
 polling `GET /admin/jobs/{uuid}` is on the **JWT admin** chain instead, so reuse
 of the cron bearer there returns 401.

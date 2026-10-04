@@ -8,11 +8,13 @@ Repository for Code of phsar website + backend.
 
 ## Setup environment
 
-### Create a new conda environment
+### Create a virtual environment
+
+With [uv](https://docs.astral.sh/uv/), from the repository root:
 
 ```
-conda create -yn phsar python=3.12
-conda activate phsar
+uv venv --python 3.12
+source .venv/bin/activate
 ```
 
 ### Install necessary libraries in environment
@@ -20,15 +22,15 @@ conda activate phsar
 Run the following commands in the `phsar/` folder of this repository:
 
 ```
-pip install -r requirements-torch.txt   # CPU-only torch, before the rest
-pip install -r requirements.txt
+uv pip install -r requirements-torch.txt   # CPU-only torch, before the rest
+uv pip install -r requirements.txt
 ```
 
 `requirements.txt` is runtime-only. To run the tests or the linter, add the
 tooling as well:
 
 ```
-pip install -r requirements-dev.txt
+uv pip install -r requirements-dev.txt
 ```
 
 ## Setup local database (recommended way)

@@ -43,7 +43,7 @@ Review what changed in the current work session and update all affected document
 - New per-tree doc? Drop a line in root `CLAUDE.md` pointing to it so it's discoverable.
 
 ### 3. `README.md` (root)
-**Purpose:** High-level project overview, conda/docker setup, getting started pointers.
+**Purpose:** High-level project overview, venv/docker setup, getting started pointers.
 **When to update:** Changes to the setup process (new dependencies, docker config changes, new prerequisites).
 **Be careful:**
 - This is for first-time setup — keep instructions sequential and copy-pasteable.
