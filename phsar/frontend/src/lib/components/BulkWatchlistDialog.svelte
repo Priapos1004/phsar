@@ -136,7 +136,7 @@
 		loading = true;
 		let fetched: WatchlistOut[] = [];
 		try {
-			// Why the selection goes along: services/CLAUDE.md (bulk note). Optional media
+			// Why the selection goes along: docs/features/watchlist.md. Optional media
 			// join it only in add mode, where nothing is listed to prefill.
 			const res = await api.get<WatchlistAnimeEntries>(`/watchlist/anime/${animeUuid}`, {
 				params: new URLSearchParams(mediaUuids.map((u) => ['media_uuids', u])),

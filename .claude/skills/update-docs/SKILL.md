@@ -31,7 +31,7 @@ Review what changed in the current work session and update all affected document
 ### 2. Per-tree `CLAUDE.md` files (loaded contextually when Claude Code works in that subtree)
 **Purpose:** Notes for things that live only in that subtree, layered on top of the root file.
 **Locations:**
-- `phsar/app/services/CLAUDE.md` — services with no feature doc of their own (auth/settings/tokens, watchlist + tags, export), plus the pointer table to `docs/features/`
+- `phsar/app/services/CLAUDE.md` — services with no feature doc of their own, plus the pointer table to `docs/features/`
 - `phsar/frontend/CLAUDE.md` — frontend component / store / util conventions, theme system, route map
 - `phsar/scripts/CLAUDE.md` — dev DB helper scripts catalog (read-only vs. mutating, when to use each)
 **Be careful:**

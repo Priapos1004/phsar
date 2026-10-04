@@ -131,7 +131,7 @@ caller's own ratings.
 
 - **Spoilers** — a rating write moves the frontier: [spoilers.md](spoilers.md).
 - **Watchlist** — independent by design; the only link is the inline remove a
-  rating offers on a listed media ([USER_FLOWS.md](../../phsar/frontend/USER_FLOWS.md) §8).
+  rating offers on a listed media ([USER_FLOWS.md](../../phsar/frontend/USER_FLOWS.md) §7.4).
 - **Readiness** — a rated media still counts as content:
   [readiness.md](readiness.md).
 

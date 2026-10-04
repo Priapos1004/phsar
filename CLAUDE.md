@@ -44,6 +44,7 @@ that touches its area, before settling on an approach.
 | [backups](docs/features/backups.md) | Dump/restore, retention pools, the restorability verdict |
 | [spoilers](docs/features/spoilers.md) | Frontier algorithm, visibility cache |
 | [readiness](docs/features/readiness.md) | "Can I start this tonight?" — media temporal classes, the per-anime verdict, the standalone rule |
+| [watchlist](docs/features/watchlist.md) | Entries and lists, bulk writes and the note target, what the bookmarks and the page read |
 | [navigation](docs/features/navigation.md) | What survives leaving a page and coming back: route, origin, scroll position, filters — and when each resets |
 
 **`compound-docs/`** — why something changed, dated and frozen; feature docs say how

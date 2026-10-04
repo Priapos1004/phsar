@@ -42,7 +42,7 @@ class Tag(BaseModel):
     )
     # Relationships
     users: Mapped["Users"] = relationship("Users", back_populates="tag", lazy="raise")
-    # One tag → many watchlist entries. No ORM delete-cascade here: deletion is handled
-    # by the tag_id FK's ON DELETE CASCADE (cascade path) or an explicit reassign in the
-    # service (reassign path); this relationship exists for reads only.
+    # One tag → many watchlist entries. No ORM delete-cascade here: `tag_service.delete_tag`
+    # reassigns or explicitly deletes the entries first, and the tag_id FK's ON DELETE
+    # CASCADE backstops anything left; this relationship exists for reads only.
     watchlist: Mapped[list["Watchlist"]] = relationship("Watchlist", back_populates="tag", lazy="raise")

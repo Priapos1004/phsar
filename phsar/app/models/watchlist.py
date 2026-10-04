@@ -25,9 +25,9 @@ class Watchlist(BaseModel):
     media_id: Mapped[int] = mapped_column(Integer, ForeignKey("media.id", ondelete="CASCADE"), nullable=False)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
-    # Exactly one tag per entry (v0.15.0 — replaced the WatchlistTag many-to-many).
-    # ON DELETE CASCADE: deleting a tag removes its entries unless the service reassigns
-    # them to the default tag first (the delete-with-reassign path).
+    # Exactly one tag per entry. ON DELETE CASCADE is a backstop: `tag_service.delete_tag`
+    # reassigns the entries to the default tag or deletes them itself (for an accurate
+    # count) before the tag goes.
     tag_id: Mapped[int] = mapped_column(Integer, ForeignKey("tag.id", ondelete="CASCADE"), nullable=False)
 
     # Optional note field

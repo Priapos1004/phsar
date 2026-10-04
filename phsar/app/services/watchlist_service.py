@@ -151,7 +151,7 @@ async def get_watchlist_for_anime(
 ) -> WatchlistAnimeEntries:
     """An anime's entries plus the media a bulk note over `media_uuids` would land on —
     everything a bulk-update form needs to show what it is about to change, without
-    re-deriving `select_note_target_index`. Why that matters is in `services/CLAUDE.md`."""
+    re-deriving `select_note_target_index`. Why that matters is in `docs/features/watchlist.md`."""
     entries = await watchlist_dao.get_by_user_and_anime_uuid(db, user_id, anime_uuid)
     selection = await media_service.resolve_media_uuids(db, media_uuids)
     target = selection[select_note_target_index(selection, latest=False)].uuid
