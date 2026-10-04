@@ -18,6 +18,6 @@ class MalIdDAO(BaseDAO[T]):
         Get all mal_id values currently stored in the database for this model.
         """
         # BaseModel has no mal_id. A mapped mixin could declare one, but that is
-        # four model files and an `alembic check` run to delete one suppression.
+        # every mal_id model and an `alembic check` run to delete one suppression.
         result = await db.execute(select(self.model.mal_id))  # type: ignore[attr-defined]
         return list(result.scalars().all())

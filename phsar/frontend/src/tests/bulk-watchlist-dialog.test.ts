@@ -4,7 +4,7 @@ import { get } from 'svelte/store';
 import BulkWatchlistDialog from '$lib/components/BulkWatchlistDialog.svelte';
 import { api } from '$lib/api';
 import { tags } from '$lib/stores/tags';
-import type { WatchlistOut } from '$lib/types/api';
+import type { WatchlistAnimeEntries, WatchlistOut } from '$lib/types/api';
 
 vi.mock('$lib/api', () => ({
 	api: { get: vi.fn(), put: vi.fn(), post: vi.fn(), del: vi.fn() },
@@ -48,7 +48,10 @@ function entry(mediaUuid: string, priority: number, note: string | null): Watchl
 }
 
 /** The GET /watchlist/anime/{uuid} payload: rows plus the server-named note target. */
-function payload(entries: WatchlistOut[], noteTarget: string | null = entries[0]?.media_uuid ?? null) {
+function payload(
+	entries: WatchlistOut[],
+	noteTarget: string = entries[0]?.media_uuid ?? M1
+): WatchlistAnimeEntries {
 	return { entries, note_target_media_uuid: noteTarget };
 }
 
@@ -167,5 +170,33 @@ describe('BulkWatchlistDialog — update mode', () => {
 		await waitFor(() => expect(vi.mocked(api.put)).toHaveBeenCalled());
 		expect(bulkBody().priority).toBe(3);
 		expect(get(tags)[0].uuid).toBe(bulkBody().tag_uuid); // the default list
+	});
+
+	it('asks for the note target over its own selection, the set the save picks over', async () => {
+		vi.mocked(api.get).mockResolvedValue(payload([entry(M1, 3, 'note A'), entry(M2, 3, 'note B')], M2));
+		render(BulkWatchlistDialog, { props: { open: true, mediaUuids: [M2], animeUuid: ANIME } });
+
+		await waitFor(() => expect(screen.getByText('Update watchlist entry')).toBeTruthy());
+		const options = vi.mocked(api.get).mock.calls[0][1] as { params: URLSearchParams };
+		expect(options.params.getAll('media_uuids')).toEqual([M2]);
+		expect((screen.getByPlaceholderText('Optional note…') as HTMLTextAreaElement).value).toBe('note B');
+	});
+
+	it('can save a selection that mixes a listed and an unlisted media unchanged', async () => {
+		// The prefill matches M1's stored values, so nothing is "dirty" — but M2 still
+		// needs writing, and that is the whole point of the save.
+		vi.mocked(api.get).mockResolvedValue(payload([entry(M1, 3, null)]));
+		render(BulkWatchlistDialog, { props: { open: true, mediaUuids: [M1, M2], animeUuid: ANIME } });
+
+		await waitFor(() => expect(screen.getByText('Update watchlist entry')).toBeTruthy());
+		expect(screen.getByRole('button', { name: /^Update 2/ }).hasAttribute('disabled')).toBe(false);
+	});
+
+	it('blocks saving when the prefill failed, so defaults cannot overwrite the stored entries', async () => {
+		vi.mocked(api.get).mockRejectedValue(new Error('boom'));
+		render(BulkWatchlistDialog, { props: { open: true, mediaUuids: [M1], animeUuid: ANIME } });
+
+		await waitFor(() => expect(screen.getByText('Failed to load existing entries')).toBeTruthy());
+		expect(screen.getByRole('button', { name: /^Add 1/ }).hasAttribute('disabled')).toBe(true);
 	});
 });

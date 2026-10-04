@@ -10,11 +10,11 @@ import type { AnimeRatingCoverage, CoverageTier } from '$lib/types/api';
  *
  * LAZY, unlike `watchlistTags`, and for a reason that is about where it is read:
  * the bookmark set is read on the same pages watchlist writes happen, so an
- * eager refresh paints something. Coverage is read on exactly two surfaces —
- * `/search` and `/ratings` — and none of the rating-write paths lives on either.
- * Refreshing on write would fetch a library-sized aggregate that nothing mounted
- * reads, once per rating, and racing two of those can leave the older response
- * winning. So the write path only marks it stale, and the two readers `ensure`.
+ * eager refresh paints something. Coverage is read only on pages that host no
+ * rating write (the `ensureRatingCoverage` callers). Refreshing on write would
+ * fetch a library-sized aggregate that nothing mounted reads, once per rating, and
+ * racing two of those can leave the older response winning. So the write path
+ * only marks it stale, and the readers `ensure`.
  *
  * Deliberately NOT derived from `ratingScores` — that response carries only rated
  * media, so it has the numerator and never the denominator.
@@ -25,14 +25,14 @@ export const ratingCoverage = writable<Map<string, CoverageTier>>(new Map());
 // identity is what tells a settling request whether it is still the current one.
 // Without that check an invalidate landing mid-flight lets the pre-write response
 // win and then marks the store fresh, so the staleness sticks until the next
-// write. `ratingScores` guards the same race the same way.
+// write.
 let loadPromise: Promise<void> | null = null;
 
 /**
  * Populate the store unless it is already current. Safe to call on every mount;
  * concurrent callers share the one request.
  *
- * Never rejects — both callers fire it unawaited, where a rejection would be an
+ * Never rejects — its callers fire it unawaited, where a rejection would be an
  * unhandled one.
  */
 export function ensureRatingCoverage(): Promise<void> {

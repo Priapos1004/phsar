@@ -56,11 +56,10 @@ class WatchlistOut(BaseModel):
 
 
 class WatchlistAnimeEntries(BaseModel):
-    """An anime's entries plus the media a bulk note would land on, by
-    `filter_service.select_note_target_index`. The target ships with the data so no
-    client has to re-derive that rule; None when the anime has no entries."""
+    """An anime's entries plus the media a bulk note over the requested selection would
+    land on (`filter_service.select_note_target_index`)."""
     entries: list[WatchlistOut]
-    note_target_media_uuid: UUID | None
+    note_target_media_uuid: UUID
 
 
 class WatchlistItem(BaseModel):

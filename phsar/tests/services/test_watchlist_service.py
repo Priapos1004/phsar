@@ -161,7 +161,9 @@ async def test_get_for_anime(db_session):
             db_session, user.id, m.uuid, WatchlistCreate(tag_uuid=default.uuid),
         )
     anime_uuid = media[0].anime.uuid
-    out = await watchlist_service.get_watchlist_for_anime(db_session, user.id, anime_uuid)
+    out = await watchlist_service.get_watchlist_for_anime(
+        db_session, user.id, anime_uuid, [m.uuid for m in media]
+    )
     assert len(out.entries) == 2
     # The note target is named for the caller — _setup's media are all main, so the
     # earliest (lowest mal_id, no seasons set) wins.

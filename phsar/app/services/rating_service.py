@@ -44,7 +44,7 @@ _EXCLUDE_BULK = {"media_uuids"}
 # Upper bound for episodes_watched when the media has no published episode total (a
 # still-airing long-runner like One Piece, ~1100). Twinned with UNKNOWN_EPISODES_CAP in
 # frontend `utils/ratingLimits.ts`; `test_unknown_episodes_cap_matches_the_client` holds
-# the two equal, so this is a checked pair rather than a "keep in sync" comment.
+# the two equal.
 UNKNOWN_EPISODES_CAP = 2000
 
 
@@ -254,9 +254,6 @@ async def get_rating_score_items(db: AsyncSession, user_id: int) -> list[RatingS
 
 def _coverage_tier(row: Row) -> CoverageTier:
     """The highest tier the per-anime counts support.
-
-    Pure, so the ladder is tested without a database — the SQL half only has to
-    produce the counts `get_anime_coverage` returns.
 
     One guard covers both completion tiers, because a main-story media is also a
     rateable media: if every rateable media is completed then every main one is,

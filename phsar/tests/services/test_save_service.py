@@ -12,6 +12,7 @@ from app.models.media_relation_edges import MediaRelationEdges
 from app.schemas.media_schema import MediaUnconnected
 from app.schemas.search_schema import SearchResultDB
 from app.services.save_service import save_search_results
+from tests._helpers import split_cluster
 
 
 def _media(mal_id: int, title: str, relation: RelationType) -> MediaUnconnected:
@@ -102,12 +103,7 @@ async def test_save_search_results_emits_split_candidate_on_disjoint_chains(db_s
             # already-computed cluster payload below.
         ],
         disjoint_franchises=[
-            {
-                "member_mal_ids": [900_021, 900_022],
-                "substance_member_mal_ids": [900_021, 900_022],
-                "suggested_anchor_mal_id": 900_021,
-                "bridge_edges": [[900_020, 900_021, "spin-off"]],
-            }
+            split_cluster(900_021, [900_021, 900_022], [[900_020, 900_021, "spin-off"]])
         ],
     )
     await save_search_results(db_session, [result])
@@ -121,12 +117,7 @@ async def test_save_search_results_emits_split_candidate_on_disjoint_chains(db_s
     assert candidate.status == SplitCandidateStatus.pending
     assert candidate.detected_by == "scrape"
     assert candidate.clusters == [
-        {
-            "member_mal_ids": [900_021, 900_022],
-            "substance_member_mal_ids": [900_021, 900_022],
-            "suggested_anchor_mal_id": 900_021,
-            "bridge_edges": [[900_020, 900_021, "spin-off"]],
-        }
+        split_cluster(900_021, [900_021, 900_022], [[900_020, 900_021, "spin-off"]])
     ]
 
 

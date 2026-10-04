@@ -147,18 +147,14 @@ async def get_watchlist_for_media(db: AsyncSession, user_id: int, media_uuid: UU
 
 
 async def get_watchlist_for_anime(
-    db: AsyncSession, user_id: int, anime_uuid: UUID
+    db: AsyncSession, user_id: int, anime_uuid: UUID, media_uuids: list[UUID]
 ) -> WatchlistAnimeEntries:
-    """An anime's entries plus the media a bulk note would land on — everything a
-    bulk-update form needs to show what it is about to change, without re-deriving
-    `select_note_target_index`. Why that matters is in `services/CLAUDE.md`."""
+    """An anime's entries plus the media a bulk note over `media_uuids` would land on —
+    everything a bulk-update form needs to show what it is about to change, without
+    re-deriving `select_note_target_index`. Why that matters is in `services/CLAUDE.md`."""
     entries = await watchlist_dao.get_by_user_and_anime_uuid(db, user_id, anime_uuid)
-    media_list = [e.media for e in entries]
-    target = (
-        media_list[select_note_target_index(media_list, latest=False)].uuid
-        if media_list
-        else None
-    )
+    selection = await media_service.resolve_media_uuids(db, media_uuids)
+    target = selection[select_note_target_index(selection, latest=False)].uuid
     return WatchlistAnimeEntries(
         entries=[_to_out(e) for e in entries], note_target_media_uuid=target
     )

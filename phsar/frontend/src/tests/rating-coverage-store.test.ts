@@ -4,9 +4,8 @@
  * The caching is barely worth a test; the INVALIDATION contract is, for the
  * reason `rating-scores-store.test.ts` states for its sibling: a real cache
  * trades per-mount safety for round trips and has to buy it back explicitly.
- * The race these pin is the one that made the eager version wrong — an
- * invalidate landing while a fetch is in flight must not let the pre-write
- * response win and then mark the store fresh.
+ * The race these pin is the one the `loadPromise` comment in
+ * `stores/ratingCoverage.ts` describes.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
@@ -50,9 +49,7 @@ describe('ratingCoverage cache', () => {
 	});
 
 	it('does not let a fetch invalidated mid-flight settle as fresh', async () => {
-		// The bug the eager version shipped: rate something while /search's fetch is
-		// still open, and the pre-write response would land, populate, and mark the
-		// cache current — leaving stale tiers until the next write.
+		// Rate something while /search's fetch is still open.
 		let resolveFirst!: (v: unknown) => void;
 		apiGet.mockReturnValueOnce(new Promise((r) => (resolveFirst = r)));
 

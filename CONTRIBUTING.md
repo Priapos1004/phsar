@@ -7,7 +7,7 @@ Thank you for your interest in contributing to Phsar! This project is licensed u
 1. **Fork** the repository
 2. **Clone** your fork and create a new branch from `main`
 3. **Set up** the development environment (see [README](README.md) + [phsar/README.md](phsar/README.md) for the full walkthrough):
-   - Backend: a virtual environment with the `phsar/requirements*.txt` files installed
+   - Backend: a virtual environment with the `phsar/requirements*.txt` files installed as the README does it — the order matters
    - Frontend: `cd phsar/frontend && bun install`
    - Database: start a PostgreSQL container with pgvector (see [phsar/README.md](phsar/README.md)) — it must be running for the app and the backend tests
 4. **Create a `.env` file** in `phsar/` (see README for required variables)
@@ -20,7 +20,7 @@ Thank you for your interest in contributing to Phsar! This project is licensed u
    `cd phsar && alembic revision --autogenerate -m "Describe change"` then `alembic upgrade head`
 3. Run the checks before committing (the DB container must be running for `pytest`):
    - Backend: `cd phsar && ruff check . && mypy && pytest`
-   - Frontend: `cd phsar/frontend && bun run check && bun run test`
+   - Frontend: `cd phsar/frontend && bun run check && bun run test && bun run build`
 4. Commit with clear, descriptive messages
 5. Push and open a pull request against `main`
 

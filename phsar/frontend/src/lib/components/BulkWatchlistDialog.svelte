@@ -101,16 +101,17 @@
 	// entry the backend picks as the target, destroying the note already there.
 	let noteTouched = $state(false);
 
-	// A fresh add is always saveable; an update only once something changed, so the
+	// Saveable unless every selected media is already listed and nothing changed, so the
 	// button stays disabled on a no-op edit (mirrors WatchlistDialog).
 	let isDirty = $derived(
-		!isUpdate ||
+		scopedEntries.length < effectiveUuids.length ||
 			priority !== prefilled.priority ||
 			tagUuid !== prefilled.tagUuid ||
 			(noteTouched && note.trim() !== prefilled.note.trim())
 	);
+	let loadFailed = $state(false);
 	let canSave = $derived(
-		!!tagUuid && priority !== undefined && effectiveUuids.length > 0 && isDirty
+		!loadFailed && !!tagUuid && priority !== undefined && effectiveUuids.length > 0 && isDirty
 	);
 
 	// untrack: load() writes the state it then prefills from, so a tracked read here
@@ -122,23 +123,32 @@
 
 	async function load() {
 		error = '';
+		loadFailed = false;
 		includeOptional = false;
 		entries = [];
 		noteTargetUuid = null;
-		if (!animeUuid) {
+		// No selection means nothing of this anime is listed (the hero's add mode on an
+		// anime without a main story), so there is nothing to prefill.
+		if (!animeUuid || mediaUuids.length === 0) {
 			applyPrefill([]);
 			return;
 		}
 		loading = true;
 		let fetched: WatchlistOut[] = [];
 		try {
-			const res = await api.get<WatchlistAnimeEntries>(`/watchlist/anime/${animeUuid}`);
+			// Why the selection goes along: services/CLAUDE.md (bulk note). Optional media
+			// join it only in add mode, where nothing is listed to prefill.
+			const res = await api.get<WatchlistAnimeEntries>(`/watchlist/anime/${animeUuid}`, {
+				params: new URLSearchParams(mediaUuids.map((u) => ['media_uuids', u])),
+			});
 			fetched = res.entries;
 			entries = fetched;
 			noteTargetUuid = res.note_target_media_uuid;
 		} catch (err) {
 			// A failed prefill must not present stale defaults as if they were the stored
-			// values — surface it and let the user retry rather than save a downgrade.
+			// values — surface it and block saving until a reopen retries, rather than
+			// let one click write the defaults over every listed entry.
+			loadFailed = true;
 			error = err instanceof ApiError ? err.detail : 'Failed to load existing entries';
 		} finally {
 			loading = false;
@@ -242,7 +252,7 @@
 				{#if mixed}
 					These {scopedEntries.length} media span {spans} — saving applies your choice to all of them.
 				{:else if isUpdate}
-					List &amp; priority apply to all {effectiveUuids.length} listed media.
+					List &amp; priority apply to all {effectiveUuids.length} media.
 				{:else}
 					List &amp; priority apply to all {effectiveUuids.length} selected; the note goes on the first season.
 				{/if}

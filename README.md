@@ -10,7 +10,8 @@ Repository for Code of phsar website + backend.
 
 ### Create a virtual environment
 
-With [uv](https://docs.astral.sh/uv/), from the repository root:
+With [uv](https://docs.astral.sh/uv/), from the repository root. Linux or Apple Silicon
+macOS — the pinned torch publishes no Intel-macOS wheel:
 
 ```
 uv venv --python 3.12

@@ -11,8 +11,9 @@ beside this file; doc placement lives in `docs.md`.
 
 - **Never** create commits, branches on the user's behalf, issues, milestones,
   releases, or push code without asking. Present the plan and wait. `git commit`
-  and `git -C … commit` each have their own `ask` pattern in `settings.json`
-  (neither covers the other), so auto mode cannot run either unseen.
+  has an `ask` pattern in `settings.json` for each usual shape — straight after
+  `git`, after `-C` or `-c`, or behind a prefix — so auto mode cannot commit
+  unseen through them. Like the gate below, that catches drift, not evasion.
 - Surface **design decisions before writing code** — API shape, enum semantics,
   one endpoint vs two. The user has strong opinions here and catches better
   designs than the first plan; picking silently wastes the work.

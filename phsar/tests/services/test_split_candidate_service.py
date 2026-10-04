@@ -25,7 +25,7 @@ from app.services.split_candidate_service import (
     execute_split,
     list_dismissed,
 )
-from tests._helpers import media_kwargs
+from tests._helpers import media_kwargs, split_cluster
 
 
 async def _make_bnha_with_vigilante_candidate(db_session):
@@ -66,12 +66,7 @@ async def _make_bnha_with_vigilante_candidate(db_session):
 
     candidate = SplitCandidate(
         anime_id=bnha.id,
-        clusters=[{
-            "member_mal_ids": [960593, 961942],
-            "substance_member_mal_ids": [960593, 961942],
-            "suggested_anchor_mal_id": 960593,
-            "bridge_edges": [[931964, 960593, "spin-off"]],
-        }],
+        clusters=[split_cluster(960593, [960593, 961942], [[931964, 960593, "spin-off"]])],
         status=SplitCandidateStatus.pending,
         detected_by="scrape",
     )
@@ -178,12 +173,7 @@ async def test_dismiss_is_sticky_against_re_detection(db_session):
     await dismiss(db_session, candidate_uuid)
     await db_session.flush()
 
-    same_clusters = [{
-        "member_mal_ids": [960593, 961942],
-        "substance_member_mal_ids": [960593, 961942],
-        "suggested_anchor_mal_id": 960593,
-        "bridge_edges": [[931964, 960593, "spin-off"]],
-    }]
+    same_clusters = [split_cluster(960593, [960593, 961942], [[931964, 960593, "spin-off"]])]
     inserted = await SplitCandidateDAO().upsert_pending(
         db_session, bnha.id, same_clusters, detected_by="scrape",
     )

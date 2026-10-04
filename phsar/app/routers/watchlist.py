@@ -1,3 +1,4 @@
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
@@ -5,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_db, require_user_or_admin
 from app.schemas import tag_schema, watchlist_schema
+from app.schemas.common_schema import BulkMediaUuids
 from app.services import tag_service, watchlist_service
 
 router = APIRouter(prefix="/watchlist", tags=["watchlist"])
@@ -121,10 +123,15 @@ async def delete_watchlist(
 @router.get("/anime/{anime_uuid}", response_model=watchlist_schema.WatchlistAnimeEntries)
 async def get_watchlist_for_anime(
     anime_uuid: UUID,
+    selection: Annotated[BulkMediaUuids, Query()],
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_user_or_admin),
 ):
-    return await watchlist_service.get_watchlist_for_anime(db, current_user.id, anime_uuid)
+    """`media_uuids` is the selection the form will PUT to `/watchlist/bulk`, so it
+    takes the same model and the same bounds."""
+    return await watchlist_service.get_watchlist_for_anime(
+        db, current_user.id, anime_uuid, selection.media_uuids
+    )
 
 
 @router.put("/bulk", response_model=list[watchlist_schema.WatchlistOut])

@@ -74,7 +74,11 @@ async def search_mal_api(
         nodes = build_classifier_nodes(related_anime_graph, all_info)
         if not nodes:
             # The only case where the classifier reports no anchor, and there is
-            # nothing in an empty graph to build a result from.
+            # nothing in an empty graph to build a result from. Logged, because
+            # it means extraction lost every member — the job still succeeds.
+            logger.warning(
+                f"Skipping a relation graph with no extracted members: {sorted(related_anime_graph)}"
+            )
             continue
         classifications, anime_mal_id = classify_anime_relations(nodes, edges)
         assert anime_mal_id is not None

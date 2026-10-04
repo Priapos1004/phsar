@@ -122,8 +122,8 @@ async def create_anime_embedding(db: AsyncSession, anime_id: int, title_texts: l
     await _create_search_embedding(db, AnimeSearch, {"anime_id": anime_id}, title_texts, description_text)
 
 
-async def create_rating_embedding(db: AsyncSession, rating_id: int, note: str | None):
-    embedding = await generate_embedding(note or "")
+async def create_rating_embedding(db: AsyncSession, rating_id: int, note: str):
+    embedding = await generate_embedding(note)
     db.add(RatingSearch(rating_id=rating_id, note_embedding=embedding))
     await db.flush()
 
@@ -171,13 +171,13 @@ async def regenerate_anime_embedding(
     )
 
 
-async def regenerate_rating_embedding(db: AsyncSession, rating_id: int, note: str | None) -> None:
+async def regenerate_rating_embedding(db: AsyncSession, rating_id: int, note: str) -> None:
     """Replace a rating's note embedding (single embedding, no title/desc
     split). Encode first, then delete + insert, so an encode failure leaves
     the prior row intact (same discipline as `_regenerate_search_embedding`).
     Tolerates a missing row — the DELETE is a no-op — so it doubles as a
     backfill for a note that never got a search row."""
-    embedding = await generate_embedding(note or "")
+    embedding = await generate_embedding(note)
     await db.execute(delete(RatingSearch).where(RatingSearch.rating_id == rating_id))
     db.add(RatingSearch(rating_id=rating_id, note_embedding=embedding))
     await db.flush()
