@@ -10,7 +10,9 @@ beside this file; doc placement lives in `docs.md`.
 ## Ask first
 
 - **Never** create commits, branches on the user's behalf, issues, milestones,
-  releases, or push code without asking. Present the plan and wait.
+  releases, or push code without asking. Present the plan and wait. `git commit`
+  and `git -C … commit` each have their own `ask` pattern in `settings.json`
+  (neither covers the other), so auto mode cannot run either unseen.
 - Surface **design decisions before writing code** — API shape, enum semantics,
   one endpoint vs two. The user has strong opinions here and catches better
   designs than the first plan; picking silently wastes the work.
