@@ -14,6 +14,12 @@ passlib==1.7.4
 pgvector==0.4.0
 httpx==0.28.1
 tenacity==9.1.2
-sentence-transformers==4.1.0
+sentence-transformers==5.6.0
+# Pinned though transitive: they tokenize and run the model, so an unpinned rebuild
+# could change every new vector against the stored ones with no line in the diff.
+# Bumping them, sentence-transformers or torch means comparing fresh encodes to stored
+# vectors first.
+transformers==5.18.0
+tokenizers==0.23.2
 python-jose==3.4.0
 python-multipart==0.0.32
