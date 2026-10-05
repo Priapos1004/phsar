@@ -37,9 +37,8 @@ from app.models.watchlist import Watchlist
 # later — it drops out of the MIN instead of sorting ahead of Winter. Unreachable
 # today, so no test separates the two.
 #
-# Spelled as explicit WHEN comparisons rather than `case(mapping, value=...)`: the
-# shorthand binds its keys untyped, and asyncpg refuses `seasontype = varchar`. Same
-# form as `search_filters._score_weight_case`, for the same reason.
+# Explicit WHEN comparisons, not the `case(mapping, value=...)` shorthand —
+# rules/database.md.
 _SEASON_KEY = Media.anime_season_year * 10 + case(
     *[(Media.anime_season_name == season, rank) for season, rank in SEASON_ORDER.items()],
 )

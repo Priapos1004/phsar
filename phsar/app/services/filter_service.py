@@ -10,7 +10,13 @@ from app.daos.search_filters import (
     weighted_mean_votes_expr,
 )
 from app.daos.studio_dao import StudioDAO
-from app.models.media import AGE_RATING_TIERS, SEASON_ORDER, Media
+from app.models.media import (
+    AGE_RATING_TIERS,
+    SEASON_ORDER,
+    Media,
+    MediaType,
+    RelationType,
+)
 from app.schemas.genre_schema import GenreOut
 from app.schemas.media_filter_schema import ViewType
 
@@ -127,22 +133,29 @@ async def _get_anime_aggregated_ranges(db: AsyncSession) -> dict:
 
 async def _fetch_shared_filter_values(db: AsyncSession) -> dict:
     """Categorical filter values shared between media and anime views."""
-    relation_types = await media_dao.get_unique_in_field(db, field_name="relation_type")
-    media_types = await media_dao.get_unique_in_field(db, field_name="media_type")
+    # Every option sorts in Python by an explicit key (rules/database.md). Where the key
+    # is declaration order, no test can see it: the test DB always has Python's order.
+    relation_types = sorted(
+        await media_dao.get_unique_in_field(db, field_name="relation_type"),
+        key=list(RelationType).index,
+    )
+    media_types = sorted(
+        await media_dao.get_unique_in_field(db, field_name="media_type"),
+        key=list(MediaType).index,
+    )
 
-    # Sorted by tier rather than by the column: Postgres orders an enum by declaration,
-    # which only tracks tier order while every label is added in its place.
-    age_ratings = await media_dao.get_unique_in_field(db, field_name="age_rating", order=False)
+    # By tier rather than declaration, the order a filter by minimum age reads in.
+    age_ratings = await media_dao.get_unique_in_field(db, field_name="age_rating")
     age_rating_values = sorted((r for r in age_ratings if r is not None), key=AGE_RATING_TIERS.__getitem__)
 
-    airing_status = await media_dao.get_unique_in_field(db, field_name="airing_status")
+    airing_status = sorted(await media_dao.get_unique_in_field(db, field_name="airing_status"), key=str.casefold)
 
     anime_seasons_tuple = await media_dao.get_unique_in_fields(db, field_names=["anime_season_name", "anime_season_year"])
     anime_seasons = sort_seasons([f"{name.value} {year}" for name, year in anime_seasons_tuple if name and year])
 
     studio_names = await studio_dao.get_distinct_used_studios(db)
 
-    sources = await media_dao.get_unique_in_field(db, field_name="original_source", order=False)
+    sources = await media_dao.get_unique_in_field(db, field_name="original_source")
 
     return {
         "relation_type": relation_types,

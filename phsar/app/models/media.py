@@ -198,8 +198,8 @@ class Media(BaseModel):
     @age_rating_numeric.inplace.expression
     @classmethod
     def _age_rating_numeric_expression(cls) -> SQLColumnExpression[int | None]:
-        # Explicit WHEN comparisons, not `case(mapping, value=...)` — same form and
-        # reason as `watchlist_dao._SEASON_KEY`.
+        # Explicit WHEN comparisons, not the `case(mapping, value=...)` shorthand —
+        # rules/database.md.
         return case(*[(cls.age_rating == rating, tier) for rating, tier in AGE_RATING_TIERS.items()])
 
     @hybrid_property
