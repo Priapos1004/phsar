@@ -112,7 +112,10 @@ list — the diff already says what changed.
 
 Add it to `compound-docs/INDEX.md` in **both** groupings.
 
-Then `/ship` this doc as its own commit.
+**When the base from step 1 is `main`, tick the release's row** in the
+`docs/ROADMAP.md` version table (`✓ <title>`) — `/update-docs` leaves it to this step.
+
+Then `/ship` this doc and the tick as their own commit.
 
 ## 6. Stamp the PR marker
 
