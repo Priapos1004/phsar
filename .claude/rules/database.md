@@ -101,7 +101,12 @@ hand-written `ALTER TYPE … ADD VALUE` migration, which autogenerate never writ
 without it every write of the member fails, and a label the Python enum lacks makes
 every read of its rows raise `LookupError`. A comparator in `alembic/env.py` makes
 `alembic check` and `--autogenerate` raise while the labels differ — only against a DB
-the migrations built, which the test DB is not.
+the migrations built, which the test DB is not. It raises rather than writing the op
+because Alembic cannot reverse an `ExecuteSQLOp` into a downgrade.
+
+A migration that relabels an enum maps the labels back in its downgrade. A cast to text
+keeps the new labels, and the next upgrade's `CASE`, knowing only the old ones, NULLs
+them. Prove it with upgrade → downgrade → upgrade on a restored dump, comparing counts.
 
 `ADD VALUE` appends unless placed with `BEFORE`/`AFTER`, so a type's label order can
 differ from its Python enum's — and `ORDER BY` on the column follows the type. Where the
@@ -115,6 +120,12 @@ comparator wherever a name differs from its value, and the round-trip test
 A migration that creates a type drops a leftover one first. `pg_restore --clean` only
 drops what the dump contains, so restoring a dump older than the type leaves it
 orphaned, and a bare `CREATE TYPE` then fails the next boot's upgrade.
+
+## A `case()` over an enum column takes the searched form
+
+`case((col == member, value), …)`, never the `case(mapping, value=col)` shorthand: it
+binds its keys untyped and asyncpg refuses the comparison. Compiling the statement
+doesn't show it, only a real database does.
 
 ## A migration docstring is frozen, so it may narrate
 

@@ -258,7 +258,7 @@ Self-hosted on a Coolify-managed VM. Images are built in GitHub Actions and pull
 
 Tag any commit with `v*` (stable `v0.13.0` or preview `v0.13.0-rc1`) and push. `build-images.yml` builds both images in parallel and pushes to `ghcr.io/priapos1004/phsar-{backend,frontend}:<tag>`. In Coolify, point each service at the new image tag and redeploy.
 
-Move both images to the same tag whenever a release changes an API **response shape** rather than only adding to it. The frontend is typed against the backend's DTOs with no version negotiation between them, so a mixed pair breaks the affected page outright instead of degrading.
+Move both images to the same tag whenever a release changes an API **response shape** rather than only adding to it. The frontend is typed against the backend's DTOs with no version negotiation between them, so a mixed pair breaks the affected page outright instead of degrading. An addition is safe in one direction only — a frontend reading a new field breaks against the old backend — so deploy the backend first.
 
 ### Backups — operations
 
