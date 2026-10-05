@@ -85,28 +85,17 @@ class BaseDAO(Generic[T]):
         await db.execute(stmt)
         await db.flush()
 
-    async def get_unique_in_field(self, db: AsyncSession, field_name: str, order: bool = True) -> list:
-        """
-        Get distinct values from a specific field in the model.
-        Optionally order the results (default: True).
-        """
+    async def get_unique_in_field(self, db: AsyncSession, field_name: str) -> list:
+        """Distinct values of one field, unordered — callers sort by an explicit key
+        (rules/database.md)."""
         field = getattr(self.model, field_name)
-        stmt = select(distinct(field))
-        if order:
-            stmt = stmt.order_by(field)
-        result = await db.execute(stmt)
+        result = await db.execute(select(distinct(field)))
         return [row[0] for row in result.fetchall()]
-    
-    async def get_unique_in_fields(self, db: AsyncSession, field_names: list[str], order: bool = True) -> list[tuple]:
-        """
-        Get distinct values from specific fields in the model.
-        Optionally order the results (default: True).
-        """
+
+    async def get_unique_in_fields(self, db: AsyncSession, field_names: list[str]) -> list[tuple]:
+        """Distinct combinations of several fields, unordered for the same reason."""
         fields = [getattr(self.model, field_name) for field_name in field_names]
-        stmt = select(*fields).distinct()
-        if order:
-            stmt = stmt.order_by(*fields)
-        result = await db.execute(stmt)
+        result = await db.execute(select(*fields).distinct())
         return [tuple(row) for row in result.fetchall()]
     
     async def get_min_max(self, db: AsyncSession, field_name: str) -> tuple:

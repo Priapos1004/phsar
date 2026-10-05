@@ -49,8 +49,10 @@ def media_to_dict(media: Media) -> dict:
         "aired_to": media.aired_to,
         "duration": media.duration,
         "duration_seconds": media.duration_seconds,
-        "genres": [g.genre.name for g in media.media_genre if g.genre is not None],
-        "studio": [s.studio.name for s in media.media_studio if s.studio is not None],
+        # A→Z: one media has no frequency to rank by. The same order as the ratings and
+        # watchlist projections — see media_projections._name_agg.
+        "genres": sorted((g.genre.name for g in media.media_genre if g.genre is not None), key=str.casefold),
+        "studio": sorted((s.studio.name for s in media.media_studio if s.studio is not None), key=str.casefold),
         "anime_uuid": media.anime.uuid,
         "anime_title": media.anime.title,
         "anime_name_eng": media.anime.name_eng,

@@ -406,8 +406,8 @@ describe('buildWatchlistView', () => {
 
 describe('watchlistSummary', () => {
 	const items = [
-		item({ media_uuid: 'm1', anime_uuid: 'A', genres: ['Action'], studios: ['X'] }),
-		item({ media_uuid: 'm2', anime_uuid: 'A', genres: ['Action', 'Drama'], studios: ['X'] }),
+		item({ media_uuid: 'm1', anime_uuid: 'A', genres: ['Action'], studios: ['X'], original_source: 'Manga' }),
+		item({ media_uuid: 'm2', anime_uuid: 'A', genres: ['Action', 'Drama'], studios: ['X'], original_source: 'Manga' }),
 		item({ media_uuid: 'm3', anime_uuid: 'B', genres: ['Comedy'], studios: ['Y'] }),
 	];
 	const rated = [
@@ -426,12 +426,14 @@ describe('watchlistSummary', () => {
 		expect(s.continuations).toBe(1);
 	});
 
-	it('counts genres/studios per distinct anime (a franchise counted once), ties by name', () => {
+	it('counts genres/sources/studios per distinct anime (a franchise counted once), ties by name', () => {
 		const s = watchlistSummary(items, rated);
 		// Action appears on m1 + m2 but both are anime A → count 1 (anime), main=2 media.
 		expect(s.topGenres.find((g) => g.name === 'Action')).toEqual({ name: 'Action', count: 1, main: 2, side: 0, seconds: 0 });
 		expect(s.topGenres.map((g) => g.name)).toEqual(['Action', 'Comedy', 'Drama']);
 		expect(s.topStudios.map((g) => g.name)).toEqual(['X', 'Y']);
+		// A scalar source counts like a one-tag list; m3 has none and is skipped.
+		expect(s.topSources).toEqual([{ name: 'Manga', count: 1, main: 2, side: 0, seconds: 0 }]);
 	});
 
 	it('sums queued runtime (total_watch_time) overall and per tag', () => {
@@ -454,7 +456,7 @@ describe('watchlistSummary', () => {
 		);
 		const s = watchlistSummary(many, []);
 		expect(s.topGenres).toHaveLength(5);
-		expect(s.topStudios).toHaveLength(3);
+		expect(s.topStudios).toHaveLength(5);
 		expect(s.alreadyRated).toBe(0);
 		expect(s.continuations).toBe(0);
 	});

@@ -64,9 +64,10 @@ class AnimeAggregatedBase(BaseModel):
     # Breakdown badges
     relation_types: list[RelationTypeSummary] = []
     media_types: list[MediaTypeSummary] = []
-    # Genres (strict majority) and studios (any)
+    # Genres (strict majority); studios and sources (any)
     genres: list[str] = []
     studios: list[str] = []
+    original_sources: list[str] = []
     # Season range
     season_start: str | None = None
     season_end: str | None = None

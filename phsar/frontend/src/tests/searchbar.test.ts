@@ -29,6 +29,7 @@ describe('SearchBar', () => {
 					genre_name: ['Action', 'Comedy', 'Drama'],
 					anime_season: ['Winter 2024', 'Spring 2024'],
 					studio_name: ['MAPPA', 'Bones'],
+					original_source: ['Manga', 'Original'],
 					airing_status: ['Currently Airing', 'Finished Airing'],
 					relation_type: ['Sequel', 'Prequel'],
 					media_type: ['TV', 'Movie'],

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
 	payloadSummary,
 	unknownGenreTags,
+	unknownMalValues,
 	probeAttachedMedia,
 	hentaiRemoved,
 	deleteCandidatesRaised,
@@ -156,6 +157,13 @@ describe('row-level signals', () => {
 		expect(unknownGenreTags(row({ kind: 'update_sweep', result_summary: { unknown_genre_tags: ['Ecchi'] } }))).toEqual(['Ecchi']);
 		expect(unknownGenreTags(row({ kind: 'update_sweep', result_summary: {} }))).toEqual([]);
 		expect(unknownGenreTags(row({ kind: 'update_sweep', result_summary: { unknown_genre_tags: 'Ecchi' } }))).toEqual([]);
+	});
+
+	it('unknownMalValues tolerates a missing or malformed list', () => {
+		const sweepRow = (summary: Record<string, unknown>) => row({ kind: 'update_sweep', version: 10, result_summary: summary });
+		expect(unknownMalValues(sweepRow({ unknown_mal_values: ['original_source: web_comic'] }))).toEqual(['original_source: web_comic']);
+		expect(unknownMalValues(sweepRow({}))).toEqual([]);
+		expect(unknownMalValues(sweepRow({ unknown_mal_values: 'original_source: web_comic' }))).toEqual([]);
 	});
 
 	it('probeAttachedMedia / hentaiRemoved default to 0 on older versions', () => {

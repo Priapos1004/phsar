@@ -406,8 +406,8 @@ export function buildWatchlistView(
 
 export interface TagCount {
 	name: string;
-	count: number; // distinct watchlisted anime carrying this genre/studio (the bar metric)
-	main: number; // watchlisted MAIN media in this genre/studio (for the bar hover)
+	count: number; // distinct watchlisted anime carrying this tag (the bar metric)
+	main: number; // watchlisted MAIN media with this tag (for the bar hover)
 	side: number; // watchlisted SIDE media
 	seconds: number; // queued runtime (Σ total_watch_time) of this tag's media
 }
@@ -426,21 +426,22 @@ export interface WatchlistSummary {
 	alreadyRated: number; // watchlist media you've already rated
 	continuations: number; // UNRATED watchlist media whose anime has another rated media
 	topGenres: TagCount[];
+	topSources: TagCount[];
 	topStudios: TagCount[];
 }
 
 /** Minimal shape needed from a rating for the summary (media + its anime). */
 export type RatedRef = { media_uuid: string; anime_uuid: string };
 
-/** Count distinct watchlisted anime per tag value (genre/studio) — anime-level so a
- *  multi-season franchise isn't over-counted — top `limit`, ties broken by name. Also
- *  tallies the watchlisted main/side MEDIA per tag (the bar's hover breakdown). */
-function topTags(items: WatchlistItem[], dim: 'genres' | 'studios', limit: number): TagCount[] {
+/** Count distinct watchlisted anime per tag value — anime-level so a multi-season
+ *  franchise isn't over-counted — top `limit`, ties broken by name.
+ *  Also tallies the watchlisted main/side MEDIA per tag (the bar's hover breakdown). */
+function topTags(items: WatchlistItem[], tagsOf: (it: WatchlistItem) => string[], limit: number): TagCount[] {
 	const byTag = new Map<string, { anime: Set<string>; main: number; side: number; seconds: number }>();
 	for (const it of items) {
 		const isMain = MAIN_RELATIONS.has(it.relation_type);
 		const secs = queuedSeconds(it);
-		for (const name of it[dim]) {
+		for (const name of tagsOf(it)) {
 			let acc = byTag.get(name);
 			if (!acc) {
 				acc = { anime: new Set(), main: 0, side: 0, seconds: 0 };
@@ -458,12 +459,10 @@ function topTags(items: WatchlistItem[], dim: 'genres' | 'studios', limit: numbe
 		.slice(0, limit);
 }
 
-export function watchlistSummary(
-	items: WatchlistItem[],
-	rated: RatedRef[],
-	opts: { genreLimit?: number; studioLimit?: number } = {},
-): WatchlistSummary {
-	const { genreLimit = 5, studioLimit = 3 } = opts;
+/** How many bars each top list shows — one value for every list, so the cards line up. */
+const TOP_TAGS = 5;
+
+export function watchlistSummary(items: WatchlistItem[], rated: RatedRef[]): WatchlistSummary {
 
 	const ratedMedia = new Set(rated.map((r) => r.media_uuid));
 	const ratedByAnime = new Map<string, Set<string>>();
@@ -496,7 +495,8 @@ export function watchlistSummary(
 		totalQueuedSeconds: items.reduce((sum, it) => sum + queuedSeconds(it), 0),
 		alreadyRated,
 		continuations,
-		topGenres: topTags(items, 'genres', genreLimit),
-		topStudios: topTags(items, 'studios', studioLimit),
+		topGenres: topTags(items, (it) => it.genres, TOP_TAGS),
+		topSources: topTags(items, (it) => (it.original_source == null ? [] : [it.original_source]), TOP_TAGS),
+		topStudios: topTags(items, (it) => it.studios, TOP_TAGS),
 	};
 }

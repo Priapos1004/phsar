@@ -78,6 +78,7 @@ export interface FilterOptions {
 	anime_season: string[];
 	genre_name: string[];
 	studio_name: string[];
+	original_source: string[];
 	score_min: number | null;
 	score_max: number | null;
 	scored_by_min: number | null;
@@ -185,6 +186,7 @@ export interface RatingScoreItem {
 	watch_status: WatchStatus;
 	episodes_watched: number | null;
 	age_rating_numeric: number | null;
+	original_source: string | null;
 	genres: string[];
 	studios: string[];
 	mal_score: number | null;
@@ -293,6 +295,7 @@ export interface AnimeAggregatedBase {
 	media_types: MediaTypeSummary[];
 	genres: string[];
 	studios: string[];
+	original_sources: string[];
 	season_start: string | null;
 	season_end: string | null;
 	airing_status: string;
@@ -436,6 +439,7 @@ export interface WatchlistItem {
 	franchise_upcoming_key: number | null;
 	genres: string[];
 	studios: string[];
+	original_source: string | null;
 	total_watch_time: number | null;
 	created_at: string;
 	modified_at: string;
@@ -652,6 +656,9 @@ export interface UpdateSweepMediaChange {
 	static: UpdateSweepFieldChange[];
 	genre_drift: UpdateSweepM2MDrift | null;
 	studio_drift: UpdateSweepM2MDrift | null;
+	// v10+: MAL codes with no enum member — `old` is the stored value, `new` the
+	// raw code that was NOT written. Static-field changes in every respect but that.
+	unknown_mal_values?: UpdateSweepFieldChange[];
 }
 
 // Shape the genre/studio drift detector emits per-media. Mirrors the
@@ -816,6 +823,8 @@ export interface UpdateSweepResultSummary extends JobResultSummary {
 	// v9+: media MAL 404'd this sweep. Pre-v9 rows carried these on the
 	// matching `step1_failures[]` entry instead.
 	gone_upstream?: UpdateSweepGoneUpstream[];
+	// v10+: unmapped MAL codes as "column: code", deduplicated across media.
+	unknown_mal_values?: string[];
 	merge_detect_failed?: boolean;
 	cache_recompute_failed?: boolean;
 }

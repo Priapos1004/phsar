@@ -77,6 +77,13 @@ function ratingKey(m: UpdateSweepMediaChange): [number, number] {
 	return [3, 0];
 }
 
+/** Static rows a media carries — applied edits plus unmapped MAL codes, which the
+ * card renders as static rows too. The one count both the rank and the job page's
+ * "Static only" filter use. */
+export function staticFieldCount(m: UpdateSweepMediaChange): number {
+	return m.static.length + (m.unknown_mal_values?.length ?? 0);
+}
+
 interface SortKey {
 	// One slot per medal-bearing entry of CHANGE_TONE_ORDER, in that order,
 	// each compared descending. Fixed-length so a slot cannot go missing.
@@ -93,7 +100,7 @@ function sortKey(m: UpdateSweepMediaChange, nameLanguage: NameLanguage): SortKey
 			m.dynamic.filter((d) => !isRatingField(d.field)).length,
 			m.genre_drift ? 1 : 0,
 			m.studio_drift ? 1 : 0,
-			m.static.length,
+			staticFieldCount(m),
 		],
 		sub,
 		mag,

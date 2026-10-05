@@ -33,9 +33,13 @@ RUN python -c "from sentence_transformers import SentenceTransformer; \
 FROM python:3.12-slim AS runtime
 
 ARG APP_VERSION=dev
+# HF_HUB_DISABLE_PROGRESS_BARS: transformers draws a "Loading weights" bar on every
+# model load, which lands in the container log at each start. The model is baked, so
+# there is no download whose progress would be worth seeing.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     SENTENCE_TRANSFORMERS_HOME=/opt/st-cache \
+    HF_HUB_DISABLE_PROGRESS_BARS=1 \
     APP_VERSION=${APP_VERSION} \
     BACKUP_DIR=/backups
 

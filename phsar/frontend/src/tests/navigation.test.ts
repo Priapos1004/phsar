@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { absoluteDetailUrl, buildDetailHref, searchByStudio } from '$lib/utils/navigation';
+import { absoluteDetailUrl, buildDetailHref, searchBySource, searchByStudio } from '$lib/utils/navigation';
 import { api } from '$lib/api';
 
 // `goto` is globally mocked in setup.ts; mock the API so navigateToSearch's
@@ -69,6 +69,16 @@ describe('searchByStudio', () => {
 		expect(api.post).toHaveBeenCalledWith(
 			'/filters/create-token',
 			expect.objectContaining({ studio_name: ['Wit Studio'], view_type: 'anime', search_type: 'title', query: '' }),
+		);
+	});
+});
+
+describe('searchBySource', () => {
+	it('posts an anime-view search filtered to the source', () => {
+		searchBySource('Light Novel');
+		expect(api.post).toHaveBeenCalledWith(
+			'/filters/create-token',
+			expect.objectContaining({ original_source: ['Light Novel'], view_type: 'anime', search_type: 'title', query: '' }),
 		);
 	});
 });

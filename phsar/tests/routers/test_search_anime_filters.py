@@ -20,15 +20,17 @@ intersection — independent of whatever other catalog rows the vector
 search returned.
 """
 
+from collections import Counter
+
 import pytest
 
 from app.models.anime import Anime
 from app.models.genre import Genre, GenreType
-from app.models.media import Media, MediaType, RelationType
+from app.models.media import Media, MediaType, OriginalSource, RelationType
 from app.models.media_genre import MediaGenre
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
-from app.services.anime_search_service import anime_title_texts
+from app.services.anime_search_service import anime_title_texts, most_frequent_first
 from app.services.vector_embedding_service import create_anime_embedding
 from tests._helpers import media_kwargs
 
@@ -123,6 +125,68 @@ async def test_age_rating_r_returns_mixed_only(client, user_auth_headers, age_ra
         age_rating="R - 17+ (violence & profanity)",
     )
     assert seen == {f"{_AGE_FIXTURE_QUERY} MixedRating Anime"}
+
+
+_SOURCE_FIXTURE_QUERY = "FilterTestSource"
+_SOURCE_FIXTURE_TITLES = {
+    f"{_SOURCE_FIXTURE_QUERY} OriginalFranchise Anime",
+    f"{_SOURCE_FIXTURE_QUERY} PureOriginal Anime",
+}
+
+
+@pytest.fixture
+async def source_set(db_session):
+    """original_source is any-media, like studios: an anime adapted from a light
+    novel only in a side story still matches "Light Novel". Its card lists every
+    source and studio most frequent first — Original (2 media) ahead of Light Novel
+    (1), Zeta ahead of Alpha. The side story is created first, so both A→Z and
+    first-seen order put it ahead, and only the frequency sort puts them there."""
+    zeta, alpha = Studio(name="SourceTest Zeta"), Studio(name="SourceTest Alpha")
+    db_session.add_all([zeta, alpha])
+    await db_session.flush()
+
+    franchise = await _make_anime(
+        db_session, mal_id=85101, title=f"{_SOURCE_FIXTURE_QUERY} OriginalFranchise Anime",
+    )
+    side = await _add_media(
+        db_session, franchise, 851013,
+        relation_type=RelationType.SideStory, original_source=OriginalSource.LightNovel,
+    )
+    first = await _add_media(db_session, franchise, 851011, original_source=OriginalSource.Original)
+    second = await _add_media(db_session, franchise, 851012, original_source=OriginalSource.Original)
+    db_session.add_all([
+        MediaStudio(media_id=first.id, studio_id=zeta.id),
+        MediaStudio(media_id=second.id, studio_id=zeta.id),
+        MediaStudio(media_id=side.id, studio_id=alpha.id),
+    ])
+
+    pure = await _make_anime(
+        db_session, mal_id=85102, title=f"{_SOURCE_FIXTURE_QUERY} PureOriginal Anime",
+    )
+    await _add_media(db_session, pure, 851021, original_source=OriginalSource.Original)
+
+
+async def test_source_filter_matches_any_media(client, user_auth_headers, source_set):
+    resp = await client.get(
+        ANIME_SEARCH_URL,
+        params={"query": _SOURCE_FIXTURE_QUERY, "original_source": "Light Novel"},
+        headers=user_auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    matched = [a for a in resp.json() if a["title"] in _SOURCE_FIXTURE_TITLES]
+
+    assert [(a["title"], a["original_sources"], a["studios"]) for a in matched] == [(
+        f"{_SOURCE_FIXTURE_QUERY} OriginalFranchise Anime",
+        ["Original", "Light Novel"],
+        ["SourceTest Zeta", "SourceTest Alpha"],
+    )]
+
+
+def test_most_frequent_first_breaks_ties_a_to_z_ignoring_case():
+    """The tie is inserted Z→A, so `most_common`'s insertion-order tiebreak gives the
+    reverse, and a case-sensitive sort puts "MAPPA" ahead of "aniplex"."""
+    counts = Counter({"Zexcs": 2, "ufotable": 1, "MAPPA": 1, "aniplex": 1})
+    assert most_frequent_first(counts) == ["Zexcs", "aniplex", "MAPPA", "ufotable"]
 
 
 async def test_age_rating_g_or_r_returns_both(client, user_auth_headers, age_rating_set):

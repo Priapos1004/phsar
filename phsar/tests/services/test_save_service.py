@@ -3,11 +3,11 @@ MediaRelationEdges sidecars so the merge / preview / backfill paths can
 re-classify without re-hitting MAL.
 """
 
-from sqlalchemy import select
+from sqlalchemy import String, cast, select
 from sqlalchemy.orm import selectinload
 
 from app.models.anime import Anime
-from app.models.media import Media, MediaType, RelationType
+from app.models.media import AgeRating, Media, MediaType, OriginalSource, RelationType
 from app.models.media_relation_edges import MediaRelationEdges
 from app.schemas.media_schema import MediaUnconnected
 from app.schemas.search_schema import SearchResultDB
@@ -60,6 +60,25 @@ async def test_save_search_results_persists_edges_per_media(db_session):
     assert edges_by_mal[900_001] == [[900_002, "sequel"], [900_003, "side_story"]]
     assert edges_by_mal[900_002] == [[900_001, "prequel"]]
     assert edges_by_mal[900_003] == []
+
+
+async def test_enum_columns_store_their_label(db_session):
+    """A `values_callable` enum column persists the member's VALUE ("Light Novel"), not its name
+    (`LightNovel`). The CI test DB is built by create_all, where a name-persisting enum
+    would round-trip in silence. Both members here have a name that differs from their
+    value, so either column losing it fails."""
+    media = _media(900_020, "Label Show", RelationType.Main)
+    media.original_source = OriginalSource.LightNovel
+    media.age_rating = AgeRating.PG13
+    await save_search_results(db_session, [SearchResultDB(
+        anime_mal_id=900_020, unconnected_media_list=[media], cross_link_mal_ids=set(),
+    )])
+
+    stored = (await db_session.execute(
+        select(cast(Media.original_source, String), cast(Media.age_rating, String))
+        .where(Media.mal_id == 900_020)
+    )).one()
+    assert tuple(stored) == ("Light Novel", "PG-13 - Teens 13 or older")
 
 
 async def test_save_search_results_defaults_empty_edges(db_session):

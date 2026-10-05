@@ -258,7 +258,7 @@ Self-hosted on a Coolify-managed VM. Images are built in GitHub Actions and pull
 
 Tag any commit with `v*` (stable `v0.13.0` or preview `v0.13.0-rc1`) and push. `build-images.yml` builds both images in parallel and pushes to `ghcr.io/priapos1004/phsar-{backend,frontend}:<tag>`. In Coolify, point each service at the new image tag and redeploy.
 
-Move both images to the same tag whenever a release changes an API **response shape** rather than only adding to it. The frontend is typed against the backend's DTOs with no version negotiation between them, so a mixed pair breaks the affected page outright instead of degrading.
+Move both images to the same tag whenever a release changes an API **response shape** rather than only adding to it. The frontend is typed against the backend's DTOs with no version negotiation between them, so a mixed pair breaks the affected page outright instead of degrading. An addition is safe in one direction only — a frontend reading a new field breaks against the old backend — so deploy the backend first.
 
 ### Backups — operations
 
@@ -308,7 +308,7 @@ the price of pre-PR feedback. Cancelling is disabled on `main`, where it would l
 the branch the README badges track sitting on a cancelled status.
 
 - **Backend Lint** (`backend-lint.yml`): `ruff check .` in `phsar/`
-- **Backend Tests** (`backend-test.yml`): `mypy` then `pytest` against a pgvector service container — the type check lives in this job because it needs SQLAlchemy's and Pydantic's own types, which only this job installs. Also runs **`alembic check`**, which guards two things at once: that models and migrations agree (an index or column declared in only one is what makes the next `--autogenerate` propose a destructive diff), and that the chain still replays from empty. It needs its own throwaway `migrationcheck` DB brought up by `alembic upgrade head` — run against the test DB it would compare `create_all`'s metadata to a schema built from that same metadata, and pass however far the migrations had drifted
+- **Backend Tests** (`backend-test.yml`): `mypy` then `pytest` against a pgvector service container — the type check lives in this job because it needs SQLAlchemy's and Pydantic's own types, which only this job installs. Also runs **`alembic check`**, which guards that models and migrations agree (an index or column declared in only one is what makes the next `--autogenerate` propose a destructive diff), that the chain still replays from empty, and — through a comparator in `alembic/env.py` — that every native enum holds its Python enum's labels. It needs its own throwaway `migrationcheck` DB brought up by `alembic upgrade head` — run against the test DB it would compare `create_all`'s metadata to a schema built from that same metadata, and pass however far the migrations had drifted
 - **Frontend Check** (`frontend-check.yml`): `bun run check` + `bun run test` + `bun run build`. The build step is not redundant with the type check — `svelte-check` reads sources, and only a real adapter-node build proves the bundle still comes out
 - **Commit Gate** (`gate.yml`): `.claude/hooks/test-gate.sh`, on `.claude/**`. Its own workflow because the suite needs no project toolchain — it drives the hook against the checked-out tree on whatever the runner ships — and because a red result here means something other than a lint failure
 - **Build & Push Images** (`build-images.yml`): builds + pushes to ghcr.io — tag push (`v*`) or manual dispatch. No cancellation: a tag build must never be superseded

@@ -7,23 +7,25 @@ same side-by-side anime card, so a future field addition (e.g.
 airing_status) lands in one place.
 """
 
+from collections import Counter
 from datetime import date
 
 from app.models.anime import Anime
 from app.schemas.admin_schema import MergeCandidateAnimeSummary
+from app.services.anime_search_service import most_frequent_first
 
 
 def summarize_anime(anime: Anime, rating_count: int) -> MergeCandidateAnimeSummary:
     """Requires `anime.media` + each media's `media_studio.studio` to be
     pre-loaded by the caller (selectinload). The lazy="raise" config on
     relationships ensures this surfaces fast if missed."""
-    studio_names: set[str] = set()
+    studio_counts: Counter[str] = Counter()
     years: list[int] = []
     aired_from_dates: list[date] = []
     for media in anime.media:
         for ms in media.media_studio:
             if ms.studio is not None:
-                studio_names.add(ms.studio.name)
+                studio_counts[ms.studio.name] += 1
         if media.anime_season_year is not None:
             years.append(media.anime_season_year)
         if media.aired_from is not None:
@@ -34,7 +36,7 @@ def summarize_anime(anime: Anime, rating_count: int) -> MergeCandidateAnimeSumma
         name_eng=anime.name_eng,
         name_jap=anime.name_jap,
         media_count=len(anime.media),
-        studios=sorted(studio_names),
+        studios=most_frequent_first(studio_counts),
         earliest_year=min(years) if years else None,
         earliest_aired_from=min(aired_from_dates) if aired_from_dates else None,
         rating_count=rating_count,

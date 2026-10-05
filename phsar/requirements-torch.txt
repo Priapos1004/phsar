@@ -6,5 +6,7 @@
 # exact same pin, and a copy in each drifts with nothing to catch it.
 # No `+cpu` label on the pin: the index already guarantees the CPU build, and macOS
 # wheels here carry no label, which a labelled pin refuses to match.
+# torch runs the embedding model, so a bump follows the transformers pin's note in
+# requirements.txt.
 --index-url https://download.pytorch.org/whl/cpu
-torch==2.11.0
+torch==2.13.0

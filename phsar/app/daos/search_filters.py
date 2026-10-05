@@ -6,7 +6,7 @@ from sqlalchemy import Numeric, and_, case, cast, distinct, func, select, tuple_
 from app.models.anime import Anime
 from app.models.genre import Genre
 from app.models.media import (
-    AGE_RATING_MAP,
+    AGE_RATING_TIERS,
     AIRING_STATUS_CURRENTLY_AIRING,
     AIRING_STATUS_FINISHED_AIRING,
     AIRING_STATUS_NOT_YET_AIRED,
@@ -126,6 +126,8 @@ def _build_categorical_conditions(
         conditions.append(Media.age_rating.in_(filters.age_rating))
     if not for_anime and filters.airing_status:
         conditions.append(Media.airing_status.in_(filters.airing_status))
+    if filters.original_source:
+        conditions.append(Media.original_source.in_(filters.original_source))
     if filters.anime_season:
         filter_pairs = _parse_season_filters(filters.anime_season)
         if filter_pairs:
@@ -133,21 +135,6 @@ def _build_categorical_conditions(
                 tuple_(Media.anime_season_year, Media.anime_season_name).in_(filter_pairs)
             )
     return conditions
-
-
-def _age_rating_text_to_numerics(text_ratings: list[str]) -> list[int]:
-    """Map MAL `age_rating` text strings to their numeric tier using the
-    same prefix lookup the `Media.age_rating_numeric` hybrid uses. Lets the
-    anime-view filter compare against `MAX(age_rating_numeric)` (the card's
-    derivation) without round-tripping back to text."""
-    results: list[int] = []
-    for text in text_ratings:
-        normalized = text.strip()
-        for prefix, value in AGE_RATING_MAP:
-            if normalized.startswith(prefix):
-                results.append(value)
-                break
-    return results
 
 
 def apply_media_filters(stmt, filters: MediaSearchFilters):
@@ -338,9 +325,8 @@ def apply_anime_having_filters(stmt, filters: MediaSearchFilters, agg_columns: d
     # displayed age. A mixed-rating anime (e.g. G main + R side-story)
     # surfaces under R, not G, because the card surfaces under R.
     if filters.age_rating:
-        numerics = _age_rating_text_to_numerics(filters.age_rating)
-        if numerics:
-            conditions.append(func.max(Media.age_rating_numeric).in_(numerics))
+        tiers = [AGE_RATING_TIERS[rating] for rating in filters.age_rating]
+        conditions.append(func.max(Media.age_rating_numeric).in_(tiers))
 
     # Airing-status filter: reproduce `_compute_airing_status`'s priority
     # ladder (Currently → Finished → Not yet aired) in SQL, then check

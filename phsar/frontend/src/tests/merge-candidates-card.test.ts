@@ -58,6 +58,24 @@ describe('MergeCandidatesCard', () => {
 		vi.clearAllMocks();
 	});
 
+	it('shows the studios both sides share first, marked, ahead of more frequent ones', async () => {
+		const candidate = makeCandidate();
+		// Server order is most-frequent-first, so the shared studio arrives last on both
+		// sides — only the shared-first rule brings it into the two that are shown.
+		candidate.anime_a.studios = ['Studio Alpha', 'Studio Gamma', 'Shared Studio'];
+		candidate.anime_b.studios = ['Studio Beta', 'Studio Delta', 'Shared Studio'];
+		globalThis.fetch = vi.fn(async () => jsonResponse([candidate])) as typeof fetch;
+
+		render(MergeCandidatesCard);
+		await vi.waitFor(() => expect(screen.getByText('Anime A')).toBeInTheDocument());
+
+		const shared = screen.getAllByText('Shared Studio');
+		expect(shared).toHaveLength(2);
+		for (const el of shared) expect(el).toHaveClass('text-primary');
+		expect(screen.getByText('Studio Alpha')).not.toHaveClass('text-primary');
+		expect(screen.queryByText('Studio Gamma')).not.toBeInTheDocument();
+	});
+
 	it('default merge POSTs the visible A side as keep_uuid', async () => {
 		const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
 			if (typeof url === 'string' && url.endsWith('/admin/merge-candidates')) {

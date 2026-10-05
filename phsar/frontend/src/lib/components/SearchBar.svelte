@@ -9,7 +9,7 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Label } from '$lib/components/ui/label';
 	import * as Card from '$lib/components/ui/card';
-	import type { MediaSearchFilters } from '$lib/utils/search';
+	import type { ListFilterKey, MediaSearchFilters } from '$lib/utils/search';
 	import { formatDecimalDigits, formatDuration, formatNumber, formatRelationType } from '$lib/utils/formatString';
 	import * as cls from '$lib/styles/classes';
 
@@ -35,7 +35,7 @@
 	type UnifiedFilterConfig =
 		| {
 			type: 'list';
-			key: keyof Pick<MediaSearchFilters, 'genre_name' | 'anime_season' | 'studio_name' | 'airing_status' | 'relation_type' | 'media_type' | 'age_rating'>;
+			key: ListFilterKey;
 			label: string;
 			placeholder: string;
 		  }
@@ -59,6 +59,7 @@
 	const filterConfig: UnifiedFilterConfig[] = [
 		{ type: 'list', key: 'genre_name', label: 'Genres', placeholder: 'Search genres...' },
 		{ type: 'list', key: 'anime_season', label: 'Seasons', placeholder: 'Search seasons...' },
+		{ type: 'list', key: 'original_source', label: 'Source', placeholder: 'Search sources...' },
 		{ type: 'list', key: 'studio_name', label: 'Studios', placeholder: 'Search studios...' },
 		{ type: 'list', key: 'airing_status', label: 'Airing Status', placeholder: 'Search airing status...' },
 		{ type: 'list', key: 'relation_type', label: 'Relation Type', placeholder: 'Search relation types...' },

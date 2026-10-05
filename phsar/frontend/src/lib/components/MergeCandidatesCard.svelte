@@ -128,8 +128,18 @@
         if (a.earliest_year !== null) parts.push(String(a.earliest_year));
         parts.push(`${a.media_count} media`);
         if (a.rating_count > 0) parts.push(`${a.rating_count} rating${a.rating_count === 1 ? '' : 's'}`);
-        if (a.studios.length > 0) parts.push(a.studios.slice(0, 2).join(', '));
         return parts.join(' · ');
+    }
+
+    /** The two studios a side shows. The ones both anime credit come first: a shared
+     *  studio is what gates the title detectors, so it is the evidence the admin is
+     *  checking. The rest keep the server's most-frequent-first order. */
+    function shownStudios(own: string[], other: string[]): { name: string; shared: boolean }[] {
+        const otherSet = new Set(other);
+        // A stable sort, so each group keeps the server's order.
+        return own.map((name) => ({ name, shared: otherSet.has(name) }))
+            .sort((a, b) => Number(b.shared) - Number(a.shared))
+            .slice(0, 2);
     }
 </script>
 
@@ -204,6 +214,7 @@
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                             {#each sides(c) as anime, i (anime.uuid)}
                                 {@const animeTitle = resolveTitle(anime.title, anime.name_eng, anime.name_jap, nameLanguage)}
+                                {@const studios = shownStudios(anime.studios, sides(c)[1 - i].studios)}
                                 <div class="rounded border bg-card px-3 py-2 space-y-1">
                                     <div class="text-xs font-semibold uppercase text-muted-foreground tracking-wide">
                                         Anime {i === 0 ? 'A (kept)' : 'B (merged in)'}
@@ -222,7 +233,9 @@
                                     {#if anime.name_eng && anime.name_eng !== animeTitle}
                                         <p class="text-xs text-muted-foreground">{anime.name_eng}</p>
                                     {/if}
-                                    <p class="text-xs text-muted-foreground">{summaryLine(anime)}</p>
+                                    <p class="text-xs text-muted-foreground">
+                                        {summaryLine(anime)}{#each studios as s, j (s.name)}{j ? ', ' : ' · '}<span class={s.shared ? 'font-medium text-primary' : undefined}>{s.name}</span>{/each}
+                                    </p>
                                 </div>
                             {/each}
                         </div>

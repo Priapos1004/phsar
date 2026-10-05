@@ -85,6 +85,17 @@ Extend `PhsarBaseError` with a `status_code` class attribute — one handler in
 `main.py` reads it. `PermanentPhsarError` marks a failure non-retryable, which is
 what stops the job bell offering retry on a deterministic failure.
 
+## Name lists sort A→Z ignoring case
+
+Studio, genre and source names reach the UI sorted from two places — SQL `ORDER BY`
+and Python `sorted()` — and both must agree. The database collates `en_US`, which ignores
+case ("MAPPA", "ufotable", "Zexcs"), while Python's default sort puts every capital before
+every lowercase letter. So a Python sort of names takes `key=str.casefold`.
+
+`casefold` matches the collation on case only — `en_US` also discounts punctuation and
+spaces at its first level — so names differing in punctuation may still order slightly
+differently between the two. Case is the difference a user notices.
+
 ## Roles
 
 Three: `admin` (full access), `user` (read + write), `restricted_user` (a read-only

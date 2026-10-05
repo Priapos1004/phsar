@@ -35,7 +35,7 @@
 	import * as cls from '$lib/styles/classes';
 	import { formatScoreWithStep, formatShortDate } from '$lib/utils/formatString';
 	import { SHARE_CARD_HEIGHT, SHARE_CARD_WIDTH } from '$lib/utils/shareImage';
-	import type { ShareBadge, ShareBadgeTone, ShareCardBody } from '$lib/utils/shareContent';
+	import { fitChipCount, shareChips, type ShareBadge, type ShareBadgeTone, type ShareCardBody } from '$lib/utils/shareContent';
 
 	interface Props {
 		/** Already resolved to the viewer's name-language setting. */
@@ -87,7 +87,7 @@
 	/** Solid tints only — `bg-muted` rather than the page's `bg-card-foreground/8`, because a
 	 *  fractional-alpha `color-mix` that fails to reparse in the clone degrades to invisible
 	 *  on a light-on-light chip. */
-	const studioChip = `${chip} border border-border bg-muted text-card-foreground`;
+	const factChip = `${chip} border border-border bg-muted text-card-foreground`;
 	/** Tone → the app's shared badge tokens. The tone union is a share-feature concept, so the
 	 *  mapping lives here while the tints stay in `classes.ts` with their siblings. */
 	const TONE: Record<ShareBadgeTone, string> = {
@@ -99,6 +99,18 @@
 	};
 
 	let coverImg = $state<HTMLImageElement | null>(null);
+
+	// How many chips the source and studio rows show; `null` until measured (see factChips).
+	let fit = $state<{ sources: number; studios: number } | null>(null);
+	let sourceRow = $state<HTMLElement | null>(null);
+	let studioRow = $state<HTMLElement | null>(null);
+
+	function measureRow(row: HTMLElement): number {
+		const width = (el: Element) => el.getBoundingClientRect().width;
+		const chips = [...row.querySelectorAll('[data-fact-chip]')].map(width);
+		const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
+		return fitChipCount(chips, width(row), gap, width(row.querySelector('[data-overflow-probe]')!));
+	}
 
 	/**
 	 * Readiness for the chartless variant.
@@ -115,6 +127,8 @@
 		let cancelled = false;
 		void (async () => {
 			await tick(); // Svelte's DOM writes are flushed
+			fit = { sources: measureRow(sourceRow!), studios: measureRow(studioRow!) };
+			await tick();
 			await coverImg?.decode().catch(() => {}); // a corrupt cover must not hang the capture
 			await new Promise(requestAnimationFrame); // style + layout have run
 			// A card unmounted mid-chain (rapid variant toggling) must stay silent: the
@@ -214,8 +228,8 @@
 			<!-- Facts band across the card's full width rather than beside the cover: in the
 			     328px hero column a heavily-tagged anime wraps to four chip rows and pushes the
 			     synopsis out of frame. The max-height sits on the CHIPS, not the band, so if a
-			     cap is ever relaxed the overflow eats genre chips and the studio row survives.
-			     These are plain spans rather than GenreBadges/StudioLinks: those mount a
+			     cap is ever relaxed the overflow eats genre chips and the source/studio row survives.
+			     These are plain spans rather than GenreBadges/SearchLinks: those mount a
 			     tooltip provider per chip, fetch genre descriptions on mount (network I/O
 			     inside the capture window), and render focusable buttons inside an aria-hidden
 			     subtree — all three are page affordances a static image has no use for. -->
@@ -228,11 +242,17 @@
 					     different kind of fact, and in one hue it just reads as another genre. -->
 					<span class="{chip} {cls.badgeAgeRatingColor}">{body.ageRating}</span>
 				</div>
-				<div class="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+				<!-- A label column sized to the wider label, so both rows start their chips at
+				     the same x. -->
+				<div class="grid grid-cols-[auto_1fr] items-center gap-x-2 gap-y-1.5">
+					<span class="text-sm font-medium text-muted-foreground">Source</span>
+					<div bind:this={sourceRow} class="relative flex gap-1.5 overflow-hidden">
+						{@render factChips(body.sources, fit?.sources)}
+					</div>
 					<span class="text-sm font-medium text-muted-foreground">Studio</span>
-					{#each body.studios as studio}
-						<span class={studioChip}>{studio}</span>
-					{/each}
+					<div bind:this={studioRow} class="relative flex gap-1.5 overflow-hidden">
+						{@render factChips(body.studios, fit?.studios)}
+					</div>
 				</div>
 			</div>
 
@@ -241,12 +261,13 @@
 			     footer.
 
 			     The clamp is sized to the WORST band, not the common one: the heaviest catalog
-			     rows wrap their chips to two rows (~90px), leaving ~245px here, and 12 lines is
-			     234px. Clamping any looser would fill the common one-chip-row card (~276px)
-			     but let this div silently cut the heavy ones mid-word — the clamp's ellipsis
-			     has to be what trims the text, never the overflow. -->
+			     rows wrap their genre chips to two rows (~90px) above the source and studio
+			     rows, leaving ~213px here, and 10 lines is 195px. Clamping any looser would fill
+			     the common one-chip-row card (~244px) but let this div silently cut the heavy
+			     ones mid-word — the clamp's ellipsis has to be what trims the text, never the
+			     overflow. -->
 			<div class="min-h-0 flex-1 overflow-hidden">
-				<p class="line-clamp-12 text-sm break-words text-card-foreground">
+				<p class="line-clamp-10 text-sm break-words text-card-foreground">
 					{body.synopsis ?? 'No synopsis on record.'}
 				</p>
 			</div>
@@ -258,3 +279,16 @@
 		<span>{dateLabel}</span>
 	</div>
 </div>
+
+<!-- One fact row, kept to one line. Unmeasured (`shown` undefined), every chip renders at its
+     natural width beside an invisible "+N" probe, and `measureRow` reads them off the laid-out
+     card before `onReady`. Fitted, the first `shown` chips render with a "+N" for the rest,
+     the first one free to shrink to an ellipsis when it is too wide even alone. -->
+{#snippet factChips(values: string[], shown?: number)}
+	{#each shown === undefined ? values : shareChips(values, shown) as value, i}
+		<span data-fact-chip class="{factChip} {shown !== undefined && i === 0 ? 'min-w-0 truncate' : 'shrink-0'}">{value}</span>
+	{/each}
+	{#if shown === undefined}
+		<span data-overflow-probe class="{factChip} invisible absolute">+{values.length}</span>
+	{/if}
+{/snippet}

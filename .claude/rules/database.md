@@ -84,8 +84,8 @@ migration-only index silently loses its query the access path it exists for.
 `alembic check` in CI is the guard — it must both agree with the models and replay
 from empty.
 
-**It is a partial guard.** Nullability, column types, indexes and FK constraints fail
-loudly; `server_default`, Python-side `default` and `onupdate` are not compared at all,
+**It is a partial guard.** Nullability, column types, indexes, FK constraints and native
+enum labels fail loudly; `server_default`, Python-side `default` and `onupdate` are not compared at all,
 so dropping one ships green. Review those by eye whenever column definitions move.
 
 Do **not** index a sidecar's `last_checked_at`. The planner could not use it (the
@@ -93,6 +93,39 @@ staleness predicate is a `coalesce` across a joined table, so it isn't sargable,
 and the `ORDER BY` sits on the nullable side of a LEFT JOIN), and it would be worse
 than inert: it would be the only indexed *mutable* column on the sidecar, turning
 every sweep write into a non-HOT update.
+
+## A native enum's labels are maintained by hand
+
+The Python enum and the Postgres type must hold the same labels. Adding a member is a
+hand-written `ALTER TYPE … ADD VALUE` migration, which autogenerate never writes:
+without it every write of the member fails, and a label the Python enum lacks makes
+every read of its rows raise `LookupError`. A comparator in `alembic/env.py` makes
+`alembic check` and `--autogenerate` raise while the labels differ — only against a DB
+the migrations built, which the test DB is not. It raises rather than writing the op
+because Alembic cannot reverse an `ExecuteSQLOp` into a downgrade.
+
+A migration that relabels an enum maps the labels back in its downgrade. A cast to text
+keeps the new labels, and the next upgrade's `CASE`, knowing only the old ones, NULLs
+them. Prove it with upgrade → downgrade → upgrade on a restored dump, comparing counts.
+
+`ADD VALUE` appends unless placed with `BEFORE`/`AFTER`, so a type's label order can
+differ from its Python enum's — and `ORDER BY` on the column follows the type. Where the
+order means something, sort by an explicit key.
+
+An enum whose values are display labels (`OriginalSource`) persists them through
+`values_callable` — the default persists member *names*. Dropping it trips that
+comparator wherever a name differs from its value, and the round-trip test
+`test_enum_columns_store_their_label` covers the test DB.
+
+A migration that creates a type drops a leftover one first. `pg_restore --clean` only
+drops what the dump contains, so restoring a dump older than the type leaves it
+orphaned, and a bare `CREATE TYPE` then fails the next boot's upgrade.
+
+## A `case()` over an enum column takes the searched form
+
+`case((col == member, value), …)`, never the `case(mapping, value=col)` shorthand: it
+binds its keys untyped and asyncpg refuses the comparison. Compiling the statement
+doesn't show it, only a real database does.
 
 ## A migration docstring is frozen, so it may narrate
 

@@ -11,7 +11,7 @@
 	import { tagMetrics, type TagDim, type TagMetric } from '$lib/utils/ratingStats';
 	import { chartTooltipStyle } from '$lib/utils/chartTheme';
 	import { ratingsFilter } from '$lib/stores/ratingsFilter';
-	import { searchByStudio } from '$lib/utils/navigation';
+	import { searchBySource, searchByStudio } from '$lib/utils/navigation';
 	import { AGE_RATING_LABELS, formatDecimalDigits, formatDuration, escapeHtml } from '$lib/utils/formatString';
 	import { ensureGenresLoaded } from '$lib/stores/genres';
 	import type { RatingScoreItem } from '$lib/types/api';
@@ -51,6 +51,7 @@
 	// "17" and only become "R-17+" here and in the tooltip.
 	const DIMS: Record<TagDim, { label: string; singular: string; format: (tag: string) => string }> = {
 		genres: { label: 'Genres', singular: 'genre', format: (t) => t },
+		sources: { label: 'Source', singular: 'source', format: (t) => t },
 		studios: { label: 'Studios', singular: 'studio', format: (t) => t },
 		seasons: { label: 'Seasons', singular: 'season', format: (t) => t },
 		ageRatings: { label: 'Age', singular: 'age rating', format: (t) => AGE_RATING_LABELS[Number(t)] ?? t },
@@ -62,10 +63,11 @@
 
 	/** Where a bar label goes, per dimension — the single place that decides it.
 	 * Season + age drill INTO your own ratings ("what did I rate in Fall 2025"); a
-	 * studio asks the opposite question ("what ELSE did they make") so it leaves for
-	 * search; a genre has no destination and keeps its description tooltip instead. */
+	 * studio or source asks the opposite question ("what ELSE is there") so it leaves
+	 * for search; a genre has no destination and keeps its description tooltip instead. */
 	function labelAction(tag: string): (() => void) | undefined {
 		if (dim === 'studios') return () => searchByStudio(tag);
+		if (dim === 'sources') return () => searchBySource(tag);
 		if (dim === 'genres') return undefined;
 		// The other value filters are CLEARED rather than intersected: clicking a bar
 		// means "show me this", not "narrow whatever was already applied".

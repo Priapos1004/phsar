@@ -13,7 +13,7 @@ from sqlalchemy import select
 
 from app.exceptions import MediaNotFoundError, TagNotFoundError, WatchlistNotFoundError
 from app.models.anime import Anime
-from app.models.media import Media, RelationType, SeasonType
+from app.models.media import Media, OriginalSource, RelationType, SeasonType
 from app.models.user_visible_media import UserVisibleMedia
 from app.models.watchlist import Watchlist
 from app.schemas.tag_schema import TagCreate
@@ -321,6 +321,7 @@ async def test_bulk_delete(db_session):
 
 async def test_get_items_projection(db_session):
     user, default, media = await _setup(db_session)
+    media[0].original_source = OriginalSource.Manga
     await watchlist_service.upsert_watchlist(
         db_session, user.id, media[0].uuid,
         WatchlistCreate(tag_uuid=default.uuid, priority=2, note="n"),
@@ -335,6 +336,7 @@ async def test_get_items_projection(db_session):
     assert item.tag_name == tag_service.DEFAULT_TAG_NAME
     assert item.tag_color == tag_service.DEFAULT_TAG_COLOR
     assert item.mal_id == media[0].mal_id
+    assert item.original_source == "Manga"
     # The projection aggregates genres/studios with array_agg, which yields SQL
     # NULL — not an empty array — for a media with none. The DTO must normalize
     # that to [], or the Statistics subtab's tallies get a null in the list.

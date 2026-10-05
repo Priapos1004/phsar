@@ -64,10 +64,12 @@ from app.services.anime_relation_service import (
 )
 from app.services.job_worker import ERROR_CATEGORY_UPSTREAM_OUTAGE, classify_error
 from app.services.mal_scraper import (
+    _TRANSLATED_COLUMNS,
     MalScraper,
     is_hentai,
     parse_mal_date,
     parse_relation_edges,
+    unknown_mal_codes,
 )
 from app.services.merge_detection_service import (
     detect_merge_candidates,
@@ -482,6 +484,13 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
                 tag
                 for entry in media_changes_log
                 for tag in (entry.get("genre_drift") or {}).get("unknown_tags") or []
+            }),
+            # The same signal for the translated columns, as "column: code",
+            # off the per-media rows. Tints the row like the above.
+            "unknown_mal_values": sorted({
+                f"{row['field']}: {row['new']}"
+                for entry in media_changes_log
+                for row in entry.get("unknown_mal_values") or []
             }),
             "merge_detect_failed": merge_detect_failed,
             "cache_recompute_failed": cache_recompute_failed,
@@ -919,8 +928,13 @@ async def _refresh_one_anime(
 
         genre_drift = await _apply_genre_diff(session, media, payload)
         studio_drift = await _apply_studio_diff(session, media, payload)
+        # Unmapped MAL codes: docs/features/jobs.md, "Unmapped MAL codes".
+        unknown_mal_values = [
+            {"field": column, "old": _jsonable(getattr(media, column)), "new": code}
+            for column, code in unknown_mal_codes(raw).items()
+        ]
 
-        if dynamic or static or genre_drift or studio_drift:
+        if dynamic or static or genre_drift or studio_drift or unknown_mal_values:
             # Carry name_eng / name_jap alongside the romaji title so the
             # admin detail page can respect the viewer's name_language
             # setting (same convention as the rest of the UI) without a
@@ -942,6 +956,7 @@ async def _refresh_one_anime(
                 "static": static,
                 "genre_drift": genre_drift,
                 "studio_drift": studio_drift,
+                "unknown_mal_values": unknown_mal_values,
             })
 
         _advance_media_freshness(
@@ -1173,9 +1188,10 @@ _EMBEDDING_TEXT_FIELDS = ("title", "name_eng", "name_jap", "other_names", "descr
 # back to weekly polling over a duration typo. All None-guarded in the loop below
 # so a MAL omission never nulls a populated value. media_type, anime_season_name
 # and aired_from are self-healed too but need special handling (enum coercion /
-# date parse) so they live outside this tuple.
+# date parse) so they live outside this tuple. The translated enum columns need
+# none — extract_information already emits members — so they join it as listed.
 _METADATA_NONTEXT_FIELDS = (
-    "cover_image", "age_rating", "original_source",
+    "cover_image", *_TRANSLATED_COLUMNS,
     "duration_seconds", "anime_season_year", "mal_url",
 )
 

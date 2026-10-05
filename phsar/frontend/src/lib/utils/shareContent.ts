@@ -39,12 +39,11 @@ export interface ShareCardContent {
  */
 const MISSING = '--';
 
-/** Chip caps. The card is a fixed 540×675 with no scroll container, so these are what keep
- *  a heavily-tagged anime from pushing the synopsis out of frame. */
+/** The genre cap. The card is a fixed 540×675 with no scroll container, so this is what
+ *  keeps a heavily-tagged anime from pushing the synopsis out of frame. */
 const SHARE_MAX_GENRES = 6;
-const SHARE_MAX_STUDIOS = 2;
 /**
- * Synopsis budget — the ~12 lines the card's tightest layout has room for, at ~65
+ * Synopsis budget — the ~10 lines the card's tightest layout has room for, at ~68
  * characters a line.
  *
  * Belt and braces with the card's own `line-clamp`, and the two guard different failures:
@@ -54,7 +53,7 @@ const SHARE_MAX_STUDIOS = 2;
  * `-webkit-box-orient` reflows the box to a SINGLE line — so the cap is what keeps that
  * failure to a slightly-short synopsis rather than a one-line one.
  */
-export const SHARE_SYNOPSIS_MAX_CHARS = 820;
+export const SHARE_SYNOPSIS_MAX_CHARS = 680;
 
 export type ShareBadgeTone = 'airing' | 'unaired' | 'upcoming' | 'finished' | 'complete';
 /** A pill under the card's title — the hero's airing state, carried into the image. */
@@ -91,6 +90,8 @@ export type ShareCardBody =
 			genres: string[];
 			/** "16+", or `--`. Never null — see MISSING. */
 			ageRating: string;
+			/** Uncapped — the card fits each to one line (`fitChipCount`). `['--']` when none. */
+			sources: string[];
 			studios: string[];
 			synopsis: string | null;
 	  };
@@ -189,10 +190,26 @@ function ageRatingLabel(numeric: number | null): string {
 
 /** Cap a chip list at `max`, absorbing the remainder into a trailing "+N". An empty list
  *  becomes a single `--` chip rather than vanishing. */
-function shareChips(values: string[], max: number): string[] {
+export function shareChips(values: string[], max = Infinity): string[] {
 	if (values.length === 0) return [MISSING];
 	if (values.length <= max) return [...values];
 	return [...values.slice(0, max), `+${values.length - max}`];
+}
+
+/**
+ * How many of a one-line fact row's chips to show: all of them when the row fits whole,
+ * else as many as fit beside a "+N" chip for the rest — the arithmetic half of the
+ * card's fit, here because jsdom can't lay anything out. Never below 1: a first chip
+ * too wide even alone still shows (the card ellipsizes it).
+ */
+export function fitChipCount(widths: number[], available: number, gap: number, overflowWidth: number): number {
+	let used = -gap;
+	let besideOverflow = 0;
+	for (const w of widths) {
+		used += gap + w;
+		if (used + gap + overflowWidth <= available) besideOverflow++;
+	}
+	return used <= available ? widths.length : Math.max(besideOverflow, 1);
 }
 
 /**
@@ -266,7 +283,8 @@ export function mediaInfoCard(media: MediaDetail): ShareVariantContent {
 			kind: 'info',
 			genres: shareChips(media.genres, SHARE_MAX_GENRES),
 			ageRating: ageRatingLabel(media.age_rating_numeric),
-			studios: shareChips(media.studio, SHARE_MAX_STUDIOS),
+			sources: shareChips(media.original_source == null ? [] : [media.original_source]),
+			studios: shareChips(media.studio),
 			synopsis: shareSynopsis(media.description),
 		},
 	};
@@ -392,7 +410,8 @@ export function animeInfoCard(anime: AnimeDetail): ShareVariantContent {
 			kind: 'info',
 			genres: shareChips(anime.genres, SHARE_MAX_GENRES),
 			ageRating: ageRatingLabel(anime.age_rating_numeric),
-			studios: shareChips(anime.studios, SHARE_MAX_STUDIOS),
+			sources: shareChips(anime.original_sources),
+			studios: shareChips(anime.studios),
 			synopsis: shareSynopsis(anime.description),
 		},
 	};

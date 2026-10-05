@@ -5,7 +5,7 @@
 	import { api, ApiError } from '$lib/api';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import { isRatingField, resolveTitle } from '$lib/utils/formatString';
-	import { sortMediaChanges } from '$lib/utils/mediaChangeSort';
+	import { sortMediaChanges, staticFieldCount } from '$lib/utils/mediaChangeSort';
 	import { userSettings } from '$lib/stores/userSettings';
 	import { Input } from '$lib/components/ui/input';
 	import * as Card from '$lib/components/ui/card';
@@ -83,7 +83,7 @@
 		const filtered = all.filter((m: UpdateSweepMediaChange) => {
 			if (filter === 'dynamic' && !m.dynamic.some((d) => !isRatingField(d.field))) return false;
 			if (filter === 'rating' && !m.dynamic.some((d) => isRatingField(d.field))) return false;
-			if (filter === 'static' && m.static.length === 0) return false;
+			if (filter === 'static' && staticFieldCount(m) === 0) return false;
 			if (filter === 'drift' && !m.genre_drift && !m.studio_drift) return false;
 			if (!q) return true;
 			// Match across romaji + name_eng + name_jap so an admin
@@ -114,7 +114,7 @@
 		{
 			key: 'static',
 			label: 'Static only',
-			tooltip: 'Metadata fields MAL changes rarely: title, name_eng, name_jap, other_names, description, cover_image, age_rating, original_source.',
+			tooltip: 'Metadata fields MAL changes rarely: title, name_eng, name_jap, other_names, description, cover_image, age_rating, original_source — plus MAL codes with no enum member.',
 		},
 		{
 			key: 'drift',

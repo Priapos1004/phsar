@@ -36,12 +36,14 @@ JOB_KIND_VERSIONS: dict[JobKind, int] = {
     #   v8  `counters.delete_candidates_raised`
     #   v9  a MAL 404 stops failing its anime: `gone_upstream[]` replaces the
     #       `step1_failures[].gone_media_*` keys, so siblings refresh normally
+    #   v10 `media_changes[].unknown_mal_values` [{field, old, new}] for unmapped
+    #       MAL codes, aggregated as top-level `unknown_mal_values` ["field: code"]
     #
     # A version whose only change is net-new keys bumps anyway, against the
     # rules above, and that is the one thing worth knowing about this list: a
     # reader must be able to tell a genuine zero or empty list from a row too
     # old to have counted at all.
-    JobKind.update_sweep: 9,
+    JobKind.update_sweep: 10,
     # Both season sweeps come off ONE dispatcher and so write one shape:
     # {season_entries, new_entries_enqueued, dedup_skipped, season_year, season_name}.
     # The season pair is additive with a safe default and the frontend gates on its
@@ -54,9 +56,9 @@ JOB_KIND_VERSIONS: dict[JobKind, int] = {
 
 # result_summary keys the Jobs Log *list* never reads — only the
 # /admin/jobs/{uuid} detail page renders them. They dominate an
-# update_sweep row (media_changes alone is one 13-key object per changed
-# media, up to JOBS_SWEEP_MAX_PER_RUN of them), while the list shows
-# nothing but `counters` scalars and `unknown_genre_tags`. A 50-row page
+# update_sweep row (media_changes alone is one wide object per changed
+# media, up to JOBS_SWEEP_MAX_PER_RUN of them), while the list reads only
+# small keys — counter scalars and the short row-signal lists. A 50-row page
 # on a 3s poll ships that repeatedly for nothing, so
 # `JobDAO.list_admin_paginated` projects them out.
 #

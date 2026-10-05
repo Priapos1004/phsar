@@ -2,11 +2,14 @@ import re
 
 import pytest
 
+from app.models.media import AGE_RATING_TIERS, AgeRating, Media
 from app.services.mal_scraper import (
+    _TRANSLATED_COLUMNS,
     MalScraper,
     _mal_date_to_iso,
     is_hentai,
     parse_relation_edges,
+    unknown_mal_codes,
 )
 
 # MAL v2 emits media_type lowercase/snake_case; the test builders keep the
@@ -691,7 +694,30 @@ def test_extract_information_translates_mal_enums():
     assert info["media_type"] == "TVSpecial"
     assert info["airing_status"] == "Currently Airing"
     assert info["age_rating"] == "R - 17+ (violence & profanity)"
-    assert info["original_source"] == "Light novel"
+    assert info["original_source"] == "Light Novel"
+
+
+def test_every_age_rating_has_a_tier():
+    """`age_rating_numeric` indexes AGE_RATING_TIERS by member, so a member added
+    without a tier raises in Python and reads as NULL in SQL."""
+    assert set(AGE_RATING_TIERS) == set(AgeRating)
+
+
+def test_every_enum_member_has_a_mal_code():
+    """A member added without its map entry is never written, and the sweep keeps
+    reporting the code it was added for."""
+    for column, (_, table) in _TRANSLATED_COLUMNS.items():
+        assert set(table.values()) == set(Media.__table__.c[column].type.enum_class), column
+
+
+def test_unmapped_mal_code_is_stored_as_none_and_reported():
+    """A source code with no OriginalSource member must not reach the enum column —
+    it becomes None — while `unknown_mal_codes` still names it for the sweep's
+    report. The known `pg_13` rating beside it must not be reported."""
+    raw = {**_make_anime(1, "X"), "source": "web_comic"}
+
+    assert MalScraper().extract_information(raw)["original_source"] is None
+    assert unknown_mal_codes(raw) == {"original_source": "web_comic"}
 
 
 def test_extract_information_pins_cover_extension_to_webp():

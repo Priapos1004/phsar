@@ -140,9 +140,8 @@ def _title_score(a: str, b: str) -> float:
 
 def _cosine_similarity(a, b) -> float:
     """Cosine similarity of two embedding vectors. Returns 0.0 if either
-    vector is empty/None or has zero norm. Uses numpy (already a transitive
-    dep via sentence-transformers) so the O(catalog²) backfill doesn't
-    spend its time in a Python float-loop on 384-dim arrays."""
+    vector is empty/None or has zero norm. Uses numpy so the O(catalog²)
+    backfill doesn't spend its time in a Python float-loop on 384-dim arrays."""
     if a is None or b is None:
         return 0.0
     a_arr = np.asarray(a, dtype=np.float32)

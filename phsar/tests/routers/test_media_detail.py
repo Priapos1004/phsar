@@ -19,7 +19,11 @@ async def test_anime_with_siblings(db_session):
     "you are here" slot (0 / 1 / 2) without re-seeding."""
     genre = Genre(name="TestGenreDetail", genre_type=GenreType.Genres)
     studio = Studio(name="TestStudioDetail")
-    db_session.add_all([genre, studio])
+    # Linked second but sort first, so insertion order and A→Z disagree — and lowercase,
+    # so a case-sensitive sort would put them last instead.
+    early_genre = Genre(name="aaa TestGenreDetail", genre_type=GenreType.Genres)
+    early_studio = Studio(name="aaa TestStudioDetail")
+    db_session.add_all([genre, studio, early_genre, early_studio])
     await db_session.flush()
 
     anime = Anime(mal_id=77777, title="Test Anime Series")
@@ -66,6 +70,9 @@ async def test_anime_with_siblings(db_session):
     db_session.add(MediaGenre(media_id=media_main.id, genre_id=genre.id))
     db_session.add(MediaStudio(media_id=media_main.id, studio_id=studio.id))
     await db_session.flush()
+    db_session.add(MediaGenre(media_id=media_main.id, genre_id=early_genre.id))
+    db_session.add(MediaStudio(media_id=media_main.id, studio_id=early_studio.id))
+    await db_session.flush()
 
     return {"anime": anime, "main": media_main, "ova": media_ova, "movie": media_movie}
 
@@ -91,8 +98,8 @@ async def test_get_media_detail(client, user_auth_headers, test_anime_with_sibli
     assert data["anime_title"] == "Test Anime Series"
 
     # Genre and studio
-    assert "TestGenreDetail" in data["genres"]
-    assert "TestStudioDetail" in data["studio"]
+    assert data["genres"] == ["aaa TestGenreDetail", "TestGenreDetail"]
+    assert data["studio"] == ["aaa TestStudioDetail", "TestStudioDetail"]
 
     # Siblings (excludes self) — chronological order: OVA (Spring 2019) →
     # Movie (Fall 2021). The main S1 (Winter 2020) sits between them, so the

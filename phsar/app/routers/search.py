@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_db, require_user_or_admin
 from app.exceptions import InvalidSearchTypeError
-from app.models.media import MediaType, RelationType
+from app.models.media import AgeRating, MediaType, OriginalSource, RelationType
 from app.models.ratings import (
     AnimationQuality,
     CharacterDepth,
@@ -38,11 +38,12 @@ router = APIRouter(prefix="/search", tags=["search"])
 def get_media_filters(
     relation_type: list[RelationType] | None = Query(default=None),
     media_type: list[MediaType] | None = Query(default=None),
-    age_rating: list[str] | None = Query(default=None),
+    age_rating: list[AgeRating] | None = Query(default=None),
     airing_status: list[str] | None = Query(default=None),
     anime_season: list[str] | None = Query(default=None),
     genre_name: list[str] | None = Query(default=None),
     studio_name: list[str] | None = Query(default=None),
+    original_source: list[OriginalSource] | None = Query(default=None),
     score_min: float | None = None,
     score_max: float | None = None,
     scored_by_min: int | None = None,
@@ -62,6 +63,7 @@ def get_media_filters(
         anime_season=anime_season,
         genre_name=genre_name,
         studio_name=studio_name,
+        original_source=original_source,
         score_min=score_min,
         score_max=score_max,
         scored_by_min=scored_by_min,

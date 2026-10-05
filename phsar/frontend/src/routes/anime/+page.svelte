@@ -3,7 +3,7 @@
 	import { getContext } from 'svelte';
 	import { api, ApiError } from '$lib/api';
 	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, airingStatusParts, formatEpisodeCount, isSeasonRange, resolveTitle, resolveSubtitles, decimalPlaces, roundScore, formatRelationType, formatMediaType } from '$lib/utils/formatString';
-	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
+	import { buildDetailHref, searchBySource, searchByStudio, type DetailOrigin } from '$lib/utils/navigation';
 	import { FOCUS_PARAM } from '$lib/utils/scrollFocus';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -18,7 +18,7 @@
 	import BulkRateDialog from '$lib/components/BulkRateDialog.svelte';
 	import DeleteWatchHistoryToggle from '$lib/components/DeleteWatchHistoryToggle.svelte';
 	import BackLink from '$lib/components/BackLink.svelte';
-	import StudioLinks from '$lib/components/StudioLinks.svelte';
+	import SearchLinks from '$lib/components/SearchLinks.svelte';
 	import GenreBadges from '$lib/components/GenreBadges.svelte';
 	import ScorePercentile from '$lib/components/ScorePercentile.svelte';
 	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
@@ -530,7 +530,8 @@
 						{/if}
 					</div>
 
-					<StudioLinks studios={anime.studios} />
+					<SearchLinks label="Source" values={anime.original_sources} onSelect={searchBySource} />
+					<SearchLinks label="Studio" values={anime.studios} onSelect={searchByStudio} />
 				</div>
 			</div>
 		</div>

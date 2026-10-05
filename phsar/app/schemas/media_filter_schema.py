@@ -2,7 +2,7 @@ from enum import Enum
 
 from pydantic import BaseModel
 
-from app.models.media import MediaType, RelationType
+from app.models.media import AgeRating, MediaType, OriginalSource, RelationType
 
 
 class SearchType(str, Enum):
@@ -19,11 +19,12 @@ class ViewType(str, Enum):
 class MediaSearchFilters(BaseModel):
     relation_type: list[RelationType] | None = None
     media_type: list[MediaType] | None = None
-    age_rating: list[str] | None = None
+    age_rating: list[AgeRating] | None = None
     airing_status: list[str] | None = None
     anime_season: list[str] | None = None
     genre_name: list[str] | None = None
     studio_name: list[str] | None = None
+    original_source: list[OriginalSource] | None = None
 
     score_min: float | None = None
     score_max: float | None = None
@@ -50,6 +51,7 @@ class MediaFilterValues(BaseModel):
     anime_season: list[str]
     genre_name: list[str]
     studio_name: list[str]
+    original_source: list[str]
 
     # Numerical limits
     score_min: float | None

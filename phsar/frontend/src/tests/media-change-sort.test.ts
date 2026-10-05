@@ -171,6 +171,17 @@ describe('sortMediaChanges — medal table', () => {
 		expect(sorted([small, big])).toEqual([big, small]);
 	});
 
+	it('an unknown MAL value counts toward the static medal', () => {
+		// The A→Z tiebreak favours Apple, so Zebra only leads if its unknown row
+		// is counted alongside its one static edit.
+		const zebra = change({
+			media_title: 'Zebra', static: statics(1),
+			unknown_mal_values: [fc('original_source', null, 'web_comic')],
+		});
+		const apple = change({ media_title: 'Apple', static: statics(1) });
+		expect(sorted([apple, zebra])).toEqual([zebra, apple]);
+	});
+
 	it('falls back to the displayed title A→Z when every medal and the rating key tie', () => {
 		const zebra = change({ media_title: 'Zebra', static: statics(1) });
 		const apple = change({ media_title: 'Apple', static: statics(1) });

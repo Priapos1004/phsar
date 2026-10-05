@@ -3,7 +3,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import TagBarLabel from '$lib/components/TagBarLabel.svelte';
-	import { searchByStudio } from '$lib/utils/navigation';
+	import { searchBySource, searchByStudio } from '$lib/utils/navigation';
 	import { Film, Layers, Clock, Star, TrendingUp } from 'lucide-svelte';
 	import type { TagCount, WatchlistSummary } from '$lib/utils/watchlistStats';
 	import { getThemedChartColorPalette } from '$lib/utils/chartColors';
@@ -92,25 +92,26 @@
 			{/each}
 		</div>
 
-		<!-- Top genres / studios — symmetric top-5, palette-colored bars that grow in. -->
-		<div class="grid gap-3 md:grid-cols-2">
+		<!-- Top genres / sources / studios — palette-colored bars that grow in. -->
+		<div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
 			{@render tagBars('Top genres', s.topGenres, 'genre')}
-			{@render tagBars('Top studios', s.topStudios, 'studio')}
+			{@render tagBars('Top sources', s.topSources, 'source', searchBySource)}
+			{@render tagBars('Top studios', s.topStudios, 'studio', searchByStudio)}
 		</div>
 	</div>
 {/if}
 
-{#snippet tagBars(title: string, tags: TagCount[], kind: 'genre' | 'studio')}
+{#snippet tagBars(title: string, tags: TagCount[], kind: 'genre' | 'source' | 'studio', onSelect?: (name: string) => void)}
 	<Card.Root class={cls.cardGlass}>
 		<Card.Content class="space-y-3">
 			<div>
 				<h3 class="text-base font-semibold text-card-foreground">{title}</h3>
 				<!-- Explicit metric caption: the bar length + count are the number of ANIME
-				     (not media) carrying each genre/studio; the media split is in the hover. -->
+				     (not media) carrying each tag; the media split is in the hover. -->
 				<p class="text-xs text-muted-foreground">Anime per {kind}</p>
 			</div>
 			{#if tags.length === 0}
-				<p class="text-sm text-muted-foreground">No {kind === 'genre' ? 'genres' : 'studios'} yet.</p>
+				<p class="text-sm text-muted-foreground">No {kind}s yet.</p>
 			{:else}
 				{@const max = tags[0].count}
 				<div class="space-y-2.5">
@@ -120,7 +121,7 @@
 								<TagBarLabel
 									name={t.name}
 									describeGenre={kind === 'genre'}
-									onClick={kind === 'studio' ? () => searchByStudio(t.name) : undefined}
+									onClick={onSelect && (() => onSelect(t.name))}
 								/>
 							</div>
 							<!-- Themed app Tooltip (the intentional-hint path — matches the genre label

@@ -2,7 +2,7 @@ import pytest
 
 from app.models.anime import Anime
 from app.models.genre import Genre, GenreType
-from app.models.media import Media, SeasonType
+from app.models.media import Media, OriginalSource, SeasonType
 from app.models.media_genre import MediaGenre
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
@@ -26,12 +26,12 @@ async def rated_media_two_anime(db_session):
     db_session.add_all([anime_a, anime_b])
     await db_session.flush()
 
-    # age_rating_numeric is derived from the age_rating string prefix (PG-13 → 13, R → 17).
+    # age_rating_numeric comes from AGE_RATING_TIERS (PG-13 → 13, R → 17).
     # MAL score/votes + watch-time + season feed the /ratings page projection.
     # anime_season_name + anime_season_year are constrained both-or-neither.
     media_a = Media(**media_kwargs(
         anime_a.id, 96101, title="Score Media A", name_eng="Score Media A (EN)",
-        age_rating="PG-13 - Teens 13 or older",
+        age_rating="PG-13 - Teens 13 or older", original_source=OriginalSource.LightNovel,
         score=8.5, scored_by=1200, episodes=12, duration_seconds=1440,
         anime_season_name=SeasonType.Spring, anime_season_year=2021,
     ))
@@ -77,6 +77,7 @@ async def test_rating_scores_returns_compact_items(client, user_auth_headers, ra
     assert item_a["genres"] == ["ScoreItemGenre"]
     assert item_a["studios"] == ["ScoreItemStudio"]
     assert item_a["age_rating_numeric"] == 13
+    assert item_a["original_source"] == "Light Novel"
     assert item_a["pace"] == "normal"
     assert "modified_at" in item_a
     assert "created_at" in item_a
@@ -95,6 +96,7 @@ async def test_rating_scores_returns_compact_items(client, user_auth_headers, ra
     assert item_b["genres"] == []
     assert item_b["studios"] == []
     assert item_b["age_rating_numeric"] == 17
+    assert item_b["original_source"] is None
     # media_b carries no MAL score and no season/duration → nulls + zero votes
     assert item_b["mal_score"] is None
     assert item_b["scored_by"] == 0

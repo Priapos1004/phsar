@@ -98,7 +98,7 @@
 	});
 
 	let statsSummary = $derived<WatchlistSummary | null>(
-		items && rated ? watchlistSummary(items, rated, { genreLimit: 5, studioLimit: 5 }) : null,
+		items && rated ? watchlistSummary(items, rated) : null,
 	);
 	// items loaded but ratings still in flight → the stats tab shows its loading state.
 	let statsLoading = $derived(items !== null && rated === null);
