@@ -65,6 +65,12 @@ building.
 If a pair has a genuine reason to diverge, **raise it for discussion** rather than
 deciding alone — divergence is how the pairs drifted apart in the first place.
 
+One divergence is settled and stays: the **rated-coverage marking**
+(`utils/ratingCoverage.ts`) is on search and `/ratings` only. `/watchlist` asks
+what you have *not* watched, and its card is already the most heavily overlaid in
+the app; the library's recent-additions strip and the detail heroes sit next to
+the answer already. Don't add it to them.
+
 ## Tooltips — pick by what the cursor is over
 
 Never style raw text as a hint. Three mechanisms, and they are the whole set:

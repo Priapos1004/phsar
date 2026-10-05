@@ -40,9 +40,11 @@ that touches its area, before settling on an approach.
 | [curation](docs/features/curation.md) | The admin merge/split/delete queues: candidate lifecycle, sticky dismissal, what deleting costs, blacklisting |
 | [jobs](docs/features/jobs.md) | Worker, job kinds, due-tiers, `result_summary` versioning, the sweeps |
 | [search](docs/features/search.md) | Embeddings, ranking, anime-view filters, main-story scoring |
+| [ratings](docs/features/ratings.md) | Write guards, watch events, rated-coverage tiers, the one-fetch scores projection |
 | [backups](docs/features/backups.md) | Dump/restore, retention pools, the restorability verdict |
 | [spoilers](docs/features/spoilers.md) | Frontier algorithm, visibility cache |
 | [readiness](docs/features/readiness.md) | "Can I start this tonight?" — media temporal classes, the per-anime verdict, the standalone rule |
+| [watchlist](docs/features/watchlist.md) | Entries and lists, bulk writes and the note target, what the bookmarks and the page read |
 | [navigation](docs/features/navigation.md) | What survives leaving a page and coming back: route, origin, scroll position, filters — and when each resets |
 
 **`compound-docs/`** — why something changed, dated and frozen; feature docs say how
@@ -70,6 +72,9 @@ uvicorn app.main:app --reload
 ruff check .
 ruff check . --fix    # auto-fix
 
+# Type check (configured in pyproject.toml)
+mypy
+
 # Tests (requires running PostgreSQL container)
 pytest
 pytest tests/routers/test_auth.py           # single file
@@ -84,6 +89,11 @@ pytest tests/routers/test_auth.py::test_fn  # single test
 alembic revision --autogenerate -m "Describe change"
 alembic upgrade head
 ```
+
+Dependencies are split by who installs them: the image takes `requirements.txt`
+(runtime) and `requirements-torch.txt` (the CPU torch pin, shared with the
+Dockerfile), and never `requirements-dev.txt` (test and lint tooling). Install
+commands are in [README.md](README.md).
 
 Dev DB helper scripts (audit, inspect, find, delete) live under `phsar/scripts/` — see [phsar/scripts/CLAUDE.md](phsar/scripts/CLAUDE.md) for the full list. Read-only by default; mutating scripts require `--apply`.
 
@@ -137,7 +147,7 @@ several `admin_*` modules). The live contract is FastAPI's own
 | `/auth` | login, register, validate, refresh (sliding session) |
 | `/search` | `/media` per-entry, `/anime` aggregated, `/ratings` note search, `/mal` |
 | `/media` | media + anime detail |
-| `/ratings` | rating CRUD, rewatch, scores projection, spoiler visibility |
+| `/ratings` | rating CRUD, rewatch, scores projection, rated coverage, spoiler visibility |
 | `/watchlist` | entries + lists (a "list" is a tag) |
 | `/users` | settings, export, account deletion |
 | `/jobs` | user-triggered scrapes, own-job polling |
@@ -155,7 +165,8 @@ DAOs own the vector, aggregation and filtering queries. `search_filters.py` hold
 filter/order helpers and `media_projections.py` the shared wide-projection columns.
 Query invariants are in [.claude/rules/database.md](.claude/rules/database.md).
 
-**`models/`** — SQLAlchemy ORM. Alongside the canonical tables sit the deliberate
+**`models/`** — SQLAlchemy ORM, 2.0 declarative style (`Mapped[T] = mapped_column(...)`
+on a `DeclarativeBase` root). Alongside the canonical tables sit the deliberate
 shapes covered by `rules/database.md`: **1:1 sidecars** for operational state
 (`anime_freshness`, `media_freshness`, `media_relation_edges`, `anime_completion`),
 **search tables** holding pgvector embeddings (`anime_search`, `media_search`,
@@ -239,7 +250,7 @@ Self-hosted on a Coolify-managed VM. Images are built in GitHub Actions and pull
 
 ### Services
 
-- **`phsar/Dockerfile`** — multi-stage backend. CPU-only torch from the pytorch CPU index; sentence-transformers model baked into `/opt/st-cache`; runs as non-root `phsar` (UID 1000); `/backups` created and chowned at build time so a bind-mounted host dir matches. `docker/entrypoint.sh` applies Alembic migrations before exec'ing uvicorn.
+- **`phsar/Dockerfile`** — multi-stage backend. CPU-only torch via `requirements-torch.txt`; sentence-transformers model baked into `/opt/st-cache`; runs as non-root `phsar` (UID 1000); `/backups` created and chowned at build time so a bind-mounted host dir matches. `docker/entrypoint.sh` applies Alembic migrations before exec'ing uvicorn.
 - **`phsar/frontend/Dockerfile`** — bun build → `node:22-slim` via SvelteKit `adapter-node`.
 - **`docker-compose.yml`** (repo root) — all three containers; local parity smoke-testing only, not day-to-day dev.
 
@@ -285,14 +296,29 @@ and `POST /admin/jobs/schedule-{sweep,seasonal,upcoming}?delay_minutes=N`.
 
 ## CI
 
-- **Backend Lint** (`backend-lint.yml`): `ruff check .` in `phsar/` — every push/PR
-- **Backend Tests** (`backend-test.yml`): `pytest` against a pgvector service container — every push/PR. Also runs **`alembic check`**, which guards two things at once: that models and migrations agree (an index or column declared in only one is what makes the next `--autogenerate` propose a destructive diff), and that the chain still replays from empty. It needs its own throwaway `migrationcheck` DB brought up by `alembic upgrade head` — run against the test DB it would compare `create_all`'s metadata to a schema built from that same metadata, and pass however far the migrations had drifted
-- **Frontend Check** (`frontend-check.yml`): `bun run check` + `bun run test` — every push/PR
-- **Build & Push Images** (`build-images.yml`): builds + pushes to ghcr.io — tag push (`v*`) or manual dispatch
+Every workflow below except the image build and CodeQL gates a pull request. Each is
+**scoped on push and whole on pull request**: a push runs only the part of the repo it touched, a pull request runs
+everything. The PR side has to stay unfiltered, because a skipped job never reports a
+status and a required check that never reports blocks the merge indefinitely.
 
-## Linting Config (pyproject.toml)
+A push to a branch that already has a PR therefore runs both — the `concurrency`
+groups cancel superseded runs *within* an event, but push and `pull_request` carry
+different `github.ref` values and so never collapse into each other. That overlap is
+the price of pre-PR feedback. Cancelling is disabled on `main`, where it would leave
+the branch the README badges track sitting on a cancelled status.
 
-Ruff runs a curated ruleset, not the defaults: `select = ["E4","E7","E9","F","I","UP","B","SIM","C4","RUF","RET","ASYNC"]`, with `RUF001`–`RUF003` and `ASYNC240` ignored. `alembic/versions` and `__init__.py` are excluded.
+- **Backend Lint** (`backend-lint.yml`): `ruff check .` in `phsar/`
+- **Backend Tests** (`backend-test.yml`): `mypy` then `pytest` against a pgvector service container — the type check lives in this job because it needs SQLAlchemy's and Pydantic's own types, which only this job installs. Also runs **`alembic check`**, which guards two things at once: that models and migrations agree (an index or column declared in only one is what makes the next `--autogenerate` propose a destructive diff), and that the chain still replays from empty. It needs its own throwaway `migrationcheck` DB brought up by `alembic upgrade head` — run against the test DB it would compare `create_all`'s metadata to a schema built from that same metadata, and pass however far the migrations had drifted
+- **Frontend Check** (`frontend-check.yml`): `bun run check` + `bun run test` + `bun run build`. The build step is not redundant with the type check — `svelte-check` reads sources, and only a real adapter-node build proves the bundle still comes out
+- **Commit Gate** (`gate.yml`): `.claude/hooks/test-gate.sh`, on `.claude/**`. Its own workflow because the suite needs no project toolchain — it drives the hook against the checked-out tree on whatever the runner ships — and because a red result here means something other than a lint failure
+- **Build & Push Images** (`build-images.yml`): builds + pushes to ghcr.io — tag push (`v*`) or manual dispatch. No cancellation: a tag build must never be superseded
+- **CodeQL**: GitHub **default setup** — configured in repo settings, with no file in `.github/workflows/`. Alerts are triaged through `/review-comments`. Not a required check, because its context names are GitHub-managed
+
+## Lint and type config (pyproject.toml)
+
+Ruff runs a curated ruleset, not the defaults: `select = ["E4","E7","E9","F","I","UP","B","SIM","C4","RUF","RET","ASYNC"]`, with `RUF001`–`RUF003` and `ASYNC240` ignored. `alembic/versions` and `__init__.py` are excluded. `required-version` is pinned here too, so an out-of-range ruff fails loudly instead of linting differently.
+
+mypy's settings sit in the same file, with the reasoning beside them. Its suppression discipline is an invariant and lives in [.claude/rules/backend.md](.claude/rules/backend.md).
 
 ## Test Config
 

@@ -1,11 +1,19 @@
 name: Frontend Check
 
 on:
+  # Scoped on push, whole on pull_request. Root CLAUDE.md's "## CI" section owns why.
   push:
+    paths:
+      - 'phsar/frontend/**'
+      - '.github/workflows/frontend-check.yml'
   pull_request:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   check-test:
@@ -40,3 +48,6 @@ jobs:
 
     - name: Run tests
       run: bun run test
+
+    - name: Production build
+      run: bun run build

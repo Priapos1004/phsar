@@ -49,6 +49,20 @@ export interface MediaConnected {
 	age_rating_numeric: number | null;
 }
 
+// A media-view search hit: MediaConnected plus whether the caller has rated it.
+export interface MediaSearchResult extends MediaConnected {
+	is_rated: boolean;
+}
+
+// How completely the caller has rated one anime (GET /ratings/coverage). Tiers and
+// what earns each are in docs/features/ratings.md.
+export type CoverageTier = 'some' | 'main' | 'all';
+
+export interface AnimeRatingCoverage {
+	anime_uuid: string;
+	tier: CoverageTier;
+}
+
 // Genre name + description (GET /filters/genres) — powers genre-badge tooltips
 export interface GenreOut {
 	name: string;
@@ -103,7 +117,7 @@ export interface MediaDetail extends MediaConnected {
 
 // Rating attribute enums
 export type Pace = 'slow' | 'normal' | 'fast';
-export type AnimationQuality = 'bad' | 'normal' | 'good' | 'very_good';
+export type AnimationQuality = 'low' | 'normal' | 'good' | 'very_good';
 export type ThreeDAnimation = 'none' | 'rare' | 'medium' | 'heavy';
 export type WatchedFormat = 'sub' | 'dub' | 'both';
 export type FanService = 'none' | 'rare' | 'medium' | 'heavy';
@@ -237,7 +251,7 @@ export function isAttrRated(value: string | null): value is string {
 /** Maps each rating attribute to its display label and possible values. */
 export const RATING_ATTRIBUTE_OPTIONS: Record<string, { label: string; options: { value: string; label: string }[] }> = {
 	pace: { label: 'Pace', options: [{ value: 'slow', label: 'Slow' }, { value: 'normal', label: 'Normal' }, { value: 'fast', label: 'Fast' }] },
-	animation_quality: { label: 'Animation Quality', options: [{ value: 'bad', label: 'Bad' }, { value: 'normal', label: 'Normal' }, { value: 'good', label: 'Good' }, { value: 'very_good', label: 'Very Good' }] },
+	animation_quality: { label: 'Animation Quality', options: [{ value: 'low', label: 'Low' }, { value: 'normal', label: 'Normal' }, { value: 'good', label: 'Good' }, { value: 'very_good', label: 'Very Good' }] },
 	has_3d_animation: { label: '3D Animation', options: [{ value: 'none', label: 'None' }, { value: 'rare', label: 'Rare' }, { value: 'medium', label: 'Medium' }, { value: 'heavy', label: 'Heavy' }] },
 	watched_format: { label: 'Watched Format', options: [{ value: 'sub', label: 'Sub' }, { value: 'dub', label: 'Dub' }, { value: 'both', label: 'Both' }] },
 	fan_service: { label: 'Fan Service', options: [{ value: 'none', label: 'None' }, { value: 'rare', label: 'Rare' }, { value: 'medium', label: 'Medium' }, { value: 'heavy', label: 'Heavy' }] },
@@ -379,6 +393,14 @@ export interface WatchlistOut {
 	anime_title: string;
 	created_at: string;
 	modified_at: string;
+}
+
+/** GET /watchlist/anime/{uuid}?media_uuids=… — an anime's entries plus the media a
+ *  bulk note over that selection lands on. Read the target; never re-derive it (the
+ *  backend owns that rule). */
+export interface WatchlistAnimeEntries {
+	entries: WatchlistOut[];
+	note_target_media_uuid: string;
 }
 
 // Wide projection (GET /watchlist/items) — the overview page's single fetch;

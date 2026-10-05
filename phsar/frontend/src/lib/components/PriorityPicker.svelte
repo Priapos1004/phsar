@@ -1,9 +1,12 @@
 <script lang="ts">
 	// The 3-button High/Medium/Low priority picker, shared by the watchlist dialogs.
+	// `undefined` renders with nothing selected — the bulk dialog's state when the
+	// entries it would rewrite disagree, so the user has to pick rather than inherit
+	// a default that would quietly downgrade one of them.
 	import { PRIORITY_OPTIONS } from '$lib/utils/watchlist';
 
 	interface Props {
-		value: number;
+		value: number | undefined;
 	}
 
 	let { value = $bindable() }: Props = $props();

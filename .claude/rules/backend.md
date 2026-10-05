@@ -51,6 +51,34 @@ one. That is why a handler invoking one ends in a bare `db.commit()`.
   deliberately omits a column: `defer(..., raiseload=True)`, so a path that
   forgot about it faults instead of emitting one lazy load per row.
 
+## It has to type-check
+
+Annotations are not demanded — `disallow_untyped_defs` is off. Annotate where the type
+tells a reader or the checker something; skip it where it would only restate the
+obvious. **Always annotate a return value other code binds**, though: an unannotated
+return makes the binder `Any`, which silently unchecks every method called on it, even
+the fully typed ones. Model-side rules live in `database.md`; what matters here is what
+the service and DAO layers do with them.
+
+**There is no per-module error suppression, and adding some is not the fix.** The
+config carries no `ignore_errors`, so a module cannot be quietly excluded. A
+suppression is a single `# type: ignore[code]` on the line that needs it, with the
+reason next to it — and `warn_unused_ignores` is on, so one that stops being needed
+becomes an error rather than lingering.
+
+**Prefer narrowing the value to widening the signature.** Most findings are a
+nullable value reaching a parameter that cannot take one, and the right answer is
+usually a guard that says what the code already assumes: `if x is None: raise`
+where a miss is a real failure, an early `continue` where the case is empty and
+uninteresting, or an `assert` with the invariant named where the checker has merely
+lost a narrowing it cannot follow. Widening the parameter to `| None` is right only
+when the callee genuinely handles it — `vector_embedding_service` takes
+`str | None` because a media really can have no description.
+
+**A `.get()` always adds `| None`.** On an untrusted upstream payload, type the
+payload `dict[str, Any]` so reads are `Any`; on a dict whose key is known to exist,
+index it, so a missing key is loud at the source rather than a `None` travelling on.
+
 ## Exceptions
 
 Extend `PhsarBaseError` with a `status_code` class attribute — one handler in
@@ -103,7 +131,8 @@ path — uvicorn/HTTP, the cron and admin endpoints, and the `job_worker` loop w
 its maintenance-flag bracketing — so it validates something the deployed app
 never does.
 
-Boot `uvicorn app.main:app` from `phsar/` (conda env `phsar`) and wait for
-`/health`. The cron-authed schedulers take `Authorization: Bearer $JOBS_CRON_TOKEN`;
+Boot `uvicorn app.main:app` from `phsar/`, with the dev environment from
+`README.md` active, and wait for `/health`. The cron-authed schedulers take
+`Authorization: Bearer $JOBS_CRON_TOKEN`;
 polling `GET /admin/jobs/{uuid}` is on the **JWT admin** chain instead, so reuse
 of the cron bearer there returns 401.

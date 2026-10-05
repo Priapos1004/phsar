@@ -428,7 +428,7 @@ describe('attributeCorrelations', () => {
 	it('ranks ordinal attributes by how strongly their level tracks the score', () => {
 		// animation_quality rises with score; story_quality is flat.
 		const items = [
-			item({ media_uuid: 'a', anime_uuid: 'A', rating: 3, animation_quality: 'bad', story_quality: 'good' }),
+			item({ media_uuid: 'a', anime_uuid: 'A', rating: 3, animation_quality: 'low', story_quality: 'good' }),
 			item({ media_uuid: 'b', anime_uuid: 'B', rating: 5, animation_quality: 'normal', story_quality: 'good' }),
 			item({ media_uuid: 'c', anime_uuid: 'C', rating: 7, animation_quality: 'good', story_quality: 'good' }),
 			item({ media_uuid: 'd', anime_uuid: 'D', rating: 9, animation_quality: 'very_good', story_quality: 'good' }),

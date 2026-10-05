@@ -22,7 +22,8 @@ def summarize_anime(anime: Anime, rating_count: int) -> MergeCandidateAnimeSumma
     aired_from_dates: list[date] = []
     for media in anime.media:
         for ms in media.media_studio:
-            studio_names.add(ms.studio.name)
+            if ms.studio is not None:
+                studio_names.add(ms.studio.name)
         if media.anime_season_year is not None:
             years.append(media.anime_season_year)
         if media.aired_from is not None:

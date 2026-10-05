@@ -5,7 +5,7 @@ import re
 from collections import deque
 from datetime import date, datetime, timezone
 from time import monotonic
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import httpx
 from tenacity import (
@@ -363,7 +363,7 @@ class MalScraper:
         self.client: httpx.AsyncClient | None = None
         self.timeout = httpx.Timeout(connect=5.0, read=120.0, write=10.0, pool=5.0)
 
-    async def __aenter__(self):
+    async def __aenter__(self) -> "MalScraper":
         # Every MAL v2 request carries the client-id header; public data needs
         # no OAuth. The header is set on the client so it can't be forgotten
         # on an individual call.
@@ -382,8 +382,12 @@ class MalScraper:
         )
         return self
 
-    async def __aexit__(self, exc_type, exc, tb):
-        await self.client.aclose()
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        # Unreachable when None — __aexit__ only runs if __aenter__ returned. Skip
+        # rather than raise like _get does: an exception here would mask whatever
+        # is already propagating.
+        if self.client is not None:
+            await self.client.aclose()
 
     @classmethod
     async def _wait_for_rate_limit(cls) -> None:
@@ -421,6 +425,8 @@ class MalScraper:
     async def _get(self, url: str, params: dict | None = None) -> dict:
         logger.debug(f"Fetching URL: {url} with params: {params}")
         await self._wait_for_rate_limit()
+        if self.client is None:
+            raise RuntimeError("MalScraper used outside its async context manager")
         response = await self.client.get(url, params=params)
         response.raise_for_status()
         return response.json()
@@ -465,7 +471,7 @@ class MalScraper:
         cleaned = cleaned.strip()
         return cleaned or None
 
-    def extract_information(self, anime: dict) -> dict:
+    def extract_information(self, anime: dict[str, Any]) -> dict:
         alt_titles = anime.get("alternative_titles") or {}
         genres = [genre["name"] for genre in anime.get("genres", [])]
         anime_season_name, anime_season_year = MalScraper.__get_anime_season(anime)
@@ -473,7 +479,7 @@ class MalScraper:
         media_type = anime.get("media_type")
         # Only the 6 insertable enum types translate; music/cm/pv pass through
         # (lowercase) for the skip-rule to filter; unknown → None.
-        media_type = _MEDIA_TYPE_MAP.get(media_type, media_type)
+        media_type = _MEDIA_TYPE_MAP.get(media_type, media_type) if media_type is not None else None
         # average_episode_duration is already seconds — no string parsing. MAL
         # provides no human duration string, so the display column is dropped
         # (the frontend renders from duration_seconds via formatDuration).
@@ -489,9 +495,9 @@ class MalScraper:
             "media_type": media_type,
             "genres": genres,
             "studio": [studio["name"] for studio in anime.get("studios", [])],
-            "age_rating": _AGE_RATING_MAP.get(anime.get("rating")),
+            "age_rating": _AGE_RATING_MAP.get(rating) if (rating := anime.get("rating")) is not None else None,
             "description": MalScraper._clean_synopsis(anime.get("synopsis")),
-            "original_source": _SOURCE_MAP.get(anime.get("source"), anime.get("source")),
+            "original_source": _SOURCE_MAP.get(source, source) if (source := anime.get("source")) is not None else None,
             "cover_image": _normalize_cover_url((anime.get("main_picture") or {}).get("large")),
             "score": anime.get("mean"),
             "scored_by": scored_by,
@@ -500,7 +506,7 @@ class MalScraper:
             "anime_season_year": anime_season_year,
             "aired_from": _mal_date_to_iso(anime.get("start_date")),
             "aired_to": _mal_date_to_iso(anime.get("end_date")),
-            "airing_status": _AIRING_STATUS_MAP.get(anime.get("status"), anime.get("status")),
+            "airing_status": _AIRING_STATUS_MAP.get(status, status) if (status := anime.get("status")) is not None else None,
             "duration": None,
             "duration_seconds": duration_seconds,
         }
@@ -738,7 +744,7 @@ class MalScraper:
             # visited_ids = traversed in *this* run. Splitting them so we can
             # detect "BFS hit a media that already lives under a different anime
             # in the catalog" — that's the relation_link merge-candidate signal.
-            excluded_ids: frozenset[int] = frozenset(excluded_mal_ids)
+            excluded_ids = frozenset(excluded_mal_ids)
 
         # Anchor discovery pre-pass: from each search root, walk structural-
         # upward relations to find the canonical chain start. Prepend

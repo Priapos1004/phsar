@@ -136,7 +136,7 @@ async def attach_search_result_to_anime(
         if mal_id in existing_parent_mal_ids:
             continue
         media_in = media_unconnected_from_info(
-            all_info[mal_id], relation_type=relation_info.get("relation_type"),
+            all_info[mal_id], relation_type=relation_info["relation_type"],
         )
         media_obj = await persist_media_with_links(
             db, media_in, anime_id=parent_anime.id, last_checked_at=now,

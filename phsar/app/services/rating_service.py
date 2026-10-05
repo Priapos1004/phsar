@@ -11,10 +11,12 @@ from app.exceptions import (
     RatingNotFoundError,
     RewatchNotAllowedError,
 )
-from app.models.media import AIRING_STATUS_NOT_YET_AIRED, Media
+from app.models.media import Media
 from app.models.ratings import Ratings, WatchStatus
 from app.schemas.media_filter_schema import SearchType
 from app.schemas.rating_schema import (
+    AnimeRatingCoverage,
+    CoverageTier,
     RatedMediaResult,
     RatingAttributes,
     RatingBulkCreate,
@@ -40,8 +42,9 @@ watch_event_dao = WatchEventDAO()
 _EXCLUDE_BULK = {"media_uuids"}
 
 # Upper bound for episodes_watched when the media has no published episode total (a
-# still-airing long-runner like One Piece, ~1100). Keep in sync with UNKNOWN_EPISODES_CAP
-# in frontend RatingCard.svelte (the client clamps on input; this is the server backstop).
+# still-airing long-runner like One Piece, ~1100). Twinned with UNKNOWN_EPISODES_CAP in
+# frontend `utils/ratingLimits.ts`; `test_unknown_episodes_cap_matches_the_client` holds
+# the two equal.
 UNKNOWN_EPISODES_CAP = 2000
 
 
@@ -100,7 +103,7 @@ async def _upsert_single_rating(
     # shared core, so the single AND bulk paths are guarded identically (the frontend
     # hides/excludes it; this defends a direct/stale call). An existing rating stays
     # editable so a correction isn't trapped once the show later airs.
-    if existing is None and media.airing_status == AIRING_STATUS_NOT_YET_AIRED:
+    if existing is None and not media.is_rateable:
         raise CannotRateUnairedError()
 
     # Clamp episodes_watched so a direct/stale API call can't store a nonsense value (e.g.
@@ -195,6 +198,8 @@ async def upsert_rating(
 
     # Re-fetch with eager loading for media/anime relationships needed by _rating_to_out
     rating = await rating_dao.get_by_uuid_and_user(db, uuid, user_id)
+    if rating is None:
+        raise RatingNotFoundError(str(uuid))
     return (await _ratings_to_out(db, user_id, [rating]))[0]
 
 
@@ -245,6 +250,35 @@ async def get_rating_score_items(db: AsyncSession, user_id: int) -> list[RatingS
     No watched_count batch (the helper doesn't show it) — keeps this to one query."""
     ratings = await rating_dao.get_all_for_score_items(db, user_id)
     return [_rating_to_score_item(r) for r in ratings]
+
+
+def _coverage_tier(row: Row) -> CoverageTier:
+    """The highest tier the per-anime counts support.
+
+    One guard covers both completion tiers, because a main-story media is also a
+    rateable media: if every rateable media is completed then every main one is,
+    so `all` can only be reached from inside the `main` branch. `n_main > 0` is
+    what stops an anime whose main story has not aired from reaching either tier
+    off a finished side story — over an empty main set "everything is done" is
+    vacuously true.
+
+    Total by construction: `some` is the floor, which is sound because
+    `get_anime_coverage` only returns anime the caller has rated.
+    """
+    if row.n_main and row.n_main == row.done_main:
+        return CoverageTier.all if row.n_all == row.done_all else CoverageTier.main
+    return CoverageTier.some
+
+
+async def get_rating_coverage(db: AsyncSession, user_id: int) -> list[AnimeRatingCoverage]:
+    """How completely the user has rated each anime they have touched.
+
+    Computed live on every call rather than stored: merge and split re-parent
+    media while the ratings on them survive, so a persisted per-anime tier would
+    need invalidating on both curation paths to stay true.
+    """
+    rows = await rating_dao.get_anime_coverage(db, user_id)
+    return [AnimeRatingCoverage(anime_uuid=r.anime_uuid, tier=_coverage_tier(r)) for r in rows]
 
 
 async def delete_rating(
@@ -345,6 +379,9 @@ async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCr
     the whole anime with one note,' and the note belongs on the most recent season — the
     last row in the media table — not whatever was selected last (selection order is
     arbitrary, so the ordering keys on intrinsic media properties, not request order).
+    Bulk *watchlist* deliberately does the opposite and preserves the notes it does not
+    target, because there it is also how a whole anime changes list or priority; here
+    there is no such second gesture, so clearing stays right.
 
     Bulk rating is a whole-anime 'I finished this' action: every selected media is written
     as `completed` with its full episode count, pinned per-media below. Per-media watch

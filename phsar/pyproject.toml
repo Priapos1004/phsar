@@ -1,4 +1,10 @@
 [tool.ruff]
+# Bind the version here rather than only in requirements-dev.txt, because that file
+# governs only what CI and a fresh dev install get. review-gate.sh runs whatever
+# `ruff` is on the developer's PATH, so without this a green local gate can still
+# land findings in CI. Ruff enforces this itself and fails loudly on a mismatch.
+required-version = ">=0.16,<0.17"
+
 # Paths to exclude
 exclude = [
     "alembic/versions",
@@ -31,3 +37,22 @@ extend-immutable-calls = [
     "fastapi.File",
     "fastapi.Security",
 ]
+[tool.mypy]
+python_version = "3.12"
+files = ["app"]
+# pydantic.mypy teaches mypy that BaseSettings fields arrive from the environment
+# and how the response DTOs construct; without it a third of the output is false
+# positives about arguments the framework supplies. Not the SQLAlchemy plugin — the
+# ORM is typed through `Mapped[]`, which needs none.
+plugins = ["pydantic.mypy"]
+# Prospective: without this, the next function written without annotations takes
+# its whole body outside the checker, silently.
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
+# Imports app/ makes that carry no types. mypy errors on a new one, so this list
+# cannot silently fall behind.
+[[tool.mypy.overrides]]
+module = ["pgvector.*", "jose.*", "passlib.*"]
+ignore_missing_imports = true

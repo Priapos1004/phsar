@@ -3,19 +3,12 @@ import { get } from 'svelte/store';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import BackupsCard from '../lib/components/BackupsCard.svelte';
 import type { BackupMetadata } from '../lib/types/api';
+import { jsonResponse } from './fixtures/response';
 
 vi.mock('$lib/stores/auth', async () => {
 	const { writable } = await import('svelte/store');
 	return { token: writable('fake-token') };
 });
-
-function jsonResponse(body: unknown, status = 200): Response {
-	return {
-		ok: status >= 200 && status < 300,
-		status,
-		json: () => Promise.resolve(body),
-	} as Response;
-}
 
 // The list endpoint returns an envelope: the live schema revision + the rows.
 function backupList(rows: BackupMetadata[], dbRevision: string | null = null) {

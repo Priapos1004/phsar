@@ -82,10 +82,9 @@
 	let watchlistRemoveError = $state('');
 
 	// --- Anime-hero watchlist (aggregate over the anime's media) ---
+	// One dialog for both gestures: empty → add the main media, listed → update the
+	// whole anime's list/priority/note, with remove inside it.
 	let heroAddOpen = $state(false);
-	let heroRemoveOpen = $state(false);
-	let heroRemoving = $state(false);
-	let heroRemoveError = $state('');
 
 	// Main = Main + AlternativeVersion (the story spine) — the app-wide MAIN_RELATIONS set.
 	let mainMediaUuids = $derived(
@@ -109,19 +108,11 @@
 	// Distinct tag colors across this anime's watchlisted media → solid or gradient fill.
 	let heroColors = $derived(anime ? ($watchlistAnimeColors.get(anime.uuid) ?? []) : []);
 
+	// Throws on failure: the dialog owns the busy + error rendering for its own button.
 	async function handleHeroRemove() {
-		heroRemoving = true;
-		heroRemoveError = '';
-		try {
-			await api.post('/watchlist/bulk-delete', { media_uuids: watchlistedInAnime });
-			await refreshWatchlist();
-			pushToast('Removed from watchlist', 'success');
-			heroRemoveOpen = false;
-		} catch (err) {
-			heroRemoveError = err instanceof ApiError ? err.detail : 'Failed to remove from watchlist';
-		} finally {
-			heroRemoving = false;
-		}
+		await api.post('/watchlist/bulk-delete', { media_uuids: watchlistedInAnime });
+		await refreshWatchlist();
+		pushToast('Removed from watchlist', 'success');
 	}
 
 	let bulkDeleting = $state(false);
@@ -455,18 +446,18 @@
 
 							<!-- Anime-level watchlist bookmark — filled (theme primary, since an anime can
 							     span multiple tags) when ≥1 of this anime's media is on the list. Click
-							     adds all main media (optionally + side stories), or removes all of this
-							     anime's watchlisted media (guarded). Restricted (guest) users see it
+							     adds all main media (optionally + side stories), or edits the whole
+							     anime's list/priority/note. Restricted (guest) users see it
 							     disabled (visible-but-inert) so they see what their own account could do. -->
 							<WatchlistBookmarkButton
 								colors={heroColors}
 								tooltip={isRestricted
 									? "Guest accounts can't use the watchlist"
 									: heroWatchlisted
-										? `${watchlistedInAnime.length} on your watchlist — click to remove`
+										? `${watchlistedInAnime.length} on your watchlist — click to edit`
 										: 'Add this anime to your watchlist'}
-								ariaLabel={heroWatchlisted ? 'Remove anime from watchlist' : 'Add anime to watchlist'}
-								onclick={() => (heroWatchlisted ? (heroRemoveOpen = true) : (heroAddOpen = true))}
+								ariaLabel={heroWatchlisted ? 'Edit anime watchlist entry' : 'Add anime to watchlist'}
+								onclick={() => (heroAddOpen = true)}
 								disabled={isRestricted}
 							/>
 						</div>
@@ -774,43 +765,27 @@
 			ageRatingNumeric={anime?.age_rating_numeric}
 		/>
 
-		<!-- Anime-hero: add all main media (optionally + side stories) to the watchlist -->
+		<!-- Anime-hero. Empty: add all main media (optionally + side stories). Listed:
+		     update those entries as a set, remove included — so a whole anime can change
+		     list or priority without the per-media dialog. The optional side-story set is
+		     add-only; an update acts on exactly what is already listed. -->
 		<BulkWatchlistDialog
 			bind:open={heroAddOpen}
 			title="Add to watchlist"
-			mediaUuids={mainMediaUuids}
-			optionalMediaUuids={sideMediaUuids}
+			mediaUuids={heroWatchlisted ? watchlistedInAnime : mainMediaUuids}
+			optionalMediaUuids={heroWatchlisted ? [] : sideMediaUuids}
 			optionalLabel="Include side stories"
+			animeUuid={anime.uuid}
+			onRemove={handleHeroRemove}
 		/>
 
-		<!-- Anime-hero: remove-all guard (count = media of this anime on the watchlist) -->
-		<Dialog.Root bind:open={heroRemoveOpen}>
-			<Dialog.Content class="sm:max-w-md">
-				<Dialog.Header>
-					<Dialog.Title>Remove from watchlist?</Dialog.Title>
-					<Dialog.Description>
-						This removes all {watchlistedInAnime.length} media of this anime from your watchlist.
-					</Dialog.Description>
-				</Dialog.Header>
-				{#if heroRemoveError}
-					<p class="text-destructive text-sm">{heroRemoveError}</p>
-				{/if}
-				<Dialog.Footer>
-					<Button variant="secondary" onclick={() => (heroRemoveOpen = false)} disabled={heroRemoving}>
-						Cancel
-					</Button>
-					<Button variant="destructive" onclick={handleHeroRemove} disabled={heroRemoving}>
-						{heroRemoving ? 'Removing…' : `Remove ${watchlistedInAnime.length}`}
-					</Button>
-				</Dialog.Footer>
-			</Dialog.Content>
-		</Dialog.Root>
-
-		<!-- Media-table select-mode: bulk-add the selected media to a list -->
+		<!-- Media-table select-mode: add the selected media, or edit them when they are
+		     already listed. No remove button — the action bar has its own. -->
 		<BulkWatchlistDialog
 			bind:open={showWatchlistDialog}
 			title={`Add ${selectedUuids.size} to watchlist`}
 			mediaUuids={[...selectedUuids]}
+			animeUuid={anime.uuid}
 			onSaved={handleWatchlistBulkSaved}
 		/>
 

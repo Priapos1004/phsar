@@ -64,3 +64,26 @@ async def make_user(db, username: str = "testuser", role: RoleType = RoleType.Us
     db.add(user)
     await db.flush()
     return user
+
+
+def split_cluster(
+    anchor_mal_id: int,
+    member_mal_ids: list[int],
+    bridge_edges: list[list] | None = None,
+) -> dict:
+    """One entry of `SplitCandidate.clusters` — the JSONB DisjointFranchise dict
+    that `find_disjoint_franchises` emits and `execute_split` reads back.
+
+    Here rather than inline, because the router and service tests both build one:
+    two hand-written copies of a four-key schema means adding a key leaves one
+    side silently asserting the old shape.
+
+    Defaults `substance_member_mal_ids` to every member — the substance gate is
+    exercised in test_relation_classifier.py, not by the consumers of this.
+    """
+    return {
+        "member_mal_ids": member_mal_ids,
+        "substance_member_mal_ids": member_mal_ids,
+        "suggested_anchor_mal_id": anchor_mal_id,
+        "bridge_edges": bridge_edges if bridge_edges is not None else [],
+    }

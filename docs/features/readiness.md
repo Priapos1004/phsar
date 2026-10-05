@@ -3,9 +3,8 @@
 What "can I start this anime tonight?" means, and where the answer is computed. The
 watchlist is its only surface today — its **Status** filter and the badges beside it —
 but the verdict is a property of an anime plus a user, not of that page, so it is
-written down here rather than with the page. What the watchlist itself does with
-entries, lists and priorities is in
-[USER_FLOWS.md](../../phsar/frontend/USER_FLOWS.md) §9.
+written down here rather than with the page. The watchlist itself — entries, lists,
+priorities — is in [watchlist.md](watchlist.md).
 
 ## The problem
 

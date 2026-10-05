@@ -5,6 +5,7 @@ import pytest
 from app.models.anime import Anime
 from app.models.media import Media, RelationType, SeasonType
 from app.models.ratings import Ratings, WatchStatus
+from app.schemas.common_schema import BULK_MEDIA_LIMIT
 from tests._helpers import make_user, media_kwargs
 
 
@@ -36,6 +37,30 @@ async def test_media_list(db_session):
 async def _default_tag_uuid(client, headers) -> str:
     tags = (await client.get("/watchlist/tags", headers=headers)).json()
     return next(t["uuid"] for t in tags if t["is_default"])
+
+
+async def _two_noted_mains(client, headers, db_session, mal_id: int):
+    """An anime with two listed main seasons, S1 (earlier, "note A") and S2 ("note B").
+    Returns (anime, s1, s2, default tag uuid)."""
+    anime = Anime(mal_id=mal_id, title=f"WL {mal_id}")
+    db_session.add(anime)
+    await db_session.flush()
+    s1 = Media(**media_kwargs(anime.id, mal_id - 1, title="S1", relation_type=RelationType.Main,
+                              anime_season_name=SeasonType.Winter, anime_season_year=2020))
+    s2 = Media(**media_kwargs(anime.id, mal_id - 2, title="S2", relation_type=RelationType.Main,
+                              anime_season_name=SeasonType.Spring, anime_season_year=2022))
+    db_session.add_all([s1, s2])
+    await db_session.flush()
+
+    tag_uuid = await _default_tag_uuid(client, headers)
+    for m, note in ((s1, "note A"), (s2, "note B")):
+        resp = await client.put(
+            f"/watchlist/media/{m.uuid}",
+            json={"tag_uuid": tag_uuid, "priority": 3, "note": note},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+    return anime, s1, s2, tag_uuid
 
 
 async def test_registered_user_has_default_tag(client, user_auth_headers):
@@ -181,6 +206,100 @@ async def test_delete_entry(client, user_auth_headers, test_media):
     assert deleted.status_code == 204
     tags = (await client.get("/watchlist/media-tags", headers=user_auth_headers)).json()
     assert tags["entries"] == []
+
+
+async def test_anime_entries_name_the_media_a_bulk_note_lands_on(client, user_auth_headers, db_session):
+    """The note target travels with the entries, and agrees with where a bulk write
+    actually puts the note. A client deriving it instead would prefill an edit box from
+    one entry and have the write replace another's note."""
+    anime = Anime(mal_id=-63200, title="WL Note Target")
+    db_session.add(anime)
+    await db_session.flush()
+    # The target is the earliest MAIN; an earlier side story must not win it.
+    later_main = Media(**media_kwargs(anime.id, -63201, title="Later Main", relation_type=RelationType.Main,
+                                      anime_season_name=SeasonType.Spring, anime_season_year=2022))
+    earliest_main = Media(**media_kwargs(anime.id, -63202, title="Earliest Main", relation_type=RelationType.Main,
+                                         anime_season_name=SeasonType.Winter, anime_season_year=2020))
+    earlier_side = Media(**media_kwargs(anime.id, -63203, title="Earlier Side", relation_type=RelationType.SideStory,
+                                        anime_season_name=SeasonType.Fall, anime_season_year=2019))
+    db_session.add_all([later_main, earliest_main, earlier_side])
+    await db_session.flush()
+
+    tag_uuid = await _default_tag_uuid(client, user_auth_headers)
+    media = [later_main, earliest_main, earlier_side]
+    resp = await client.put(
+        "/watchlist/bulk",
+        json={"media_uuids": [str(m.uuid) for m in media], "tag_uuid": tag_uuid,
+              "priority": 2, "note": "start here"},
+        headers=user_auth_headers,
+    )
+    assert resp.status_code == 200
+    wrote_to = {e["media_uuid"] for e in resp.json() if e["note"] == "start here"}
+
+    resp = await client.get(
+        f"/watchlist/anime/{anime.uuid}",
+        params={"media_uuids": [str(m.uuid) for m in media]},
+        headers=user_auth_headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["note_target_media_uuid"] == str(earliest_main.uuid)
+    assert wrote_to == {body["note_target_media_uuid"]}  # named target == written target
+    # Rows come back chronologically, so any caller walking them sees the media-table order.
+    assert [e["media_uuid"] for e in body["entries"]] == [
+        str(earlier_side.uuid), str(earliest_main.uuid), str(later_main.uuid)
+    ]
+
+
+async def test_anime_entries_name_the_target_within_a_partial_selection(client, user_auth_headers, db_session):
+    """A form editing part of an anime asks for the target over its selection, which is
+    what the bulk write picks over. Over the listed entries the earlier S1 would be named
+    while the write lands on S2, replacing S2's note behind a box that showed none."""
+    anime, _s1, s2, tag_uuid = await _two_noted_mains(client, user_auth_headers, db_session, -63300)
+
+    resp = await client.get(
+        f"/watchlist/anime/{anime.uuid}",
+        params={"media_uuids": [str(s2.uuid)]},
+        headers=user_auth_headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["note_target_media_uuid"] == str(s2.uuid)
+
+    resp = await client.put(
+        "/watchlist/bulk",
+        json={"media_uuids": [str(s2.uuid)], "tag_uuid": tag_uuid, "priority": 3, "note": "edited"},
+        headers=user_auth_headers,
+    )
+    assert [e["note"] for e in resp.json()] == ["edited"]  # named target == written target
+
+    # No selection, no target to name; and the PUT's bound, with the PUT's wording.
+    resp = await client.get(f"/watchlist/anime/{anime.uuid}", headers=user_auth_headers)
+    assert resp.status_code == 422
+    resp = await client.get(
+        f"/watchlist/anime/{anime.uuid}",
+        params={"media_uuids": [str(s2.uuid)] * (BULK_MEDIA_LIMIT + 1)},
+        headers=user_auth_headers,
+    )
+    assert resp.status_code == 422
+    assert "Cannot bulk-operate" in resp.json()["detail"][0]["msg"]
+
+
+async def test_bulk_upsert_over_the_wire_without_note_keeps_every_note(client, user_auth_headers, db_session):
+    """The dialog's list/priority-only request shape: no `note` key at all. Pydantic must
+    read that as unset rather than as null, or a whole anime changing list loses the notes
+    on every media it carries."""
+    _anime, s1, s2, tag_uuid = await _two_noted_mains(client, user_auth_headers, db_session, -63100)
+
+    resp = await client.put(
+        "/watchlist/bulk",
+        json={"media_uuids": [str(s1.uuid), str(s2.uuid)], "tag_uuid": tag_uuid, "priority": 1},
+        headers=user_auth_headers,
+    )
+    assert resp.status_code == 200
+    by_uuid = {e["media_uuid"]: e for e in resp.json()}
+    assert by_uuid[str(s1.uuid)]["note"] == "note A"
+    assert by_uuid[str(s2.uuid)]["note"] == "note B"
+    assert all(e["priority"] == 1 for e in resp.json())
 
 
 async def test_bulk_upsert_note_on_first_main(client, user_auth_headers, db_session):

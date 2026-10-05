@@ -93,7 +93,7 @@ async def generate_embedding(text: str) -> list[float]:
 
 
 async def _compute_search_embeddings(
-    title_texts: list[str | None], description_text: str,
+    title_texts: list[str | None], description_text: str | None,
 ) -> tuple[list[float], list[float]]:
     """Encode title + description embeddings without touching the DB.
     Returned in title-then-description order. Two sequential awaits;
@@ -102,11 +102,11 @@ async def _compute_search_embeddings(
     CPU win on a 2-vCPU VM)."""
     combined_text = " ".join([t for t in title_texts if t])
     title_embedding = await generate_embedding(combined_text)
-    description_embedding = await generate_embedding(f"{combined_text} {description_text}")
+    description_embedding = await generate_embedding(f"{combined_text} {description_text or ''}")
     return title_embedding, description_embedding
 
 
-async def _create_search_embedding(db: AsyncSession, model_class, fk_kwargs: dict, title_texts: list[str], description_text: str):
+async def _create_search_embedding(db: AsyncSession, model_class, fk_kwargs: dict, title_texts: list[str | None], description_text: str | None):
     """Shared helper for creating title + description embeddings and persisting them."""
     title_embedding, description_embedding = await _compute_search_embeddings(title_texts, description_text)
     obj = model_class(**fk_kwargs, title_embedding=title_embedding, description_embedding=description_embedding)
@@ -114,11 +114,11 @@ async def _create_search_embedding(db: AsyncSession, model_class, fk_kwargs: dic
     await db.flush()
 
 
-async def create_media_embedding(db: AsyncSession, media_id: int, title_texts: list[str], description_text: str):
+async def create_media_embedding(db: AsyncSession, media_id: int, title_texts: list[str | None], description_text: str | None):
     await _create_search_embedding(db, MediaSearch, {"media_id": media_id}, title_texts, description_text)
 
 
-async def create_anime_embedding(db: AsyncSession, anime_id: int, title_texts: list[str], description_text: str):
+async def create_anime_embedding(db: AsyncSession, anime_id: int, title_texts: list[str | None], description_text: str | None):
     await _create_search_embedding(db, AnimeSearch, {"anime_id": anime_id}, title_texts, description_text)
 
 
@@ -130,7 +130,7 @@ async def create_rating_embedding(db: AsyncSession, rating_id: int, note: str):
 
 async def _regenerate_search_embedding(
     db: AsyncSession, model_class, fk_column, fk_value: int,
-    title_texts: list[str | None], description_text: str,
+    title_texts: list[str | None], description_text: str | None,
 ) -> None:
     """Replace the existing search-embedding row with one built from
     fresh text. Encode FIRST, then DELETE + INSERT, so an encode failure
@@ -156,7 +156,7 @@ async def _regenerate_search_embedding(
 
 
 async def regenerate_media_embedding(
-    db: AsyncSession, media_id: int, title_texts: list[str | None], description_text: str,
+    db: AsyncSession, media_id: int, title_texts: list[str | None], description_text: str | None,
 ) -> None:
     await _regenerate_search_embedding(
         db, MediaSearch, MediaSearch.media_id, media_id, title_texts, description_text,
@@ -164,7 +164,7 @@ async def regenerate_media_embedding(
 
 
 async def regenerate_anime_embedding(
-    db: AsyncSession, anime_id: int, title_texts: list[str | None], description_text: str,
+    db: AsyncSession, anime_id: int, title_texts: list[str | None], description_text: str | None,
 ) -> None:
     await _regenerate_search_embedding(
         db, AnimeSearch, AnimeSearch.anime_id, anime_id, title_texts, description_text,

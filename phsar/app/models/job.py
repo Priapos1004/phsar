@@ -1,7 +1,8 @@
 import enum
+from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
-    Column,
     DateTime,
     Enum,
     ForeignKey,
@@ -12,9 +13,12 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
+
+if TYPE_CHECKING:
+    from app.models.users import Users
 
 
 class JobKind(str, enum.Enum):
@@ -47,17 +51,17 @@ class JobStatus(str, enum.Enum):
 class Job(BaseModel):
     __tablename__ = "jobs"
 
-    kind = Column(Enum(JobKind), nullable=False)
-    status = Column(Enum(JobStatus), nullable=False, default=JobStatus.queued)
+    kind: Mapped[JobKind] = mapped_column(Enum(JobKind), nullable=False)
+    status: Mapped[JobStatus] = mapped_column(Enum(JobStatus), nullable=False, default=JobStatus.queued)
 
     # Per-kind schema version for `result_summary`. Runtime source of
     # truth is the JOB_KIND_VERSIONS registry in `core/job_versions.py`;
     # server_default guards against a forgotten registry write during
     # refactors.
-    version = Column(Integer, nullable=False, server_default="1")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
 
     # Nullable because system-triggered jobs (sweeps) have no requester.
-    requested_by_user_id = Column(
+    requested_by_user_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
@@ -67,7 +71,7 @@ class Job(BaseModel):
     # user_scrape child it enqueues. Admin Jobs Log collapses children under
     # the parent row. ON DELETE SET NULL keeps the audit history intact if
     # the parent ever gets deleted.
-    parent_job_id = Column(
+    parent_job_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("jobs.id", ondelete="SET NULL"),
         nullable=True,
@@ -76,26 +80,26 @@ class Job(BaseModel):
     # Per-kind input. user_scrape stores {"query": ..., "mal_id": ...};
     # sweeps may stash their own selection criteria. JSONB keeps the schema
     # one table instead of three near-identical tables.
-    payload = Column(JSONB, nullable=False, default=dict)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
 
     # Free-form per-kind label; sweeps and scrapes have disjoint stages.
-    stage = Column(String(64), nullable=True)
+    stage: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # NULL until the first BFS pass returns — the frontend renders an
     # indeterminate spinner while items_total is unknown.
-    items_total = Column(Integer, nullable=True)
-    items_done = Column(Integer, nullable=False, default=0)
+    items_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    items_done: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    result_summary = Column(JSONB, nullable=True)
-    error_message = Column(String, nullable=True)
+    result_summary: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Worker skips a queued job until now() >= not_before_at. Powers the
     # 20-minute pre-maintenance announcement window.
-    not_before_at = Column(DateTime(timezone=True), nullable=True)
-    started_at = Column(DateTime(timezone=True), nullable=True)
-    finished_at = Column(DateTime(timezone=True), nullable=True)
+    not_before_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    requested_by = relationship("Users", lazy="raise")
-    parent = relationship("Job", remote_side="Job.id", lazy="raise")
+    requested_by: Mapped["Users | None"] = relationship("Users", lazy="raise")
+    parent: Mapped["Job | None"] = relationship("Job", remote_side="Job.id", lazy="raise")
 
     __table_args__ = (
         # Partial: only queued rows, ordered by created_at. The worker's

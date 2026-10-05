@@ -55,6 +55,13 @@ class WatchlistOut(BaseModel):
     modified_at: datetime
 
 
+class WatchlistAnimeEntries(BaseModel):
+    """An anime's entries plus the media a bulk note over the requested selection would
+    land on (`filter_service.select_note_target_index`)."""
+    entries: list[WatchlistOut]
+    note_target_media_uuid: UUID
+
+
 class WatchlistItem(BaseModel):
     """Wide projection for the /watchlist overview page (list + grid derived from one
     fetch). Every field is a scalar, which is what lets

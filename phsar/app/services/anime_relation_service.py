@@ -15,7 +15,7 @@ both endpoints in `nodes`.
 """
 
 from collections.abc import Iterable
-from typing import TypedDict
+from typing import Any, TypedDict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,6 +23,7 @@ from app.models.anime import Anime
 from app.models.media import Media, RelationType
 from app.services.anime_service import strip_season_suffix
 from app.services.relation_classifier import (
+    ClassifierNode,
     classify_anime_relations,
     media_to_classifier_node,
 )
@@ -31,7 +32,7 @@ from app.services.vector_embedding_service import regenerate_anime_embedding
 
 def build_classifier_graph(
     media: Iterable[Media],
-) -> tuple[dict[int, dict], list[tuple[int, int, str]]]:
+) -> tuple[dict[int, ClassifierNode], list[tuple[int, int, str]]]:
     """Project a media iterable into (nodes, edges) ready for
     `classify_anime_relations`. Edges include the full unfiltered set
     from each media's sidecar — the classifier filters dangling
@@ -99,7 +100,7 @@ async def reclassify_anime(
     # this anchor. Dict-driven so adding an 8th umbrella field (or
     # changing which fields gate embedding regen) is one edit, not three.
     new_anchor_media = current_by_mal[new_anchor_mal_id]
-    new_umbrella: dict[str, object] = {
+    new_umbrella: dict[str, Any] = {
         "mal_id": new_anchor_mal_id,
         "title": strip_season_suffix(new_anchor_media.title) or new_anchor_media.title,
         "name_eng": strip_season_suffix(new_anchor_media.name_eng),
@@ -112,13 +113,13 @@ async def reclassify_anime(
     # change shouldn't trigger the ~50-100ms encode.
     _EMBEDDING_FIELDS = ("mal_id", "title", "name_eng", "name_jap", "other_names", "description")
 
-    def _current(field: str) -> object:
+    def _current(field: str) -> Any:
         # Normalize other_names None → [] so the comparison matches
         # how new_umbrella["other_names"] is built.
         val = getattr(anime, field)
         return list(val or []) if field == "other_names" else val
 
-    def _drifted(field: str, new_val: object) -> bool:
+    def _drifted(field: str, new_val: Any) -> bool:
         current = _current(field)
         # MAL's title_synonyms list isn't returned in stable order, so
         # comparing as ordered lists would flag pure reorders as drift

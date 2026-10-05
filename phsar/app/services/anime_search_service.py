@@ -122,8 +122,8 @@ def _compute_anime_aggregates(media_list: list[Media]) -> AnimeAggregates:
     max_age_rating: int | None = None
 
     for m in media_list:
-        genres = [mg.genre.name for mg in m.media_genre]
-        studios = [ms.studio.name for ms in m.media_studio]
+        genres = [mg.genre.name for mg in m.media_genre if mg.genre is not None]
+        studios = [ms.studio.name for ms in m.media_studio if ms.studio is not None]
 
         for g in genres:
             genre_counts[g] += 1
@@ -198,12 +198,12 @@ def _media_to_anime_media_item(m: Media) -> AnimeMediaItem:
         anime_season_year=m.anime_season_year,
         total_watch_time=m.total_watch_time,
         age_rating_numeric=m.age_rating_numeric,
-        genres=[mg.genre.name for mg in m.media_genre],
-        studios=[ms.studio.name for ms in m.media_studio],
+        genres=[mg.genre.name for mg in m.media_genre if mg.genre is not None],
+        studios=[ms.studio.name for ms in m.media_studio if ms.studio is not None],
     )
 
 
-def anime_title_texts(anime) -> list[str]:
+def anime_title_texts(anime) -> list[str | None]:
     """Build the list of title texts for embedding generation from an Anime object."""
     return [anime.title, anime.name_eng, anime.name_jap, *(anime.other_names or [])]
 

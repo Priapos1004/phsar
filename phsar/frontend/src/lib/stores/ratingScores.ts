@@ -1,5 +1,6 @@
 import { api } from '$lib/api';
 import type { RatingScoreItem } from '$lib/types/api';
+import { invalidateRatingCoverage } from '$lib/stores/ratingCoverage';
 
 /**
  * Session cache for `GET /ratings/scores` — the user's whole rating set.
@@ -57,6 +58,10 @@ export function ensureRatingScores(): Promise<RatingScoreItem[]> {
  */
 export function invalidateRatingScores(): void {
 	loadPromise = null;
+	// The per-anime coverage tiers are derived from the same ratings, and every
+	// write path already routes through here — folding it in beats a second list
+	// of call sites that has to stay in step with this one.
+	invalidateRatingCoverage();
 }
 
 /** Clear on logout / user switch — see the note above on per-user data.

@@ -19,16 +19,22 @@ Future: a user-report → admin-approve flow can add columns here without
 restructuring (tracked on GH issue #58).
 """
 
-from sqlalchemy import Column, ForeignKey, Integer
-from sqlalchemy.orm import relationship
+from typing import TYPE_CHECKING
+
+from sqlalchemy import ForeignKey, Integer
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
+
+if TYPE_CHECKING:
+    from app.models.anime import Anime
+    from app.models.users import Users
 
 
 class AnimeCompletion(BaseModel):
     __tablename__ = "anime_completion"
 
-    anime_id = Column(
+    anime_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("anime.id", ondelete="CASCADE"),
         nullable=False,
@@ -36,12 +42,12 @@ class AnimeCompletion(BaseModel):
     )
     # Who marked it. SET NULL (not CASCADE) so deleting the admin account doesn't
     # un-mark the anime — the completion fact outlives its author.
-    marked_by_user_id = Column(
+    marked_by_user_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
 
-    anime = relationship("Anime", back_populates="completion", lazy="raise")
+    anime: Mapped["Anime"] = relationship("Anime", back_populates="completion", lazy="raise")
     # One-directional (no back-ref on Users): read the marker's username for the
     # admin Completion list's audit line. Explicit foreign_keys since Users has no
     # back_populates here.
-    marked_by = relationship("Users", foreign_keys=[marked_by_user_id], lazy="raise")
+    marked_by: Mapped["Users | None"] = relationship("Users", foreign_keys=[marked_by_user_id], lazy="raise")

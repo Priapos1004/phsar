@@ -188,6 +188,7 @@ Each media search result card shows:
 - Genre tags, media type tag, relation type tag
 - Total watch time
 - A colored bookmark icon when the media is on your watchlist (tinted to its list's color)
+- A **rated band** in the theme colour around the card edge when you have rated this media. A media is rated or it isn't, so it never shows the gold or obsidian of 5.3
 - Clicking navigates to `/media?uuid=<uuid>` (with `&q=<token>` preserved for back navigation)
 
 ### 5.2 Anime Card (anime view)
@@ -202,7 +203,21 @@ Each anime search result card shows:
 - Media type badges with counts (e.g., "TV: 3", "Movie: 1")
 - Total watch time (summed across media)
 - A colored bookmark icon when any of the anime's media is on your watchlist — solid for one list, a gradient when it spans several
+- A **rated band** around the card edge showing how much of the anime you have rated — see 5.3
 - Clicking navigates to `/anime?uuid=<uuid>` (with `&q=<token>` preserved)
+
+### 5.3 Rated-coverage marking
+
+Both card types carry how much of the title you have rated, drawn on the **card**
+— cover art varies too much for a mark on it to stay legible, and anything
+overlaying an image reads as part of it. Three tiers: the **theme colour** for
+partly rated, **gold** for the main story done, **obsidian** for everything done.
+Which tier a title earns is in [ratings.md](../../docs/features/ratings.md).
+
+A band inside the card edge fades toward the middle, over a crisp outer ring.
+Gold and obsidian are fixed colours, not theme tokens, so they mean the same
+thing under every theme. Guests and restricted users see no marking — neither
+can rate.
 
 ---
 
@@ -226,7 +241,7 @@ Each anime search result card shows:
 - Age rating badge (max across media), genre badges (strict majority rule) — hovering a genre badge shows its description when one is seeded
 - Stats grid: total episodes, media count, season range, total watch time
 - Studio names — each is a button linking to an anime-view search filtered to that studio ("other anime from this studio")
-- **Watchlist bookmark** (disabled, not hidden, for restricted users): outline when none of the anime's media are listed, filled/gradient (colored by the lists in play) when some are. Clicking it when empty opens a bulk-add dialog (adds all **main** media — Main + AlternativeVersion — with an optional "Include side stories" checkbox that offers side stories only, not summaries/recaps); clicking it when populated opens a guarded "Remove from watchlist?" dialog that clears all of this anime's watchlisted media
+- **Watchlist bookmark** (disabled, not hidden, for restricted users): outline when none of the anime's media are listed, filled/gradient (colored by the lists in play) when some are. Clicking it when empty opens a bulk-add dialog (adds all **main** media — Main + AlternativeVersion — with an optional "Include side stories" checkbox that offers side stories only, not summaries/recaps). Clicking it when populated opens the same dialog in **update** mode over exactly the media already listed — prefilled with their list, priority and note, so a whole anime moves between lists or priorities in one step. Removal lives inside that dialog as a click-to-arm button (first click relabels to "Sure?", a second within ~3s clears all of this anime's watchlisted media). When the listed media don't share one list or priority, the dialog says how many of each they span and preselects neither, so saving can't silently demote one of them. If loading the stored values fails, the dialog says so and Save stays disabled until it is reopened
 - **Share** icon, immediately left of the bookmark: opens the share dialog (see 6.7). **Never disabled** — when you've rated any of this anime's media it offers your rating card, and when you haven't (including on a guest account, which can't rate at all) it offers the info card instead, since telling someone about a show you haven't watched is the case that card exists for
 
 ### 6.3 Synopsis
@@ -244,7 +259,7 @@ Each anime search result card shows:
   - "Delete Ratings" button appears when any selected media have existing ratings
   - **Rate** opens BulkRateDialog: score circle + slider, note (applied to the chronologically-last main media — the order the media table shows, not click order), collapsible attributes grid (each attribute clearable via a ✕), and the same "How you rated similar titles" panel as the media page (bulk is anime-scoped, so neighbors come from other anime). Not-yet-aired media in the selection are excluded from the rating with a yellow warning (they stay selected, since the selection also feeds the future watchlist); if every selected media is not-yet-aired, Save is disabled. Overwrite warning shown if any selected media already rated. On save: exits select mode, shows "Note Added" info dialog naming which media received the note.
   - **Delete Ratings** opens a destructive confirmation dialog. When any selected media have recorded watches, the dialog offers an "Also delete watch history" checkbox showing how many have watches (and how many were watched more than once); kept by default. Submits `POST /ratings/bulk-delete?delete_watch_history=`
-  - **Watchlist** opens BulkWatchlistDialog: pick a list + priority + note (list + priority apply to every selected media; the note goes on the chronologically-first main media only — the mirror of bulk rating's last-main note), with an overwrite warning when any selection is already listed. On save it exits select mode; the row bookmarks reflect the change
+  - **Watchlist** opens BulkWatchlistDialog: pick a list + priority + note (list + priority apply to every selected media; the note goes on the chronologically-first main media only — the mirror of bulk rating's last-main note, and every other media keeps its own note), with an overwrite warning when any selection is already listed. Selected media that are already listed prefill the form, so re-saving to a different list keeps their priority instead of resetting it. The note box shows the note of the media the note will land on within the selection. A selection mixing listed and unlisted media can be saved unchanged — that lists the rest. On save it exits select mode; the row bookmarks reflect the change
   - **Remove from Watchlist** opens a guarded confirm dialog and removes exactly the selected media that were on the watchlist (the bulk-delete silently skips the rest)
   - "Cancel" exits select mode and clears selection
 
@@ -380,6 +395,7 @@ Each anime search result card shows:
   - **Grid** (default): cards grouped under score-band dividers (by integer score), each band labeled + score-colored with a count. An order arrow flips whether the highest or lowest band sits on top.
   - **Table**: sortable columns (title, your score, MAL, Δ, genres, status, date); clicking a header toggles the sort; scrolls horizontally on narrow widths.
 - Each card/row links to the anime detail page; multi-media anime show a "N rated" indicator and a watch-status mix.
+- Grid cards carry the **rated-coverage** marking of 5.3, but only its two metal tiers: every anime here is rated by definition, so "partly rated" would mark the whole grid and say nothing. A marked card tints its footer as well as its edge — on a grid of near-identical covers the edge alone is easy to scan past.
 - **Filter bar**: genre filter with an any/all match toggle, season filter, and age-rating chips; a "Clear all" button appears when any value filter is active. Filter options are the union of values present in your ratings (no extra fetch).
 
 ### 8.3 Statistics Tab
@@ -666,6 +682,7 @@ own.
 | `/media/anime/{uuid}` | GET | Anime detail page load |
 | `/media/{uuid}` | GET | Media detail page load |
 | `/ratings/scores` | GET | The `/ratings` page, the watchlist Statistics subtab, and the rating-consistency panel — one shared session-cached fetch (`ratingScores` store), invalidated by any rating write |
+| `/ratings/coverage` | GET | `/search` (anime view) and `/ratings` on mount, when stale — per-anime rated-coverage tiers (`ratingCoverage` store) for the card marking in 5.3 |
 | `/ratings/media/{uuid}` | GET | Media detail page load (fetch user's rating) |
 | `/ratings/anime/{uuid}` | GET | Anime detail page load (fetch user's ratings for all media) |
 | `/ratings/media/{uuid}` | PUT | Create or update a rating |
@@ -684,7 +701,8 @@ own.
 | `/watchlist/media/{media_uuid}` | GET | WatchlistDialog (load the existing entry, if any) |
 | `/watchlist/media/{media_uuid}` | PUT | Media page / dialog (create or update a watchlist entry) |
 | `/watchlist/media/{media_uuid}` | DELETE | Media page / dialog (remove a watchlist entry) |
-| `/watchlist/bulk` | PUT | Anime page bulk add (hero add-all + media-table select-mode) |
+| `/watchlist/anime/{anime_uuid}` | GET | BulkWatchlistDialog (prefill: this anime's entries + which media of the selection, passed as `media_uuids`, a bulk note lands on) |
+| `/watchlist/bulk` | PUT | Anime page bulk add/update (hero bookmark + media-table select-mode) |
 | `/watchlist/bulk-delete` | POST | Anime page bulk remove (hero remove-all + media-table select-mode) |
 | `/users/settings` | GET | Layout auth (fetch user settings) |
 | `/users/settings` | PUT | Settings page (update preferences) |

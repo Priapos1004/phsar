@@ -278,6 +278,7 @@ async def _compute_content_hash(dump_path: Path) -> tuple[str, str | None]:
         # Keyed on "have we seen the block", NOT on `revision is None` — a value
         # rejected by _REVISION_PATTERN sets that back to None and would rescan.
         revision_seen = False
+        assert proc.stdout is not None  # created with stdout=PIPE
         while chunk := await proc.stdout.read(1024 * 1024):
             buffer += chunk
             lines = buffer.split(b"\n")

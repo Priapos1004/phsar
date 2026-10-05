@@ -88,11 +88,11 @@ class DeleteCandidateDAO(MalIdDAO[DeleteCandidate]):
         """Whether a decision on this mal_id is still in force. Not
         `get_by_mal_id`, which spans `deleted` too — see
         `LIVE_DECISION_STATUSES`."""
-        return await db.scalar(
+        return bool(await db.scalar(
             select(live_decision_mal_ids().where(
                 DeleteCandidate.mal_id == mal_id
             ).exists())
-        )
+        ))
 
     async def get_for_resolve(self, db: AsyncSession, uuid: UUID) -> DeleteCandidate | None:
         """Row-locked — see "A candidate resolves once" in docs/features/curation.md."""
@@ -253,7 +253,7 @@ class DeleteCandidateDAO(MalIdDAO[DeleteCandidate]):
             .where(Media.anime_id.in_(anime_ids))
             .group_by(Media.anime_id)
         )
-        return dict((await db.execute(stmt)).all())
+        return dict((await db.execute(stmt)).tuples().all())
 
     async def select_low_signal_media(self, db: AsyncSession) -> list[Media]:
         """Standalone entries that never gained MAL traction — the `low_signal`

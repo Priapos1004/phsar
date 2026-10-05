@@ -20,27 +20,33 @@ diverges from expectations. Matches the unique-FK pattern used in the
 other 1:1 sidecars (`anime_search`, `media_search`).
 """
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, text
-from sqlalchemy.orm import relationship
+from datetime import datetime
+from typing import TYPE_CHECKING
+
+from sqlalchemy import DateTime, ForeignKey, Integer, text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
+
+if TYPE_CHECKING:
+    from app.models.anime import Anime
 
 
 class AnimeFreshness(BaseModel):
     __tablename__ = "anime_freshness"
 
-    anime_id = Column(
+    anime_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("anime.id", ondelete="CASCADE"),
         nullable=False,
         unique=True,
     )
-    last_checked_at = Column(DateTime(timezone=True), nullable=True)
-    stable_check_count = Column(
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stable_check_count: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         default=0,
         server_default=text("0"),
     )
 
-    anime = relationship("Anime", back_populates="freshness", lazy="raise")
+    anime: Mapped["Anime"] = relationship("Anime", back_populates="freshness", lazy="raise")

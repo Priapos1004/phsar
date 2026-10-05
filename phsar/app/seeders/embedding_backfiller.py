@@ -94,6 +94,7 @@ async def _backfill_rating_embeddings(db: AsyncSession):
     count = 0
     for rating in missing:
         try:
+            assert rating.note is not None  # the query selects noted ratings only
             await create_rating_embedding(db, rating_id=rating.id, note=rating.note)
             count += 1
             logger.info(f"Backfilled embedding for Rating ID: {rating.id}")
@@ -156,6 +157,7 @@ async def _reembed_media(db: AsyncSession) -> int:
 async def _reembed_ratings(db: AsyncSession) -> int:
     rows = (await db.execute(select(Ratings).where(Ratings.note.isnot(None)))).scalars().all()
     for i, rating in enumerate(rows, start=1):
+        assert rating.note is not None  # the query selects noted ratings only
         await regenerate_rating_embedding(db, rating_id=rating.id, note=rating.note)
         if i % _REEMBED_COMMIT_BATCH == 0:
             await db.commit()

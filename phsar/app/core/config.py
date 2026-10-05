@@ -1,5 +1,4 @@
-from pydantic import ConfigDict
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -125,6 +124,6 @@ class Settings(BaseSettings):
     # `embedding_backfiller.reembed_all_embeddings`.
     EMBEDDING_REEMBED_ON_STARTUP: bool = False
 
-    model_config = ConfigDict(env_file=".env")  # Tell Pydantic to load from .env
+    model_config = SettingsConfigDict(env_file=".env")  # Tell Pydantic to load from .env
 
 settings = Settings()

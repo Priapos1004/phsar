@@ -101,7 +101,9 @@ async def seed_genres(db: AsyncSession):
 
     dirty = False
     for _, name, mal_type, description in MAL_GENRES:
-        genre_type = MAL_TO_GENRETYPE.get(mal_type)
+        # Indexed, not .get(): genre_type is NOT NULL, MAL_GENRES is static, and a
+        # KeyError at seed time beats a constraint violation on insert.
+        genre_type = MAL_TO_GENRETYPE[mal_type]
         genre = existing.get(name)
         if genre:
             if genre.description != description or genre.genre_type != genre_type:

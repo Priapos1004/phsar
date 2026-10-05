@@ -19,6 +19,7 @@ phsar/
 │   │   ├── config.py
 │   │   ├── db.py
 │   │   ├── dependencies.py
+│   │   ├── job_versions.py
 │   │   ├── logging_config.py
 │   │   ├── maintenance.py
 │   │   ├── maintenance_middleware.py
@@ -295,6 +296,7 @@ phsar/
 │   │   │   │   ├── jobs.ts
 │   │   │   │   ├── maintenance.ts
 │   │   │   │   ├── persistedFilter.ts
+│   │   │   │   ├── ratingCoverage.ts
 │   │   │   │   ├── ratingScores.ts
 │   │   │   │   ├── ratingsFilter.ts
 │   │   │   │   ├── spoilerVisibility.ts
@@ -324,6 +326,8 @@ phsar/
 │   │   │       ├── mediaChangeSort.ts
 │   │   │       ├── navigation.ts
 │   │   │       ├── ratingAttributes.ts
+│   │   │       ├── ratingCoverage.ts
+│   │   │       ├── ratingLimits.ts
 │   │   │       ├── ratingNeighbors.ts
 │   │   │       ├── ratingStats.ts
 │   │   │       ├── relations.ts
@@ -373,6 +377,7 @@ phsar/
 │   │       ├── SpoilerGuardTest.svelte
 │   │       ├── fixtures/
 │   │       │   ├── jwt.ts
+│   │       │   ├── response.ts
 │   │       │   └── watchlistItem.ts
 │   │       ├── admin-jobs-filter.test.ts
 │   │       ├── admin-jobs-poll.test.ts
@@ -381,6 +386,7 @@ phsar/
 │   │       ├── auth-store.test.ts
 │   │       ├── backup-status.test.ts
 │   │       ├── backups-card.test.ts
+│   │       ├── bulk-watchlist-dialog.test.ts
 │   │       ├── chart-theme.test.ts
 │   │       ├── color.test.ts
 │   │       ├── completion-status-card.test.ts
@@ -403,6 +409,8 @@ phsar/
 │   │       ├── navigation.test.ts
 │   │       ├── persisted-filter.test.ts
 │   │       ├── rating-attributes.test.ts
+│   │       ├── rating-coverage-store.test.ts
+│   │       ├── rating-coverage.test.ts
 │   │       ├── rating-modal.test.ts
 │   │       ├── rating-neighbors.test.ts
 │   │       ├── rating-scores-store.test.ts
@@ -416,12 +424,14 @@ phsar/
 │   │       ├── share-card.test.ts
 │   │       ├── share-content.test.ts
 │   │       ├── share-image.test.ts
+│   │       ├── split-candidates-card.test.ts
 │   │       ├── spoiler-frontier.test.ts
 │   │       ├── spoiler-guard.test.ts
 │   │       ├── studio-links.test.ts
 │   │       ├── toast.test.ts
 │   │       ├── watchlist-ready.test.ts
-│   │       └── watchlist-stats.test.ts
+│   │       ├── watchlist-stats.test.ts
+│   │       └── watchlist-uniform-entries.test.ts
 │   ├── static/
 │   │   ├── apple-touch-icon.png
 │   │   ├── favicon-192x192.png
@@ -441,7 +451,9 @@ phsar/
 ├── alembic.ini
 ├── pyproject.toml
 ├── pytest.ini
-├── requirements.txt
+├── requirements-dev.txt    # test + lint tooling, never in the image
+├── requirements-torch.txt  # CPU torch pin, shared with the Dockerfile
+├── requirements.txt        # runtime — installed into the image
 ├── scripts/
 │   ├── audit_cross_franchise.py
 │   ├── audit_relation_backfill.py
@@ -461,7 +473,9 @@ phsar/
     │   ├── test_admin_delete.py
     │   ├── test_admin_nightly.py
     │   ├── test_admin_seasonal.py
+    │   ├── test_admin_split.py
     │   ├── test_admin_sweep.py
+    │   ├── test_admin_upcoming.py
     │   ├── test_anime_detail.py
     │   ├── test_auth.py
     │   ├── test_compression.py
@@ -470,22 +484,27 @@ phsar/
     │   ├── test_filters_token.py
     │   ├── test_health.py
     │   ├── test_jobs.py
+    │   ├── test_library.py
     │   ├── test_maintenance.py
     │   ├── test_media_detail.py
+    │   ├── test_rating_coverage.py
     │   ├── test_rating_scores.py
     │   ├── test_ratings.py
     │   ├── test_save.py
     │   ├── test_search_anime.py
     │   ├── test_search_anime_filters.py
+    │   ├── test_search_mal.py
     │   ├── test_search_media.py
     │   ├── test_search_ranking.py
     │   ├── test_search_ratings.py
+    │   ├── test_seeder.py
     │   ├── test_user_flows_endpoints.py
     │   ├── test_user_settings.py
     │   └── test_watchlist.py
     ├── seeders/
     │   ├── test_embedding_backfiller.py
-    │   └── test_relation_backfiller.py
+    │   ├── test_relation_backfiller.py
+    │   └── test_split_candidate_backfiller.py
     └── services/
         ├── test_anime_service.py
         ├── test_backup_jobs.py
@@ -502,6 +521,7 @@ phsar/
         ├── test_merge_detection.py
         ├── test_merge_preservation.py
         ├── test_progress_reporter.py
+        ├── test_rating_coverage.py
         ├── test_relation_classifier.py
         ├── test_save_service.py
         ├── test_score_percentile.py

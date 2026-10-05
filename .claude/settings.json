@@ -45,6 +45,12 @@
       "mcp__dev-browser__browser_wait_for",
       "mcp__dev-browser__browser_take_screenshot"
     ],
+    "ask": [
+      "Bash(git commit *)",
+      "Bash(git -C * commit *)",
+      "Bash(git -c * commit *)",
+      "Bash(* git commit *)"
+    ],
     "deny": [
       "Bash(git push --force *)",
       "Bash(git reset --hard *)",

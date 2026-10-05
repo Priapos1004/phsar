@@ -1,8 +1,17 @@
+import re
+from pathlib import Path
+
 import pytest
 
 from app.models.anime import Anime
 from app.models.media import Media, RelationType, SeasonType
+from app.services.rating_service import UNKNOWN_EPISODES_CAP
 from tests._helpers import media_kwargs
+
+CLIENT_LIMITS = Path(__file__).resolve().parents[2] / "frontend" / "src" / "lib" / "utils" / "ratingLimits.ts"
+# Anchored and `export`-pinned: an unanchored search would match a longer name that
+# ends in this one, or a `= 2000` left on the next line by a reworded comment.
+_CLIENT_CAP = re.compile(r"^export const UNKNOWN_EPISODES_CAP = (\d+);$", re.M)
 
 
 @pytest.fixture
@@ -93,6 +102,20 @@ async def test_episodes_watched_clamped_to_cap_when_no_total(client, user_auth_h
     )
     assert response.status_code == 200
     assert response.json()["episodes_watched"] == 2000
+
+
+def test_unknown_episodes_cap_matches_the_client():
+    """The clamp is enforced on both sides — the client caps the input, the server
+    caps the stored value — so the two constants have to agree or one is dead.
+
+    They are in different languages, so the assertion has to read the other source.
+    The Python side is authoritative and imports its own value; only the TypeScript
+    is matched by regex."""
+    match = _CLIENT_CAP.search(CLIENT_LIMITS.read_text())
+    assert match, f"UNKNOWN_EPISODES_CAP not found in {CLIENT_LIMITS}"
+    assert int(match.group(1)) == UNKNOWN_EPISODES_CAP, (
+        f"client cap {match.group(1)} != server cap {UNKNOWN_EPISODES_CAP}"
+    )
 
 
 async def test_upsert_rating_rejects_unaired_media(client, user_auth_headers, db_session):

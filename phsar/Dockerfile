@@ -13,12 +13,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install CPU-only torch first (huge wheel) via the pytorch CPU index
-# so sentence-transformers doesn't pull the GPU variant (~2 GB saved).
-# Pinned for layer-cache stability.
-RUN pip install --index-url https://download.pytorch.org/whl/cpu \
-        torch==2.11.0+cpu
+# Its own COPY layer, above requirements.txt, so a runtime-pin bump does not
+# invalidate this one. The file explains the pin itself.
+COPY requirements-torch.txt ./
+RUN pip install -r requirements-torch.txt
 
+# Runtime only — requirements-dev.txt is deliberately never installed here.
 COPY requirements.txt ./
 RUN pip install -r requirements.txt
 

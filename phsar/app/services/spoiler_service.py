@@ -111,6 +111,7 @@ def compute_visible_media(
 
         # Visible: everything up to the frontier, plus any individually rated
         # media beyond it (e.g. a side story the user explicitly watched)
+        assert frontier_idx is not None  # the all-rated case continued above
         for i, m in enumerate(sorted_media):
             if i <= frontier_idx or m.id in rated_media_ids:
                 visible.add(m.id)
