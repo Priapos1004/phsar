@@ -78,6 +78,7 @@ export interface FilterOptions {
 	anime_season: string[];
 	genre_name: string[];
 	studio_name: string[];
+	original_source: string[];
 	score_min: number | null;
 	score_max: number | null;
 	scored_by_min: number | null;
@@ -185,6 +186,7 @@ export interface RatingScoreItem {
 	watch_status: WatchStatus;
 	episodes_watched: number | null;
 	age_rating_numeric: number | null;
+	original_source: string | null;
 	genres: string[];
 	studios: string[];
 	mal_score: number | null;
@@ -293,6 +295,7 @@ export interface AnimeAggregatedBase {
 	media_types: MediaTypeSummary[];
 	genres: string[];
 	studios: string[];
+	original_sources: string[];
 	season_start: string | null;
 	season_end: string | null;
 	airing_status: string;
@@ -436,6 +439,7 @@ export interface WatchlistItem {
 	franchise_upcoming_key: number | null;
 	genres: string[];
 	studios: string[];
+	original_source: string | null;
 	total_watch_time: number | null;
 	created_at: string;
 	modified_at: string;

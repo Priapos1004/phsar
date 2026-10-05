@@ -1,7 +1,7 @@
 <script lang="ts">
 	import SearchBar from '$lib/components/SearchBar.svelte';
 	import { page } from '$app/state';
-	import { fetchSearchResults, fetchAnimeSearchResults } from '$lib/utils/search';
+	import { fetchSearchResults, fetchAnimeSearchResults, LIST_FILTER_KEYS } from '$lib/utils/search';
 	import { getContext } from 'svelte';
 	import { ensureRatingCoverage } from '$lib/stores/ratingCoverage';
 	import type { MediaSearchFilters } from '$lib/utils/search';
@@ -148,7 +148,7 @@
 	// level toggle. Score carries too — it's always the fixed 0–10 scale. Everything else
 	// is dropped: relation type (media-only) and the view-relative ranges (episodes/
 	// scored-by/duration/watch-time, whose scale differs between per-media and aggregated).
-	const CARRY_LIST_KEYS = ['genre_name', 'studio_name', 'anime_season', 'age_rating', 'airing_status', 'media_type'] as const;
+	const CARRY_LIST_KEYS = LIST_FILTER_KEYS.filter((key) => key !== 'relation_type');
 	const CARRY_NUMBER_KEYS = ['score_min', 'score_max'] as const;
 
 	async function switchView(newView: 'anime' | 'media') {

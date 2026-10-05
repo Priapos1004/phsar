@@ -56,6 +56,7 @@ function anime(o: Partial<AnimeDetail> = {}): AnimeDetail {
 		is_finished: false,
 		genres: [],
 		studios: [],
+		original_sources: [],
 		age_rating_numeric: null,
 		description: null,
 		...o,
@@ -236,7 +237,7 @@ describe('mediaInfoCard', () => {
 			media({ episodes: null, genres: [], studio: [], age_rating_numeric: null }),
 		);
 		expect(c.metaLines[0]).toContain('-- eps');
-		expect(c.body).toMatchObject({ genres: ['--'], ageRating: '--', studios: ['--'] });
+		expect(c.body).toMatchObject({ genres: ['--'], ageRating: '--', sources: ['--'], studios: ['--'] });
 	});
 
 	it('reports the airing status, and never a story-complete badge', () => {
@@ -246,12 +247,13 @@ describe('mediaInfoCard', () => {
 
 	it('passes the catalog facts through', () => {
 		const c = mediaInfoCard(
-			media({ genres: ['Action'], studio: ['Bones'], age_rating_numeric: 17, description: 'Hi.' }),
+			media({ genres: ['Action'], studio: ['Bones'], original_source: 'Manga', age_rating_numeric: 17, description: 'Hi.' }),
 		);
 		expect(c.body).toMatchObject({
 			kind: 'info',
 			genres: ['Action'],
 			ageRating: '17+',
+			sources: ['Manga'],
 			studios: ['Bones'],
 			synopsis: 'Hi.',
 		});
@@ -304,11 +306,13 @@ describe('animeInfoCard', () => {
 		const c = animeInfoCard(
 			anime({
 				genres: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'],
+				original_sources: ['Manga', 'Original', 'Game'],
 				studios: ['one', 'two', 'three'],
 			}),
 		);
 		expect(c.body).toMatchObject({
 			genres: ['a', 'b', 'c', 'd', 'e', 'f', '+2'],
+			sources: ['Manga', '+2'],
 			studios: ['one', 'two', '+1'],
 		});
 	});

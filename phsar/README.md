@@ -245,9 +245,9 @@ phsar/
 │   │   │   │   ├── ShareDialog.svelte
 │   │   │   │   ├── SpoilerGuard.svelte
 │   │   │   │   ├── SearchBar.svelte
+│   │   │   │   ├── SearchLinks.svelte
 │   │   │   │   ├── SkeletonMediaInfo.svelte
 │   │   │   │   ├── SplitCandidatesCard.svelte
-│   │   │   │   ├── StudioLinks.svelte
 │   │   │   │   ├── TabNav.svelte
 │   │   │   │   ├── TagBarLabel.svelte
 │   │   │   │   ├── TagSelect.svelte
@@ -418,6 +418,7 @@ phsar/
 │   │       ├── resume-session.test.ts
 │   │       ├── return-to.test.ts
 │   │       ├── scroll-focus.test.ts
+│   │       ├── search-links.test.ts
 │   │       ├── searchbar.test.ts
 │   │       ├── segmented-control.test.ts
 │   │       ├── session-timeout.test.ts
@@ -427,7 +428,6 @@ phsar/
 │   │       ├── split-candidates-card.test.ts
 │   │       ├── spoiler-frontier.test.ts
 │   │       ├── spoiler-guard.test.ts
-│   │       ├── studio-links.test.ts
 │   │       ├── toast.test.ts
 │   │       ├── watchlist-ready.test.ts
 │   │       ├── watchlist-stats.test.ts

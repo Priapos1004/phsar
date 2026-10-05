@@ -98,10 +98,11 @@ class WatchlistItem(BaseModel):
     # dated). The client compares that key against the one it builds for next season.
     franchise_airing: bool
     franchise_upcoming_key: int | None
-    # Per-media genres + studios (aggregated arrays from get_all_for_items) so the
-    # Statistics subtab can tally top genres/studios client-side off this one fetch.
+    # Per-media genres, studios and source so the Statistics subtab can tally its
+    # top lists client-side off this one fetch.
     genres: list[str]
     studios: list[str]
+    original_source: str | None
     # The Media.total_watch_time hybrid (episodes × duration_seconds) — reused rather
     # than shipping the two factors for the client to multiply.
     total_watch_time: int | None

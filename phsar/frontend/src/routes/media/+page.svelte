@@ -3,7 +3,7 @@
 	import { getContext } from 'svelte';
 	import { api, ApiError } from '$lib/api';
 	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, formatEpisodeCount, formatAiringStatus, cleanDescription, resolveTitle, resolveSubtitles, formatRelationType, formatMediaType } from '$lib/utils/formatString';
-	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
+	import { buildDetailHref, searchBySource, searchByStudio, type DetailOrigin } from '$lib/utils/navigation';
 	import { FOCUS_PARAM } from '$lib/utils/scrollFocus';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -14,7 +14,7 @@
 	import WatchlistBookmarkButton from '$lib/components/WatchlistBookmarkButton.svelte';
 	import MediaShare from '$lib/components/MediaShare.svelte';
 	import BackLink from '$lib/components/BackLink.svelte';
-	import StudioLinks from '$lib/components/StudioLinks.svelte';
+	import SearchLinks from '$lib/components/SearchLinks.svelte';
 	import GenreBadges from '$lib/components/GenreBadges.svelte';
 	import ScorePercentile from '$lib/components/ScorePercentile.svelte';
 	import Tooltip from '$lib/components/Tooltip.svelte';
@@ -284,7 +284,8 @@
 						{/if}
 					</div>
 
-					<StudioLinks studios={media.studio} />
+					<SearchLinks label="Source" values={media.original_source == null ? [] : [media.original_source]} onSelect={searchBySource} />
+					<SearchLinks label="Studio" values={media.studio} onSelect={searchByStudio} />
 				</div>
 			</div>
 		</div>

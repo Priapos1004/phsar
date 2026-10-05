@@ -39,6 +39,7 @@ export function watchlistItem(overrides: Partial<WatchlistItem> = {}): Watchlist
 		franchise_upcoming_key: null,
 		genres: [],
 		studios: [],
+		original_source: null,
 		total_watch_time: null,
 		created_at: '2024-01-01T00:00:00Z',
 		modified_at: '2024-01-01T00:00:00Z',

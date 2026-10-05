@@ -204,6 +204,7 @@ class WatchlistDAO(BaseDAO[Watchlist]):
                 Media.anime_season_year,
                 Media.airing_status,
                 Media.mal_id,
+                Media.original_source,
                 # The canonical hybrid, not raw episodes x duration.
                 Media.total_watch_time.label("total_watch_time"),
                 # NULL when the user has never rated this media. The readiness filter

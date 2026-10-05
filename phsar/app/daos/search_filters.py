@@ -126,6 +126,8 @@ def _build_categorical_conditions(
         conditions.append(Media.age_rating.in_(filters.age_rating))
     if not for_anime and filters.airing_status:
         conditions.append(Media.airing_status.in_(filters.airing_status))
+    if filters.original_source:
+        conditions.append(Media.original_source.in_(filters.original_source))
     if filters.anime_season:
         filter_pairs = _parse_season_filters(filters.anime_season)
         if filter_pairs:

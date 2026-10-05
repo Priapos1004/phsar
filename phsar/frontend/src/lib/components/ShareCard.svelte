@@ -87,7 +87,7 @@
 	/** Solid tints only — `bg-muted` rather than the page's `bg-card-foreground/8`, because a
 	 *  fractional-alpha `color-mix` that fails to reparse in the clone degrades to invisible
 	 *  on a light-on-light chip. */
-	const studioChip = `${chip} border border-border bg-muted text-card-foreground`;
+	const factChip = `${chip} border border-border bg-muted text-card-foreground`;
 	/** Tone → the app's shared badge tokens. The tone union is a share-feature concept, so the
 	 *  mapping lives here while the tints stay in `classes.ts` with their siblings. */
 	const TONE: Record<ShareBadgeTone, string> = {
@@ -214,8 +214,8 @@
 			<!-- Facts band across the card's full width rather than beside the cover: in the
 			     328px hero column a heavily-tagged anime wraps to four chip rows and pushes the
 			     synopsis out of frame. The max-height sits on the CHIPS, not the band, so if a
-			     cap is ever relaxed the overflow eats genre chips and the studio row survives.
-			     These are plain spans rather than GenreBadges/StudioLinks: those mount a
+			     cap is ever relaxed the overflow eats genre chips and the source/studio row survives.
+			     These are plain spans rather than GenreBadges/SearchLinks: those mount a
 			     tooltip provider per chip, fetch genre descriptions on mount (network I/O
 			     inside the capture window), and render focusable buttons inside an aria-hidden
 			     subtree — all three are page affordances a static image has no use for. -->
@@ -229,9 +229,13 @@
 					<span class="{chip} {cls.badgeAgeRatingColor}">{body.ageRating}</span>
 				</div>
 				<div class="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-					<span class="text-sm font-medium text-muted-foreground">Studio</span>
+					<span class="text-sm font-medium text-muted-foreground">Source</span>
+					{#each body.sources as source}
+						<span class={factChip}>{source}</span>
+					{/each}
+					<span class="ml-2 text-sm font-medium text-muted-foreground">Studio</span>
 					{#each body.studios as studio}
-						<span class={studioChip}>{studio}</span>
+						<span class={factChip}>{studio}</span>
 					{/each}
 				</div>
 			</div>

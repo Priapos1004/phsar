@@ -94,6 +94,7 @@ class AnimeAggregates(TypedDict):
     media_types: list[MediaTypeSummary]
     genres: list[str]
     studios: list[str]
+    original_sources: list[str]
     season_start: str | None
     season_end: str | None
     airing_status: str
@@ -106,6 +107,7 @@ def _compute_anime_aggregates(media_list: list[Media]) -> AnimeAggregates:
     Used by both search results and detail page."""
     genre_counts: Counter[str] = Counter()
     all_studios: set[str] = set()
+    source_counts: Counter[str] = Counter()
     all_statuses: list[str] = []
     all_seasons: list[tuple[str, int]] = []
     relation_type_counts: Counter[str] = Counter()
@@ -128,6 +130,8 @@ def _compute_anime_aggregates(media_list: list[Media]) -> AnimeAggregates:
         for g in genres:
             genre_counts[g] += 1
         all_studios.update(studios)
+        if m.original_source is not None:
+            source_counts[m.original_source.value] += 1
         if m.airing_status:
             all_statuses.append(m.airing_status)
         if m.relation_type:
@@ -173,6 +177,8 @@ def _compute_anime_aggregates(media_list: list[Media]) -> AnimeAggregates:
         ],
         "genres": majority_genres,
         "studios": sorted(all_studios),
+        # Every source any media has, the franchise's own first: most media, then A→Z.
+        "original_sources": sorted(source_counts, key=lambda s: (-source_counts[s], s)),
         "season_start": season_start,
         "season_end": season_end,
         "airing_status": airing_status,

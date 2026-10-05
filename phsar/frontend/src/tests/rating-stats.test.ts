@@ -35,6 +35,7 @@ function item(o: Partial<RatingScoreItem> & { media_uuid: string; anime_uuid: st
 		watch_status: 'completed' as WatchStatus,
 		episodes_watched: null,
 		age_rating_numeric: null,
+		original_source: null,
 		genres: [],
 		studios: [],
 		mal_score: null,
@@ -394,7 +395,7 @@ describe('tagMetrics (genre + studio)', () => {
 	});
 });
 
-describe('tagMetrics (season + age rating)', () => {
+describe('tagMetrics (season, age rating + source)', () => {
 	const items = [
 		item({ media_uuid: 'a', anime_uuid: 'A', rating: 9, anime_season_name: 'Fall', anime_season_year: 2025, age_rating_numeric: 17 }),
 		// Same anime, same season → one bucket entry, counted once at the anime grain.
@@ -417,10 +418,23 @@ describe('tagMetrics (season + age rating)', () => {
 		expect(a.find((t) => t.tag === '17')).toMatchObject({ avg: 7, count: 1 });
 	});
 
+	it('buckets by source and skips media with none', () => {
+		const sourced = [
+			item({ media_uuid: 'a', anime_uuid: 'A', rating: 9, original_source: 'Manga' }),
+			item({ media_uuid: 'b', anime_uuid: 'A', rating: 5, original_source: 'Manga' }),
+			item({ media_uuid: 'c', anime_uuid: 'B', rating: 8, original_source: 'Light Novel' }),
+			item({ media_uuid: 'd', anime_uuid: 'C', rating: 6 }),
+		];
+		const s = tagMetrics(sourced, 'sources');
+		expect(s.map((t) => t.tag).sort()).toEqual(['Light Novel', 'Manga']);
+		expect(s.find((t) => t.tag === 'Manga')).toMatchObject({ avg: 7, count: 1 });
+	});
+
 	it('returns no buckets when nothing carries a value', () => {
 		const bare = [item({ media_uuid: 'x', anime_uuid: 'X', rating: 7 })];
 		expect(tagMetrics(bare, 'seasons')).toEqual([]);
 		expect(tagMetrics(bare, 'ageRatings')).toEqual([]);
+		expect(tagMetrics(bare, 'sources')).toEqual([]);
 	});
 });
 

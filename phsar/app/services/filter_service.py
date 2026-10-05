@@ -142,6 +142,8 @@ async def _fetch_shared_filter_values(db: AsyncSession) -> dict:
 
     studio_names = await studio_dao.get_distinct_used_studios(db)
 
+    sources = await media_dao.get_unique_in_field(db, field_name="original_source", order=False)
+
     return {
         "relation_type": relation_types,
         "media_type": media_types,
@@ -149,6 +151,7 @@ async def _fetch_shared_filter_values(db: AsyncSession) -> dict:
         "airing_status": airing_status,
         "anime_season": anime_seasons,
         "studio_name": studio_names,
+        "original_source": sorted(s for s in sources if s is not None),
         "score_min": 0.0,
         "score_max": 10.0,
     }

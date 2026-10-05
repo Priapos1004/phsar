@@ -43,6 +43,9 @@ const MISSING = '--';
  *  a heavily-tagged anime from pushing the synopsis out of frame. */
 const SHARE_MAX_GENRES = 6;
 const SHARE_MAX_STUDIOS = 2;
+// One source, the franchise's own: it shares the Studio row, and
+// a second chip is what would wrap that row into the synopsis budget.
+const SHARE_MAX_SOURCES = 1;
 /**
  * Synopsis budget — the ~12 lines the card's tightest layout has room for, at ~65
  * characters a line.
@@ -91,6 +94,7 @@ export type ShareCardBody =
 			genres: string[];
 			/** "16+", or `--`. Never null — see MISSING. */
 			ageRating: string;
+			sources: string[];
 			studios: string[];
 			synopsis: string | null;
 	  };
@@ -266,6 +270,7 @@ export function mediaInfoCard(media: MediaDetail): ShareVariantContent {
 			kind: 'info',
 			genres: shareChips(media.genres, SHARE_MAX_GENRES),
 			ageRating: ageRatingLabel(media.age_rating_numeric),
+			sources: shareChips(media.original_source == null ? [] : [media.original_source], SHARE_MAX_SOURCES),
 			studios: shareChips(media.studio, SHARE_MAX_STUDIOS),
 			synopsis: shareSynopsis(media.description),
 		},
@@ -392,6 +397,7 @@ export function animeInfoCard(anime: AnimeDetail): ShareVariantContent {
 			kind: 'info',
 			genres: shareChips(anime.genres, SHARE_MAX_GENRES),
 			ageRating: ageRatingLabel(anime.age_rating_numeric),
+			sources: shareChips(anime.original_sources, SHARE_MAX_SOURCES),
 			studios: shareChips(anime.studios, SHARE_MAX_STUDIOS),
 			synopsis: shareSynopsis(anime.description),
 		},

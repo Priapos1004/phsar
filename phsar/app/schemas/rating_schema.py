@@ -131,6 +131,7 @@ class RatingScoreItem(RatingAttributes):
     watch_status: WatchStatus
     episodes_watched: int | None
     age_rating_numeric: int | None
+    original_source: str | None
     genres: list[str] = []
     studios: list[str] = []
     # MAL score + vote count power the You-vs-MAL alignment scatter (point weight =

@@ -14,6 +14,7 @@ export interface MediaSearchFilters {
 	anime_season?: string[];
 	genre_name?: string[];
 	studio_name?: string[];
+	original_source?: string[];
 
 	// Range filters
 	score_min?: number;
@@ -30,22 +31,23 @@ export interface MediaSearchFilters {
 	total_watch_time_max?: number;
 }
 
+/** Every list-valued filter. The request builder and the view toggle iterate it, and the
+ * filter panel's config is typed against it, so the panel can't offer a key the request
+ * would drop. A new key still needs its own panel entry. */
+export const LIST_FILTER_KEYS = [
+	'genre_name', 'anime_season', 'original_source', 'studio_name', 'airing_status',
+	'relation_type', 'media_type', 'age_rating',
+] as const;
+export type ListFilterKey = (typeof LIST_FILTER_KEYS)[number];
+
 function buildSearchParams(params: MediaSearchFilters): URLSearchParams {
 	const searchParams = new URLSearchParams();
 
 	if (params.query) searchParams.append('query', params.query);
 	if (params.search_type) searchParams.append('search_type', params.search_type);
 
-	const listKeys: (keyof MediaSearchFilters)[] = [
-		'genre_name', 'anime_season', 'studio_name', 'airing_status',
-		'relation_type', 'media_type', 'age_rating',
-	];
-
-	for (const key of listKeys) {
-		const values = params[key];
-		if (Array.isArray(values)) {
-			values.forEach((v) => searchParams.append(key, v));
-		}
+	for (const key of LIST_FILTER_KEYS) {
+		params[key]?.forEach((v) => searchParams.append(key, v));
 	}
 
 	const numberKeys: (keyof MediaSearchFilters)[] = [

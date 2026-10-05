@@ -448,10 +448,10 @@ export function spearman(pairs: { x: number; y: number }[]): SpearmanResult {
 
 // ── Categorical breakdowns (one implementation, keyed on the bucketing dim) ──
 
-export type TagDim = 'genres' | 'studios' | 'seasons' | 'ageRatings';
+export type TagDim = 'genres' | 'sources' | 'studios' | 'seasons' | 'ageRatings';
 
 /** How each dim reads its bucket keys off a rating. Genres/studios are already
- * many-per-media; season and age rating are scalar, so they yield a one-element
+ * many-per-media; source, season and age rating are scalar, so they yield a one-element
  * list (or none when the media carries no value — a null must be SKIPPED, not
  * bucketed as its own "unknown" tag).
  *
@@ -461,6 +461,7 @@ export type TagDim = 'genres' | 'studios' | 'seasons' | 'ageRatings';
  * the moment a label is reworded. Display formatting is the caller's job. */
 const TAG_DIM_KEYS: Record<TagDim, (it: RatingScoreItem) => string[]> = {
 	genres: (it) => it.genres,
+	sources: (it) => (it.original_source == null ? [] : [it.original_source]),
 	studios: (it) => it.studios,
 	seasons: (it) => {
 		const s = seasonLabel(it);
@@ -491,7 +492,7 @@ function bucketByTag(items: RatingScoreItem[], dim: TagDim): Map<string, RatingS
 	return map;
 }
 
-/** Per-bucket metrics (genre, studio, season or age rating) in one pass: avg rating, count, total watch
+/** Per-bucket metrics for one `TagDim` in one pass: avg rating, count, total watch
  * time, and a composite `weighted` score. The composite blends quality, volume and
  * watch time — `avg × log10(count+1) × (1 + log10(hours+1))` — then divides by the
  * strongest tag so the best is 1 and the rest scale below it (the same log-damping

@@ -59,6 +59,7 @@ function infoBody(o: Partial<Extract<ShareCardBody, { kind: 'info' }>> = {}): Sh
 		kind: 'info',
 		genres: ['Action', 'Drama'],
 		ageRating: '17+',
+		sources: ['Manga'],
 		studios: ['Wit Studio'],
 		synopsis: 'Humanity fights for survival behind three walls.',
 		...o,
@@ -160,12 +161,14 @@ describe('ShareCard — rating variant', () => {
 });
 
 describe('ShareCard — info variant', () => {
-	it('renders the genre chips, age chip, studios and synopsis', () => {
+	it('renders the genre chips, age chip, source, studios and synopsis', () => {
 		render(ShareCard, { props: infoProps });
 
 		expect(screen.getByText('Action')).toBeInTheDocument();
 		expect(screen.getByText('Drama')).toBeInTheDocument();
 		expect(screen.getByText('17+')).toBeInTheDocument();
+		expect(screen.getByText('Source')).toBeInTheDocument();
+		expect(screen.getByText('Manga')).toBeInTheDocument();
 		expect(screen.getByText('Studio')).toBeInTheDocument();
 		expect(screen.getByText('Wit Studio')).toBeInTheDocument();
 		expect(
@@ -184,9 +187,10 @@ describe('ShareCard — info variant', () => {
 	// app around it, so a dropped studio row is indistinguishable from a rendering bug.
 	it('keeps a row for each fact the catalog is missing', () => {
 		render(ShareCard, {
-			props: { ...infoProps, body: infoBody({ genres: ['--'], ageRating: '--', studios: ['--'] }) },
+			props: { ...infoProps, body: infoBody({ genres: ['--'], ageRating: '--', sources: ['--'], studios: ['--'] }) },
 		});
-		expect(screen.getAllByText('--')).toHaveLength(3);
+		expect(screen.getAllByText('--')).toHaveLength(4);
+		expect(screen.getByText('Source')).toBeInTheDocument();
 		expect(screen.getByText('Studio')).toBeInTheDocument();
 	});
 

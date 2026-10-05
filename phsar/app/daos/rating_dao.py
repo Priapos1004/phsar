@@ -226,6 +226,7 @@ class RatingDAO(BaseDAO[Ratings]):
                 Media.anime_season_name,
                 Media.anime_season_year,
                 Media.relation_type,
+                Media.original_source,
                 # Hybrid with a SQL expression — selects like a column.
                 Media.age_rating_numeric.label("age_rating_numeric"),
                 *anime_identity_columns(),

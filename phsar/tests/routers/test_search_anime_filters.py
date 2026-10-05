@@ -24,7 +24,7 @@ import pytest
 
 from app.models.anime import Anime
 from app.models.genre import Genre, GenreType
-from app.models.media import Media, MediaType, RelationType
+from app.models.media import Media, MediaType, OriginalSource, RelationType
 from app.models.media_genre import MediaGenre
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
@@ -123,6 +123,49 @@ async def test_age_rating_r_returns_mixed_only(client, user_auth_headers, age_ra
         age_rating="R - 17+ (violence & profanity)",
     )
     assert seen == {f"{_AGE_FIXTURE_QUERY} MixedRating Anime"}
+
+
+_SOURCE_FIXTURE_QUERY = "FilterTestSource"
+_SOURCE_FIXTURE_TITLES = {
+    f"{_SOURCE_FIXTURE_QUERY} OriginalFranchise Anime",
+    f"{_SOURCE_FIXTURE_QUERY} PureOriginal Anime",
+}
+
+
+@pytest.fixture
+async def source_set(db_session):
+    """original_source is any-media, like studios: an anime adapted from a light
+    novel only in a side story still matches "Light Novel". Its card lists every
+    source, most frequent first — Original (2 media) ahead of Light Novel (1),
+    against the A→Z order, so the frequency sort is what puts it there."""
+    franchise = await _make_anime(
+        db_session, mal_id=85101, title=f"{_SOURCE_FIXTURE_QUERY} OriginalFranchise Anime",
+    )
+    await _add_media(db_session, franchise, 851011, original_source=OriginalSource.Original)
+    await _add_media(db_session, franchise, 851012, original_source=OriginalSource.Original)
+    await _add_media(
+        db_session, franchise, 851013,
+        relation_type=RelationType.SideStory, original_source=OriginalSource.LightNovel,
+    )
+
+    pure = await _make_anime(
+        db_session, mal_id=85102, title=f"{_SOURCE_FIXTURE_QUERY} PureOriginal Anime",
+    )
+    await _add_media(db_session, pure, 851021, original_source=OriginalSource.Original)
+
+
+async def test_source_filter_matches_any_media(client, user_auth_headers, source_set):
+    resp = await client.get(
+        ANIME_SEARCH_URL,
+        params={"query": _SOURCE_FIXTURE_QUERY, "original_source": "Light Novel"},
+        headers=user_auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    matched = [a for a in resp.json() if a["title"] in _SOURCE_FIXTURE_TITLES]
+
+    assert [(a["title"], a["original_sources"]) for a in matched] == [
+        (f"{_SOURCE_FIXTURE_QUERY} OriginalFranchise Anime", ["Original", "Light Novel"]),
+    ]
 
 
 async def test_age_rating_g_or_r_returns_both(client, user_auth_headers, age_rating_set):

@@ -19,6 +19,7 @@ function item(
 		age_rating_numeric: null,
 		genres: [],
 		studios: [],
+		original_source: null,
 		mal_score: null,
 		scored_by: 0,
 		episodes: null,
