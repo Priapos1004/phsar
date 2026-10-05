@@ -62,6 +62,8 @@
 		old: string;
 		new: string;
 		delta: string | null;
+		// A row from `unknown_mal_values` — see its type.
+		unknown?: boolean;
 	};
 	type TagsetRow = {
 		kind: 'tagset';
@@ -129,6 +131,7 @@
 		const out: DiffRow[] = [];
 		for (const f of change.dynamic) out.push(scalarRow(f, dynamicTone(f.field)));
 		for (const f of change.static) out.push(scalarRow(f, 'static'));
+		for (const f of change.unknown_mal_values ?? []) out.push({ ...scalarRow(f, 'static'), unknown: true });
 		if (change.genre_drift) out.push(tagsetRow(change.genre_drift));
 		if (change.studio_drift) out.push(tagsetRow(change.studio_drift));
 		return out.sort((a, b) => TONE_RANK[a.tone] - TONE_RANK[b.tone]);
@@ -184,6 +187,9 @@
 								{row.new}
 								{#if row.delta}
 									<span class="ml-1 text-xs {row.delta.startsWith('+') ? 'text-emerald-400' : 'text-destructive'}">({row.delta})</span>
+								{/if}
+								{#if row.unknown}
+									<p class="mt-1 text-xs text-amber-400">Unknown MAL code — not stored until the enum has a member.</p>
 								{/if}
 							</td>
 						{:else}

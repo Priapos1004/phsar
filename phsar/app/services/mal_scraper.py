@@ -3,6 +3,7 @@ import enum
 import logging
 import re
 from collections import deque
+from collections.abc import Mapping
 from datetime import date, datetime, timezone
 from time import monotonic
 from typing import TYPE_CHECKING, Any
@@ -21,7 +22,7 @@ from app.exceptions import (
     MalIdNotFoundError,
     TransientUpstreamError,
 )
-from app.models.media import AIRING_STATUS_NOT_YET_AIRED
+from app.models.media import AIRING_STATUS_NOT_YET_AIRED, OriginalSource
 from app.services.relation_classifier import (
     anchor_tier,
     build_classifier_nodes,
@@ -136,27 +137,44 @@ _AGE_RATING_MAP = {
     "rx": "Rx - Hentai",
 }
 
-# MAL source enum → Jikan-style title case (filter-value + metadata-diff
-# stability). Unknown values pass through unchanged rather than being dropped.
-_SOURCE_MAP = {
-    "other": "Other",
-    "original": "Original",
-    "manga": "Manga",
-    "4_koma_manga": "4-koma manga",
-    "web_manga": "Web manga",
-    "digital_manga": "Digital manga",
-    "novel": "Novel",
-    "light_novel": "Light novel",
-    "visual_novel": "Visual novel",
-    "game": "Game",
-    "card_game": "Card game",
-    "book": "Book",
-    "picture_book": "Picture book",
-    "radio": "Radio",
-    "music": "Music",
-    "web_novel": "Web novel",
-    "mixed_media": "Mixed media",
+_SOURCE_MAP: dict[str, OriginalSource] = {
+    "original": OriginalSource.Original,
+    "manga": OriginalSource.Manga,
+    "4_koma_manga": OriginalSource.FourKomaManga,
+    "web_manga": OriginalSource.WebManga,
+    "digital_manga": OriginalSource.DigitalManga,
+    "novel": OriginalSource.Novel,
+    "light_novel": OriginalSource.LightNovel,
+    "web_novel": OriginalSource.WebNovel,
+    "visual_novel": OriginalSource.VisualNovel,
+    "game": OriginalSource.Game,
+    "card_game": OriginalSource.CardGame,
+    "book": OriginalSource.Book,
+    "picture_book": OriginalSource.PictureBook,
+    "radio": OriginalSource.Radio,
+    "music": OriginalSource.Music,
+    "mixed_media": OriginalSource.MixedMedia,
+    "other": OriginalSource.Other,
 }
+
+# Column → (raw MAL key, translation map). The one list both `extract_information`
+# and `unknown_mal_codes` read.
+_TRANSLATED_COLUMNS: dict[str, tuple[str, Mapping[str, object]]] = {
+    "original_source": ("source", _SOURCE_MAP),
+    "age_rating": ("rating", _AGE_RATING_MAP),
+}
+
+
+def unknown_mal_codes(raw: dict[str, Any]) -> dict[str, str]:
+    """{column: raw MAL code} for every translated field whose code has no mapping.
+
+    Reads the RAW payload rather than the translated dict, because translation is
+    where the code is lost — by then an unknown and an absent value are both None."""
+    return {
+        column: code
+        for column, (key, table) in _TRANSLATED_COLUMNS.items()
+        if (code := raw.get(key)) is not None and code not in table
+    }
 
 
 # The translated age_rating string MAL assigns to Hentai (see _AGE_RATING_MAP).
@@ -495,9 +513,8 @@ class MalScraper:
             "media_type": media_type,
             "genres": genres,
             "studio": [studio["name"] for studio in anime.get("studios", [])],
-            "age_rating": _AGE_RATING_MAP.get(rating) if (rating := anime.get("rating")) is not None else None,
+            **{column: table.get(anime.get(key, "")) for column, (key, table) in _TRANSLATED_COLUMNS.items()},
             "description": MalScraper._clean_synopsis(anime.get("synopsis")),
-            "original_source": _SOURCE_MAP.get(source, source) if (source := anime.get("source")) is not None else None,
             "cover_image": _normalize_cover_url((anime.get("main_picture") or {}).get("large")),
             "score": anime.get("mean"),
             "scored_by": scored_by,

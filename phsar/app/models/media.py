@@ -88,6 +88,36 @@ class SeasonType(str, enum.Enum):
     Fall   = "Fall"
 
 
+# MAL's `source` vocabulary. The values are the display labels, in the Title Case
+# the other badges use, so the frontend renders them as they arrive. Adding one is a
+# member here, an entry in `mal_scraper._SOURCE_MAP`, and a migration
+# (rules/database.md).
+class OriginalSource(str, enum.Enum):
+    Original = "Original"
+    Manga = "Manga"
+    FourKomaManga = "4-Koma Manga"
+    WebManga = "Web Manga"
+    DigitalManga = "Digital Manga"
+    Novel = "Novel"
+    LightNovel = "Light Novel"
+    WebNovel = "Web Novel"
+    VisualNovel = "Visual Novel"
+    Game = "Game"
+    CardGame = "Card Game"
+    Book = "Book"
+    PictureBook = "Picture Book"
+    Radio = "Radio"
+    Music = "Music"
+    MixedMedia = "Mixed Media"
+    Other = "Other"
+
+
+def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
+    """`values_callable` that persists an enum's values rather than its member names
+    (rules/database.md)."""
+    return [m.value for m in enum_cls]
+
+
 # Chronological rank of a season within its year. Lives beside the enum rather than in
 # one of its consumers because both layers need it: services sort by it in Python, the
 # watchlist DAO builds a SQL CASE from it. Keyed by members, but the str-enum hashes by
@@ -129,7 +159,7 @@ class Media(BaseModel):
     relation_type: Mapped[RelationType] = mapped_column(Enum(RelationType), nullable=False)
     age_rating: Mapped[str | None] = mapped_column(String)
     description: Mapped[str | None] = mapped_column(String)
-    original_source: Mapped[str | None] = mapped_column(String)
+    original_source: Mapped[OriginalSource | None] = mapped_column(Enum(OriginalSource, values_callable=_enum_values))
     cover_image: Mapped[str | None] = mapped_column(String)
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
     scored_by: Mapped[int] = mapped_column(Integer, nullable=False)

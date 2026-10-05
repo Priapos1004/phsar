@@ -113,6 +113,13 @@ export function unknownGenreTags(row: AdminJobResponse): string[] {
 	return Array.isArray(tags) ? (tags as string[]) : [];
 }
 
+/** v10+ sweeps report MAL codes with no enum member, as `column: code` — the
+ * sibling of `unknownGenreTags`. */
+export function unknownMalValues(row: AdminJobResponse): string[] {
+	const values = row.result_summary?.unknown_mal_values;
+	return Array.isArray(values) ? (values as string[]) : [];
+}
+
 /** v6+ sweeps report how many media the relations probe attached. Surfaced
  * at the row level (blue, informational) so the admin spots which sweeps grew
  * the catalog without drilling in — sibling to the amber unknown-genre-tags
@@ -141,8 +148,9 @@ export function deleteCandidatesRaised(row: AdminJobResponse): number {
 }
 
 /** Mutually-exclusive row tint in priority order: hentai-removal (rose,
- * destructive) > delete-candidates (violet, needs a decision) > unknown-genre-
- * tags (amber, needs seeding) > probe-attach (blue, informational).
+ * destructive) > delete-candidates (violet, needs a decision) > unknown genre
+ * tags or MAL values (amber, needs seeding or an enum member) > probe-attach
+ * (blue, informational).
  *
  * Violet outranks amber because a pending destructive decision is worth more of
  * the admin's attention than a seeder chore, and sits below rose because rose
@@ -152,13 +160,13 @@ export function deleteCandidatesRaised(row: AdminJobResponse): number {
  * background tint is single-winner. */
 export function rowTintClass(
 	hentaiCount: number,
-	unknownTagCount: number,
+	unknownCount: number,
 	probeMedia: number,
 	deleteCandidates: number,
 ): string {
 	if (hentaiCount > 0) return 'bg-rose-500/15 border-l-2 border-l-rose-400';
 	if (deleteCandidates > 0) return 'bg-violet-500/15 border-l-2 border-l-violet-400';
-	if (unknownTagCount > 0) return 'bg-amber-500/15 border-l-2 border-l-amber-400';
+	if (unknownCount > 0) return 'bg-amber-500/15 border-l-2 border-l-amber-400';
 	if (probeMedia > 0) return 'bg-blue-500/10 border-l-2 border-l-blue-400';
 	return '';
 }

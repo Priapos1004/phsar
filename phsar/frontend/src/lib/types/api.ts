@@ -652,6 +652,9 @@ export interface UpdateSweepMediaChange {
 	static: UpdateSweepFieldChange[];
 	genre_drift: UpdateSweepM2MDrift | null;
 	studio_drift: UpdateSweepM2MDrift | null;
+	// v10+: MAL codes with no enum member — `old` is the stored value, `new` the
+	// raw code that was NOT written. Static-field changes in every respect but that.
+	unknown_mal_values?: UpdateSweepFieldChange[];
 }
 
 // Shape the genre/studio drift detector emits per-media. Mirrors the
@@ -816,6 +819,8 @@ export interface UpdateSweepResultSummary extends JobResultSummary {
 	// v9+: media MAL 404'd this sweep. Pre-v9 rows carried these on the
 	// matching `step1_failures[]` entry instead.
 	gone_upstream?: UpdateSweepGoneUpstream[];
+	// v10+: unmapped MAL codes as "column: code", deduplicated across media.
+	unknown_mal_values?: string[];
 	merge_detect_failed?: boolean;
 	cache_recompute_failed?: boolean;
 }

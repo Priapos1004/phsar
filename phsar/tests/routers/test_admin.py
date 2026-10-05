@@ -806,6 +806,7 @@ def _sweep_summary() -> dict:
     return {
         "counters": {"media_refreshed": 3, "step1_failed": 1},
         "unknown_genre_tags": ["Iyashikei"],
+        "unknown_mal_values": ["original_source: web_comic"],
         "media_changes": [{"media_uuid": "m", "dynamic": [], "static": []}],
         "anime_umbrella_changes": [{"anime_uuid": "a", "dynamic": []}],
         "step1_failures": [{"anime_uuid": "a", "error_message": "boom"}],
@@ -843,6 +844,7 @@ async def test_admin_jobs_list_projects_summary_but_detail_does_not(
     # The scalars the list actually renders survive the projection.
     assert row["result_summary"]["counters"]["media_refreshed"] == 3
     assert row["result_summary"]["unknown_genre_tags"] == ["Iyashikei"]
+    assert row["result_summary"]["unknown_mal_values"] == ["original_source: web_comic"]
 
     detail = (await client.get(
         f"{JOBS_LOG_URL}/{job.uuid}", headers=admin_auth_headers,

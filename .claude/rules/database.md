@@ -94,6 +94,21 @@ and the `ORDER BY` sits on the nullable side of a LEFT JOIN), and it would be wo
 than inert: it would be the only indexed *mutable* column on the sidecar, turning
 every sweep write into a non-HOT update.
 
+## A native enum's labels are maintained by hand
+
+The Python enum and the Postgres type must hold the same labels, and nothing checks
+that they do: autogenerate and `alembic check` compare neither. Adding a member is a
+hand-written `ALTER TYPE … ADD VALUE` migration, and a label the Python enum lacks
+makes every read of its rows raise `LookupError`.
+
+An enum whose values are display labels (`OriginalSource`) persists them through
+`values_callable` — the default persists member *names*. The round-trip test
+`test_enum_columns_store_their_label` is the only guard on it; its docstring says why.
+
+A migration that creates a type drops a leftover one first. `pg_restore --clean` only
+drops what the dump contains, so restoring a dump older than the type leaves it
+orphaned, and a bare `CREATE TYPE` then fails the next boot's upgrade.
+
 ## A migration docstring is frozen, so it may narrate
 
 It is dated and read as a record of its moment, so `workflow.md`'s present-tense

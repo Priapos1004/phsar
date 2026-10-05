@@ -7,6 +7,7 @@ from app.services.mal_scraper import (
     _mal_date_to_iso,
     is_hentai,
     parse_relation_edges,
+    unknown_mal_codes,
 )
 
 # MAL v2 emits media_type lowercase/snake_case; the test builders keep the
@@ -691,7 +692,17 @@ def test_extract_information_translates_mal_enums():
     assert info["media_type"] == "TVSpecial"
     assert info["airing_status"] == "Currently Airing"
     assert info["age_rating"] == "R - 17+ (violence & profanity)"
-    assert info["original_source"] == "Light novel"
+    assert info["original_source"] == "Light Novel"
+
+
+def test_unmapped_mal_code_is_stored_as_none_and_reported():
+    """A source code with no OriginalSource member must not reach the enum column —
+    it becomes None — while `unknown_mal_codes` still names it for the sweep's
+    report. The known `pg_13` rating beside it must not be reported."""
+    raw = {**_make_anime(1, "X"), "source": "web_comic"}
+
+    assert MalScraper().extract_information(raw)["original_source"] is None
+    assert unknown_mal_codes(raw) == {"original_source": "web_comic"}
 
 
 def test_extract_information_pins_cover_extension_to_webp():

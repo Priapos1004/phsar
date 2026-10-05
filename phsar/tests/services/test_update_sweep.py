@@ -1850,6 +1850,36 @@ async def test_dispatcher_returns_summary(tracked_anime, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_dispatcher_reports_unmapped_mal_codes(tracked_anime, monkeypatch):
+    """An unmapped MAL code is stored as None, so it is no change — yet each media
+    carrying one still gets a `media_changes` row naming it, and the sweep-level
+    aggregate reports it once for two media sending the same code.
+
+    `_FakeScraper.extract_information` is the identity, so the raw `source` key
+    rides along with the payload's already-translated keys."""
+    a1_id = await _real_seed(
+        mal_id=-8011, last_checked_at=datetime.now(timezone.utc) - timedelta(days=10),
+    )
+    a2_id = await _real_seed(
+        mal_id=-8012, last_checked_at=datetime.now(timezone.utc) - timedelta(days=10),
+    )
+    tracked_anime.extend([a1_id, a2_id])
+
+    payloads = {
+        -8011 * 100: {**_payload(), "source": "web_comic"},
+        -8012 * 100: {**_payload(), "source": "web_comic"},
+    }
+    summary, _, _ = await _run_dispatcher_harness(
+        monkeypatch, _FakeScraper(payloads), [a1_id, a2_id],
+    )
+
+    assert [entry["unknown_mal_values"] for entry in summary["media_changes"]] == [
+        [{"field": "original_source", "old": None, "new": "web_comic"}],
+    ] * 2
+    assert summary["unknown_mal_values"] == ["original_source: web_comic"]
+
+
+@pytest.mark.asyncio
 async def test_dispatcher_progress_is_media_grained(tracked_anime, monkeypatch):
     """items_total is the due-media count, NOT the anime count (v0.14.8). One
     anime with two due media must report items_total=2 (media) and

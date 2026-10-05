@@ -182,6 +182,16 @@ Both apply additions *and* removals, but they are not symmetric:
 Drift must actually be written, with the audit log as the rollback path. Reporting
 drift without applying it re-reports the same drift every sweep.
 
+### Unmapped MAL codes
+
+The genre-tag rule, applied to the columns `mal_scraper._TRANSLATED_COLUMNS` lists:
+a code [scraping](scraping.md#value-translation) stores as None leaves the old value
+in place under the metadata None-guard, and is recorded on the media's change entry
+as `unknown_mal_values` — the media getting an entry even when that is all it carries.
+They aggregate into a sweep-level `unknown_mal_values` that tints the Jobs Log row
+amber. A media keeps its stale value until it next comes due after the member is
+added, which is why the record is per media.
+
 ## Season sweeps
 
 `seasonal_sweep` and `upcoming_sweep` share one dispatcher; `job.kind` picks the
