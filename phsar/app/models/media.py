@@ -138,7 +138,8 @@ AIRING_STATUS_NOT_YET_AIRED = "Not yet aired"
 
 # MAL's rating vocabulary, as its own descriptive labels. Adding one is a member here,
 # its tier in AGE_RATING_TIERS, an entry in `mal_scraper._AGE_RATING_MAP`, and a
-# migration (rules/database.md).
+# migration (rules/database.md) — plus a label in the frontend's `AGE_RATING_LABELS`
+# when its tier is new.
 class AgeRating(str, enum.Enum):
     G = "G - All Ages"
     PG = "PG - Children"

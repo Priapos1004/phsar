@@ -84,8 +84,8 @@ migration-only index silently loses its query the access path it exists for.
 `alembic check` in CI is the guard — it must both agree with the models and replay
 from empty.
 
-**It is a partial guard.** Nullability, column types, indexes and FK constraints fail
-loudly; `server_default`, Python-side `default` and `onupdate` are not compared at all,
+**It is a partial guard.** Nullability, column types, indexes, FK constraints and native
+enum labels fail loudly; `server_default`, Python-side `default` and `onupdate` are not compared at all,
 so dropping one ships green. Review those by eye whenever column definitions move.
 
 Do **not** index a sidecar's `last_checked_at`. The planner could not use it (the
@@ -96,14 +96,21 @@ every sweep write into a non-HOT update.
 
 ## A native enum's labels are maintained by hand
 
-The Python enum and the Postgres type must hold the same labels, and nothing checks
-that they do: autogenerate and `alembic check` compare neither. Adding a member is a
-hand-written `ALTER TYPE … ADD VALUE` migration, and a label the Python enum lacks
-makes every read of its rows raise `LookupError`.
+The Python enum and the Postgres type must hold the same labels. Adding a member is a
+hand-written `ALTER TYPE … ADD VALUE` migration, which autogenerate never writes:
+without it every write of the member fails, and a label the Python enum lacks makes
+every read of its rows raise `LookupError`. A comparator in `alembic/env.py` makes
+`alembic check` and `--autogenerate` raise while the labels differ — only against a DB
+the migrations built, which the test DB is not.
+
+`ADD VALUE` appends unless placed with `BEFORE`/`AFTER`, so a type's label order can
+differ from its Python enum's — and `ORDER BY` on the column follows the type. Where the
+order means something, sort by an explicit key.
 
 An enum whose values are display labels (`OriginalSource`) persists them through
-`values_callable` — the default persists member *names*. The round-trip test
-`test_enum_columns_store_their_label` is the only guard on it; its docstring says why.
+`values_callable` — the default persists member *names*. Dropping it trips that
+comparator wherever a name differs from its value, and the round-trip test
+`test_enum_columns_store_their_label` covers the test DB.
 
 A migration that creates a type drops a leftover one first. `pg_restore --clean` only
 drops what the dump contains, so restoring a dump older than the type leaves it

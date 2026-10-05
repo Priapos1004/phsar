@@ -89,13 +89,15 @@ jobs:
         sudo apt-get install -y postgresql-client-17
         echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
 
-    # Guards two things at once, in seconds and with no file written:
+    # Guards, in seconds and with no file written:
     #  1. Models and migrations agree — an index or column declared in only one
     #     of the two is exactly what makes the next `--autogenerate` propose a
     #     destructive diff nobody reads closely.
     #  2. The migration chain still replays from empty. Nothing else in CI does
     #     this: the test DB below is built by `create_all`, so the chain is
     #     never exercised end to end.
+    #  3. Every native enum holds its Python enum's labels (the comparator in
+    #     alembic/env.py).
     #
     # It needs its OWN database, built by replaying the chain. Run it against
     # `testdb` and it would compare `create_all`'s metadata to the same

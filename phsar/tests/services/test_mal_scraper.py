@@ -2,8 +2,9 @@ import re
 
 import pytest
 
-from app.models.media import AGE_RATING_TIERS, AgeRating
+from app.models.media import AGE_RATING_TIERS, AgeRating, Media
 from app.services.mal_scraper import (
+    _TRANSLATED_COLUMNS,
     MalScraper,
     _mal_date_to_iso,
     is_hentai,
@@ -700,6 +701,13 @@ def test_every_age_rating_has_a_tier():
     """`age_rating_numeric` indexes AGE_RATING_TIERS by member, so a member added
     without a tier raises in Python and reads as NULL in SQL."""
     assert set(AGE_RATING_TIERS) == set(AgeRating)
+
+
+def test_every_enum_member_has_a_mal_code():
+    """A member added without its map entry is never written, and the sweep keeps
+    reporting the code it was added for."""
+    for column, (_, table) in _TRANSLATED_COLUMNS.items():
+        assert set(table.values()) == set(Media.__table__.c[column].type.enum_class), column
 
 
 def test_unmapped_mal_code_is_stored_as_none_and_reported():

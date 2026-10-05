@@ -351,6 +351,8 @@ describe('fitChipCount', () => {
 	// gap 6, "+N" chip 30 wide throughout.
 	it('keeps every chip when the whole row fits, with no "+N" to make room for', () => {
 		expect(fitChipCount([100, 100], 206, 6, 30)).toBe(2);
+		// A last chip narrower than the "+N" fits where the "+N" would not.
+		expect(fitChipCount([100, 100, 20], 232, 6, 30)).toBe(3);
 	});
 
 	it('stops where the next chip plus the "+N" would overflow', () => {

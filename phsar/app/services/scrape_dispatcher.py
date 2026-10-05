@@ -64,6 +64,7 @@ from app.services.anime_relation_service import (
 )
 from app.services.job_worker import ERROR_CATEGORY_UPSTREAM_OUTAGE, classify_error
 from app.services.mal_scraper import (
+    _TRANSLATED_COLUMNS,
     MalScraper,
     is_hentai,
     parse_mal_date,
@@ -1187,10 +1188,10 @@ _EMBEDDING_TEXT_FIELDS = ("title", "name_eng", "name_jap", "other_names", "descr
 # back to weekly polling over a duration typo. All None-guarded in the loop below
 # so a MAL omission never nulls a populated value. media_type, anime_season_name
 # and aired_from are self-healed too but need special handling (enum coercion /
-# date parse) so they live outside this tuple. `original_source` is an enum column
-# that needs none: extract_information already emits a member.
+# date parse) so they live outside this tuple. The translated enum columns need
+# none — extract_information already emits members — so they join it as listed.
 _METADATA_NONTEXT_FIELDS = (
-    "cover_image", "age_rating", "original_source",
+    "cover_image", *_TRANSLATED_COLUMNS,
     "duration_seconds", "anime_season_year", "mal_url",
 )
 

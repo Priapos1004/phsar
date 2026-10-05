@@ -211,7 +211,7 @@ def _media_to_anime_media_item(m: Media) -> AnimeMediaItem:
         anime_season_year=m.anime_season_year,
         total_watch_time=m.total_watch_time,
         age_rating_numeric=m.age_rating_numeric,
-        genres=[mg.genre.name for mg in m.media_genre if mg.genre is not None],
+        genres=sorted((mg.genre.name for mg in m.media_genre if mg.genre is not None), key=str.casefold),
         studios=sorted((ms.studio.name for ms in m.media_studio if ms.studio is not None), key=str.casefold),
     )
 

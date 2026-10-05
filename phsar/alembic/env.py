@@ -3,6 +3,9 @@ import os
 import sys
 from logging.config import fileConfig
 
+from alembic.autogenerate import comparators
+from alembic.util import CommandError
+from sqlalchemy import Enum
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from alembic import context
@@ -28,6 +31,25 @@ config.set_main_option(
 )
 
 target_metadata = Base.metadata
+
+
+@comparators.dispatch_for("schema")
+def compare_enum_labels(autogen_context, upgrade_ops, schemas):
+    """Fails while a native enum's labels differ from its Python enum's, which stock
+    autogenerate never compares. It raises rather than emitting an op, and compares
+    label sets rather than their order — rules/database.md (native enums) says why."""
+    db = {e["name"]: set(e["labels"]) for e in autogen_context.inspector.get_enums()}
+    declared = {
+        col.type.name: set(col.type.enums)
+        for table in autogen_context.metadata.tables.values()
+        for col in table.columns
+        if isinstance(col.type, Enum) and col.type.native_enum
+    }
+    # A type the DB lacks is a new column's, which stock autogenerate already emits.
+    drift = {name: (db[name], labels) for name, labels in declared.items() if name in db and db[name] != labels}
+    if drift:
+        raise CommandError(f"Enum labels differ (database, models): {drift}")
+
 
 def run_migrations_offline():
     """Run migrations in 'offline' mode."""

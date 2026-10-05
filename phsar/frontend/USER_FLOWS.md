@@ -325,7 +325,7 @@ can rate.
 - MAL score with star icon and rating count; hovering the score pill shows a tooltip clarifying it's the MyAnimeList community score, not Phsar users' ratings
 - A small "Top N%" chip after the rating-count text (always visible, color-ramped) showing where this media ranks among all scored media by its vote-weighted MAL score; hovering explains the rank + vote weighting. Hidden when the media has no score
 - Badges: media type (green), relation type (blue), age rating (orange)
-- Genre badges (themed primary color) — hovering a genre badge shows its description when one is seeded
+- Genre badges — A→Z, in the themed primary color — hovering a genre badge shows its description when one is seeded
 - Stats grid: episodes, duration per episode, season, total watch time
 - Source — a button linking to an anime-view search filtered to that source
 - Studio names — A→Z — each a button linking to an anime-view search filtered to that studio, the row aligned with Source as on the anime page

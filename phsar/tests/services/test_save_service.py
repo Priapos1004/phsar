@@ -64,10 +64,9 @@ async def test_save_search_results_persists_edges_per_media(db_session):
 
 async def test_enum_columns_store_their_label(db_session):
     """A `values_callable` enum column persists the member's VALUE ("Light Novel"), not its name
-    (`LightNovel`). The only guard on `values_callable`: `alembic check` does not
-    compare enum labels, and the CI test DB is built by create_all, where a
-    name-persisting enum would round-trip in silence. Both members here have a name
-    that differs from their value, so either column losing it fails."""
+    (`LightNovel`). The CI test DB is built by create_all, where a name-persisting enum
+    would round-trip in silence. Both members here have a name that differs from their
+    value, so either column losing it fails."""
     media = _media(900_020, "Label Show", RelationType.Main)
     media.original_source = OriginalSource.LightNovel
     media.age_rating = AgeRating.PG13
