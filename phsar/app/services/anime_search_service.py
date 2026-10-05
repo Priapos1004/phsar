@@ -84,6 +84,14 @@ def _compute_season_range(
     return start, end
 
 
+def most_frequent_first(counts: Counter[str]) -> list[str]:
+    """Names by how many of an anime's media carry them, A→Z on a tie — the order that
+    puts a franchise's own studio or source ahead of the one a spin-off brought in.
+    `Counter.most_common` would tie on insertion order, which is media load order.
+    A→Z ignores case, as every name sort must (rules/backend.md)."""
+    return sorted(counts, key=lambda name: (-counts[name], name.casefold()))
+
+
 class AnimeAggregates(TypedDict):
     avg_score: float | None
     avg_scored_by: int
@@ -106,7 +114,7 @@ def _compute_anime_aggregates(media_list: list[Media]) -> AnimeAggregates:
     """Compute aggregated metadata from a list of media belonging to one anime.
     Used by both search results and detail page."""
     genre_counts: Counter[str] = Counter()
-    all_studios: set[str] = set()
+    studio_counts: Counter[str] = Counter()
     source_counts: Counter[str] = Counter()
     all_statuses: list[str] = []
     all_seasons: list[tuple[str, int]] = []
@@ -129,7 +137,7 @@ def _compute_anime_aggregates(media_list: list[Media]) -> AnimeAggregates:
 
         for g in genres:
             genre_counts[g] += 1
-        all_studios.update(studios)
+        studio_counts.update(studios)
         if m.original_source is not None:
             source_counts[m.original_source.value] += 1
         if m.airing_status:
@@ -156,7 +164,7 @@ def _compute_anime_aggregates(media_list: list[Media]) -> AnimeAggregates:
 
     media_count = len(media_list)
     majority_threshold = media_count / 2
-    majority_genres = sorted(g for g, c in genre_counts.items() if c > majority_threshold)
+    majority_genres = sorted((g for g, c in genre_counts.items() if c > majority_threshold), key=str.casefold)
 
     airing_status, has_upcoming = _compute_airing_status(all_statuses)
     season_start, season_end = _compute_season_range(all_seasons)
@@ -176,9 +184,8 @@ def _compute_anime_aggregates(media_list: list[Media]) -> AnimeAggregates:
             for mt, c in media_type_counts.most_common()
         ],
         "genres": majority_genres,
-        "studios": sorted(all_studios),
-        # Every source any media has, the franchise's own first: most media, then A→Z.
-        "original_sources": sorted(source_counts, key=lambda s: (-source_counts[s], s)),
+        "studios": most_frequent_first(studio_counts),
+        "original_sources": most_frequent_first(source_counts),
         "season_start": season_start,
         "season_end": season_end,
         "airing_status": airing_status,
@@ -205,7 +212,7 @@ def _media_to_anime_media_item(m: Media) -> AnimeMediaItem:
         total_watch_time=m.total_watch_time,
         age_rating_numeric=m.age_rating_numeric,
         genres=[mg.genre.name for mg in m.media_genre if mg.genre is not None],
-        studios=[ms.studio.name for ms in m.media_studio if ms.studio is not None],
+        studios=sorted((ms.studio.name for ms in m.media_studio if ms.studio is not None), key=str.casefold),
     )
 
 

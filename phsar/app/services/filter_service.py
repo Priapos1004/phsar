@@ -151,7 +151,7 @@ async def _fetch_shared_filter_values(db: AsyncSession) -> dict:
         "airing_status": airing_status,
         "anime_season": anime_seasons,
         "studio_name": studio_names,
-        "original_source": sorted(s for s in sources if s is not None),
+        "original_source": sorted((s for s in sources if s is not None), key=str.casefold),
         "score_min": 0.0,
         "score_max": 10.0,
     }

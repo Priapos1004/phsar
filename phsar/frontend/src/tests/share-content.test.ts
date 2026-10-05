@@ -5,6 +5,7 @@ import {
 	mediaInfoCard,
 	mediaShareContent,
 	SHARE_SYNOPSIS_MAX_CHARS,
+	fitChipCount,
 	shareSynopsis,
 } from '$lib/utils/shareContent';
 import type { AnimeDetail, AnimeMediaItem, MediaDetail, RatingOut } from '$lib/types/api';
@@ -302,7 +303,7 @@ describe('animeInfoCard', () => {
 		]);
 	});
 
-	it('caps the chip lists and absorbs the remainder into a +N', () => {
+	it('caps the genres into a +N and leaves sources and studios for the card to fit', () => {
 		const c = animeInfoCard(
 			anime({
 				genres: ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'],
@@ -312,8 +313,8 @@ describe('animeInfoCard', () => {
 		);
 		expect(c.body).toMatchObject({
 			genres: ['a', 'b', 'c', 'd', 'e', 'f', '+2'],
-			sources: ['Manga', '+2'],
-			studios: ['one', 'two', '+1'],
+			sources: ['Manga', 'Original', 'Game'],
+			studios: ['one', 'two', 'three'],
 		});
 	});
 });
@@ -343,5 +344,22 @@ describe('shareSynopsis', () => {
 	it('still fills the budget when there are no word boundaries', () => {
 		const cut = shareSynopsis('あ'.repeat(SHARE_SYNOPSIS_MAX_CHARS + 400))!;
 		expect(cut.length).toBe(SHARE_SYNOPSIS_MAX_CHARS + 1); // + the ellipsis
+	});
+});
+
+describe('fitChipCount', () => {
+	// gap 6, "+N" chip 30 wide throughout.
+	it('keeps every chip when the whole row fits, with no "+N" to make room for', () => {
+		expect(fitChipCount([100, 100], 206, 6, 30)).toBe(2);
+	});
+
+	it('stops where the next chip plus the "+N" would overflow', () => {
+		// 100 + 6 + 100 + 6 + 30 = 242 fits in 250; a third chip would need 312.
+		expect(fitChipCount([100, 100, 100], 250, 6, 30)).toBe(2);
+	});
+
+	it('keeps the first chip even when it is too wide alone, for the row to ellipsize', () => {
+		expect(fitChipCount([400, 50], 300, 6, 30)).toBe(1);
+		expect(fitChipCount([280, 50], 300, 6, 30)).toBe(1);
 	});
 });

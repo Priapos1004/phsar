@@ -136,17 +136,27 @@ _SOURCE_FIXTURE_TITLES = {
 async def source_set(db_session):
     """original_source is any-media, like studios: an anime adapted from a light
     novel only in a side story still matches "Light Novel". Its card lists every
-    source, most frequent first — Original (2 media) ahead of Light Novel (1),
-    against the A→Z order, so the frequency sort is what puts it there."""
+    source and studio most frequent first — Original (2 media) ahead of Light Novel
+    (1), Zeta ahead of Alpha — against the A→Z order, so the frequency sort is what
+    puts them there."""
+    zeta, alpha = Studio(name="SourceTest Zeta"), Studio(name="SourceTest Alpha")
+    db_session.add_all([zeta, alpha])
+    await db_session.flush()
+
     franchise = await _make_anime(
         db_session, mal_id=85101, title=f"{_SOURCE_FIXTURE_QUERY} OriginalFranchise Anime",
     )
-    await _add_media(db_session, franchise, 851011, original_source=OriginalSource.Original)
-    await _add_media(db_session, franchise, 851012, original_source=OriginalSource.Original)
-    await _add_media(
+    first = await _add_media(db_session, franchise, 851011, original_source=OriginalSource.Original)
+    second = await _add_media(db_session, franchise, 851012, original_source=OriginalSource.Original)
+    side = await _add_media(
         db_session, franchise, 851013,
         relation_type=RelationType.SideStory, original_source=OriginalSource.LightNovel,
     )
+    db_session.add_all([
+        MediaStudio(media_id=first.id, studio_id=zeta.id),
+        MediaStudio(media_id=second.id, studio_id=zeta.id),
+        MediaStudio(media_id=side.id, studio_id=alpha.id),
+    ])
 
     pure = await _make_anime(
         db_session, mal_id=85102, title=f"{_SOURCE_FIXTURE_QUERY} PureOriginal Anime",
@@ -163,9 +173,11 @@ async def test_source_filter_matches_any_media(client, user_auth_headers, source
     assert resp.status_code == 200, resp.text
     matched = [a for a in resp.json() if a["title"] in _SOURCE_FIXTURE_TITLES]
 
-    assert [(a["title"], a["original_sources"]) for a in matched] == [
-        (f"{_SOURCE_FIXTURE_QUERY} OriginalFranchise Anime", ["Original", "Light Novel"]),
-    ]
+    assert [(a["title"], a["original_sources"], a["studios"]) for a in matched] == [(
+        f"{_SOURCE_FIXTURE_QUERY} OriginalFranchise Anime",
+        ["Original", "Light Novel"],
+        ["SourceTest Zeta", "SourceTest Alpha"],
+    )]
 
 
 async def test_age_rating_g_or_r_returns_both(client, user_auth_headers, age_rating_set):
