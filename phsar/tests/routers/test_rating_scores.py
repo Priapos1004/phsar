@@ -26,7 +26,7 @@ async def rated_media_two_anime(db_session):
     db_session.add_all([anime_a, anime_b])
     await db_session.flush()
 
-    # age_rating_numeric is derived from the age_rating string prefix (PG-13 → 13, R → 17).
+    # age_rating_numeric comes from AGE_RATING_TIERS (PG-13 → 13, R → 17).
     # MAL score/votes + watch-time + season feed the /ratings page projection.
     # anime_season_name + anime_season_year are constrained both-or-neither.
     media_a = Media(**media_kwargs(

@@ -2,6 +2,7 @@ import re
 
 import pytest
 
+from app.models.media import AGE_RATING_TIERS, AgeRating
 from app.services.mal_scraper import (
     MalScraper,
     _mal_date_to_iso,
@@ -693,6 +694,12 @@ def test_extract_information_translates_mal_enums():
     assert info["airing_status"] == "Currently Airing"
     assert info["age_rating"] == "R - 17+ (violence & profanity)"
     assert info["original_source"] == "Light Novel"
+
+
+def test_every_age_rating_has_a_tier():
+    """`age_rating_numeric` indexes AGE_RATING_TIERS by member, so a member added
+    without a tier raises in Python and reads as NULL in SQL."""
+    assert set(AGE_RATING_TIERS) == set(AgeRating)
 
 
 def test_unmapped_mal_code_is_stored_as_none_and_reported():

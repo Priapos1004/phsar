@@ -22,7 +22,7 @@ from app.exceptions import (
     MalIdNotFoundError,
     TransientUpstreamError,
 )
-from app.models.media import AIRING_STATUS_NOT_YET_AIRED, OriginalSource
+from app.models.media import AIRING_STATUS_NOT_YET_AIRED, AgeRating, OriginalSource
 from app.services.relation_classifier import (
     anchor_tier,
     build_classifier_nodes,
@@ -100,11 +100,9 @@ _SEARCH_FIELDS = "id,title"
 
 
 # ---------------------------------------------------------------------------
-# Value translation: MAL v2 emits snake_case / lowercase values where the
-# catalog stores Jikan-era title-cased strings. Translating back on ingestion
-# keeps the DB enums, the `ix_media_airing_now` partial index, the
-# `age_rating_numeric` prefix map, the classifier sentinels, filter values,
-# and every stored row untouched by the API swap (v0.14.14).
+# Value translation: MAL v2 emits snake_case / lowercase values; these tables map
+# them to the catalog's stored labels. What depends on that boundary:
+# docs/features/scraping.md#value-translation.
 # ---------------------------------------------------------------------------
 
 # Only the 6 INSERTABLE MediaType enum values need mapping — `music`/`cm`/`pv`
@@ -126,15 +124,13 @@ _AIRING_STATUS_MAP = {
     "not_yet_aired": "Not yet aired",
 }
 
-# MAL rating codes → the Jikan-style strings `Media.age_rating_numeric`
-# prefix-matches (`PG-13`/`R+`/`R`/`PG`/`G`) and the filter surfaces.
-_AGE_RATING_MAP = {
-    "g": "G - All Ages",
-    "pg": "PG - Children",
-    "pg_13": "PG-13 - Teens 13 or older",
-    "r": "R - 17+ (violence & profanity)",
-    "r+": "R+ - Mild Nudity",
-    "rx": "Rx - Hentai",
+_AGE_RATING_MAP: dict[str, AgeRating] = {
+    "g": AgeRating.G,
+    "pg": AgeRating.PG,
+    "pg_13": AgeRating.PG13,
+    "r": AgeRating.R,
+    "r+": AgeRating.RPlus,
+    "rx": AgeRating.Rx,
 }
 
 _SOURCE_MAP: dict[str, OriginalSource] = {
@@ -177,10 +173,6 @@ def unknown_mal_codes(raw: dict[str, Any]) -> dict[str, str]:
     }
 
 
-# The translated age_rating string MAL assigns to Hentai (see _AGE_RATING_MAP).
-_AGE_RATING_HENTAI = _AGE_RATING_MAP["rx"]
-
-
 def is_hentai(anime_info: dict) -> bool:
     """True when a MAL record is Hentai — either the explicit "Hentai" genre
     tag or the Rx age rating. Operates on `extract_information` output (the
@@ -191,7 +183,7 @@ def is_hentai(anime_info: dict) -> bool:
     genres = anime_info.get("genres") or []
     if any(name.lower() == "hentai" for name in genres):
         return True
-    return anime_info.get("age_rating") == _AGE_RATING_HENTAI
+    return anime_info.get("age_rating") == AgeRating.Rx
 
 
 def parse_mal_date(value: str | None) -> date | None:

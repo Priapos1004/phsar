@@ -7,7 +7,7 @@ from sqlalchemy import String, cast, select
 from sqlalchemy.orm import selectinload
 
 from app.models.anime import Anime
-from app.models.media import Media, MediaType, OriginalSource, RelationType
+from app.models.media import AgeRating, Media, MediaType, OriginalSource, RelationType
 from app.models.media_relation_edges import MediaRelationEdges
 from app.schemas.media_schema import MediaUnconnected
 from app.schemas.search_schema import SearchResultDB
@@ -66,17 +66,20 @@ async def test_enum_columns_store_their_label(db_session):
     """A `values_callable` enum column persists the member's VALUE ("Light Novel"), not its name
     (`LightNovel`). The only guard on `values_callable`: `alembic check` does not
     compare enum labels, and the CI test DB is built by create_all, where a
-    name-persisting enum would round-trip in silence."""
+    name-persisting enum would round-trip in silence. Both members here have a name
+    that differs from their value, so either column losing it fails."""
     media = _media(900_020, "Label Show", RelationType.Main)
     media.original_source = OriginalSource.LightNovel
+    media.age_rating = AgeRating.PG13
     await save_search_results(db_session, [SearchResultDB(
         anime_mal_id=900_020, unconnected_media_list=[media], cross_link_mal_ids=set(),
     )])
 
     stored = (await db_session.execute(
-        select(cast(Media.original_source, String)).where(Media.mal_id == 900_020)
-    )).scalar_one()
-    assert stored == "Light Novel"
+        select(cast(Media.original_source, String), cast(Media.age_rating, String))
+        .where(Media.mal_id == 900_020)
+    )).one()
+    assert tuple(stored) == ("Light Novel", "PG-13 - Teens 13 or older")
 
 
 async def test_save_search_results_defaults_empty_edges(db_session):

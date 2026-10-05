@@ -54,18 +54,17 @@ stays `TransientUpstreamError` and remains retryable.
 `extract_information` is an anti-corruption layer at the ingestion chokepoint. MAL
 v2 emits snake_case/lowercase `media_type`, `status`, `rating` and `source`; the
 `_MEDIA_TYPE_MAP` / `_AIRING_STATUS_MAP` / `_AGE_RATING_MAP` / `_SOURCE_MAP`
-tables convert them to the catalogue's stored title-cased strings.
+tables convert them to the catalogue's stored labels.
 
-That boundary is load-bearing for the DB enums, the `ix_media_airing_now` partial
-index (which matches the literal `'Currently Airing'`), `age_rating_numeric`'s
-prefix map, the classifier sentinels, and the filter facets — all of which compare
-against the stored format.
+That boundary is load-bearing for everything that compares against the stored
+format — the DB enums, and literals such as the `ix_media_airing_now` partial index's
+`'Currently Airing'`.
 
 - Only the six insertable `MediaType` values map. `music`/`cm`/`pv` pass through
   lowercased for the skip rule; `unknown` becomes None.
-- `source` translates to the `OriginalSource` enum. A code outside any map
-  `_TRANSLATED_COLUMNS` lists is stored as None, never written raw;
-  `unknown_mal_codes` names it for the update sweep
+- `rating` and `source` translate to the `AgeRating` and `OriginalSource` enums. A
+  code outside any map `_TRANSLATED_COLUMNS` lists is stored as None, never written
+  raw; `unknown_mal_codes` names it for the update sweep
   ([jobs](jobs.md#unmapped-mal-codes)).
 - Relation labels normalize via `normalize_relation` (lowercase, spaces →
   underscores) plus a `spin_off` → `spin-off` alias, so a sweep re-fetch doesn't

@@ -10,7 +10,7 @@ from app.daos.search_filters import (
     weighted_mean_votes_expr,
 )
 from app.daos.studio_dao import StudioDAO
-from app.models.media import SEASON_ORDER, Media
+from app.models.media import AGE_RATING_TIERS, SEASON_ORDER, Media
 from app.schemas.genre_schema import GenreOut
 from app.schemas.media_filter_schema import ViewType
 
@@ -69,14 +69,6 @@ def sort_seasons(seasons: list[str]) -> list[str]:
         return (9999, 99)  # Put unparseable items at the end
 
     return sorted(seasons, key=season_sort_key, reverse=True)
-
-def sort_age_ratings(age_rating_tuples: list[tuple[str, int]]) -> list[str]:
-    """Sort by numeric value first, then return string value."""
-    sorted_pairs = sorted(
-        age_rating_tuples,
-        key=lambda t: (t[1] is None, t[1])  # None sorts last
-    )
-    return [s for s, _ in sorted_pairs if s is not None]
 
 
 async def _get_anime_majority_genres(db: AsyncSession) -> list[str]:
@@ -138,8 +130,10 @@ async def _fetch_shared_filter_values(db: AsyncSession) -> dict:
     relation_types = await media_dao.get_unique_in_field(db, field_name="relation_type")
     media_types = await media_dao.get_unique_in_field(db, field_name="media_type")
 
-    age_rating_tuples = await media_dao.get_unique_in_fields(db, field_names=["age_rating", "age_rating_numeric"])
-    age_rating_values = sort_age_ratings(age_rating_tuples)
+    # Sorted by tier rather than by the column: Postgres orders an enum by declaration,
+    # which only tracks tier order while every label is added in its place.
+    age_ratings = await media_dao.get_unique_in_field(db, field_name="age_rating", order=False)
+    age_rating_values = sorted((r for r in age_ratings if r is not None), key=AGE_RATING_TIERS.__getitem__)
 
     airing_status = await media_dao.get_unique_in_field(db, field_name="airing_status")
 

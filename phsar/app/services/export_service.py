@@ -58,7 +58,7 @@ def _media_columns(media: Media, name_language: NameLanguage) -> dict:
     row["episode_duration_seconds"] = media.duration_seconds
     row["season"] = media.anime_season_name.value if media.anime_season_name else None
     row["season_year"] = media.anime_season_year
-    row["age_rating"] = media.age_rating
+    row["age_rating"] = media.age_rating.value if media.age_rating else None
     row["mal_score"] = media.score
     row["mal_scored_by"] = media.scored_by
     return row

@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel
 
-from app.models.media import MediaType, OriginalSource, RelationType
+from app.models.media import AgeRating, MediaType, OriginalSource, RelationType
 
 
 class MediaBase(BaseModel):
@@ -15,7 +15,7 @@ class MediaBase(BaseModel):
     other_names: list[str] = []
     media_type: MediaType
     relation_type: RelationType
-    age_rating: str | None
+    age_rating: AgeRating | None
     description: str | None
     original_source: OriginalSource | None
     cover_image: str | None

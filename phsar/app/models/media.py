@@ -136,14 +136,29 @@ AIRING_STATUS_CURRENTLY_AIRING = "Currently Airing"
 AIRING_STATUS_FINISHED_AIRING = "Finished Airing"
 AIRING_STATUS_NOT_YET_AIRED = "Not yet aired"
 
-# Define ordered mapping to ensure correct prefix priority
-AGE_RATING_MAP = [
-    ("PG-13", 13),   # Must come before PG
-    ("R+", 18),      # Must come before R
-    ("R", 17),
-    ("PG", 6),
-    ("G", 0),
-]
+# MAL's rating vocabulary, as its own descriptive labels. Adding one is a member here,
+# its tier in AGE_RATING_TIERS, an entry in `mal_scraper._AGE_RATING_MAP`, and a
+# migration (rules/database.md).
+class AgeRating(str, enum.Enum):
+    G = "G - All Ages"
+    PG = "PG - Children"
+    PG13 = "PG-13 - Teens 13 or older"
+    R = "R - 17+ (violence & profanity)"
+    RPlus = "R+ - Mild Nudity"
+    # Never stored — the hentai skip runs before every write — but a member, so
+    # `mal_scraper.is_hentai` compares the translated value like any other.
+    Rx = "Rx - Hentai"
+
+
+# The minimum age each rating stands for — what `age_rating_numeric` reads.
+AGE_RATING_TIERS: dict[AgeRating, int] = {
+    AgeRating.G: 0,
+    AgeRating.PG: 6,
+    AgeRating.PG13: 13,
+    AgeRating.R: 17,
+    AgeRating.RPlus: 18,
+    AgeRating.Rx: 18,
+}
 
 class Media(BaseModel):
     __tablename__ = "media"
@@ -157,7 +172,7 @@ class Media(BaseModel):
     other_names: Mapped[list[str] | None] = mapped_column(JSONB, default=list)
     media_type: Mapped[MediaType] = mapped_column(Enum(MediaType), nullable=False)
     relation_type: Mapped[RelationType] = mapped_column(Enum(RelationType), nullable=False)
-    age_rating: Mapped[str | None] = mapped_column(String)
+    age_rating: Mapped[AgeRating | None] = mapped_column(Enum(AgeRating, values_callable=_enum_values))
     description: Mapped[str | None] = mapped_column(String)
     original_source: Mapped[OriginalSource | None] = mapped_column(Enum(OriginalSource, values_callable=_enum_values))
     cover_image: Mapped[str | None] = mapped_column(String)
@@ -174,15 +189,7 @@ class Media(BaseModel):
 
     @hybrid_property
     def age_rating_numeric(self) -> int | None:
-        """Returns numeric age rating based on MAL's age rating strings."""
-        if not self.age_rating:
-            return None
-
-        normalized = self.age_rating.strip()
-        for prefix, value in AGE_RATING_MAP:
-            if normalized.startswith(prefix):
-                return value
-        return None
+        return AGE_RATING_TIERS[self.age_rating] if self.age_rating is not None else None
 
     # `inplace.expression` on a differently-named function, not a second
     # `def age_rating_numeric`: the two-same-names form reads as a redefinition to
@@ -190,11 +197,9 @@ class Media(BaseModel):
     @age_rating_numeric.inplace.expression
     @classmethod
     def _age_rating_numeric_expression(cls) -> SQLColumnExpression[int | None]:
-        """SQL expression to compute numeric age rating using prefix matching."""
-        return case(
-            *[(cls.age_rating.startswith(prefix), value) for prefix, value in AGE_RATING_MAP],
-            else_=None
-        )
+        # Explicit WHEN comparisons, not `case(mapping, value=...)` — same form and
+        # reason as `watchlist_dao._SEASON_KEY`.
+        return case(*[(cls.age_rating == rating, tier) for rating, tier in AGE_RATING_TIERS.items()])
 
     @hybrid_property
     def total_watch_time(self) -> int | None:
