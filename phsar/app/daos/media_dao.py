@@ -8,15 +8,15 @@ from sqlalchemy.orm import selectinload
 from app.daos.base_mal_id_dao import MalIdDAO
 from app.daos.search_filters import (
     apply_media_filters,
-    apply_vector_ordering,
+    description_passes,
     fetch_search_results,
+    title_match_passes,
     title_match_score,
     weighted_score_expr,
 )
 from app.models.anime import Anime
 from app.models.media import Media
 from app.models.media_genre import MediaGenre
-from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
 from app.services.vector_embedding_service import generate_query_embedding
@@ -95,29 +95,23 @@ class MediaDAO(MalIdDAO[Media]):
     ) -> list[Media]:
         stmt = select(Media)
 
-        query_embedding = None
-        if query and search_type == SearchType.DESCRIPTION:
-            query_embedding = await generate_query_embedding(query)
-            # Inner join ensures only media with embeddings are searched
-            stmt = stmt.join(MediaSearch)
-
         if visible_media_ids is not None:
             stmt = stmt.where(Media.id.in_(visible_media_ids))
 
         stmt = apply_media_filters(stmt, filters)
 
-        stmt = stmt.options(*self._media_eager_options())
+        stmt = stmt.options(*self._media_eager_options()).limit(limit)
 
         weighted_score = weighted_score_expr(Media.score, Media.scored_by)
-        title_match = None
         if query and search_type == SearchType.TITLE:
             title_match = title_match_score(query, Media)
-            stmt = stmt.order_by(title_match.desc(), weighted_score.desc().nullslast(), Media.id)
-        elif query_embedding is not None:
-            stmt = apply_vector_ordering(stmt, search_type, query_embedding)
+            passes = title_match_passes(
+                stmt.order_by(title_match.desc(), weighted_score.desc().nullslast(), Media.id),
+                title_match,
+            )
+        elif query and search_type == SearchType.DESCRIPTION:
+            passes = description_passes(stmt, query, await generate_query_embedding(query))
         else:
-            stmt = stmt.order_by(weighted_score.desc().nullslast())
+            passes = [stmt.order_by(weighted_score.desc().nullslast())]
 
-        stmt = stmt.limit(limit)
-
-        return await fetch_search_results(db, stmt, title_match)
+        return await fetch_search_results(db, *passes)

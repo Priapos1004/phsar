@@ -15,14 +15,14 @@ from app.daos.media_projections import (
 )
 from app.daos.search_filters import (
     apply_media_filters,
-    apply_vector_ordering,
+    description_passes,
     fetch_search_results,
+    title_match_passes,
     title_match_score,
 )
 from app.models.anime import Anime
 from app.models.media import MAIN_STORY_RELATIONS, Media
 from app.models.media_genre import MediaGenre
-from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
 from app.models.rating_search import RatingSearch
 from app.models.ratings import Ratings, WatchStatus
@@ -262,15 +262,6 @@ class RatingDAO(BaseDAO[Ratings]):
             .where(self.model.user_id == user_id)
         )
 
-        title_match = None
-        if query:
-            if search_type == SearchType.TITLE:
-                title_match = title_match_score(query, Media)
-            elif search_type == SearchType.DESCRIPTION:
-                stmt = stmt.join(MediaSearch, MediaSearch.media_id == Media.id)
-            elif search_type == SearchType.RATING_NOTES:
-                stmt = stmt.join(RatingSearch, RatingSearch.rating_id == self.model.id)
-
         stmt = apply_media_filters(stmt, filters)
 
         conditions = []
@@ -291,18 +282,22 @@ class RatingDAO(BaseDAO[Ratings]):
             selectinload(self.model.media).selectinload(Media.anime),
             selectinload(self.model.media).selectinload(Media.media_genre).selectinload(MediaGenre.genre),
             selectinload(self.model.media).selectinload(Media.media_studio).selectinload(MediaStudio.studio),
-        )
+        ).limit(limit)
 
-        if title_match is not None:
-            stmt = stmt.order_by(title_match.desc(), *recency_order(self.model))
-        elif query:
+        if query and search_type == SearchType.TITLE:
+            title_match = title_match_score(query, Media)
+            passes = title_match_passes(stmt.order_by(title_match.desc(), *recency_order(self.model)), title_match)
+        elif query and search_type == SearchType.DESCRIPTION:
+            passes = description_passes(stmt, query, await generate_query_embedding(query))
+        elif query and search_type == SearchType.RATING_NOTES:
+            # A rating without a note has no embedding, so the inner join drops it.
             query_embedding = await generate_query_embedding(query)
-            stmt = apply_vector_ordering(
-                stmt, search_type, query_embedding,
-                extra_columns={SearchType.RATING_NOTES: RatingSearch.note_embedding},
-            )
+            passes = [
+                stmt.join(RatingSearch, RatingSearch.rating_id == self.model.id).order_by(
+                    RatingSearch.note_embedding.cosine_distance(query_embedding),
+                ),
+            ]
         else:
-            stmt = stmt.order_by(*recency_order(self.model))
+            passes = [stmt.order_by(*recency_order(self.model))]
 
-        stmt = stmt.limit(limit)
-        return await fetch_search_results(db, stmt, title_match)
+        return await fetch_search_results(db, *passes)

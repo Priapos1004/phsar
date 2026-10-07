@@ -60,11 +60,33 @@ variants))` after grouping — a title query is a filter, so the
 [Anime-view filters](#anime-view-filters) invariant binds it. Pinned by
 `test_media_title_reaches_its_anime`.
 
-## Semantic ranking
+## Description search
 
-Description and rating-note search rank by embedding distance. **The anime grain
-averages its media's description distances** — it must stay an aggregate that
-ignores group size: `SUM` would rank a franchise worse for having more entries.
+**Literal hits first, semantic neighbours after, down to a cutoff.** A media is a
+literal hit when every query word starts a word of its titles or description — the
+text its description embedding encodes, so both tiers judge the same media. A word
+*start* (`\m`): a prefix, never an infix. Each tier is ordered nearest first;
+`description_passes` is the one ranker every description search shares.
+
+**The cutoff is relative to the query**: a semantic hit must sit `SEMANTIC_MARGIN`
+below the catalogue's mean distance to that query. A fixed distance cannot serve both
+ends — a short name sits close to every description, a sentence far from all of
+them. The mean runs over the whole catalogue, unfiltered, so no filter moves it and
+`/search/ratings` measures against the catalogue, not the caller's own ratings. A
+media with an empty description is never a semantic hit: its vector encodes the title
+alone, and such vectors sit near every short query. The margin is calibrated for the
+embedding model, beside its constant.
+
+**When nothing matches at all, it retries once, typo-tolerant**: every word
+`word_similarity`-matched at the strict title threshold. That reaches a typo at the
+end of a word, not a swap mid-word.
+
+**The anime grain decides in HAVING**, for the title match's reason: a literal hit on
+any media makes the anime one, and the semantic test averages its media's distances —
+an aggregate that must ignore group size, since `SUM` would rank a franchise worse for
+having more entries. Pinned by `test_description_literal_hit_on_a_side_story_reaches_its_anime`.
+
+Rating-note search ranks by note-embedding distance alone: no literal tier, no cutoff.
 
 ## Anime-view filters
 
@@ -142,4 +164,4 @@ The client-side frontier walk is the one sanctioned divergence — see
 - [Further QoL](../../compound-docs/2026-06-22-v0.14.11-further-qol.md) — `score_top_percent` query shape
 - [Quality-of-life upgrades](../../compound-docs/2026-07-27-v0.15.3-quality-of-life.md) — filters no longer rescoping the score
 - [Efficiency improvements](../../compound-docs/2026-08-06-v0.15.4-efficiency-improvements.md) — the aggregate-in-ORDER-BY change and query memoization
-- [Search rework](../../compound-docs/2026-10-07-v0.16.0-search-rework.md) — the title-match threshold study and its problem cases
+- [Search rework](../../compound-docs/2026-10-07-v0.16.0-search-rework.md) — the title-match and description-cutoff studies, the embedding-model comparison, and their problem cases

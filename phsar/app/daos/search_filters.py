@@ -1,7 +1,19 @@
 import logging
+import re
 
-from pgvector.sqlalchemy import Vector
-from sqlalchemy import Numeric, Text, and_, case, cast, distinct, func, select, tuple_
+from sqlalchemy import (
+    Numeric,
+    Text,
+    and_,
+    case,
+    cast,
+    distinct,
+    false,
+    func,
+    or_,
+    select,
+    tuple_,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.anime import Anime
@@ -19,14 +31,9 @@ from app.models.media_genre import MediaGenre
 from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
-from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
+from app.schemas.media_filter_schema import MediaSearchFilters
 
 logger = logging.getLogger(__name__)
-
-# Base mapping from search type to the embedding column used for cosine distance ordering
-_VECTOR_COLUMNS = {
-    SearchType.DESCRIPTION: MediaSearch.description_embedding,
-}
 
 
 def weighted_score_expr(score, scored_by):
@@ -357,8 +364,8 @@ def apply_anime_having_filters(stmt, filters: MediaSearchFilters, agg_columns: d
     return stmt
 
 
-# The fuzzy tier's thresholds, strictest first — `fetch_search_results` tries each
-# in turn.
+# The fuzzy tier's thresholds, strictest first — `title_match_passes` makes each a
+# pass of its own, which `fetch_search_results` tries in turn.
 #
 # word_similarity compares the query's trigrams with the best contiguous stretch
 # of the title's, as shared / (query ∪ stretch). A typo at the end of a word costs
@@ -367,9 +374,10 @@ def apply_anime_having_filters(stmt, filters: MediaSearchFilters, agg_columns: d
 # Partial-word noise lands at exactly 3/5 ("jojo" → Evangelion), so 0.61 keeps it
 # out and admits end-of-word typos. It cannot be written `> 0.6`: word_similarity
 # returns float4, and 0.6f promotes to 0.6000000238. Mid-word typos land among the
-# noise, hence the 0.5 fallback. The calibration study is in
-# compound-docs/2026-10-07-v0.16.0-search-rework.md — re-measure before moving
-# either.
+# noise, hence the 0.5 fallback. The strict one also gates description search's
+# typo retry (`_description_literal_matches`). The calibration study is in
+# compound-docs/2026-10-07-v0.16.0-search-rework.md — re-measure both searches before
+# moving either.
 TITLE_MATCH_THRESHOLDS = (0.61, 0.5)
 
 
@@ -380,10 +388,17 @@ def _escape_like(text: str) -> str:
     return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def _title_variants(model: type[Anime] | type[Media]) -> tuple:
+    """Every title a row goes by: romaji, English, Japanese, and the synonyms
+    (`other_names`, a JSONB list) as one JSON string, so a single ilike,
+    word_similarity or regex covers every synonym without unnesting the list. The
+    embeddings' twins are `media_search_service.media_title_texts` and
+    `anime_search_service.anime_title_texts`."""
+    return (model.title, model.name_eng, model.name_jap, cast(model.other_names, Text))
+
+
 def title_match_score(query: str, model: type[Anime] | type[Media]):
-    """How well `query` matches the best of `model`'s title variants. The synonyms
-    (`other_names`, a JSONB list) are matched as one JSON string, so a single
-    ilike / word_similarity covers every synonym without unnesting the list.
+    """How well `query` matches the best of `model`'s `_title_variants`.
 
     A substring hit scores `1 + similarity`, a fuzzy one its `word_similarity`
     (< 1 unless every query trigram is present), so a substring hit outranks any
@@ -395,53 +410,96 @@ def title_match_score(query: str, model: type[Anime] | type[Media]):
     compound-docs/2026-10-07-v0.16.0-search-rework.md. A GIN `gin_trgm_ops` index
     plus a `%>` candidate pre-filter is the upgrade when that starts to matter."""
     pattern = f"%{_escape_like(query)}%"
-    variants = (model.title, model.name_eng, model.name_jap, cast(model.other_names, Text))
     return func.greatest(*(
         case(
             (col.ilike(pattern, escape="\\"), 1 + func.similarity(query, col)),
             # Argument order matters: the short query first, the long title second.
             else_=func.word_similarity(query, col),
         )
-        for col in variants
+        for col in _title_variants(model)
     ))
 
 
-async def fetch_search_results(
-    db: AsyncSession, stmt, title_match=None, *, having: bool = False,
-) -> list:
-    """Every row's first column, through the threshold fallback for a title search
-    (`title_match` set).
-
-    A retry rather than one query at the loosest threshold trimmed afterwards: the
-    trim is only correct while the match is the primary sort key. `having` for a
-    grouped statement whose match is an aggregate."""
-    if title_match is None:
-        return list((await db.execute(stmt)).scalars().all())
+def title_match_passes(stmt, title_match, *, having: bool = False) -> list:
+    """`stmt` restricted to each of `TITLE_MATCH_THRESHOLDS`, strictest first, for
+    `fetch_search_results`. `having` for a grouped statement whose match is an
+    aggregate."""
     restrict = stmt.having if having else stmt.where
+    return [restrict(title_match >= threshold) for threshold in TITLE_MATCH_THRESHOLDS]
+
+
+# How far below the catalogue's mean distance to the query a semantic description hit
+# must sit; why relative is in docs/features/search.md. Specific to the embedding
+# model: the calibration study is in compound-docs/2026-10-07-v0.16.0-search-rework.md
+# — re-measure on a model change.
+SEMANTIC_MARGIN = 0.30
+
+
+def _description_distance(query_embedding):
+    """Cosine distance from the query to the description embedding; NULL for a media
+    without a description, which is never a semantic hit (docs/features/search.md)."""
+    return case((Media.description != "", MediaSearch.description_embedding.cosine_distance(query_embedding)))
+
+
+def description_cutoff(query_embedding):
+    """The largest distance a semantic hit may have: the mean distance to the query
+    over the whole, unfiltered catalogue, less `SEMANTIC_MARGIN`. Its explicit FROM
+    keeps SQLAlchemy from correlating it with the outer row, which would make the mean
+    that row's own distance."""
+    mean = (
+        select(func.avg(_description_distance(query_embedding)))
+        .select_from(MediaSearch)
+        .join(Media, Media.id == MediaSearch.media_id)
+        .scalar_subquery()
+    )
+    return mean - SEMANTIC_MARGIN
+
+
+def _description_literal_matches(query: str) -> list:
+    """The literal tier's tests, strict then fuzzy: every word of the query starts a
+    word of the media's titles or description (a prefix, never an infix), or reaches
+    the strict title threshold in `word_similarity`. Words are `\\w+` runs, so
+    `\\m` + word needs no regex escaping; a query without any has no literal tier."""
+    words = re.findall(r"\w+", query)
+    if not words:
+        return [false()]
+    text = func.concat_ws(" ", *_title_variants(Media), Media.description)
+    return [
+        and_(*(text.regexp_match(rf"\m{word}", flags="i") for word in words)),
+        and_(*(func.word_similarity(word, text) >= TITLE_MATCH_THRESHOLDS[0] for word in words)),
+    ]
+
+
+def description_passes(stmt, query: str, query_embedding, *, having: bool = False) -> list:
+    """Description search, one pass per literal test for `fetch_search_results`:
+    literal hits first, then semantic hits down to `description_cutoff`, each nearest
+    first. Outer join, so a media without an embedding can still be a literal hit.
+
+    `having` for the anime grain's grouped statement: `bool_or` over the literal
+    tests, `AVG` over the distance."""
+    stmt = stmt.outerjoin(MediaSearch, MediaSearch.media_id == Media.id)
+    distance = _description_distance(query_embedding)
+    literals = _description_literal_matches(query)
+    pk, restrict = Media.id, stmt.where
+    if having:
+        distance, pk, restrict = func.avg(distance), Anime.id, stmt.having
+        literals = [func.bool_or(literal) for literal in literals]
+    cutoff = description_cutoff(query_embedding)
+    return [
+        restrict(or_(literal, distance <= cutoff)).order_by(literal.desc(), distance, pk)
+        for literal in literals
+    ]
+
+
+async def fetch_search_results(db: AsyncSession, *passes) -> list:
+    """Every row's first column from the first of `passes` that returns any — the
+    strict statement, then looser ones only while nothing has matched.
+
+    A retry rather than one query at the loosest test trimmed afterwards: the trim is
+    only correct while the match is the primary sort key."""
     rows: list = []
-    for threshold in TITLE_MATCH_THRESHOLDS:
-        rows = list((await db.execute(restrict(title_match >= threshold))).scalars().all())
+    for stmt in passes:
+        rows = list((await db.execute(stmt)).scalars().all())
         if rows:
             break
     return rows
-
-
-def apply_vector_ordering(
-    stmt,
-    search_type: SearchType,
-    query_embedding,
-    *,
-    extra_columns: dict | None = None,
-):
-    """Order by cosine distance to the query embedding.
-
-    `extra_columns` registers additional `search_type → embedding column`
-    mappings (e.g., `RATING_NOTES → RatingSearch.note_embedding`).
-    """
-    columns = {**_VECTOR_COLUMNS, **(extra_columns or {})}
-    column = columns.get(search_type)
-    if column is None:
-        logger.warning("No embedding column for search_type=%s; results will not be relevance-ordered", search_type)
-        return stmt
-
-    return stmt.order_by(func.cosine_distance(column, cast(query_embedding, Vector)))

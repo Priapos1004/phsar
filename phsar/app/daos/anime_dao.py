@@ -2,8 +2,7 @@ import logging
 from typing import Any, NamedTuple
 from uuid import UUID
 
-from pgvector.sqlalchemy import Vector
-from sqlalchemy import and_, case, cast, func, or_, select, text
+from sqlalchemy import and_, case, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, selectinload
 
@@ -13,7 +12,9 @@ from app.daos.delete_candidate_dao import awaiting_review_mal_ids
 from app.daos.search_filters import (
     apply_anime_having_filters,
     apply_anime_pre_filters,
+    description_passes,
     fetch_search_results,
+    title_match_passes,
     title_match_score,
     weighted_mean_score_expr,
     weighted_mean_votes_expr,
@@ -23,7 +24,6 @@ from app.models.anime import Anime
 from app.models.media import AIRING_STATUS_CURRENTLY_AIRING, Media, RelationType
 from app.models.media_freshness import MediaFreshness
 from app.models.media_genre import MediaGenre
-from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
 from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
 from app.services.vector_embedding_service import generate_query_embedding
@@ -537,26 +537,18 @@ class AnimeDAO(MalIdDAO[Anime]):
         stmt = select(Anime.id)
         stmt = stmt.join(Media, Media.anime_id == Anime.id)
 
-        query_embedding = None
-        if query and search_type == SearchType.DESCRIPTION:
-            query_embedding = await generate_query_embedding(query)
-            # LEFT JOIN so anime with some media missing embeddings still appear;
-            # avg() naturally ignores NULLs from the outer join
-            stmt = stmt.outerjoin(MediaSearch, MediaSearch.media_id == Media.id)
-
         # Pre-aggregation WHERE filters (any-match semantics)
         stmt = apply_anime_pre_filters(stmt, filters)
 
         # GROUP BY the PK alone: Anime's own columns in the title match below ride
-        # functional dependency on it, and the description distance is averaged
-        # over the anime's media.
+        # functional dependency on it, and the description match and distance
+        # aggregate over the anime's media.
         stmt = stmt.group_by(Anime.id)
 
         # Post-aggregation HAVING filters (majority/range semantics)
-        stmt = apply_anime_having_filters(stmt, filters, agg_columns)
+        stmt = apply_anime_having_filters(stmt, filters, agg_columns).limit(limit)
 
         weighted = weighted_score_expr(avg_score, avg_scored_by)
-        title_match = None
         if query and search_type == SearchType.TITLE:
             # A title query selects in HAVING, not WHERE: narrowing the joined
             # media rows to the matching ones would rescope every aggregate above,
@@ -567,20 +559,17 @@ class AnimeDAO(MalIdDAO[Anime]):
                 func.max(title_match_score(query, Media)),
             ).label("title_match")
             stmt = stmt.add_columns(title_match)
-            stmt = stmt.order_by(title_match.desc(), weighted.desc().nullslast(), Anime.id)
-        elif query_embedding is not None:
-            avg_distance = func.avg(
-                func.cosine_distance(MediaSearch.description_embedding, cast(query_embedding, Vector))
-            ).label("avg_distance")
-            stmt = stmt.add_columns(avg_distance)
-            stmt = stmt.order_by(avg_distance.asc().nullslast())
+            passes = title_match_passes(
+                stmt.order_by(title_match.desc(), weighted.desc().nullslast(), Anime.id),
+                title_match, having=True,
+            )
+        elif query and search_type == SearchType.DESCRIPTION:
+            passes = description_passes(stmt, query, await generate_query_embedding(query), having=True)
         else:
             # Default ordering: weighted score = S_w * log10(V_w + 1) over Main+Alt
-            stmt = stmt.order_by(weighted.desc().nullslast())
+            passes = [stmt.order_by(weighted.desc().nullslast())]
 
-        stmt = stmt.limit(limit)
-
-        anime_ids = await fetch_search_results(db, stmt, title_match, having=True)
+        anime_ids = await fetch_search_results(db, *passes)
         if not anime_ids:
             return []
 
