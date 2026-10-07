@@ -93,7 +93,7 @@ Once all features are discussed, this becomes the basis for GitHub issues and mi
 | Total watch time | Sum across all media |
 | Episodes | Sum across all media |
 | Vector search (description) | Average cosine distance across all media of an anime — consistently relevant anime ranks higher than single lucky match |
-| Vector search (title) | Match against anime's own title/names directly |
+| Title search | Fuzzy substring match over the anime's own titles and every one of its media's |
 
 **Filter behavior at anime level:**
 
@@ -614,8 +614,12 @@ length target.
 | **v0.15.5** | ✓ Quality-of-life upgrades | Signing in after an involuntary exit lands where you were; returning from a detail page centres the card you clicked. The watchlist gains a per-anime **readiness** verdict and a **watchtime** filter, with the runtime on every card. Attribute pills aggregate per attribute; air dates become `Date` columns; the share sheet offers a deep link. Admin gains a **delete-candidates** queue for entries MAL removed or that never found an audience, and job details rank changes by what drifted. |
 | **v0.15.6** | ✓ Test & CI setup + rated coverage | Workflows scope a push to what it touched and keep PRs whole, gaining a frontend build and the commit-gate suite; models move to SQLAlchemy 2.0 `Mapped[]` with mypy in CI. New **rated coverage** marks how much of an anime you have rated on search and `/ratings` cards. The anime bookmark gains an **update** mode: a whole anime changes list or priority in one step, keeping its notes. Animation quality's floor reads "low". |
 | **v0.15.7** | ✓ Original source | MAL's original source joins the search filters, both detail heroes (linking to search, like studios), the ratings Categories, watchlist statistics, the share card and the export. Source and age rating are stored as closed enums, source in Title Case; an unmapped MAL code is stored empty and flagged amber in the Jobs Log and job details. Studios list most frequent first, and curation highlights the studios a merge pair shares. |
-| **v0.16.0** | Browse page + home page redesign | Crunchyroll-style horizontal card rows. Browse sections with algo selector. Home page as light version. Get-started page. |
-| **v0.16.1** | Search enhancements + design polish | "In watchlist"/"already watched" search filters. Search filter QoL improvements. Component design polish. Note: consider enlarging the watchlist bookmark icon on the media detail page for better tap target and visual presence. |
+| **v0.16.0** | Search engine | Title search becomes a fuzzy substring filter over every title variant; description search ranks literal hits first; sorts, a result limit, and new filters (upcoming content, top N%, any/all genres and studios, your rated state, watchlisted). Queries are stripped where they enter. The now-unread title embeddings are dropped once fuzzy search has proven itself. |
+| **v0.16.1** | Search UI | Title / Description / My notes search modes, a sort control, a filter sheet with active-filter chips and the new filters; slider reload fixes. Note: consider enlarging the watchlist bookmark icon on the media detail page for better tap target and visual presence. |
+| **v0.16.2** | Browse + News | Carousel definitions in the DB with a resolver and seeded core rows; the Browse page and its News tab; a see-all page, also reached from search. |
+| **v0.16.3** | Home + Discover | Home carousels replace the placeholders; a Discover tab with a daily rotation. |
+| **v0.16.4** | Personalisation | Per-carousel refinement toggles; pinning a search to Browse as a custom carousel. |
+| **v0.16.5** | Get-started page | The `/getting-started` page. |
 | **v0.17.0** | Advanced analytics (v2) | Heavy/precomputed analytics that go beyond v0.14.12's client-side stats: embedding/taste clustering (HDBSCAN), production-company deep-dives, monthly pre-computed reports, and a true watch-history time series from the `watch_event` table (actual watch moments + rewatches, vs v0.14.12's `created_at` proxy). The standard graphs (score histogram, genre distribution, watch-time) already shipped client-side in **v0.14.12**. |
 | **v0.18.0+** | Advanced recommendations, achievements, advanced analytics | HDBSCAN clustering, pattern prediction, "love it or hate it", achievements system with titles. Iterative. |
 
@@ -624,6 +628,6 @@ length target.
 - v0.11.0 (anime search) depends on v0.10.0 (media pages exist to link to)
 - v0.13.0 (deployment) must come before v0.14.0 (content pipeline needs Coolify cron)
 - v0.15.0 (watchlist) depends on v0.11.0 (anime/media pages for navigation)
-- v0.16.0 (browse) depends on v0.15.0 (watchlist) + v0.9.0 (ratings) for section data
+- v0.16.2 (browse) depends on v0.16.0 (the search params its carousels run on) + v0.15.0 (watchlist) + v0.9.0 (ratings) for section data
 - v0.14.12 (ratings page + client-side statistics) depends on v0.9.0 (ratings data) — delivered the standard graphs the old v0.17.0 row scoped
 - v0.17.0 (advanced analytics) depends on v0.14.12 (the client-side stats it deepens) + v0.9.0 (ratings data)

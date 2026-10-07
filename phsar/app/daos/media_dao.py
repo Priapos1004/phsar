@@ -9,6 +9,8 @@ from app.daos.base_mal_id_dao import MalIdDAO
 from app.daos.search_filters import (
     apply_media_filters,
     apply_vector_ordering,
+    fetch_search_results,
+    title_match_score,
     weighted_score_expr,
 )
 from app.models.anime import Anime
@@ -82,7 +84,7 @@ class MediaDAO(MalIdDAO[Media]):
         # clamp needed since rank >= 1. Matches the "Among the top N%" chip.
         return ((better + 1) * 100 + total - 1) // total
 
-    async def search_media_by_vector_with_filters(
+    async def search_media_with_filters(
         self,
         db: AsyncSession,
         query: str,
@@ -93,7 +95,8 @@ class MediaDAO(MalIdDAO[Media]):
     ) -> list[Media]:
         stmt = select(Media)
 
-        if query != "":
+        query_embedding = None
+        if query and search_type == SearchType.DESCRIPTION:
             query_embedding = await generate_query_embedding(query)
             # Inner join ensures only media with embeddings are searched
             stmt = stmt.join(MediaSearch)
@@ -105,16 +108,16 @@ class MediaDAO(MalIdDAO[Media]):
 
         stmt = stmt.options(*self._media_eager_options())
 
-        if query != "":
-            stmt = apply_vector_ordering(
-                stmt, search_type, query_embedding,
-                query=query,
-                title_columns=[Media.title, Media.name_eng],
-            )
+        weighted_score = weighted_score_expr(Media.score, Media.scored_by)
+        title_match = None
+        if query and search_type == SearchType.TITLE:
+            title_match = title_match_score(query, Media)
+            stmt = stmt.order_by(title_match.desc(), weighted_score.desc().nullslast(), Media.id)
+        elif query_embedding is not None:
+            stmt = apply_vector_ordering(stmt, search_type, query_embedding)
         else:
-            weighted_score = weighted_score_expr(Media.score, Media.scored_by)
             stmt = stmt.order_by(weighted_score.desc().nullslast())
 
         stmt = stmt.limit(limit)
 
-        return (await db.execute(stmt)).scalars().all()
+        return await fetch_search_results(db, stmt, title_match)

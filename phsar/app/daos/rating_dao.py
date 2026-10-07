@@ -13,7 +13,12 @@ from app.daos.media_projections import (
     media_identity_columns,
     media_studio_names,
 )
-from app.daos.search_filters import apply_media_filters, apply_vector_ordering
+from app.daos.search_filters import (
+    apply_media_filters,
+    apply_vector_ordering,
+    fetch_search_results,
+    title_match_score,
+)
 from app.models.anime import Anime
 from app.models.media import MAIN_STORY_RELATIONS, Media
 from app.models.media_genre import MediaGenre
@@ -257,8 +262,11 @@ class RatingDAO(BaseDAO[Ratings]):
             .where(self.model.user_id == user_id)
         )
 
+        title_match = None
         if query:
-            if search_type in (SearchType.TITLE, SearchType.DESCRIPTION):
+            if search_type == SearchType.TITLE:
+                title_match = title_match_score(query, Media)
+            elif search_type == SearchType.DESCRIPTION:
                 stmt = stmt.join(MediaSearch, MediaSearch.media_id == Media.id)
             elif search_type == SearchType.RATING_NOTES:
                 stmt = stmt.join(RatingSearch, RatingSearch.rating_id == self.model.id)
@@ -285,7 +293,9 @@ class RatingDAO(BaseDAO[Ratings]):
             selectinload(self.model.media).selectinload(Media.media_studio).selectinload(MediaStudio.studio),
         )
 
-        if query:
+        if title_match is not None:
+            stmt = stmt.order_by(title_match.desc(), *recency_order(self.model))
+        elif query:
             query_embedding = await generate_query_embedding(query)
             stmt = apply_vector_ordering(
                 stmt, search_type, query_embedding,
@@ -295,5 +305,4 @@ class RatingDAO(BaseDAO[Ratings]):
             stmt = stmt.order_by(*recency_order(self.model))
 
         stmt = stmt.limit(limit)
-        result = await db.execute(stmt)
-        return result.scalars().all()
+        return await fetch_search_results(db, stmt, title_match)

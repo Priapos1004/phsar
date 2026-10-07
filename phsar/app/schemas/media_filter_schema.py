@@ -1,8 +1,13 @@
 from enum import Enum
+from typing import Annotated
 
-from pydantic import BaseModel
+from pydantic import BaseModel, StringConstraints
 
 from app.models.media import AgeRating, MediaType, OriginalSource, RelationType
+
+# A search query, stripped where it enters (route params and the search token):
+# padding would otherwise become part of the title-match pattern.
+SearchQuery = Annotated[str, StringConstraints(strip_whitespace=True)]
 
 
 class SearchType(str, Enum):
@@ -38,7 +43,7 @@ class MediaSearchFilters(BaseModel):
     total_watch_time_max: int | None = None
 
 class ExtendedMediaSearchFilters(MediaSearchFilters):
-    query: str = ""
+    query: SearchQuery = ""
     search_type: SearchType = SearchType.TITLE
     view_type: ViewType = ViewType.ANIME
 

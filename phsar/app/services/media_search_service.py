@@ -76,7 +76,7 @@ async def search_media_by_query(
     logger.info(f"Filters: {filters.model_dump()}")
     logger.info(f"Search type: {search_type}")
     # Get ORM objects from DAO
-    media_list: list[Media] = await media_dao.search_media_by_vector_with_filters(
+    media_list: list[Media] = await media_dao.search_media_with_filters(
         db=db,
         query=query,
         filters=filters,

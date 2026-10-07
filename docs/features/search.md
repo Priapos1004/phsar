@@ -1,7 +1,7 @@
 # Search
 
-Semantic + filtered search over the catalogue, at two grains: **media** (one entry)
-and **anime** (a franchise, aggregated from its media).
+Title, description and note search over the catalogue, filtered, at two grains:
+**media** (one entry) and **anime** (a franchise, aggregated from its media).
 
 **Code**: `services/vector_embedding_service.py` (embeddings) →
 `services/media_search_service.py` / `services/anime_search_service.py` (queries) →
@@ -10,18 +10,18 @@ and **anime** (a franchise, aggregated from its media).
 
 ## Embeddings
 
-Model is `paraphrase-multilingual-MiniLM-L12-v2`, stored in pgvector. Three
-targets, selected by `SearchType`: `title`, `description`, `rating_notes`.
+Model is `paraphrase-multilingual-MiniLM-L12-v2`, stored in pgvector. Searches read
+the `description` and `rating_notes` embeddings. Title embeddings are still written
+beside the description ones, but nothing reads them: title search matches literally
+(below).
 
 **Everything is case-folded before encoding.** The model is *cased*, so the same
 text in different capitalisation produces materially different vectors — enough
-that capitalising a query reorders title results and can bury the intended show.
+that capitalising a query reorders the results and can bury the intended show.
 `_fold` is the single chokepoint every embedding passes through, queries and
 stored documents alike — `generate_query_embedding` and `generate_embedding` are
 siblings over `_run_encode`, not one calling the other — so folding there keeps
 both in one case space.
-The SQL literal-match bonuses still use the raw query, which is already
-case-insensitive.
 
 **Queries are memoized; document text is not.** `generate_query_embedding` wraps a
 256-entry LRU over the folded text (~30 ms per encode, ~0.1 ms on a hit, ~4 MB at
@@ -40,31 +40,31 @@ owner. Pinned by `test_cache_hits_do_not_alias_the_returned_list`; the shared fo
 that keeps queries and documents in one case space is pinned by
 `test_query_and_document_paths_produce_the_same_vector`.
 
-## Ranking
+## Title search
 
-`apply_vector_ordering` subtracts a two-tier bonus from `cosine_distance` so
-literal matches outrank merely thematically-similar shows: a flat bonus for a
-substring (`ilike`) match, and a pg_trgm `word_similarity()` bonus scaled linearly
-above a threshold so typos still surface the intended title. It must stay
-`word_similarity` and not plain `similarity`, which penalises the length mismatch
-between a short query and a long title and buries partial matches.
+**A title query is a filter, not a ranking.** A row matches when one of its title
+variants — romaji, English, Japanese, or a synonym (`other_names`) — contains the
+query or fuzzy-matches it; everything else is left out. At the anime grain the
+variants are the anime's own plus every one of its media's, so a side story's title
+finds the franchise. `title_match_score` is the one definition the anime, media and
+`/search/ratings` searches share.
 
-Description and rating-note search skip both bonuses — those are semantic queries,
-not literal ones.
+A **substring** hit (`ilike`) outranks any fuzzy hit. The **fuzzy** tier must stay
+pg_trgm `word_similarity` and not plain `similarity`, which penalises the length
+mismatch between a short query and a long title and buries the partial match. It tries
+`TITLE_MATCH_THRESHOLDS` strictest first, moving on only when the stricter matches
+nothing; their calibration sits beside them.
 
-**Anime-level ranking aggregates the distance in the ORDER BY** rather than putting
-the embedding in the GROUP BY. Three constraints shape that:
+**The anime grain matches in HAVING**, as `GREATEST(anime variants, MAX(media
+variants))` after grouping — a title query is a filter, so the
+[Anime-view filters](#anime-view-filters) invariant binds it. Pinned by
+`test_media_title_reaches_its_anime`.
 
-- it must wrap the **distance**, since pgvector has no `min(vector)`;
-- it must **ignore group size** — the query groups over joined media rows, so a
-  six-media anime contributes six identical rows. `min`/`avg` qualify; `sum` would
-  rank a franchise six times worse for being a franchise;
-- the literal-match bonuses stay un-aggregated, being functionally dependent on the
-  grouped primary key.
+## Semantic ranking
 
-Grouping by the vector instead would put 384 floats in the hash/sort key of every
-input row, forcing a GroupAggregate plus a full sort where a HashAggregate would do
-— and Postgres won't infer functional dependency for a column on a different table.
+Description and rating-note search rank by embedding distance. **The anime grain
+averages its media's description distances** — it must stay an aggregate that
+ignores group size: `SUM` would rank a franchise worse for having more entries.
 
 ## Anime-view filters
 
@@ -142,3 +142,4 @@ The client-side frontier walk is the one sanctioned divergence — see
 - [Further QoL](../../compound-docs/2026-06-22-v0.14.11-further-qol.md) — `score_top_percent` query shape
 - [Quality-of-life upgrades](../../compound-docs/2026-07-27-v0.15.3-quality-of-life.md) — filters no longer rescoping the score
 - [Efficiency improvements](../../compound-docs/2026-08-06-v0.15.4-efficiency-improvements.md) — the aggregate-in-ORDER-BY change and query memoization
+- [Search rework](../../compound-docs/2026-10-07-v0.16.0-search-rework.md) — the title-match threshold study and its problem cases

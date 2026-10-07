@@ -195,6 +195,23 @@ async def test_enqueue_scrape_rejects_short_query(client, user_auth_headers):
     assert resp.status_code == 422
 
 
+async def test_enqueue_scrape_measures_the_stripped_query(client, user_auth_headers):
+    """Padding can't carry a too-short query past the minimum."""
+    resp = await client.post(
+        "/jobs/scrape", json={"query": "   fma   "}, headers=user_auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+async def test_enqueue_scrape_stores_the_stripped_query(client, user_auth_headers):
+    query = _q()
+    resp = await client.post(
+        "/jobs/scrape", json={"query": f"  {query}  "}, headers=user_auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["payload"] == {"query": query}
+
+
 async def test_enqueue_scrape_accepts_optional_mal_id(client, user_auth_headers):
     """Callers can opt into the seed-mal_id path that the seasonal sweep
     uses (skips MAL's fuzzy q= lookup). Without mal_id the existing

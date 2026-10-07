@@ -13,7 +13,8 @@ class ScrapeJobRequest(BaseModel):
     via the BFS visited set, so no client-side disambiguation is needed.
 
     min_length=4 because shorter queries are ambiguous on MAL (e.g. "fma" hits
-    Fullmetal Alchemist + dozens of unrelated entries) and waste a job slot.
+    Fullmetal Alchemist + dozens of unrelated entries) and waste a job slot. It is
+    checked after stripping, so padding can't sneak a short query past it.
 
     `mal_id` is opt-in: when set, the BFS skips the fuzzy q= lookup and
     seeds directly from the given mal_id. The seasonal sweep uses this
@@ -22,6 +23,8 @@ class ScrapeJobRequest(BaseModel):
     `query` is also treated as a direct mal_id — see `_MAL_ID_QUERY` in
     `services/job_submission_service.py`.
     """
+    model_config = ConfigDict(str_strip_whitespace=True)
+
     query: str = Field(..., min_length=4, max_length=200)
     mal_id: int | None = Field(default=None, gt=0)
 

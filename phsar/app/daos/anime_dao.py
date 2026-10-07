@@ -13,13 +13,13 @@ from app.daos.delete_candidate_dao import awaiting_review_mal_ids
 from app.daos.search_filters import (
     apply_anime_having_filters,
     apply_anime_pre_filters,
-    apply_vector_ordering,
+    fetch_search_results,
+    title_match_score,
     weighted_mean_score_expr,
     weighted_mean_votes_expr,
     weighted_score_expr,
 )
 from app.models.anime import Anime
-from app.models.anime_search import AnimeSearch
 from app.models.media import AIRING_STATUS_CURRENTLY_AIRING, Media, RelationType
 from app.models.media_freshness import MediaFreshness
 from app.models.media_genre import MediaGenre
@@ -537,64 +537,54 @@ class AnimeDAO(MalIdDAO[Anime]):
         stmt = select(Anime.id)
         stmt = stmt.join(Media, Media.anime_id == Anime.id)
 
-        # Vector search joins
         query_embedding = None
-        if query:
+        if query and search_type == SearchType.DESCRIPTION:
             query_embedding = await generate_query_embedding(query)
-            if search_type == SearchType.TITLE:
-                stmt = stmt.join(AnimeSearch, AnimeSearch.anime_id == Anime.id)
-            elif search_type == SearchType.DESCRIPTION:
-                # LEFT JOIN so anime with some media missing embeddings still appear;
-                # avg() naturally ignores NULLs from the outer join
-                stmt = stmt.outerjoin(MediaSearch, MediaSearch.media_id == Media.id)
+            # LEFT JOIN so anime with some media missing embeddings still appear;
+            # avg() naturally ignores NULLs from the outer join
+            stmt = stmt.outerjoin(MediaSearch, MediaSearch.media_id == Media.id)
 
         # Pre-aggregation WHERE filters (any-match semantics)
         stmt = apply_anime_pre_filters(stmt, filters)
 
-        # GROUP BY the PK alone. Title search orders on the anime_search
-        # embedding, which lives on another table, so it can't ride functional
-        # dependency the way Anime's own columns do — it's aggregated in the
-        # ORDER BY instead (`aggregate_distance` below). Grouping by the vector
-        # would put 384 floats in the hash/sort key of every input row.
+        # GROUP BY the PK alone: Anime's own columns in the title match below ride
+        # functional dependency on it, and the description distance is averaged
+        # over the anime's media.
         stmt = stmt.group_by(Anime.id)
 
         # Post-aggregation HAVING filters (majority/range semantics)
         stmt = apply_anime_having_filters(stmt, filters, agg_columns)
 
-        # Ordering
-        if query and query_embedding is not None:
-            if search_type == SearchType.TITLE:
-                stmt = apply_vector_ordering(
-                    stmt, search_type, query_embedding,
-                    query=query,
-                    title_columns=[Anime.title, Anime.name_eng],
-                    extra_columns={SearchType.TITLE: AnimeSearch.title_embedding},
-                    # AnimeSearch is 1:1 with Anime, so MIN over the group is
-                    # that row's own distance — the aggregate exists to satisfy
-                    # the GROUP BY, not to pick between candidates.
-                    aggregate_distance=True,
-                )
-            elif search_type == SearchType.DESCRIPTION:
-                avg_distance = func.avg(
-                    func.cosine_distance(MediaSearch.description_embedding, cast(query_embedding, Vector))
-                ).label("avg_distance")
-                stmt = stmt.add_columns(avg_distance)
-                stmt = stmt.order_by(avg_distance.asc().nullslast())
+        weighted = weighted_score_expr(avg_score, avg_scored_by)
+        title_match = None
+        if query and search_type == SearchType.TITLE:
+            # A title query selects in HAVING, not WHERE: narrowing the joined
+            # media rows to the matching ones would rescope every aggregate above,
+            # so an anime reached through a side-story title would rank and filter
+            # on that side story alone. MAX is group-size invariant.
+            title_match = func.greatest(
+                title_match_score(query, Anime),
+                func.max(title_match_score(query, Media)),
+            ).label("title_match")
+            stmt = stmt.add_columns(title_match)
+            stmt = stmt.order_by(title_match.desc(), weighted.desc().nullslast(), Anime.id)
+        elif query_embedding is not None:
+            avg_distance = func.avg(
+                func.cosine_distance(MediaSearch.description_embedding, cast(query_embedding, Vector))
+            ).label("avg_distance")
+            stmt = stmt.add_columns(avg_distance)
+            stmt = stmt.order_by(avg_distance.asc().nullslast())
         else:
             # Default ordering: weighted score = S_w * log10(V_w + 1) over Main+Alt
-            weighted = weighted_score_expr(avg_score, avg_scored_by)
             stmt = stmt.order_by(weighted.desc().nullslast())
 
         stmt = stmt.limit(limit)
 
-        result = await db.execute(stmt)
-        agg_rows = result.all()
-
-        if not agg_rows:
+        anime_ids = await fetch_search_results(db, stmt, title_match, having=True)
+        if not anime_ids:
             return []
 
         # --- Phase B: Detail fetch for matched anime ---
-        anime_ids = [row[0] for row in agg_rows]
         detail_stmt = (
             select(Anime)
             .where(Anime.id.in_(anime_ids))

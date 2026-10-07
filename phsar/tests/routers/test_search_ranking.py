@@ -1,11 +1,9 @@
-"""Title-search ranking — substring-match bonus.
+"""Title search — a fuzzy substring filter over every title variant.
 
-Pure cosine-distance ranking can promote thematically-similar shows
-over titles that literally contain the user's query. Concrete case:
-"Lord of" surfaces "Overlord" above "Lord of Mysteries" because the
-embeddings cluster on theme, not literal token match. The
-`_TITLE_MATCH_BONUS_WEIGHT` reduction in `apply_vector_ordering`
-nudges substring-containing titles ahead.
+A title query keeps the rows where some title variant — the anime's own or any of
+its media's — contains the query or fuzzy-matches it, substring hits first. No
+fixture here carries a search embedding: a title search that still finds them
+proves the title path joins none.
 
 Fixture rows are scoped to a `SentinelSeason`; every query goes through
 `_ordered_fixture_titles`.
@@ -15,12 +13,7 @@ import pytest
 
 from app.daos.search_filters import _escape_like
 from app.models.anime import Anime
-from app.models.media import Media
-from app.services.anime_search_service import anime_title_texts
-from app.services.vector_embedding_service import (
-    create_anime_embedding,
-    create_media_embedding,
-)
+from app.models.media import Media, RelationType
 from tests._helpers import SentinelSeason, media_kwargs
 
 ANIME_SEARCH_URL = "/search/anime"
@@ -28,79 +21,37 @@ MEDIA_SEARCH_URL = "/search/media"
 
 _RANK_SEASON = SentinelSeason(1902)
 
+_BOTH_VIEWS = pytest.mark.parametrize("url", [ANIME_SEARCH_URL, MEDIA_SEARCH_URL], ids=["anime", "media"])
 
-async def _make_anime_with_media_titled(
-    db_session, *, mal_id: int, anime_title: str, media_titles: list[str],
+
+async def _make_anime(
+    db_session, *, mal_id: int, title: str, media: list[dict] | None = None,
 ) -> Anime:
-    anime = Anime(mal_id=mal_id, title=anime_title, description=anime_title)
+    """An anime and its media, stamped with the sentinel season. `media` holds
+    each media's `media_kwargs` overrides; by default one Main media carrying the
+    anime's own title, so the fixture serves the media view unchanged."""
+    anime = Anime(mal_id=mal_id, title=title)
     db_session.add(anime)
     await db_session.flush()
-    await create_anime_embedding(
-        db_session, anime_id=anime.id,
-        title_texts=anime_title_texts(anime),
-        description_text=anime.description or "",
-    )
-    for i, media_title in enumerate(media_titles):
-        media = Media(**media_kwargs(
-            anime.id, mal_id * 10 + i, title=media_title,
-            **_RANK_SEASON.columns,
-        ))
-        db_session.add(media)
-        await db_session.flush()
-        await create_media_embedding(
-            db_session, media_id=media.id,
-            title_texts=[media.title], description_text=media.title,
-        )
+    for i, overrides in enumerate(media or [{"title": title}]):
+        db_session.add(Media(**media_kwargs(
+            anime.id, mal_id * 10 + i, **_RANK_SEASON.columns, **overrides,
+        )))
+    await db_session.flush()
     return anime
-
-
-# ---------------------------------------------------------------------------
-# Anime view
-# ---------------------------------------------------------------------------
-
-_RANK_FIXTURE_QUERY = "FilterTestRank"
-
-
-@pytest.fixture
-async def lord_of_anime_set(db_session):
-    """Anime sharing the `FilterTestRank` query prefix, each with a
-    different relationship to the substring "Lord of":
-
-    - 'Lord of Mysteries' contains the substring → gets the bonus
-    - 'The Lord of the Rings' contains the substring → gets the bonus
-    - 'Overlord Show' contains "Lord" but NOT "Lord of" as a contiguous
-      substring → no bonus
-    - 'Unrelated Anime' has neither → no bonus
-
-    Returns the titles it inserted, which every consumer passes as the helper's
-    `expect`. Each anime's one media carries the anime's own title, so the set
-    serves the media view unchanged.
-    """
-    titles = [
-        f"{_RANK_FIXTURE_QUERY} Lord of Mysteries",
-        f"{_RANK_FIXTURE_QUERY} The Lord of the Rings",
-        f"{_RANK_FIXTURE_QUERY} Overlord Show",
-        f"{_RANK_FIXTURE_QUERY} Unrelated Anime",
-    ]
-    for offset, title in enumerate(titles):
-        await _make_anime_with_media_titled(
-            db_session, mal_id=87001 + offset,
-            anime_title=title, media_titles=[title],
-        )
-    return set(titles)
 
 
 async def _ordered_fixture_titles(
     client, headers, *, url: str, expect: set[str], **params,
 ) -> list[str]:
-    """The fixture's rows in response order, checked to be all of them.
+    """The fixture's rows in response order, checked to be exactly `expect`.
 
     Every caller's assertion passes on an empty or truncated list, so the check
     that makes them mean anything belongs here rather than in each test that
-    remembers to write it. `expect` is the whole set the caller's fixture
-    inserted: requiring equality catches both a row lost to a missing embedding
-    or a dropped join, and a season string that stopped parsing — which is
-    logged and dropped, silently widening the response to the catalogue."""
+    remembers to write it. `expect` is the subset of the fixture the query must
+    match: equality catches a match lost and a non-match let through alike, and
+    a season string that stopped parsing — which is logged and dropped, silently
+    widening the response to the catalogue."""
     resp = await client.get(
         url,
         params={**params, "anime_season": _RANK_SEASON.filter},
@@ -109,184 +60,140 @@ async def _ordered_fixture_titles(
     assert resp.status_code == 200, resp.text
     titles = [a["title"] for a in resp.json()]
     assert set(titles) == expect, (
-        f"response is not the fixture's row set: missing {sorted(expect - set(titles))}, "
+        f"response is not the expected match set: missing {sorted(expect - set(titles))}, "
         f"unexpected {sorted(set(titles) - expect)}"
     )
     return titles
 
 
-def _assert_matchers_first(ordered: list[str], matchers: set[str], non_matchers: set[str]):
-    """Every matcher ahead of every non-matcher — compared at the boundary
-    (last matcher vs first non-matcher) so the two groups may order internally
-    however the embedding distance puts them."""
-    matcher_positions = [i for i, t in enumerate(ordered) if t in matchers]
-    non_matcher_positions = [i for i, t in enumerate(ordered) if t in non_matchers]
-    assert max(matcher_positions) < min(non_matcher_positions), (
-        f"Non-matcher ranked above a matcher. Order: {ordered}"
-    )
-
-
-async def test_anime_substring_match_outranks_non_match(
-    client, user_auth_headers, lord_of_anime_set,
-):
-    """The two anime whose titles contain "Lord of" must come before the
-    Overlord/Unrelated rows. Pure cosine could put them in any order;
-    the substring bonus forces matchers first."""
-    matchers = {
-        f"{_RANK_FIXTURE_QUERY} Lord of Mysteries",
-        f"{_RANK_FIXTURE_QUERY} The Lord of the Rings",
-    }
-    non_matchers = {
-        f"{_RANK_FIXTURE_QUERY} Overlord Show",
-        f"{_RANK_FIXTURE_QUERY} Unrelated Anime",
-    }
-    ordered = await _ordered_fixture_titles(
-        client, user_auth_headers,
-        url=ANIME_SEARCH_URL,
-        expect=lord_of_anime_set,
-        query=f"{_RANK_FIXTURE_QUERY} Lord of",
-    )
-    _assert_matchers_first(ordered, matchers, non_matchers)
-
-
-async def test_anime_query_case_does_not_change_ranking(
-    client, user_auth_headers, lord_of_anime_set,
-):
-    """Capitalising the query must not change results. The reported bug:
-    typing "Kurokos" instead of "kurokos" buried Kuroko's Basketball
-    because the cased embedding model gave the two a materially different
-    vector. `generate_embedding` now folds case, and the SQL bonuses were
-    already case-insensitive, so query case is irrelevant end to end."""
-    lower = await _ordered_fixture_titles(
-        client, user_auth_headers, url=ANIME_SEARCH_URL, expect=lord_of_anime_set,
-        query=f"{_RANK_FIXTURE_QUERY} Lord of",
-    )
-    upper = await _ordered_fixture_titles(
-        client, user_auth_headers, url=ANIME_SEARCH_URL, expect=lord_of_anime_set,
-        query=f"{_RANK_FIXTURE_QUERY} Lord of".upper(),
-    )
-    assert lower == upper, f"Query case changed ranking: {lower} vs {upper}"
-
-
 # ---------------------------------------------------------------------------
-# Fuzzy / typo tolerance via pg_trgm
+# Substring hits first, fuzzy hits after, non-matches out
 # ---------------------------------------------------------------------------
 
-async def test_anime_fuzzy_typo_lifts_best_match_above_unrelated(
-    client, user_auth_headers, lord_of_anime_set,
-):
-    """Typo "lor of" (missing 'd') doesn't substring-match anything, but
-    pg_trgm trigram similarity gives "Lord of Mysteries" a strong fuzzy
-    bonus. Production win: the user's mistyped query still surfaces the
-    intended show near the top instead of leaving it buried by raw
-    embedding distance. The strongest fuzzy matcher must rank before
-    the explicitly-unrelated title.
+_SUBSTRING_HIT = "Overlord of Darkness"
+_FUZZY_HIT = "Lord, of Ashes"
+_NON_MATCH = "Unrelated Anime"
 
-    NOTE: weaker fuzzy matchers (Lord of Rings, Overlord) can still land
-    below Unrelated depending on the multilingual MiniLM embedding's
-    cosine variance — that's a test-fixture limitation, not a
-    production bug. The test pins the high-confidence outcome only.
-    """
-    best_matcher = f"{_RANK_FIXTURE_QUERY} Lord of Mysteries"
-    unrelated = f"{_RANK_FIXTURE_QUERY} Unrelated Anime"
-    ordered = await _ordered_fixture_titles(
-        client, user_auth_headers,
-        url=ANIME_SEARCH_URL,
-        expect=lord_of_anime_set,
-        query=f"{_RANK_FIXTURE_QUERY} lor of",
-    )
-    assert ordered.index(best_matcher) < ordered.index(unrelated), (
-        f"Best fuzzy matcher ranked below the unrelated title. "
-        f"pg_trgm bonus may not be firing. Order: {ordered}"
-    )
-
-
-# ---------------------------------------------------------------------------
-# Anime-view ranking is invariant to how many media an anime has
-# ---------------------------------------------------------------------------
 
 @pytest.fixture
-async def uneven_media_count_set(db_session):
-    """Two substring-matching anime with wildly different media counts (6 vs 1),
-    plus a non-matcher. Their titles differ, so their title embeddings differ
-    too — what the pair isolates is not embedding distance but how many rows
-    each contributes to the GROUP BY.
+async def lord_of_set(db_session):
+    """The anime against the query "lord of":
 
-    Returns the anime titles it inserted, for the helper's `expect`. The
-    franchise's media are titled per-season and so are not in that set — this
-    fixture serves the anime view only.
-    """
-    franchise = f"{_RANK_FIXTURE_QUERY} Lord of Franchise"
-    standalone = f"{_RANK_FIXTURE_QUERY} Lord of Standalone"
-    non_matcher = f"{_RANK_FIXTURE_QUERY} Wholly Different Title"
-    await _make_anime_with_media_titled(
-        db_session, mal_id=87101, anime_title=franchise,
-        media_titles=[f"{franchise} S{i}" for i in range(6)],
-    )
-    await _make_anime_with_media_titled(
-        db_session, mal_id=87102, anime_title=standalone, media_titles=[standalone],
-    )
-    await _make_anime_with_media_titled(
-        db_session, mal_id=87103, anime_title=non_matcher, media_titles=[non_matcher],
-    )
-    return {franchise, standalone, non_matcher}
+    - "Overlord of Darkness" contains it ("over·lord of"), the substring tier;
+    - "Lord, of Ashes" matches only fuzzily — the comma breaks the substring, while
+      every trigram of the query is still present (word_similarity 1.0);
+    - "Unrelated Anime" matches neither.
+
+    Everything else points the other way: by weighted score the fuzzy hit leads the
+    substring hit, and the non-match would lead both."""
+    rows = [
+        (_SUBSTRING_HIT, 5.0, 10),
+        (_FUZZY_HIT, 9.0, 100_000),
+        (_NON_MATCH, 9.5, 1_000_000),
+    ]
+    for offset, (title, score, votes) in enumerate(rows):
+        await _make_anime(
+            db_session, mal_id=87001 + offset, title=title,
+            media=[{"title": title, "score": score, "scored_by": votes}],
+        )
 
 
-async def test_anime_ranking_is_invariant_to_media_count(
-    client, user_auth_headers, uneven_media_count_set,
+@_BOTH_VIEWS
+async def test_title_search_keeps_matches_substring_hits_first(
+    client, user_auth_headers, lord_of_set, url,
 ):
-    """Anime-level title search groups over the JOINed media rows, so a
-    6-media anime contributes 6 identical (anime, embedding) rows and a
-    1-media anime contributes 1. The ordering distance is aggregated over that
-    group, and the aggregate must be one that ignores group SIZE — MIN and AVG
-    both do, SUM does not, and a SUM would rank the 6-media anime six times
-    worse purely for being a franchise.
-
-    Both matchers contain the "Lord of" substring, so both earn the same
-    literal bonus.
-    """
-    franchise = f"{_RANK_FIXTURE_QUERY} Lord of Franchise"
-    standalone = f"{_RANK_FIXTURE_QUERY} Lord of Standalone"
-    non_matcher = f"{_RANK_FIXTURE_QUERY} Wholly Different Title"
     ordered = await _ordered_fixture_titles(
-        client, user_auth_headers,
-        url=ANIME_SEARCH_URL,
-        expect=uneven_media_count_set,
-        query=f"{_RANK_FIXTURE_QUERY} Lord of",
+        client, user_auth_headers, url=url,
+        expect={_SUBSTRING_HIT, _FUZZY_HIT}, query="lord of",
     )
-    # A size-scaling aggregate multiplies the franchise's distance by its six
-    # media, sinking it below the non-matcher it outranks under every
-    # size-invariant one. The standalone row is the control: at one media, SUM
-    # and MIN agree on it, so it holds its place either way.
-    assert ordered.index(franchise) < ordered.index(non_matcher), (
-        f"The 6-media anime fell below a non-matching title — the ordering "
-        f"aggregate is scaling with group size. Order: {ordered}"
+    assert ordered == [_SUBSTRING_HIT, _FUZZY_HIT]
+
+
+@_BOTH_VIEWS
+@pytest.mark.parametrize("query", ["LORD OF", "  lord of  "], ids=["upper", "padded"])
+async def test_title_search_ignores_case_and_padding(
+    client, user_auth_headers, lord_of_set, url, query,
+):
+    """Both variants would demote the substring hit if they reached the SQL as
+    typed: a case-sensitive match misses "LORD OF", and the padded pattern
+    `%  lord of  %` is contained in no title. The fuzzy tier ignores both, so the
+    fuzzy hit would then lead."""
+    ordered = await _ordered_fixture_titles(
+        client, user_auth_headers, url=url,
+        expect={_SUBSTRING_HIT, _FUZZY_HIT}, query=query,
     )
-    assert ordered.index(standalone) < ordered.index(non_matcher), (
-        f"The 1-media matcher fell below a non-matching title. Order: {ordered}"
+    assert ordered == [_SUBSTRING_HIT, _FUZZY_HIT]
+
+
+# ---------------------------------------------------------------------------
+# The looser threshold runs only when the strict one matches nothing
+# ---------------------------------------------------------------------------
+
+_MID_WORD_TYPO_HIT = "Frieren Fixture"
+
+
+@_BOTH_VIEWS
+async def test_title_search_falls_back_when_nothing_clears_the_threshold(
+    client, user_auth_headers, db_session, url,
+):
+    """"friren" drops a letter mid-word, so the stretch of "frieren" it matches
+    shares 5 of 10 trigrams with it — 0.5, under the first threshold. Nothing
+    matches at that one, so the search retries at the fallback and finds it."""
+    await _make_anime(db_session, mal_id=87301, title=_MID_WORD_TYPO_HIT)
+    await _ordered_fixture_titles(
+        client, user_auth_headers, url=url, expect={_MID_WORD_TYPO_HIT}, query="friren",
+    )
+
+
+@_BOTH_VIEWS
+async def test_title_search_skips_the_fallback_when_something_matches(
+    client, user_auth_headers, db_session, url,
+):
+    await _make_anime(db_session, mal_id=87301, title=_MID_WORD_TYPO_HIT)
+    await _make_anime(db_session, mal_id=87302, title="Friren Academy")
+    await _ordered_fixture_titles(
+        client, user_auth_headers, url=url, expect={"Friren Academy"}, query="friren",
     )
 
 
 # ---------------------------------------------------------------------------
-# Media view (same bonus applies via media_dao)
+# A media's titles reach its anime, without rescoping the anime's aggregates
 # ---------------------------------------------------------------------------
 
-async def test_media_substring_match_outranks_non_match(
-    client, user_auth_headers, lord_of_anime_set,
-):
-    """Media-view title search benefits from the same bonus."""
-    matchers = {
-        f"{_RANK_FIXTURE_QUERY} Lord of Mysteries",
-        f"{_RANK_FIXTURE_QUERY} The Lord of the Rings",
-    }
-    non_matchers = {f"{_RANK_FIXTURE_QUERY} Overlord Show"}
-    ordered = await _ordered_fixture_titles(
-        client, user_auth_headers,
-        url=MEDIA_SEARCH_URL,
-        expect=lord_of_anime_set,
-        query=f"{_RANK_FIXTURE_QUERY} Lord of",
+async def test_media_title_reaches_its_anime(client, user_auth_headers, db_session):
+    """A side story's own title finds its anime, and the anime still scores over
+    its main story.
+
+    The match is decided in HAVING over all the anime's media. Deciding it in
+    WHERE would narrow the grouped rows to the side story, whose relation weight is
+    0, leaving avg_score NULL — so `score_min` would drop the anime."""
+    await _make_anime(db_session, mal_id=87101, title="Hagane Alchemist", media=[
+        {"title": "Hagane Alchemist", "score": 8.0, "scored_by": 1000},
+        {
+            "title": "Fullmetal Alchemist: Brotherhood",
+            "relation_type": RelationType.SideStory, "score": 6.0, "scored_by": 1000,
+        },
+    ])
+    await _ordered_fixture_titles(
+        client, user_auth_headers, url=ANIME_SEARCH_URL,
+        expect={"Hagane Alchemist"}, query="brotherhood", score_min=7,
     )
-    _assert_matchers_first(ordered, matchers, non_matchers)
+
+
+async def test_synonym_reaches_its_anime(client, user_auth_headers, db_session):
+    """Synonyms (`other_names`, a JSONB list) are a title variant too. Placed on a
+    side story, so the same WHERE-instead-of-HAVING regression fails here as well."""
+    await _make_anime(db_session, mal_id=87201, title="Shingeki Fixture", media=[
+        {"title": "Shingeki Fixture", "score": 8.0, "scored_by": 1000},
+        {
+            "title": "Shingeki Fixture OVA", "other_names": ["Attack on Titan OVA"],
+            "relation_type": RelationType.SideStory,
+        },
+    ])
+    await _ordered_fixture_titles(
+        client, user_auth_headers, url=ANIME_SEARCH_URL,
+        expect={"Shingeki Fixture"}, query="attack on titan", score_min=7,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,6 @@
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +23,7 @@ from app.models.ratings import (
 )
 from app.models.user_settings import SpoilerLevel
 from app.schemas.anime_schema import AnimeSearchResult
-from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
+from app.schemas.media_filter_schema import MediaSearchFilters, SearchQuery, SearchType
 from app.schemas.media_schema import MediaSearchResult
 from app.schemas.rating_schema import RatedMediaResult, RatingSearchFilters
 from app.schemas.search_schema import SearchResultDB
@@ -115,7 +117,7 @@ def get_rating_filters(
 
 @router.get("/anime", response_model=list[AnimeSearchResult])
 async def search_anime(
-    query: str = Query(default="", description="Search query string."),
+    query: Annotated[SearchQuery, Query(description="Search query string.")] = "",
     search_type: SearchType = Query(default=SearchType.TITLE, description="Search by title or description."),
     filters: MediaSearchFilters = Depends(get_media_filters),
     current_user=Depends(get_current_user),
@@ -134,7 +136,7 @@ async def search_anime(
 
 @router.get("/mal", response_model=list[SearchResultDB])
 async def search_mal(
-    query: str,
+    query: SearchQuery,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_user_or_admin),
 ):
@@ -147,7 +149,7 @@ async def search_mal(
 
 @router.get("/media", response_model=list[MediaSearchResult])
 async def search_media(
-    query: str = Query(default="", description="The search query string (e.g., anime title)."),
+    query: Annotated[SearchQuery, Query(description="The search query string (e.g., anime title).")] = "",
     search_type: SearchType = Query(default=SearchType.TITLE, description="The way to search by: title or description."),
     filters: MediaSearchFilters = Depends(get_media_filters),
     current_user=Depends(get_current_user),
@@ -174,7 +176,7 @@ async def search_media(
 
 @router.get("/ratings", response_model=list[RatedMediaResult])
 async def search_ratings(
-    query: str = Query(default="", description="Search query (matched against selected search type)."),
+    query: Annotated[SearchQuery, Query(description="Search query (matched against selected search type).")] = "",
     search_type: SearchType = Query(default=SearchType.TITLE, description="What to search: title, description, or rating_notes."),
     filters: RatingSearchFilters = Depends(get_rating_filters),
     limit: int = Query(default=50, ge=1, le=200),

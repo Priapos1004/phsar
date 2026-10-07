@@ -134,6 +134,21 @@ async def test_create_and_verify_token_as_admin(client, admin_auth_headers):
     assert data["query"] == "spy"
     assert "Action" in data["genre_name"]
 
+async def test_token_carries_the_stripped_query(client, user_auth_headers):
+    create_resp = await client.post(
+        "/filters/create-token",
+        json={**VALID_FILTER_PAYLOAD, "query": "  spy  "},
+        headers=user_auth_headers,
+    )
+    assert create_resp.status_code == 200
+    verify_resp = await client.post(
+        "/filters/verify-token",
+        json={"token": create_resp.json()["token"]},
+        headers=user_auth_headers,
+    )
+    assert verify_resp.status_code == 200
+    assert verify_resp.json()["query"] == "spy"
+
 @pytest.mark.asyncio
 async def test_token_endpoints_as_user(client, user_auth_headers):
     create_resp = await client.post(

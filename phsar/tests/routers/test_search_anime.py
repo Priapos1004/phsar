@@ -8,11 +8,7 @@ from app.models.media import Media, MediaType, RelationType, SeasonType
 from app.models.media_genre import MediaGenre
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
-from app.services.anime_search_service import anime_title_texts
-from app.services.vector_embedding_service import (
-    create_anime_embedding,
-    create_media_embedding,
-)
+from app.services.vector_embedding_service import create_media_embedding
 from tests._helpers import media_kwargs
 
 logger = logging.getLogger(__name__)
@@ -34,13 +30,6 @@ async def anime_with_media(db_session):
     )
     db_session.add(anime)
     await db_session.flush()
-
-    # Anime embedding
-    await create_anime_embedding(
-        db_session, anime_id=anime.id,
-        title_texts=anime_title_texts(anime),
-        description_text=anime.description or "",
-    )
 
     media_tv = Media(**media_kwargs(
         anime.id, 99101,
@@ -280,13 +269,6 @@ async def large_anime_with_genre_majority(db_session):
     anime = Anime(mal_id=99900, title="Large Majority Anime", description="Majority test.")
     db_session.add(anime)
     await db_session.flush()
-
-    # Anime embedding
-    await create_anime_embedding(
-        db_session, anime_id=anime.id,
-        title_texts=anime_title_texts(anime),
-        description_text=anime.description or "",
-    )
 
     media_ids = []
     for i in range(6):

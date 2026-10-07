@@ -16,7 +16,7 @@ _COVERAGE_SEASON = SentinelSeason(1903)
 
 async def _anime_with_media(db_session, mal_seed: int, count: int) -> tuple:
     """No embeddings: every search below passes `query=""`, which is the branch
-    `MediaDAO.search_media_by_vector_with_filters` answers without joining
+    `MediaDAO.search_media_with_filters` answers without joining
     `MediaSearch` at all."""
     anime = Anime(mal_id=mal_seed, title=f"CoverageFixture{mal_seed}")
     db_session.add(anime)

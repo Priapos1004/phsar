@@ -5,11 +5,10 @@ Runs once at lifespan startup to clean up rows scraped before
 Idempotent: subsequent restarts find nothing to change and exit
 without touching the catalog.
 
-When a row's title fields are updated, the anime embedding is stale
-(the embedding combines `[title, name_eng, name_jap, *other_names]`),
-so the existing AnimeSearch row is deleted and regenerated. Skipping
-that step would leave title-vector search ranking against pre-strip
-text.
+When a row's title fields are updated, the anime's title embedding is
+stale (it combines `[title, name_eng, name_jap, *other_names]`), so the
+existing AnimeSearch row is deleted and regenerated rather than left
+describing pre-strip text.
 """
 
 import logging

@@ -1,7 +1,8 @@
 import logging
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Numeric, and_, case, cast, distinct, func, select, tuple_
+from sqlalchemy import Numeric, Text, and_, case, cast, distinct, func, select, tuple_
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.anime import Anime
 from app.models.genre import Genre
@@ -24,7 +25,6 @@ logger = logging.getLogger(__name__)
 
 # Base mapping from search type to the embedding column used for cosine distance ordering
 _VECTOR_COLUMNS = {
-    SearchType.TITLE: MediaSearch.title_embedding,
     SearchType.DESCRIPTION: MediaSearch.description_embedding,
 }
 
@@ -357,33 +357,20 @@ def apply_anime_having_filters(stmt, filters: MediaSearchFilters, agg_columns: d
     return stmt
 
 
-# Two-tier title-match bonus subtracted from cosine_distance. Without
-# either, pure embedding distance ranks thematically-similar shows
-# above titles that literally contain the user's query — e.g. "Lord of"
-# against the catalog can promote "Overlord" over "Lord of Mysteries"
-# because the embeddings cluster on theme, not literal token match.
+# The fuzzy tier's thresholds, strictest first — `fetch_search_results` tries each
+# in turn.
 #
-# Cosine distance ranges roughly 0.2-1.0 for mid-cluster results. The
-# substring bonus closes a ~0.2 cosine gap on an exact match; the
-# fuzzy bonus peaks at a similar magnitude when word_similarity is
-# perfect, so the two tiers reach roughly the same maximum lift but
-# via different signals.
-# - SUBSTRING (case-insensitive ilike): exact contiguous match wins a
-#   flat bonus. Tight signal, low false-positive risk.
-# - FUZZY (pg_trgm word_similarity above a threshold): catches typos,
-#   partial spellings, and transposed letters the substring rule
-#   misses ("lord of myst" or "lrod of myst" → "Lord of Mysteries").
-#   word_similarity is used instead of plain similarity because the
-#   query is usually a short phrase that fuzzy-matches part of a
-#   longer title — plain similarity penalises the length mismatch and
-#   buries partial matches. Threshold 0.4 filters most false positives
-#   (probed against the dev catalog: unrelated short-query noise sits
-#   around 0.43-0.44, true partial matches at 0.5+). Proportional
-#   scaling above the threshold means borderline noise contributes
-#   almost nothing while strong matches approach the substring bonus.
-_TITLE_MATCH_BONUS_WEIGHT = 0.2
-_TITLE_FUZZY_SIMILARITY_THRESHOLD = 0.4
-_TITLE_FUZZY_BONUS_SCALER = 0.3  # (sim - threshold) * scaler; max ≈ 0.18 at sim=1.0
+# word_similarity compares the query's trigrams with the best contiguous stretch
+# of the title's, as shared / (query ∪ stretch). A typo at the end of a word costs
+# only the trigrams it breaks ("frieran" → Frieren, 5/8); a letter dropped mid-word
+# also pays for the title's trigrams between the two halves ("friren" → 5/10).
+# Partial-word noise lands at exactly 3/5 ("jojo" → Evangelion), so 0.61 keeps it
+# out and admits end-of-word typos. It cannot be written `> 0.6`: word_similarity
+# returns float4, and 0.6f promotes to 0.6000000238. Mid-word typos land among the
+# noise, hence the 0.5 fallback. The calibration study is in
+# compound-docs/2026-10-07-v0.16.0-search-rework.md — re-measure before moving
+# either.
+TITLE_MATCH_THRESHOLDS = (0.61, 0.5)
 
 
 def _escape_like(text: str) -> str:
@@ -393,42 +380,63 @@ def _escape_like(text: str) -> str:
     return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def title_match_score(query: str, model: type[Anime] | type[Media]):
+    """How well `query` matches the best of `model`'s title variants. The synonyms
+    (`other_names`, a JSONB list) are matched as one JSON string, so a single
+    ilike / word_similarity covers every synonym without unnesting the list.
+
+    A substring hit scores `1 + similarity`, a fuzzy one its `word_similarity`
+    (< 1 unless every query trigram is present), so a substring hit outranks any
+    fuzzy hit, and among substring hits an exact title outranks a longer one that
+    merely contains it. NULL variants drop out of GREATEST.
+
+    There is no trigram index, so every variant is scored on every row and the cost
+    grows linearly with the catalogue — the measured figure is in
+    compound-docs/2026-10-07-v0.16.0-search-rework.md. A GIN `gin_trgm_ops` index
+    plus a `%>` candidate pre-filter is the upgrade when that starts to matter."""
+    pattern = f"%{_escape_like(query)}%"
+    variants = (model.title, model.name_eng, model.name_jap, cast(model.other_names, Text))
+    return func.greatest(*(
+        case(
+            (col.ilike(pattern, escape="\\"), 1 + func.similarity(query, col)),
+            # Argument order matters: the short query first, the long title second.
+            else_=func.word_similarity(query, col),
+        )
+        for col in variants
+    ))
+
+
+async def fetch_search_results(
+    db: AsyncSession, stmt, title_match=None, *, having: bool = False,
+) -> list:
+    """Every row's first column, through the threshold fallback for a title search
+    (`title_match` set).
+
+    A retry rather than one query at the loosest threshold trimmed afterwards: the
+    trim is only correct while the match is the primary sort key. `having` for a
+    grouped statement whose match is an aggregate."""
+    if title_match is None:
+        return list((await db.execute(stmt)).scalars().all())
+    restrict = stmt.having if having else stmt.where
+    rows: list = []
+    for threshold in TITLE_MATCH_THRESHOLDS:
+        rows = list((await db.execute(restrict(title_match >= threshold))).scalars().all())
+        if rows:
+            break
+    return rows
+
+
 def apply_vector_ordering(
     stmt,
     search_type: SearchType,
     query_embedding,
     *,
-    query: str | None = None,
-    title_columns: list | None = None,
     extra_columns: dict | None = None,
-    aggregate_distance: bool = False,
 ):
-    """Apply cosine distance ordering for vector similarity search.
+    """Order by cosine distance to the query embedding.
 
     `extra_columns` registers additional `search_type → embedding column`
     mappings (e.g., `RATING_NOTES → RatingSearch.note_embedding`).
-
-    `aggregate_distance` wraps the distance in `MIN()` for callers that GROUP BY
-    (anime-level search). The embedding lives on a different table from the
-    grouped key, so Postgres won't infer functional dependency and needs either
-    the 384-float vector in the GROUP BY — which puts it in the hash/sort key of
-    every input row — or an aggregate over it. It has to wrap the DISTANCE
-    rather than the embedding, since pgvector has no `min(vector)`. The literal
-    bonuses below stay UN-aggregated: they read columns of the grouped table, so
-    they're functionally dependent on its primary key and already legal.
-
-    `query` + `title_columns` enable two literal-text bonuses on
-    `SearchType.TITLE` (description and rating-notes search skip both
-    — those queries are semantic, not literal):
-    - Substring (`ilike '%query%'`): contributes `_TITLE_MATCH_BONUS_WEIGHT`
-      per column when the column contains the raw query case-insensitively.
-    - Fuzzy (`pg_trgm.similarity >= threshold`): contributes
-      `_TITLE_FUZZY_BONUS_WEIGHT` per column above the similarity threshold.
-      Catches typos / partial spellings the substring rule misses.
-
-    Bonuses across columns AND across the two tiers sum, so an anime
-    matching both `title` and `name_eng` and matching both literally and
-    fuzzily gets the strongest boost.
     """
     columns = {**_VECTOR_COLUMNS, **(extra_columns or {})}
     column = columns.get(search_type)
@@ -436,31 +444,4 @@ def apply_vector_ordering(
         logger.warning("No embedding column for search_type=%s; results will not be relevance-ordered", search_type)
         return stmt
 
-    distance = func.cosine_distance(column, cast(query_embedding, Vector))
-    if aggregate_distance:
-        distance = func.min(distance)
-
-    if query and title_columns and search_type == SearchType.TITLE:
-        pattern = f"%{_escape_like(query)}%"
-        bonus_terms: list = []
-        for col in title_columns:
-            bonus_terms.append(case(
-                (col.ilike(pattern, escape="\\"), _TITLE_MATCH_BONUS_WEIGHT),
-                else_=0.0,
-            ))
-            # word_similarity(query, target) — argument order matters:
-            # the SHORT query goes first, the LONG title second.
-            sim = func.word_similarity(query, col)
-            bonus_terms.append(case(
-                (
-                    sim >= _TITLE_FUZZY_SIMILARITY_THRESHOLD,
-                    (sim - _TITLE_FUZZY_SIMILARITY_THRESHOLD) * _TITLE_FUZZY_BONUS_SCALER,
-                ),
-                else_=0.0,
-            ))
-        total_bonus = bonus_terms[0]
-        for term in bonus_terms[1:]:
-            total_bonus = total_bonus + term
-        distance = distance - total_bonus
-
-    return stmt.order_by(distance)
+    return stmt.order_by(func.cosine_distance(column, cast(query_embedding, Vector)))
