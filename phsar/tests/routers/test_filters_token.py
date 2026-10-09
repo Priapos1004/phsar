@@ -176,6 +176,16 @@ async def test_token_carries_the_stripped_query(client, user_auth_headers):
     data = await _round_trip(client, user_auth_headers, {**VALID_FILTER_PAYLOAD, "query": "  spy  "})
     assert data["query"] == "spy"
 
+
+async def test_token_that_no_longer_validates_reads_as_malformed(client, user_auth_headers):
+    """An earlier link over today's query cap: a 400, not a 500."""
+    from app.core.security import create_url_token
+
+    token = create_url_token({**VALID_FILTER_PAYLOAD, "query": "x" * 201})
+    resp = await client.post("/filters/verify-token", json={"token": token}, headers=user_auth_headers)
+    assert resp.status_code == 400
+    assert "malformed" in resp.text.lower()
+
 @pytest.mark.asyncio
 async def test_token_endpoints_as_user(client, user_auth_headers):
     create_resp = await client.post(
