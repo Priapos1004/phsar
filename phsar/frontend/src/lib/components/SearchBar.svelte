@@ -30,6 +30,7 @@
 		filterChips,
 		normalizeRated,
 		rangeParams,
+		withQuery,
 		type ListFilterKey,
 		type RangeKey,
 		type RatedState,
@@ -69,17 +70,22 @@
 	let appliedCount = $derived(filterChips(applied, viewType).length);
 	let stagedCount = $derived(filterChips(staged, viewType).length);
 
-	const MODES: { value: SearchType; label: string }[] = [
-		{ value: 'title', label: 'Title' },
-		{ value: 'description', label: 'Description' },
-	];
+	let modes = $derived([
+		{ value: 'title' as const, label: 'Title' },
+		{ value: 'description' as const, label: 'Description' },
+		{
+			value: 'rating_notes' as const, label: 'My notes',
+			disabled: isGuest, hint: isGuest ? 'Guest accounts have no notes to search' : undefined,
+		},
+	]);
 	let placeholder = $derived(
 		mode === 'description' ? 'Describe a story, a character, a theme...'
+			: mode === 'rating_notes' ? 'Search your notes...'
 			: viewType === 'anime' ? 'Search anime...' : 'Search media...',
 	);
 
 	function submit() {
-		onSearch({ ...$state.snapshot(applied), query, search_type: mode });
+		onSearch(withQuery($state.snapshot(applied) as MediaSearchFilters, query, mode));
 	}
 
 	function handleSubmit(e: Event) {
@@ -95,7 +101,7 @@
 	}
 
 	function showResults() {
-		onSearch(normalizeRated({ ...staged, query, search_type: mode }, viewType));
+		onSearch(normalizeRated(withQuery(staged, query, mode), viewType));
 		filtersOpen = false;
 	}
 
@@ -224,7 +230,7 @@
 	</div>
 
 	<div class="flex justify-center">
-		<PillToggle options={MODES} value={mode} onSelect={selectMode} ariaLabel="What to search" />
+		<PillToggle options={modes} value={mode} onSelect={selectMode} ariaLabel="What to search" />
 	</div>
 </form>
 

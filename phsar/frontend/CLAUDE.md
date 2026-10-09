@@ -38,7 +38,7 @@ that carry an area's reasoning; it is not an inventory of the tree.
 | Watchlist | `WatchlistBookmarkIcon` (the mask gradient), `WatchlistDialog`, `BulkWatchlistDialog`, and `watchlist/` for the page's own tabs |
 | Admin | `admin/`, plus `BackupsCard`, `MergeCandidatesCard`, `SplitCandidatesCard`, `DeleteCandidatesCard`. The job-detail page argues its own case in `src/routes/admin/jobs/[uuid]/+page.svelte` |
 | Session + status | `SessionTimeoutBanner` with `$lib/utils/sessionTimeout.ts`, `MaintenanceBanner`, `JobBell`, `Toast`/`ToastHost` |
-| Search | `SearchBar.svelte` (the staged filter sheet), `DoubleRangeSlider.svelte` (the step grid, and why it writes only on commit), and `$lib/utils/search.ts` for the filter tables, the chips and the anime↔media carry |
+| Search | `SearchBar.svelte` (the staged filter sheet), `DoubleRangeSlider.svelte` (the step grid, and why it writes only on commit), and `$lib/utils/search.ts` for the filter tables, the sort options, the chips and the anime↔media carry |
 
 Several of these render a verdict the backend owns — restorability, cycle membership,
 merge, split and delete candidates, sibling order — and must not recompute it; the relevant
@@ -69,7 +69,9 @@ deliberate absence of a global 401 handler, both argued at the throw site.
 ## The rest of the tree
 
 - `lib/components/ui/` — shadcn-svelte primitives. Mostly untouched, but not
-  off-limits: `ui/tooltip/tooltip-content.svelte` carries the app's themed surface.
+  off-limits: `ui/tooltip/tooltip-content.svelte` carries the app's themed surface, and
+  other primitives carry local edits too (theming, row styling, a slider key the comment
+  there explains). Diff against upstream before re-syncing one from shadcn.
 - `app.css` — the theme system: `@property` registration, `@theme inline` `var()`
   indirection, the `.theme-*` override classes and the gradients. The file itself
   explains why the `:root` defaults cannot be left to `@property` alone.

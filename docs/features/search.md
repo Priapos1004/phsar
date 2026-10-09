@@ -190,6 +190,14 @@ follows every real season, so ascending runs oldest → announced → TBA, and d
 the reverse. A row with no season comes last either way. A media still "Not yet aired"
 after its season has passed sorts at that past season.
 
+**Latest aired says how fresh; release says what comes next.** An anime sits at its main
+story's last finished season, else its airing one, else its closest announced season,
+else TBA — so announcements count only for an anime with nothing aired, and one with a
+finished season and another airing sits at the finished one. A media sits at its own
+season, as for release. Release stays beside it: holding a continuation at its last
+finished season, latest aired can't give [`upcoming_main`](#anime-view-filters) its
+soonest-first order. Latest aired descends by default.
+
 **Title sorts in the user's name language**, through `display_title`. **Random is
 daily**: md5 of the row's uuid and the UTC date, so every viewer gets the same order
 that day. **Your rating** is the mean of the caller's ratings over the anime's rated

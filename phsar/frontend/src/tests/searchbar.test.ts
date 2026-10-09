@@ -134,6 +134,17 @@ describe('SearchBar', () => {
 		expect(onSearch).toHaveBeenCalledWith(expect.objectContaining({ rated: ['dropped'] }));
 	});
 
+	it('notes mode is shown to a guest but not selectable', async () => {
+		const onSearch = vi.fn();
+		render(SearchBar, { props: { onSearch }, context: new Map([['userRole', () => 'restricted_user']]) });
+		await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'cozy' } });
+		const notes = screen.getByRole('button', { name: 'My notes' });
+		expect(notes).toHaveAttribute('aria-disabled', 'true');
+		await fireEvent.click(notes);
+		expect(onSearch).not.toHaveBeenCalled();
+		expect(screen.queryByPlaceholderText('Search your notes...')).not.toBeInTheDocument();
+	});
+
 	it('a guest gets an explanation in place of the personal filters', async () => {
 		render(SearchBar, { context: new Map([['userRole', () => 'restricted_user']]) });
 		await openSheet();

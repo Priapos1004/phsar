@@ -49,7 +49,9 @@ async def get_sort(
         default=SortKey.RELEVANCE,
         description="Result order. `relevance` is the query's own match order, and `top_rated` "
         "without a query. Any other sort orders the same matching rows. `your_rating` is your "
-        "rating of a media, or the mean over an anime's rated media; unrated last.",
+        "rating of a media, or the mean over an anime's rated media; unrated last. `release` is the "
+        "next announced season, else the latest aired; `aired` the latest finished main season, "
+        "else the airing one, else the next announced.",
     ),
     current_user: Users = Depends(get_current_user),
 ) -> SortKey:

@@ -30,6 +30,7 @@ class SortKey(str, Enum):
     POPULARITY = "popularity"
     ADDED = "added"
     RELEASE = "release"
+    AIRED = "aired"
     TITLE = "title"
     RANDOM = "random"
     YOUR_RATING = "your_rating"

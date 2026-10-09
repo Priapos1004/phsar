@@ -326,11 +326,11 @@ def _anime_genre_majority_condition(genre_names: list[str], mode: MatchMode):
     return Anime.id.in_(qualifying)
 
 
-# A main-story media not aired yet: what the release sort counts as an announcement and
+MAIN_STORY = Media.relation_type.in_(MAIN_STORY_RELATIONS)
+
+# A main-story media not aired yet: what `_announced_keys` counts as an announcement and
 # what `upcoming_main` keeps, which "closest to release" needs to agree.
-ANNOUNCED_MAIN_STORY = Media.relation_type.in_(MAIN_STORY_RELATIONS) & (
-    Media.airing_status == AIRING_STATUS_NOT_YET_AIRED
-)
+ANNOUNCED_MAIN_STORY = MAIN_STORY & (Media.airing_status == AIRING_STATUS_NOT_YET_AIRED)
 
 
 def upcoming_main_media():
@@ -618,17 +618,33 @@ SEASON_KEY = Media.anime_season_year * 10 + case(
 TBA_SEASON_KEY = 99_999
 
 
+def _announced_keys() -> tuple:
+    """An anime's announcement for every key on the season timeline: its closest announced
+    main-story season, else TBA when it is announced only undated."""
+    return (
+        func.min(SEASON_KEY).filter(ANNOUNCED_MAIN_STORY),
+        func.max(case((ANNOUNCED_MAIN_STORY & Media.anime_season_year.is_(None), TBA_SEASON_KEY))),
+    )
+
+
 def _release_key(*, having: bool):
     """The release sort's key, per media or, with `having`, per anime: the timeline in
     docs/features/search.md#sorting."""
     unaired = Media.airing_status == AIRING_STATUS_NOT_YET_AIRED
     if not having:
         return func.coalesce(SEASON_KEY, case((unaired, TBA_SEASON_KEY)))
-    main = Media.relation_type.in_(MAIN_STORY_RELATIONS)
+    return func.coalesce(*_announced_keys(), func.max(SEASON_KEY).filter(MAIN_STORY & ~unaired))
+
+
+def _aired_key(*, having: bool):
+    """The latest-aired sort's key, per media or, with `having`, per anime:
+    docs/features/search.md#sorting."""
+    if not having:
+        return _release_key(having=False)
     return func.coalesce(
-        func.min(SEASON_KEY).filter(ANNOUNCED_MAIN_STORY),
-        func.max(case((ANNOUNCED_MAIN_STORY & Media.anime_season_year.is_(None), TBA_SEASON_KEY))),
-        func.max(SEASON_KEY).filter(main & ~unaired),
+        func.max(SEASON_KEY).filter(MAIN_STORY & (Media.airing_status == AIRING_STATUS_FINISHED_AIRING)),
+        func.max(SEASON_KEY).filter(MAIN_STORY & (Media.airing_status == AIRING_STATUS_CURRENTLY_AIRING)),
+        *_announced_keys(),
     )
 
 
@@ -642,6 +658,12 @@ def display_title(model: type[Anime] | type[Media], name_language: NameLanguage)
 def utc_today() -> date:
     """The random sort's seed date; a function so a test can move it."""
     return datetime.now(UTC).date()
+
+
+# The keys that ascend unless a direction is given; the rest descend. The search menu's
+# `ASCENDING_SORTS` (frontend lib/utils/search.ts) mirrors it, pinned by
+# `test_the_search_menu_knows_which_sorts_ascend`.
+ASCENDING_SORTS = frozenset({SortKey.TITLE, SortKey.RELEASE})
 
 
 def sort_order(
@@ -681,6 +703,8 @@ def sort_order(
             key = model.created_at
         case SortKey.RELEASE:
             key = _release_key(having=having)
+        case SortKey.AIRED:
+            key = _aired_key(having=having)
         case SortKey.TITLE:
             key = display_title(model, name_language)
         case SortKey.RANDOM:
@@ -690,7 +714,7 @@ def sort_order(
             key = your_rating
         case SortKey.TOP_RATED | SortKey.RELEVANCE:
             key = weighted
-    ascending = sort_dir == SortDir.ASC if sort_dir else sort in (SortKey.TITLE, SortKey.RELEASE)
+    ascending = sort_dir == SortDir.ASC if sort_dir else sort in ASCENDING_SORTS
     direction = asc if ascending else desc
     return [direction(key).nulls_last(), weighted.desc().nulls_last(), direction(model.id)]
 

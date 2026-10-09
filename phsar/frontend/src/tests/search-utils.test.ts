@@ -1,11 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
 	carryAcrossView,
+	effectiveSort,
 	fetchAnimeSearchResults,
 	filterChips,
 	normalizeRated,
 	omitKeys,
 	stripForGuest,
+	withQuery,
 	type MediaSearchFilters,
 } from '$lib/utils/search';
 import { sliderGrid, thumbValue, toGrid } from '$lib/components/DoubleRangeSlider.svelte';
@@ -101,6 +103,7 @@ describe('carryAcrossView', () => {
 		score_min: 8, score_max: 10, scored_by_min: 1, scored_by_max: 2, episodes_min: 1, episodes_max: 2,
 		duration_per_episode_min: 1, duration_per_episode_max: 2, total_watch_time_min: 1, total_watch_time_max: 2,
 		top_percent: 10, upcoming_main: true, rated: ['in_progress', 'on_hold', 'dropped'], watchlisted: true,
+		sort: 'release', sort_dir: 'desc',
 	};
 
 	it('keeps what means the same at both grains and drops the rest', () => {
@@ -110,6 +113,7 @@ describe('carryAcrossView', () => {
 			anime_season: ['Fall 2023'], genre_name: ['Fantasy'], studio_name: ['Madhouse'], original_source: ['Manga'],
 			genre_mode: 'any', studio_mode: 'all', score_min: 8, score_max: 10,
 			top_percent: 10, upcoming_main: true, rated: ['on_hold', 'dropped'], watchlisted: true,
+			sort: 'release', sort_dir: 'desc',
 		});
 	});
 
@@ -123,7 +127,47 @@ describe('stripForGuest', () => {
 		expect(stripForGuest({ ...BASE, watchlisted: false, genre_name: ['Action'] })).toEqual({
 			params: { ...BASE, genre_name: ['Action'] }, stripped: true,
 		});
-		expect(stripForGuest({ ...BASE, rated: null, watchlisted: null })).toMatchObject({ stripped: false });
+		expect(stripForGuest({ ...BASE, rated: null, watchlisted: null, sort: 'score' })).toMatchObject({ stripped: false });
+	});
+
+	it('drops a sort by your rating and turns a notes search into a title search', () => {
+		expect(stripForGuest({ query: 'cozy', search_type: 'rating_notes', sort: 'your_rating', sort_dir: 'asc' })).toEqual({
+			params: { query: 'cozy', search_type: 'title' }, stripped: true,
+		});
+	});
+});
+
+describe('effectiveSort', () => {
+	it('reads relevance as top rated without a query, since that is the order the results are in', () => {
+		expect(effectiveSort(BASE)).toMatchObject({ sort: 'top_rated', dir: 'desc' });
+		expect(effectiveSort({ ...BASE, sort: 'relevance' })).toMatchObject({ sort: 'top_rated', dir: 'desc' });
+		expect(effectiveSort({ ...BASE, query: 'frieren' })).toMatchObject({ sort: 'relevance', dir: null });
+	});
+
+	it('gives a shuffle no direction', () => {
+		expect(effectiveSort({ ...BASE, sort: 'random', sort_dir: 'asc' })).toMatchObject({ sort: 'random', dir: null });
+	});
+
+	it("takes each key's default direction unless one is set", () => {
+		expect(effectiveSort({ ...BASE, sort: 'title' }).dir).toBe('asc');
+		expect(effectiveSort({ ...BASE, sort: 'release' }).dir).toBe('asc');
+		expect(effectiveSort({ ...BASE, sort: 'score' }).dir).toBe('desc');
+		expect(effectiveSort({ ...BASE, sort: 'aired' }).dir).toBe('desc');
+		expect(effectiveSort({ ...BASE, sort: 'title', sort_dir: 'desc' }).dir).toBe('desc');
+	});
+});
+
+describe('withQuery', () => {
+	const sorted: MediaSearchFilters = { ...BASE, query: 'frieren', sort: 'added', sort_dir: 'asc', genre_name: ['Fantasy'] };
+
+	it('starts a different query from Best match, keeping the filters', () => {
+		expect(withQuery(sorted, 'dungeon meshi', 'title')).toEqual({
+			...BASE, query: 'dungeon meshi', genre_name: ['Fantasy'],
+		});
+	});
+
+	it('keeps the sort for the same query, padded or in another mode', () => {
+		expect(withQuery(sorted, ' frieren ', 'description')).toMatchObject({ sort: 'added', sort_dir: 'asc' });
 	});
 });
 

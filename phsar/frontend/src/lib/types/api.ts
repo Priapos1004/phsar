@@ -52,6 +52,8 @@ export interface MediaConnected {
 // A media-view search hit: MediaConnected plus whether the caller has rated it.
 export interface MediaSearchResult extends MediaConnected {
 	is_rated: boolean;
+	/** Notes search only: the caller's note on this media. */
+	matched_note?: string | null;
 }
 
 // How completely the caller has rated one anime (GET /ratings/coverage). Tiers and
@@ -304,7 +306,10 @@ export interface AnimeAggregatedBase {
 	is_finished: boolean;
 }
 
-export interface AnimeSearchResult extends AnimeAggregatedBase {}
+export interface AnimeSearchResult extends AnimeAggregatedBase {
+	/** Notes search only: the caller's note that best matches the query. */
+	matched_note?: string | null;
+}
 
 // Anime detail
 export interface AnimeMediaItem {

@@ -12,6 +12,10 @@ export type ViewType = 'anime' | 'media';
 export type SearchType = 'title' | 'description' | 'rating_notes';
 export type MatchMode = 'any' | 'all';
 export type RatedState = 'none' | 'in_progress' | 'on_hold' | 'dropped' | 'main' | 'all' | 'completed';
+export type SortKey =
+	| 'relevance' | 'top_rated' | 'score' | 'popularity' | 'added' | 'release' | 'aired' | 'title' | 'random'
+	| 'your_rating';
+export type SortDir = 'asc' | 'desc';
 
 /** The search's parameters, as the token carries them. A token verifies to every field,
  * unset ones as null or their default, so an optional field may be null as well as absent. */
@@ -49,7 +53,15 @@ export interface MediaSearchFilters {
 	// The caller's own: a union of states, and listed or not.
 	rated?: RatedState[] | null;
 	watchlisted?: boolean | null;
+
+	// Unset = the endpoint's own: relevance, and each key's default direction.
+	sort?: SortKey | null;
+	sort_dir?: SortDir | null;
 }
+
+/** How many results a search shows. One more is requested, so a full page can say "50+"
+ * rather than a count that would be a guess. */
+export const SEARCH_LIMIT = 50;
 
 const LIST_FILTER_KEYS = [
 	'airing_status', 'anime_season', 'genre_name', 'studio_name', 'original_source',
@@ -86,21 +98,95 @@ export const DEFAULT_MODE = { genre_mode: 'all', studio_mode: 'any' } as const s
 // Every non-empty value goes out as a query param, a list as repeated keys. Null and
 // absent stay out, so a verified token's unset fields fall back to the endpoint's
 // defaults; `watchlisted=false` is a value and goes.
-function buildSearchParams(params: MediaSearchFilters): URLSearchParams {
+function buildSearchParams(params: MediaSearchFilters, limit?: number): URLSearchParams {
 	const searchParams = new URLSearchParams();
 	for (const [key, value] of Object.entries(params)) {
 		if (value === null || value === undefined || value === '') continue;
 		for (const v of Array.isArray(value) ? value : [value]) searchParams.append(key, String(v));
 	}
+	if (limit !== undefined) searchParams.set('limit', String(limit));
 	return searchParams;
 }
 
-export async function fetchSearchResults(params: MediaSearchFilters): Promise<MediaSearchResult[]> {
-	return api.get<MediaSearchResult[]>('/search/media', { params: buildSearchParams(params) });
+export async function fetchSearchResults(params: MediaSearchFilters, limit?: number): Promise<MediaSearchResult[]> {
+	return api.get<MediaSearchResult[]>('/search/media', { params: buildSearchParams(params, limit) });
 }
 
-export async function fetchAnimeSearchResults(params: MediaSearchFilters): Promise<AnimeSearchResult[]> {
-	return api.get<AnimeSearchResult[]>('/search/anime', { params: buildSearchParams(params) });
+export async function fetchAnimeSearchResults(params: MediaSearchFilters, limit?: number): Promise<AnimeSearchResult[]> {
+	return api.get<AnimeSearchResult[]>('/search/anime', { params: buildSearchParams(params, limit) });
+}
+
+// ---------------------------------------------------------------------------
+// Sort
+// ---------------------------------------------------------------------------
+
+export interface SortOption {
+	value: SortKey;
+	label: string;
+	/** What the key orders by, shown under it in the menu. */
+	hint: string;
+	/** What each direction reads as. A key whose reverse means nothing has none: the
+	 * query's own order, or a shuffle, which reversed is just another shuffle. */
+	dir?: Record<SortDir, string>;
+}
+
+/** Every sort the search knows, in menu order. */
+export const SORT_OPTIONS: SortOption[] = [
+	{ value: 'relevance', label: 'Best match', hint: 'How closely it matches your query' },
+	{
+		value: 'top_rated', label: 'Top rated', hint: 'MAL score weighted by how many voted',
+		dir: { desc: 'Highest first', asc: 'Lowest first' },
+	},
+	{ value: 'score', label: 'Score', hint: 'The MAL score alone', dir: { desc: 'Highest first', asc: 'Lowest first' } },
+	{
+		value: 'popularity', label: 'Popularity', hint: 'How many people voted on MAL',
+		dir: { desc: 'Most votes first', asc: 'Fewest votes first' },
+	},
+	{
+		value: 'added', label: 'Newest added', hint: 'When it joined the library',
+		dir: { desc: 'Newest first', asc: 'Oldest first' },
+	},
+	{
+		value: 'release', label: 'Release date', hint: 'Next announced, else last aired season',
+		dir: { asc: 'Oldest first', desc: 'Newest first' },
+	},
+	{
+		value: 'aired', label: 'Latest aired', hint: 'Last finished, else airing or next season',
+		dir: { desc: 'Newest first', asc: 'Oldest first' },
+	},
+	{ value: 'title', label: 'Title A–Z', hint: 'In your name language', dir: { asc: 'A to Z', desc: 'Z to A' } },
+	{ value: 'random', label: 'Random (daily)', hint: 'Same shuffle for everyone today' },
+	{
+		value: 'your_rating', label: 'Your rating', hint: 'Your mean rating, unrated last',
+		dir: { desc: 'Highest first', asc: 'Lowest first' },
+	},
+];
+
+// The keys the backend ascends unless told otherwise; the rest descend. One line, because
+// a backend test reads it against `search_filters.ASCENDING_SORTS`.
+export const ASCENDING_SORTS: SortKey[] = ['title', 'release'];
+
+/** The sorts the menu offers: Best match only with a query to match. */
+export function offeredSorts(params: MediaSearchFilters): SortOption[] {
+	return SORT_OPTIONS.filter((o) => o.value !== 'relevance' || params.query?.trim());
+}
+
+/** The order the results are actually in. Without a query, relevance falls back to top
+ * rated — the backend's rule, shown rather than hidden. */
+export function effectiveSort(params: MediaSearchFilters): { sort: SortKey; option: SortOption; dir: SortDir | null } {
+	const requested = params.sort ?? 'relevance';
+	const sort = requested === 'relevance' && !params.query?.trim() ? 'top_rated' : requested;
+	const option = SORT_OPTIONS.find((o) => o.value === sort)!;
+	if (!option.dir) return { sort, option, dir: null };
+	return { sort, option, dir: params.sort_dir ?? (ASCENDING_SORTS.includes(sort) ? 'asc' : 'desc') };
+}
+
+/** The applied search with a new query and mode. A different query starts from Best match:
+ * a sort chosen for the last query would bury the new one's intended hit. A mode switch
+ * keeps the sort. */
+export function withQuery(params: MediaSearchFilters, query: string, mode: SearchType): MediaSearchFilters {
+	const next = { ...params, query, search_type: mode };
+	return query.trim() === (params.query ?? '').trim() ? next : omitKeys(next, ['sort', 'sort_dir']);
 }
 
 // ---------------------------------------------------------------------------
@@ -237,6 +323,7 @@ const ACROSS_VIEWS = {
 	duration_per_episode_min: 'drop', duration_per_episode_max: 'drop',
 	total_watch_time_min: 'drop', total_watch_time_max: 'drop',
 	top_percent: 'carry', upcoming_main: 'carry', rated: 'common', watchlisted: 'carry',
+	sort: 'carry', sort_dir: 'carry',
 } as const satisfies Record<keyof Required<MediaSearchFilters>, 'carry' | 'drop' | 'common'>;
 
 const COMMON_RATED = RATED_STATES.anime
@@ -261,10 +348,14 @@ export function carryAcrossView(params: MediaSearchFilters, view: ViewType): Med
 // Guests
 // ---------------------------------------------------------------------------
 
-/** A shared link opened by a guest: drop what reads the caller's own ratings and
- * watchlist, which a guest is refused (docs/features/search.md, Personal filters), and
- * say whether anything went, so the page can tell them. */
+/** A shared link opened by a guest: drop what reads the caller's own ratings, notes and
+ * watchlist, which a guest is refused (docs/features/search.md, Personal filters and sort), and
+ * say whether anything went, so the page can tell them. Notes fall back to a title search. */
 export function stripForGuest(params: MediaSearchFilters): { params: MediaSearchFilters; stripped: boolean } {
-	const stripped = !!params.rated?.length || params.watchlisted != null;
-	return { params: stripped ? omitKeys(params, ['rated', 'watchlisted']) : params, stripped };
+	const byRating = params.sort === 'your_rating';
+	const notes = params.search_type === 'rating_notes';
+	const stripped = !!params.rated?.length || params.watchlisted != null || byRating || notes;
+	if (!stripped) return { params, stripped };
+	const kept = omitKeys(params, byRating ? ['rated', 'watchlisted', 'sort', 'sort_dir'] : ['rated', 'watchlisted']);
+	return { params: notes ? { ...kept, search_type: 'title' } : kept, stripped };
 }

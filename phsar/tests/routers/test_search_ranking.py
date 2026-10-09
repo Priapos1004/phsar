@@ -24,7 +24,9 @@ Every query goes through `_ordered_fixture_titles`, which scopes it to the fixtu
 """
 
 import hashlib
+import re
 from datetime import UTC, date, datetime
+from pathlib import Path
 from uuid import UUID
 
 import pytest
@@ -35,6 +37,7 @@ from app.daos.anime_dao import AnimeDAO
 from app.daos.media_dao import MediaDAO
 from app.daos.rating_dao import _note_distance, note_cutoff
 from app.daos.search_filters import (
+    ASCENDING_SORTS,
     _escape_like,
     description_cutoff,
     weighted_mean_score_expr,
@@ -838,11 +841,83 @@ async def test_release_sort_is_one_timeline(client, user_auth_headers, release_s
     assert ordered == expected
 
 
+_AIRING = {"airing_status": AIRING_STATUS_CURRENTLY_AIRING}
+
+# Anime → its media, every title holding "Zqa". Where the latest-aired key and the release
+# key part: Finished Airing has a finished main season (2017) and an airing one (Fall
+# 2026), Finished Announced a finished one and an announcement — the release key would put
+# them at Fall 2026 and Winter 2030.
+_AIRED_FIXTURE = {
+    "Zqa Finished Airing": [
+        ("Zqa Finished Airing", _season(SeasonType.Spring, 2017)),
+        ("Zqa Finished Airing 2", {**_season(SeasonType.Fall, 2026), **_AIRING}),
+    ],
+    "Zqa Nothing": [("Zqa Nothing", {})],
+    "Zqa Announced Only": [
+        ("Zqa Announced Only 2", {**_season(SeasonType.Fall, 2027), **_UNAIRED}),
+        ("Zqa Announced Only", {**_season(SeasonType.Winter, 2027), **_UNAIRED}),
+    ],
+    "Zqa Side Later": [
+        ("Zqa Side Later", _season(SeasonType.Spring, 2019)),
+        ("Zqa Side Later OVA", {**_season(SeasonType.Fall, 2025), **_SIDE}),
+    ],
+    "Zqa Undated Only": [("Zqa Undated Only", _UNAIRED)],
+    "Zqa Finished Announced": [
+        ("Zqa Finished Announced", _season(SeasonType.Fall, 2020)),
+        ("Zqa Finished Announced 2", {**_season(SeasonType.Winter, 2030), **_UNAIRED}),
+    ],
+    "Zqa Airing Only": [("Zqa Airing Only", {**_season(SeasonType.Spring, 2027), **_AIRING})],
+}
+
+# Undated Only at TBA · Airing Only Spring 2027 · Announced Only its closest announcement,
+# Winter 2027 — its Fall 2027 would put it above Airing Only · Finished Announced Fall
+# 2020, its announcement ignored · Side Later its main story's Spring 2019, not the OVA ·
+# Finished Airing Spring 2017, finished before airing · Nothing, last either way.
+_ANIME_AIRED_DESC = [
+    "Zqa Undated Only", "Zqa Airing Only", "Zqa Announced Only", "Zqa Finished Announced",
+    "Zqa Side Later", "Zqa Finished Airing", "Zqa Nothing",
+]
+
+
+@pytest.mark.parametrize("params", [{"sort": "aired"}, {"sort": "aired", "sort_dir": "asc"}], ids=["desc", "asc"])
+async def test_aired_sort_is_the_latest_finished_main_season(client, user_auth_headers, db_session, params):
+    """Newest first by default; ascending reverses every seasoned row, and the row
+    without a season stays last."""
+    await _make_franchises(db_session, _AIRED_FIXTURE, mal_id=87671, in_season=False)
+    desc = _ANIME_AIRED_DESC
+    expected = [*reversed(desc[:-1]), desc[-1]] if "sort_dir" in params else desc
+    ordered = await _ordered_fixture_titles(
+        client, user_auth_headers, url=ANIME_SEARCH_URL, expect=set(expected), in_season=False, query="zqa", **params,
+    )
+    assert ordered == expected
+
+
+CLIENT_SEARCH = Path(__file__).resolve().parents[2] / "frontend" / "src" / "lib" / "utils" / "search.ts"
+# Anchored and `export`-pinned, as test_ratings.py reads `ratingLimits.ts`.
+_CLIENT_ASCENDING = re.compile(r"^export const ASCENDING_SORTS: SortKey\[\] = \[(.*)\];$", re.M)
+
+
+def test_the_search_menu_knows_which_sorts_ascend():
+    """The menu names a sort's direction before the backend has ordered anything, so its
+    default directions must be the backend's."""
+    match = _CLIENT_ASCENDING.search(CLIENT_SEARCH.read_text())
+    assert match, f"no ASCENDING_SORTS line in {CLIENT_SEARCH}"
+    assert {key.strip(" '") for key in match.group(1).split(",")} == {key.value for key in ASCENDING_SORTS}
+
+
+async def test_aired_sort_at_the_media_grain_is_each_media_season(client, user_auth_headers, release_set):
+    """One media has one season, so the media grain orders as the release key does."""
+    ordered = await _ordered_fixture_titles(
+        client, user_auth_headers, url=MEDIA_SEARCH_URL, expect=set(_MEDIA_RELEASE_ASC), in_season=False,
+        query="zqv", sort="aired", sort_dir="asc",
+    )
+    assert ordered == _MEDIA_RELEASE_ASC
+
+
 # ---------------------------------------------------------------------------
 # Upcoming main story, top N%, and any/all genres and studios
 # ---------------------------------------------------------------------------
 
-_AIRING = {"airing_status": AIRING_STATUS_CURRENTLY_AIRING}
 
 # Anime → its media (title, columns); Main and finished unless the columns say otherwise.
 _UPCOMING_FIXTURE = {

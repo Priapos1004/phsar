@@ -2,16 +2,22 @@
 	import SearchBar from '$lib/components/SearchBar.svelte';
 	import GrainToggle from '$lib/components/GrainToggle.svelte';
 	import Notice from '$lib/components/Notice.svelte';
-	import { X } from 'lucide-svelte';
+	import Tooltip from '$lib/components/Tooltip.svelte';
+	import * as Select from '$lib/components/ui/select';
+	import { ArrowDown, ArrowUp, X } from 'lucide-svelte';
 	import { page } from '$app/state';
 	import {
+		SEARCH_LIMIT,
 		carryAcrossView,
+		effectiveSort,
 		fetchAnimeSearchResults,
 		fetchSearchResults,
 		filterChips,
+		offeredSorts,
 		omitKeys,
 		stripForGuest,
 		type MediaSearchFilters,
+		type SortKey,
 		type ViewType,
 	} from '$lib/utils/search';
 	import { getContext } from 'svelte';
@@ -29,6 +35,7 @@
 	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
 
 	const getUserRole = getContext<() => string | null>('userRole');
+	let isGuest = $derived(getUserRole?.() === 'restricted_user');
 	let mediaResults: MediaSearchResult[] = $state([]);
 	let animeResults: AnimeSearchResult[] = $state([]);
 	let isLoading = $state(false);
@@ -51,7 +58,14 @@
 	let visibleCount = $state(PAGE_STEP);
 	let loadRequestId = 0;
 
-	let currentResults = $derived(viewType === 'anime' ? animeResults : mediaResults);
+	let fetched = $derived(viewType === 'anime' ? animeResults : mediaResults);
+	let currentResults = $derived(fetched.slice(0, SEARCH_LIMIT));
+	let countLabel = $derived(
+		`${fetched.length > SEARCH_LIMIT ? `${SEARCH_LIMIT}+` : currentResults.length} ${viewType === 'anime' ? 'anime' : 'media'}`,
+	);
+
+	let order = $derived(effectiveSort(decodedParams));
+	let sortOptions = $derived(offeredSorts(decodedParams));
 
 	function showMore() {
 		visibleCount = Math.min(visibleCount + PAGE_STEP, currentResults.length);
@@ -101,7 +115,7 @@
 			const parsed = await api.post<MediaSearchFilters>('/filters/verify-token', { token });
 			if (thisRequest !== loadRequestId) return;
 
-			const { params, stripped } = getUserRole?.() === 'restricted_user'
+			const { params, stripped } = isGuest
 				? stripForGuest(parsed)
 				: { params: parsed, stripped: false };
 			strippedForGuest = stripped;
@@ -120,14 +134,14 @@
 		// view reads `is_rated` off each hit and never touches the store, and the
 		// layout's rule is that a request known to fail shouldn't be sent.
 		// Unawaited: the tiers decorate cards, so they must not hold results back.
-		if (viewType === 'anime' && getUserRole?.() !== 'restricted_user') void ensureRatingCoverage();
+		if (viewType === 'anime' && !isGuest) void ensureRatingCoverage();
 		try {
 			if (viewType === 'anime') {
-				const results = await fetchAnimeSearchResults(params);
+				const results = await fetchAnimeSearchResults(params, SEARCH_LIMIT + 1);
 				if (requestId !== undefined && requestId !== loadRequestId) return;
 				animeResults = results;
 			} else {
-				const results = await fetchSearchResults(params);
+				const results = await fetchSearchResults(params, SEARCH_LIMIT + 1);
 				if (requestId !== undefined && requestId !== loadRequestId) return;
 				mediaResults = results;
 			}
@@ -169,6 +183,19 @@
 	function removeFilters(keys: (keyof MediaSearchFilters)[]) {
 		navigateToSearch({ ...omitKeys(decodedParams, keys), view_type: viewType });
 	}
+
+	// A sort reorders the same results, so it applies at once rather than through the sheet.
+	// A new key starts at its own default direction.
+	function setSort(sort: SortKey) {
+		navigateToSearch({ ...omitKeys(decodedParams, ['sort', 'sort_dir']), sort, view_type: viewType });
+	}
+
+	function flipDirection() {
+		if (!order.dir) return;
+		navigateToSearch({
+			...decodedParams, sort: order.sort, sort_dir: order.dir === 'asc' ? 'desc' : 'asc', view_type: viewType,
+		});
+	}
 </script>
 
 <svelte:head>
@@ -176,6 +203,7 @@
 </svelte:head>
 
 <div class={`${cls.container} p-4 space-y-4`}>
+	<!-- Top-right, apart from the sort: it changes what a result is, not their order. -->
 	<div class="flex justify-end">
 		<GrainToggle grain={viewType} onSelect={switchView} />
 	</div>
@@ -215,6 +243,44 @@
 		</div>
 	{/if}
 
+	<div class="flex flex-wrap items-center gap-2">
+		<span class="mr-auto text-sm text-white/70">{isLoading || error ? '' : countLabel}</span>
+		<Select.Root type="single" value={order.sort} onValueChange={(v) => v && v !== order.sort && setSort(v as SortKey)}>
+			<Select.Trigger size="sm" class={cls.pageControl} aria-label="Sort by">
+				{order.option.label}
+			</Select.Trigger>
+			<!-- Each option says what it orders by in place, rather than in a hover tooltip,
+			     which neither touch nor arrow-key navigation would ever show. -->
+			<Select.Content class="w-80">
+				{#each sortOptions as opt (opt.value)}
+					{@const guestOnly = opt.value === 'your_rating' && isGuest}
+					<Select.Item value={opt.value} label={opt.label} disabled={guestOnly}>
+						<div class="flex flex-col">
+							<span>{opt.label}</span>
+							<span class="text-xs text-muted-foreground">
+								{guestOnly ? 'Guest accounts have no ratings to sort by' : opt.hint}
+							</span>
+						</div>
+					</Select.Item>
+				{/each}
+			</Select.Content>
+		</Select.Root>
+		<Tooltip text={order.option.dir && order.dir ? `${order.option.dir[order.dir]} (click to reverse)` : `${order.option.label} has no direction`}>
+			{#snippet trigger(props)}
+				<button
+					{...props}
+					type="button"
+					class="size-8 flex items-center justify-center {cls.pageControl} disabled:opacity-40 disabled:hover:text-white/80"
+					aria-label="Reverse the order"
+					disabled={!order.dir}
+					onclick={flipDirection}
+				>
+					{#if order.dir === 'asc'}<ArrowUp class="size-4" />{:else}<ArrowDown class="size-4" />{/if}
+				</button>
+			{/snippet}
+		</Tooltip>
+	</div>
+
 	{#if isLoading}
 		<div class={cls.mediaInfoGrid}>
 			{#each Array(6) as _}
@@ -246,6 +312,7 @@
 						watchtime={result.total_watch_time !== null ? formatDuration(result.total_watch_time) : null}
 						imageUrl={result.cover_image}
 						is_finished={result.is_finished}
+						matched_note={result.matched_note}
 						media_uuid={result.uuid}
 						{searchToken}
 					/>
@@ -266,6 +333,7 @@
 						watchtime={result.total_watch_time !== null ? formatDuration(result.total_watch_time) : null}
 						imageUrl={result.cover_image}
 						is_rated={result.is_rated}
+						matched_note={result.matched_note}
 						media_uuid={result.uuid}
 						{searchToken}
 					/>
