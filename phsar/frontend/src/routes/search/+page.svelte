@@ -1,10 +1,21 @@
 <script lang="ts">
 	import SearchBar from '$lib/components/SearchBar.svelte';
+	import GrainToggle from '$lib/components/GrainToggle.svelte';
+	import Notice from '$lib/components/Notice.svelte';
+	import { X } from 'lucide-svelte';
 	import { page } from '$app/state';
-	import { fetchSearchResults, fetchAnimeSearchResults, LIST_FILTER_KEYS } from '$lib/utils/search';
+	import {
+		carryAcrossView,
+		fetchAnimeSearchResults,
+		fetchSearchResults,
+		filterChips,
+		omitKeys,
+		stripForGuest,
+		type MediaSearchFilters,
+		type ViewType,
+	} from '$lib/utils/search';
 	import { getContext } from 'svelte';
 	import { ensureRatingCoverage } from '$lib/stores/ratingCoverage';
-	import type { MediaSearchFilters } from '$lib/utils/search';
 	import { navigateToSearch } from '$lib/utils/navigation';
 	import { formatDuration, formatSeason, formatSeasonRange, resolveTitle } from '$lib/utils/formatString';
 	import { api } from '$lib/api';
@@ -23,13 +34,16 @@
 	let isLoading = $state(false);
 	let error = $state('');
 	let hasToken = $state(false);
+	// A guest's shared link lost the filters that read the caller's own ratings or watchlist.
+	let strippedForGuest = $state(false);
+	let filtersOpen = $state(false);
 
 	let defaultView = $derived($userSettings?.default_search_view ?? 'anime');
-	let viewType = $state<'anime' | 'media'>('anime');
-	// Apply default search view from settings on initial load (before any token overrides)
-	$effect(() => { if (!hasToken) viewType = defaultView; });
-	let decodedParams: Partial<MediaSearchFilters> = $state({});
+	let decodedParams = $state<MediaSearchFilters>({ query: '', search_type: 'title' });
+	// The view is the applied search's, so it has one writer: whatever loaded the search.
+	let viewType = $derived<ViewType>(decodedParams.view_type ?? defaultView);
 	let searchToken = $derived(page.url.searchParams.get('q'));
+	let chips = $derived(filterChips(decodedParams, viewType));
 
 	/** One "Show More" step, and the initial cut. */
 	const PAGE_STEP = 20;
@@ -66,7 +80,7 @@
 		error = '';
 		mediaResults = [];
 		animeResults = [];
-		viewType = view;
+		strippedForGuest = false;
 		const params: MediaSearchFilters = { query: '', search_type: 'title', view_type: view };
 		decodedParams = params;
 		try {
@@ -87,9 +101,12 @@
 			const parsed = await api.post<MediaSearchFilters>('/filters/verify-token', { token });
 			if (thisRequest !== loadRequestId) return;
 
-			decodedParams = parsed;
-			viewType = parsed.view_type === 'media' ? 'media' : 'anime';
-			await loadSearchResults(parsed, thisRequest);
+			const { params, stripped } = getUserRole?.() === 'restricted_user'
+				? stripForGuest(parsed)
+				: { params: parsed, stripped: false };
+			strippedForGuest = stripped;
+			decodedParams = params;
+			await loadSearchResults(params, thisRequest);
 		} catch (err) {
 			if (thisRequest !== loadRequestId) return;
 			error = err instanceof Error ? err.message : 'An unexpected error occurred';
@@ -144,37 +161,13 @@
 		navigateToSearch({ ...params, view_type: viewType });
 	}
 
-	// Categorical filters that mean the same thing in both views, so they carry across a
-	// level toggle. Score carries too — it's always the fixed 0–10 scale. Everything else
-	// is dropped: relation type (media-only) and the view-relative ranges (episodes/
-	// scored-by/duration/watch-time, whose scale differs between per-media and aggregated).
-	const CARRY_LIST_KEYS = LIST_FILTER_KEYS.filter((key) => key !== 'relation_type');
-	const CARRY_NUMBER_KEYS = ['score_min', 'score_max'] as const;
+	// What survives the switch is `carryAcrossView`'s call; the new token reloads the page.
+	function switchView(newView: ViewType) {
+		if (newView !== viewType) navigateToSearch(carryAcrossView(decodedParams, newView));
+	}
 
-	async function switchView(newView: 'anime' | 'media') {
-		if (newView === viewType) return;
-		viewType = newView;
-		mediaResults = [];
-		animeResults = [];
-		error = '';
-		visibleCount = PAGE_STEP;
-		// Partial clear: carry the directly-applicable filters (query + categorical lists +
-		// score) through the new token and drop the rest, so toggling level keeps your broad
-		// filtering without dragging over view-specific ranges that don't translate.
-		const carried: MediaSearchFilters = {
-			query: decodedParams.query ?? '',
-			search_type: decodedParams.search_type ?? 'title',
-			view_type: newView,
-		};
-		for (const key of CARRY_LIST_KEYS) {
-			const vals = decodedParams[key];
-			if (vals?.length) carried[key] = [...vals];
-		}
-		for (const key of CARRY_NUMBER_KEYS) {
-			const val = decodedParams[key];
-			if (typeof val === 'number') carried[key] = val;
-		}
-		navigateToSearch(carried);
+	function removeFilters(keys: (keyof MediaSearchFilters)[]) {
+		navigateToSearch({ ...omitKeys(decodedParams, keys), view_type: viewType });
 	}
 </script>
 
@@ -183,25 +176,44 @@
 </svelte:head>
 
 <div class={`${cls.container} p-4 space-y-4`}>
-	<!-- View toggle — subtle, top-right, below navbar -->
 	<div class="flex justify-end">
-		<div class="inline-flex rounded-full border border-border bg-card/60 backdrop-blur p-0.5 text-xs">
-			<button
-				class="px-3 py-1 rounded-full font-medium transition {viewType === 'anime' ? 'bg-primary text-primary-foreground' : 'text-card-foreground/70 hover:text-card-foreground'}"
-				onclick={() => switchView('anime')}
-			>
-				Anime
-			</button>
-			<button
-				class="px-3 py-1 rounded-full font-medium transition {viewType === 'media' ? 'bg-primary text-primary-foreground' : 'text-card-foreground/70 hover:text-card-foreground'}"
-				onclick={() => switchView('media')}
-			>
-				Media
-			</button>
-		</div>
+		<GrainToggle grain={viewType} onSelect={switchView} />
 	</div>
 
-	<SearchBar onSearch={handleSearch} searchParams={decodedParams} {viewType} />
+	<SearchBar onSearch={handleSearch} applied={decodedParams} {viewType} bind:filtersOpen />
+
+	{#if strippedForGuest}
+		<div class="max-w-xl mx-auto">
+			<Notice>This link filtered by ratings or the watchlist, which guest accounts don't have, so those filters were left out.</Notice>
+		</div>
+	{/if}
+
+	{#if chips.length}
+		<div class="flex flex-wrap items-center justify-center gap-2 max-w-3xl mx-auto">
+			{#each chips as chip (chip.id)}
+				<span class="inline-flex items-center rounded-full border border-primary/40 bg-primary/15 text-sm text-primary">
+					<button type="button" class="pl-3 pr-1.5 py-1 hover:text-white" onclick={() => (filtersOpen = true)}>
+						{chip.label}
+					</button>
+					<button
+						type="button"
+						class="pr-2 pl-0.5 py-1 hover:text-white"
+						aria-label="Remove {chip.label}"
+						onclick={() => removeFilters(chip.keys)}
+					>
+						<X class="size-3.5" />
+					</button>
+				</span>
+			{/each}
+			{#if chips.length > 1}
+				<button
+					type="button"
+					class="px-2 py-1 text-sm text-white/60 hover:text-white"
+					onclick={() => removeFilters(chips.flatMap((c) => c.keys))}
+				>Clear all</button>
+			{/if}
+		</div>
+	{/if}
 
 	{#if isLoading}
 		<div class={cls.mediaInfoGrid}>

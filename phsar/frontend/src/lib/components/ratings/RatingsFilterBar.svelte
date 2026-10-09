@@ -38,10 +38,6 @@
 	// control row doesn't jump when switching top-level tabs. On the dark page bg.
 	const VIEW_ON = 'border-primary bg-primary/15 text-primary font-medium';
 	const VIEW_OFF = 'border-white/15 text-white/60 hover:text-white hover:border-white/30';
-	// In-card controls sit on the WHITE card, so inactive text is card-foreground (dark),
-	// never the light page `foreground` token. Selected = solid primary; resting = muted.
-	const CHIP_ON = 'bg-primary text-white shadow-sm';
-	const CHIP_OFF = 'bg-muted text-card-foreground/70 hover:bg-muted/70';
 	const labelCls = 'text-muted-foreground text-xs uppercase tracking-wide';
 </script>
 
@@ -143,12 +139,10 @@
 			{#if ageOptions.length}
 				<div class="space-y-1.5">
 					<div class="flex h-7 items-center"><Label class={labelCls}>Age rating</Label></div>
-					<!-- Chips live in a box mirroring the TagSelect (same border / radius /
-					     min-height) so the filters line up; filled-chip toggle reads cleanly. -->
-					<div class="bg-card/80 backdrop-blur border border-input rounded-xl px-2 min-h-[48px] flex flex-wrap items-center gap-1.5">
+					<div class={cls.chipGroup}>
 						{#each ageOptions as age (age)}
 							<button
-								class="px-3 py-1.5 rounded-lg text-sm font-medium transition-colors {$ratingsFilter.ageRatings.includes(age) ? CHIP_ON : CHIP_OFF}"
+								class="{cls.chip} {$ratingsFilter.ageRatings.includes(age) ? cls.chipOn : cls.chipOff}"
 								onclick={() => toggleAge(age)}
 							>{AGE_RATING_LABELS[age] ?? age}</button>
 						{/each}

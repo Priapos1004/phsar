@@ -117,7 +117,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 ## 3. Home Page
 
 - **Hero banner** (InfoDiashow): Full-width rounded card showing the active theme's character pic as background (`object-cover`, per-theme focal point). A subtle bottom-up dark scrim (for legibility only, no color cast over the art) anchors the "Current Season" label and season name (e.g., "Spring 2026") bottom-left with a soft drop shadow. Pic updates reactively when the user changes theme.
-- SearchBar component for entering queries and applying filters
+- The search bar (4.2) — the same query box, mode pills and filter sheet as the search page; submitting or applying goes to `/search`
 - Three placeholder cards: "Recommended", "Lucky Find", "Upcoming"
 
 ---
@@ -125,17 +125,17 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 ## 4. Search Flow
 
 ### 4.1 Anime/Media View Toggle
-- A small pill-shaped toggle sits in the top-right corner of the search page, below the navbar
+- A small pill-shaped toggle sits in the top-right corner of the search page, below the navbar — the same pill as the ratings and watchlist grain toggles
 - Default view: **Anime** (aggregated search grouping media by parent anime)
-- Switching toggle: **partial clear** — carries the filters that apply identically in both views (the query, every list filter except relation type, and the fixed 0–10 score range) into a fresh search token, and drops the rest (relation type + the view-relative ranges: episodes, scored-by, duration, watch time). Closes the filter panel, reloads filter options for the new view, and re-runs the search
+- Switching toggle: **partial clear** — carries the query, its mode and every filter into a fresh search token except what doesn't translate: relation type (media only), the view-relative ranges (episodes, scored-by, duration, watch time; the 0–10 score carries) and the rated states only one view has (4.4). Then it re-runs the search; the sheet's options follow the new view
 - The `view_type` is encoded in the search token, so "Back to search" restores the correct toggle state
 - SearchBar placeholder changes: "Search anime..." / "Search media..."
 
 ### 4.2 Submitting a Search
-1. User types a query in the SearchBar text input (filter toggle on the left, search button on the right)
-2. Optionally toggles "Expand search to descriptions" checkbox
-3. Optionally opens the filter panel (left icon) and sets filters
-4. Submits via the Enter key or the search button on the right of the input
+1. User types a query in the search box (filter button on the left, showing how many filter groups are applied; search button on the right)
+2. Optionally picks a mode with the pills under the box: **Title** (default) or **Description**. With text in the box a mode click re-runs the search; with nothing typed it only changes the placeholder
+3. Optionally opens the filter sheet (left icon) and applies filters (4.4)
+4. Submits via the Enter key or the search button on the right of the input; the filters already applied stay
 5. Frontend POSTs filter params (including `view_type`) to `/filters/create-token` → receives a search token
 6. Navigates to `/search?q=<token>`
 
@@ -143,7 +143,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 1. Page reads `q` param from URL
 2. POSTs token to `/filters/verify-token` → receives decoded filter params (including `view_type`)
 3. View toggle is set to match the decoded `view_type`
-4. SearchBar is pre-populated with the decoded filters
+4. The query box, the mode and the filter chips show the decoded search. A **guest** opening a shared link that filters by ratings or the watchlist gets the search without those filters and a yellow notice saying so
 5. `GET /search/anime?...` or `GET /search/media?...` fetches results based on view type
 6. Results display as cards in a grid
 7. "Show More" button loads 20 more results per click
@@ -156,27 +156,26 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 
 **No-query ranking:** With no query (browsing, or filters only — e.g. arriving from a studio link), results are ordered by the vote-weighted MAL score each card shows, highest first, with unscored anime last. Filters choose which anime appear and never change a card's score or where it sits relative to the others, so a filtered list reads in the same order as the unfiltered one.
 
-**Title-query matching:** A title query **filters**: the results are the anime (or media) whose title — in any language, including synonyms and, in the anime view, the titles of any of its entries — contains the query or nearly does. Literal matches come first, then near-misses that tolerate a typo (`frieran` → Frieren); a looser match (`friren`) shows only when nothing matches better, and a query no title matches even loosely yields "No results found". Describing a show in title mode therefore finds nothing — "Expand search to descriptions" is the way to search by plot. Search ignores **capitalization** and surrounding spaces (`Kurokos` and ` kurokos ` find the same).
+**Title-query matching:** A title query **filters**: the results are the anime (or media) whose title — in any language, including synonyms and, in the anime view, the titles of any of its entries — contains the query or nearly does. Literal matches come first, then near-misses that tolerate a typo (`frieran` → Frieren); a looser match (`friren`) shows only when nothing matches better, and a query no title matches even loosely yields "No results found". Describing a show in title mode therefore finds nothing — Description mode is the way to search by plot. Search ignores **capitalization** and surrounding spaces (`Kurokos` and ` kurokos ` find the same).
 
-**Description-query matching:** A description query ("Expand search to descriptions") shows first the entries whose synopsis or title contains every word of the query — as the start of a word, so `rintaro` finds Rintarou but `izumi` does not find Nishizumi — then entries close in meaning. Less related entries are left out, so a short list, or "No results found", is normal. When nothing matches, the query is retried once tolerating a typo at the end of a word (`izumy` → Izumi).
+**Description-query matching:** A description query (Description mode) shows first the entries whose synopsis or title contains every word of the query — as the start of a word, so `rintaro` finds Rintarou but `izumi` does not find Nishizumi — then entries close in meaning. Less related entries are left out, so a short list, or "No results found", is normal. When nothing matches, the query is retried once tolerating a typo at the end of a word (`izumy` → Izumi).
 
 ### 4.4 Search Filters
-Filters appear in a collapsible panel below the search input. Filter options adapt to the current view type.
+Filters live in a **sheet** that slides in from the right (full width on a phone), opened by the filter button or a chip. Edits are **staged**: **Show results** applies them as a new search; closing the sheet (✕, Esc, a click outside) discards them; the sheet's own **Clear all** resets only the sheet. Options adapt to the current view type.
 
-**List filters** (searchable tag-select dropdowns, max 5 items each):
-- Genres (anime view shows only majority-qualifying genres), Seasons, Source, Studios, Airing Status, Relation Type (**media view only** — a per-media property, meaningless on aggregated anime rows), Media Type, Age Rating
+- **Yours** — **Rated**: any of the rated states (anime: Unrated, In Progress, On Hold, Dropped, Main Done, All Done; media: Unrated, Completed, On Hold, Dropped — the watch statuses read as on the rating badge). Choosing every state filters nothing. **Watchlist**: Any / In list / Not in list. A guest sees "Guest accounts have no ratings or watchlist to filter by." instead
+- **Release** — Airing status, Season, **Upcoming main story** (anime with aired content and an announced main-story entry; in the media view, those entries)
+- **Score** — Score (0–10), **Top** N% (Any · 5 · 10 · 20 · 50 · 75 — keeps what the detail page's "Top N%" badge shows at that cut-off or better; a link carrying another value adds it to the list), Scored by (logarithmic — the average over main entries in the anime view)
+- **Content** — Genres (anime view lists only majority-qualifying genres) and Studios, each with an **Any/All** toggle (genres default All, studios Any), Source, Media type, Relation type (**media view only** — a per-media property, meaningless on aggregated anime rows), Age rating. Searchable tag-selects, max 5 each
+- **Length** — Episodes (logarithmic — the aggregated sum in the anime view), Duration per episode (media view only), Total watch time (logarithmic)
 
-**Range filters** (dual-thumb sliders):
-- Episodes (integer, linear — aggregated sum for anime view)
-- Score (decimal, linear)
-- Scored By (logarithmic scale — average over main entries for anime view)
-- Average Duration per Episode (time display — hidden in anime view)
-- Total Watch Time (time display — aggregated sum for anime view)
+**Range sliders:** dragging a thumb back to its end clears that side of the filter, and the readout shows the catalogue's bound again. A value set by a link keeps its exact number until its thumb is moved.
+
+**Applied-filter chips** sit under the search box, one per filter group ("Genres: Action & Comedy", "Top 20%", "Scored by ≤ 2,965,820"). ✕ removes that group and re-runs the search at once; clicking the label opens the sheet. With two or more chips, **Clear all** removes every filter but keeps the query and mode.
 
 **Behavior:**
-- Filter options come from `GET /filters/options?view_type=anime|media`, cached per view for the session — SearchBar mounts on both `/` and `/search`, so a hop between them reuses the cached bounds instead of refetching. A finished scrape (which can widen a slider or add a season/studio) drops the cache
-- "Clear all" button resets all filters and query to defaults
-- Modifying filters and resubmitting creates a new search token and navigates
+- Filter options come from `GET /filters/options?view_type=anime|media`, cached per view for the session; a finished scrape (which can widen a slider or add a season/studio) drops the cache
+- Applying filters creates a new search token and navigates
 - **Anime view:** filters apply to the value shown on the anime card, not to individual media. Age rating uses the max across media; airing status uses the priority-collapsed value (Currently Airing dominates over Finished over Not yet aired). Source matches any of the anime's media — the same list its detail page shows.
 
 ---
@@ -679,7 +678,7 @@ own.
 | Endpoint | Method | When |
 |----------|--------|------|
 | `/auth/login` | POST | Login form submission |
-| `/filters/options?view_type=anime\|media` | GET | SearchBar first mount per view (cached for the session by the `filterOptions` store; cleared when a scrape lands) |
+| `/filters/options?view_type=anime\|media` | GET | The filter sheet's first opening per view (cached for the session by the `filterOptions` store; cleared when a scrape lands) |
 | `/filters/genres` | GET | Genre-badge tooltips (cached once per session by the `genres` store) |
 | `/filters/create-token` | POST | Search submission |
 | `/filters/verify-token` | POST | Search page load |

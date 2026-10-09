@@ -16,6 +16,7 @@
 	import { pushToast, type ToastVariant } from '$lib/stores/toast';
 	import { formatBytes, formatJobKind, JOB_SUCCESS_HREF, percentOf } from '$lib/utils/formatString';
 	import type { BackupResultSummary, CurationPendingCounts, Job, JobStatus } from '$lib/types/api';
+	import * as cls from '$lib/styles/classes';
 
 	const getUserRole = getContext<() => string | null>('userRole');
 	let isAdmin = $derived(getUserRole?.() === 'admin');
@@ -487,11 +488,7 @@
 	>
 		<Bell class="w-5 h-5 text-white" />
 		{#if badgeCount > 0}
-			<span
-				class="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center"
-			>
-				{badgeCount}
-			</span>
+			<span class={cls.countBadge}>{badgeCount}</span>
 		{/if}
 	</DropdownMenu.Trigger>
 	<DropdownMenu.Content class="w-80 p-0 overflow-hidden" align="end">

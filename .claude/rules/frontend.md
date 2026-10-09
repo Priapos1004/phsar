@@ -121,9 +121,10 @@ than by asserting what it rendered.
 
 The exception to "prefer changing the component" above. `SegmentedControl` is the
 on-card toggle — muted track, solid thumb — and belongs on the white card surface. A
-toggle on the dark page surface is a border-fill pill instead (`GrainToggle`, the
-ratings view pills). Same job, different surface, deliberately two components:
-unifying them makes one of the two illegible against its own background.
+toggle on the dark page surface is a border-fill pill instead (`PillToggle`, with
+`GrainToggle` its anime/media form; the ratings view pills). Same job, different
+surface, deliberately two components: unifying them makes one of the two illegible
+against its own background.
 
 ## A destructive action's confirm is tiered by what it costs to undo
 

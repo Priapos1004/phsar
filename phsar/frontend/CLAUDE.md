@@ -16,7 +16,7 @@ the way it is sits in the page itself.
 | `/ratings`, `/watchlist` | a `?tab=` switcher over a list tab and a Statistics tab. The page owns the fetches, so a tab switch never refetches. Whether a tab stays mounted or remounts differs between the two on purpose — each page states which and why |
 | `/admin` | `?tab=` again, tabs eager-rendered and kept mounted. `AdminTabKey` in `lib/components/admin/types.ts` lists what adding one touches |
 | `/admin/jobs/[uuid]` | the sweep audit trail, rendered per `result_summary` version — the versions themselves are in [jobs](../../docs/features/jobs.md) |
-| `/search` | which filters survive an anime↔media switch |
+| `/search` | `SearchBar.svelte`'s header states the one-source rule the page, the sheet and the chips follow; what survives an anime↔media switch is `carryAcrossView` in `lib/utils/search.ts` |
 | `/library/add` | enqueues a scrape; the navbar bell owns everything after that |
 | `/health` | liveness for the container platform |
 
@@ -38,7 +38,7 @@ that carry an area's reasoning; it is not an inventory of the tree.
 | Watchlist | `WatchlistBookmarkIcon` (the mask gradient), `WatchlistDialog`, `BulkWatchlistDialog`, and `watchlist/` for the page's own tabs |
 | Admin | `admin/`, plus `BackupsCard`, `MergeCandidatesCard`, `SplitCandidatesCard`, `DeleteCandidatesCard`. The job-detail page argues its own case in `src/routes/admin/jobs/[uuid]/+page.svelte` |
 | Session + status | `SessionTimeoutBanner` with `$lib/utils/sessionTimeout.ts`, `MaintenanceBanner`, `JobBell`, `Toast`/`ToastHost` |
-| Search | `SearchBar.svelte`, and `src/routes/search/+page.svelte` for which filters survive an anime↔media switch |
+| Search | `SearchBar.svelte` (the staged filter sheet), `DoubleRangeSlider.svelte` (the step grid, and why it writes only on commit), and `$lib/utils/search.ts` for the filter tables, the chips and the anime↔media carry |
 
 Several of these render a verdict the backend owns — restorability, cycle membership,
 merge, split and delete candidates, sibling order — and must not recompute it; the relevant

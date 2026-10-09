@@ -87,6 +87,19 @@ export const mutedPill = `${pillBox} bg-muted text-muted-foreground`;
 // Tint composed at the call site from `READY_BADGE` (utils/watchlist).
 export const readyPill = `${pillBox} font-medium`;
 
+// On-card filter chips: one shape, one resting state, so the sibling filter UIs stay
+// parallel. Inactive text is card-foreground, never the light page `foreground`.
+// `chipOn` is the plain selected fill; a group with its own accent composes its own.
+// `chipGroup` boxes a group to the TagSelect's height so the filters line up.
+export const chip = 'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-1.5 border border-transparent';
+export const chipOn = 'bg-primary text-white shadow-sm';
+export const chipOff = 'bg-muted text-card-foreground/70 hover:bg-muted/70';
+export const chipGroup = 'bg-card/80 backdrop-blur border border-input rounded-xl px-2 min-h-[48px] flex flex-wrap items-center gap-1.5 py-1.5';
+
+// The count bubble on an icon button's corner, composed onto a positioned button.
+export const countBadge =
+	'absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] font-bold flex items-center justify-center';
+
 // Ghost/icon button tinted destructive (delete, clear-filters, discard) — the hover keeps the
 // destructive color and adds a faint destructive wash. Composed with any layout classes at the site.
 export const btnGhostDestructive = 'text-destructive hover:text-destructive hover:bg-destructive/10';

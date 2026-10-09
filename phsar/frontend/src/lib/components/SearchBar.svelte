@@ -1,258 +1,194 @@
+<script lang="ts" module>
+	import type { MediaSearchFilters } from '$lib/utils/search';
+
+	const NO_SEARCH: MediaSearchFilters = { query: '', search_type: 'title' };
+</script>
+
 <script lang="ts">
-	import { onMount } from 'svelte';
+	// The query box, its mode, and the filter sheet. Everything here starts from `applied`,
+	// the search on screen, and nothing writes back to it: typing, a mode and the sheet's
+	// edits are local until `onSearch` sends a new search, which comes back as the next
+	// `applied`. One source and one direction is what keeps a reload, a view switch and an
+	// open sheet from racing each other.
+	import { getContext } from 'svelte';
 	import { SlidersHorizontal, Search } from 'lucide-svelte';
 	import { ensureFilterOptions } from '$lib/stores/filterOptions';
 	import TagSelect from '$lib/components/TagSelect.svelte';
 	import DoubleRangeSlider from '$lib/components/DoubleRangeSlider.svelte';
+	import PillToggle from '$lib/components/PillToggle.svelte';
+	import SegmentedControl from '$lib/components/SegmentedControl.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Label } from '$lib/components/ui/label';
-	import * as Card from '$lib/components/ui/card';
-	import type { ListFilterKey, MediaSearchFilters } from '$lib/utils/search';
-	import { formatDecimalDigits, formatDuration, formatNumber, formatRelationType } from '$lib/utils/formatString';
+	import * as Sheet from '$lib/components/ui/sheet';
+	import {
+		DEFAULT_MODE,
+		LIST_FILTERS,
+		RANGE_FILTERS,
+		RATED_STATES,
+		filterChips,
+		normalizeRated,
+		rangeParams,
+		type ListFilterKey,
+		type RangeKey,
+		type RatedState,
+		type SearchType,
+		type ViewType,
+	} from '$lib/utils/search';
+	import type { FilterOptions } from '$lib/types/api';
 	import * as cls from '$lib/styles/classes';
 
 	interface Props {
-		viewType?: 'anime' | 'media';
+		viewType?: ViewType;
 		onSearch?: (params: MediaSearchFilters) => void;
-		searchParams?: Partial<MediaSearchFilters>;
+		/** The search on screen; the home page has none. */
+		applied?: MediaSearchFilters;
+		filtersOpen?: boolean;
 	}
 
-	let {
-		viewType = 'anime',
-		onSearch = () => {},
-		searchParams = {},
-	}: Props = $props();
+	let { viewType = 'anime', onSearch = () => {}, applied = NO_SEARCH, filtersOpen = $bindable(false) }: Props = $props();
 
-	let query = $state('');
-	let useDescription = $state(false);
-	let showFilters = $state(false);
+	const getUserRole = getContext<(() => string | null) | undefined>('userRole');
+	let isGuest = $derived(getUserRole?.() === 'restricted_user');
 
-	const logBase = 2;
-	const logStep = 0.1;
+	// Follow the applied search; typing or picking a mode overrides them until the next one.
+	let query = $derived(applied.query ?? '');
+	let mode = $derived<SearchType>(applied.search_type ?? 'title');
 
-	type UnifiedFilterConfig =
-		| {
-			type: 'list';
-			key: ListFilterKey;
-			label: string;
-			placeholder: string;
-		  }
-		| {
-			type: 'range';
-			minKey: keyof Pick<MediaSearchFilters, 'episodes_min' | 'score_min' | 'scored_by_min'>;
-			maxKey: keyof Pick<MediaSearchFilters, 'episodes_max' | 'score_max' | 'scored_by_max'>;
-			label: string;
-			step: number;
-			large_number: boolean;
-			scale?: 'linear' | 'log';
-		  }
-		| {
-			type: 'timeRange';
-			minKey: keyof Pick<MediaSearchFilters, 'duration_per_episode_min' | 'total_watch_time_min'>;
-			maxKey: keyof Pick<MediaSearchFilters, 'duration_per_episode_max' | 'total_watch_time_max'>;
-			label: string;
-			step: number;
-		};
+	// The sheet edits a copy of the applied filters, taken afresh each time it opens, so
+	// dismissing it throws the edits away and "Show results" applies them.
+	let staged = $derived.by(() => {
+		void filtersOpen;
+		return $state.snapshot(applied) as MediaSearchFilters;
+	});
+	function stage(patch: Partial<MediaSearchFilters>) {
+		staged = { ...staged, ...patch };
+	}
 
-	const filterConfig: UnifiedFilterConfig[] = [
-		{ type: 'list', key: 'genre_name', label: 'Genres', placeholder: 'Search genres...' },
-		{ type: 'list', key: 'anime_season', label: 'Seasons', placeholder: 'Search seasons...' },
-		{ type: 'list', key: 'original_source', label: 'Source', placeholder: 'Search sources...' },
-		{ type: 'list', key: 'studio_name', label: 'Studios', placeholder: 'Search studios...' },
-		{ type: 'list', key: 'airing_status', label: 'Airing Status', placeholder: 'Search airing status...' },
-		{ type: 'list', key: 'relation_type', label: 'Relation Type', placeholder: 'Search relation types...' },
-		{ type: 'list', key: 'media_type', label: 'Media Type', placeholder: 'Search media types...' },
-		{ type: 'list', key: 'age_rating', label: 'Age Rating', placeholder: 'Search age ratings...' },
-		{ type: 'range', minKey: 'episodes_min', maxKey: 'episodes_max', label: 'Episodes', step: 1, large_number: false },
-		{ type: 'range', minKey: 'score_min', maxKey: 'score_max', label: 'Score', step: 0.01, large_number: false },
-		{ type: 'range', minKey: 'scored_by_min', maxKey: 'scored_by_max', label: 'Scored By', step: 100, large_number: true, scale: 'log' },
-		{ type: 'timeRange', minKey: 'duration_per_episode_min', maxKey: 'duration_per_episode_max', label: 'Average Duration per Episode', step: 60 },
-		{ type: 'timeRange', minKey: 'total_watch_time_min', maxKey: 'total_watch_time_max', label: 'Total Watch Time', step: 60 },
+	let appliedCount = $derived(filterChips(applied, viewType).length);
+	let stagedCount = $derived(filterChips(staged, viewType).length);
+
+	const MODES: { value: SearchType; label: string }[] = [
+		{ value: 'title', label: 'Title' },
+		{ value: 'description', label: 'Description' },
 	];
-
-	// Adapt filters for anime view: relation type is a per-media property (meaningless on
-	// aggregated anime rows), duration-per-episode doesn't apply, and scored-by is per-media.
-	let activeFilterConfig = $derived(
-		viewType === 'anime'
-			? filterConfig
-				.filter(c => !(c.type === 'list' && c.key === 'relation_type'))
-				.filter(c => !(c.type === 'timeRange' && c.minKey === 'duration_per_episode_min'))
-				.map(c => 'minKey' in c && c.minKey === 'scored_by_min' ? { ...c, label: 'Scored By (per Media)' } : c)
-			: filterConfig
+	let placeholder = $derived(
+		mode === 'description' ? 'Describe a story, a character, a theme...'
+			: viewType === 'anime' ? 'Search anime...' : 'Search media...',
 	);
 
-	let listFilters: Partial<Record<string, string[]>> = $state({});
-	let numberFilters: Partial<Record<string, number | undefined>> = $state({});
-	let listFilterOptions: Partial<Record<string, string[]>> = $state({});
-	let numberFilterOptions: Partial<Record<string, number>> = $state({});
-
-	function calculate_min_max_timerange(
-		min: number | undefined | null,
-		max: number | undefined | null,
-		base_value: number
-	): [number | undefined, number | undefined] {
-		if (typeof min !== 'number' || typeof max !== 'number') {
-			return [undefined, undefined];
-		}
-		return [
-			Math.floor(min / base_value) * base_value,
-			Math.ceil(max / base_value) * base_value,
-		];
-	}
-
-	function handleRangeChange(
-		minKey: string,
-		maxKey: string,
-		from: number,
-		to: number,
-		config?: UnifiedFilterConfig
-	): void {
-		const tolerance = 1e-6;
-		const minDefault = numberFilterOptions[minKey] ?? 0;
-		const maxDefault = numberFilterOptions[maxKey] ?? 0;
-
-		let actualFrom = from;
-		let actualTo = to;
-
-		if (config && config.type === 'range' && config.scale === 'log') {
-			actualFrom = fromLog(from);
-			actualTo = fromLog(to);
-		}
-
-		numberFilters[minKey] =
-			Math.abs(actualFrom - minDefault) <= tolerance ? undefined : actualFrom;
-		numberFilters[maxKey] =
-			Math.abs(actualTo - maxDefault) <= tolerance ? undefined : actualTo;
-	}
-
-	function getFormatDisplay(config: UnifiedFilterConfig): (val: number) => string {
-		if (config.type === 'timeRange') {
-			return (val) => formatDuration(val);
-		}
-		if (config.type === 'range') {
-			const digits = (config.step.toString().split('.')[1] || '').length;
-			return (val) => formatNumber(formatDecimalDigits(val, digits));
-		}
-		return (val) => String(val);
-	}
-
-	function toLog(value: number): number {
-		return Math.log(Math.max(value, 0) + 1) / Math.log(logBase);
-	}
-
-	function fromLog(logValue: number): number {
-		return Math.round(Math.pow(logBase, logValue) - 1);
-	}
-
-	function syncFiltersFromParams() {
-		query = searchParams.query ?? '';
-		useDescription = searchParams.search_type === 'description';
-
-		filterConfig.forEach((config) => {
-			if (config.type === 'list') {
-				listFilters[config.key] = [...(searchParams[config.key] ?? [])];
-			} else if (config.type === 'timeRange' || (config.type === 'range' && config.large_number)) {
-				const [newMin, newMax] = calculate_min_max_timerange(
-					searchParams[config.minKey], searchParams[config.maxKey], config.step
-				);
-				numberFilters[config.minKey] = newMin;
-				numberFilters[config.maxKey] = newMax;
-			} else {
-				numberFilters[config.minKey] = searchParams[config.minKey] ?? undefined;
-				numberFilters[config.maxKey] = searchParams[config.maxKey] ?? undefined;
-			}
-		});
-	}
-
-	$effect(() => {
-		if (Object.keys(searchParams).length) {
-			syncFiltersFromParams();
-		}
-	});
-
-	// Re-fetch filter options when viewType changes
-	let prevViewType: string | undefined;
-	$effect(() => {
-		if (prevViewType !== undefined && viewType !== prevViewType) {
-			// Close the panel on a view switch so the user doesn't watch filters reorganize
-			// (relation type appearing/disappearing, ranges resetting) mid-toggle.
-			showFilters = false;
-			// Don't clearFilters() here — the page carries cross-view-compatible filters
-			// through the new search token, and syncFiltersFromParams (the searchParams
-			// effect) reconciles: it re-applies carried values and empties dropped ones.
-			// Only the per-view option bounds are stale, so reset + refetch those.
-			listFilterOptions = {};
-			numberFilterOptions = {};
-			fetchFilters();
-		}
-		prevViewType = viewType;
-	});
-
-	onMount(fetchFilters);
-
-	async function fetchFilters() {
-		try {
-			// Session-cached per view_type — this component mounts on both / and
-			// /search, so every hop between them used to refetch. See filterOptions.
-			const data = await ensureFilterOptions(viewType);
-
-			filterConfig.forEach((config) => {
-				if (config.type === 'list') {
-					listFilterOptions[config.key] = data[config.key] ?? [];
-				} else if (config.type === 'timeRange' || (config.type === 'range' && config.large_number)) {
-					const [newMin, newMax] = calculate_min_max_timerange(
-						data[config.minKey], data[config.maxKey], config.step
-					);
-					numberFilterOptions[config.minKey] = newMin;
-					numberFilterOptions[config.maxKey] = newMax;
-				} else {
-					numberFilterOptions[config.minKey] = data[config.minKey] ?? undefined;
-					numberFilterOptions[config.maxKey] = data[config.maxKey] ?? undefined;
-				}
-			});
-		} catch (err) {
-			console.error('Filter fetch error:', err);
-		}
+	function submit() {
+		onSearch({ ...$state.snapshot(applied), query, search_type: mode });
 	}
 
 	function handleSubmit(e: Event) {
 		e.preventDefault();
-		const params: MediaSearchFilters = {
-			query,
-			search_type: useDescription ? 'description' : 'title',
-			...listFilters,
-			...numberFilters,
-		};
-		onSearch(params);
-		showFilters = false;
+		submit();
 	}
 
-	function clearFilters() {
-		query = '';
-		useDescription = false;
-
-		filterConfig.forEach((config) => {
-			if (config.type === 'list') {
-				listFilters[config.key] = [];
-			} else {
-				numberFilters[config.minKey] = undefined;
-				numberFilters[config.maxKey] = undefined;
-			}
-		});
+	// A mode switches how the typed query is read, so it re-runs it; with nothing typed
+	// there is nothing to re-run, and the mode waits for the query.
+	function selectMode(next: SearchType) {
+		mode = next;
+		if (query.trim()) submit();
 	}
 
-	let hasActiveFilters = $derived(
-		Object.values(listFilters).some((arr) => arr?.length) ||
-		Object.values(numberFilters).some((v) => v !== undefined) ||
-		useDescription
+	function showResults() {
+		onSearch(normalizeRated({ ...staged, query, search_type: mode }, viewType));
+		filtersOpen = false;
+	}
+
+	function clearStaged() {
+		staged = { query: staged.query, search_type: staged.search_type, view_type: staged.view_type };
+	}
+
+	function toggleRated(state: RatedState) {
+		const rated = staged.rated ?? [];
+		stage({ rated: rated.includes(state) ? rated.filter((s) => s !== state) : [...rated, state] });
+	}
+
+	const WATCHLIST = [
+		{ value: 'any', label: 'Any' },
+		{ value: 'in', label: 'In list' },
+		{ value: 'out', label: 'Not in list' },
+	] as const;
+	type WatchlistChoice = (typeof WATCHLIST)[number]['value'];
+	let watchlistChoice = $derived<WatchlistChoice>(
+		staged.watchlisted == null ? 'any' : staged.watchlisted ? 'in' : 'out',
 	);
+
+	// Preset cut-offs, 75 among them for "everything but the weak ones". A shared link may
+	// carry another value, which joins the list rather than reading as "Any".
+	const TOP_PRESETS = [5, 10, 20, 50, 75];
+	let topOptions = $derived.by(() => {
+		const current = staged.top_percent;
+		const values = current != null && !TOP_PRESETS.includes(current)
+			? [...TOP_PRESETS, current].sort((a, b) => a - b)
+			: TOP_PRESETS;
+		return [{ value: 0, label: 'Any' }, ...values.map((v) => ({ value: v, label: `${v}%` }))];
+	});
+
+	const MATCH_MODES = [{ value: 'any' as const, label: 'Any' }, { value: 'all' as const, label: 'All' }];
+
+	const RELEASE_LISTS: ListFilterKey[] = ['airing_status', 'anime_season'];
+	const CONTENT_LISTS: ListFilterKey[] = ['genre_name', 'studio_name', 'original_source', 'media_type', 'relation_type', 'age_rating'];
+	const LENGTH_RANGES: RangeKey[] = ['episodes', 'duration_per_episode', 'total_watch_time'];
+
+	const sectionCls = 'space-y-4 py-6 first:pt-0';
+	const headingCls = 'text-sm font-semibold uppercase tracking-wide text-primary';
+	const fieldLabelCls = 'text-sm font-medium text-card-foreground';
 </script>
 
-<form onsubmit={handleSubmit} class="w-full max-w-xl mx-auto">
+{#snippet listField(key: ListFilterKey, options: FilterOptions)}
+	{@const field = LIST_FILTERS[key]}
+	{#if !field.mediaOnly || viewType === 'media'}
+		<div class="space-y-1.5">
+			<div class="flex h-6 items-center justify-between">
+				<span class={fieldLabelCls}>{field.label}</span>
+				{#if field.mode}
+					{@const modeKey = field.mode}
+					<SegmentedControl
+						ariaLabel="{field.label} match mode"
+						options={MATCH_MODES}
+						value={staged[modeKey] ?? DEFAULT_MODE[modeKey]}
+						onSelect={(v) => stage({ [modeKey]: v })}
+					/>
+				{/if}
+			</div>
+			<TagSelect
+				placeholder="Add {field.label.toLowerCase()}..."
+				options={options[key] ?? []}
+				selectedItems={staged[key] ?? []}
+				labelFor={field.format}
+				onAdd={(item) => stage({ [key]: [...(staged[key] ?? []), item] })}
+				onRemove={(item) => stage({ [key]: (staged[key] ?? []).filter((i) => i !== item) })}
+			/>
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet rangeField(key: RangeKey, options: FilterOptions)}
+	{@const range = RANGE_FILTERS[key]}
+	{@const [minKey, maxKey] = rangeParams(key)}
+	{@const min = options[minKey]}
+	{@const max = options[maxKey]}
+	{#if (!range.mediaOnly || viewType === 'media') && min != null && max != null}
+		<DoubleRangeSlider
+			label={range.label}
+			bounds={[min, max]}
+			value={[staged[minKey] ?? undefined, staged[maxKey] ?? undefined]}
+			step={range.step}
+			log={range.log}
+			format={range.format}
+			onCommit={([from, to]) => stage({ [minKey]: from, [maxKey]: to })}
+		/>
+	{/if}
+{/snippet}
+
+<form onsubmit={handleSubmit} class="w-full max-w-xl mx-auto space-y-3">
 	<div class="relative">
-		<!-- Filter toggle on the left; search trigger on the right so mobile users can
+		<!-- Filter button on the left; search trigger on the right so mobile users can
 		     tap to search instead of having to focus the field and press Enter.
 		     z-10 is load-bearing: the input's backdrop-blur makes it a stacking context
 		     painted in tree order, so without it the input would paint over the filter
@@ -262,15 +198,18 @@
 			variant="ghost"
 			size="icon"
 			class="absolute top-1/2 left-2 -translate-y-1/2 z-10 text-primary hover:text-primary/70"
-			onclick={() => (showFilters = !showFilters)}
-			aria-label="Toggle filters"
+			onclick={() => (filtersOpen = true)}
+			aria-label="Filters"
 		>
 			<SlidersHorizontal class="w-5 h-5" />
+			{#if appliedCount}
+				<span class={cls.countBadge}>{appliedCount}</span>
+			{/if}
 		</Button>
 		<Input
 			type="text"
-			bind:value={query}
-			placeholder={viewType === 'anime' ? 'Search anime...' : 'Search media...'}
+			bind:value={() => query, (v) => (query = v)}
+			{placeholder}
 			class="w-full h-12 pl-12 pr-12 rounded-full bg-card/80 backdrop-blur border-input"
 		/>
 		<Button
@@ -284,69 +223,109 @@
 		</Button>
 	</div>
 
-	{#if showFilters}
-		<Card.Root class="mt-3 bg-card/80 backdrop-blur relative z-10">
-			<Card.Content class="space-y-4">
-				<div class="flex justify-between items-center mb-2">
-					<h2 class="text-lg font-semibold text-card-foreground">Filters</h2>
-					{#if hasActiveFilters}
-						<Button
-							variant="ghost"
-							size="sm"
-							class={cls.btnGhostDestructive}
-							onclick={clearFilters}
-						>
-							Clear all
-						</Button>
-					{/if}
-				</div>
-
-				<div class="flex items-center gap-2 mb-2">
-					<Checkbox
-						id="use-description"
-						checked={useDescription}
-						onCheckedChange={(v) => (useDescription = !!v)}
-					/>
-					<Label for="use-description" class="text-sm text-card-foreground cursor-pointer select-none">
-						Expand search to descriptions
-					</Label>
-				</div>
-
-				{#each activeFilterConfig as config}
-					{#if config.type === 'list'}
-						<TagSelect
-							placeholder={config.placeholder}
-							options={listFilterOptions[config.key] ?? []}
-							selectedItems={listFilters[config.key] ?? []}
-							labelFor={config.key === 'relation_type' ? formatRelationType : undefined}
-							onAdd={(item) => (listFilters[config.key] = [...(listFilters[config.key] ?? []), item])}
-							onRemove={(item) => (listFilters[config.key] = (listFilters[config.key] ?? []).filter((i) => i !== item))}
-						/>
-					{:else if config.type === 'range' || config.type === 'timeRange'}
-						{@const isLog = config.type === 'range' && config.scale === 'log'}
-						{@const minOpt = numberFilterOptions[config.minKey] ?? 1}
-						{@const maxOpt = numberFilterOptions[config.maxKey] ?? 1}
-						{@const fromVal = numberFilters[config.minKey] ?? minOpt}
-						{@const toVal = numberFilters[config.maxKey] ?? maxOpt}
-
-						<DoubleRangeSlider
-							label={config.label}
-							minValue={isLog ? toLog(minOpt) : minOpt}
-							maxValue={isLog ? toLog(maxOpt) : maxOpt}
-							step={isLog ? logStep : config.step}
-							from={isLog ? toLog(fromVal) : fromVal}
-							to={isLog ? toLog(toVal) : toVal}
-							onChange={({ from, to }) =>
-								handleRangeChange(config.minKey, config.maxKey, from, to, config)
-							}
-							formatDisplay={(val) => {
-								const displayVal = isLog ? fromLog(val) : val;
-								return getFormatDisplay(config)(displayVal);
-							}}
-						/>
-					{/if}
-				{/each}
-			</Card.Content>
-		</Card.Root>
-	{/if}
+	<div class="flex justify-center">
+		<PillToggle options={MODES} value={mode} onSelect={selectMode} ariaLabel="What to search" />
+	</div>
 </form>
+
+<!-- Outside the form: the sheet's buttons must never submit the query. -->
+<Sheet.Root bind:open={filtersOpen}>
+	<Sheet.Content side="right" class="w-full sm:max-w-md bg-card text-card-foreground gap-0">
+		<Sheet.Header class="border-b border-border">
+			<Sheet.Title class="text-card-foreground">Filters</Sheet.Title>
+		</Sheet.Header>
+
+		<div class="flex-1 overflow-y-auto px-4 pt-5 divide-y divide-border">
+			{#await ensureFilterOptions(viewType)}
+				<p class="text-sm text-muted-foreground">Loading filters...</p>
+			{:then options}
+				<section class={sectionCls}>
+					<h3 class={headingCls}>Yours</h3>
+					{#if isGuest}
+						<p class="text-sm text-muted-foreground">
+							Guest accounts have no ratings or watchlist to filter by.
+						</p>
+					{:else}
+						<div class="space-y-1.5">
+							<span class={fieldLabelCls}>Rated</span>
+							<!-- Columns set so each grain's states fill two even rows. -->
+							<div class="grid gap-1.5 {viewType === 'anime' ? 'grid-cols-3' : 'grid-cols-2'}">
+								{#each RATED_STATES[viewType] as state (state.value)}
+									{@const on = staged.rated?.includes(state.value) ?? false}
+									<button
+										type="button"
+										class="{cls.chip} justify-center {on ? cls.chipOn : cls.chipOff}"
+										aria-pressed={on}
+										onclick={() => toggleRated(state.value)}
+									>{state.label}</button>
+								{/each}
+							</div>
+						</div>
+						<div class="flex items-center justify-between gap-2">
+							<span class={fieldLabelCls}>Watchlist</span>
+							<SegmentedControl
+								ariaLabel="Watchlist"
+								size="md"
+								options={[...WATCHLIST]}
+								value={watchlistChoice}
+								onSelect={(v) => stage({ watchlisted: v === 'any' ? undefined : v === 'in' })}
+							/>
+						</div>
+					{/if}
+				</section>
+
+				<section class={sectionCls}>
+					<h3 class={headingCls}>Release</h3>
+					{#each RELEASE_LISTS as key (key)}{@render listField(key, options)}{/each}
+					<div class="flex items-center gap-2">
+						<Checkbox
+							id="upcoming-main"
+							checked={staged.upcoming_main ?? false}
+							onCheckedChange={(v) => stage({ upcoming_main: v || undefined })}
+						/>
+						<Label for="upcoming-main" class="text-sm text-card-foreground cursor-pointer select-none">
+							Upcoming main story
+						</Label>
+					</div>
+				</section>
+
+				<section class={sectionCls}>
+					<h3 class={headingCls}>Score</h3>
+					{@render rangeField('score', options)}
+					<div class="flex items-center justify-between gap-2">
+						<span class={fieldLabelCls}>Top</span>
+						<SegmentedControl
+							ariaLabel="Top percent"
+							size="md"
+							options={topOptions}
+							value={staged.top_percent ?? 0}
+							onSelect={(v) => stage({ top_percent: v || undefined })}
+						/>
+					</div>
+					{@render rangeField('scored_by', options)}
+				</section>
+
+				<section class={sectionCls}>
+					<h3 class={headingCls}>Content</h3>
+					{#each CONTENT_LISTS as key (key)}{@render listField(key, options)}{/each}
+				</section>
+
+				<section class={sectionCls}>
+					<h3 class={headingCls}>Length</h3>
+					{#each LENGTH_RANGES as key (key)}{@render rangeField(key, options)}{/each}
+				</section>
+			{:catch}
+				<p class="text-sm text-destructive">The filters could not be loaded.</p>
+			{/await}
+		</div>
+
+		<Sheet.Footer class="border-t border-border flex-row items-center justify-between">
+			{#if stagedCount}
+				<Button variant="ghost" size="sm" class={cls.btnGhostDestructive} onclick={clearStaged}>
+					Clear all
+				</Button>
+			{/if}
+			<Button class="ml-auto" onclick={showResults}>Show results</Button>
+		</Sheet.Footer>
+	</Sheet.Content>
+</Sheet.Root>

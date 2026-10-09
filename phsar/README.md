@@ -212,6 +212,7 @@ phsar/
 │   │   │   │   ├── MergeCandidatesCard.svelte
 │   │   │   │   ├── NavBar.svelte
 │   │   │   │   ├── Notice.svelte
+│   │   │   │   ├── PillToggle.svelte
 │   │   │   │   ├── PriorityPicker.svelte
 │   │   │   │   ├── RatingCard.svelte
 │   │   │   │   ├── RatingNeighbors.svelte
@@ -283,6 +284,7 @@ phsar/
 │   │   │   │       ├── popover/
 │   │   │   │       ├── select/
 │   │   │   │       ├── separator/
+│   │   │   │       ├── sheet/
 │   │   │   │       ├── slider/
 │   │   │   │       ├── textarea/
 │   │   │   │       └── tooltip/
@@ -419,6 +421,7 @@ phsar/
 │   │       ├── return-to.test.ts
 │   │       ├── scroll-focus.test.ts
 │   │       ├── search-links.test.ts
+│   │       ├── search-utils.test.ts
 │   │       ├── searchbar.test.ts
 │   │       ├── segmented-control.test.ts
 │   │       ├── session-timeout.test.ts
