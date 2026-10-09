@@ -19,8 +19,6 @@ from app.models.ratings import (
     WatchStatus,
 )
 from app.schemas.common_schema import BulkMediaUuids
-from app.schemas.media_filter_schema import MediaSearchFilters
-from app.schemas.media_schema import MediaConnected
 
 
 class RatingAttributes(BaseModel):
@@ -168,24 +166,6 @@ class RatingBulkDelete(BulkMediaUuids):
     pass
 
 
-class RatingSearchFilters(MediaSearchFilters):
-    """Extends media filters with rating-specific filters for searching within a user's ratings."""
-    user_rating_min: float | None = None
-    user_rating_max: float | None = None
-    watch_status: list[WatchStatus] | None = None
-    pace: list[Pace] | None = None
-    animation_quality: list[AnimationQuality] | None = None
-    has_3d_animation: list[ThreeDAnimation] | None = None
-    watched_format: list[WatchedFormat] | None = None
-    fan_service: list[FanService] | None = None
-    dialogue_quality: list[DialogueQuality] | None = None
-    character_depth: list[CharacterDepth] | None = None
-    ending_type: list[EndingType] | None = None
-    ending_quality: list[EndingQuality] | None = None
-    story_quality: list[StoryQuality] | None = None
-    originality: list[Originality] | None = None
-
-
 class SpoilerVisibility(BaseModel):
     """Media UUIDs that are visible (not spoiler-protected) for the current user."""
     visible_media_uuids: list[UUID]
@@ -203,16 +183,3 @@ class CoverageTier(str, Enum):
 class AnimeRatingCoverage(BaseModel):
     anime_uuid: UUID
     tier: CoverageTier
-
-
-class RatedMediaResult(MediaConnected, RatingAttributes):
-    """Media search result enriched with the user's rating data.
-    Inherits media fields from MediaConnected and enum fields from RatingAttributes."""
-    rating_uuid: UUID
-    user_rating: float
-    watch_status: WatchStatus
-    watched_count: int
-    episodes_watched: int | None = None
-    note: str | None = None
-    rating_created_at: datetime
-    rating_modified_at: datetime

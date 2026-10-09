@@ -5,25 +5,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_db, require_user_or_admin
-from app.exceptions import (
-    InvalidRatedStateError,
-    InvalidSearchTypeError,
-)
+from app.exceptions import InvalidRatedStateError
 from app.models.media import AgeRating, MediaType, OriginalSource, RelationType
-from app.models.ratings import (
-    AnimationQuality,
-    CharacterDepth,
-    DialogueQuality,
-    EndingQuality,
-    EndingType,
-    FanService,
-    Originality,
-    Pace,
-    StoryQuality,
-    ThreeDAnimation,
-    WatchedFormat,
-    WatchStatus,
-)
 from app.models.user_settings import SpoilerLevel
 from app.models.users import Users
 from app.schemas.anime_schema import AnimeSearchResult
@@ -40,11 +23,9 @@ from app.schemas.media_filter_schema import (
     SortKey,
 )
 from app.schemas.media_schema import MediaSearchResult
-from app.schemas.rating_schema import RatedMediaResult, RatingSearchFilters
 from app.schemas.search_schema import SearchResultDB
 from app.services.anime_search_service import search_anime_by_query
 from app.services.media_search_service import search_media_by_query
-from app.services.rating_service import search_user_ratings
 from app.services.search_service import handle_search_mal_api_results
 from app.services.spoiler_service import get_visible_media_ids
 from app.services.user_settings_service import get_settings
@@ -76,6 +57,19 @@ async def get_sort(
     if sort == SortKey.YOUR_RATING:
         await require_user_or_admin(current_user)
     return sort
+
+
+async def get_search_type(
+    search_type: SearchType = Query(
+        default=SearchType.TITLE,
+        description="What the query matches.",
+    ),
+    current_user: Users = Depends(get_current_user),
+) -> SearchType:
+    # Gated on the mode, not the query, as `watchlisted=false` is on the filter alone.
+    if search_type == SearchType.RATING_NOTES:
+        await require_user_or_admin(current_user)
+    return search_type
 
 
 def get_media_filters(
@@ -158,46 +152,10 @@ async def get_catalogue_filters(
     )
 
 
-def get_rating_filters(
-    media_filters: MediaSearchFilters = Depends(get_media_filters),
-    user_rating_min: float | None = None,
-    user_rating_max: float | None = None,
-    watch_status: list[WatchStatus] | None = Query(default=None),
-    pace: list[Pace] | None = Query(default=None),
-    animation_quality: list[AnimationQuality] | None = Query(default=None),
-    has_3d_animation: list[ThreeDAnimation] | None = Query(default=None),
-    watched_format: list[WatchedFormat] | None = Query(default=None),
-    fan_service: list[FanService] | None = Query(default=None),
-    dialogue_quality: list[DialogueQuality] | None = Query(default=None),
-    character_depth: list[CharacterDepth] | None = Query(default=None),
-    ending_type: list[EndingType] | None = Query(default=None),
-    ending_quality: list[EndingQuality] | None = Query(default=None),
-    story_quality: list[StoryQuality] | None = Query(default=None),
-    originality: list[Originality] | None = Query(default=None),
-) -> RatingSearchFilters:
-    return RatingSearchFilters(
-        **media_filters.model_dump(),
-        user_rating_min=user_rating_min,
-        user_rating_max=user_rating_max,
-        watch_status=watch_status,
-        pace=pace,
-        animation_quality=animation_quality,
-        has_3d_animation=has_3d_animation,
-        watched_format=watched_format,
-        fan_service=fan_service,
-        dialogue_quality=dialogue_quality,
-        character_depth=character_depth,
-        ending_type=ending_type,
-        ending_quality=ending_quality,
-        story_quality=story_quality,
-        originality=originality,
-    )
-
-
 @router.get("/anime", response_model=list[AnimeSearchResult])
 async def search_anime(
     query: Annotated[SearchQuery, Query(description="Search query string.")] = "",
-    search_type: SearchType = Query(default=SearchType.TITLE, description="Search by title or description."),
+    search_type: SearchType = Depends(get_search_type),
     sort: SortKey = Depends(get_sort),
     sort_dir: SortDirParam = None,
     limit: SearchLimit = 50,
@@ -205,8 +163,6 @@ async def search_anime(
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    if search_type == SearchType.RATING_NOTES:
-        raise InvalidSearchTypeError(search_type.value)
     _check_rated_grain(filters, ANIME_RATED_STATES)
 
     settings = await get_settings(db, current_user.id)
@@ -239,7 +195,7 @@ async def search_mal(
 @router.get("/media", response_model=list[MediaSearchResult])
 async def search_media(
     query: Annotated[SearchQuery, Query(description="The search query string (e.g., anime title).")] = "",
-    search_type: SearchType = Query(default=SearchType.TITLE, description="The way to search by: title or description."),
+    search_type: SearchType = Depends(get_search_type),
     sort: SortKey = Depends(get_sort),
     sort_dir: SortDirParam = None,
     limit: SearchLimit = 50,
@@ -247,8 +203,6 @@ async def search_media(
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    if search_type == SearchType.RATING_NOTES:
-        raise InvalidSearchTypeError(search_type.value)
     _check_rated_grain(filters, MEDIA_RATED_STATES)
 
     # Hide mode: only show media within the spoiler frontier
@@ -268,25 +222,4 @@ async def search_media(
         name_language=settings.name_language,
         limit=limit,
         visible_media_ids=visible_media_ids,
-    )
-
-
-@router.get("/ratings", response_model=list[RatedMediaResult])
-async def search_ratings(
-    query: Annotated[SearchQuery, Query(description="Search query (matched against selected search type).")] = "",
-    search_type: SearchType = Query(default=SearchType.TITLE, description="What to search: title, description, or rating_notes."),
-    filters: RatingSearchFilters = Depends(get_rating_filters),
-    limit: SearchLimit = 50,
-    current_user=Depends(require_user_or_admin),
-    db: AsyncSession = Depends(get_db),
-):
-    """Search within the current user's ratings. Supports all media filters
-    plus rating-specific filters (enums, user rating range, watch status)."""
-    return await search_user_ratings(
-        db=db,
-        user_id=current_user.id,
-        query=query,
-        filters=filters,
-        search_type=search_type,
-        limit=limit,
     )

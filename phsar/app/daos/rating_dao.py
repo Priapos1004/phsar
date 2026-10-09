@@ -1,7 +1,7 @@
 import logging
 from uuid import UUID
 
-from sqlalchemy import and_, delete, func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -13,21 +13,12 @@ from app.daos.media_projections import (
     media_identity_columns,
     media_studio_names,
 )
-from app.daos.search_filters import (
-    apply_media_filters,
-    description_passes,
-    fetch_search_results,
-    title_match_passes,
-    title_match_score,
-)
+from app.daos.search_filters import SEMANTIC_MARGIN, literal_matches, match_passes
 from app.models.anime import Anime
 from app.models.media import MAIN_STORY_RELATIONS, Media
-from app.models.media_genre import MediaGenre
-from app.models.media_studio import MediaStudio
 from app.models.rating_search import RatingSearch
 from app.models.ratings import Ratings, WatchStatus
-from app.schemas.media_filter_schema import SearchType
-from app.schemas.rating_schema import RatingAttributes, RatingSearchFilters
+from app.schemas.rating_schema import RatingAttributes
 from app.services.vector_embedding_service import generate_query_embedding
 
 logger = logging.getLogger(__name__)
@@ -44,6 +35,40 @@ def rating_of(user_id: int):
     `unique_user_media_rating` makes it 0-or-1, so as an outer join it never fans a
     media row set out and every aggregate over those rows stays a per-media one."""
     return (Ratings.media_id == Media.id) & (Ratings.user_id == user_id)
+
+
+def _note_distance(query_embedding):
+    return RatingSearch.note_embedding.cosine_distance(query_embedding)
+
+
+def note_cutoff(query_embedding, user_id: int):
+    """The largest distance a semantic note hit may have: the mean distance to the
+    query over the caller's own notes, less the margin — relative for description's
+    reason (docs/features/search.md). Its explicit FROM keeps it uncorrelated, as
+    `description_cutoff`'s does."""
+    mean = (
+        select(func.avg(_note_distance(query_embedding)))
+        .select_from(RatingSearch)
+        .join(Ratings, Ratings.id == RatingSearch.rating_id)
+        .where(Ratings.user_id == user_id)
+        .scalar_subquery()
+    )
+    return mean - SEMANTIC_MARGIN
+
+
+def note_passes(stmt, query: str, query_embedding, user_id: int, *, having: bool = False) -> list:
+    """Notes search through `match_passes`, over the note alone — the text its
+    embedding encodes. `stmt` already outer-joins the caller's ratings by `rating_of`,
+    and `rating_search` is 1:1 with a rating, so no media row fans out. The anime grain
+    takes its media's nearest note, not description's average; why is in
+    docs/features/search.md."""
+    return match_passes(
+        stmt.outerjoin(RatingSearch, RatingSearch.rating_id == Ratings.id),
+        literal_matches(query, Ratings.note),
+        _note_distance(query_embedding),
+        note_cutoff(query_embedding, user_id),
+        having=having, aggregate=func.min,
+    )
 
 
 class RatingDAO(BaseDAO[Ratings]):
@@ -92,13 +117,50 @@ class RatingDAO(BaseDAO[Ratings]):
     ) -> list[int]:
         """Which of the given media the user actually has a rating for. Scalar projection
         (no ORM rows / embeddings) — scopes an opt-in watch-history wipe to the media
-        whose rating is being deleted, and flags the caller's own hits in media search."""
+        whose rating is being deleted."""
         if not media_ids:
             return []
         stmt = select(self.model.media_id).where(
             self.model.user_id == user_id, self.model.media_id.in_(media_ids)
         )
         return list((await db.execute(stmt)).scalars().all())
+
+    async def notes_by_rated_media_id(
+        self, db: AsyncSession, user_id: int, media_ids: list[int]
+    ) -> dict[int, str | None]:
+        """Which of the given media the user has rated, each with the rating's note — the
+        media search's `is_rated` and, in notes mode, its quote."""
+        if not media_ids:
+            return {}
+        stmt = select(self.model.media_id, self.model.note).where(
+            self.model.user_id == user_id, self.model.media_id.in_(media_ids)
+        )
+        return dict((await db.execute(stmt)).tuples().all())
+
+    async def best_note_by_anime_id(
+        self, db: AsyncSession, user_id: int, query: str, anime_ids: list[int],
+    ) -> dict[int, str]:
+        """The caller's note that best matches `query` per anime, for the notes search's
+        hits. Ordered as `note_passes` ranks: strict literal, then typo-tolerant literal,
+        then nearest. Which pass admitted the hit is not known here, so an anime admitted
+        semantically quotes a typo-literal note when it has one."""
+        if not anime_ids:
+            return {}
+        stmt = (
+            select(Media.anime_id, self.model.note)
+            .select_from(Media)
+            .join(self.model, rating_of(user_id))
+            .outerjoin(RatingSearch, RatingSearch.rating_id == self.model.id)
+            .where(self.model.note.is_not(None), Media.anime_id.in_(anime_ids))
+            .order_by(
+                *(literal.desc() for literal in literal_matches(query, self.model.note)),
+                _note_distance(await generate_query_embedding(query)),
+            )
+        )
+        best: dict[int, str] = {}
+        for anime_id, note in (await db.execute(stmt)).all():
+            best.setdefault(anime_id, note)
+        return best
 
     async def get_anime_coverage(self, db: AsyncSession, user_id: int) -> list[Row]:
         """Per-anime counts behind the rated state and the coverage tier, for every
@@ -259,58 +321,3 @@ class RatingDAO(BaseDAO[Ratings]):
             .order_by(*recency_order(Ratings))
         )
         return list((await db.execute(stmt)).all())
-
-    async def search_ratings_with_filters(
-        self,
-        db: AsyncSession,
-        user_id: int,
-        query: str,
-        filters: RatingSearchFilters,
-        search_type: SearchType,
-        limit: int = 50,
-    ) -> list[Ratings]:
-        stmt = (
-            select(self.model)
-            .join(Media, self.model.media_id == Media.id)
-            .where(self.model.user_id == user_id)
-        )
-
-        stmt = apply_media_filters(stmt, filters)
-
-        conditions = []
-        if filters.user_rating_min is not None:
-            conditions.append(self.model.rating >= filters.user_rating_min)
-        if filters.user_rating_max is not None:
-            conditions.append(self.model.rating <= filters.user_rating_max)
-        if filters.watch_status:
-            conditions.append(self.model.watch_status.in_(filters.watch_status))
-        for field_name in _RATING_ATTR_FIELDS:
-            values = getattr(filters, field_name, None)
-            if values:
-                conditions.append(getattr(self.model, field_name).in_(values))
-        if conditions:
-            stmt = stmt.where(and_(*conditions))
-
-        stmt = stmt.options(
-            selectinload(self.model.media).selectinload(Media.anime),
-            selectinload(self.model.media).selectinload(Media.media_genre).selectinload(MediaGenre.genre),
-            selectinload(self.model.media).selectinload(Media.media_studio).selectinload(MediaStudio.studio),
-        ).limit(limit)
-
-        if query and search_type == SearchType.TITLE:
-            title_match = title_match_score(query, Media)
-            passes = title_match_passes(stmt.order_by(title_match.desc(), *recency_order(self.model)), title_match)
-        elif query and search_type == SearchType.DESCRIPTION:
-            passes = description_passes(stmt, query, await generate_query_embedding(query))
-        elif query and search_type == SearchType.RATING_NOTES:
-            # A rating without a note has no embedding, so the inner join drops it.
-            query_embedding = await generate_query_embedding(query)
-            passes = [
-                stmt.join(RatingSearch, RatingSearch.rating_id == self.model.id).order_by(
-                    RatingSearch.note_embedding.cosine_distance(query_embedding),
-                ),
-            ]
-        else:
-            passes = [stmt.order_by(*recency_order(self.model))]
-
-        return await fetch_search_results(db, *passes)

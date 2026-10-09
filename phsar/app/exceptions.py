@@ -232,14 +232,6 @@ class MissingSearchDataError(PhsarBaseError):
         super().__init__(message)
 
 
-class InvalidSearchTypeError(PhsarBaseError):
-    """Raised when a search type is not supported for the given endpoint."""
-
-    def __init__(self, search_type: str):
-        message = f"Search type '{search_type}' is not supported on this endpoint."
-        super().__init__(message)
-
-
 class InvalidRatedStateError(PhsarBaseError):
     """Raised when a `rated` state belongs to the other search grain."""
 

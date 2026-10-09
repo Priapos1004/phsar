@@ -64,10 +64,13 @@ async def default_tag_uuid(client, headers) -> str:
     return next(t["uuid"] for t in tags if t["is_default"])
 
 
-async def rate_media(client, headers, media_uuid, status: str = "completed", rating: float = 8.0) -> None:
+async def rate_media(
+    client, headers, media_uuid, status: str = "completed", rating: float = 8.0, note: str | None = None,
+) -> None:
     """Rate one media as the caller, through the real endpoint."""
     resp = await client.put(
-        f"/ratings/media/{media_uuid}", json={"rating": rating, "watch_status": status}, headers=headers,
+        f"/ratings/media/{media_uuid}", json={"rating": rating, "watch_status": status, "note": note},
+        headers=headers,
     )
     assert resp.status_code == 200, resp.text
 

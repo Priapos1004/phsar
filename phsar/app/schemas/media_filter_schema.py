@@ -104,6 +104,9 @@ class ExtendedMediaSearchFilters(CatalogueSearchFilters):
     query: SearchQuery = ""
     search_type: SearchType = SearchType.TITLE
     view_type: ViewType = ViewType.ANIME
+    # None = the endpoints' own defaults (relevance; each key's own direction).
+    sort: SortKey | None = None
+    sort_dir: SortDir | None = None
 
 class MediaFilterValues(BaseModel):
     # Categorical fields

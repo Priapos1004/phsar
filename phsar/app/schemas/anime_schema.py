@@ -82,7 +82,8 @@ class AnimeAggregatedBase(BaseModel):
 
 class AnimeSearchResult(AnimeAggregatedBase):
     """Aggregated anime search result for the search card."""
-    pass
+    # Notes search only: the caller's note that best matches the query.
+    matched_note: str | None = None
 
 
 # --- Anime detail schemas ---

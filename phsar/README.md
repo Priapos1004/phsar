@@ -496,7 +496,6 @@ phsar/
     │   ├── test_search_mal.py
     │   ├── test_search_media.py
     │   ├── test_search_ranking.py
-    │   ├── test_search_ratings.py
     │   ├── test_seeder.py
     │   ├── test_user_flows_endpoints.py
     │   ├── test_user_settings.py

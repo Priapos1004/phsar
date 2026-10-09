@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.daos.base_mal_id_dao import MalIdDAO
-from app.daos.rating_dao import rating_of
+from app.daos.rating_dao import note_passes, rating_of
 from app.daos.search_filters import (
     apply_media_filters,
     description_passes,
@@ -97,10 +97,10 @@ class MediaDAO(MalIdDAO[Media]):
         stmt = apply_media_filters(stmt, filters)
         if filters.upcoming_main:
             stmt = stmt.where(upcoming_main_media())
-        your_rating = None
-        if sort == SortKey.YOUR_RATING:
+        notes = bool(query) and search_type == SearchType.RATING_NOTES
+        if sort == SortKey.YOUR_RATING or notes:
             stmt = stmt.outerjoin(Ratings, rating_of(user_id))
-            your_rating = Ratings.rating
+        your_rating = Ratings.rating if sort == SortKey.YOUR_RATING else None
 
         stmt = stmt.options(*self._media_eager_options()).limit(limit)
 
@@ -113,6 +113,8 @@ class MediaDAO(MalIdDAO[Media]):
             )
         elif query and search_type == SearchType.DESCRIPTION:
             passes = description_passes(stmt, query, await generate_query_embedding(query))
+        elif notes:
+            passes = note_passes(stmt, query, await generate_query_embedding(query), user_id)
         else:
             passes = [stmt]
 

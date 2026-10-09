@@ -5,7 +5,7 @@ Title, description and note search over the catalogue, filtered, at two grains:
 
 **Code**: `services/vector_embedding_service.py` (embeddings) →
 `services/media_search_service.py` / `services/anime_search_service.py` (queries) →
-`daos/search_filters.py` (shared filter/order helpers) →
+`daos/search_filters.py` (shared filter/order helpers; the notes passes in `daos/rating_dao.py`) →
 `services/filter_service.py` (facet values).
 
 ## Embeddings
@@ -48,8 +48,7 @@ that keeps queries and documents in one case space is pinned by
 variants — romaji, English, Japanese, or a synonym (`other_names`) — contains the
 query or fuzzy-matches it; everything else is left out. At the anime grain the
 variants are the anime's own plus every one of its media's, so a side story's title
-finds the franchise. `title_match_score` is the one definition the anime, media and
-`/search/ratings` searches share.
+finds the franchise. `title_match_score` is the one definition every title search shares.
 
 A **substring** hit (`ilike`) outranks any fuzzy hit. The **fuzzy** tier must stay
 pg_trgm `word_similarity` and not plain `similarity`, which penalises the length
@@ -68,13 +67,12 @@ variants))` after grouping — a title query is a filter, so the
 literal hit when every query word starts a word of its titles or description — the
 text its description embedding encodes, so both tiers judge the same media. A word
 *start* (`\m`): a prefix, never an infix. Each tier is ordered nearest first;
-`description_passes` is the one ranker every description search shares.
+`match_passes` is the one ranker every literal-first search shares ([notes](#notes-search) too).
 
 **The cutoff is relative to the query**: a semantic hit must sit `SEMANTIC_MARGIN`
 below the catalogue's mean distance to that query. A fixed distance cannot serve both
 ends — a short name sits close to every description, a sentence far from all of
-them. The mean runs over the whole catalogue, unfiltered, so no filter moves it and
-`/search/ratings` measures against the catalogue, not the caller's own ratings. A
+them. The mean runs over the whole catalogue, unfiltered, so no filter moves it. A
 media with an empty description is never a semantic hit: its vector encodes the title
 alone, and such vectors sit near every short query.
 
@@ -90,7 +88,25 @@ any media makes the anime one, and the semantic test averages its media's distan
 an aggregate that must ignore group size, since `SUM` would rank a franchise worse for
 having more entries. Pinned by `test_description_literal_hit_on_a_side_story_reaches_its_anime`.
 
-Rating-note search ranks by note-embedding distance alone: no literal tier, no cutoff.
+## Notes search
+
+**The description tiers over the caller's own notes.** A literal hit is a note holding
+every query word as a word start — the note is all its embedding encodes — and semantic
+hits follow down to `SEMANTIC_MARGIN` below the mean distance over **the caller's own
+notes**, the population searched. Notes are short, so their mean sits nearer a query
+than the catalogue's does, which would admit dozens of loose matches. With only a few
+notes the mean sits near each one's own distance, so the semantic tier all but closes and
+the search is literal. The typo retry runs as for descriptions.
+
+**The anime grain takes its nearest note** (MIN), not description's average: an anime's
+notes are about different entries, so an unrelated second note must not sink the one
+that matches. An anime matches exactly when one of its media does at the media grain.
+Decided in HAVING, for the title match's reason. Pinned by
+`test_notes_anime_grain_matches_on_its_nearest_note`.
+
+**Each hit quotes the note that matched** (`matched_note`), filled after the query over
+the page of hits: a media its own note, an anime the best of its media's
+(`rating_dao.best_note_by_anime_id`).
 
 ## Anime-view filters
 
@@ -154,8 +170,8 @@ the displayed number, the ranking and the "Top N%" pill from drifting apart.
 
 ## Sorting
 
-**A query decides which rows match; the sort decides their order.** Title and
-description queries keep their match set (every pass's restriction, the
+**A query decides which rows match; the sort decides their order.** Every query
+keeps its match set (every pass's restriction, the
 strict-then-loose retry), and `sort` only replaces the ORDER BY. `relevance`, the
 default, is the query's own match order, and top rated without a query. `limit` runs 1–1000,
 default 50.
@@ -182,13 +198,14 @@ unrated rows come last.
 
 ## Personal filters and sort
 
-**`rated`, `watchlisted` and `your_rating` read the caller's own data, and
+**Every input scoped to the caller reads the caller's own data, and
 `daos/search_filters.py` still knows nothing about a user** — the anime query's GROUP BY
 and the [Anime-view filters](#anime-view-filters) invariant depend on that. The service
 resolves the personal filters to ids (`filter_service.personal_scope`) and the DAOs select rows
 by them, `IN` / `NOT IN` on the primary key, so the grouped media and every aggregate stay
 whole. `your_rating` reaches `sort_order` as a key the DAO builds over its own outer join
-onto the caller's ratings. Pinned by `test_personal_filters_and_sort_do_not_rescope_the_aggregates`.
+onto the caller's ratings, and notes search matches over the same join
+(`rating_dao.note_passes`). Pinned by `test_personal_filters_and_sort_do_not_rescope_the_aggregates`.
 
 - **States are a union.** The anime grain takes the [rated states](ratings.md#rated-state-and-coverage);
   the media grain its own rating's watch status, or `none`. A state of the other grain is
@@ -196,8 +213,8 @@ onto the caller's ratings. Pinned by `test_personal_filters_and_sort_do_not_resc
 - **An anime is watchlisted when any of its media is**, as its bookmark shows.
 - **They narrow the spoiler scope, never replace it**: in hide mode the media grain
   starts from the visible set.
-- **A guest gets 403** for any of them, `watchlisted=false` included: a read scoped to
-  the caller (`rules/backend.md`, Roles).
+- **A guest gets 403** for any of them, `watchlisted=false` and the notes mode without a
+  query included: a read scoped to the caller (`rules/backend.md`, Roles).
 
 Media-view results also carry `is_rated` (`MediaSearchResult`), filled after the query
 from one indexed lookup over the page of hits. The anime grain's counterpart is the
@@ -222,3 +239,4 @@ The client-side frontier walk is the one sanctioned divergence — see
 - [Quality-of-life upgrades](../../compound-docs/2026-07-27-v0.15.3-quality-of-life.md) — filters no longer rescoping the score
 - [Efficiency improvements](../../compound-docs/2026-08-06-v0.15.4-efficiency-improvements.md) — the aggregate-in-ORDER-BY change and query memoization
 - [Search rework](../../compound-docs/2026-10-07-v0.16.0-search-rework.md) — the studies and problem cases behind the v0.16.0 search changes
+- [Search UI](../../compound-docs/2026-10-09-v0.16.1-search-ui.md) — the notes cutoff study and why the anime grain takes the nearest note
