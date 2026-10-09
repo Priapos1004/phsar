@@ -14,6 +14,7 @@ from app.daos.search_filters import (
     apply_anime_pre_filters,
     description_passes,
     fetch_search_results,
+    sort_order,
     title_match_passes,
     title_match_score,
     weighted_mean_score_expr,
@@ -25,7 +26,13 @@ from app.models.media import AIRING_STATUS_CURRENTLY_AIRING, Media, RelationType
 from app.models.media_freshness import MediaFreshness
 from app.models.media_genre import MediaGenre
 from app.models.media_studio import MediaStudio
-from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
+from app.models.user_settings import NameLanguage
+from app.schemas.media_filter_schema import (
+    MediaSearchFilters,
+    SearchType,
+    SortDir,
+    SortKey,
+)
 from app.services.vector_embedding_service import generate_query_embedding
 
 logger = logging.getLogger(__name__)
@@ -506,17 +513,21 @@ class AnimeDAO(MalIdDAO[Anime]):
         query: str,
         filters: MediaSearchFilters,
         search_type: SearchType,
-        limit: int = 50,
+        *,
+        sort: SortKey,
+        sort_dir: SortDir | None,
+        name_language: NameLanguage,
+        limit: int,
     ) -> list[Anime]:
         """Anime search: aggregation query for filtering/ordering,
         then detail fetch for the matched anime.
 
-        Returns Anime objects with eagerly loaded media/genres/studios,
-        ordered by search relevance or weighted score."""
+        Returns Anime objects with eagerly loaded media/genres/studios, ordered by
+        `sort`."""
 
         # --- Phase A: Aggregation query (for filtering + ordering only) ---
         # Score/votes are the relation-weighted means over Main+Alt media
-        # (RELATION_SCORE_WEIGHTS) — this scopes the default ordering AND the
+        # (RELATION_SCORE_WEIGHTS) — this scopes every ordering by score AND the
         # score/scored_by HAVING filters (via agg_columns) so they match the
         # displayed avg (anime_search_service._compute_anime_aggregates). Episode
         # /watch-time/genre-majority aggregates stay over ALL media.
@@ -540,15 +551,14 @@ class AnimeDAO(MalIdDAO[Anime]):
         # Pre-aggregation WHERE filters (any-match semantics)
         stmt = apply_anime_pre_filters(stmt, filters)
 
-        # GROUP BY the PK alone: Anime's own columns in the title match below ride
-        # functional dependency on it, and the description match and distance
-        # aggregate over the anime's media.
+        # GROUP BY the PK alone: Anime's own columns in the title match and the sort
+        # keys below ride functional dependency on it, and the description match,
+        # distance and the other sort keys aggregate over the anime's media.
         stmt = stmt.group_by(Anime.id)
 
         # Post-aggregation HAVING filters (majority/range semantics)
         stmt = apply_anime_having_filters(stmt, filters, agg_columns).limit(limit)
 
-        weighted = weighted_score_expr(avg_score, avg_scored_by)
         if query and search_type == SearchType.TITLE:
             # A title query selects in HAVING, not WHERE: narrowing the joined
             # media rows to the matching ones would rescope every aggregate above,
@@ -559,6 +569,7 @@ class AnimeDAO(MalIdDAO[Anime]):
                 func.max(title_match_score(query, Media)),
             ).label("title_match")
             stmt = stmt.add_columns(title_match)
+            weighted = weighted_score_expr(avg_score, avg_scored_by)
             passes = title_match_passes(
                 stmt.order_by(title_match.desc(), weighted.desc().nullslast(), Anime.id),
                 title_match, having=True,
@@ -566,10 +577,10 @@ class AnimeDAO(MalIdDAO[Anime]):
         elif query and search_type == SearchType.DESCRIPTION:
             passes = description_passes(stmt, query, await generate_query_embedding(query), having=True)
         else:
-            # Default ordering: weighted score = S_w * log10(V_w + 1) over Main+Alt
-            passes = [stmt.order_by(weighted.desc().nullslast())]
+            passes = [stmt]
 
-        anime_ids = await fetch_search_results(db, *passes)
+        order = None if query and sort == SortKey.RELEVANCE else sort_order(sort, sort_dir, name_language, having=True)
+        anime_ids = await fetch_search_results(db, *passes, order=order)
         if not anime_ids:
             return []
 

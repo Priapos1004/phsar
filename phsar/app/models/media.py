@@ -119,9 +119,9 @@ def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
 
 
 # Chronological rank of a season within its year. Lives beside the enum rather than in
-# one of its consumers because both layers need it: services sort by it in Python, the
-# watchlist DAO builds a SQL CASE from it. Keyed by members, but the str-enum hashes by
-# value, so a caller holding a plain `"Fall"` looks up just as well.
+# one of its consumers because both layers need it: services sort by it in Python,
+# `search_filters.SEASON_KEY` builds a SQL CASE from it. Keyed by members, but the
+# str-enum hashes by value, so a caller holding a plain `"Fall"` looks up just as well.
 #
 # Distinct from `mal_scraper._SEASON_ORDER`, the lowercase MAL/URL vocabulary; this is
 # the catalog's title-cased one.

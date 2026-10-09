@@ -13,7 +13,7 @@ export const SEASON_ORDER: Record<string, number> = {
  *  `<`. Null when the season is unknown — an anime with no announced season sorts
  *  nowhere rather than at the start of its year.
  *
- *  The same encoding the backend's `watchlist_dao._SEASON_KEY` emits for
+ *  The same encoding the backend's `search_filters.SEASON_KEY` emits for
  *  `franchise_upcoming_key`, which is the only reason it is an integer at all. No
  *  import can span the two languages, so each side pins the encoding in its own test
  *  against the same season. */

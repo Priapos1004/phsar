@@ -23,7 +23,13 @@ from app.models.ratings import (
 )
 from app.models.user_settings import SpoilerLevel
 from app.schemas.anime_schema import AnimeSearchResult
-from app.schemas.media_filter_schema import MediaSearchFilters, SearchQuery, SearchType
+from app.schemas.media_filter_schema import (
+    MediaSearchFilters,
+    SearchQuery,
+    SearchType,
+    SortDir,
+    SortKey,
+)
 from app.schemas.media_schema import MediaSearchResult
 from app.schemas.rating_schema import RatedMediaResult, RatingSearchFilters
 from app.schemas.search_schema import SearchResultDB
@@ -35,6 +41,17 @@ from app.services.spoiler_service import get_visible_media_ids
 from app.services.user_settings_service import get_settings
 
 router = APIRouter(prefix="/search", tags=["search"])
+
+# Above 50 for the see-all pages; one user's ratings stay well under the cap.
+SearchLimit = Annotated[int, Query(ge=1, le=1000, description="How many results to return.")]
+SortParam = Annotated[SortKey, Query(
+    description="Result order. `relevance` is the query's own match order, and `top_rated` "
+    "without a query. Any other sort orders the same matching rows.",
+)]
+SortDirParam = Annotated[SortDir | None, Query(
+    description="Direction; by default `title` and `release` ascend and the rest descend. "
+    "Ignored with `relevance`.",
+)]
 
 
 def get_media_filters(
@@ -119,6 +136,9 @@ def get_rating_filters(
 async def search_anime(
     query: Annotated[SearchQuery, Query(description="Search query string.")] = "",
     search_type: SearchType = Query(default=SearchType.TITLE, description="Search by title or description."),
+    sort: SortParam = SortKey.RELEVANCE,
+    sort_dir: SortDirParam = None,
+    limit: SearchLimit = 50,
     filters: MediaSearchFilters = Depends(get_media_filters),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -126,11 +146,16 @@ async def search_anime(
     if search_type == SearchType.RATING_NOTES:
         raise InvalidSearchTypeError(search_type.value)
 
+    settings = await get_settings(db, current_user.id)
     return await search_anime_by_query(
         db=db,
         query=query,
         filters=filters,
         search_type=search_type,
+        sort=sort,
+        sort_dir=sort_dir,
+        name_language=settings.name_language,
+        limit=limit,
     )
 
 
@@ -151,6 +176,9 @@ async def search_mal(
 async def search_media(
     query: Annotated[SearchQuery, Query(description="The search query string (e.g., anime title).")] = "",
     search_type: SearchType = Query(default=SearchType.TITLE, description="The way to search by: title or description."),
+    sort: SortParam = SortKey.RELEVANCE,
+    sort_dir: SortDirParam = None,
+    limit: SearchLimit = 50,
     filters: MediaSearchFilters = Depends(get_media_filters),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -170,6 +198,10 @@ async def search_media(
         filters=filters,
         search_type=search_type,
         user_id=current_user.id,
+        sort=sort,
+        sort_dir=sort_dir,
+        name_language=settings.name_language,
+        limit=limit,
         visible_media_ids=visible_media_ids,
     )
 
@@ -179,7 +211,7 @@ async def search_ratings(
     query: Annotated[SearchQuery, Query(description="Search query (matched against selected search type).")] = "",
     search_type: SearchType = Query(default=SearchType.TITLE, description="What to search: title, description, or rating_notes."),
     filters: RatingSearchFilters = Depends(get_rating_filters),
-    limit: int = Query(default=50, ge=1, le=200),
+    limit: SearchLimit = 50,
     current_user=Depends(require_user_or_admin),
     db: AsyncSession = Depends(get_db),
 ):

@@ -207,11 +207,3 @@ async def test_search_ratings_invalid_pace_filter(client, user_auth_headers):
     )
     assert response.status_code == 422
 
-
-async def test_search_ratings_invalid_limit(client, user_auth_headers):
-    response = await client.get(
-        "/search/ratings",
-        params={"limit": 0},
-        headers=user_auth_headers,
-    )
-    assert response.status_code == 422

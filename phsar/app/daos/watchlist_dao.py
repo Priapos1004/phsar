@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import case, delete, func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -13,35 +13,17 @@ from app.daos.media_projections import (
     media_identity_columns,
     media_studio_names,
 )
+from app.daos.search_filters import SEASON_KEY
 from app.models.anime import Anime
 from app.models.media import (
     AIRING_STATUS_CURRENTLY_AIRING,
     AIRING_STATUS_NOT_YET_AIRED,
     MAIN_STORY_RELATIONS,
-    SEASON_ORDER,
     Media,
 )
 from app.models.ratings import Ratings, WatchStatus
 from app.models.tag import Tag
 from app.models.watchlist import Watchlist
-
-# Sortable season key: `year * 10 + rank`, so (2026, Fall) > (2026, Summer) and
-# (2027, Winter) > both with one integer comparison. The SQL twin of
-# `filter_service.chronological_media_key`'s first two components; the frontend builds
-# the same key for "next season" and compares, which keeps the season arithmetic in
-# one place instead of passing a moving cutoff down into SQL.
-#
-# No `else_`: every SeasonType has a WHEN, and `check_season_parts_both_or_none` makes
-# a year without a season unstorable, so no fallback is reachable. Defaulting to NULL
-# rather than a rank of 0 is still the better shape for a season added to the enum
-# later — it drops out of the MIN instead of sorting ahead of Winter. Unreachable
-# today, so no test separates the two.
-#
-# Explicit WHEN comparisons, not the `case(mapping, value=...)` shorthand —
-# rules/database.md.
-_SEASON_KEY = Media.anime_season_year * 10 + case(
-    *[(Media.anime_season_name == season, rank) for season, rank in SEASON_ORDER.items()],
-)
 
 
 def _franchise_signals(anime_id_scope, user_id: int):
@@ -74,7 +56,10 @@ def _franchise_signals(anime_id_scope, user_id: int):
                 (Media.airing_status == AIRING_STATUS_CURRENTLY_AIRING)
                 & Ratings.watch_status.is_distinct_from(WatchStatus.dropped)
             ).label("franchise_airing"),
-            func.min(_SEASON_KEY)
+            # An integer the frontend compares against the key it builds for "next
+            # season", which keeps the season arithmetic in one place instead of passing
+            # a moving cutoff down into SQL.
+            func.min(SEASON_KEY)
             .filter(Media.airing_status == AIRING_STATUS_NOT_YET_AIRED)
             .label("franchise_upcoming_key"),
         )
@@ -158,7 +143,7 @@ class WatchlistDAO(BaseDAO[Watchlist]):
             # `filter_service.chronological_media_key`, so a caller walking these rows
             # sees the same order as the media table. NULLS LAST because that key maps a
             # missing year to 9999, putting an undated media at the end.
-            .order_by(_SEASON_KEY.nulls_last(), Media.mal_id)
+            .order_by(SEASON_KEY.nulls_last(), Media.mal_id)
         )
         return list((await db.execute(stmt)).scalars().all())
 

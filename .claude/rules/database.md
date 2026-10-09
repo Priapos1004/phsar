@@ -46,6 +46,8 @@ construction, and the helper's docstring says how they tie and what breaks witho
 it. Pinned by `test_get_items_orders_tied_rows_by_id_desc`, whose docstring says why
 it asserts the intended order rather than that repeated calls agree.
 
+Search sorts are the exception; `search_filters.sort_order`'s docstring says why.
+
 ## Operational state goes in a 1:1 sidecar
 
 When adding tracking or audit state — `last_checked_at`, sweep counters, freshness

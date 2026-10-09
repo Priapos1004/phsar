@@ -21,6 +21,22 @@ class ViewType(str, Enum):
     MEDIA = "media"
 
 
+class SortKey(str, Enum):
+    RELEVANCE = "relevance"
+    TOP_RATED = "top_rated"
+    SCORE = "score"
+    POPULARITY = "popularity"
+    ADDED = "added"
+    RELEASE = "release"
+    TITLE = "title"
+    RANDOM = "random"
+
+
+class SortDir(str, Enum):
+    ASC = "asc"
+    DESC = "desc"
+
+
 class MediaSearchFilters(BaseModel):
     relation_type: list[RelationType] | None = None
     media_type: list[MediaType] | None = None

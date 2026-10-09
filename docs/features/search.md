@@ -126,12 +126,36 @@ over, and this fires on every genre chip toggle. The denominator is the anime's
 Summary count 0 — i.e. the same anchor set the spoiler frontier uses.
 
 The Python computation in `_compute_anime_aggregates` is the twin of the SQL
-`weighted_mean_score_expr` / `weighted_mean_votes_expr` used by the default ordering, the
-score HAVING filters, and `score_top_percent`. Keeping them in step is what stops
+`weighted_mean_score_expr` / `weighted_mean_votes_expr` used by every anime-grain
+ordering by score, the score HAVING filters, and `score_top_percent`. Keeping them in step is what stops
 the displayed number, the ranking and the "Top N%" pill from drifting apart.
 
 `total_episodes`, `total_watch_time`, `media_count` and genre majority stay over
 **all** media.
+
+## Sorting
+
+**A query decides which rows match; the sort decides their order.** Title and
+description queries keep their match set (every pass's restriction, the
+strict-then-loose retry), and `sort` only replaces the ORDER BY. `relevance`, the
+default, is the query's own match order, and top rated without a query. `limit` runs 1–1000,
+default 50.
+
+`sort_order` is the one implementation at both grains, and its docstring gives the
+tiebreak. At the anime grain, the keys built on score or votes read the aggregates its
+card shows ([main story only](#anime-score-is-main-story-only)); the rest, apart from
+release, read the anime's own row.
+
+**Release is one timeline.** An anime sits at its next announced season, else at
+`TBA_SEASON_KEY` if it has an announcement without a season, else at its latest aired
+season. A media sits at its own season, or at TBA while announced without one. TBA
+follows every real season, so ascending runs oldest → announced → TBA, and descending
+the reverse. A row with no season comes last either way. A media still "Not yet aired"
+after its season has passed sorts at that past season.
+
+**Title sorts in the user's name language**, through `display_title`. **Random is
+daily**: md5 of the row's uuid and the UTC date, so every viewer gets the same order
+that day.
 
 ## The caller's own ratings
 

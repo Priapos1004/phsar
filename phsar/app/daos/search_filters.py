@@ -1,12 +1,15 @@
 import logging
 import re
+from datetime import UTC, date, datetime
 
 from sqlalchemy import (
     Numeric,
     Text,
     and_,
+    asc,
     case,
     cast,
+    desc,
     distinct,
     false,
     func,
@@ -24,6 +27,7 @@ from app.models.media import (
     AIRING_STATUS_FINISHED_AIRING,
     AIRING_STATUS_NOT_YET_AIRED,
     RELATION_SCORE_WEIGHTS,
+    SEASON_ORDER,
     Media,
     SeasonType,
 )
@@ -31,7 +35,8 @@ from app.models.media_genre import MediaGenre
 from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
-from app.schemas.media_filter_schema import MediaSearchFilters
+from app.models.user_settings import NameLanguage
+from app.schemas.media_filter_schema import MediaSearchFilters, SortDir, SortKey
 
 logger = logging.getLogger(__name__)
 
@@ -491,14 +496,108 @@ def description_passes(stmt, query: str, query_embedding, *, having: bool = Fals
     ]
 
 
-async def fetch_search_results(db: AsyncSession, *passes) -> list:
+# Sortable season key: `year * 10 + rank`, so (2026, Fall) > (2026, Summer) and
+# (2027, Winter) > both with one integer comparison. The SQL twin of
+# `filter_service.chronological_media_key`'s first two components, and what every SQL
+# ordering by season reads.
+#
+# No `else_`: every SeasonType has a WHEN, and `check_season_parts_both_or_none` makes
+# a year without a season unstorable, so no fallback is reachable. Defaulting to NULL
+# rather than a rank of 0 is still the better shape for a season added to the enum
+# later — it drops out of the MIN instead of sorting ahead of Winter. Unreachable
+# today, so no test separates the two.
+#
+# Explicit WHEN comparisons, not the `case(mapping, value=...)` shorthand —
+# rules/database.md.
+SEASON_KEY = Media.anime_season_year * 10 + case(
+    *[(Media.anime_season_name == season, rank) for season, rank in SEASON_ORDER.items()],
+)
+
+# Where the release sort puts an announcement that has no season yet: after every real
+# season, since `check_season_year_4_digits` caps the year at 2200.
+TBA_SEASON_KEY = 99_999
+
+
+def _release_key(*, having: bool):
+    """The release sort's key, per media or, with `having`, per anime: the timeline in
+    docs/features/search.md#sorting."""
+    unaired = Media.airing_status == AIRING_STATUS_NOT_YET_AIRED
+    if not having:
+        return func.coalesce(SEASON_KEY, case((unaired, TBA_SEASON_KEY)))
+    return func.coalesce(
+        func.min(SEASON_KEY).filter(unaired),
+        func.max(case((unaired & Media.anime_season_year.is_(None), TBA_SEASON_KEY))),
+        func.max(SEASON_KEY).filter(~unaired),
+    )
+
+
+def display_title(model: type[Anime] | type[Media], name_language: NameLanguage):
+    """The title a card shows: the SQL twin of the frontend's `resolveTitle`, so the
+    title sort orders what the card displays."""
+    preferred = {NameLanguage.english: model.name_eng, NameLanguage.japanese: model.name_jap}.get(name_language)
+    return model.title if preferred is None else func.coalesce(func.nullif(preferred, ""), model.title)
+
+
+def utc_today() -> date:
+    """The random sort's seed date; a function so a test can move it."""
+    return datetime.now(UTC).date()
+
+
+def sort_order(
+    sort: SortKey, sort_dir: SortDir | None, name_language: NameLanguage, *, having: bool = False,
+) -> list:
+    """ORDER BY for `sort` over Media rows, or over the anime grain's grouped rows with
+    `having` (aggregates and Anime columns only, both valid under its GROUP BY).
+
+    The key comes first, NULLS LAST in either direction, so an unscored or unseasoned
+    row never leads an ascending list. Ties go to the weighted score, then to the PK in
+    the sort's direction. That makes newest-first end `created_at DESC, …, id DESC`, as
+    `recency_order` would. It doesn't go through that helper, which would put the PK
+    straight after the timestamp: rows added in one transaction share `created_at`, and
+    among them the better one should lead.
+
+    RELEVANCE only reaches here without a query, where it is the default order: top
+    rated, in its default direction. A query's own match order belongs to its passes."""
+    if sort == SortKey.RELEVANCE:
+        sort_dir = None
+    model: type[Anime] | type[Media] = Anime if having else Media
+    if having:
+        score, votes = weighted_mean_score_expr(), weighted_mean_votes_expr()
+    else:
+        score, votes = Media.score, Media.scored_by
+    weighted = weighted_score_expr(score, votes)
+    match sort:
+        case SortKey.SCORE:
+            key = score
+        case SortKey.POPULARITY:
+            key = votes
+        case SortKey.ADDED:
+            key = model.created_at
+        case SortKey.RELEASE:
+            key = _release_key(having=having)
+        case SortKey.TITLE:
+            key = display_title(model, name_language)
+        case SortKey.RANDOM:
+            key = func.md5(cast(model.uuid, Text) + utc_today().isoformat())
+        case SortKey.TOP_RATED | SortKey.RELEVANCE:
+            key = weighted
+    ascending = sort_dir == SortDir.ASC if sort_dir else sort in (SortKey.TITLE, SortKey.RELEASE)
+    direction = asc if ascending else desc
+    return [direction(key).nulls_last(), weighted.desc().nulls_last(), direction(model.id)]
+
+
+async def fetch_search_results(db: AsyncSession, *passes, order: list | None = None) -> list:
     """Every row's first column from the first of `passes` that returns any — the
     strict statement, then looser ones only while nothing has matched.
 
-    A retry rather than one query at the loosest test trimmed afterwards: the trim is
-    only correct while the match is the primary sort key."""
+    `order`, a `sort_order`, replaces each pass's own: the passes decide which rows
+    match, the sort only their order. Hence a retry rather than one query at the
+    loosest test trimmed afterwards — the trim is only correct while the match is the
+    primary sort key."""
     rows: list = []
     for stmt in passes:
+        if order:
+            stmt = stmt.order_by(None).order_by(*order)
         rows = list((await db.execute(stmt)).scalars().all())
         if rows:
             break

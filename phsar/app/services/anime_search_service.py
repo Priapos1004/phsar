@@ -16,6 +16,7 @@ from app.models.media import (
     SEASON_ORDER,
     Media,
 )
+from app.models.user_settings import NameLanguage
 from app.schemas.anime_schema import (
     AnimeDetail,
     AnimeMediaItem,
@@ -23,7 +24,12 @@ from app.schemas.anime_schema import (
     MediaTypeSummary,
     RelationTypeSummary,
 )
-from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
+from app.schemas.media_filter_schema import (
+    MediaSearchFilters,
+    SearchType,
+    SortDir,
+    SortKey,
+)
 from app.services.filter_service import chronological_media_key
 
 logger = logging.getLogger(__name__)
@@ -226,9 +232,15 @@ async def search_anime_by_query(
     query: str,
     filters: MediaSearchFilters,
     search_type: SearchType,
+    *,
+    sort: SortKey,
+    sort_dir: SortDir | None,
+    name_language: NameLanguage,
+    limit: int,
 ) -> list[AnimeSearchResult]:
     anime_list = await anime_dao.search_anime_aggregated(
         db=db, query=query, filters=filters, search_type=search_type,
+        sort=sort, sort_dir=sort_dir, name_language=name_language, limit=limit,
     )
 
     results = []

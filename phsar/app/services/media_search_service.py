@@ -7,7 +7,13 @@ from app.daos.media_dao import MediaDAO
 from app.daos.rating_dao import RatingDAO
 from app.exceptions import MediaNotFoundError
 from app.models.media import Media
-from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
+from app.models.user_settings import NameLanguage
+from app.schemas.media_filter_schema import (
+    MediaSearchFilters,
+    SearchType,
+    SortDir,
+    SortKey,
+)
 from app.schemas.media_schema import MediaDetail, MediaSearchResult, MediaSibling
 from app.services.filter_service import chronological_media_key
 
@@ -70,6 +76,11 @@ async def search_media_by_query(
     filters: MediaSearchFilters,
     search_type: SearchType,
     user_id: int,
+    *,
+    sort: SortKey,
+    sort_dir: SortDir | None,
+    name_language: NameLanguage,
+    limit: int,
     visible_media_ids: set[int] | None = None,
 ) -> list[MediaSearchResult]:
     logger.info(f"Query: {query}")
@@ -81,6 +92,10 @@ async def search_media_by_query(
         query=query,
         filters=filters,
         search_type=search_type,
+        sort=sort,
+        sort_dir=sort_dir,
+        name_language=name_language,
+        limit=limit,
         visible_media_ids=visible_media_ids,
     )
 

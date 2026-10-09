@@ -10,6 +10,7 @@ from app.daos.search_filters import (
     apply_media_filters,
     description_passes,
     fetch_search_results,
+    sort_order,
     title_match_passes,
     title_match_score,
     weighted_score_expr,
@@ -18,7 +19,13 @@ from app.models.anime import Anime
 from app.models.media import Media
 from app.models.media_genre import MediaGenre
 from app.models.media_studio import MediaStudio
-from app.schemas.media_filter_schema import MediaSearchFilters, SearchType
+from app.models.user_settings import NameLanguage
+from app.schemas.media_filter_schema import (
+    MediaSearchFilters,
+    SearchType,
+    SortDir,
+    SortKey,
+)
 from app.services.vector_embedding_service import generate_query_embedding
 
 logger = logging.getLogger(__name__)
@@ -90,7 +97,11 @@ class MediaDAO(MalIdDAO[Media]):
         query: str,
         filters: MediaSearchFilters,
         search_type: SearchType,
-        limit: int = 50,
+        *,
+        sort: SortKey,
+        sort_dir: SortDir | None,
+        name_language: NameLanguage,
+        limit: int,
         visible_media_ids: set[int] | None = None,
     ) -> list[Media]:
         stmt = select(Media)
@@ -102,9 +113,9 @@ class MediaDAO(MalIdDAO[Media]):
 
         stmt = stmt.options(*self._media_eager_options()).limit(limit)
 
-        weighted_score = weighted_score_expr(Media.score, Media.scored_by)
         if query and search_type == SearchType.TITLE:
             title_match = title_match_score(query, Media)
+            weighted_score = weighted_score_expr(Media.score, Media.scored_by)
             passes = title_match_passes(
                 stmt.order_by(title_match.desc(), weighted_score.desc().nullslast(), Media.id),
                 title_match,
@@ -112,6 +123,7 @@ class MediaDAO(MalIdDAO[Media]):
         elif query and search_type == SearchType.DESCRIPTION:
             passes = description_passes(stmt, query, await generate_query_embedding(query))
         else:
-            passes = [stmt.order_by(weighted_score.desc().nullslast())]
+            passes = [stmt]
 
-        return await fetch_search_results(db, *passes)
+        order = None if query and sort == SortKey.RELEVANCE else sort_order(sort, sort_dir, name_language)
+        return await fetch_search_results(db, *passes, order=order)
