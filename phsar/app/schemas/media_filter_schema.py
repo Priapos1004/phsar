@@ -4,6 +4,7 @@ from typing import Annotated
 from pydantic import BaseModel, Field, StringConstraints
 
 from app.models.media import AgeRating, MediaType, OriginalSource, RelationType
+from app.models.ratings import WatchStatus
 
 # A search query, stripped where it enters (route params and the search token):
 # padding would otherwise become part of the title-match pattern.
@@ -30,6 +31,7 @@ class SortKey(str, Enum):
     RELEASE = "release"
     TITLE = "title"
     RANDOM = "random"
+    YOUR_RATING = "your_rating"
 
 
 class SortDir(str, Enum):
@@ -41,6 +43,25 @@ class MatchMode(str, Enum):
     """Whether a row needs one of the selected values or every one of them."""
     ANY = "any"
     ALL = "all"
+
+
+class RatedState(str, Enum):
+    """How far the caller has got with a row. An anime's state comes from its media's
+    ratings (`rating_service._rated_state`, docs/features/ratings.md); a media's is its
+    own rating's watch status, so each grain takes its own subset below."""
+    NONE = "none"
+    IN_PROGRESS = "in_progress"
+    ON_HOLD = "on_hold"
+    DROPPED = "dropped"
+    MAIN = "main"
+    ALL = "all"
+    COMPLETED = "completed"
+
+
+ANIME_RATED_STATES = frozenset({
+    RatedState.NONE, RatedState.IN_PROGRESS, RatedState.ON_HOLD, RatedState.DROPPED, RatedState.MAIN, RatedState.ALL,
+})
+MEDIA_RATED_STATES = frozenset({RatedState.NONE, *(RatedState(status.value) for status in WatchStatus)})
 
 
 class MediaSearchFilters(BaseModel):
@@ -73,6 +94,9 @@ class CatalogueSearchFilters(MediaSearchFilters):
     """The filters only the catalogue searches take, beyond the `MediaSearchFilters`
     every filtered search shares."""
     upcoming_main: bool = False
+    # The caller's own: a union of states, and listed or not (None filters nothing).
+    rated: list[RatedState] | None = None
+    watchlisted: bool | None = None
 
 
 class ExtendedMediaSearchFilters(CatalogueSearchFilters):

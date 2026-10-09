@@ -57,6 +57,29 @@ def media_kwargs(anime_id: int, mal_id: int, **overrides) -> dict:
     return base
 
 
+async def default_tag_uuid(client, headers) -> str:
+    """The caller's default watchlist list, which every non-restricted user has — the
+    one a test files an entry under when the list itself isn't the point."""
+    tags = (await client.get("/watchlist/tags", headers=headers)).json()
+    return next(t["uuid"] for t in tags if t["is_default"])
+
+
+async def rate_media(client, headers, media_uuid, status: str = "completed", rating: float = 8.0) -> None:
+    """Rate one media as the caller, through the real endpoint."""
+    resp = await client.put(
+        f"/ratings/media/{media_uuid}", json={"rating": rating, "watch_status": status}, headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+
+
+async def list_media(client, headers, *media_uuids) -> None:
+    """Put each media on the caller's default watchlist list, through the real endpoint."""
+    tag_uuid = await default_tag_uuid(client, headers)
+    for media_uuid in media_uuids:
+        resp = await client.put(f"/watchlist/media/{media_uuid}", json={"tag_uuid": tag_uuid}, headers=headers)
+        assert resp.status_code == 200, resp.text
+
+
 async def make_user(db, username: str = "testuser", role: RoleType = RoleType.User) -> Users:
     """Insert and flush a Users row (the inline `Users(...)` pattern repeated across
     the service tests). Password hash is a placeholder — auth isn't exercised here."""

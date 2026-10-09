@@ -9,7 +9,7 @@ against a populated dev catalogue as well as CI's empty one.
 
 from app.models.anime import Anime
 from app.models.media import Media
-from tests._helpers import SentinelSeason, media_kwargs
+from tests._helpers import SentinelSeason, media_kwargs, rate_media
 
 _COVERAGE_SEASON = SentinelSeason(1903)
 
@@ -34,15 +34,6 @@ async def _anime_with_media(db_session, mal_seed: int, count: int) -> tuple:
     return anime, media
 
 
-async def _rate(client, headers, media):
-    res = await client.put(
-        f"/ratings/media/{media.uuid}",
-        json={"rating": 8.0, "watch_status": "completed"},
-        headers=headers,
-    )
-    assert res.status_code == 200
-
-
 async def _search(client, headers) -> dict[str, bool]:
     res = await client.get("/search/media", params={
         "query": "", "anime_season": _COVERAGE_SEASON.filter,
@@ -53,7 +44,7 @@ async def _search(client, headers) -> dict[str, bool]:
 
 async def test_coverage_reports_the_tier_for_a_rated_anime(client, user_auth_headers, db_session):
     anime, media = await _anime_with_media(db_session, -93000, 2)
-    await _rate(client, user_auth_headers, media[0])
+    await rate_media(client, user_auth_headers, media[0].uuid)
 
     res = await client.get("/ratings/coverage", headers=user_auth_headers)
     assert res.status_code == 200
@@ -72,7 +63,7 @@ async def test_coverage_requires_a_token(client):
 
 async def test_search_media_flags_the_callers_own_ratings(client, user_auth_headers, db_session):
     _, media = await _anime_with_media(db_session, -93200, 2)
-    await _rate(client, user_auth_headers, media[0])
+    await rate_media(client, user_auth_headers, media[0].uuid)
 
     by_uuid = await _search(client, user_auth_headers)
     assert by_uuid[str(media[0].uuid)] is True
@@ -83,7 +74,7 @@ async def test_search_media_does_not_leak_another_users_ratings(
     client, user_auth_headers, admin_auth_headers, db_session,
 ):
     _, media = await _anime_with_media(db_session, -93300, 1)
-    await _rate(client, admin_auth_headers, media[0])
+    await rate_media(client, admin_auth_headers, media[0].uuid)
 
     by_uuid = await _search(client, user_auth_headers)
     assert by_uuid[str(media[0].uuid)] is False

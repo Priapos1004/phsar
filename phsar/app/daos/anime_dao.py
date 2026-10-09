@@ -9,6 +9,7 @@ from sqlalchemy.orm import aliased, selectinload
 from app.daos.base_dao import recency_order
 from app.daos.base_mal_id_dao import MalIdDAO
 from app.daos.delete_candidate_dao import awaiting_review_mal_ids
+from app.daos.rating_dao import rating_of
 from app.daos.search_filters import (
     apply_anime_having_filters,
     apply_anime_pre_filters,
@@ -27,6 +28,7 @@ from app.models.media import AIRING_STATUS_CURRENTLY_AIRING, Media, RelationType
 from app.models.media_freshness import MediaFreshness
 from app.models.media_genre import MediaGenre
 from app.models.media_studio import MediaStudio
+from app.models.ratings import Ratings
 from app.models.user_settings import NameLanguage
 from app.schemas.media_filter_schema import (
     CatalogueSearchFilters,
@@ -482,9 +484,15 @@ class AnimeDAO(MalIdDAO[Anime]):
         sort_dir: SortDir | None,
         name_language: NameLanguage,
         limit: int,
+        user_id: int,
+        include_ids: set[int] | None,
+        exclude_ids: set[int],
     ) -> list[Anime]:
         """Anime search: aggregation query for filtering/ordering,
         then detail fetch for the matched anime.
+
+        `include_ids` / `exclude_ids` scope it to the caller's personal filters, which
+        the service resolves to anime ids.
 
         Returns Anime objects with eagerly loaded media/genres/studios, ordered by
         `sort`."""
@@ -514,6 +522,15 @@ class AnimeDAO(MalIdDAO[Anime]):
 
         # Pre-aggregation WHERE filters (any-match semantics)
         stmt = apply_anime_pre_filters(stmt, filters)
+        # By anime id, like the pre-filters: selecting anime, never their media rows.
+        if include_ids is not None:
+            stmt = stmt.where(Anime.id.in_(include_ids))
+        if exclude_ids:
+            stmt = stmt.where(Anime.id.not_in(exclude_ids))
+        your_rating = None
+        if sort == SortKey.YOUR_RATING:
+            stmt = stmt.outerjoin(Ratings, rating_of(user_id))
+            your_rating = func.avg(Ratings.rating)
 
         # GROUP BY the PK alone: Anime's own columns in the title match and the sort
         # keys below ride functional dependency on it, and the description match,
@@ -543,7 +560,9 @@ class AnimeDAO(MalIdDAO[Anime]):
         else:
             passes = [stmt]
 
-        order = None if query and sort == SortKey.RELEVANCE else sort_order(sort, sort_dir, name_language, having=True)
+        order = None if query and sort == SortKey.RELEVANCE else sort_order(
+            sort, sort_dir, name_language, having=True, your_rating=your_rating,
+        )
         anime_ids = await fetch_search_results(db, *passes, order=order)
         if not anime_ids:
             return []

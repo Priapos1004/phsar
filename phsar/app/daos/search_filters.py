@@ -635,6 +635,7 @@ def utc_today() -> date:
 
 def sort_order(
     sort: SortKey, sort_dir: SortDir | None, name_language: NameLanguage, *, having: bool = False,
+    your_rating=None,
 ) -> list:
     """ORDER BY for `sort` over Media rows, or over the anime grain's grouped rows with
     `having` (aggregates and Anime columns only, both valid under its GROUP BY).
@@ -647,7 +648,10 @@ def sort_order(
     among them the better one should lead.
 
     RELEVANCE only reaches here without a query, where it is the default order: top
-    rated, in its default direction. A query's own match order belongs to its passes."""
+    rated, in its default direction. A query's own match order belongs to its passes.
+
+    YOUR_RATING orders by `your_rating`, which the DAO that joins the caller's ratings
+    passes (docs/features/search.md, Personal filters and sort)."""
     if sort == SortKey.RELEVANCE:
         sort_dir = None
     model: type[Anime] | type[Media] = Anime if having else Media
@@ -669,6 +673,9 @@ def sort_order(
             key = display_title(model, name_language)
         case SortKey.RANDOM:
             key = func.md5(cast(model.uuid, Text) + utc_today().isoformat())
+        case SortKey.YOUR_RATING:
+            assert your_rating is not None
+            key = your_rating
         case SortKey.TOP_RATED | SortKey.RELEVANCE:
             key = weighted
     ascending = sort_dir == SortDir.ASC if sort_dir else sort in (SortKey.TITLE, SortKey.RELEASE)

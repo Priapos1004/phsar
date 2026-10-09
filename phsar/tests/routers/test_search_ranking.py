@@ -13,6 +13,10 @@ catalogue change fails there instead of silently voiding the test.
 
 A sort orders the rows a query matched, or the whole catalogue without one.
 
+The caller's own ratings and watchlist filter and sort it too. Their fixtures rate and
+list through the real endpoints, as the caller and, where another user's rating must
+not count, as the admin.
+
 Every query goes through `_ordered_fixture_titles`, which scopes it to the fixture.
 """
 
@@ -47,12 +51,13 @@ from app.models.media_genre import MediaGenre
 from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
+from app.services import anime_search_service, media_search_service
 from app.services.media_search_service import media_title_texts
 from app.services.vector_embedding_service import (
     create_media_embedding,
     generate_query_embedding,
 )
-from tests._helpers import SentinelSeason, media_kwargs
+from tests._helpers import SentinelSeason, list_media, media_kwargs, rate_media
 
 ANIME_SEARCH_URL = "/search/anime"
 MEDIA_SEARCH_URL = "/search/media"
@@ -68,15 +73,16 @@ async def _make_anime(
     in_season: bool = True, **columns,
 ) -> Anime:
     """An anime and its media, stamped with the sentinel season unless `in_season` is
-    off. `media` holds each media's `media_kwargs` overrides; by default one Main media
-    carrying the anime's own title, so the fixture serves the media view unchanged.
-    `columns` are the anime's own beyond its title."""
+    off or the media's overrides carry a season of their own. `media` holds each media's
+    `media_kwargs` overrides; by default one Main media carrying the anime's own title,
+    so the fixture serves the media view unchanged. `columns` are the anime's own beyond
+    its title."""
     anime = Anime(mal_id=mal_id, title=title, **columns)
     db_session.add(anime)
     await db_session.flush()
     season = _RANK_SEASON.columns if in_season else {}
     for i, overrides in enumerate(media or [{"title": title}]):
-        db_session.add(Media(**media_kwargs(anime.id, mal_id * 10 + i, **season, **overrides)))
+        db_session.add(Media(**media_kwargs(anime.id, mal_id * 10 + i, **{**season, **overrides})))
     await db_session.flush()
     return anime
 
@@ -311,8 +317,7 @@ async def _describe(client, headers, db_session, url: str, *titles: str) -> None
         if embedded:
             await create_media_embedding(db_session, media.id, media_title_texts(media), media.description)
         if url == RATINGS_SEARCH_URL:
-            resp = await client.put(f"/ratings/media/{media.uuid}", json={"rating": 7.0}, headers=headers)
-            assert resp.status_code == 200, resp.text
+            await rate_media(client, headers, media.uuid, rating=7.0)
 
 
 async def _distances_and_cutoff(db_session, query: str) -> tuple[dict[str, float], float]:
@@ -935,6 +940,280 @@ async def test_studio_mode_counts_only_the_media_the_other_filters_match(
             client, user_auth_headers, url=ANIME_SEARCH_URL, expect=titles,
             studio_name=studios, studio_mode=mode, media_type="TV",
         )
+
+
+# ---------------------------------------------------------------------------
+# The caller's own ratings and watchlist
+# ---------------------------------------------------------------------------
+
+_DONE, _HOLD, _DROP = "completed", "on_hold", "dropped"
+
+
+async def _media_uuids(db_session, titles) -> dict[str, UUID]:
+    return dict((await db_session.execute(select(Media.title, Media.uuid).where(Media.title.in_(titles)))).all())
+
+
+async def _make_rated(db_session, client, headers, fixture: dict, *, mal_id: int) -> None:
+    """`_make_franchises` over `fixture`, whose media are `(title, columns, status)`,
+    each media with a status rated with it."""
+    await _make_franchises(
+        db_session, {anime: [(title, columns) for title, columns, _ in media] for anime, media in fixture.items()},
+        mal_id=mal_id,
+    )
+    statuses = {title: status for media in fixture.values() for title, _, status in media if status}
+    uuids = await _media_uuids(db_session, statuses)
+    for title, status in statuses.items():
+        await rate_media(client, headers, uuids[title], status)
+
+
+# Anime → its media (title, columns, the caller's watch status); Main and finished unless
+# the columns say otherwise.
+_RATED_FIXTURE = {
+    "Rst Unrated": [("Rst Unrated", {}, None)],
+    "Rst Progress": [("Rst Progress", {}, _DONE), ("Rst Progress 2", {}, None)],
+    "Rst Side Only": [("Rst Side Only", {}, None), ("Rst Side Only OVA", _SIDE, _DONE)],
+    "Rst Main": [("Rst Main", {}, _DONE), ("Rst Main OVA", _SIDE, None)],
+    "Rst All": [("Rst All", {}, _DONE), ("Rst All OVA", _SIDE, _DONE)],
+    "Rst Dropped": [("Rst Dropped", {}, _DROP), ("Rst Dropped 2", {}, _HOLD)],
+    "Rst On Hold": [("Rst On Hold", {}, _HOLD), ("Rst On Hold 2", {}, _DONE)],
+    "Rst Side Bailed": [
+        ("Rst Side Bailed", {}, _DONE), ("Rst Side Bailed 2", {}, None),
+        ("Rst Side Bailed OVA", _SIDE, _DROP), ("Rst Side Bailed Special", _SIDE, _HOLD),
+    ],
+    "Rst Unaired Main": [("Rst Unaired Main", _UNAIRED, None), ("Rst Unaired Main OVA", _SIDE, _DONE)],
+    "Rst Sequel": [("Rst Sequel", {}, _DONE), ("Rst Sequel 2", _UNAIRED, None)],
+}
+
+# The anime states, written out by hand. Each precedence case has a row where the other
+# order gives another state: Dropped holds an on-hold main too, All is also main-complete.
+# Side Bailed dropped and paused only side stories, so it stays in progress; Unaired Main
+# has no rateable main, so its finished side story makes it neither main nor all; Sequel's
+# announced main can't be rated, so it is all. Untested: dropped and on-hold count only
+# rateable mains, which needs a rating on an unaired media — no write path makes one.
+_ANIME_STATES = {
+    "Rst Unrated": "none", "Rst Progress": "in_progress", "Rst Side Only": "in_progress",
+    "Rst Main": "main", "Rst All": "all", "Rst Dropped": "dropped", "Rst On Hold": "on_hold",
+    "Rst Side Bailed": "in_progress", "Rst Unaired Main": "in_progress", "Rst Sequel": "all",
+}
+_MEDIA_STATES = {title: status or "none" for media in _RATED_FIXTURE.values() for title, _, status in media}
+
+# Main and All are listed through a side story only: an anime is listed when any of its
+# media is.
+_LISTED_MEDIA = {"Rst Unrated", "Rst Progress 2", "Rst Main OVA", "Rst All OVA"}
+_LISTED_ANIME = {"Rst Unrated", "Rst Progress", "Rst Main", "Rst All"}
+
+
+@pytest.fixture
+async def rated_set(db_session, client, user_auth_headers):
+    await _make_rated(db_session, client, user_auth_headers, _RATED_FIXTURE, mal_id=87801)
+    await list_media(client, user_auth_headers, *(await _media_uuids(db_session, _LISTED_MEDIA)).values())
+
+
+def _personal_expect(states: dict[str, str], listed: set[str], rated=None, watchlisted=None) -> set[str]:
+    return {
+        title for title, state in states.items()
+        if (rated is None or state in rated) and (watchlisted is None or (title in listed) == watchlisted)
+    }
+
+
+def _case_id(params: dict) -> str:
+    return "&".join(f"{key}={'+'.join(value) if isinstance(value, list) else value}" for key, value in params.items())
+
+
+@pytest.mark.parametrize("params", [
+    {"rated": ["none"]}, {"rated": ["in_progress"]}, {"rated": ["on_hold"]}, {"rated": ["dropped"]},
+    {"rated": ["main"]}, {"rated": ["all"]},
+    {"rated": ["none", "main"]}, {"rated": ["in_progress", "on_hold"]},
+    {"rated": ["none", "in_progress", "on_hold", "dropped", "main", "all"]},
+    {"watchlisted": True}, {"watchlisted": False},
+    {"rated": ["none"], "watchlisted": True}, {"rated": ["in_progress"], "watchlisted": True},
+    {"rated": ["none", "dropped"], "watchlisted": False}, {"rated": ["all"], "watchlisted": False},
+], ids=_case_id)
+async def test_anime_rated_states_and_watchlist(client, user_auth_headers, rated_set, params):
+    """Each state alone and in unions, listed or not, and both together."""
+    await _ordered_fixture_titles(
+        client, user_auth_headers, url=ANIME_SEARCH_URL,
+        expect=_personal_expect(_ANIME_STATES, _LISTED_ANIME, **params), **params,
+    )
+
+
+@pytest.mark.parametrize("params", [
+    {"rated": ["none"]}, {"rated": ["completed"]}, {"rated": ["on_hold"]}, {"rated": ["dropped"]},
+    {"rated": ["none", "dropped"]}, {"rated": ["completed", "on_hold"]},
+    {"rated": ["none", "completed", "on_hold", "dropped"]},
+    {"watchlisted": True}, {"watchlisted": False},
+    {"rated": ["none"], "watchlisted": True}, {"rated": ["completed"], "watchlisted": True},
+    {"rated": ["completed"], "watchlisted": False},
+], ids=_case_id)
+async def test_media_rated_states_and_watchlist(client, user_auth_headers, rated_set, params):
+    """A media's state is its own rating's watch status, whatever its anime's is."""
+    await _ordered_fixture_titles(
+        client, user_auth_headers, url=MEDIA_SEARCH_URL,
+        expect=_personal_expect(_MEDIA_STATES, _LISTED_MEDIA, **params), **params,
+    )
+
+
+@pytest.mark.parametrize(("url", "rated"), [
+    (MEDIA_SEARCH_URL, ["in_progress"]), (MEDIA_SEARCH_URL, ["none", "main"]), (MEDIA_SEARCH_URL, ["all"]),
+    (ANIME_SEARCH_URL, ["completed"]),
+], ids=["media_in_progress", "media_main", "media_all", "anime_completed"])
+async def test_rated_state_of_the_other_grain_is_rejected(client, user_auth_headers, url, rated):
+    resp = await client.get(url, params={"rated": rated}, headers=user_auth_headers)
+    assert resp.status_code == 400, resp.text
+
+
+@_BOTH_VIEWS
+@pytest.mark.parametrize(("params", "status"), [
+    ({}, 200),
+    ({"rated": ["none"]}, 403),
+    ({"watchlisted": True}, 403),
+    ({"watchlisted": False}, 403),
+    ({"sort": "your_rating"}, 403),
+], ids=["plain", "rated", "watchlisted", "not_watchlisted", "your_rating"])
+async def test_personal_filters_and_sort_are_closed_to_guests(
+    client, restricted_user_auth_headers, url, params, status,
+):
+    """A guest searches, but has no ratings or watchlist to search by."""
+    resp = await client.get(
+        url, params={"anime_season": _RANK_SEASON.filter, **params}, headers=restricted_user_auth_headers,
+    )
+    assert resp.status_code == status, resp.text
+
+
+@pytest.mark.parametrize(("url", "dao", "method"), [
+    (ANIME_SEARCH_URL, anime_search_service.anime_dao, "search_anime_aggregated"),
+    (MEDIA_SEARCH_URL, media_search_service.media_dao, "search_media_with_filters"),
+], ids=["anime", "media"])
+async def test_an_empty_personal_scope_skips_the_search(client, user_auth_headers, monkeypatch, url, dao, method):
+    """Nothing dropped, so nothing can match, and no search query runs."""
+    async def never(*args, **kwargs):
+        raise AssertionError("searched an empty scope")
+    monkeypatch.setattr(dao, method, never)
+    resp = await client.get(url, params={"rated": ["dropped"]}, headers=user_auth_headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == []
+
+
+# Anime → its media (title, columns, the caller's rating); Main unless the columns say
+# otherwise. Inserted in an order no expected one follows.
+_YOURS = {
+    "Yr Six": [("Yr Six", {"score": 8.5}, 6.0)],
+    "Yr Mixed": [
+        ("Yr Mixed", {"score": 8.0}, 9.0), ("Yr Mixed 2", {"score": 8.0}, 5.0),
+        ("Yr Mixed Side", {**_SIDE, "score": 6.0}, None),
+    ],
+    "Yr Unrated": [("Yr Unrated", {"score": 9.0}, None)],
+    "Yr Eight": [("Yr Eight", {"score": 7.0}, 8.0)],
+}
+
+
+@pytest.mark.parametrize(("url", "descending", "unrated"), [
+    (ANIME_SEARCH_URL, ["Yr Eight", "Yr Mixed", "Yr Six"], ["Yr Unrated"]),
+    (MEDIA_SEARCH_URL, ["Yr Mixed", "Yr Eight", "Yr Six", "Yr Mixed 2"], ["Yr Unrated", "Yr Mixed Side"]),
+], ids=["anime", "media"])
+@pytest.mark.parametrize("sort_dir", [None, "desc", "asc"], ids=["default", "desc", "asc"])
+async def test_your_rating_sorts_by_the_callers_mean(
+    client, user_auth_headers, admin_auth_headers, db_session, url, descending, unrated, sort_dir,
+):
+    """An anime sorts at the mean of the caller's ratings over its rated media: Mixed's 9
+    and 5 make 7, between Eight and Six, where the max, min, sum or an unrated side
+    story counted as 0 would put it elsewhere. A media sorts at its own rating. Top rated
+    runs the other way (Unrated, Six, Mixed, Eight). Unrated rows come last both ways —
+    Unrated although the admin rated it 10 — in the weighted score's order."""
+    await _make_franchises(db_session, {
+        anime: [(title, {**columns, "scored_by": 100_000}) for title, columns, _ in media]
+        for anime, media in _YOURS.items()
+    }, mal_id=87821)
+    ratings = {title: rating for media in _YOURS.values() for title, _, rating in media if rating}
+    uuids = await _media_uuids(db_session, [*ratings, "Yr Unrated"])
+    for title, rating in ratings.items():
+        await rate_media(client, user_auth_headers, uuids[title], _DONE, rating)
+    await rate_media(client, admin_auth_headers, uuids["Yr Unrated"], _DONE, 10.0)
+
+    expected = [*(reversed(descending) if sort_dir == "asc" else descending), *unrated]
+    params = {"sort": "your_rating"} | ({"sort_dir": sort_dir} if sort_dir else {})
+    ordered = await _ordered_fixture_titles(client, user_auth_headers, url=url, expect=set(expected), **params)
+    assert ordered == expected
+
+
+@pytest.mark.parametrize("params", [
+    {"rated": ["in_progress"]}, {"watchlisted": True}, {"sort": "your_rating"},
+], ids=["rated", "watchlisted", "your_rating"])
+async def test_personal_filters_and_sort_do_not_rescope_the_aggregates(
+    client, user_auth_headers, db_session, params,
+):
+    """The caller rated and listed only the side story (weight 0) of an anime whose main
+    story scores 8.0. Narrowing the grouped rows to those media would leave the anime
+    unscored, and `score_min` — a HAVING over Phase A's aggregates, which the card's
+    refetch never sees — would drop it."""
+    await _make_anime(db_session, mal_id=87831, title="Rsc Scoped", media=[
+        {"title": "Rsc Scoped", "score": 8.0, "scored_by": 1000},
+        {"title": "Rsc Scoped OVA", "relation_type": RelationType.SideStory, "score": 5.0, "scored_by": 1000},
+    ])
+    side = (await _media_uuids(db_session, ["Rsc Scoped OVA"]))["Rsc Scoped OVA"]
+    await rate_media(client, user_auth_headers, side, _DONE)
+    await list_media(client, user_auth_headers, side)
+    await _ordered_fixture_titles(
+        client, user_auth_headers, url=ANIME_SEARCH_URL, expect={"Rsc Scoped"}, score_min=7, **params,
+    )
+
+
+def _announced(name: SeasonType, year: int) -> dict:
+    return {**_season(name, year), **_UNAIRED}
+
+
+# Inserted latest announcement first; Dropped and Unrated announce earliest, so either
+# would lead if it slipped in, and Finished is all done but announces nothing.
+_CONTINUATIONS = {
+    "Anc Later": [("Anc Later", {}, _DONE), ("Anc Later 2", _announced(SeasonType.Fall, 2031), None)],
+    "Anc Hold": [("Anc Hold", {}, _HOLD), ("Anc Hold 2", _announced(SeasonType.Spring, 2031), None)],
+    "Anc Main": [
+        ("Anc Main", {}, _DONE), ("Anc Main OVA", _SIDE, None),
+        ("Anc Main 2", _announced(SeasonType.Summer, 2030), None),
+    ],
+    "Anc Progress": [
+        ("Anc Progress", {}, _DONE), ("Anc Progress 2", {}, None),
+        ("Anc Progress 3", _announced(SeasonType.Winter, 2030), None),
+    ],
+    "Anc Dropped": [("Anc Dropped", {}, _DROP), ("Anc Dropped 2", _announced(SeasonType.Winter, 2029), None)],
+    "Anc Unrated": [("Anc Unrated", {}, None), ("Anc Unrated 2", _announced(SeasonType.Winter, 2029), None)],
+    "Anc Finished": [("Anc Finished", {}, _DONE)],
+}
+_CONTINUATIONS_QUERY = {
+    "sort": "release", "upcoming_main": True, "rated": ["in_progress", "on_hold", "main", "all"], "limit": 25,
+}
+
+
+async def test_announced_continuations_carousel(
+    client, user_auth_headers, restricted_user_auth_headers, db_session,
+):
+    """The anime you have rated, short of dropping them, with a main story announced —
+    the next season first."""
+    await _make_rated(db_session, client, user_auth_headers, _CONTINUATIONS, mal_id=87841)
+    expected = ["Anc Progress", "Anc Main", "Anc Hold", "Anc Later"]
+    ordered = await _ordered_fixture_titles(
+        client, user_auth_headers, url=ANIME_SEARCH_URL, expect=set(expected), **_CONTINUATIONS_QUERY,
+    )
+    assert ordered == expected
+
+    resp = await client.get(ANIME_SEARCH_URL, params=_CONTINUATIONS_QUERY, headers=restricted_user_auth_headers)
+    assert resp.status_code == 403, resp.text
+
+
+@pytest.mark.parametrize("params", [{"watchlisted": True}, {"rated": ["none"]}], ids=["watchlisted", "unrated"])
+async def test_media_personal_filters_stay_inside_the_spoiler_frontier(
+    client, user_auth_headers, db_session, params,
+):
+    """In hide mode, rating Spf 1 reveals it and the next main, Spf 2; Spf 3 lies beyond
+    the frontier. Listed and unrated, Spf 3 still stays hidden: the personal filters
+    narrow the visible set, never replace it."""
+    await _make_anime(db_session, mal_id=87851, title="Spf", media=[{"title": f"Spf {n}"} for n in (1, 2, 3)])
+    uuids = await _media_uuids(db_session, ["Spf 1", "Spf 2", "Spf 3"])
+    await rate_media(client, user_auth_headers, uuids["Spf 1"], _DONE)
+    await list_media(client, user_auth_headers, uuids["Spf 2"], uuids["Spf 3"])
+    resp = await client.put("/users/settings", json={"spoiler_level": "hide"}, headers=user_auth_headers)
+    assert resp.status_code == 200, resp.text
+    await _ordered_fixture_titles(client, user_auth_headers, url=MEDIA_SEARCH_URL, expect={"Spf 2"}, **params)
 
 
 # ---------------------------------------------------------------------------

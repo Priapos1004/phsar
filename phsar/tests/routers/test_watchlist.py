@@ -6,7 +6,7 @@ from app.models.anime import Anime
 from app.models.media import Media, RelationType, SeasonType
 from app.models.ratings import Ratings, WatchStatus
 from app.schemas.common_schema import BULK_MEDIA_LIMIT
-from tests._helpers import make_user, media_kwargs
+from tests._helpers import default_tag_uuid, make_user, media_kwargs
 
 
 # NEGATIVE mal_ids so fixtures can't collide with the dev DB's real catalog on the
@@ -34,11 +34,6 @@ async def test_media_list(db_session):
     return media
 
 
-async def _default_tag_uuid(client, headers) -> str:
-    tags = (await client.get("/watchlist/tags", headers=headers)).json()
-    return next(t["uuid"] for t in tags if t["is_default"])
-
-
 async def _two_noted_mains(client, headers, db_session, mal_id: int):
     """An anime with two listed main seasons, S1 (earlier, "note A") and S2 ("note B").
     Returns (anime, s1, s2, default tag uuid)."""
@@ -52,7 +47,7 @@ async def _two_noted_mains(client, headers, db_session, mal_id: int):
     db_session.add_all([s1, s2])
     await db_session.flush()
 
-    tag_uuid = await _default_tag_uuid(client, headers)
+    tag_uuid = await default_tag_uuid(client, headers)
     for m, note in ((s1, "note A"), (s2, "note B")):
         resp = await client.put(
             f"/watchlist/media/{m.uuid}",
@@ -158,7 +153,7 @@ async def test_empty_endpoint_on_default_tag(client, user_auth_headers):
 # --- Entries ---
 
 async def test_upsert_entry_and_media_tags(client, user_auth_headers, test_media):
-    tag_uuid = await _default_tag_uuid(client, user_auth_headers)
+    tag_uuid = await default_tag_uuid(client, user_auth_headers)
     resp = await client.put(
         f"/watchlist/media/{test_media.uuid}",
         json={"tag_uuid": tag_uuid, "priority": 1, "note": "soon"},
@@ -186,7 +181,7 @@ async def test_upsert_entry_and_media_tags(client, user_auth_headers, test_media
 
 
 async def test_upsert_defaults_priority(client, user_auth_headers, test_media):
-    tag_uuid = await _default_tag_uuid(client, user_auth_headers)
+    tag_uuid = await default_tag_uuid(client, user_auth_headers)
     resp = await client.put(
         f"/watchlist/media/{test_media.uuid}",
         json={"tag_uuid": tag_uuid},
@@ -197,7 +192,7 @@ async def test_upsert_defaults_priority(client, user_auth_headers, test_media):
 
 
 async def test_delete_entry(client, user_auth_headers, test_media):
-    tag_uuid = await _default_tag_uuid(client, user_auth_headers)
+    tag_uuid = await default_tag_uuid(client, user_auth_headers)
     await client.put(
         f"/watchlist/media/{test_media.uuid}",
         json={"tag_uuid": tag_uuid}, headers=user_auth_headers,
@@ -225,7 +220,7 @@ async def test_anime_entries_name_the_media_a_bulk_note_lands_on(client, user_au
     db_session.add_all([later_main, earliest_main, earlier_side])
     await db_session.flush()
 
-    tag_uuid = await _default_tag_uuid(client, user_auth_headers)
+    tag_uuid = await default_tag_uuid(client, user_auth_headers)
     media = [later_main, earliest_main, earlier_side]
     resp = await client.put(
         "/watchlist/bulk",
@@ -323,7 +318,7 @@ async def test_bulk_upsert_note_on_first_main(client, user_auth_headers, db_sess
     db_session.add_all([winner, later_main, earlier_side])
     await db_session.flush()
 
-    tag_uuid = await _default_tag_uuid(client, user_auth_headers)
+    tag_uuid = await default_tag_uuid(client, user_auth_headers)
     resp = await client.put(
         "/watchlist/bulk",
         json={
@@ -345,7 +340,7 @@ async def test_bulk_upsert_note_on_first_main(client, user_auth_headers, db_sess
 
 
 async def test_bulk_delete_entries(client, user_auth_headers, test_media_list):
-    tag_uuid = await _default_tag_uuid(client, user_auth_headers)
+    tag_uuid = await default_tag_uuid(client, user_auth_headers)
     await client.put(
         "/watchlist/bulk",
         json={"media_uuids": [str(m.uuid) for m in test_media_list], "tag_uuid": tag_uuid},
@@ -395,7 +390,7 @@ async def listed(db_session):
 async def _watchlist_items(client, headers, media, db_session):
     """Watchlist `media`, then return the single /watchlist/items row for it."""
     await db_session.flush()
-    tag_uuid = await _default_tag_uuid(client, headers)
+    tag_uuid = await default_tag_uuid(client, headers)
     resp = await client.put(
         f"/watchlist/media/{media.uuid}", json={"tag_uuid": tag_uuid}, headers=headers
     )
@@ -466,7 +461,7 @@ async def test_franchise_airing_counts_media_the_user_watchlisted(
     and that hazard returns with the frontend suite green — its fixtures set
     `franchise_airing` by hand, so they pin the column's value and never its scope.
     """
-    tag_uuid = await _default_tag_uuid(client, user_auth_headers)
+    tag_uuid = await default_tag_uuid(client, user_auth_headers)
     airing = Media(**media_kwargs(
         listed.anime_id, -64003, title="Listed S2",
         airing_status="Currently Airing", relation_type=RelationType.Main,

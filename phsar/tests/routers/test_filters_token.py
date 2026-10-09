@@ -12,7 +12,10 @@ VALID_FILTER_PAYLOAD = {
 }
 
 # Optional, so a token minted without them verifies to their defaults.
-OPTIONAL_FILTERS = {"top_percent": 20, "genre_mode": "any", "studio_mode": "all", "upcoming_main": True}
+OPTIONAL_FILTERS = {
+    "top_percent": 20, "genre_mode": "any", "studio_mode": "all", "upcoming_main": True,
+    "rated": ["in_progress", "main"], "watchlisted": False,
+}
 
 TOO_LONG_FILTER_PAYLOAD = {
     "query": (
@@ -158,6 +161,7 @@ async def test_token_without_the_optional_filters_reads_their_defaults(client, u
     data = await _round_trip(client, user_auth_headers, VALID_FILTER_PAYLOAD)
     assert {key: data[key] for key in OPTIONAL_FILTERS} == {
         "top_percent": None, "genre_mode": "all", "studio_mode": "any", "upcoming_main": False,
+        "rated": None, "watchlisted": None,
     }
 
 

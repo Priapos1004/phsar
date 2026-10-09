@@ -39,6 +39,13 @@ for _f in _RATING_ATTR_FIELDS:
     assert hasattr(Ratings, _f), f"RatingAttributes field '{_f}' missing from Ratings model"
 
 
+def rating_of(user_id: int):
+    """Join condition from each `Media` row to `user_id`'s rating of it.
+    `unique_user_media_rating` makes it 0-or-1, so as an outer join it never fans a
+    media row set out and every aggregate over those rows stays a per-media one."""
+    return (Ratings.media_id == Media.id) & (Ratings.user_id == user_id)
+
+
 class RatingDAO(BaseDAO[Ratings]):
     def __init__(self):
         super().__init__(Ratings)
@@ -94,40 +101,46 @@ class RatingDAO(BaseDAO[Ratings]):
         return list((await db.execute(stmt)).scalars().all())
 
     async def get_anime_coverage(self, db: AsyncSession, user_id: int) -> list[Row]:
-        """Per-anime counts behind the rated-coverage tier, for every anime the user
-        has rated at least one media of. The counts, not the tier — `rating_service`
-        turns them into one.
+        """Per-anime counts behind the rated state and the coverage tier, for every
+        anime the user has rated at least one media of. The counts, not the state —
+        `rating_service` turns them into one.
 
         Scoped to the anime the user has actually rated — bounded by their library,
         not the catalogue — for the reason spelled out in
         `media_projections._name_agg`. That scope is also what keeps untouched anime
         out of the response, pinned by `test_untouched_anime_is_absent_from_the_response`.
-        `unique_user_media_rating` makes the outer join 0-or-1, so it cannot fan the
-        media rows out and every count stays a count of media.
         """
-        rated_anime = select(Media.anime_id).join(
-            Ratings, (Ratings.media_id == Media.id) & (Ratings.user_id == user_id)
-        )
+        rated_anime = select(Media.anime_id).join(Ratings, rating_of(user_id))
         rateable = Media.is_rateable
-        is_main = Media.relation_type.in_(MAIN_STORY_RELATIONS)
+        main = rateable & Media.relation_type.in_(MAIN_STORY_RELATIONS)
         # NULL for an unrated media, and a NULL filter predicate excludes the row —
         # which is exactly the "not completed" reading we want.
-        completed = Ratings.watch_status == WatchStatus.completed
+        status = Ratings.watch_status
+        completed = status == WatchStatus.completed
         stmt = (
             select(
+                Anime.id.label("anime_id"),
                 Anime.uuid.label("anime_uuid"),
                 func.count().filter(rateable).label("n_all"),
                 func.count().filter(rateable & completed).label("done_all"),
-                func.count().filter(rateable & is_main).label("n_main"),
-                func.count().filter(rateable & is_main & completed).label("done_main"),
+                func.count().filter(main).label("n_main"),
+                func.count().filter(main & completed).label("done_main"),
+                func.count().filter(main & (status == WatchStatus.dropped)).label("dropped_main"),
+                func.count().filter(main & (status == WatchStatus.on_hold)).label("on_hold_main"),
             )
             .select_from(Media)
             .join(Anime, Anime.id == Media.anime_id)
-            .outerjoin(Ratings, (Ratings.media_id == Media.id) & (Ratings.user_id == user_id))
+            .outerjoin(Ratings, rating_of(user_id))
             .where(Media.anime_id.in_(rated_anime))
-            .group_by(Anime.uuid)
+            .group_by(Anime.id)
         )
         return list((await db.execute(stmt)).all())
+
+    async def get_watch_status_by_media_id(self, db: AsyncSession, user_id: int) -> dict[int, WatchStatus]:
+        """Every media the user has rated, with the rating's watch status — a media's
+        rated state in search."""
+        stmt = select(Ratings.media_id, Ratings.watch_status).where(Ratings.user_id == user_id)
+        return dict((await db.execute(stmt)).tuples().all())
 
     async def bulk_delete_by_user_and_media_ids(
         self, db: AsyncSession, user_id: int, media_ids: list[int]

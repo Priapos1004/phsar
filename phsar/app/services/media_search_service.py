@@ -5,22 +5,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.media_dao import MediaDAO
 from app.daos.rating_dao import RatingDAO
+from app.daos.watchlist_dao import WatchlistDAO
 from app.exceptions import MediaNotFoundError
 from app.models.media import Media
 from app.models.user_settings import NameLanguage
 from app.schemas.media_filter_schema import (
     CatalogueSearchFilters,
+    RatedState,
     SearchType,
     SortDir,
     SortKey,
 )
 from app.schemas.media_schema import MediaDetail, MediaSearchResult, MediaSibling
-from app.services.filter_service import chronological_media_key
+from app.services.filter_service import chronological_media_key, personal_scope
 
 logger = logging.getLogger(__name__)
 
 media_dao = MediaDAO()
 rating_dao = RatingDAO()
+watchlist_dao = WatchlistDAO()
 
 
 def media_title_texts(media: Media) -> list[str | None]:
@@ -86,7 +89,18 @@ async def search_media_by_query(
     logger.info(f"Query: {query}")
     logger.info(f"Filters: {filters.model_dump()}")
     logger.info(f"Search type: {search_type}")
-    # Get ORM objects from DAO
+    # Read off the DAO, since `rating_service` imports this module.
+    states = {
+        media_id: RatedState(status.value)
+        for media_id, status in (await rating_dao.get_watch_status_by_media_id(db, user_id)).items()
+    } if filters.rated else {}
+    include, exclude = personal_scope(
+        filters, states,
+        await watchlist_dao.get_listed_ids(db, user_id, per_anime=False) if filters.watchlisted is not None else set(),
+        include=visible_media_ids,
+    )
+    if include is not None and not include:
+        return []
     media_list: list[Media] = await media_dao.search_media_with_filters(
         db=db,
         query=query,
@@ -96,10 +110,12 @@ async def search_media_by_query(
         sort_dir=sort_dir,
         name_language=name_language,
         limit=limit,
-        visible_media_ids=visible_media_ids,
+        user_id=user_id,
+        include_ids=include,
+        exclude_ids=exclude,
     )
 
-    # Filled after the search, not inside it — see "The caller's own ratings" in
+    # Filled after the search, not inside it — see "Personal filters and sort" in
     # docs/features/search.md for why it stays out of `daos/search_filters`.
     rated_ids = set(await rating_dao.get_rated_media_ids(db, user_id, [m.id for m in media_list]))
     return [

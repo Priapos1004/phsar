@@ -240,6 +240,14 @@ class InvalidSearchTypeError(PhsarBaseError):
         super().__init__(message)
 
 
+class InvalidRatedStateError(PhsarBaseError):
+    """Raised when a `rated` state belongs to the other search grain."""
+
+    def __init__(self, states: list[str]):
+        message = f"Rated state(s) {', '.join(states)} not supported on this endpoint."
+        super().__init__(message)
+
+
 class RatingNotFoundError(PhsarBaseError):
     """Raised when a rating is not found or not owned by the user."""
     status_code = 404

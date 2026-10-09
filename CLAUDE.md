@@ -39,8 +39,8 @@ that touches its area, before settling on an approach.
 | [relations](docs/features/relations.md) | Two-pass classifier, substance gate, split detection, merge signals |
 | [curation](docs/features/curation.md) | The admin merge/split/delete queues: candidate lifecycle, sticky dismissal, what deleting costs, blacklisting |
 | [jobs](docs/features/jobs.md) | Worker, job kinds, due-tiers, `result_summary` versioning, the sweeps |
-| [search](docs/features/search.md) | Embeddings, ranking, anime-view filters, main-story scoring |
-| [ratings](docs/features/ratings.md) | Write guards, watch events, rated-coverage tiers, the one-fetch scores projection |
+| [search](docs/features/search.md) | Embeddings, ranking, anime-view and personal filters, sorting, main-story scoring |
+| [ratings](docs/features/ratings.md) | Write guards, watch events, rated states and coverage tiers, the one-fetch scores projection |
 | [backups](docs/features/backups.md) | Dump/restore, retention pools, the restorability verdict |
 | [spoilers](docs/features/spoilers.md) | Frontier algorithm, visibility cache |
 | [readiness](docs/features/readiness.md) | "Can I start this tonight?" — media temporal classes, the per-anime verdict, the standalone rule |

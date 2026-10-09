@@ -172,20 +172,32 @@ after its season has passed sorts at that past season.
 
 **Title sorts in the user's name language**, through `display_title`. **Random is
 daily**: md5 of the row's uuid and the UTC date, so every viewer gets the same order
-that day.
+that day. **Your rating** is the mean of the caller's ratings over the anime's rated
+media, whatever their status — the `/ratings` page's mean — or the media's own rating;
+unrated rows come last.
 
-## The caller's own ratings
+## Personal filters and sort
 
-Media-view results carry `is_rated` (`MediaSearchResult`), so a hit can show that
-the caller already rated it. It is filled after the search query, from one indexed
-lookup over the page of hits — bounded by the result limit, and deliberately not
-threaded into `daos/search_filters.py`, which knows nothing about a user and must
-keep it that way: the anime query's GROUP BY and the "a filter never rescopes the
-aggregates" invariant both depend on that.
+**`rated`, `watchlisted` and `your_rating` read the caller's own data, and
+`daos/search_filters.py` still knows nothing about a user** — the anime query's GROUP BY
+and the [Anime-view filters](#anime-view-filters) invariant depend on that. The service
+resolves the personal filters to ids (`filter_service.personal_scope`) and the DAOs select rows
+by them, `IN` / `NOT IN` on the primary key, so the grouped media and every aggregate stay
+whole. `your_rating` reaches `sort_order` as a key the DAO builds over its own outer join
+onto the caller's ratings. Pinned by `test_personal_filters_and_sort_do_not_rescope_the_aggregates`.
 
-The anime grain has no equivalent field. Its counterpart is the per-anime coverage
-tier from `/ratings/coverage`, which the client indexes by anime uuid — see
-[ratings.md](ratings.md).
+- **States are a union.** The anime grain takes the [rated states](ratings.md#rated-state-and-coverage);
+  the media grain its own rating's watch status, or `none`. A state of the other grain is
+  a 400.
+- **An anime is watchlisted when any of its media is**, as its bookmark shows.
+- **They narrow the spoiler scope, never replace it**: in hide mode the media grain
+  starts from the visible set.
+- **A guest gets 403** for any of them, `watchlisted=false` included: a read scoped to
+  the caller (`rules/backend.md`, Roles).
+
+Media-view results also carry `is_rated` (`MediaSearchResult`), filled after the query
+from one indexed lookup over the page of hits. The anime grain's counterpart is the
+coverage tier from `/ratings/coverage`, which the client indexes by anime uuid.
 
 ## Ordering media within an anime
 

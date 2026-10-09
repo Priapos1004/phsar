@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.anime_dao import AnimeDAO
+from app.daos.watchlist_dao import WatchlistDAO
 from app.exceptions import AnimeNotFoundByUuidError
 from app.models.media import (
     AIRING_STATUS_CURRENTLY_AIRING,
@@ -30,11 +31,13 @@ from app.schemas.media_filter_schema import (
     SortDir,
     SortKey,
 )
-from app.services.filter_service import chronological_media_key
+from app.services.filter_service import chronological_media_key, personal_scope
+from app.services.rating_service import rated_states_by_anime_id
 
 logger = logging.getLogger(__name__)
 
 anime_dao = AnimeDAO()
+watchlist_dao = WatchlistDAO()
 
 
 def _compute_airing_status(statuses: list[str]) -> tuple[str, bool]:
@@ -237,10 +240,19 @@ async def search_anime_by_query(
     sort_dir: SortDir | None,
     name_language: NameLanguage,
     limit: int,
+    user_id: int,
 ) -> list[AnimeSearchResult]:
+    include, exclude = personal_scope(
+        filters,
+        await rated_states_by_anime_id(db, user_id) if filters.rated else {},
+        await watchlist_dao.get_listed_ids(db, user_id, per_anime=True) if filters.watchlisted is not None else set(),
+    )
+    if include is not None and not include:
+        return []
     anime_list = await anime_dao.search_anime_aggregated(
         db=db, query=query, filters=filters, search_type=search_type,
         sort=sort, sort_dir=sort_dir, name_language=name_language, limit=limit,
+        user_id=user_id, include_ids=include, exclude_ids=exclude,
     )
 
     results = []

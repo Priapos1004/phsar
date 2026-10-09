@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.daos.base_mal_id_dao import MalIdDAO
+from app.daos.rating_dao import rating_of
 from app.daos.search_filters import (
     apply_media_filters,
     description_passes,
@@ -21,6 +22,7 @@ from app.models.anime import Anime
 from app.models.media import Media
 from app.models.media_genre import MediaGenre
 from app.models.media_studio import MediaStudio
+from app.models.ratings import Ratings
 from app.models.user_settings import NameLanguage
 from app.schemas.media_filter_schema import (
     CatalogueSearchFilters,
@@ -79,16 +81,26 @@ class MediaDAO(MalIdDAO[Media]):
         sort_dir: SortDir | None,
         name_language: NameLanguage,
         limit: int,
-        visible_media_ids: set[int] | None = None,
+        user_id: int,
+        include_ids: set[int] | None,
+        exclude_ids: set[int],
     ) -> list[Media]:
+        """`include_ids` / `exclude_ids` scope it to the spoiler frontier and the
+        caller's personal filters, which the service resolves to media ids."""
         stmt = select(Media)
 
-        if visible_media_ids is not None:
-            stmt = stmt.where(Media.id.in_(visible_media_ids))
+        if include_ids is not None:
+            stmt = stmt.where(Media.id.in_(include_ids))
+        if exclude_ids:
+            stmt = stmt.where(Media.id.not_in(exclude_ids))
 
         stmt = apply_media_filters(stmt, filters)
         if filters.upcoming_main:
             stmt = stmt.where(upcoming_main_media())
+        your_rating = None
+        if sort == SortKey.YOUR_RATING:
+            stmt = stmt.outerjoin(Ratings, rating_of(user_id))
+            your_rating = Ratings.rating
 
         stmt = stmt.options(*self._media_eager_options()).limit(limit)
 
@@ -104,5 +116,7 @@ class MediaDAO(MalIdDAO[Media]):
         else:
             passes = [stmt]
 
-        order = None if query and sort == SortKey.RELEVANCE else sort_order(sort, sort_dir, name_language)
+        order = None if query and sort == SortKey.RELEVANCE else sort_order(
+            sort, sort_dir, name_language, your_rating=your_rating,
+        )
         return await fetch_search_results(db, *passes, order=order)

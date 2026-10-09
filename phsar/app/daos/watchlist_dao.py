@@ -13,6 +13,7 @@ from app.daos.media_projections import (
     media_identity_columns,
     media_studio_names,
 )
+from app.daos.rating_dao import rating_of
 from app.daos.search_filters import SEASON_KEY
 from app.models.anime import Anime
 from app.models.media import (
@@ -64,7 +65,7 @@ def _franchise_signals(anime_id_scope, user_id: int):
             .label("franchise_upcoming_key"),
         )
         .select_from(Media)
-        .outerjoin(Ratings, (Ratings.media_id == Media.id) & (Ratings.user_id == user_id))
+        .outerjoin(Ratings, rating_of(user_id))
         .where(
             Media.anime_id.in_(anime_id_scope),
             Media.relation_type.in_(MAIN_STORY_RELATIONS),
@@ -192,8 +193,7 @@ class WatchlistDAO(BaseDAO[Watchlist]):
                 # The canonical hybrid, not raw episodes x duration.
                 Media.total_watch_time.label("total_watch_time"),
                 # NULL when the user has never rated this media. The readiness filter
-                # reads it to tell a rewatch from fresh content; `unique_user_media_rating`
-                # makes the join 0-or-1, so it can't fan the row set out.
+                # reads it to tell a rewatch from fresh content.
                 Ratings.watch_status.label("watch_status"),
                 *anime_identity_columns(),
                 genres.c.genres,
@@ -207,7 +207,7 @@ class WatchlistDAO(BaseDAO[Watchlist]):
             .join(Tag, Tag.id == Watchlist.tag_id)
             .join(Media, Media.id == Watchlist.media_id)
             .join(Anime, Anime.id == Media.anime_id)
-            .outerjoin(Ratings, (Ratings.media_id == Media.id) & (Ratings.user_id == user_id))
+            .outerjoin(Ratings, rating_of(user_id))
             .outerjoin(genres, genres.c.media_id == Media.id)
             .outerjoin(studios, studios.c.media_id == Media.id)
             .outerjoin(franchise, franchise.c.anime_id == Media.anime_id)
@@ -260,6 +260,14 @@ class WatchlistDAO(BaseDAO[Watchlist]):
             .where(Watchlist.user_id == user_id)
         )
         return list((await db.execute(stmt)).all())
+
+    async def get_listed_ids(self, db: AsyncSession, user_id: int, *, per_anime: bool) -> set[int]:
+        """The media the user has listed or, `per_anime`, the anime with any media
+        listed — the bookmark's reading. What search's `watchlisted` filter selects."""
+        stmt = select(Watchlist.media_id).where(Watchlist.user_id == user_id)
+        if per_anime:
+            stmt = select(Media.anime_id).where(Media.id.in_(stmt))
+        return set((await db.execute(stmt)).scalars().all())
 
     async def bulk_delete_by_user_and_media_ids(
         self, db: AsyncSession, user_id: int, media_ids: list[int]

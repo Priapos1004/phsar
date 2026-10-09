@@ -17,8 +17,8 @@ bulk write of one row per media. What the shape buys downstream:
 
 - A `LEFT JOIN Ratings ON (media_id, user_id)` is **0-or-1**, so it can never fan
   a media row set out. Every per-user projection that joins this way depends on
-  it, hardest where the joined column feeds an aggregate — the invariant is
-  written beside each join.
+  it, hardest where the joined column feeds an aggregate — each such join is
+  `rating_dao.rating_of`, whose docstring carries the invariant.
 - Ratings survive merge and split — see [relations.md](relations.md). Only the
   anime a rating rolls up into changes, which is why anything aggregated per
   anime is computed live rather than stored.
@@ -76,30 +76,38 @@ so a delete-then-re-add, or a `completed` → `on_hold` downgrade, doesn't stran
 or pollute the series. The frontend asks before passing True. Events also clear
 via DB `ON DELETE CASCADE` on account or media deletion.
 
-## Rated coverage
+## Rated state and coverage
 
-`get_rating_coverage` (`GET /ratings/coverage`) answers "how much of this anime
-have I rated" for each anime the user has touched, feeding the per-anime
-coverage indicator on cards. The answer is a `CoverageTier`:
+How far the user has got with an anime is one `RatedState`, computed from
+per-anime counts (`RatingDAO.get_anime_coverage`) by `_rated_state` — the first
+row that matches:
 
-| Tier | Reached when |
+| State | Reached when |
 |---|---|
 | `all` | every rateable media carries a `completed` rating |
 | `main` | every rateable main-story media carries a `completed` rating |
-| `some` | any rating exists, whatever its status |
+| `dropped` | a rateable main-story media is dropped |
+| `on_hold` | a rateable main-story media is on hold |
+| `in_progress` | anything else rated |
+| `none` | nothing rated |
 
-Highest tier wins. `dropped` and `on_hold` are opinions rather than
-completions, so they hold an anime at `some`: dropping a side story still
-leaves `main` reachable, dropping a main does not. Both completion tiers also
-require at least one **rateable** main-story media — the guard, and why it is
-needed, are on `_coverage_tier`.
+Search filters by it ([search.md](search.md#personal-filters-and-sort)).
+`get_rating_coverage` (`GET /ratings/coverage`) serves its coarser view, the
+`CoverageTier` behind the card's coverage indicator: `all`, `main`, and `some` for
+every incomplete state.
+
+`dropped` and `on_hold` are opinions rather than completions, so they hold an anime
+below `main`: dropping a side story still leaves `main` reachable, dropping a main
+does not. The `/ratings` page's badge reads every rated media instead, so it shows an
+anime dropped that the state calls `in_progress` when the dropped media is a side
+story. Both completion states also require at least one **rateable** main-story
+media — the guard, and why it is needed, are on `_rated_state`.
 
 Rateable means `Media.is_rateable`, the same predicate the unaired guard above
-refuses on. Anime with no rating are **absent** from the response rather than
-reported as untouched; that comes from the query scope, described on
+refuses on. Anime with no rating are **absent** from the counts — that absence is
+`none` — so the coverage response leaves them out rather than reporting them
+untouched; that comes from the query scope, described on
 `RatingDAO.get_anime_coverage`.
-
-The media grain has no tier — see [search.md](search.md).
 
 ## The scores projection
 
@@ -134,6 +142,8 @@ caller's own ratings.
   rating offers on a listed media ([USER_FLOWS.md](../../phsar/frontend/USER_FLOWS.md) §7.4).
 - **Readiness** — a rated media still counts as content:
   [readiness.md](readiness.md).
+- **Search** — filters by the rated state and sorts by your ratings:
+  [search.md](search.md#personal-filters-and-sort).
 
 ---
 
