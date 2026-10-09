@@ -148,7 +148,9 @@ release, read the anime's own row.
 
 **Release is one timeline.** An anime sits at its next announced season, else at
 `TBA_SEASON_KEY` if it has an announcement without a season, else at its latest aired
-season. A media sits at its own season, or at TBA while announced without one. TBA
+season, all read from its main-story media (`MAIN_STORY_RELATIONS`) alone: a recap or
+OVA neither announces a franchise nor makes it fresh. A media sits at its own
+season, side stories included, or at TBA while announced without one. TBA
 follows every real season, so ascending runs oldest → announced → TBA, and descending
 the reverse. A row with no season comes last either way. A media still "Not yet aired"
 after its season has passed sorts at that past season.

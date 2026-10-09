@@ -49,9 +49,7 @@ class RelationType(str, enum.Enum):
 
 # The story-advancing set. `main` is the canonical backbone; `alternative_version`
 # covers retellings that extend or diverge from it (Evangelion Rebuild, Hokuto no Ken
-# alts). Every question that turns on "does this advance the story" reads this set —
-# what the spoiler frontier anchors on, what the MAL score averages over, which
-# relations the watchlist's readiness filter treats as a season worth waiting for.
+# alts). Every question that turns on "does this advance the story" reads this set.
 #
 # A frozenset of enum MEMBERS, which `in` and `.in_()` both take — and because
 # RelationType is a str-enum hashing by value, a plain `"main"` from a flat projection

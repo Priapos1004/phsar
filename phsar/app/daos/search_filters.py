@@ -26,6 +26,7 @@ from app.models.media import (
     AIRING_STATUS_CURRENTLY_AIRING,
     AIRING_STATUS_FINISHED_AIRING,
     AIRING_STATUS_NOT_YET_AIRED,
+    MAIN_STORY_RELATIONS,
     RELATION_SCORE_WEIGHTS,
     SEASON_ORDER,
     Media,
@@ -524,10 +525,12 @@ def _release_key(*, having: bool):
     unaired = Media.airing_status == AIRING_STATUS_NOT_YET_AIRED
     if not having:
         return func.coalesce(SEASON_KEY, case((unaired, TBA_SEASON_KEY)))
+    main = Media.relation_type.in_(MAIN_STORY_RELATIONS)
+    announced = main & unaired
     return func.coalesce(
-        func.min(SEASON_KEY).filter(unaired),
-        func.max(case((unaired & Media.anime_season_year.is_(None), TBA_SEASON_KEY))),
-        func.max(SEASON_KEY).filter(~unaired),
+        func.min(SEASON_KEY).filter(announced),
+        func.max(case((announced & Media.anime_season_year.is_(None), TBA_SEASON_KEY))),
+        func.max(SEASON_KEY).filter(main & ~unaired),
     )
 
 

@@ -614,6 +614,7 @@ def _season(name: SeasonType, year: int) -> dict:
 
 
 _UNAIRED = {"airing_status": AIRING_STATUS_NOT_YET_AIRED}
+_SIDE = {"relation_type": RelationType.SideStory}
 
 # Anime → its media (title, columns), every title holding the token "Zqv" that scopes
 # the query. Inserted in this order, which no sort matches.
@@ -639,6 +640,12 @@ _RELEASE_FIXTURE = {
         ("Zqv Announced TBA", _UNAIRED),
     ],
     "Zqv Middle": [("Zqv Middle", _season(SeasonType.Summer, 2008))],
+    "Zqv Recap": [
+        ("Zqv Recap", _season(SeasonType.Spring, 2012)),
+        ("Zqv Recap OVA", {**_season(SeasonType.Fall, 2025), **_SIDE}),
+        ("Zqv Recap Movie", {**_season(SeasonType.Winter, 2029), **_UNAIRED, **_SIDE}),
+        ("Zqv Recap Special", {**_UNAIRED, **_SIDE}),
+    ],
 }
 
 
@@ -651,20 +658,23 @@ async def release_set(db_session):
         )
 
 
-# Old Spring 2001 · Middle Summer 2008 · Newer its latest aired, Winter 2015 (not Fall
-# 2003) · Announced its next announced, Winter 2030 (not Spring 2031, and not its
-# undated one or its aired Summer 2020) · Sequel Fall 2030 · Someday TBA, though it
-# aired Fall 2018 · Undated nothing, last either way.
+# Old Spring 2001 · Middle Summer 2008 · Recap its main story, Spring 2012 (its side
+# stories aired Fall 2025, are announced for Winter 2029 and announced undated) · Newer
+# its latest aired, Winter 2015 (not Fall 2003) · Announced its next announced, Winter
+# 2030 (not Spring 2031, and not its undated one or its aired Summer 2020) · Sequel Fall
+# 2030 · Someday TBA, though it aired Fall 2018 · Undated nothing, last either way.
 _ANIME_RELEASE_ASC = [
-    "Zqv Old", "Zqv Middle", "Zqv Newer", "Zqv Announced", "Zqv Sequel", "Zqv Someday", "Zqv Undated",
+    "Zqv Old", "Zqv Middle", "Zqv Recap", "Zqv Newer", "Zqv Announced", "Zqv Sequel", "Zqv Someday",
+    "Zqv Undated",
 ]
 
 
-# Each media at its own season; the two undated announcements tie at TBA and, both
-# unscored, follow their ids.
+# Each media at its own season, side stories included; the undated announcements tie at
+# TBA and, all unscored, follow their ids.
 _MEDIA_RELEASE_ASC = [
-    "Zqv Old", "Zqv Newer", "Zqv Middle", "Zqv Sequel", "Zqv Newer 2", "Zqv Someday", "Zqv Announced",
-    "Zqv Announced 2", "Zqv Sequel 2", "Zqv Announced 3", "Zqv Someday 2", "Zqv Announced TBA", "Zqv Undated",
+    "Zqv Old", "Zqv Newer", "Zqv Middle", "Zqv Sequel", "Zqv Recap", "Zqv Newer 2", "Zqv Someday",
+    "Zqv Announced", "Zqv Recap OVA", "Zqv Recap Movie", "Zqv Announced 2", "Zqv Sequel 2",
+    "Zqv Announced 3", "Zqv Someday 2", "Zqv Announced TBA", "Zqv Recap Special", "Zqv Undated",
 ]
 
 
