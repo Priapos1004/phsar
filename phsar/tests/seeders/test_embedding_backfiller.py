@@ -57,7 +57,7 @@ async def test_reembed_regenerates_existing_vectors_in_place(db_session):
     await db_session.flush()
     await create_media_embedding(
         db_session, media_id=media.id,
-        title_texts=[media.title], description_text=media.title,
+        title_texts=[media.title], description_text=None,
     )
 
     user = Users(username="reembed-rater", hashed_password="x", role=RoleType.User)
@@ -79,8 +79,8 @@ async def test_reembed_regenerates_existing_vectors_in_place(db_session):
         select(MediaSearch).where(MediaSearch.media_id == media.id))).scalar_one()
     r_row = (await db_session.execute(
         select(RatingSearch).where(RatingSearch.rating_id == rating.id))).scalar_one()
-    a_row.title_embedding = _SENTINEL
-    m_row.title_embedding = _SENTINEL
+    a_row.description_embedding = _SENTINEL
+    m_row.description_embedding = _SENTINEL
     r_row.note_embedding = _SENTINEL
     await db_session.flush()
 
@@ -95,12 +95,13 @@ async def test_reembed_regenerates_existing_vectors_in_place(db_session):
         select(RatingSearch).where(RatingSearch.rating_id == rating.id))).scalar_one()
 
     # Each sentinel was replaced by the freshly case-folded encoding.
-    assert not _is_sentinel(a_after.title_embedding)
-    assert not _is_sentinel(m_after.title_embedding)
+    assert not _is_sentinel(a_after.description_embedding)
+    assert not _is_sentinel(m_after.description_embedding)
     assert not _is_sentinel(r_after.note_embedding)
     assert await _cosine_to(
-        a_after.title_embedding,
-        " ".join(t for t in anime_title_texts(anime) if t),
+        a_after.description_embedding,
+        f"{' '.join(t for t in anime_title_texts(anime) if t)} {anime.description}",
     ) > 0.999
-    assert await _cosine_to(m_after.title_embedding, media.title) > 0.999
+    # The media has no description, so the re-embed encodes its title alone.
+    assert await _cosine_to(m_after.description_embedding, media.title) > 0.999
     assert await _cosine_to(r_after.note_embedding, rating.note) > 0.999

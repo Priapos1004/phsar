@@ -360,7 +360,7 @@ def _aligned_media(mal_id: int, **media_overrides):
 
 def _patch_regen(monkeypatch) -> list[dict]:
     """Capture calls to regenerate_media_embedding so the metadata diff
-    tests don't pay the 50-100ms encode and don't require a real
+    tests don't pay the ~30 ms encode and don't require a real
     MediaSearch row. Returns a list the test asserts against."""
     calls: list[dict] = []
 
@@ -443,8 +443,8 @@ async def test_metadata_diff_none_passthrough_does_not_clobber(monkeypatch):
 @pytest.mark.asyncio
 async def test_metadata_diff_name_eng_revealed_regenerates_embedding(monkeypatch):
     """English title arriving late (announcement → simulcast licensing)
-    is the most common metadata change on MAL — must propagate to the
-    title embedding so search picks up the new alias."""
+    is the most common metadata change on MAL — must regenerate the
+    embedding, which encodes the titles."""
     calls = _patch_regen(monkeypatch)
     media = _aligned_media(mal_id=1, name_eng=None)
     assert await _apply_metadata_diff(
@@ -469,7 +469,7 @@ async def test_metadata_diff_other_names_no_change_skips_regen(monkeypatch):
 @pytest.mark.asyncio
 async def test_metadata_diff_other_names_reorder_skips_regen(monkeypatch):
     """MAL doesn't return title_synonyms in a stable order — a pure
-    reorder must not fire the 50-100ms embedding regen on noise."""
+    reorder must not fire the ~30 ms embedding regen on noise."""
     calls = _patch_regen(monkeypatch)
     media = _aligned_media(mal_id=1, other_names=["alpha", "beta"])
     payload = _metadata_payload(other_names=["beta", "alpha"])
@@ -479,8 +479,8 @@ async def test_metadata_diff_other_names_reorder_skips_regen(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_metadata_diff_other_names_added_regenerates_embedding(monkeypatch):
-    """A new synonym landing on MAL must flow into the title embedding
-    so search-by-alias hits the row on the next query."""
+    """A new synonym landing on MAL must regenerate the embedding, which
+    encodes the titles."""
     calls = _patch_regen(monkeypatch)
     media = _aligned_media(mal_id=1, other_names=["alpha"])
     payload = _metadata_payload(other_names=["alpha", "beta"])

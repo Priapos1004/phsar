@@ -14,7 +14,6 @@ class AnimeSearch(BaseModel):
     __tablename__ = "anime_search"
 
     anime_id: Mapped[int] = mapped_column(Integer, ForeignKey("anime.id", ondelete="CASCADE"), nullable=False, unique=True)
-    title_embedding: Mapped[Any] = mapped_column(Vector(384), nullable=False)
     description_embedding: Mapped[Any] = mapped_column(Vector(384), nullable=False)
 
     # Relationships

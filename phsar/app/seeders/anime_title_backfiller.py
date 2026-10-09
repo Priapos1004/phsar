@@ -5,10 +5,9 @@ Runs once at lifespan startup to clean up rows scraped before
 Idempotent: subsequent restarts find nothing to change and exit
 without touching the catalog.
 
-When a row's title fields are updated, the anime's title embedding is
-stale (it combines `[title, name_eng, name_jap, *other_names]`), so the
-existing AnimeSearch row is deleted and regenerated rather than left
-describing pre-strip text.
+When a row's title fields are updated, the anime's description embedding
+is stale (it encodes the titles), so the existing AnimeSearch row is deleted
+and regenerated rather than left describing pre-strip text.
 """
 
 import logging
@@ -26,8 +25,7 @@ logger = logging.getLogger(__name__)
 async def backfill_anime_title_suffixes(db: AsyncSession) -> int:
     """Returns the number of anime rows updated. Callers commit."""
     # No selectinload for Anime.anime_search — we don't read the row,
-    # only DELETE it. Pulling the 384-dim title_embedding into memory
-    # for every anime would waste hundreds of MB on a large catalog.
+    # only DELETE it, so loading a 384-dim vector per anime would be for nothing.
     rows = (await db.execute(select(Anime))).scalars().all()
 
     updated = 0

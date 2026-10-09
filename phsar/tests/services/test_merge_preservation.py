@@ -221,17 +221,12 @@ async def test_merge_preserves_media_genre_links(db_session):
 
 @pytest.mark.asyncio
 async def test_merge_preserves_media_search_embeddings(db_session):
-    """Per-media title/description embeddings on B's media survive — they
-    were generated from the media's own text and stay valid post-reparent."""
+    """Per-media description embeddings on B's media survive — they were
+    generated from the media's own text and stay valid post-reparent."""
     seed = await _seed_merge_pair(db_session, mal_a=91601, mal_b=91602)
     target = seed["media_b_list"][0]
-    title_emb = [0.1] * 384
     desc_emb = [0.2] * 384
-    db_session.add(MediaSearch(
-        media_id=target.id,
-        title_embedding=title_emb,
-        description_embedding=desc_emb,
-    ))
+    db_session.add(MediaSearch(media_id=target.id, description_embedding=desc_emb))
     await db_session.flush()
     target_id = target.id
 
@@ -244,7 +239,6 @@ async def test_merge_preserves_media_search_embeddings(db_session):
     # pgvector stores as float32; round-trip through asyncpg leaves tiny
     # ULP-level drift on each component. Approximate equality is the right
     # contract for "embedding survived unchanged."
-    assert list(row.title_embedding) == pytest.approx(title_emb, rel=1e-6)
     assert list(row.description_embedding) == pytest.approx(desc_emb, rel=1e-6)
 
 
@@ -292,7 +286,6 @@ async def test_merge_anime_search_for_loser_deleted(db_session):
     seed = await _seed_merge_pair(db_session, mal_a=91801, mal_b=91802)
     db_session.add(AnimeSearch(
         anime_id=seed["loser"].id,
-        title_embedding=[0.5] * 384,
         description_embedding=[0.5] * 384,
     ))
     await db_session.flush()
@@ -319,5 +312,4 @@ async def test_merge_anime_search_for_survivor_refreshed(db_session):
         select(AnimeSearch).where(AnimeSearch.anime_id == survivor_id)
     )).scalars().first()
     assert row is not None
-    assert len(list(row.title_embedding)) == 384
     assert len(list(row.description_embedding)) == 384

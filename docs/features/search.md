@@ -11,9 +11,9 @@ Title, description and note search over the catalogue, filtered, at two grains:
 ## Embeddings
 
 Model is `paraphrase-multilingual-MiniLM-L12-v2`, stored in pgvector. Searches read
-the `description` and `rating_notes` embeddings. Title embeddings are still written
-beside the description ones, but nothing reads them: title search matches literally
-(below).
+the `description` and `rating_notes` embeddings. A description embedding encodes the
+row's titles together with its description, so a title change regenerates it. Titles
+have no embedding of their own: title search matches literally (below).
 
 **Everything is case-folded before encoding.** The model is *cased*, so the same
 text in different capitalisation produces materially different vectors — enough

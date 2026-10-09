@@ -45,9 +45,8 @@ def _fold(text: str) -> str:
 
     `paraphrase-multilingual-MiniLM-L12-v2` is a *cased* model, so "Kurokos" and
     "kurokos" produce materially different vectors — and the query-case difference
-    alone reorders title results enough to drop the intended show off the page
-    (the cosine swing exceeds the literal-match bonus). Folding here, on both
-    queries AND stored title/description/note text, keeps them in one case space
+    alone reorders the results enough to bury the intended show. Folding here, on
+    both queries AND stored description/note text, keeps them in one case space
     (the textbook precondition for embedding retrieval); folding at the query
     call-sites alone would paper over the symptom and risk a fresh
     query↔document mismatch. It is also what makes capitalisation variants of one
@@ -77,7 +76,7 @@ async def generate_query_embedding(text: str) -> list[float]:
 
     Separate from `generate_embedding` because the two populations have opposite
     reuse profiles and would share one cache otherwise. Queries repeat; document
-    text does not — a save encodes each title and description exactly once, and a
+    text does not — a save encodes its text exactly once, and a
     sweep or `reembed_all_embeddings` inserts thousands of keys that can never be
     hit again. Sharing a 256-slot LRU therefore left the query cache fully evicted
     after every sweep, i.e. cold precisely after the nightly maintenance window.
@@ -86,30 +85,23 @@ async def generate_query_embedding(text: str) -> list[float]:
 
 
 async def generate_embedding(text: str) -> list[float]:
-    """Embed DOCUMENT text (titles, descriptions, rating notes) — uncached, since
+    """Embed DOCUMENT text (descriptions with their titles, rating notes) — uncached, since
     a given document string is encoded once. Search queries go through
     `generate_query_embedding`."""
     return await _run_encode(_encode, text)
 
 
-async def _compute_search_embeddings(
-    title_texts: list[str | None], description_text: str | None,
-) -> tuple[list[float], list[float]]:
-    """Encode title + description embeddings without touching the DB.
-    Returned in title-then-description order. Two sequential awaits;
-    `asyncio.gather` is intentionally avoided (see .claude/rules/backend.md
-    "Async — the two that bite" — the trap surface isn't worth the modest
-    CPU win on a 2-vCPU VM)."""
+async def _description_embedding(title_texts: list[str | None], description_text: str | None) -> list[float]:
+    """The titles and the description encoded together, so any title change
+    invalidates it too."""
     combined_text = " ".join([t for t in title_texts if t])
-    title_embedding = await generate_embedding(combined_text)
-    description_embedding = await generate_embedding(f"{combined_text} {description_text or ''}")
-    return title_embedding, description_embedding
+    return await generate_embedding(f"{combined_text} {description_text or ''}")
 
 
 async def _create_search_embedding(db: AsyncSession, model_class, fk_kwargs: dict, title_texts: list[str | None], description_text: str | None):
-    """Shared helper for creating title + description embeddings and persisting them."""
-    title_embedding, description_embedding = await _compute_search_embeddings(title_texts, description_text)
-    obj = model_class(**fk_kwargs, title_embedding=title_embedding, description_embedding=description_embedding)
+    """Shared helper for creating a description embedding and persisting it."""
+    description_embedding = await _description_embedding(title_texts, description_text)
+    obj = model_class(**fk_kwargs, description_embedding=description_embedding)
     db.add(obj)
     await db.flush()
 
@@ -139,19 +131,11 @@ async def _regenerate_search_embedding(
     caller catching the exception without rolling back (per-anime
     try/except in relation_backfiller etc.) would commit the deletion
     with no replacement.
-
-    Title and description embeddings are both rebuilt: title text mixes
-    into the description embedding (see `_compute_search_embeddings`),
-    so any title-side change invalidates both anyway.
     """
-    title_embedding, description_embedding = await _compute_search_embeddings(title_texts, description_text)
+    description_embedding = await _description_embedding(title_texts, description_text)
 
     await db.execute(delete(model_class).where(fk_column == fk_value))
-    db.add(model_class(
-        **{fk_column.key: fk_value},
-        title_embedding=title_embedding,
-        description_embedding=description_embedding,
-    ))
+    db.add(model_class(**{fk_column.key: fk_value}, description_embedding=description_embedding))
     await db.flush()
 
 
@@ -172,8 +156,8 @@ async def regenerate_anime_embedding(
 
 
 async def regenerate_rating_embedding(db: AsyncSession, rating_id: int, note: str) -> None:
-    """Replace a rating's note embedding (single embedding, no title/desc
-    split). Encode first, then delete + insert, so an encode failure leaves
+    """Replace a rating's note embedding. Encode first, then delete + insert,
+    so an encode failure leaves
     the prior row intact (same discipline as `_regenerate_search_embedding`).
     Tolerates a missing row — the DELETE is a no-op — so it doubles as a
     backfill for a note that never got a search row."""
