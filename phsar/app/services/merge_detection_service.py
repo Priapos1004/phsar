@@ -64,7 +64,8 @@ TITLE_ALONE_THRESHOLD = 0.85
 # description match isn't trusted — random shows with vaguely similar
 # synopses shouldn't flag.
 TITLE_FLOOR_FOR_DESC = 0.5
-# Description-cosine threshold for the title+desc combined rule.
+# Description-cosine threshold for the title+desc combined rule. Set on the
+# embedding model's similarities — re-measure on a model change.
 DESC_THRESHOLD = 0.85
 # Containment match must be at least this many chars to count, OR a full
 # match of the shorter title with the shorter at least MIN_FULL_MATCH_CHARS

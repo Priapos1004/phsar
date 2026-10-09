@@ -362,7 +362,7 @@ The original design (a `WatchlistTag` many-to-many junction, tags and entries as
 
 ### Watchlist Page UI (as shipped)
 - `/watchlist` with a `?tab=` switcher: **Watchlists** (entries — grid priority-band grid or sortable table, anime/media grain toggle, multi-select list-union filter) + **Lists** (create/edit/delete/empty lists).
-- Deferred to later versions: the "In watchlist" search filter (v0.16.1) and the browse-page "Only my watchlist" toggle (v0.16.0).
+- Deferred to later versions: the "In watchlist" search filter (`watchlisted` API v0.16.0, toggle v0.16.1) and the browse-page "Only my watchlist" toggle (v0.16.2).
 
 ---
 
@@ -614,7 +614,7 @@ length target.
 | **v0.15.5** | ✓ Quality-of-life upgrades | Signing in after an involuntary exit lands where you were; returning from a detail page centres the card you clicked. The watchlist gains a per-anime **readiness** verdict and a **watchtime** filter, with the runtime on every card. Attribute pills aggregate per attribute; air dates become `Date` columns; the share sheet offers a deep link. Admin gains a **delete-candidates** queue for entries MAL removed or that never found an audience, and job details rank changes by what drifted. |
 | **v0.15.6** | ✓ Test & CI setup + rated coverage | Workflows scope a push to what it touched and keep PRs whole, gaining a frontend build and the commit-gate suite; models move to SQLAlchemy 2.0 `Mapped[]` with mypy in CI. New **rated coverage** marks how much of an anime you have rated on search and `/ratings` cards. The anime bookmark gains an **update** mode: a whole anime changes list or priority in one step, keeping its notes. Animation quality's floor reads "low". |
 | **v0.15.7** | ✓ Original source | MAL's original source joins the search filters, both detail heroes (linking to search, like studios), the ratings Categories, watchlist statistics, the share card and the export. Source and age rating are stored as closed enums, source in Title Case; an unmapped MAL code is stored empty and flagged amber in the Jobs Log and job details. Studios list most frequent first, and curation highlights the studios a merge pair shares. |
-| **v0.16.0** | Search engine | Title search becomes a fuzzy substring filter over every title variant; description search ranks literal hits first; sorts, a result limit, and new filters (an announced main story, top N%, any/all genres and studios, your rated state, watchlisted). Queries are stripped where they enter, and titles no longer get an embedding of their own. |
+| **v0.16.0** | ✓ Search engine | Title search becomes a fuzzy substring filter over every title variant; description search ranks literal hits first; sorts, a result limit, and new filters (an announced main story, top N%, any/all genres and studios, your rated state, watchlisted). Queries are stripped where they enter, and titles no longer get an embedding of their own. |
 | **v0.16.1** | Search UI | Title / Description / My notes search modes, a sort control, a filter sheet with active-filter chips and the new filters; slider reload fixes. Note: consider enlarging the watchlist bookmark icon on the media detail page for better tap target and visual presence. |
 | **v0.16.2** | Browse + News | Carousel definitions in the DB with a resolver and seeded core rows; the Browse page and its News tab; a see-all page, also reached from search. |
 | **v0.16.3** | Home + Discover | Home carousels replace the placeholders; a Discover tab with a daily rotation. |

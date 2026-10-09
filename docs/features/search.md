@@ -13,7 +13,9 @@ Title, description and note search over the catalogue, filtered, at two grains:
 Model is `paraphrase-multilingual-MiniLM-L12-v2`, stored in pgvector. Searches read
 the `description` and `rating_notes` embeddings. A description embedding encodes the
 row's titles together with its description, so a title change regenerates it. Titles
-have no embedding of their own: title search matches literally (below).
+have no embedding of their own: title search matches literally (below). Changing the
+model re-tunes every constant calibrated on it, each marked "re-measure on a model
+change".
 
 **Everything is case-folded before encoding.** The model is *cased*, so the same
 text in different capitalisation produces materially different vectors — enough
@@ -74,12 +76,14 @@ ends — a short name sits close to every description, a sentence far from all o
 them. The mean runs over the whole catalogue, unfiltered, so no filter moves it and
 `/search/ratings` measures against the catalogue, not the caller's own ratings. A
 media with an empty description is never a semantic hit: its vector encodes the title
-alone, and such vectors sit near every short query. The margin is calibrated for the
-embedding model, beside its constant.
+alone, and such vectors sit near every short query.
 
 **When nothing matches at all, it retries once, typo-tolerant**: every word
 `word_similarity`-matched at the strict title threshold. That reaches a typo at the
 end of a word, not a swap mid-word.
+
+**Both retries count what the filters leave**: a filter that excludes every strict
+match lets the looser matches through.
 
 **The anime grain decides in HAVING**, for the title match's reason: a literal hit on
 any media makes the anime one, and the semantic test averages its media's distances —
