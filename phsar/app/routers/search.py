@@ -51,7 +51,6 @@ from app.services.user_settings_service import get_settings
 
 router = APIRouter(prefix="/search", tags=["search"])
 
-# Above 50 for the see-all pages; one user's ratings stay well under the cap.
 SearchLimit = Annotated[int, Query(ge=1, le=1000, description="How many results to return.")]
 SortDirParam = Annotated[SortDir | None, Query(
     description="Direction; by default `title` and `release` ascend and the rest descend. "

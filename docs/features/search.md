@@ -158,8 +158,8 @@ default 50.
 
 `sort_order` is the one implementation at both grains, and its docstring gives the
 tiebreak. At the anime grain, the keys built on score or votes read the aggregates its
-card shows ([main story only](#anime-score-is-main-story-only)); the rest, apart from
-release, read the anime's own row.
+card shows ([main story only](#anime-score-is-main-story-only)); a key computed over
+the anime's media says so below; the rest read the anime's own row.
 
 **Release is one timeline.** An anime sits at its next announced season, else at
 `TBA_SEASON_KEY` if it has an announcement without a season, else at its latest aired

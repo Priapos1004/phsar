@@ -183,6 +183,14 @@ async def test_title_search_ignores_case_and_padding(
     assert ordered == [_SUBSTRING_HIT, _FUZZY_HIT]
 
 
+@_BOTH_VIEWS
+async def test_query_cap_counts_the_stripped_query(client, user_auth_headers, url):
+    """A query over the cap only by its padding is accepted: the cap (see
+    `test_out_of_range_is_rejected`) measures what reaches the SQL."""
+    resp = await client.get(url, params={"query": f"  {'x' * 200}  "}, headers=user_auth_headers)
+    assert resp.status_code == 200, resp.text
+
+
 # ---------------------------------------------------------------------------
 # The looser threshold runs only when the strict one matches nothing
 # ---------------------------------------------------------------------------
@@ -517,7 +525,7 @@ async def test_limit_cuts_the_sorted_list(client, user_auth_headers, score_set, 
 
 @pytest.mark.parametrize("url", [ANIME_SEARCH_URL, MEDIA_SEARCH_URL, RATINGS_SEARCH_URL])
 @pytest.mark.parametrize(("param", "value"), [
-    ("limit", 0), ("limit", 1001), ("top_percent", 0), ("top_percent", 101),
+    ("limit", 0), ("limit", 1001), ("top_percent", 0), ("top_percent", 101), ("query", "x" * 201),
 ])
 async def test_out_of_range_is_rejected(client, user_auth_headers, url, param, value):
     resp = await client.get(url, params={param: value}, headers=user_auth_headers)
@@ -525,7 +533,8 @@ async def test_out_of_range_is_rejected(client, user_auth_headers, url, param, v
 
 
 # (title, name_eng, name_jap). Latin "Japanese" names, so the order never depends on
-# how the collation ranks kana against Latin.
+# how the collation ranks kana against Latin. Mirrored by the frontend's `resolveTitle`
+# test in format-string.test.ts.
 _NAMED = {
     "Delta": ("Alpha", "Kilo"),
     "Charlie": (None, "Hotel"),

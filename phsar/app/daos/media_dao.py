@@ -116,7 +116,5 @@ class MediaDAO(MalIdDAO[Media]):
         else:
             passes = [stmt]
 
-        order = None if query and sort == SortKey.RELEVANCE else sort_order(
-            sort, sort_dir, name_language, your_rating=your_rating,
-        )
+        order = sort_order(sort, sort_dir, name_language, query=query, your_rating=your_rating)
         return await fetch_search_results(db, *passes, order=order)

@@ -7,8 +7,9 @@ from app.models.media import AgeRating, MediaType, OriginalSource, RelationType
 from app.models.ratings import WatchStatus
 
 # A search query, stripped where it enters (route params and the search token):
-# padding would otherwise become part of the title-match pattern.
-SearchQuery = Annotated[str, StringConstraints(strip_whitespace=True)]
+# padding would otherwise become part of the title-match pattern. Capped because
+# description search tests every word of it against every media's text.
+SearchQuery = Annotated[str, StringConstraints(strip_whitespace=True, max_length=200)]
 
 
 class SearchType(str, Enum):

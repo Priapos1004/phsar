@@ -560,9 +560,7 @@ class AnimeDAO(MalIdDAO[Anime]):
         else:
             passes = [stmt]
 
-        order = None if query and sort == SortKey.RELEVANCE else sort_order(
-            sort, sort_dir, name_language, having=True, your_rating=your_rating,
-        )
+        order = sort_order(sort, sort_dir, name_language, query=query, having=True, your_rating=your_rating)
         anime_ids = await fetch_search_results(db, *passes, order=order)
         if not anime_ids:
             return []

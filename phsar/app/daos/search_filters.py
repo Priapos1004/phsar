@@ -634,9 +634,9 @@ def utc_today() -> date:
 
 
 def sort_order(
-    sort: SortKey, sort_dir: SortDir | None, name_language: NameLanguage, *, having: bool = False,
-    your_rating=None,
-) -> list:
+    sort: SortKey, sort_dir: SortDir | None, name_language: NameLanguage, *, query: str,
+    having: bool = False, your_rating=None,
+) -> list | None:
     """ORDER BY for `sort` over Media rows, or over the anime grain's grouped rows with
     `having` (aggregates and Anime columns only, both valid under its GROUP BY).
 
@@ -647,12 +647,13 @@ def sort_order(
     straight after the timestamp: rows added in one transaction share `created_at`, and
     among them the better one should lead.
 
-    RELEVANCE only reaches here without a query, where it is the default order: top
-    rated, in its default direction. A query's own match order belongs to its passes.
+    RELEVANCE with a query returns None, so each pass keeps its own match order.
 
     YOUR_RATING orders by `your_rating`, which the DAO that joins the caller's ratings
     passes (docs/features/search.md, Personal filters and sort)."""
     if sort == SortKey.RELEVANCE:
+        if query:
+            return None
         sort_dir = None
     model: type[Anime] | type[Media] = Anime if having else Media
     if having:
@@ -687,7 +688,7 @@ async def fetch_search_results(db: AsyncSession, *passes, order: list | None = N
     """Every row's first column from the first of `passes` that returns any — the
     strict statement, then looser ones only while nothing has matched.
 
-    `order`, a `sort_order`, replaces each pass's own: the passes decide which rows
+    `order`, a `sort_order` when given, replaces each pass's own: the passes decide which rows
     match, the sort only their order. Hence a retry rather than one query at the
     loosest test trimmed afterwards — the trim is only correct while the match is the
     primary sort key."""

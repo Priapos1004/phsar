@@ -20,8 +20,7 @@ OPTIONAL_FILTERS = {
 TOO_LONG_FILTER_PAYLOAD = {
     "query": (
         "In this anime, a group of genetically enhanced teenagers engage in a philosophical battle against "
-        "a corrupt government while navigating themes of identity, memory, and artificial intelligence. "
-        "The protagonist, haunted by dreams of a parallel world, must choose between saving reality and preserving free will."
+        "a corrupt government while navigating themes of identity, memory and free will."
     ),
     "genre_name": [
         "Magical Sex Shift",
@@ -46,9 +45,9 @@ TOO_LONG_FILTER_PAYLOAD = {
     ],
     "airing_status": ["Currently Airing", "Finished Airing", "Not Yet Aired"],
     "studio_name": [
-        "Studio A with a pretty long name",
-        "Studio B also having the longest name ever seen",
-        "Studio C having a name that could reach the atmosphere",
+        "Studio A with a pretty long name that keeps going well past what any real studio would call itself",
+        "Studio B also having the longest name ever seen, until Studio A came along and outdid it",
+        "Studio C having a name that could reach the atmosphere and then carry on into orbit and beyond",
         "Studio D with a name that is just too long to be real",
         "Studio E going on and on with its name for no reason at all really no reason at all"
     ],
