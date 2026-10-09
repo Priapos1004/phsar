@@ -24,6 +24,8 @@ from app.models.ratings import (
 from app.models.user_settings import SpoilerLevel
 from app.schemas.anime_schema import AnimeSearchResult
 from app.schemas.media_filter_schema import (
+    CatalogueSearchFilters,
+    MatchMode,
     MediaSearchFilters,
     SearchQuery,
     SearchType,
@@ -73,6 +75,16 @@ def get_media_filters(
     duration_per_episode_max: int | None = None,
     total_watch_time_min: int | None = None,
     total_watch_time_max: int | None = None,
+    top_percent: int | None = Query(
+        default=None, ge=1, le=100,
+        description="Keep the rows whose \"Top N%\" badge reads this percentage or better.",
+    ),
+    genre_mode: MatchMode = Query(
+        default=MatchMode.ALL, description="Whether a row needs every selected genre or one of them.",
+    ),
+    studio_mode: MatchMode = Query(
+        default=MatchMode.ANY, description="Whether a row needs one of the selected studios or every one.",
+    ),
 ) -> MediaSearchFilters:
     return MediaSearchFilters(
         relation_type=relation_type,
@@ -93,7 +105,21 @@ def get_media_filters(
         duration_per_episode_max=duration_per_episode_max,
         total_watch_time_min=total_watch_time_min,
         total_watch_time_max=total_watch_time_max,
+        top_percent=top_percent,
+        genre_mode=genre_mode,
+        studio_mode=studio_mode,
     )
+
+
+def get_catalogue_filters(
+    media_filters: MediaSearchFilters = Depends(get_media_filters),
+    upcoming_main: bool = Query(
+        default=False,
+        description="Keep the anime that have aired content and an announced main-story entry; "
+        "at the media grain, those announced main-story entries.",
+    ),
+) -> CatalogueSearchFilters:
+    return CatalogueSearchFilters(**media_filters.model_dump(), upcoming_main=upcoming_main)
 
 
 def get_rating_filters(
@@ -139,7 +165,7 @@ async def search_anime(
     sort: SortParam = SortKey.RELEVANCE,
     sort_dir: SortDirParam = None,
     limit: SearchLimit = 50,
-    filters: MediaSearchFilters = Depends(get_media_filters),
+    filters: CatalogueSearchFilters = Depends(get_catalogue_filters),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -179,7 +205,7 @@ async def search_media(
     sort: SortParam = SortKey.RELEVANCE,
     sort_dir: SortDirParam = None,
     limit: SearchLimit = 50,
-    filters: MediaSearchFilters = Depends(get_media_filters),
+    filters: CatalogueSearchFilters = Depends(get_catalogue_filters),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):

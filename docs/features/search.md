@@ -92,8 +92,8 @@ Rating-note search ranks by note-embedding distance alone: no literal tier, no c
 
 **A filter selects which anime; it never rescopes the aggregates.**
 `apply_anime_pre_filters` emits `Anime.id IN (SELECT media.anime_id WHERE …)` — one
-subquery, so all conditions hold for the *same* media row ("studio X + type TV"
-means one media is a TV by X) — rather than filtering the grouped rows.
+subquery, so the studios count only on media the other conditions match ("studio X +
+type TV" means one media is a TV by X) — rather than filtering the grouped rows.
 
 Those grouped rows also feed `avg_score`, `avg_scored_by`, `total_episodes`,
 `media_count` and every HAVING filter. Narrowing them would make the displayed
@@ -110,14 +110,29 @@ priority-collapsed value (Currently → Finished → Not yet aired). Otherwise a
 with one finished side story surfaces under "Finished" while its card reads
 "Currently Airing".
 
-**Genre majority is a separate condition.** Every selected genre must be carried by
-a majority of the anime's media (`count * 2 > total`, the same threshold that
+**Genre majority is a separate condition.** A selected genre counts for an anime
+when a majority of its media carry it (`count * 2 > total`, the same threshold that
 populates the dropdown). It stays **one non-correlated pass** — per-(anime, genre)
 counts and per-anime totals computed once, joined, survivors counted against the
-number of genres selected. A correlated majority-subquery per genre is superlinear:
+number the mode needs. A correlated majority-subquery per genre is superlinear:
 each one adds a SubPlan *and* widens the set every existing SubPlan re-evaluates
 over, and this fires on every genre chip toggle. The denominator is the anime's
 **full** media count, so a stacked studio filter can't shrink it.
+
+**Any or all.** `genre_mode` (default all) and `studio_mode` (default any) choose
+whether a row needs one selected value or every one. An anime's genres are the ones
+reaching their majority; its studios are the union over the media the categorical
+filters match, coupled as above. The media grain tests the media itself.
+
+**Top N% is the badge.** Both badges and the `top_percent` filter read one ranking,
+`top_percent_ranking`, so N keeps exactly the rows whose badge reads N% or better;
+its docstring gives the population and the rounding.
+
+**`upcoming_main` reads the main story** (`upcoming_main_media`), as the [release
+sort](#sorting) does. It departs from
+the card's `has_upcoming`, which counts any announced media, so that "upcoming +
+release ascending" lists the next seasons — an anime announcing only an OVA would
+sort at its last aired season.
 
 ## Anime score is main-story only
 
@@ -126,8 +141,8 @@ over, and this fires on every genre chip toggle. The denominator is the anime's
 Summary count 0 — i.e. the same anchor set the spoiler frontier uses.
 
 The Python computation in `_compute_anime_aggregates` is the twin of the SQL
-`weighted_mean_score_expr` / `weighted_mean_votes_expr` used by every anime-grain
-ordering by score, the score HAVING filters, and `score_top_percent`. Keeping them in step is what stops
+`weighted_mean_score_expr` / `weighted_mean_votes_expr`, which every anime-grain
+query reads the score through. Keeping them in step is what stops
 the displayed number, the ranking and the "Top N%" pill from drifting apart.
 
 `total_episodes`, `total_watch_time`, `media_count` and genre majority stay over
@@ -187,7 +202,7 @@ The client-side frontier walk is the one sanctioned divergence — see
 
 **Why it is this way**
 - [Anime score over the main story](../../compound-docs/2026-07-19-anime-score-main-only.md) — the prod-data study behind the weights
-- [Further QoL](../../compound-docs/2026-06-22-v0.14.11-further-qol.md) — `score_top_percent` query shape
+- [Further QoL](../../compound-docs/2026-06-22-v0.14.11-further-qol.md) — the badge's rank-based rounding
 - [Quality-of-life upgrades](../../compound-docs/2026-07-27-v0.15.3-quality-of-life.md) — filters no longer rescoping the score
 - [Efficiency improvements](../../compound-docs/2026-08-06-v0.15.4-efficiency-improvements.md) — the aggregate-in-ORDER-BY change and query memoization
-- [Search rework](../../compound-docs/2026-10-07-v0.16.0-search-rework.md) — the title-match and description-cutoff studies, the embedding-model comparison, and their problem cases
+- [Search rework](../../compound-docs/2026-10-07-v0.16.0-search-rework.md) — the studies and problem cases behind the v0.16.0 search changes

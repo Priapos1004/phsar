@@ -3,7 +3,7 @@ import re
 from datetime import UTC, date, datetime
 
 from sqlalchemy import (
-    Numeric,
+    Float,
     Text,
     and_,
     asc,
@@ -18,6 +18,7 @@ from sqlalchemy import (
     tuple_,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.models.anime import Anime
 from app.models.genre import Genre
@@ -37,7 +38,13 @@ from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
 from app.models.user_settings import NameLanguage
-from app.schemas.media_filter_schema import MediaSearchFilters, SortDir, SortKey
+from app.schemas.media_filter_schema import (
+    CatalogueSearchFilters,
+    MatchMode,
+    MediaSearchFilters,
+    SortDir,
+    SortKey,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,17 +52,21 @@ logger = logging.getLogger(__name__)
 def weighted_score_expr(score, scored_by):
     """Confidence-weighted MAL score `score * log10(scored_by + 1)` — log10 (not
     ln) dampens the vote-count weight so a very popular but mediocre title can't
-    outrank a higher-scored niche one. Single source of truth for the SQL form,
-    shared by media + anime search ranking and the `score_top_percent` percentile
-    DAOs (the Python twin is `scrape_dispatcher._weighted_score`). `score` /
-    `scored_by` may be plain columns (per-media, media DAOs) or the per-anime
-    weighted means (`weighted_mean_score_expr` / `weighted_mean_votes_expr`).
+    outrank a higher-scored niche one. Single source of truth for the SQL form (the
+    Python twin is `scrape_dispatcher._weighted_score`). `score` / `scored_by` may be
+    plain columns (per-media, media DAOs) or the per-anime weighted means
+    (`weighted_mean_score_expr` / `weighted_mean_votes_expr`).
 
-    The base is passed explicitly (`log(10, x)`) rather than relying on
-    Postgres's single-arg `log()` defaulting to base 10, so the SQL stays
-    numerically locked to the Python twin's `math.log10` even if the dialect
-    changes — `test_weighted_score_matches_python_twin` guards the equivalence."""
-    return score * func.log(10, scored_by + 1)
+    Float8 `log10`, the C function the twin's `math.log10` calls —
+    `test_weighted_score_matches_python_twin` guards the equivalence. Not numeric
+    `log(10, x)`: it costs ~60x more per row, enough to dominate every ordering by
+    score and both badges (measured in
+    compound-docs/2026-10-07-v0.16.0-search-rework.md).
+
+    Computed per query over the whole catalogue. Past ~50k media, store it: a
+    generated `media.weighted_score` column with an index, and a per-anime aggregate
+    kept current by every write that changes an anime's media or their scores."""
+    return score * func.log10(cast(scored_by + 1, Float))
 
 
 def _score_weight_case():
@@ -79,9 +90,7 @@ def _relation_weighted_mean(value_col):
     scored = Media.score.is_not(None)
     num = func.sum(w * value_col).filter(scored)
     den = func.sum(w).filter(scored)
-    # Cast to Numeric: weighted_score_expr's two-arg log(10, x) requires
-    # numeric, but this division yields double precision.
-    return cast(num / func.nullif(den, 0.0), Numeric)
+    return num / func.nullif(den, 0.0)
 
 
 def weighted_mean_score_expr():
@@ -96,14 +105,56 @@ def weighted_mean_votes_expr():
     return _relation_weighted_mean(Media.scored_by)
 
 
-def _studio_condition(studio_names: list[str]):
-    """The media is credited to at least one of `studio_names`. Membership test rather
-    than a join so a media matching several of the selected studios doesn't fan out
-    into duplicate rows."""
-    return Media.id.in_(
-        select(MediaStudio.media_id)
-        .join(MediaStudio.studio)
+def top_percent_ranking(*, per_anime: bool):
+    """`(id, top_percent)` for every scored anime or media: the "Top N%" badge, ranked
+    by `weighted_score_expr` over the whole catalogue (per anime, its relation-weighted
+    means), and unfiltered, so N% is the same figure whatever else a search selects.
+
+    `top_percent` is the rank as a percentage of the scored rows, rounded up — ties
+    share their best rank, and the worst row reads 100.
+
+    `rank()` rather than a count of the better rows, which would spare one badge its
+    sort: the filter needs every row's rank."""
+    if per_anime:
+        mean_score = weighted_mean_score_expr()
+        scored = (
+            select(
+                Media.anime_id.label("id"),
+                weighted_score_expr(mean_score, weighted_mean_votes_expr()).label("metric"),
+            )
+            .group_by(Media.anime_id)
+            .having(mean_score.is_not(None))
+        )
+    else:
+        scored = select(
+            Media.id.label("id"), weighted_score_expr(Media.score, Media.scored_by).label("metric"),
+        ).where(Media.score.is_not(None))
+    population = scored.subquery()
+    rank = func.rank().over(order_by=population.c.metric.desc())
+    total = func.count().over()
+    return select(population.c.id, ((rank * 100 + total - 1) // total).label("top_percent")).subquery()
+
+
+def _top_percent_ids(top_percent: int, *, per_anime: bool):
+    ranking = top_percent_ranking(per_anime=per_anime)
+    return select(ranking.c.id).where(ranking.c.top_percent <= top_percent)
+
+
+def _needed(names: list[str], mode: MatchMode) -> int:
+    """How many of the selected `names` a row must carry under `mode`."""
+    return len(set(names)) if mode == MatchMode.ALL else 1
+
+
+def _carrying_studios(credits, key, studio_names: list[str], mode: MatchMode):
+    """`credits` — a select over `MediaStudio` rows — grouped by `key`, keeping the
+    groups credited to one (`any`) or every (`all`) of `studio_names`. Used as a
+    membership test rather than a join, so a row matching several of the selected
+    studios doesn't fan out into duplicates."""
+    return (
+        credits.join(Studio, Studio.id == MediaStudio.studio_id)
         .where(Studio.name.in_(studio_names))
+        .group_by(key)
+        .having(func.count(distinct(Studio.id)) >= _needed(studio_names, mode))
     )
 
 
@@ -154,21 +205,25 @@ def apply_media_filters(stmt, filters: MediaSearchFilters):
     """Apply media metadata filters (genre, studio, scores, etc.) to a query.
     The statement must already have Media accessible (via select or join)."""
 
-    # Genre filter: require media to have ALL specified genres
+    # Genre filter: the media's own genres, where the anime grain counts a majority
     if filters.genre_name:
-        unique_genres = set(filters.genre_name)
         subquery = (
             select(Media.id)
             .join(Media.media_genre)
             .join(MediaGenre.genre)
-            .where(Genre.name.in_(unique_genres))
+            .where(Genre.name.in_(filters.genre_name))
             .group_by(Media.id)
-            .having(func.count(distinct(Genre.id)) >= len(unique_genres))
+            .having(func.count(distinct(Genre.id)) >= _needed(filters.genre_name, filters.genre_mode))
         ).subquery()
         stmt = stmt.where(Media.id.in_(select(subquery.c.id)))
 
     if filters.studio_name:
-        stmt = stmt.where(_studio_condition(filters.studio_name))
+        stmt = stmt.where(Media.id.in_(_carrying_studios(
+            select(MediaStudio.media_id), MediaStudio.media_id, filters.studio_name, filters.studio_mode,
+        )))
+
+    if filters.top_percent is not None:
+        stmt = stmt.where(Media.id.in_(_top_percent_ids(filters.top_percent, per_anime=False)))
 
     conditions = _build_categorical_conditions(filters)
 
@@ -253,33 +308,59 @@ def anime_genre_majority_relation(genre_names: list[str] | None = None):
     ).subquery()
 
 
-def _anime_genre_majority_condition(genre_names: list[str]):
-    """Anime clearing the majority bar on EVERY selected genre.
+def _anime_genre_majority_condition(genre_names: list[str], mode: MatchMode):
+    """Anime clearing the majority bar on every (`all`) or one (`any`) selected genre.
 
     One non-correlated pass over `anime_genre_majority_relation`: count each
-    anime's surviving genres and require all N. The alternative shape — one
+    anime's surviving genres and require all N, or one. The alternative shape — one
     correlated majority-subquery per genre — grows superlinearly, since each
     added genre both adds a SubPlan and widens the set every existing SubPlan is
     re-evaluated over, and this fires on ticking genre chips.
     """
-    unique_genres = set(genre_names)
     majority = anime_genre_majority_relation(genre_names)
     qualifying = (
         select(majority.c.anime_id)
         .group_by(majority.c.anime_id)
-        .having(func.count() == len(unique_genres))
+        .having(func.count() >= _needed(genre_names, mode))
     )
     return Anime.id.in_(qualifying)
 
 
-def apply_anime_pre_filters(stmt, filters: MediaSearchFilters):
-    """Select WHICH ANIME qualify. Two independent conditions, both selecting
-    anime rather than narrowing the grouped media rows:
+# A main-story media not aired yet: what the release sort counts as an announcement and
+# what `upcoming_main` keeps, which "closest to release" needs to agree.
+ANNOUNCED_MAIN_STORY = Media.relation_type.in_(MAIN_STORY_RELATIONS) & (
+    Media.airing_status == AIRING_STATUS_NOT_YET_AIRED
+)
 
-    - Categorical + studio, with 'any media matches' semantics — an anime is by
-      studio X / of type TV when at least one of its media is. These share ONE
-      subquery, so they must hold for the SAME media row (studio X + type TV
-      means one media is a TV by X), matching media-level semantics.
+
+def upcoming_main_media():
+    """The media is an announced main-story entry of an anime that has aired content:
+    `upcoming_main` at the media grain, and the anime grain keeps the anime holding
+    one. Why main story only, unlike the card's `has_upcoming`
+    (`anime_search_service._compute_airing_status`): docs/features/search.md.
+
+    Aired content is the card's Currently/Finished pair, not `Media.is_rateable`, so
+    the two agree on any other status."""
+    aired = aliased(Media)
+    return and_(
+        ANNOUNCED_MAIN_STORY,
+        Media.anime_id.in_(
+            select(aired.anime_id).where(
+                aired.airing_status.in_((AIRING_STATUS_CURRENTLY_AIRING, AIRING_STATUS_FINISHED_AIRING))
+            )
+        ),
+    )
+
+
+def apply_anime_pre_filters(stmt, filters: CatalogueSearchFilters):
+    """Select WHICH ANIME qualify. Independent conditions, all selecting anime rather
+    than narrowing the grouped media rows:
+
+    - Categorical + studio, with 'any media matches' semantics — an anime is of
+      type TV when at least one of its media is. These share ONE subquery, so the
+      categorical conditions and the studios hold for the same media: studio X +
+      type TV means one media is a TV by X. Coupling both modes keeps them equal for
+      a single studio.
     - Genre majority, which gets its own subquery precisely because it is NOT a
       same-media-row question — it's an aggregate over the anime's whole media
       set (see `_anime_genre_majority_condition`).
@@ -294,16 +375,23 @@ def apply_anime_pre_filters(stmt, filters: MediaSearchFilters):
     compound-docs/2026-07-19-anime-score-main-only.md.
     """
     conditions = _build_categorical_conditions(filters, for_anime=True)
+    matching = select(Media.anime_id).where(*conditions)
     if filters.studio_name:
-        conditions.append(_studio_condition(filters.studio_name))
-
-    if conditions:
-        stmt = stmt.where(
-            Anime.id.in_(select(Media.anime_id).where(and_(*conditions)))
+        matching = _carrying_studios(
+            matching.join(MediaStudio, MediaStudio.media_id == Media.id),
+            Media.anime_id, filters.studio_name, filters.studio_mode,
         )
+    if filters.studio_name or conditions:
+        stmt = stmt.where(Anime.id.in_(matching))
 
     if filters.genre_name:
-        stmt = stmt.where(_anime_genre_majority_condition(filters.genre_name))
+        stmt = stmt.where(_anime_genre_majority_condition(filters.genre_name, filters.genre_mode))
+
+    if filters.top_percent is not None:
+        stmt = stmt.where(Anime.id.in_(_top_percent_ids(filters.top_percent, per_anime=True)))
+
+    if filters.upcoming_main:
+        stmt = stmt.where(Anime.id.in_(select(Media.anime_id).where(upcoming_main_media())))
 
     return stmt
 
@@ -526,10 +614,9 @@ def _release_key(*, having: bool):
     if not having:
         return func.coalesce(SEASON_KEY, case((unaired, TBA_SEASON_KEY)))
     main = Media.relation_type.in_(MAIN_STORY_RELATIONS)
-    announced = main & unaired
     return func.coalesce(
-        func.min(SEASON_KEY).filter(announced),
-        func.max(case((announced & Media.anime_season_year.is_(None), TBA_SEASON_KEY))),
+        func.min(SEASON_KEY).filter(ANNOUNCED_MAIN_STORY),
+        func.max(case((ANNOUNCED_MAIN_STORY & Media.anime_season_year.is_(None), TBA_SEASON_KEY))),
         func.max(SEASON_KEY).filter(main & ~unaired),
     )
 

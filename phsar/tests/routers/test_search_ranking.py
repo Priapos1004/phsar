@@ -24,15 +24,29 @@ import pytest
 from sqlalchemy import select
 
 from app.daos import search_filters
-from app.daos.search_filters import _escape_like, description_cutoff
+from app.daos.anime_dao import AnimeDAO
+from app.daos.media_dao import MediaDAO
+from app.daos.search_filters import (
+    _escape_like,
+    description_cutoff,
+    weighted_mean_score_expr,
+    weighted_mean_votes_expr,
+    weighted_score_expr,
+)
 from app.models.anime import Anime
+from app.models.genre import Genre, GenreType
 from app.models.media import (
+    AIRING_STATUS_CURRENTLY_AIRING,
     AIRING_STATUS_NOT_YET_AIRED,
     Media,
+    MediaType,
     RelationType,
     SeasonType,
 )
+from app.models.media_genre import MediaGenre
 from app.models.media_search import MediaSearch
+from app.models.media_studio import MediaStudio
+from app.models.studio import Studio
 from app.services.media_search_service import media_title_texts
 from app.services.vector_embedding_service import (
     create_media_embedding,
@@ -497,9 +511,11 @@ async def test_limit_cuts_the_sorted_list(client, user_auth_headers, score_set, 
 
 
 @pytest.mark.parametrize("url", [ANIME_SEARCH_URL, MEDIA_SEARCH_URL, RATINGS_SEARCH_URL])
-@pytest.mark.parametrize("limit", [0, 1001])
-async def test_limit_out_of_range_is_rejected(client, user_auth_headers, url, limit):
-    resp = await client.get(url, params={"limit": limit}, headers=user_auth_headers)
+@pytest.mark.parametrize(("param", "value"), [
+    ("limit", 0), ("limit", 1001), ("top_percent", 0), ("top_percent", 101),
+])
+async def test_out_of_range_is_rejected(client, user_auth_headers, url, param, value):
+    resp = await client.get(url, params={param: value}, headers=user_auth_headers)
     assert resp.status_code == 422
 
 
@@ -649,13 +665,19 @@ _RELEASE_FIXTURE = {
 }
 
 
-@pytest.fixture
-async def release_set(db_session):
-    for offset, (title, media) in enumerate(_RELEASE_FIXTURE.items()):
+async def _make_franchises(db_session, fixture: dict, *, mal_id: int, in_season: bool = True) -> None:
+    """One anime per `fixture` key with its `(title, columns)` media, mal ids counting
+    up from `mal_id`."""
+    for offset, (title, media) in enumerate(fixture.items()):
         await _make_anime(
-            db_session, mal_id=87651 + offset, title=title, in_season=False,
+            db_session, mal_id=mal_id + offset, title=title, in_season=in_season,
             media=[{"title": media_title, **columns} for media_title, columns in media],
         )
+
+
+@pytest.fixture
+async def release_set(db_session):
+    await _make_franchises(db_session, _RELEASE_FIXTURE, mal_id=87651, in_season=False)
 
 
 # Old Spring 2001 · Middle Summer 2008 · Recap its main story, Spring 2012 (its side
@@ -694,6 +716,225 @@ async def test_release_sort_is_one_timeline(client, user_auth_headers, release_s
         client, user_auth_headers, url=url, expect=set(expected), in_season=False, query="zqv", **params,
     )
     assert ordered == expected
+
+
+# ---------------------------------------------------------------------------
+# Upcoming main story, top N%, and any/all genres and studios
+# ---------------------------------------------------------------------------
+
+_AIRING = {"airing_status": AIRING_STATUS_CURRENTLY_AIRING}
+
+# Anime → its media (title, columns); Main and finished unless the columns say otherwise.
+_UPCOMING_FIXTURE = {
+    "Upm Continued": [("Upm Continued", {}), ("Upm Continued 2", _UNAIRED)],
+    "Upm Airing": [
+        ("Upm Airing", _AIRING),
+        ("Upm Airing Alt", {**_UNAIRED, "relation_type": RelationType.AlternativeVersion}),
+    ],
+    "Upm Side": [("Upm Side", {}), ("Upm Side OVA", {**_UNAIRED, **_SIDE})],
+    "Upm New": [("Upm New", _UNAIRED)],
+    "Upm Done": [("Upm Done", {})],
+}
+
+
+@pytest.fixture
+async def upcoming_set(db_session):
+    await _make_franchises(db_session, _UPCOMING_FIXTURE, mal_id=87701)
+
+
+@pytest.mark.parametrize(("url", "upcoming_main", "expected"), [
+    (ANIME_SEARCH_URL, True, {"Upm Continued", "Upm Airing"}),
+    (MEDIA_SEARCH_URL, True, {"Upm Continued 2", "Upm Airing Alt"}),
+    (ANIME_SEARCH_URL, False, set(_UPCOMING_FIXTURE)),
+    (MEDIA_SEARCH_URL, False, {title for media in _UPCOMING_FIXTURE.values() for title, _ in media}),
+], ids=["anime", "media", "anime_off", "media_off"])
+async def test_upcoming_main_keeps_announced_main_story_of_aired_anime(
+    client, user_auth_headers, upcoming_set, url, upcoming_main, expected,
+):
+    """Continued (finished, then a season announced) and Airing (airing, then an
+    alternative version announced — main story too) qualify. Side announces only a side
+    story, New has aired nothing, Done announces nothing. The media grain keeps just the
+    two announcements. Off, it filters nothing."""
+    await _ordered_fixture_titles(
+        client, user_auth_headers, url=url, expect=expected, upcoming_main=upcoming_main,
+    )
+
+
+_TOP_ANCHOR, _TOP_HIGH, _TOP_MID, _TOP_UNSCORED = "Topp Anchor", "Topp High", "Topp Mid", "Topp Unscored"
+_TOP_FIXTURE = [_TOP_ANCHOR, _TOP_HIGH, _TOP_MID, _TOP_UNSCORED]
+
+
+@pytest.fixture
+async def top_percent_set(db_session):
+    """Two scored rows and an unscored one in the sentinel season, and outside it an
+    anchor that outranks any real title. The anchor counts toward every rank, so a
+    ranking over only the rows a search selects disagrees with the badge.
+
+    Three scored rows, so on CI, where they are the whole catalogue, every badge but
+    the worst depends on rounding up: 34, 67 (and 100)."""
+    await _make_anime(
+        db_session, mal_id=87711, title=_TOP_ANCHOR, in_season=False,
+        media=[{"title": _TOP_ANCHOR, "score": 10.0, "scored_by": 100_000_000}],
+    )
+    rows = [(_TOP_HIGH, 9.5, 1_000_000), (_TOP_UNSCORED, None, 0), (_TOP_MID, 7.5, 50_000)]
+    for offset, (title, score, votes) in enumerate(rows):
+        await _make_single(db_session, mal_id=87712 + offset, title=title, score=score, scored_by=votes)
+
+
+async def _ids(db_session, model: type[Anime] | type[Media], titles) -> dict[str, int]:
+    return dict((await db_session.execute(select(model.title, model.id).where(model.title.in_(titles)))).all())
+
+
+def _grain(url: str) -> type[Anime] | type[Media]:
+    return Anime if url == ANIME_SEARCH_URL else Media
+
+
+async def _badges(db_session, url: str) -> dict[str, int | None]:
+    """Each fixture row's "Top N%" badge, read through the badge's DAO."""
+    dao = AnimeDAO() if url == ANIME_SEARCH_URL else MediaDAO()
+    ids = await _ids(db_session, _grain(url), _TOP_FIXTURE)
+    return {title: await dao.score_top_percent(db_session, id_) for title, id_ in ids.items()}
+
+
+async def _badges_by_hand(db_session, url: str) -> dict[str, int | None]:
+    """The badges counted out in Python over the whole catalogue's scored rows. The
+    ranked population is written out here again rather than taken from
+    `top_percent_ranking`: shared, a ranking scoped to fewer rows would pass."""
+    if url == ANIME_SEARCH_URL:
+        mean_score = weighted_mean_score_expr()
+        stmt = (
+            select(Media.anime_id, weighted_score_expr(mean_score, weighted_mean_votes_expr()))
+            .group_by(Media.anime_id).having(mean_score.is_not(None))
+        )
+    else:
+        stmt = select(Media.id, weighted_score_expr(Media.score, Media.scored_by)).where(Media.score.is_not(None))
+    metrics = dict((await db_session.execute(stmt)).all())
+    badges: dict[str, int | None] = {}
+    for title, id_ in (await _ids(db_session, _grain(url), _TOP_FIXTURE)).items():
+        if id_ not in metrics:
+            badges[title] = None
+            continue
+        rank = 1 + sum(metric > metrics[id_] for metric in metrics.values())
+        badges[title] = -(-rank * 100 // len(metrics))
+    return badges
+
+
+@_BOTH_VIEWS
+async def test_top_percent_keeps_exactly_the_badges_it_names(client, user_auth_headers, db_session, top_percent_set, url):
+    """N keeps every row whose badge reads N% or better: Mid at its own badge, not one
+    point below. The badges are checked against a count by hand first, since the filter
+    and the badge share one expression and would agree on any rounding. The anchor tops
+    every catalogue, so it also pins the best rank to 1 + 0 better rows."""
+    badges = await _badges(db_session, url)
+    assert badges == await _badges_by_hand(db_session, url)
+    assert badges[_TOP_UNSCORED] is None
+    mid = badges[_TOP_MID]
+    assert mid is not None and mid > 1
+
+    in_season = {title: badge for title, badge in badges.items() if title != _TOP_ANCHOR}
+    for top_percent in (mid, mid - 1, 100):
+        expected = {title for title, badge in in_season.items() if badge is not None and badge <= top_percent}
+        await _ordered_fixture_titles(
+            client, user_auth_headers, url=url, expect=expected, top_percent=top_percent,
+        )
+
+
+_GENRE_A, _GENRE_B = "Gmode Genre A", "Gmode Genre B"
+_GENRE_FIXTURE = {"Gmode Both": [_GENRE_A, _GENRE_B], "Gmode Only A": [_GENRE_A], "Gmode Only B": [_GENRE_B], "Gmode Neither": []}
+
+
+@_BOTH_VIEWS
+@pytest.mark.parametrize(("params", "expected"), [
+    ({"genre_mode": "any"}, {"Gmode Both", "Gmode Only A", "Gmode Only B"}),
+    ({"genre_mode": "all"}, {"Gmode Both"}),
+    ({}, {"Gmode Both"}),
+], ids=["any", "all", "default_all"])
+async def test_genre_mode_needs_one_or_every_selected_genre(
+    client, user_auth_headers, db_session, url, params, expected,
+):
+    """One media per anime, so each genre it carries is its anime's majority."""
+    genres = {name: Genre(name=name, genre_type=GenreType.Genres, description="mode test") for name in (_GENRE_A, _GENRE_B)}
+    db_session.add_all(genres.values())
+    await db_session.flush()
+    for offset, title in enumerate(_GENRE_FIXTURE):
+        await _make_anime(db_session, mal_id=87721 + offset, title=title)
+    media_ids = await _ids(db_session, Media, _GENRE_FIXTURE)
+    db_session.add_all(
+        MediaGenre(media_id=media_ids[title], genre_id=genres[name].id)
+        for title, names in _GENRE_FIXTURE.items() for name in names
+    )
+    await db_session.flush()
+    await _ordered_fixture_titles(
+        client, user_auth_headers, url=url, expect=expected, genre_name=[_GENRE_A, _GENRE_B], **params,
+    )
+
+
+_STUDIO_X, _STUDIO_Y = "Smode Studio X", "Smode Studio Y"
+_MOVIE = {"media_type": MediaType.Movie}
+
+_STUDIO_FIXTURE = {
+    "Smode Both": [("Smode Both", {})],
+    "Smode Only X": [("Smode Only X", {}), ("Smode Only X 2", {})],
+    "Smode Split": [("Smode Split", {}), ("Smode Split Movie", _MOVIE)],
+    "Smode Neither": [("Smode Neither", {})],
+}
+# Media → its studios. Only X has two media, both by X, so an anime counting media
+# instead of studios would reach two.
+_STUDIO_CREDITS = {
+    "Smode Both": [_STUDIO_X, _STUDIO_Y],
+    "Smode Only X": [_STUDIO_X],
+    "Smode Only X 2": [_STUDIO_X],
+    "Smode Split": [_STUDIO_X],
+    "Smode Split Movie": [_STUDIO_Y],
+}
+
+
+@pytest.fixture
+async def studio_mode_set(db_session):
+    studios = {name: Studio(name=name) for name in (_STUDIO_X, _STUDIO_Y)}
+    db_session.add_all(studios.values())
+    await db_session.flush()
+    await _make_franchises(db_session, _STUDIO_FIXTURE, mal_id=87731)
+    media_ids = await _ids(db_session, Media, _STUDIO_CREDITS)
+    db_session.add_all(
+        MediaStudio(media_id=media_ids[title], studio_id=studios[name].id)
+        for title, names in _STUDIO_CREDITS.items() for name in names
+    )
+    await db_session.flush()
+
+
+@pytest.mark.parametrize(("url", "mode", "expected"), [
+    (ANIME_SEARCH_URL, "any", {"Smode Both", "Smode Only X", "Smode Split"}),
+    (ANIME_SEARCH_URL, "all", {"Smode Both", "Smode Split"}),
+    (MEDIA_SEARCH_URL, "any", {"Smode Both", "Smode Only X", "Smode Only X 2", "Smode Split", "Smode Split Movie"}),
+    (MEDIA_SEARCH_URL, "all", {"Smode Both"}),
+], ids=["anime_any", "anime_all", "media_any", "media_all"])
+async def test_studio_mode_needs_one_or_every_selected_studio(
+    client, user_auth_headers, studio_mode_set, url, mode, expected,
+):
+    """An anime carries the studios of all its media together: Split's two media, one
+    by each, make it a match for both."""
+    await _ordered_fixture_titles(
+        client, user_auth_headers, url=url, expect=expected, studio_name=[_STUDIO_X, _STUDIO_Y], studio_mode=mode,
+    )
+
+
+@pytest.mark.parametrize(("studios", "expected"), [
+    ([_STUDIO_X, _STUDIO_Y], {"any": {"Smode Both", "Smode Only X", "Smode Split"}, "all": {"Smode Both"}}),
+    ([_STUDIO_X], {"any": {"Smode Both", "Smode Only X", "Smode Split"}, "all": {"Smode Both", "Smode Only X", "Smode Split"}}),
+    ([_STUDIO_Y], {"any": {"Smode Both"}, "all": {"Smode Both"}}),
+], ids=["x_and_y", "x", "y"])
+async def test_studio_mode_counts_only_the_media_the_other_filters_match(
+    client, user_auth_headers, studio_mode_set, studios, expected,
+):
+    """With type TV, an anime's studios are those of its TV media: Split's Y made only
+    its movie, so Split is no TV by both. One studio then means the same in either
+    mode, as it should."""
+    for mode, titles in expected.items():
+        await _ordered_fixture_titles(
+            client, user_auth_headers, url=ANIME_SEARCH_URL, expect=titles,
+            studio_name=studios, studio_mode=mode, media_type="TV",
+        )
 
 
 # ---------------------------------------------------------------------------

@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 10
 
     SEARCH_SECRET_KEY: str
-    CURRENT_SEARCH_API_VERSION: str = "v1.1.0" # Used to expire tokens when API changes
+    CURRENT_SEARCH_API_VERSION: str = "v1.1.0"  # Bump only for breaking changes, e.g. a renamed filter
 
     # MyAnimeList official API v2 (https://api.myanimelist.net/v2). Public data
     # needs no OAuth — every request carries the `X-MAL-CLIENT-ID` header set to

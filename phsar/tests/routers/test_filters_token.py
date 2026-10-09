@@ -11,6 +11,9 @@ VALID_FILTER_PAYLOAD = {
     "media_type": ["TV"]
 }
 
+# Optional, so a token minted without them verifies to their defaults.
+OPTIONAL_FILTERS = {"top_percent": 20, "genre_mode": "any", "studio_mode": "all", "upcoming_main": True}
+
 TOO_LONG_FILTER_PAYLOAD = {
     "query": (
         "In this anime, a group of genetically enhanced teenagers engage in a philosophical battle against "
@@ -134,20 +137,41 @@ async def test_create_and_verify_token_as_admin(client, admin_auth_headers):
     assert data["query"] == "spy"
     assert "Action" in data["genre_name"]
 
-async def test_token_carries_the_stripped_query(client, user_auth_headers):
-    create_resp = await client.post(
-        "/filters/create-token",
-        json={**VALID_FILTER_PAYLOAD, "query": "  spy  "},
-        headers=user_auth_headers,
-    )
-    assert create_resp.status_code == 200
+
+async def _round_trip(client, headers, payload: dict) -> dict:
+    create_resp = await client.post("/filters/create-token", json=payload, headers=headers)
+    assert create_resp.status_code == 200, create_resp.text
     verify_resp = await client.post(
-        "/filters/verify-token",
-        json={"token": create_resp.json()["token"]},
-        headers=user_auth_headers,
+        "/filters/verify-token", json={"token": create_resp.json()["token"]}, headers=headers,
     )
-    assert verify_resp.status_code == 200
-    assert verify_resp.json()["query"] == "spy"
+    assert verify_resp.status_code == 200, verify_resp.text
+    return verify_resp.json()
+
+
+async def test_token_carries_the_optional_filters(client, user_auth_headers):
+    data = await _round_trip(client, user_auth_headers, {**VALID_FILTER_PAYLOAD, **OPTIONAL_FILTERS})
+    assert {key: data[key] for key in OPTIONAL_FILTERS} == OPTIONAL_FILTERS
+
+
+async def test_token_without_the_optional_filters_reads_their_defaults(client, user_auth_headers):
+    """An earlier link still opens, and searches as it did."""
+    data = await _round_trip(client, user_auth_headers, VALID_FILTER_PAYLOAD)
+    assert {key: data[key] for key in OPTIONAL_FILTERS} == {
+        "top_percent": None, "genre_mode": "all", "studio_mode": "any", "upcoming_main": False,
+    }
+
+
+@pytest.mark.parametrize("top_percent", [0, 101])
+async def test_token_rejects_a_top_percent_out_of_range(client, user_auth_headers, top_percent):
+    resp = await client.post(
+        "/filters/create-token", json={**VALID_FILTER_PAYLOAD, "top_percent": top_percent}, headers=user_auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+async def test_token_carries_the_stripped_query(client, user_auth_headers):
+    data = await _round_trip(client, user_auth_headers, {**VALID_FILTER_PAYLOAD, "query": "  spy  "})
+    assert data["query"] == "spy"
 
 @pytest.mark.asyncio
 async def test_token_endpoints_as_user(client, user_auth_headers):

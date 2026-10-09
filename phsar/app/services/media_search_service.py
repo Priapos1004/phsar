@@ -9,7 +9,7 @@ from app.exceptions import MediaNotFoundError
 from app.models.media import Media
 from app.models.user_settings import NameLanguage
 from app.schemas.media_filter_schema import (
-    MediaSearchFilters,
+    CatalogueSearchFilters,
     SearchType,
     SortDir,
     SortKey,
@@ -73,7 +73,7 @@ def media_to_dict(media: Media) -> dict:
 async def search_media_by_query(
     db: AsyncSession,
     query: str,
-    filters: MediaSearchFilters,
+    filters: CatalogueSearchFilters,
     search_type: SearchType,
     user_id: int,
     *,

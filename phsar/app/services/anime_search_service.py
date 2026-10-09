@@ -25,7 +25,7 @@ from app.schemas.anime_schema import (
     RelationTypeSummary,
 )
 from app.schemas.media_filter_schema import (
-    MediaSearchFilters,
+    CatalogueSearchFilters,
     SearchType,
     SortDir,
     SortKey,
@@ -230,7 +230,7 @@ def anime_title_texts(anime) -> list[str | None]:
 async def search_anime_by_query(
     db: AsyncSession,
     query: str,
-    filters: MediaSearchFilters,
+    filters: CatalogueSearchFilters,
     search_type: SearchType,
     *,
     sort: SortKey,

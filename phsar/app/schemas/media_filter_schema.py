@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Annotated
 
-from pydantic import BaseModel, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints
 
 from app.models.media import AgeRating, MediaType, OriginalSource, RelationType
 
@@ -37,6 +37,12 @@ class SortDir(str, Enum):
     DESC = "desc"
 
 
+class MatchMode(str, Enum):
+    """Whether a row needs one of the selected values or every one of them."""
+    ANY = "any"
+    ALL = "all"
+
+
 class MediaSearchFilters(BaseModel):
     relation_type: list[RelationType] | None = None
     media_type: list[MediaType] | None = None
@@ -58,7 +64,18 @@ class MediaSearchFilters(BaseModel):
     total_watch_time_min: int | None = None
     total_watch_time_max: int | None = None
 
-class ExtendedMediaSearchFilters(MediaSearchFilters):
+    top_percent: int | None = Field(default=None, ge=1, le=100)
+    genre_mode: MatchMode = MatchMode.ALL
+    studio_mode: MatchMode = MatchMode.ANY
+
+
+class CatalogueSearchFilters(MediaSearchFilters):
+    """The filters only the catalogue searches take, beyond the `MediaSearchFilters`
+    every filtered search shares."""
+    upcoming_main: bool = False
+
+
+class ExtendedMediaSearchFilters(CatalogueSearchFilters):
     query: SearchQuery = ""
     search_type: SearchType = SearchType.TITLE
     view_type: ViewType = ViewType.ANIME

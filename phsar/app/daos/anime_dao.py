@@ -17,6 +17,7 @@ from app.daos.search_filters import (
     sort_order,
     title_match_passes,
     title_match_score,
+    top_percent_ranking,
     weighted_mean_score_expr,
     weighted_mean_votes_expr,
     weighted_score_expr,
@@ -28,7 +29,7 @@ from app.models.media_genre import MediaGenre
 from app.models.media_studio import MediaStudio
 from app.models.user_settings import NameLanguage
 from app.schemas.media_filter_schema import (
-    MediaSearchFilters,
+    CatalogueSearchFilters,
     SearchType,
     SortDir,
     SortKey,
@@ -232,49 +233,12 @@ class AnimeDAO(MalIdDAO[Anime]):
         return result.scalars().first()
 
     async def score_top_percent(self, db: AsyncSession, anime_id: int) -> int | None:
-        """Where this anime ranks among all scored anime by its
-        confidence-weighted MAL score, as a rank-based "top N%" (lower = better,
-        worst-scored anime = 100).
-
-        Per-anime metric is `S_w * log10(V_w + 1)` where `S_w`/`V_w` are the
-        relation-weighted means (`RELATION_SCORE_WEIGHTS` — Main + AlternativeVersion
-        only) the detail card shows as `avg_score` / `avg_scored_by`, so the rank
-        lines up with the displayed pill and both move together (higher in both →
-        higher rank). Returns None when the anime has no scored Main/Alt media or
-        the catalog has none scored."""
-        mean_score = weighted_mean_score_expr()
-        per_anime = (
-            select(
-                Media.anime_id.label("anime_id"),
-                weighted_score_expr(mean_score, weighted_mean_votes_expr()).label("metric"),
-            )
-            .group_by(Media.anime_id)
-            .having(mean_score.is_not(None))
-            .cte("per_anime_score")
-        )
-        # Single pass over the per-anime metric set: rank() (ties share the lowest
-        # rank) minus 1 is the count of strictly-better anime, count() over the
-        # whole window is the scored total. Avoids referencing the CTE twice (a
-        # scalar subquery + a filtered count both scanned it before).
-        ranked = (
-            select(
-                per_anime.c.anime_id.label("anime_id"),
-                (func.rank().over(order_by=per_anime.c.metric.desc()) - 1).label("better"),
-                func.count().over().label("total"),
-            )
-            .select_from(per_anime)
-            .subquery()
-        )
-        row = (
-            await db.execute(
-                select(ranked.c.better, ranked.c.total).where(ranked.c.anime_id == anime_id)
-            )
-        ).one_or_none()
-        # No row → this anime has no scored media (filtered out by HAVING).
-        if row is None or row.total == 0:
-            return None
-        # Rank-based top N% (see MediaDAO.score_top_percent): ceil(rank/total*100).
-        return ((row.better + 1) * 100 + row.total - 1) // row.total
+        """This anime's "Top N%" badge (`top_percent_ranking`). None when the anime has
+        no scored media that `RELATION_SCORE_WEIGHTS` counts."""
+        ranking = top_percent_ranking(per_anime=True)
+        return (
+            await db.execute(select(ranking.c.top_percent).where(ranking.c.id == anime_id))
+        ).scalar_one_or_none()
 
     async def get_by_media_mal_id_with_media(
         self, db: AsyncSession, media_mal_id: int,
@@ -511,7 +475,7 @@ class AnimeDAO(MalIdDAO[Anime]):
         self,
         db: AsyncSession,
         query: str,
-        filters: MediaSearchFilters,
+        filters: CatalogueSearchFilters,
         search_type: SearchType,
         *,
         sort: SortKey,
