@@ -1,10 +1,10 @@
 """Rated-coverage tiers — the per-anime "how much of this have I rated" state.
 
 Every case drives `rating_service.get_rating_coverage`, so each one covers the
-grouped query in `RatingDAO.get_anime_coverage` and the ladder in
-`_coverage_tier` together. That is deliberate: the two halves are only
-meaningful as a pair, and a tier is the only thing either half exists to
-produce.
+grouped query in `RatingDAO.get_anime_coverage` and the ladder in `_rated_state`,
+through its `CoverageTier` view `_coverage_tier`, together. That is deliberate: the
+two halves are only meaningful as a pair, and the state is what both exist to
+produce; this file pins its tier view.
 
 Pins: the tier ordering; that `dropped`/`on_hold` hold an anime at `some`; that
 a not-yet-aired media leaves both numerator and denominator; the

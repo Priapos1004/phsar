@@ -77,9 +77,8 @@ async def enqueue_user_scrape(
     # An explicit client mal_id wins; otherwise see _MAL_ID_QUERY. Either way
     # the seed path is the same machinery the seasonal sweep uses.
     seed_mal_id = request.mal_id
-    stripped_query = request.query.strip()
-    if seed_mal_id is None and _MAL_ID_QUERY.fullmatch(stripped_query):
-        seed_mal_id = int(stripped_query)
+    if seed_mal_id is None and _MAL_ID_QUERY.fullmatch(request.query):
+        seed_mal_id = int(request.query)
     if seed_mal_id is not None:
         payload["mal_id"] = seed_mal_id
     job = make_job(

@@ -11,11 +11,16 @@ VALID_FILTER_PAYLOAD = {
     "media_type": ["TV"]
 }
 
+# Optional, so a token minted without them verifies to their defaults.
+OPTIONAL_FILTERS = {
+    "top_percent": 20, "genre_mode": "any", "studio_mode": "all", "upcoming_main": True,
+    "rated": ["in_progress", "main"], "watchlisted": False,
+}
+
 TOO_LONG_FILTER_PAYLOAD = {
     "query": (
         "In this anime, a group of genetically enhanced teenagers engage in a philosophical battle against "
-        "a corrupt government while navigating themes of identity, memory, and artificial intelligence. "
-        "The protagonist, haunted by dreams of a parallel world, must choose between saving reality and preserving free will."
+        "a corrupt government while navigating themes of identity, memory and free will."
     ),
     "genre_name": [
         "Magical Sex Shift",
@@ -40,9 +45,9 @@ TOO_LONG_FILTER_PAYLOAD = {
     ],
     "airing_status": ["Currently Airing", "Finished Airing", "Not Yet Aired"],
     "studio_name": [
-        "Studio A with a pretty long name",
-        "Studio B also having the longest name ever seen",
-        "Studio C having a name that could reach the atmosphere",
+        "Studio A with a pretty long name that keeps going well past what any real studio would call itself",
+        "Studio B also having the longest name ever seen, until Studio A came along and outdid it",
+        "Studio C having a name that could reach the atmosphere and then carry on into orbit and beyond",
         "Studio D with a name that is just too long to be real",
         "Studio E going on and on with its name for no reason at all really no reason at all"
     ],
@@ -133,6 +138,53 @@ async def test_create_and_verify_token_as_admin(client, admin_auth_headers):
     data = verify_resp.json()
     assert data["query"] == "spy"
     assert "Action" in data["genre_name"]
+
+
+async def _round_trip(client, headers, payload: dict) -> dict:
+    create_resp = await client.post("/filters/create-token", json=payload, headers=headers)
+    assert create_resp.status_code == 200, create_resp.text
+    verify_resp = await client.post(
+        "/filters/verify-token", json={"token": create_resp.json()["token"]}, headers=headers,
+    )
+    assert verify_resp.status_code == 200, verify_resp.text
+    return verify_resp.json()
+
+
+async def test_token_carries_the_optional_filters(client, user_auth_headers):
+    data = await _round_trip(client, user_auth_headers, {**VALID_FILTER_PAYLOAD, **OPTIONAL_FILTERS})
+    assert {key: data[key] for key in OPTIONAL_FILTERS} == OPTIONAL_FILTERS
+
+
+async def test_token_without_the_optional_filters_reads_their_defaults(client, user_auth_headers):
+    """An earlier link still opens, and searches as it did."""
+    data = await _round_trip(client, user_auth_headers, VALID_FILTER_PAYLOAD)
+    assert {key: data[key] for key in OPTIONAL_FILTERS} == {
+        "top_percent": None, "genre_mode": "all", "studio_mode": "any", "upcoming_main": False,
+        "rated": None, "watchlisted": None,
+    }
+
+
+@pytest.mark.parametrize("top_percent", [0, 101])
+async def test_token_rejects_a_top_percent_out_of_range(client, user_auth_headers, top_percent):
+    resp = await client.post(
+        "/filters/create-token", json={**VALID_FILTER_PAYLOAD, "top_percent": top_percent}, headers=user_auth_headers,
+    )
+    assert resp.status_code == 422
+
+
+async def test_token_carries_the_stripped_query(client, user_auth_headers):
+    data = await _round_trip(client, user_auth_headers, {**VALID_FILTER_PAYLOAD, "query": "  spy  "})
+    assert data["query"] == "spy"
+
+
+async def test_token_that_no_longer_validates_reads_as_malformed(client, user_auth_headers):
+    """An earlier link over today's query cap: a 400, not a 500."""
+    from app.core.security import create_url_token
+
+    token = create_url_token({**VALID_FILTER_PAYLOAD, "query": "x" * 201})
+    resp = await client.post("/filters/verify-token", json={"token": token}, headers=user_auth_headers)
+    assert resp.status_code == 400
+    assert "malformed" in resp.text.lower()
 
 @pytest.mark.asyncio
 async def test_token_endpoints_as_user(client, user_auth_headers):

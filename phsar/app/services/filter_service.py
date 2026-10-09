@@ -18,7 +18,7 @@ from app.models.media import (
     RelationType,
 )
 from app.schemas.genre_schema import GenreOut
-from app.schemas.media_filter_schema import ViewType
+from app.schemas.media_filter_schema import CatalogueSearchFilters, RatedState, ViewType
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +64,36 @@ def select_note_target_index(media_list: list[Media], *, latest: bool) -> int:
             im[1].anime_season_year, im[1].anime_season_name, im[1].mal_id
         ),
     )[0]
+
+
+def personal_scope(
+    filters: CatalogueSearchFilters,
+    states: dict[int, RatedState],
+    listed: set[int],
+    include: set[int] | None = None,
+) -> tuple[set[int] | None, set[int]]:
+    """The `(include, exclude)` ids the caller's `rated` and `watchlisted` filters
+    leave, at whichever grain `states` (the rated rows) and `listed` are keyed by.
+    `include` is a scope already in force — the spoiler frontier — and None means no
+    restriction.
+
+    States are a union: with `none` selected the unrated rows pass, so the rated rows
+    in an unselected state are excluded; without it, the selected ones are the include.
+    An include absorbs the exclude, so the caller has one list to send."""
+    exclude: set[int] = set()
+    if filters.rated:
+        selected = {id_ for id_, state in states.items() if state in filters.rated}
+        if RatedState.NONE in filters.rated:
+            exclude |= states.keys() - selected
+        else:
+            include = selected if include is None else include & selected
+    if filters.watchlisted is True:
+        include = listed if include is None else include & listed
+    elif filters.watchlisted is False:
+        exclude |= listed
+    if include is None:
+        return None, exclude
+    return include - exclude, set()
 
 
 def sort_seasons(seasons: list[str]) -> list[str]:

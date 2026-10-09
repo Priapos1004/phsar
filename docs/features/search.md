@@ -1,7 +1,7 @@
 # Search
 
-Semantic + filtered search over the catalogue, at two grains: **media** (one entry)
-and **anime** (a franchise, aggregated from its media).
+Title, description and note search over the catalogue, filtered, at two grains:
+**media** (one entry) and **anime** (a franchise, aggregated from its media).
 
 **Code**: `services/vector_embedding_service.py` (embeddings) →
 `services/media_search_service.py` / `services/anime_search_service.py` (queries) →
@@ -10,18 +10,20 @@ and **anime** (a franchise, aggregated from its media).
 
 ## Embeddings
 
-Model is `paraphrase-multilingual-MiniLM-L12-v2`, stored in pgvector. Three
-targets, selected by `SearchType`: `title`, `description`, `rating_notes`.
+Model is `paraphrase-multilingual-MiniLM-L12-v2`, stored in pgvector. Searches read
+the `description` and `rating_notes` embeddings. A description embedding encodes the
+row's titles together with its description, so a title change regenerates it. Titles
+have no embedding of their own: title search matches literally (below). Changing the
+model re-tunes every constant calibrated on it, each marked "re-measure on a model
+change".
 
 **Everything is case-folded before encoding.** The model is *cased*, so the same
 text in different capitalisation produces materially different vectors — enough
-that capitalising a query reorders title results and can bury the intended show.
+that capitalising a query reorders the results and can bury the intended show.
 `_fold` is the single chokepoint every embedding passes through, queries and
 stored documents alike — `generate_query_embedding` and `generate_embedding` are
 siblings over `_run_encode`, not one calling the other — so folding there keeps
 both in one case space.
-The SQL literal-match bonuses still use the raw query, which is already
-case-insensitive.
 
 **Queries are memoized; document text is not.** `generate_query_embedding` wraps a
 256-entry LRU over the folded text (~30 ms per encode, ~0.1 ms on a hit, ~4 MB at
@@ -40,38 +42,62 @@ owner. Pinned by `test_cache_hits_do_not_alias_the_returned_list`; the shared fo
 that keeps queries and documents in one case space is pinned by
 `test_query_and_document_paths_produce_the_same_vector`.
 
-## Ranking
+## Title search
 
-`apply_vector_ordering` subtracts a two-tier bonus from `cosine_distance` so
-literal matches outrank merely thematically-similar shows: a flat bonus for a
-substring (`ilike`) match, and a pg_trgm `word_similarity()` bonus scaled linearly
-above a threshold so typos still surface the intended title. It must stay
-`word_similarity` and not plain `similarity`, which penalises the length mismatch
-between a short query and a long title and buries partial matches.
+**A title query is a filter, not a ranking.** A row matches when one of its title
+variants — romaji, English, Japanese, or a synonym (`other_names`) — contains the
+query or fuzzy-matches it; everything else is left out. At the anime grain the
+variants are the anime's own plus every one of its media's, so a side story's title
+finds the franchise. `title_match_score` is the one definition the anime, media and
+`/search/ratings` searches share.
 
-Description and rating-note search skip both bonuses — those are semantic queries,
-not literal ones.
+A **substring** hit (`ilike`) outranks any fuzzy hit. The **fuzzy** tier must stay
+pg_trgm `word_similarity` and not plain `similarity`, which penalises the length
+mismatch between a short query and a long title and buries the partial match. It tries
+`TITLE_MATCH_THRESHOLDS` strictest first, moving on only when the stricter matches
+nothing; their calibration sits beside them.
 
-**Anime-level ranking aggregates the distance in the ORDER BY** rather than putting
-the embedding in the GROUP BY. Three constraints shape that:
+**The anime grain matches in HAVING**, as `GREATEST(anime variants, MAX(media
+variants))` after grouping — a title query is a filter, so the
+[Anime-view filters](#anime-view-filters) invariant binds it. Pinned by
+`test_media_title_reaches_its_anime`.
 
-- it must wrap the **distance**, since pgvector has no `min(vector)`;
-- it must **ignore group size** — the query groups over joined media rows, so a
-  six-media anime contributes six identical rows. `min`/`avg` qualify; `sum` would
-  rank a franchise six times worse for being a franchise;
-- the literal-match bonuses stay un-aggregated, being functionally dependent on the
-  grouped primary key.
+## Description search
 
-Grouping by the vector instead would put 384 floats in the hash/sort key of every
-input row, forcing a GroupAggregate plus a full sort where a HashAggregate would do
-— and Postgres won't infer functional dependency for a column on a different table.
+**Literal hits first, semantic neighbours after, down to a cutoff.** A media is a
+literal hit when every query word starts a word of its titles or description — the
+text its description embedding encodes, so both tiers judge the same media. A word
+*start* (`\m`): a prefix, never an infix. Each tier is ordered nearest first;
+`description_passes` is the one ranker every description search shares.
+
+**The cutoff is relative to the query**: a semantic hit must sit `SEMANTIC_MARGIN`
+below the catalogue's mean distance to that query. A fixed distance cannot serve both
+ends — a short name sits close to every description, a sentence far from all of
+them. The mean runs over the whole catalogue, unfiltered, so no filter moves it and
+`/search/ratings` measures against the catalogue, not the caller's own ratings. A
+media with an empty description is never a semantic hit: its vector encodes the title
+alone, and such vectors sit near every short query.
+
+**When nothing matches at all, it retries once, typo-tolerant**: every word
+`word_similarity`-matched at the strict title threshold. That reaches a typo at the
+end of a word, not a swap mid-word.
+
+**Both retries count what the filters leave**: a filter that excludes every strict
+match lets the looser matches through.
+
+**The anime grain decides in HAVING**, for the title match's reason: a literal hit on
+any media makes the anime one, and the semantic test averages its media's distances —
+an aggregate that must ignore group size, since `SUM` would rank a franchise worse for
+having more entries. Pinned by `test_description_literal_hit_on_a_side_story_reaches_its_anime`.
+
+Rating-note search ranks by note-embedding distance alone: no literal tier, no cutoff.
 
 ## Anime-view filters
 
 **A filter selects which anime; it never rescopes the aggregates.**
 `apply_anime_pre_filters` emits `Anime.id IN (SELECT media.anime_id WHERE …)` — one
-subquery, so all conditions hold for the *same* media row ("studio X + type TV"
-means one media is a TV by X) — rather than filtering the grouped rows.
+subquery, so the studios count only on media the other conditions match ("studio X +
+type TV" means one media is a TV by X) — rather than filtering the grouped rows.
 
 Those grouped rows also feed `avg_score`, `avg_scored_by`, `total_episodes`,
 `media_count` and every HAVING filter. Narrowing them would make the displayed
@@ -88,14 +114,29 @@ priority-collapsed value (Currently → Finished → Not yet aired). Otherwise a
 with one finished side story surfaces under "Finished" while its card reads
 "Currently Airing".
 
-**Genre majority is a separate condition.** Every selected genre must be carried by
-a majority of the anime's media (`count * 2 > total`, the same threshold that
+**Genre majority is a separate condition.** A selected genre counts for an anime
+when a majority of its media carry it (`count * 2 > total`, the same threshold that
 populates the dropdown). It stays **one non-correlated pass** — per-(anime, genre)
 counts and per-anime totals computed once, joined, survivors counted against the
-number of genres selected. A correlated majority-subquery per genre is superlinear:
+number the mode needs. A correlated majority-subquery per genre is superlinear:
 each one adds a SubPlan *and* widens the set every existing SubPlan re-evaluates
 over, and this fires on every genre chip toggle. The denominator is the anime's
 **full** media count, so a stacked studio filter can't shrink it.
+
+**Any or all.** `genre_mode` (default all) and `studio_mode` (default any) choose
+whether a row needs one selected value or every one. An anime's genres are the ones
+reaching their majority; its studios are the union over the media the categorical
+filters match, coupled as above. The media grain tests the media itself.
+
+**Top N% is the badge.** Both badges and the `top_percent` filter read one ranking,
+`top_percent_ranking`, so N keeps exactly the rows whose badge reads N% or better;
+its docstring gives the population and the rounding.
+
+**`upcoming_main` reads the main story** (`upcoming_main_media`), as the [release
+sort](#sorting) does. It departs from
+the card's `has_upcoming`, which counts any announced media, so that "upcoming +
+release ascending" lists the next seasons — an anime announcing only an OVA would
+sort at its last aired season.
 
 ## Anime score is main-story only
 
@@ -104,25 +145,63 @@ over, and this fires on every genre chip toggle. The denominator is the anime's
 Summary count 0 — i.e. the same anchor set the spoiler frontier uses.
 
 The Python computation in `_compute_anime_aggregates` is the twin of the SQL
-`weighted_mean_score_expr` / `weighted_mean_votes_expr` used by the default ordering, the
-score HAVING filters, and `score_top_percent`. Keeping them in step is what stops
+`weighted_mean_score_expr` / `weighted_mean_votes_expr`, which every anime-grain
+query reads the score through. Keeping them in step is what stops
 the displayed number, the ranking and the "Top N%" pill from drifting apart.
 
 `total_episodes`, `total_watch_time`, `media_count` and genre majority stay over
 **all** media.
 
-## The caller's own ratings
+## Sorting
 
-Media-view results carry `is_rated` (`MediaSearchResult`), so a hit can show that
-the caller already rated it. It is filled after the search query, from one indexed
-lookup over the page of hits — bounded by the result limit, and deliberately not
-threaded into `daos/search_filters.py`, which knows nothing about a user and must
-keep it that way: the anime query's GROUP BY and the "a filter never rescopes the
-aggregates" invariant both depend on that.
+**A query decides which rows match; the sort decides their order.** Title and
+description queries keep their match set (every pass's restriction, the
+strict-then-loose retry), and `sort` only replaces the ORDER BY. `relevance`, the
+default, is the query's own match order, and top rated without a query. `limit` runs 1–1000,
+default 50.
 
-The anime grain has no equivalent field. Its counterpart is the per-anime coverage
-tier from `/ratings/coverage`, which the client indexes by anime uuid — see
-[ratings.md](ratings.md).
+`sort_order` is the one implementation at both grains, and its docstring gives the
+tiebreak. At the anime grain, the keys built on score or votes read the aggregates its
+card shows ([main story only](#anime-score-is-main-story-only)); a key computed over
+the anime's media says so below; the rest read the anime's own row.
+
+**Release is one timeline.** An anime sits at its next announced season, else at
+`TBA_SEASON_KEY` if it has an announcement without a season, else at its latest aired
+season, all read from its main-story media (`MAIN_STORY_RELATIONS`) alone: a recap or
+OVA neither announces a franchise nor makes it fresh. A media sits at its own
+season, side stories included, or at TBA while announced without one. TBA
+follows every real season, so ascending runs oldest → announced → TBA, and descending
+the reverse. A row with no season comes last either way. A media still "Not yet aired"
+after its season has passed sorts at that past season.
+
+**Title sorts in the user's name language**, through `display_title`. **Random is
+daily**: md5 of the row's uuid and the UTC date, so every viewer gets the same order
+that day. **Your rating** is the mean of the caller's ratings over the anime's rated
+media, whatever their status — the `/ratings` page's mean — or the media's own rating;
+unrated rows come last.
+
+## Personal filters and sort
+
+**`rated`, `watchlisted` and `your_rating` read the caller's own data, and
+`daos/search_filters.py` still knows nothing about a user** — the anime query's GROUP BY
+and the [Anime-view filters](#anime-view-filters) invariant depend on that. The service
+resolves the personal filters to ids (`filter_service.personal_scope`) and the DAOs select rows
+by them, `IN` / `NOT IN` on the primary key, so the grouped media and every aggregate stay
+whole. `your_rating` reaches `sort_order` as a key the DAO builds over its own outer join
+onto the caller's ratings. Pinned by `test_personal_filters_and_sort_do_not_rescope_the_aggregates`.
+
+- **States are a union.** The anime grain takes the [rated states](ratings.md#rated-state-and-coverage);
+  the media grain its own rating's watch status, or `none`. A state of the other grain is
+  a 400.
+- **An anime is watchlisted when any of its media is**, as its bookmark shows.
+- **They narrow the spoiler scope, never replace it**: in hide mode the media grain
+  starts from the visible set.
+- **A guest gets 403** for any of them, `watchlisted=false` included: a read scoped to
+  the caller (`rules/backend.md`, Roles).
+
+Media-view results also carry `is_rated` (`MediaSearchResult`), filled after the query
+from one indexed lookup over the page of hits. The anime grain's counterpart is the
+coverage tier from `/ratings/coverage`, which the client indexes by anime uuid.
 
 ## Ordering media within an anime
 
@@ -139,6 +218,7 @@ The client-side frontier walk is the one sanctioned divergence — see
 
 **Why it is this way**
 - [Anime score over the main story](../../compound-docs/2026-07-19-anime-score-main-only.md) — the prod-data study behind the weights
-- [Further QoL](../../compound-docs/2026-06-22-v0.14.11-further-qol.md) — `score_top_percent` query shape
+- [Further QoL](../../compound-docs/2026-06-22-v0.14.11-further-qol.md) — the badge's rank-based rounding
 - [Quality-of-life upgrades](../../compound-docs/2026-07-27-v0.15.3-quality-of-life.md) — filters no longer rescoping the score
 - [Efficiency improvements](../../compound-docs/2026-08-06-v0.15.4-efficiency-improvements.md) — the aggregate-in-ORDER-BY change and query memoization
+- [Search rework](../../compound-docs/2026-10-07-v0.16.0-search-rework.md) — the studies and problem cases behind the v0.16.0 search changes

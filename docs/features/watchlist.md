@@ -88,6 +88,7 @@ shape on purpose.
   listed media ([USER_FLOWS.md](../../phsar/frontend/USER_FLOWS.md) §7.4).
 - **Readiness** — reads the entries and the user's ratings: [readiness.md](readiness.md).
 - **Curation** — a media delete cascades to its entries: [curation.md](curation.md).
+- **Search** — `watchlisted` filters by the entries: [search.md](search.md#personal-filters-and-sort).
 
 ---
 

@@ -373,8 +373,9 @@ export function formatScoreWithStep(value: number, ratingStep: number): string {
 }
 
 /**
- * Resolve the display title based on user's name language preference.
- * Falls back through: preferred language → english name → romaji title.
+ * Resolve the display title based on user's name language preference: the name in that
+ * language when it is set and not empty, else the romaji title — Japanese never falls
+ * back to English. `search_filters.display_title` is the SQL twin the title sort orders by.
  */
 export function resolveTitle(
 	title: string,

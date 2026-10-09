@@ -32,7 +32,7 @@ media_dao = MediaDAO()
 
 
 async def test_weighted_score_matches_python_twin(db_session):
-    """The SQL `weighted_score_expr` (Postgres `log(10, x)`) and the Python
+    """The SQL `weighted_score_expr` (Postgres `log10`) and the Python
     `_weighted_score` (`math.log10`) are the two copies of one formula and feed
     the same percentile ranking — they must stay numerically identical. Guards
     against a dialect/refactor that silently desyncs the chip from drift detection.

@@ -41,6 +41,7 @@ Create a new GitHub release for the phsar project.
 - Omit any section that has no entries.
 - The one-line summary should capture the overall theme, not list everything.
 - Keep bullet points concise and feature/fix-level (not commit-level).
+- Say what changed (a new field, a migration, a relabelled value), not how to deploy it — that lives in root `CLAUDE.md` § Deployment.
 - Only mention things that are meaningful relative to the *previous release*. Bugs introduced and fixed within the same cycle, internal refactors of code that didn't exist in the previous release, and meta changes to tooling/skill files are not user-facing — fold them into the related feature or omit them entirely.
 
 ## Arguments

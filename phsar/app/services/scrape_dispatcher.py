@@ -1171,10 +1171,10 @@ def _weighted_score(score: float | None, scored_by: int | None) -> float | None:
     return score * math.log10(scored_by + 1)
 
 
-# Fields whose change regenerates the MediaSearch embedding pair.
-# `_compute_search_embeddings` mixes title into the description embedding,
-# so a title-side change invalidates BOTH embeddings — same reason the
-# anime-side reclassifier collapses these into a single regen trigger.
+# Fields whose change regenerates the MediaSearch embedding.
+# `_description_embedding` encodes the titles with the description, so a
+# title-side change invalidates it too — same reason the anime-side
+# reclassifier collapses these into a single regen trigger.
 _EMBEDDING_TEXT_FIELDS = ("title", "name_eng", "name_jap", "other_names", "description")
 
 # Fields refreshed but not part of any embedding — pure DB updates.
@@ -1218,7 +1218,7 @@ async def _apply_metadata_diff(
     *, diff_sink: list[dict] | None = None,
 ) -> bool:
     """Refresh non-volatile fields (description, titles, cover, age rating,
-    source) from MAL. Regenerates the media's MediaSearch embedding pair
+    source) from MAL. Regenerates the media's MediaSearch embedding
     when any text-bearing field changed. Returns True when something
     landed so the dispatcher can count it.
 
@@ -1266,7 +1266,7 @@ async def _apply_metadata_diff(
         if field == "other_names":
             # MAL doesn't return title_synonyms in a stable order, so
             # compare as a set — without this, a pure reorder would fire
-            # the 50-100ms embedding regen on noise. Storage keeps the
+            # the ~30 ms embedding regen on noise. Storage keeps the
             # latest order only when the set actually changed.
             current = list(getattr(media, field) or [])
             new_val = list(new_val or [])

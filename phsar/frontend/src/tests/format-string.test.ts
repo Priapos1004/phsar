@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { formatNumber, formatDuration, formatDurationCompact, formatDecimalDigits, clampAndSnapScore, roundScore, formatScore, formatScoreWithStep, escapeHtml, formatAirDate, formatAiringStatus, airingStatusParts } from '$lib/utils/formatString';
+import { formatNumber, formatDuration, formatDurationCompact, formatDecimalDigits, clampAndSnapScore, roundScore, formatScore, formatScoreWithStep, escapeHtml, formatAirDate, formatAiringStatus, airingStatusParts, resolveTitle } from '$lib/utils/formatString';
 
 describe('formatNumber', () => {
 	it('formats integers with commas', () => {
@@ -296,5 +296,24 @@ describe('airingStatusParts', () => {
 			main: 'upcoming content',
 			upcoming: null,
 		});
+	});
+});
+
+describe('resolveTitle', () => {
+	// Mirrors the backend's `_NAMED` in test_search_ranking.py, so `resolveTitle` and its
+	// SQL twin are tested on the same rows.
+	const named: [string, string | null, string | null][] = [
+		['Delta', 'Alpha', 'Kilo'],
+		['Charlie', null, 'Hotel'],
+		['Bravo', '', null],
+		['Echo', 'Able', ''],
+	];
+
+	it.each([
+		['english', ['Alpha', 'Charlie', 'Bravo', 'Able']],
+		['japanese', ['Kilo', 'Hotel', 'Bravo', 'Echo']],
+		['romaji', ['Delta', 'Charlie', 'Bravo', 'Echo']],
+	] as const)('falls back to the romaji title in %s, never to the other language', (language, expected) => {
+		expect(named.map(([title, eng, jap]) => resolveTitle(title, eng, jap, language))).toEqual(expected);
 	});
 });

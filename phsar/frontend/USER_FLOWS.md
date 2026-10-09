@@ -156,7 +156,9 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 
 **No-query ranking:** With no query (browsing, or filters only — e.g. arriving from a studio link), results are ordered by the vote-weighted MAL score each card shows, highest first, with unscored anime last. Filters choose which anime appear and never change a card's score or where it sits relative to the others, so a filtered list reads in the same order as the unfiltered one.
 
-**Title-query ranking:** Title search starts from embedding cosine similarity, then boosts results whose titles literally contain the query (`Lord of` → `Lord of Mysteries` first, not `Overlord`) and results that fuzzy-match via trigram similarity (typos like `lor of` still surface the intended show near the top). Description and rating-notes search rank by embedding only — those queries are semantic, not literal. Search is **case-insensitive** — the query and stored titles are case-folded before embedding, so capitalization (`Kurokos` vs `kurokos`) never changes the results.
+**Title-query matching:** A title query **filters**: the results are the anime (or media) whose title — in any language, including synonyms and, in the anime view, the titles of any of its entries — contains the query or nearly does. Literal matches come first, then near-misses that tolerate a typo (`frieran` → Frieren); a looser match (`friren`) shows only when nothing matches better, and a query no title matches even loosely yields "No results found". Describing a show in title mode therefore finds nothing — "Expand search to descriptions" is the way to search by plot. Search ignores **capitalization** and surrounding spaces (`Kurokos` and ` kurokos ` find the same).
+
+**Description-query matching:** A description query ("Expand search to descriptions") shows first the entries whose synopsis or title contains every word of the query — as the start of a word, so `rintaro` finds Rintarou but `izumi` does not find Nishizumi — then entries close in meaning. Less related entries are left out, so a short list, or "No results found", is normal. When nothing matches, the query is retried once tolerating a typo at the end of a word (`izumy` → Izumi). Rating-notes search ranks by meaning only.
 
 ### 4.4 Search Filters
 Filters appear in a collapsible panel below the search input. Filter options adapt to the current view type.
@@ -516,7 +518,7 @@ own.
 - Restricted users see the page but the form is disabled (`POST /jobs/scrape` rejects them backend-side via `require_user_or_admin` regardless).
 
 ### 11.2 Submitting a Scrape Job
-- The query must be at least 4 chars (`minlength` attr + button stays disabled until 4 chars typed). MAL's top-3 search is too ambiguous on shorter queries.
+- The query must be at least 4 chars (`minlength` attr + button stays disabled until 4 chars typed, surrounding spaces not counted). MAL's top-3 search is too ambiguous on shorter queries.
 - Submitting POSTs `{ query }` to `/jobs/scrape`. Successful enqueue returns 202 with the new job uuid; the form clears and bumps `jobsRefresh` (in `lib/stores/jobs.ts`) so the navbar bell refetches in tens of milliseconds instead of waiting for the next 30s poll.
 - 409 dedupe: re-submitting the same normalized query within `JOBS_DEDUPE_HOURS` (default 24) returns "This query is already queued" — failed jobs don't count, so a transient MAL outage doesn't lock the user out for a day.
 - 409 per-user cap: more than `JOBS_PER_USER_LIMIT` (default 4) active/queued user jobs returns "You already have 4 active scrape jobs. Wait for one to finish before queueing more."

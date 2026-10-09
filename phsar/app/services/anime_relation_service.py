@@ -110,7 +110,7 @@ async def reclassify_anime(
         "cover_image": new_anchor_media.cover_image,
     }
     # Fields the AnimeSearch embedding consumes — a cover_image-only
-    # change shouldn't trigger the ~50-100ms encode.
+    # change shouldn't trigger the ~30 ms encode.
     _EMBEDDING_FIELDS = ("mal_id", "title", "name_eng", "name_jap", "other_names", "description")
 
     def _current(field: str) -> Any:

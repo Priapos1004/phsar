@@ -14,10 +14,10 @@ doesn't drift one without the other.
 Test pattern: the dev DB has hundreds of real anime catalog rows, so a
 no-query filter call returns the top 50 by weighted-score and our fresh
 fixtures (scored_by=0) never make the cut. Each test passes a unique
-title `query=` token so vector search scopes results to the fixture set,
-then asserts which fixture titles survive the filter via set
-intersection — independent of whatever other catalog rows the vector
-search returned.
+title `query=` token, which every fixture title contains, so the title match
+scopes results to the fixture set, then asserts which fixture titles survive
+the filter via set intersection — independent of whatever other catalog rows
+happen to match the token too.
 """
 
 from collections import Counter
@@ -30,22 +30,16 @@ from app.models.media import Media, MediaType, OriginalSource, RelationType
 from app.models.media_genre import MediaGenre
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
-from app.services.anime_search_service import anime_title_texts, most_frequent_first
-from app.services.vector_embedding_service import create_anime_embedding
+from app.services.anime_search_service import most_frequent_first
 from tests._helpers import media_kwargs
 
 ANIME_SEARCH_URL = "/search/anime"
 
 
 async def _make_anime(db_session, *, mal_id: int, title: str) -> Anime:
-    anime = Anime(mal_id=mal_id, title=title, description=title)
+    anime = Anime(mal_id=mal_id, title=title)
     db_session.add(anime)
     await db_session.flush()
-    await create_anime_embedding(
-        db_session, anime_id=anime.id,
-        title_texts=anime_title_texts(anime),
-        description_text=anime.description or "",
-    )
     return anime
 
 
@@ -60,8 +54,8 @@ async def _result_fixture_titles(
     client, headers, *, fixture_titles: set[str], **params,
 ) -> set[str]:
     """Run the search and return the subset of `fixture_titles` present in
-    the response. Other catalog rows that happen to vector-match are
-    ignored — the assertion is about which fixture rows survive the
+    the response. Other catalog rows that happen to match the title token
+    are ignored — the assertion is about which fixture rows survive the
     filter, not about the full result set."""
     resp = await client.get(ANIME_SEARCH_URL, params=params, headers=headers)
     assert resp.status_code == 200, resp.text

@@ -1,7 +1,9 @@
 from fastapi import APIRouter, Depends, Query
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_db, verify_url_token
+from app.exceptions import MalformedTokenError
 from app.schemas.auth_schema import TokenPayload
 from app.schemas.genre_schema import GenreOut
 from app.schemas.media_filter_schema import (
@@ -44,4 +46,10 @@ async def verify_search_token(
 ):
     decoded = verify_url_token(payload.token)
     decoded.pop("ver", None)
-    return ExtendedMediaSearchFilters(**decoded)
+    # A link minted before a filter's validation tightened passes the version check
+    # but no longer validates. Bumping the version would expire every link to catch
+    # those few, so they fail here as a bad token instead.
+    try:
+        return ExtendedMediaSearchFilters(**decoded)
+    except ValidationError:
+        raise MalformedTokenError() from None

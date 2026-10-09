@@ -8,11 +8,6 @@ from app.models.media import Media, MediaType, RelationType, SeasonType
 from app.models.media_genre import MediaGenre
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
-from app.services.anime_search_service import anime_title_texts
-from app.services.vector_embedding_service import (
-    create_anime_embedding,
-    create_media_embedding,
-)
 from tests._helpers import media_kwargs
 
 logger = logging.getLogger(__name__)
@@ -34,13 +29,6 @@ async def anime_with_media(db_session):
     )
     db_session.add(anime)
     await db_session.flush()
-
-    # Anime embedding
-    await create_anime_embedding(
-        db_session, anime_id=anime.id,
-        title_texts=anime_title_texts(anime),
-        description_text=anime.description or "",
-    )
 
     media_tv = Media(**media_kwargs(
         anime.id, 99101,
@@ -84,13 +72,6 @@ async def anime_with_media(db_session):
     # Studio on TV only
     db_session.add(MediaStudio(media_id=media_tv.id, studio_id=studio.id))
 
-    # Media embeddings
-    for m in [media_tv, media_movie, media_ova]:
-        await create_media_embedding(
-            db_session, media_id=m.id,
-            title_texts=[m.title], description_text=m.title or "",
-        )
-
     await db_session.flush()
     return {"anime": anime, "tv": media_tv, "movie": media_movie, "ova": media_ova}
 
@@ -115,16 +96,6 @@ async def test_search_anime_title_query(client, user_auth_headers, anime_with_me
     data = response.json()
     assert len(data) >= 1
     assert data[0]["title"] == "Search Test Anime"
-
-
-async def test_search_anime_description_query(client, user_auth_headers, anime_with_media):
-    response = await client.get("/search/anime", params={
-        "query": "search test",
-        "search_type": "description",
-    }, headers=user_auth_headers)
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) >= 1
 
 
 async def test_search_anime_aggregated_fields(client, user_auth_headers, anime_with_media):
@@ -281,13 +252,6 @@ async def large_anime_with_genre_majority(db_session):
     db_session.add(anime)
     await db_session.flush()
 
-    # Anime embedding
-    await create_anime_embedding(
-        db_session, anime_id=anime.id,
-        title_texts=anime_title_texts(anime),
-        description_text=anime.description or "",
-    )
-
     media_ids = []
     for i in range(6):
         m = Media(**media_kwargs(
@@ -298,12 +262,6 @@ async def large_anime_with_genre_majority(db_session):
         db_session.add(m)
         await db_session.flush()
         media_ids.append(m.id)
-
-        # Create media embedding
-        await create_media_embedding(
-            db_session, media_id=m.id,
-            title_texts=[m.title], description_text="test",
-        )
 
     # Genre on 5 of 6 media (majority)
     for mid in media_ids[:5]:

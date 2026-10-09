@@ -13,7 +13,7 @@ from app.exceptions import (
 )
 from app.models.media import Media
 from app.models.ratings import Ratings, WatchStatus
-from app.schemas.media_filter_schema import SearchType
+from app.schemas.media_filter_schema import RatedState, SearchType
 from app.schemas.rating_schema import (
     AnimeRatingCoverage,
     CoverageTier,
@@ -252,22 +252,41 @@ async def get_rating_score_items(db: AsyncSession, user_id: int) -> list[RatingS
     return [_rating_to_score_item(r) for r in ratings]
 
 
-def _coverage_tier(row: Row) -> CoverageTier:
-    """The highest tier the per-anime counts support.
+def _rated_state(row: Row) -> RatedState:
+    """The first state the per-anime counts reach, in the order docs/features/ratings.md
+    gives them.
 
-    One guard covers both completion tiers, because a main-story media is also a
+    One guard covers both completion states, because a main-story media is also a
     rateable media: if every rateable media is completed then every main one is,
     so `all` can only be reached from inside the `main` branch. `n_main > 0` is
-    what stops an anime whose main story has not aired from reaching either tier
+    what stops an anime whose main story has not aired from reaching either state
     off a finished side story — over an empty main set "everything is done" is
     vacuously true.
 
-    Total by construction: `some` is the floor, which is sound because
+    Total by construction: `in_progress` is the floor, which is sound because
     `get_anime_coverage` only returns anime the caller has rated.
     """
     if row.n_main and row.n_main == row.done_main:
-        return CoverageTier.all if row.n_all == row.done_all else CoverageTier.main
-    return CoverageTier.some
+        return RatedState.ALL if row.n_all == row.done_all else RatedState.MAIN
+    if row.dropped_main:
+        return RatedState.DROPPED
+    if row.on_hold_main:
+        return RatedState.ON_HOLD
+    return RatedState.IN_PROGRESS
+
+
+_TIER_OF_STATE = {RatedState.ALL: CoverageTier.all, RatedState.MAIN: CoverageTier.main}
+
+
+def _coverage_tier(row: Row) -> CoverageTier:
+    """The `CoverageTier` view of `_rated_state`."""
+    return _TIER_OF_STATE.get(_rated_state(row), CoverageTier.some)
+
+
+async def rated_states_by_anime_id(db: AsyncSession, user_id: int) -> dict[int, RatedState]:
+    """Every anime the user has rated, by its `_rated_state` — the anime grain's
+    `rated` search filter. An anime absent here is unrated."""
+    return {r.anime_id: _rated_state(r) for r in await rating_dao.get_anime_coverage(db, user_id)}
 
 
 async def get_rating_coverage(db: AsyncSession, user_id: int) -> list[AnimeRatingCoverage]:

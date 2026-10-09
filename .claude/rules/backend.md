@@ -79,6 +79,14 @@ when the callee genuinely handles it — `vector_embedding_service` takes
 payload `dict[str, Any]` so reads are `Any`; on a dict whose key is known to exist,
 index it, so a missing key is loud at the source rather than a `None` travelling on.
 
+## A constrained param type goes inside `Annotated`
+
+`query: SearchQuery = Query(default="")` silently drops the type's
+`StringConstraints` — the strip and the length cap — so the endpoint takes any
+string. Write `query: Annotated[SearchQuery, Query(...)] = ""`, or no `Query` at
+all. Pinned by `test_out_of_range_is_rejected`, whose `url` list a new search route
+joins.
+
 ## Exceptions
 
 Extend `PhsarBaseError` with a `status_code` class attribute — one handler in

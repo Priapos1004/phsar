@@ -49,9 +49,7 @@ class RelationType(str, enum.Enum):
 
 # The story-advancing set. `main` is the canonical backbone; `alternative_version`
 # covers retellings that extend or diverge from it (Evangelion Rebuild, Hokuto no Ken
-# alts). Every question that turns on "does this advance the story" reads this set —
-# what the spoiler frontier anchors on, what the MAL score averages over, which
-# relations the watchlist's readiness filter treats as a season worth waiting for.
+# alts). Every question that turns on "does this advance the story" reads this set.
 #
 # A frozenset of enum MEMBERS, which `in` and `.in_()` both take — and because
 # RelationType is a str-enum hashing by value, a plain `"main"` from a flat projection
@@ -119,9 +117,9 @@ def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
 
 
 # Chronological rank of a season within its year. Lives beside the enum rather than in
-# one of its consumers because both layers need it: services sort by it in Python, the
-# watchlist DAO builds a SQL CASE from it. Keyed by members, but the str-enum hashes by
-# value, so a caller holding a plain `"Fall"` looks up just as well.
+# one of its consumers because both layers need it: services sort by it in Python,
+# `search_filters.SEASON_KEY` builds a SQL CASE from it. Keyed by members, but the
+# str-enum hashes by value, so a caller holding a plain `"Fall"` looks up just as well.
 #
 # Distinct from `mal_scraper._SEASON_ORDER`, the lowercase MAL/URL vocabulary; this is
 # the catalog's title-cased one.

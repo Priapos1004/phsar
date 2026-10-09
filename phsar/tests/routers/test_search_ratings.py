@@ -5,42 +5,38 @@ from app.models.media import Media
 from tests._helpers import media_kwargs
 
 _RATED_MEDIA_DATA = [
-    ("Action Search Media", 9.0, "fast"),
-    ("Drama Search Media", 6.0, "slow"),
-    ("Comedy Search Media", 7.5, None),
+    ("Action Search Media", {"rating": 9.0, "pace": "fast"}),
+    ("Drama Search Media", {"rating": 6.0, "pace": "slow"}),
+    ("Comedy Search Media", {"rating": 7.5}),
 ]
+
+
+async def _rate_new_media(
+    client, headers, db_session, *, mal_id: int, rated: list[tuple[str, dict]],
+) -> list[Media]:
+    """One anime whose media carry `rated`'s titles, each rated by the caller with
+    its body, in list order."""
+    anime = Anime(mal_id=mal_id, title=f"Ratings Search Anime {mal_id}")
+    db_session.add(anime)
+    await db_session.flush()
+    media_items = [
+        Media(**media_kwargs(anime.id, mal_id * 10 + i, title=title, scored_by=100, score=8.0))
+        for i, (title, _) in enumerate(rated)
+    ]
+    db_session.add_all(media_items)
+    await db_session.flush()
+    for media, (_, body) in zip(media_items, rated, strict=True):
+        resp = await client.put(f"/ratings/media/{media.uuid}", json=body, headers=headers)
+        assert resp.status_code == 200, resp.text
+    return media_items
 
 
 @pytest.fixture
 async def rated_media(client, user_auth_headers, db_session):
     """Create media and rate them so the search endpoint has data to return."""
-    anime = Anime(mal_id=77777, title="Search Test Anime")
-    db_session.add(anime)
-    await db_session.flush()
-
-    media_items = []
-    for i, (title, _rating, _pace) in enumerate(_RATED_MEDIA_DATA):
-        media = Media(**media_kwargs(
-            anime.id, 77770 + i,
-            title=title,
-            scored_by=100,
-            score=8.0,
-        ))
-        db_session.add(media)
-        media_items.append(media)
-    await db_session.flush()
-
-    for media, (_, rating, pace) in zip(media_items, _RATED_MEDIA_DATA, strict=False):
-        body = {"rating": rating}
-        if pace:
-            body["pace"] = pace
-        await client.put(
-            f"/ratings/media/{media.uuid}",
-            json=body,
-            headers=user_auth_headers,
-        )
-
-    return media_items
+    return await _rate_new_media(
+        client, user_auth_headers, db_session, mal_id=77777, rated=_RATED_MEDIA_DATA,
+    )
 
 
 # --- Basic search ---
@@ -56,6 +52,40 @@ async def test_search_ratings_returns_results(client, user_auth_headers, rated_m
     response = await client.get("/search/ratings", headers=user_auth_headers)
     assert response.status_code == 200
     assert len(response.json()) == 3
+
+
+async def test_search_ratings_title_query_ranks_substring_hits_first(
+    client, user_auth_headers, db_session,
+):
+    """A title query over your ratings filters like the catalogue search does.
+
+    None of these media carries a search embedding, so a hit at all proves the
+    title path joins none. Rated in fixture order, newest-first recency puts
+    "Lord, of Ashes" ahead; only the substring tier puts "Overlord of Darkness"
+    there — and only once the padded query is stripped, since `%  lord of  %` is
+    contained in no title."""
+    await _rate_new_media(client, user_auth_headers, db_session, mal_id=77801, rated=[
+        (title, {"rating": 7.0})
+        for title in ("Overlord of Darkness", "Lord, of Ashes", "Unrelated Anime")
+    ])
+
+    response = await client.get(
+        "/search/ratings", params={"query": "  lord of  "}, headers=user_auth_headers,
+    )
+    assert response.status_code == 200
+    assert [r["title"] for r in response.json()] == ["Overlord of Darkness", "Lord, of Ashes"]
+
+
+async def test_search_ratings_title_query_falls_back_when_nothing_matches(
+    client, user_auth_headers, rated_media,
+):
+    """"comdy" splits its match on "comedy" mid-word (0.5) and stays under the
+    first threshold; with nothing above it, the fallback finds the row."""
+    response = await client.get(
+        "/search/ratings", params={"query": "comdy"}, headers=user_auth_headers,
+    )
+    assert response.status_code == 200
+    assert [r["title"] for r in response.json()] == ["Comedy Search Media"]
 
 
 # --- Rating-specific filters ---
@@ -177,11 +207,3 @@ async def test_search_ratings_invalid_pace_filter(client, user_auth_headers):
     )
     assert response.status_code == 422
 
-
-async def test_search_ratings_invalid_limit(client, user_auth_headers):
-    response = await client.get(
-        "/search/ratings",
-        params={"limit": 0},
-        headers=user_auth_headers,
-    )
-    assert response.status_code == 422
