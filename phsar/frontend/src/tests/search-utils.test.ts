@@ -50,6 +50,16 @@ describe('thumbValue', () => {
 		expect(thumbValue(13.3, undefined, 'min', grid)).toBe(Math.round(2 ** 13.3 - 1));
 		expect(thumbValue(13.3, 500, 'max', grid)).toBe(Math.round(2 ** 13.3 - 1));
 	});
+
+	it('reads a thumb whose value reaches the bound as no filter', () => {
+		// Episodes from 1: positions 1.1–1.3 all read 1.
+		const episodes = sliderGrid(1, 1100, 0.1, true);
+		for (const position of [1.1, 1.2, 1.3]) expect(thumbValue(position, undefined, 'min', episodes)).toBeUndefined();
+		expect(thumbValue(0.3, undefined, 'min', grid)).toBeUndefined();
+		// A bound whose position rounds up: the end at 1.5 reads 2, the bound, not a step past it.
+		const fromTwo = sliderGrid(2, 1100, 0.1, true);
+		expect(thumbValue(fromTwo.lo, undefined, 'min', fromTwo)).toBeUndefined();
+	});
 });
 
 describe('filterChips', () => {

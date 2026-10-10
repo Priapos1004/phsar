@@ -35,7 +35,7 @@ from sqlalchemy import select
 from app.daos import search_filters
 from app.daos.anime_dao import AnimeDAO
 from app.daos.media_dao import MediaDAO
-from app.daos.rating_dao import _note_distance, note_cutoff
+from app.daos.rating_dao import RatingDAO, _note_distance, note_cutoff
 from app.daos.search_filters import (
     ASCENDING_SORTS,
     _escape_like,
@@ -497,13 +497,18 @@ async def noted_set(db_session, client, user_auth_headers, admin_auth_headers):
     await rate_media(client, admin_auth_headers, uuids["Nt Theirs"], _DONE, note="Izumi again.")
 
 
+async def _note_caller(db_session) -> int:
+    """The user whose notes `noted_set` wrote."""
+    return (await db_session.execute(
+        select(Ratings.user_id).join(Media, Media.id == Ratings.media_id).where(Media.title == "Nt Near")
+    )).scalar_one()
+
+
 async def _note_distances_and_cutoff(db_session, query: str) -> tuple[dict[str, float], float]:
     """Each of the caller's fixture notes' distance to `query`, by media title, and the
     cutoff the search applies."""
     query_embedding = await generate_query_embedding(query)
-    caller = (await db_session.execute(
-        select(Ratings.user_id).join(Media, Media.id == Ratings.media_id).where(Media.title == "Nt Near")
-    )).scalar_one()
+    caller = await _note_caller(db_session)
     rows = await db_session.execute(
         select(Media.title, _note_distance(query_embedding))
         .join(Ratings, Ratings.media_id == Media.id)
@@ -569,6 +574,21 @@ async def test_notes_search_quotes_the_matched_note(client, user_auth_headers, d
     resp = await client.get(url, params={**params, "query": "nt", "search_type": "title"}, headers=user_auth_headers)
     assert resp.status_code == 200, resp.text
     assert resp.json() and all(r["matched_note"] is None for r in resp.json())
+
+
+async def test_query_without_a_word_still_runs(client, user_auth_headers, db_session, noted_set):
+    """A query with no word in it has no literal tier, and the queries that order by
+    that tier's stand-in still run (`literal_matches` says why they might not): the
+    media grain's passes, and the anime grain's note quote."""
+    for search_type in ("description", "rating_notes"):
+        resp = await client.get(
+            MEDIA_SEARCH_URL, params={"query": "😭!!", "search_type": search_type}, headers=user_auth_headers,
+        )
+        assert resp.status_code == 200, resp.text
+
+    anime_id = (await _ids(db_session, Anime, ["Nt Near"]))["Nt Near"]
+    best = await RatingDAO().best_note_by_anime_id(db_session, await _note_caller(db_session), "😭!!", [anime_id])
+    assert best == {anime_id: _NOTE_NEAR}
 
 
 # ---------------------------------------------------------------------------

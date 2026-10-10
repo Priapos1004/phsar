@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { swallowClickThrough } from '$lib/utils/clickThrough';
 
-// Covers the listener logic only. Whether iOS really dispatches the ghost click at
+// Covers the listener logic only. Whether a tap really dispatches the ghost click at
 // the element under the closed dropdown is a layout fact jsdom can't reproduce —
-// that half is checked on a phone.
+// that half is checked on a device.
 describe('swallowClickThrough', () => {
 	let item: HTMLElement;
 	let behind: HTMLButtonElement;
@@ -30,8 +30,8 @@ describe('swallowClickThrough', () => {
 		swallowClickThrough({ pointerType, currentTarget: item } as unknown as PointerEvent);
 	}
 
-	it('swallows the follow-up click that lands behind the item after a touch', () => {
-		pointerUp('touch');
+	it.each(['touch', 'pen'])('swallows the follow-up click that lands behind the item after a %s', (pointerType) => {
+		pointerUp(pointerType);
 		behind.click();
 		expect(behindClicked).not.toHaveBeenCalled();
 	});

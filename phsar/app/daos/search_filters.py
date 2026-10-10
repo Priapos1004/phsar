@@ -3,6 +3,7 @@ import re
 from datetime import UTC, date, datetime
 
 from sqlalchemy import (
+    Boolean,
     Float,
     Text,
     and_,
@@ -555,10 +556,12 @@ def literal_matches(query: str, text) -> list:
     """The literal tier's tests over `text`, strict then fuzzy: every word of the
     query starts a word of it (a prefix, never an infix), or reaches the strict title
     threshold in `word_similarity`. Words are `\\w+` runs, so `\\m` + word needs no
-    regex escaping; a query without any has no literal tier."""
+    regex escaping; a query without any has no literal tier. Its stand-in is cast,
+    because the tests also order: Postgres refuses a bare `false` in ORDER BY as a
+    non-integer constant."""
     words = re.findall(r"\w+", query)
     if not words:
-        return [false()]
+        return [cast(false(), Boolean)]
     return [
         and_(*(text.regexp_match(rf"\m{word}", flags="i") for word in words)),
         and_(*(func.word_similarity(word, text) >= TITLE_MATCH_THRESHOLDS[0] for word in words)),

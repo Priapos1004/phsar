@@ -165,7 +165,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 **Notes-query matching:** My notes searches your own rating notes the same way: notes holding every query word first, then notes close in meaning, judged against your notes as a whole. An anime matches through any of its entries' notes, and each card quotes the note (5.1, 5.2).
 
 ### 4.4 Search Filters
-Filters live in a **sheet** that slides in from the right (full width on a phone), opened by the filter button or a chip. Edits are **staged**: **Show results** applies them as a new search; closing the sheet (✕, Esc, a click outside) discards them; the sheet's own **Clear all** resets only the sheet. Options adapt to the current view type.
+Filters live in a **sheet** that slides in from the right (full width on a phone), opened by the filter button or a chip. Edits are **staged**: **Show results** applies them as a new search; closing the sheet (✕, Esc, a click outside) discards them; the sheet's own **Clear all** resets only the sheet's filters, keeping the sort. Options adapt to the current view type.
 
 - **Yours** — **Rated**: any of the rated states (anime: Unrated, In Progress, On Hold, Dropped, Main Done, All Done; media: Unrated, Completed, On Hold, Dropped — the watch statuses read as on the rating badge). Choosing every state filters nothing. **Watchlist**: Any / In list / Not in list. A guest sees "Guest accounts have no ratings or watchlist to filter by." instead
 - **Release** — Airing status, Season, **Upcoming main story** (anime with aired content and an announced main-story entry; in the media view, those entries)
@@ -175,7 +175,7 @@ Filters live in a **sheet** that slides in from the right (full width on a phone
 
 **Range sliders:** dragging a thumb back to its end clears that side of the filter, and the readout shows the catalogue's bound again. A value set by a link keeps its exact number until its thumb is moved.
 
-**Applied-filter chips** sit under the search box, one per filter group ("Genres: Action & Comedy", "Top 20%", "Scored by ≤ 2,965,820"). ✕ removes that group and re-runs the search at once; clicking the label opens the sheet. With two or more chips, **Clear all** removes every filter but keeps the query and mode.
+**Applied-filter chips** sit under the search box, one per filter group ("Genres: Action & Comedy", "Top 20%", "Scored by ≤ 2,965,820"). ✕ removes that group and re-runs the search at once; clicking the label opens the sheet. With two or more chips, **Clear all** removes every filter and nothing else.
 
 **Behavior:**
 - Filter options come from `GET /filters/options?view_type=anime|media`, cached per view for the session; a finished scrape (which can widen a slider or add a season/studio) drops the cache

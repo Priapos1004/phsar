@@ -96,7 +96,7 @@ export const chipOn = 'bg-primary text-white shadow-sm';
 export const chipOff = 'bg-muted text-card-foreground/70 hover:bg-muted/70';
 export const chipGroup = 'bg-card/80 backdrop-blur border border-input rounded-xl px-2 min-h-[48px] flex flex-wrap items-center gap-1.5 py-1.5';
 
-// A control on the dark page surface: the border-fill outline `PillToggle` uses.
+// A control on the dark page surface, outlined like `PillToggle`'s container.
 export const pageControl = 'rounded-full border border-white/15 bg-transparent text-white/80 hover:text-white';
 
 // The count bubble on an icon button's corner, composed onto a positioned button.

@@ -41,7 +41,7 @@
 	let isLoading = $state(false);
 	let error = $state('');
 	let hasToken = $state(false);
-	// A guest's shared link lost the filters that read the caller's own ratings or watchlist.
+	// Whether `stripForGuest` dropped anything from a guest's link, for the notice.
 	let strippedForGuest = $state(false);
 	let filtersOpen = $state(false);
 
@@ -171,30 +171,32 @@
 		revealFocused(uuid);
 	});
 
-	function handleSearch(params: MediaSearchFilters) {
-		navigateToSearch({ ...params, view_type: viewType });
-	}
-
 	// What survives the switch is `carryAcrossView`'s call; the new token reloads the page.
 	function switchView(newView: ViewType) {
 		if (newView !== viewType) navigateToSearch(carryAcrossView(decodedParams, newView));
 	}
 
+	// Every search but a view switch shows at once, ahead of the token's round trip, so a
+	// chip or sort tap before it lands builds on it instead of undoing it. The view stays,
+	// so the load effect (which reads it) doesn't re-run.
+	function applySearch(next: MediaSearchFilters) {
+		decodedParams = { ...next, view_type: viewType };
+		navigateToSearch(decodedParams);
+	}
+
 	function removeFilters(keys: (keyof MediaSearchFilters)[]) {
-		navigateToSearch({ ...omitKeys(decodedParams, keys), view_type: viewType });
+		applySearch(omitKeys(decodedParams, keys));
 	}
 
 	// A sort reorders the same results, so it applies at once rather than through the sheet.
 	// A new key starts at its own default direction.
 	function setSort(sort: SortKey) {
-		navigateToSearch({ ...omitKeys(decodedParams, ['sort', 'sort_dir']), sort, view_type: viewType });
+		applySearch({ ...omitKeys(decodedParams, ['sort', 'sort_dir']), sort });
 	}
 
 	function flipDirection() {
 		if (!order.dir) return;
-		navigateToSearch({
-			...decodedParams, sort: order.sort, sort_dir: order.dir === 'asc' ? 'desc' : 'asc', view_type: viewType,
-		});
+		applySearch({ ...decodedParams, sort: order.sort, sort_dir: order.dir === 'asc' ? 'desc' : 'asc' });
 	}
 </script>
 
@@ -208,11 +210,11 @@
 		<GrainToggle grain={viewType} onSelect={switchView} />
 	</div>
 
-	<SearchBar onSearch={handleSearch} applied={decodedParams} {viewType} bind:filtersOpen />
+	<SearchBar onSearch={applySearch} applied={decodedParams} {viewType} bind:filtersOpen />
 
 	{#if strippedForGuest}
 		<div class="max-w-xl mx-auto">
-			<Notice>This link filtered by ratings or the watchlist, which guest accounts don't have, so those filters were left out.</Notice>
+			<Notice>This link used ratings, notes or the watchlist, which guest accounts don't have, so it opened without them — a notes search runs on titles instead.</Notice>
 		</div>
 	{/if}
 

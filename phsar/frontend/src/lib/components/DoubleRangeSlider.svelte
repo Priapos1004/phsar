@@ -7,6 +7,9 @@
 	export interface SliderGrid {
 		lo: number;
 		hi: number;
+		/** The catalogue's bounds, in values: a filter at or past one keeps everything. */
+		min: number;
+		max: number;
 		step: number;
 		log: boolean;
 		digits: number;
@@ -19,7 +22,7 @@
 		const digits = decimalPlaces(step);
 		const round = (x: number) => +x.toFixed(digits);
 		return {
-			step, log, digits,
+			step, log, digits, min, max,
 			lo: round(Math.floor(toSlider(min, log) / step + EPS) * step),
 			hi: round(Math.ceil(toSlider(max, log) / step - EPS) * step),
 		};
@@ -41,14 +44,15 @@
 
 	/** The filter value a thumb at `position` stands for. A thumb still where `current` put
 	 * it keeps `current` verbatim — snapping it would change a value nobody touched. A thumb
-	 * at its end of the track is no filter. */
+	 * whose value reaches the catalogue's bound is no filter. Judged in values, not positions:
+	 * the track's ends sit outside the bounds, and on a log track the first steps inside an
+	 * end still round to the bound. */
 	export function thumbValue(
 		position: number, current: number | null | undefined, end: 'min' | 'max', grid: SliderGrid,
 	): number | undefined {
-		const tolerance = grid.step / 1000;
-		if (current != null && Math.abs(position - toGrid(current, grid)) < tolerance) return current;
-		const atEnd = end === 'min' ? position <= grid.lo + tolerance : position >= grid.hi - tolerance;
-		return atEnd ? undefined : fromSlider(position, grid);
+		if (current != null && Math.abs(position - toGrid(current, grid)) < grid.step / 1000) return current;
+		const value = fromSlider(position, grid);
+		return (end === 'min' ? value <= grid.min : value >= grid.max) ? undefined : value;
 	}
 </script>
 

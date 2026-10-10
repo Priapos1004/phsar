@@ -87,6 +87,20 @@ describe('SearchBar', () => {
 		expect(screen.getByLabelText('Filters')).toHaveTextContent('2');
 	});
 
+	it("the sheet's Clear all clears the filters and keeps the sort", async () => {
+		const onSearch = vi.fn();
+		render(SearchBar, {
+			props: { onSearch, applied: { ...BASE, genre_name: ['Action'], top_percent: 20, sort: 'aired', sort_dir: 'asc' } },
+		});
+		await openSheet();
+		await fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Show results' }));
+		const sent = onSearch.mock.calls[0][0];
+		expect(sent).toMatchObject({ sort: 'aired', sort_dir: 'asc' });
+		expect(sent.genre_name).toBeUndefined();
+		expect(sent.top_percent).toBeUndefined();
+	});
+
 	it('an untouched sheet applies no range filter', async () => {
 		// Opening the sheet must not turn a slider's snap onto its step grid into a filter.
 		// Two defences stop it — track ends on the grid (`sliderGrid`) and writing only on

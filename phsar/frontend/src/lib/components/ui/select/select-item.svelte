@@ -2,7 +2,7 @@
 	import CheckIcon from "@lucide/svelte/icons/check";
 	import { Select as SelectPrimitive } from "bits-ui";
 	import { cn, type WithoutChild } from "$lib/utils.js";
-	// Local edit, not upstream shadcn: the iOS click-through guard.
+	// Local edit, not upstream shadcn: the click-through guard.
 	import { swallowClickThrough } from "$lib/utils/clickThrough";
 
 	let {

@@ -29,6 +29,7 @@
 		RATED_STATES,
 		filterChips,
 		normalizeRated,
+		omitKeys,
 		rangeParams,
 		withQuery,
 		type ListFilterKey,
@@ -68,7 +69,7 @@
 	}
 
 	let appliedCount = $derived(filterChips(applied, viewType).length);
-	let stagedCount = $derived(filterChips(staged, viewType).length);
+	let stagedChips = $derived(filterChips(staged, viewType));
 
 	let modes = $derived([
 		{ value: 'title' as const, label: 'Title' },
@@ -105,8 +106,9 @@
 		filtersOpen = false;
 	}
 
+	// Like the chips' Clear all: every filter goes, the sort stays (it isn't in the sheet).
 	function clearStaged() {
-		staged = { query: staged.query, search_type: staged.search_type, view_type: staged.view_type };
+		staged = omitKeys(staged, stagedChips.flatMap((c) => c.keys));
 	}
 
 	function toggleRated(state: RatedState) {
@@ -326,7 +328,7 @@
 		</div>
 
 		<Sheet.Footer class="border-t border-border flex-row items-center justify-between">
-			{#if stagedCount}
+			{#if stagedChips.length}
 				<Button variant="ghost" size="sm" class={cls.btnGhostDestructive} onclick={clearStaged}>
 					Clear all
 				</Button>
