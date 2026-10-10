@@ -362,7 +362,7 @@ The original design (a `WatchlistTag` many-to-many junction, tags and entries as
 
 ### Watchlist Page UI (as shipped)
 - `/watchlist` with a `?tab=` switcher: **Watchlists** (entries — grid priority-band grid or sortable table, anime/media grain toggle, multi-select list-union filter) + **Lists** (create/edit/delete/empty lists).
-- Deferred to later versions: the "In watchlist" search filter (`watchlisted` API v0.16.0, toggle v0.16.1) and the browse-page "Only my watchlist" toggle (v0.16.2).
+- Deferred to later versions: the "In watchlist" search filter (`watchlisted` API v0.16.0, toggle v0.16.1) and the browse page's watchlist refinement (v0.16.2).
 
 ---
 
@@ -371,7 +371,7 @@ The original design (a `WatchlistTag` many-to-many junction, tags and entries as
 ### Concept
 Separate page/route — the "deep dive" version of home page sections.
 
-**Toggle**: "All anime in DB" vs "Only my watchlist"
+**Refinements**: per-carousel filter sets — docs/features/browse.md
 
 ### Sections (horizontal scrollable card rows — Crunchyroll-style, same as home page)
 - **Recommendation algo** (top of page) — dropdown/selector to choose algorithm. Designed for experimentation — swap in new algos over time, users can try different ones. Could also be a user setting.
@@ -442,7 +442,7 @@ Eye-catching landing page — light version of browse, serves new and returning 
 
 ### General Browsing
 - Browse page (Feature 5b) covers this — sections + search bar with filters gives full browsing capability
-- No separate "all anime" page needed if browse page has "all anime in DB" toggle
+- No separate "all anime" page: an empty search lists the whole catalogue, and each carousel has its see-all page
 
 ---
 

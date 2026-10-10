@@ -18,6 +18,7 @@ from app.daos.job_dao import JobDAO
 from app.exceptions import PhsarBaseError
 from app.models.job import JobKind
 from app.seeders.anime_title_backfiller import backfill_anime_title_suffixes
+from app.seeders.browse_seeder import seed_browse
 from app.seeders.embedding_backfiller import backfill_embeddings, reembed_all_embeddings
 from app.seeders.genre_seeder import seed_genres
 from app.seeders.relation_backfiller import backfill_relations
@@ -133,6 +134,8 @@ async def lifespan(app: FastAPI):
 
     async with async_session_maker() as session:
         await seed_genres(session)
+        await seed_browse(session)
+        await session.commit()
         await seed_admin_user(session)
         await seed_guest_user(session)
         await backfill_user_settings(session)
@@ -221,6 +224,7 @@ def create_app() -> FastAPI:
     from app.routers import (
         admin,
         auth,
+        browse,
         filters,
         jobs,
         library,
@@ -236,6 +240,7 @@ def create_app() -> FastAPI:
 
     app.include_router(admin.router)
     app.include_router(auth.router)
+    app.include_router(browse.router)
     app.include_router(filters.router)
     app.include_router(jobs.router)
     app.include_router(library.router)

@@ -15,6 +15,7 @@ there is one copy to keep correct.
 | `job_worker.py`, `progress_reporter.py`, `job_submission_service.py` | [jobs](../../../docs/features/jobs.md) |
 | `scrape_dispatcher.py`, `seasonal_sweep_dispatcher.py` | [jobs](../../../docs/features/jobs.md) |
 | `backup_dispatcher.py`, `backup_service.py` | [backups](../../../docs/features/backups.md) |
+| `browse_service.py` (and `seeders/browse_seeder.py`) | [browse](../../../docs/features/browse.md) |
 | `vector_embedding_service.py` | [search](../../../docs/features/search.md) |
 | `media_search_service.py`, `anime_search_service.py`, `filter_service.py` | [search](../../../docs/features/search.md) |
 | `spoiler_service.py` | [spoilers](../../../docs/features/spoilers.md) |

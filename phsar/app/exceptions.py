@@ -631,3 +631,12 @@ class IncompleteSeasonTargetError(PhsarBaseError):
 
     def __init__(self):
         super().__init__("Pass both `season` and `year`, or neither for the current season.")
+
+
+class CarouselNotFoundError(PhsarBaseError):
+    """Raised when a browse carousel key does not resolve to a carousel."""
+    status_code = 404
+
+    def __init__(self, key: str):
+        message = f"Carousel not found: '{key}'."
+        super().__init__(message)

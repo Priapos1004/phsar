@@ -659,7 +659,7 @@ def display_title(model: type[Anime] | type[Media], name_language: NameLanguage)
 
 
 def utc_today() -> date:
-    """The random sort's seed date; a function so a test can move it."""
+    """Today in UTC; a function so a test can move it."""
     return datetime.now(UTC).date()
 
 
