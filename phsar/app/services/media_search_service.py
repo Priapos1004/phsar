@@ -89,7 +89,6 @@ async def search_media_by_query(
     logger.info(f"Query: {query}")
     logger.info(f"Filters: {filters.model_dump()}")
     logger.info(f"Search type: {search_type}")
-    # Read off the DAO, since `rating_service` imports this module.
     states = {
         media_id: RatedState(status.value)
         for media_id, status in (await rating_dao.get_watch_status_by_media_id(db, user_id)).items()
@@ -117,9 +116,14 @@ async def search_media_by_query(
 
     # Filled after the search, not inside it — see "Personal filters and sort" in
     # docs/features/search.md for why it stays out of `daos/search_filters`.
-    rated_ids = set(await rating_dao.get_rated_media_ids(db, user_id, [m.id for m in media_list]))
+    # A media carries at most one of the caller's ratings, so its note is the one matched.
+    rated = await rating_dao.notes_by_rated_media_id(db, user_id, [m.id for m in media_list])
+    quote = bool(query) and search_type == SearchType.RATING_NOTES
     return [
-        MediaSearchResult(**media_to_dict(m), is_rated=m.id in rated_ids) for m in media_list
+        MediaSearchResult(
+            **media_to_dict(m), is_rated=m.id in rated, matched_note=rated.get(m.id) if quote else None,
+        )
+        for m in media_list
     ]
 
 

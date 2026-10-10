@@ -3,6 +3,7 @@ import re
 from datetime import UTC, date, datetime
 
 from sqlalchemy import (
+    Boolean,
     Float,
     Text,
     and_,
@@ -326,11 +327,11 @@ def _anime_genre_majority_condition(genre_names: list[str], mode: MatchMode):
     return Anime.id.in_(qualifying)
 
 
-# A main-story media not aired yet: what the release sort counts as an announcement and
+MAIN_STORY = Media.relation_type.in_(MAIN_STORY_RELATIONS)
+
+# A main-story media not aired yet: what `_announced_keys` counts as an announcement and
 # what `upcoming_main` keeps, which "closest to release" needs to agree.
-ANNOUNCED_MAIN_STORY = Media.relation_type.in_(MAIN_STORY_RELATIONS) & (
-    Media.airing_status == AIRING_STATUS_NOT_YET_AIRED
-)
+ANNOUNCED_MAIN_STORY = MAIN_STORY & (Media.airing_status == AIRING_STATUS_NOT_YET_AIRED)
 
 
 def upcoming_main_media():
@@ -468,9 +469,9 @@ def apply_anime_having_filters(stmt, filters: MediaSearchFilters, agg_columns: d
 # Partial-word noise lands at exactly 3/5 ("jojo" → Evangelion), so 0.61 keeps it
 # out and admits end-of-word typos. It cannot be written `> 0.6`: word_similarity
 # returns float4, and 0.6f promotes to 0.6000000238. Mid-word typos land among the
-# noise, hence the 0.5 fallback. The strict one also gates description search's
-# typo retry (`_description_literal_matches`). The calibration study is in
-# compound-docs/2026-10-07-v0.16.0-search-rework.md — re-measure both searches before
+# noise, hence the 0.5 fallback. The strict one also gates the literal-first
+# searches' typo retry (`literal_matches`). The calibration study is in
+# compound-docs/2026-10-07-v0.16.0-search-rework.md — re-measure every search before
 # moving either.
 TITLE_MATCH_THRESHOLDS = (0.61, 0.5)
 
@@ -522,10 +523,12 @@ def title_match_passes(stmt, title_match, *, having: bool = False) -> list:
     return [restrict(title_match >= threshold) for threshold in TITLE_MATCH_THRESHOLDS]
 
 
-# How far below the catalogue's mean distance to the query a semantic description hit
-# must sit; why relative is in docs/features/search.md. Specific to the embedding
-# model: the calibration study is in compound-docs/2026-10-07-v0.16.0-search-rework.md
-# — re-measure on a model change.
+# How far below the searched population's mean distance to the query a semantic hit
+# must sit (`description_cutoff`, `note_cutoff`); why relative is in
+# docs/features/search.md. Specific to the embedding model: the calibration studies are
+# in compound-docs/2026-10-07-v0.16.0-search-rework.md and
+# compound-docs/2026-10-09-v0.16.1-search-ui.md — re-measure every population on a model
+# change.
 SEMANTIC_MARGIN = 0.30
 
 
@@ -549,40 +552,51 @@ def description_cutoff(query_embedding):
     return mean - SEMANTIC_MARGIN
 
 
-def _description_literal_matches(query: str) -> list:
-    """The literal tier's tests, strict then fuzzy: every word of the query starts a
-    word of the media's titles or description (a prefix, never an infix), or reaches
-    the strict title threshold in `word_similarity`. Words are `\\w+` runs, so
-    `\\m` + word needs no regex escaping; a query without any has no literal tier."""
+def literal_matches(query: str, text) -> list:
+    """The literal tier's tests over `text`, strict then fuzzy: every word of the
+    query starts a word of it (a prefix, never an infix), or reaches the strict title
+    threshold in `word_similarity`. Words are `\\w+` runs, so `\\m` + word needs no
+    regex escaping; a query without any has no literal tier. Its stand-in is cast,
+    because the tests also order: Postgres refuses a bare `false` in ORDER BY as a
+    non-integer constant."""
     words = re.findall(r"\w+", query)
     if not words:
-        return [false()]
-    text = func.concat_ws(" ", *_title_variants(Media), Media.description)
+        return [cast(false(), Boolean)]
     return [
         and_(*(text.regexp_match(rf"\m{word}", flags="i") for word in words)),
         and_(*(func.word_similarity(word, text) >= TITLE_MATCH_THRESHOLDS[0] for word in words)),
     ]
 
 
-def description_passes(stmt, query: str, query_embedding, *, having: bool = False) -> list:
-    """Description search, one pass per literal test for `fetch_search_results`:
-    literal hits first, then semantic hits down to `description_cutoff`, each nearest
-    first. Outer join, so a media without an embedding can still be a literal hit.
+def match_passes(stmt, literals: list, distance, cutoff, *, having: bool, aggregate) -> list:
+    """Literal-first search, one pass per literal test for `fetch_search_results`:
+    literal hits first, then semantic hits down to `cutoff`, each nearest first.
 
     `having` for the anime grain's grouped statement: `bool_or` over the literal
-    tests, `AVG` over the distance."""
-    stmt = stmt.outerjoin(MediaSearch, MediaSearch.media_id == Media.id)
-    distance = _description_distance(query_embedding)
-    literals = _description_literal_matches(query)
+    tests, `aggregate` over the distance."""
     pk, restrict = Media.id, stmt.where
     if having:
-        distance, pk, restrict = func.avg(distance), Anime.id, stmt.having
+        distance, pk, restrict = aggregate(distance), Anime.id, stmt.having
         literals = [func.bool_or(literal) for literal in literals]
-    cutoff = description_cutoff(query_embedding)
     return [
         restrict(or_(literal, distance <= cutoff)).order_by(literal.desc(), distance, pk)
         for literal in literals
     ]
+
+
+def description_passes(stmt, query: str, query_embedding, *, having: bool = False) -> list:
+    """Description search through `match_passes`, over the text the description
+    embedding encodes: the media's titles and description. Outer join, so a media
+    without an embedding can still be a literal hit. The anime grain averages its
+    media's distances; why is in docs/features/search.md."""
+    text = func.concat_ws(" ", *_title_variants(Media), Media.description)
+    return match_passes(
+        stmt.outerjoin(MediaSearch, MediaSearch.media_id == Media.id),
+        literal_matches(query, text),
+        _description_distance(query_embedding),
+        description_cutoff(query_embedding),
+        having=having, aggregate=func.avg,
+    )
 
 
 # Sortable season key: `year * 10 + rank`, so (2026, Fall) > (2026, Summer) and
@@ -607,17 +621,33 @@ SEASON_KEY = Media.anime_season_year * 10 + case(
 TBA_SEASON_KEY = 99_999
 
 
+def _announced_keys() -> tuple:
+    """An anime's announcement for every key on the season timeline: its closest announced
+    main-story season, else TBA when it is announced only undated."""
+    return (
+        func.min(SEASON_KEY).filter(ANNOUNCED_MAIN_STORY),
+        func.max(case((ANNOUNCED_MAIN_STORY & Media.anime_season_year.is_(None), TBA_SEASON_KEY))),
+    )
+
+
 def _release_key(*, having: bool):
     """The release sort's key, per media or, with `having`, per anime: the timeline in
     docs/features/search.md#sorting."""
     unaired = Media.airing_status == AIRING_STATUS_NOT_YET_AIRED
     if not having:
         return func.coalesce(SEASON_KEY, case((unaired, TBA_SEASON_KEY)))
-    main = Media.relation_type.in_(MAIN_STORY_RELATIONS)
+    return func.coalesce(*_announced_keys(), func.max(SEASON_KEY).filter(MAIN_STORY & ~unaired))
+
+
+def _aired_key(*, having: bool):
+    """The latest-aired sort's key, per media or, with `having`, per anime:
+    docs/features/search.md#sorting."""
+    if not having:
+        return _release_key(having=False)
     return func.coalesce(
-        func.min(SEASON_KEY).filter(ANNOUNCED_MAIN_STORY),
-        func.max(case((ANNOUNCED_MAIN_STORY & Media.anime_season_year.is_(None), TBA_SEASON_KEY))),
-        func.max(SEASON_KEY).filter(main & ~unaired),
+        func.max(SEASON_KEY).filter(MAIN_STORY & (Media.airing_status == AIRING_STATUS_FINISHED_AIRING)),
+        func.max(SEASON_KEY).filter(MAIN_STORY & (Media.airing_status == AIRING_STATUS_CURRENTLY_AIRING)),
+        *_announced_keys(),
     )
 
 
@@ -631,6 +661,12 @@ def display_title(model: type[Anime] | type[Media], name_language: NameLanguage)
 def utc_today() -> date:
     """The random sort's seed date; a function so a test can move it."""
     return datetime.now(UTC).date()
+
+
+# The keys that ascend unless a direction is given; the rest descend. The search menu's
+# `ASCENDING_SORTS` (frontend lib/utils/search.ts) mirrors it, pinned by
+# `test_the_search_menu_knows_which_sorts_ascend`.
+ASCENDING_SORTS = frozenset({SortKey.TITLE, SortKey.RELEASE})
 
 
 def sort_order(
@@ -670,6 +706,8 @@ def sort_order(
             key = model.created_at
         case SortKey.RELEASE:
             key = _release_key(having=having)
+        case SortKey.AIRED:
+            key = _aired_key(having=having)
         case SortKey.TITLE:
             key = display_title(model, name_language)
         case SortKey.RANDOM:
@@ -679,7 +717,7 @@ def sort_order(
             key = your_rating
         case SortKey.TOP_RATED | SortKey.RELEVANCE:
             key = weighted
-    ascending = sort_dir == SortDir.ASC if sort_dir else sort in (SortKey.TITLE, SortKey.RELEASE)
+    ascending = sort_dir == SortDir.ASC if sort_dir else sort in ASCENDING_SORTS
     direction = asc if ascending else desc
     return [direction(key).nulls_last(), weighted.desc().nulls_last(), direction(model.id)]
 

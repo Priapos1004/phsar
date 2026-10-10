@@ -12,8 +12,8 @@ type ViewType = 'anime' | 'media';
  *
  * Worth caching because the endpoint is a dozen-odd backend round trips (tens of
  * ms) for slider bounds and dropdown values that change only when the CATALOGUE does,
- * while `SearchBar` — its only caller — mounts on both `/` and `/search`, so
- * every hop between them would otherwise refetch, as would every anime <-> media
+ * while `SearchBar`'s filter sheet — its only caller — opens on both `/` and
+ * `/search`, so every opening would otherwise refetch, as would every anime <-> media
  * toggle.
  *
  * A stored promise, so concurrent callers share one in-flight request and a
@@ -57,7 +57,7 @@ export function clearFilterOptions(): void {
 // svelte's initial synchronous fire.
 //
 // Module scope rather than a component: the bump can land while no SearchBar is
-// mounted, and only the NEXT mount cares.
+// mounted, and only the NEXT opening of the sheet cares.
 //
 // A catalogue change from another user or the nightly sweep still needs a reload.
 // `genres.ts` accepts the same limit; both are session caches of catalogue data,

@@ -54,9 +54,11 @@ class MediaSearchResult(MediaConnected):
     A subclass rather than a field on `MediaConnected`, because the schemas that
     inherit that class would then carry a defaulted `is_rated=False` asserting
     something untrue — flatly wrong on a media detail page for a media the caller
-    rated, and wrong by construction on a rated-media search result.
+    rated.
     """
     is_rated: bool
+    # Notes search only: the caller's note on this media.
+    matched_note: str | None = None
 
 
 class MediaSibling(BaseModel):

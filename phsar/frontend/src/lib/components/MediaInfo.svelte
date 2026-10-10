@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { formatNumber, formatAiringStatus, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
-	import { CheckCircle2 } from 'lucide-svelte';
+	import { CheckCircle2, MessageSquareQuote } from 'lucide-svelte';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as cls from '$lib/styles/classes';
@@ -46,6 +46,8 @@
 		 * already at rest.
 		 */
 		is_finished?: boolean;
+		/** Notes search: the caller's note that matched, quoted on one line. */
+		matched_note?: string | null;
 	}
 
 	let {
@@ -55,7 +57,7 @@
 		genres = null, media_type = null, media_types = null,
 		relation_type = null, relation_types = null, watchtime = null,
 		imageUrl = null, media_uuid, is_rated = false,
-		searchToken = null, fromParam = null, is_finished = false,
+		searchToken = null, fromParam = null, is_finished = false, matched_note = null,
 	}: Props = $props();
 
 	let imgFailed = $state(false);
@@ -135,7 +137,8 @@
 				{/if}
 			</SpoilerGuard>
 
-			<div class="flex flex-col justify-between flex-grow space-y-2">
+			<!-- min-w-0 lets the note quote truncate; a flex item won't shrink below its content. -->
+			<div class="flex flex-col justify-between flex-grow min-w-0 space-y-2">
 				<div class="flex items-start justify-between">
 					<div>
 						<h3 class="text-lg font-bold text-card-foreground inline-flex items-center gap-1.5">
@@ -191,6 +194,13 @@
 							<Badge variant="secondary" class={cls.badgeGenre}>{genre}</Badge>
 						{/each}
 					</div>
+				{/if}
+
+				{#if matched_note}
+					<p class="flex items-center gap-1.5 text-sm italic text-card-foreground/80" title={matched_note}>
+						<MessageSquareQuote class="size-4 shrink-0 not-italic text-primary" />
+						<span class="truncate">{matched_note}</span>
+					</p>
 				{/if}
 
 				<div class="flex justify-between text-sm text-muted-foreground">

@@ -9,7 +9,7 @@ from sqlalchemy.orm import aliased, selectinload
 from app.daos.base_dao import recency_order
 from app.daos.base_mal_id_dao import MalIdDAO
 from app.daos.delete_candidate_dao import awaiting_review_mal_ids
-from app.daos.rating_dao import rating_of
+from app.daos.rating_dao import note_passes, rating_of
 from app.daos.search_filters import (
     apply_anime_having_filters,
     apply_anime_pre_filters,
@@ -527,14 +527,15 @@ class AnimeDAO(MalIdDAO[Anime]):
             stmt = stmt.where(Anime.id.in_(include_ids))
         if exclude_ids:
             stmt = stmt.where(Anime.id.not_in(exclude_ids))
-        your_rating = None
-        if sort == SortKey.YOUR_RATING:
+        notes = bool(query) and search_type == SearchType.RATING_NOTES
+        if sort == SortKey.YOUR_RATING or notes:
             stmt = stmt.outerjoin(Ratings, rating_of(user_id))
-            your_rating = func.avg(Ratings.rating)
+        your_rating = func.avg(Ratings.rating) if sort == SortKey.YOUR_RATING else None
 
         # GROUP BY the PK alone: Anime's own columns in the title match and the sort
-        # keys below ride functional dependency on it, and the description match,
-        # distance and the other sort keys aggregate over the anime's media.
+        # keys below ride functional dependency on it, and the literal-first matches
+        # (`match_passes`), their distances and the other sort keys aggregate over the
+        # anime's media.
         stmt = stmt.group_by(Anime.id)
 
         # Post-aggregation HAVING filters (majority/range semantics)
@@ -557,6 +558,8 @@ class AnimeDAO(MalIdDAO[Anime]):
             )
         elif query and search_type == SearchType.DESCRIPTION:
             passes = description_passes(stmt, query, await generate_query_embedding(query), having=True)
+        elif notes:
+            passes = note_passes(stmt, query, await generate_query_embedding(query), user_id, having=True)
         else:
             passes = [stmt]
 

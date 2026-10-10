@@ -13,21 +13,18 @@ from app.exceptions import (
 )
 from app.models.media import Media
 from app.models.ratings import Ratings, WatchStatus
-from app.schemas.media_filter_schema import RatedState, SearchType
+from app.schemas.media_filter_schema import RatedState
 from app.schemas.rating_schema import (
     AnimeRatingCoverage,
     CoverageTier,
-    RatedMediaResult,
     RatingAttributes,
     RatingBulkCreate,
     RatingCreate,
     RatingOut,
     RatingScoreItem,
-    RatingSearchFilters,
 )
 from app.services import media_service
 from app.services.filter_service import select_note_target_index
-from app.services.media_search_service import media_to_dict
 from app.services.spoiler_service import recompute_visibility_for_anime
 from app.services.vector_embedding_service import (
     create_rating_embedding,
@@ -354,40 +351,6 @@ async def log_rewatch(db: AsyncSession, user_id: int, rating_uuid: UUID) -> Rati
     await watch_event_dao.create_event(db, user_id, rating.media_id)
     await db.commit()
     return (await _ratings_to_out(db, user_id, [rating]))[0]
-
-
-def _rating_to_rated_media_result(r: Ratings, watched_count: int) -> RatedMediaResult:
-    rating_data = {
-        "rating_uuid": r.uuid,
-        "user_rating": r.rating,
-        "watch_status": r.watch_status,
-        "watched_count": watched_count,
-        "episodes_watched": r.episodes_watched,
-        "note": r.note,
-        "rating_created_at": r.created_at,
-        "rating_modified_at": r.modified_at,
-    }
-    for field in RatingAttributes.model_fields:
-        rating_data[field] = getattr(r, field)
-
-    return RatedMediaResult(**media_to_dict(r.media), **rating_data)
-
-
-async def search_user_ratings(
-    db: AsyncSession,
-    user_id: int,
-    query: str,
-    filters: RatingSearchFilters,
-    search_type: SearchType,
-    limit: int = 50,
-) -> list[RatedMediaResult]:
-    ratings = await rating_dao.search_ratings_with_filters(
-        db, user_id, query, filters, search_type, limit
-    )
-    counts = await watch_event_dao.counts_for_user_media_ids(
-        db, user_id, [r.media_id for r in ratings]
-    )
-    return [_rating_to_rated_media_result(r, counts.get(r.media_id, 0)) for r in ratings]
 
 
 async def bulk_upsert_ratings(db: AsyncSession, user_id: int, data: RatingBulkCreate) -> list[RatingOut]:

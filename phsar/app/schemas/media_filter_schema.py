@@ -30,6 +30,7 @@ class SortKey(str, Enum):
     POPULARITY = "popularity"
     ADDED = "added"
     RELEASE = "release"
+    AIRED = "aired"
     TITLE = "title"
     RANDOM = "random"
     YOUR_RATING = "your_rating"
@@ -104,6 +105,9 @@ class ExtendedMediaSearchFilters(CatalogueSearchFilters):
     query: SearchQuery = ""
     search_type: SearchType = SearchType.TITLE
     view_type: ViewType = ViewType.ANIME
+    # None = the endpoints' own defaults (relevance; each key's own direction).
+    sort: SortKey | None = None
+    sort_dir: SortDir | None = None
 
 class MediaFilterValues(BaseModel):
     # Categorical fields

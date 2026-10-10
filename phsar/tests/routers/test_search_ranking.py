@@ -1,4 +1,4 @@
-"""Search ranking — title and description — and sorting.
+"""Search ranking — title, description and notes — and sorting.
 
 A title query keeps the rows where some title variant — the anime's own or any of
 its media's — contains the query or fuzzy-matches it, substring hits first. No
@@ -11,6 +11,9 @@ catalogue, and retries with typo-tolerant words only when nothing matched. Its f
 embeddings, and each test first asserts the distances it relies on, so a model or
 catalogue change fails there instead of silently voiding the test.
 
+A notes query runs the description tiers over the caller's own notes, and the anime
+grain matches on its nearest note.
+
 A sort orders the rows a query matched, or the whole catalogue without one.
 
 The caller's own ratings and watchlist filter and sort it too. Their fixtures rate and
@@ -21,7 +24,9 @@ Every query goes through `_ordered_fixture_titles`, which scopes it to the fixtu
 """
 
 import hashlib
+import re
 from datetime import UTC, date, datetime
+from pathlib import Path
 from uuid import UUID
 
 import pytest
@@ -30,7 +35,9 @@ from sqlalchemy import select
 from app.daos import search_filters
 from app.daos.anime_dao import AnimeDAO
 from app.daos.media_dao import MediaDAO
+from app.daos.rating_dao import RatingDAO, _note_distance, note_cutoff
 from app.daos.search_filters import (
+    ASCENDING_SORTS,
     _escape_like,
     description_cutoff,
     weighted_mean_score_expr,
@@ -50,6 +57,8 @@ from app.models.media import (
 from app.models.media_genre import MediaGenre
 from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
+from app.models.rating_search import RatingSearch
+from app.models.ratings import Ratings
 from app.models.studio import Studio
 from app.services import anime_search_service, media_search_service
 from app.services.media_search_service import media_title_texts
@@ -61,7 +70,6 @@ from tests._helpers import SentinelSeason, list_media, media_kwargs, rate_media
 
 ANIME_SEARCH_URL = "/search/anime"
 MEDIA_SEARCH_URL = "/search/media"
-RATINGS_SEARCH_URL = "/search/ratings"
 
 _RANK_SEASON = SentinelSeason(1902)
 
@@ -267,10 +275,6 @@ async def test_synonym_reaches_its_anime(client, user_auth_headers, db_session):
 # a typo-tolerant retry only when nothing matched
 # ---------------------------------------------------------------------------
 
-_DESCRIPTION_VIEWS = pytest.mark.parametrize(
-    "url", [ANIME_SEARCH_URL, MEDIA_SEARCH_URL, RATINGS_SEARCH_URL], ids=["anime", "media", "ratings"],
-)
-
 _LITERAL = "Fixture Garden"
 _LITERAL_UNEMBEDDED = "Fixture Letters"
 _CLOSE = "Izumo"
@@ -311,10 +315,9 @@ _DESCRIBED = {
 }
 
 
-async def _describe(client, headers, db_session, url: str, *titles: str) -> None:
+async def _describe(db_session, *titles: str) -> None:
     """One single-media anime per title, in the order given (so in id order), its
-    embedding written by the save path's own encoder. On the ratings view the caller
-    rates every one, since that search only sees rated media."""
+    embedding written by the save path's own encoder."""
     for title in titles:
         overrides, embedded = _DESCRIBED[title]
         anime = await _make_anime(
@@ -324,8 +327,6 @@ async def _describe(client, headers, db_session, url: str, *titles: str) -> None
         media = (await db_session.execute(select(Media).where(Media.anime_id == anime.id))).scalar_one()
         if embedded:
             await create_media_embedding(db_session, media.id, media_title_texts(media), media.description)
-        if url == RATINGS_SEARCH_URL:
-            await rate_media(client, headers, media.uuid, rating=7.0)
 
 
 async def _distances_and_cutoff(db_session, query: str) -> tuple[dict[str, float], float]:
@@ -342,7 +343,7 @@ async def _distances_and_cutoff(db_session, query: str) -> tuple[dict[str, float
     return dict(rows.tuples().all()), cutoff
 
 
-@_DESCRIPTION_VIEWS
+@_BOTH_VIEWS
 async def test_description_name_query_ranks_literal_hits_first(
     client, user_auth_headers, db_session, url,
 ):
@@ -356,7 +357,7 @@ async def test_description_name_query_ranks_literal_hits_first(
     Tankery" names Nishizumi, which contains the query, but no word of it starts with
     it."""
     await _describe(
-        client, user_auth_headers, db_session, url,
+        db_session,
         _CLOSE, _HUB, _INFIX, _LITERAL_UNEMBEDDED, _LITERAL, *_FAR,
     )
     dist, cutoff = await _distances_and_cutoff(db_session, "izumi")
@@ -378,7 +379,7 @@ async def test_description_search_sorts_the_rows_it_matched(
     order. The rows the query does not match all score higher, so a sort that
     reached past the match set would put them first."""
     await _describe(
-        client, user_auth_headers, db_session, url,
+        db_session,
         _CLOSE, _HUB, _INFIX, _LITERAL_UNEMBEDDED, _LITERAL, *_FAR,
     )
     ordered = await _ordered_fixture_titles(
@@ -388,14 +389,14 @@ async def test_description_search_sorts_the_rows_it_matched(
     assert ordered == [_CLOSE, _LITERAL_UNEMBEDDED, _LITERAL]
 
 
-@_DESCRIPTION_VIEWS
+@_BOTH_VIEWS
 async def test_description_search_keeps_close_rows_and_cuts_far_ones(
     client, user_auth_headers, db_session, url,
 ):
     """No description holds every word of the query ("Fixture Tankery" has "girls'"
     and nothing else), so every row here is semantic: "Fixture Summer" sits under the
     cutoff and stays, the rest sit above it and go."""
-    await _describe(client, user_auth_headers, db_session, url, _LEAP, _INFIX, *_FAR)
+    await _describe(db_session, _LEAP, _INFIX, *_FAR)
     query = "a girl who travels back in time"
     dist, cutoff = await _distances_and_cutoff(db_session, query)
     assert dist[_LEAP] <= cutoff < min(dist[_INFIX], *(dist[t] for t in _FAR))
@@ -405,7 +406,7 @@ async def test_description_search_keeps_close_rows_and_cuts_far_ones(
     )
 
 
-@_DESCRIPTION_VIEWS
+@_BOTH_VIEWS
 async def test_description_search_retries_typos_only_when_nothing_matched(
     client, user_auth_headers, db_session, url,
 ):
@@ -413,7 +414,7 @@ async def test_description_search_retries_typos_only_when_nothing_matched(
     strict pass is empty and the typo-tolerant retry finds the two descriptions naming
     Izumi. Nishizumi stays under its threshold."""
     await _describe(
-        client, user_auth_headers, db_session, url, _INFIX, _LITERAL_UNEMBEDDED, _LITERAL, *_FAR,
+        db_session, _INFIX, _LITERAL_UNEMBEDDED, _LITERAL, *_FAR,
     )
     dist, cutoff = await _distances_and_cutoff(db_session, "izumy")
     assert min(dist.values()) > cutoff
@@ -425,7 +426,7 @@ async def test_description_search_retries_typos_only_when_nothing_matched(
     assert ordered == [_LITERAL, _LITERAL_UNEMBEDDED]
 
 
-@_DESCRIPTION_VIEWS
+@_BOTH_VIEWS
 async def test_description_literal_tier_reads_titles_too(
     client, user_auth_headers, db_session, url,
 ):
@@ -433,7 +434,7 @@ async def test_description_literal_tier_reads_titles_too(
     shape of "Though I Am an Inept Villainess". Without an embedding the row
     can only surface through the literal tier, so a tier reading the description
     alone returns nothing."""
-    await _describe(client, user_auth_headers, db_session, url, _TITLE_HIT, *_FAR)
+    await _describe(db_session, _TITLE_HIT, *_FAR)
     await _ordered_fixture_titles(
         client, user_auth_headers, url=url, expect={_TITLE_HIT}, query="villainess", search_type="description",
     )
@@ -460,6 +461,134 @@ async def test_description_literal_hit_on_a_side_story_reaches_its_anime(
         client, user_auth_headers, url=ANIME_SEARCH_URL, expect={"Hagane Garden"},
         query="izumi", search_type="description", score_min=7,
     )
+
+
+# ---------------------------------------------------------------------------
+# Notes search: the description tiers over the caller's own notes, the anime grain
+# on its nearest note, the matched note quoted on the card
+# ---------------------------------------------------------------------------
+
+_NOTE_LITERAL = "Izumi's speech at the end got me."
+_NOTE_NEAR = "Izumo and Izuna."
+_NOTE_QUOTED = "Izumi was the best part, her speech at the end got me."
+
+# Anime → its media (title, the caller's note); the admin notes "Nt Theirs" instead.
+_NOTED = {
+    "Nt Literal": [("Nt Literal", _NOTE_LITERAL)],
+    "Nt Near": [("Nt Near", _NOTE_NEAR)],
+    "Nt Far": [("Nt Far", "The tax audit subplot dragged on forever.")],
+    "Nt Far Too": [("Nt Far Too", "Mecha battles were loud and the pilots kept screaming.")],
+    "Nt Pair": [("Nt Pair", _NOTE_NEAR), ("Nt Pair 2", "The villain's backstory reveal in the finale felt rushed.")],
+    "Nt Quote": [("Nt Quote", _NOTE_NEAR), ("Nt Quote 2", _NOTE_QUOTED)],
+    "Nt Theirs": [("Nt Theirs", None)],
+}
+
+
+@pytest.fixture
+async def noted_set(db_session, client, user_auth_headers, admin_auth_headers):
+    await _make_franchises(
+        db_session, {anime: [(title, {}) for title, _ in media] for anime, media in _NOTED.items()}, mal_id=87861,
+    )
+    notes = {title: note for media in _NOTED.values() for title, note in media}
+    uuids = await _media_uuids(db_session, notes)
+    for title, note in notes.items():
+        if note:
+            await rate_media(client, user_auth_headers, uuids[title], _DONE, note=note)
+    await rate_media(client, admin_auth_headers, uuids["Nt Theirs"], _DONE, note="Izumi again.")
+
+
+async def _note_caller(db_session) -> int:
+    """The user whose notes `noted_set` wrote."""
+    return (await db_session.execute(
+        select(Ratings.user_id).join(Media, Media.id == Ratings.media_id).where(Media.title == "Nt Near")
+    )).scalar_one()
+
+
+async def _note_distances_and_cutoff(db_session, query: str) -> tuple[dict[str, float], float]:
+    """Each of the caller's fixture notes' distance to `query`, by media title, and the
+    cutoff the search applies."""
+    query_embedding = await generate_query_embedding(query)
+    caller = await _note_caller(db_session)
+    rows = await db_session.execute(
+        select(Media.title, _note_distance(query_embedding))
+        .join(Ratings, Ratings.media_id == Media.id)
+        .join(RatingSearch, RatingSearch.rating_id == Ratings.id)
+        .where(Ratings.user_id == caller, Media.anime_season_year == _RANK_SEASON.year)
+    )
+    cutoff = (await db_session.execute(select(note_cutoff(query_embedding, caller)))).scalar_one()
+    return dict(rows.tuples().all()), cutoff
+
+
+@pytest.mark.parametrize(("url", "literal", "semantic"), [
+    (ANIME_SEARCH_URL, {"Nt Literal", "Nt Quote"}, {"Nt Near", "Nt Pair"}),
+    (MEDIA_SEARCH_URL, {"Nt Literal", "Nt Quote 2"}, {"Nt Near", "Nt Pair", "Nt Quote"}),
+], ids=["anime", "media"])
+async def test_notes_search_ranks_literal_hits_first(
+    client, user_auth_headers, db_session, noted_set, url, literal, semantic,
+):
+    """For "izumi" the vector prefers "Izumo and Izuna.", yet the notes naming Izumi
+    lead; the near notes follow under the cutoff and the far ones go. The admin's note
+    names Izumi too, but it is not the caller's."""
+    dist, cutoff = await _note_distances_and_cutoff(db_session, "izumi")
+    assert dist["Nt Near"] < dist["Nt Literal"]
+    assert dist["Nt Near"] <= cutoff < min(dist["Nt Far"], dist["Nt Far Too"], dist["Nt Pair 2"])
+
+    ordered = await _ordered_fixture_titles(
+        client, user_auth_headers, url=url, expect=literal | semantic, query="izumi", search_type="rating_notes",
+    )
+    assert set(ordered[:len(literal)]) == literal
+
+
+async def test_notes_anime_grain_matches_on_its_nearest_note(client, user_auth_headers, db_session, noted_set):
+    """"Nt Pair" has one near note and one far one: it matches on the near note, as its
+    media does at the media grain, where averaging the two would cut it."""
+    dist, cutoff = await _note_distances_and_cutoff(db_session, "izumi")
+    assert dist["Nt Pair"] <= cutoff < (dist["Nt Pair"] + dist["Nt Pair 2"]) / 2
+
+    resp = await client.get(
+        ANIME_SEARCH_URL, params={"query": "izumi", "search_type": "rating_notes", "anime_season": _RANK_SEASON.filter},
+        headers=user_auth_headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert "Nt Pair" in {a["title"] for a in resp.json()}
+
+
+@pytest.mark.parametrize(("url", "quoted"), [
+    (ANIME_SEARCH_URL, {"Nt Literal": _NOTE_LITERAL, "Nt Near": _NOTE_NEAR, "Nt Pair": _NOTE_NEAR, "Nt Quote": _NOTE_QUOTED}),
+    (MEDIA_SEARCH_URL, {
+        "Nt Literal": _NOTE_LITERAL, "Nt Near": _NOTE_NEAR, "Nt Pair": _NOTE_NEAR,
+        "Nt Quote": _NOTE_NEAR, "Nt Quote 2": _NOTE_QUOTED,
+    }),
+], ids=["anime", "media"])
+async def test_notes_search_quotes_the_matched_note(client, user_auth_headers, db_session, noted_set, url, quoted):
+    """An anime quotes its literal note over a nearer semantic one, as it ranked; a media
+    its own note. A title search quotes nothing."""
+    dist, _ = await _note_distances_and_cutoff(db_session, "izumi")
+    assert dist["Nt Quote"] < dist["Nt Quote 2"]
+
+    params = {"query": "izumi", "search_type": "rating_notes", "anime_season": _RANK_SEASON.filter}
+    resp = await client.get(url, params=params, headers=user_auth_headers)
+    assert resp.status_code == 200, resp.text
+    assert {r["title"]: r["matched_note"] for r in resp.json()} == quoted
+
+    resp = await client.get(url, params={**params, "query": "nt", "search_type": "title"}, headers=user_auth_headers)
+    assert resp.status_code == 200, resp.text
+    assert resp.json() and all(r["matched_note"] is None for r in resp.json())
+
+
+async def test_query_without_a_word_still_runs(client, user_auth_headers, db_session, noted_set):
+    """A query with no word in it has no literal tier, and the queries that order by
+    that tier's stand-in still run (`literal_matches` says why they might not): the
+    media grain's passes, and the anime grain's note quote."""
+    for search_type in ("description", "rating_notes"):
+        resp = await client.get(
+            MEDIA_SEARCH_URL, params={"query": "😭!!", "search_type": search_type}, headers=user_auth_headers,
+        )
+        assert resp.status_code == 200, resp.text
+
+    anime_id = (await _ids(db_session, Anime, ["Nt Near"]))["Nt Near"]
+    best = await RatingDAO().best_note_by_anime_id(db_session, await _note_caller(db_session), "😭!!", [anime_id])
+    assert best == {anime_id: _NOTE_NEAR}
 
 
 # ---------------------------------------------------------------------------
@@ -523,7 +652,7 @@ async def test_limit_cuts_the_sorted_list(client, user_auth_headers, score_set, 
     assert ordered == [_FEW_VOTES, _BALANCED]
 
 
-@pytest.mark.parametrize("url", [ANIME_SEARCH_URL, MEDIA_SEARCH_URL, RATINGS_SEARCH_URL])
+@_BOTH_VIEWS
 @pytest.mark.parametrize(("param", "value"), [
     ("limit", 0), ("limit", 1001), ("top_percent", 0), ("top_percent", 101), ("query", "x" * 201),
 ])
@@ -732,11 +861,83 @@ async def test_release_sort_is_one_timeline(client, user_auth_headers, release_s
     assert ordered == expected
 
 
+_AIRING = {"airing_status": AIRING_STATUS_CURRENTLY_AIRING}
+
+# Anime → its media, every title holding "Zqa". Where the latest-aired key and the release
+# key part: Finished Airing has a finished main season (2017) and an airing one (Fall
+# 2026), Finished Announced a finished one and an announcement — the release key would put
+# them at Fall 2026 and Winter 2030.
+_AIRED_FIXTURE = {
+    "Zqa Finished Airing": [
+        ("Zqa Finished Airing", _season(SeasonType.Spring, 2017)),
+        ("Zqa Finished Airing 2", {**_season(SeasonType.Fall, 2026), **_AIRING}),
+    ],
+    "Zqa Nothing": [("Zqa Nothing", {})],
+    "Zqa Announced Only": [
+        ("Zqa Announced Only 2", {**_season(SeasonType.Fall, 2027), **_UNAIRED}),
+        ("Zqa Announced Only", {**_season(SeasonType.Winter, 2027), **_UNAIRED}),
+    ],
+    "Zqa Side Later": [
+        ("Zqa Side Later", _season(SeasonType.Spring, 2019)),
+        ("Zqa Side Later OVA", {**_season(SeasonType.Fall, 2025), **_SIDE}),
+    ],
+    "Zqa Undated Only": [("Zqa Undated Only", _UNAIRED)],
+    "Zqa Finished Announced": [
+        ("Zqa Finished Announced", _season(SeasonType.Fall, 2020)),
+        ("Zqa Finished Announced 2", {**_season(SeasonType.Winter, 2030), **_UNAIRED}),
+    ],
+    "Zqa Airing Only": [("Zqa Airing Only", {**_season(SeasonType.Spring, 2027), **_AIRING})],
+}
+
+# Undated Only at TBA · Airing Only Spring 2027 · Announced Only its closest announcement,
+# Winter 2027 — its Fall 2027 would put it above Airing Only · Finished Announced Fall
+# 2020, its announcement ignored · Side Later its main story's Spring 2019, not the OVA ·
+# Finished Airing Spring 2017, finished before airing · Nothing, last either way.
+_ANIME_AIRED_DESC = [
+    "Zqa Undated Only", "Zqa Airing Only", "Zqa Announced Only", "Zqa Finished Announced",
+    "Zqa Side Later", "Zqa Finished Airing", "Zqa Nothing",
+]
+
+
+@pytest.mark.parametrize("params", [{"sort": "aired"}, {"sort": "aired", "sort_dir": "asc"}], ids=["desc", "asc"])
+async def test_aired_sort_is_the_latest_finished_main_season(client, user_auth_headers, db_session, params):
+    """Newest first by default; ascending reverses every seasoned row, and the row
+    without a season stays last."""
+    await _make_franchises(db_session, _AIRED_FIXTURE, mal_id=87671, in_season=False)
+    desc = _ANIME_AIRED_DESC
+    expected = [*reversed(desc[:-1]), desc[-1]] if "sort_dir" in params else desc
+    ordered = await _ordered_fixture_titles(
+        client, user_auth_headers, url=ANIME_SEARCH_URL, expect=set(expected), in_season=False, query="zqa", **params,
+    )
+    assert ordered == expected
+
+
+CLIENT_SEARCH = Path(__file__).resolve().parents[2] / "frontend" / "src" / "lib" / "utils" / "search.ts"
+# Anchored and `export`-pinned, as test_ratings.py reads `ratingLimits.ts`.
+_CLIENT_ASCENDING = re.compile(r"^export const ASCENDING_SORTS: SortKey\[\] = \[(.*)\];$", re.M)
+
+
+def test_the_search_menu_knows_which_sorts_ascend():
+    """The menu names a sort's direction before the backend has ordered anything, so its
+    default directions must be the backend's."""
+    match = _CLIENT_ASCENDING.search(CLIENT_SEARCH.read_text())
+    assert match, f"no ASCENDING_SORTS line in {CLIENT_SEARCH}"
+    assert {key.strip(" '") for key in match.group(1).split(",")} == {key.value for key in ASCENDING_SORTS}
+
+
+async def test_aired_sort_at_the_media_grain_is_each_media_season(client, user_auth_headers, release_set):
+    """One media has one season, so the media grain orders as the release key does."""
+    ordered = await _ordered_fixture_titles(
+        client, user_auth_headers, url=MEDIA_SEARCH_URL, expect=set(_MEDIA_RELEASE_ASC), in_season=False,
+        query="zqv", sort="aired", sort_dir="asc",
+    )
+    assert ordered == _MEDIA_RELEASE_ASC
+
+
 # ---------------------------------------------------------------------------
 # Upcoming main story, top N%, and any/all genres and studios
 # ---------------------------------------------------------------------------
 
-_AIRING = {"airing_status": AIRING_STATUS_CURRENTLY_AIRING}
 
 # Anime → its media (title, columns); Main and finished unless the columns say otherwise.
 _UPCOMING_FIXTURE = {
@@ -1078,11 +1279,13 @@ async def test_rated_state_of_the_other_grain_is_rejected(client, user_auth_head
     ({"watchlisted": True}, 403),
     ({"watchlisted": False}, 403),
     ({"sort": "your_rating"}, 403),
-], ids=["plain", "rated", "watchlisted", "not_watchlisted", "your_rating"])
+    ({"search_type": "rating_notes", "query": "izumi"}, 403),
+    ({"search_type": "rating_notes"}, 403),
+], ids=["plain", "rated", "watchlisted", "not_watchlisted", "your_rating", "notes", "notes_no_query"])
 async def test_personal_filters_and_sort_are_closed_to_guests(
     client, restricted_user_auth_headers, url, params, status,
 ):
-    """A guest searches, but has no ratings or watchlist to search by."""
+    """A guest searches, but has no ratings, notes or watchlist to search by."""
     resp = await client.get(
         url, params={"anime_season": _RANK_SEASON.filter, **params}, headers=restricted_user_auth_headers,
     )
@@ -1147,20 +1350,21 @@ async def test_your_rating_sorts_by_the_callers_mean(
 
 @pytest.mark.parametrize("params", [
     {"rated": ["in_progress"]}, {"watchlisted": True}, {"sort": "your_rating"},
-], ids=["rated", "watchlisted", "your_rating"])
+    {"query": "greenhouse", "search_type": "rating_notes"},
+], ids=["rated", "watchlisted", "your_rating", "notes"])
 async def test_personal_filters_and_sort_do_not_rescope_the_aggregates(
     client, user_auth_headers, db_session, params,
 ):
-    """The caller rated and listed only the side story (weight 0) of an anime whose main
-    story scores 8.0. Narrowing the grouped rows to those media would leave the anime
-    unscored, and `score_min` — a HAVING over Phase A's aggregates, which the card's
-    refetch never sees — would drop it."""
+    """The caller rated, noted and listed only the side story (weight 0) of an anime
+    whose main story scores 8.0. Narrowing the grouped rows to those media would leave
+    the anime unscored, and `score_min` — a HAVING over Phase A's aggregates, which the
+    card's refetch never sees — would drop it."""
     await _make_anime(db_session, mal_id=87831, title="Rsc Scoped", media=[
         {"title": "Rsc Scoped", "score": 8.0, "scored_by": 1000},
         {"title": "Rsc Scoped OVA", "relation_type": RelationType.SideStory, "score": 5.0, "scored_by": 1000},
     ])
     side = (await _media_uuids(db_session, ["Rsc Scoped OVA"]))["Rsc Scoped OVA"]
-    await rate_media(client, user_auth_headers, side, _DONE)
+    await rate_media(client, user_auth_headers, side, _DONE, note="The greenhouse special was charming.")
     await list_media(client, user_auth_headers, side)
     await _ordered_fixture_titles(
         client, user_auth_headers, url=ANIME_SEARCH_URL, expect={"Rsc Scoped"}, score_min=7, **params,

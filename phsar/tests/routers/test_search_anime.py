@@ -224,15 +224,6 @@ async def test_search_anime_relation_type_counts(client, user_auth_headers, anim
     assert rt_map.get("side_story") == 2
 
 
-async def test_search_anime_rating_notes_rejected(client, user_auth_headers):
-    """rating_notes search type should be rejected on anime search."""
-    response = await client.get("/search/anime", params={
-        "query": "test",
-        "search_type": "rating_notes",
-    }, headers=user_auth_headers)
-    assert response.status_code == 400
-
-
 async def test_search_anime_unauthorized(client):
     response = await client.get("/search/anime")
     assert response.status_code == 401

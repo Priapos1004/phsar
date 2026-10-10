@@ -48,13 +48,6 @@
 	const PILL_OFF = 'border-white/15 text-white/60 hover:text-white hover:border-white/30';
 	const pill = 'px-3.5 py-1.5 rounded-full text-sm border transition-colors inline-flex items-center gap-1.5';
 	const labelCls = 'text-muted-foreground text-xs uppercase tracking-wide';
-
-	// Every filter group shares one chip shape and one unselected state; only the selected
-	// fill differs.
-	// `CHIP_OFF` matches the ratings page's chips, so the sibling pages stay parallel.
-	const chip = 'px-3 py-1.5 rounded-lg text-sm font-medium transition-colors inline-flex items-center gap-1.5 border border-transparent';
-	const CHIP_OFF = 'bg-muted text-card-foreground/70 hover:bg-muted/70';
-	const chipGroup = 'bg-card/80 backdrop-blur border border-input rounded-xl px-2 min-h-[48px] flex flex-wrap items-center gap-1.5 py-1.5';
 </script>
 
 <div class="space-y-3 mb-4 relative z-20">
@@ -85,12 +78,12 @@
 			     takes the band's accent color so it matches the grid band headers. -->
 			<div class="space-y-1.5">
 				<div class="flex h-7 items-center"><Label class={labelCls}>Priority</Label></div>
-				<div class={chipGroup}>
+				<div class={cls.chipGroup}>
 					{#each PRIORITY_OPTIONS as opt (opt.value)}
 						{@const on = $watchlistFilter.priorities.includes(opt.value)}
 						{@const acc = PRIORITY_ACCENT[opt.value]}
 						<button
-							class="{chip} {on ? `${acc.dot} text-white shadow-sm` : CHIP_OFF}"
+							class="{cls.chip} {on ? `${acc.dot} text-white shadow-sm` : cls.chipOff}"
 							aria-pressed={on}
 							onclick={() => toggle('priorities', opt.value)}
 						>
@@ -109,14 +102,14 @@
 			     utils/watchlistStats.buildWatchlistView decides which. -->
 			<div class="space-y-1.5">
 				<div class="flex h-7 items-center"><Label class={labelCls}>Status</Label></div>
-				<div class={chipGroup}>
+				<div class={cls.chipGroup}>
 					{#each READY_FILTERS as opt (opt.key)}
 						{@const on = $watchlistFilter.readiness.includes(opt.key)}
 						<Tooltip text={opt.title}>
 							{#snippet trigger(props)}
 								<button
 									{...props}
-									class="{chip} {on ? `${opt.class} shadow-sm` : CHIP_OFF}"
+									class="{cls.chip} {on ? `${opt.class} shadow-sm` : cls.chipOff}"
 									aria-pressed={on}
 									onclick={() => toggle('readiness', opt.key)}
 								>
@@ -131,14 +124,14 @@
 			<!-- Watchtime: a union like the rest, over the size band each row's badge shows. -->
 			<div class="space-y-1.5">
 				<div class="flex h-7 items-center"><Label class={labelCls}>Watchtime</Label></div>
-				<div class={chipGroup}>
+				<div class={cls.chipGroup}>
 					{#each WATCHTIME_FILTERS as opt (opt.key)}
 						{@const on = $watchlistFilter.watchtime.includes(opt.key)}
 						<Tooltip text={opt.title}>
 							{#snippet trigger(props)}
 								<button
 									{...props}
-									class="{chip} {on ? `${opt.fill} shadow-sm` : CHIP_OFF}"
+									class="{cls.chip} {on ? `${opt.fill} shadow-sm` : cls.chipOff}"
 									aria-pressed={on}
 									onclick={() => toggle('watchtime', opt.key)}
 								>
@@ -153,12 +146,12 @@
 			<!-- Lists (tags): multi-select union — pick several to see them combined. -->
 			<div class="space-y-1.5 flex-grow min-w-[14rem]">
 				<div class="flex h-7 items-center"><Label class={labelCls}>Lists</Label></div>
-				<div class={chipGroup}>
+				<div class={cls.chipGroup}>
 					{#each $tags as tag (tag.uuid)}
 						{@const on = $watchlistFilter.tagUuids.includes(tag.uuid)}
 						{@const contrast = contrastText(tag.color)}
 						<button
-							class="{chip} {on ? 'shadow-sm' : CHIP_OFF}"
+							class="{cls.chip} {on ? 'shadow-sm' : cls.chipOff}"
 							aria-pressed={on}
 							style={on ? `background:${tag.color}; border-color:${tag.color}; color:${contrast}` : ''}
 							onclick={() => toggle('tagUuids', tag.uuid)}

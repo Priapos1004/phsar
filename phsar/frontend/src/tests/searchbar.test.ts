@@ -3,6 +3,37 @@ import { render, screen, fireEvent } from '@testing-library/svelte';
 import SearchBar from '$lib/components/SearchBar.svelte';
 import { token } from '$lib/stores/auth';
 import { clearFilterOptions } from '$lib/stores/filterOptions';
+import type { MediaSearchFilters } from '$lib/utils/search';
+import { jsonResponse } from './fixtures/response';
+
+const OPTIONS = {
+	genre_name: ['Action', 'Comedy', 'Drama'],
+	anime_season: ['Winter 2024', 'Spring 2024'],
+	studio_name: ['MAPPA', 'Bones'],
+	original_source: ['Manga', 'Original'],
+	airing_status: ['Currently Airing', 'Finished Airing'],
+	relation_type: ['sequel', 'side_story'],
+	media_type: ['TV', 'Movie'],
+	age_rating: ['PG-13', 'R'],
+	episodes_min: 1,
+	episodes_max: 1100,
+	score_min: 0,
+	score_max: 10,
+	scored_by_min: 0,
+	// Death Note's vote count: off the log slider's step grid, the phantom-write case.
+	scored_by_max: 3_023_456,
+	duration_per_episode_min: null,
+	duration_per_episode_max: null,
+	total_watch_time_min: 60,
+	total_watch_time_max: 1_580_000,
+};
+
+const BASE: MediaSearchFilters = { query: '', search_type: 'title', view_type: 'anime' };
+
+async function openSheet() {
+	await fireEvent.click(screen.getByLabelText('Filters'));
+	await screen.findByText('Scored by');
+}
 
 describe('SearchBar', () => {
 	const originalFetch = globalThis.fetch;
@@ -13,136 +44,141 @@ describe('SearchBar', () => {
 	});
 
 	beforeEach(() => {
-		// Filter options are cached for the session, so an earlier mount in this
-		// file would otherwise serve later ones from cache and they'd observe no
-		// fetch at all. Reset per test to keep them independent.
+		// Filter options are cached for the session, so an earlier mount in this file would
+		// otherwise serve later ones from cache and they'd observe no fetch at all.
 		clearFilterOptions();
-
-		// Set token in store (used by api client)
 		token.set('test-token');
-
-		// Mock the filter options API call
-		globalThis.fetch = vi.fn().mockResolvedValue({
-			ok: true,
-			json: () =>
-				Promise.resolve({
-					genre_name: ['Action', 'Comedy', 'Drama'],
-					anime_season: ['Winter 2024', 'Spring 2024'],
-					studio_name: ['MAPPA', 'Bones'],
-					original_source: ['Manga', 'Original'],
-					airing_status: ['Currently Airing', 'Finished Airing'],
-					relation_type: ['Sequel', 'Prequel'],
-					media_type: ['TV', 'Movie'],
-					age_rating: ['PG-13', 'R'],
-					episodes_min: 1,
-					episodes_max: 100,
-					score_min: 0,
-					score_max: 10,
-					scored_by_min: 0,
-					scored_by_max: 1000000,
-					duration_per_episode_min: 60,
-					duration_per_episode_max: 7200,
-					total_watch_time_min: 60,
-					total_watch_time_max: 360000,
-				}),
-		});
+		globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(OPTIONS));
 	});
 
-	it('renders search input with placeholder', () => {
-		render(SearchBar);
-		expect(screen.getByPlaceholderText('Search anime...')).toBeInTheDocument();
-	});
-
-	it('renders with media placeholder when viewType is media', () => {
+	it('placeholders follow the view and the mode', () => {
 		render(SearchBar, { props: { viewType: 'media' } });
 		expect(screen.getByPlaceholderText('Search media...')).toBeInTheDocument();
 	});
 
-	it('has a filter toggle button', () => {
-		render(SearchBar);
-		expect(screen.getByLabelText('Toggle filters')).toBeInTheDocument();
-	});
-
-	it('filter panel is hidden by default', () => {
-		render(SearchBar);
-		expect(screen.queryByText('Filters')).not.toBeInTheDocument();
-	});
-
-	it('shows filter panel when toggle is clicked', async () => {
-		render(SearchBar);
-		await fireEvent.click(screen.getByLabelText('Toggle filters'));
-		expect(screen.getByText('Filters')).toBeInTheDocument();
-	});
-
-	it('shows "Expand search to descriptions" checkbox in filter panel', async () => {
-		render(SearchBar);
-		await fireEvent.click(screen.getByLabelText('Toggle filters'));
-		expect(screen.getByLabelText('Expand search to descriptions')).toBeInTheDocument();
-	});
-
-	it('calls onSearch with query params on form submit', async () => {
+	it('submits the typed query with the applied filters and mode', async () => {
 		const onSearch = vi.fn();
-		render(SearchBar, { props: { onSearch } });
-
+		render(SearchBar, { props: { onSearch, applied: { ...BASE, genre_name: ['Action'] } } });
 		const input = screen.getByPlaceholderText('Search anime...');
 		await fireEvent.input(input, { target: { value: 'Naruto' } });
-
-		// Submit via hidden submit button
-		const form = input.closest('form')!;
-		await fireEvent.submit(form);
-
+		await fireEvent.submit(input.closest('form')!);
 		expect(onSearch).toHaveBeenCalledWith(
-			expect.objectContaining({
-				query: 'Naruto',
-				search_type: 'title',
-			})
+			expect.objectContaining({ query: 'Naruto', search_type: 'title', genre_name: ['Action'] }),
 		);
 	});
 
-	it('sets search_type to description when checkbox is checked', async () => {
+	it('a mode re-runs the typed query, and waits for one when nothing is typed', async () => {
 		const onSearch = vi.fn();
 		render(SearchBar, { props: { onSearch } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Description' }));
+		expect(onSearch).not.toHaveBeenCalled();
+		expect(screen.getByPlaceholderText('Describe a story, a character, a theme...')).toBeInTheDocument();
 
-		// Open filters and check the checkbox
-		await fireEvent.click(screen.getByLabelText('Toggle filters'));
-		await fireEvent.click(screen.getByLabelText('Expand search to descriptions'));
-
-		// Submit
-		const form = screen.getByPlaceholderText('Search anime...').closest('form')!;
-		await fireEvent.submit(form);
-
-		expect(onSearch).toHaveBeenCalledWith(
-			expect.objectContaining({
-				search_type: 'description',
-			})
-		);
+		await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'time travel' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Title' }));
+		expect(onSearch).toHaveBeenCalledOnce();
+		expect(onSearch).toHaveBeenCalledWith(expect.objectContaining({ query: 'time travel', search_type: 'title' }));
 	});
 
-	it('fetches filter options on first mount of a view', async () => {
-		// Per session per view_type, not per mount — the component mounts on both /
-		// and /search, and the options only change when the catalogue does.
-		render(SearchBar);
-
-		await vi.waitFor(() => {
-			expect(globalThis.fetch).toHaveBeenCalledWith(
-				'http://localhost:8000/filters/options?view_type=anime',
-				expect.objectContaining({
-					headers: { Authorization: 'Bearer test-token' },
-				})
-			);
+	it('counts the applied filter groups on the filter button', () => {
+		render(SearchBar, {
+			props: { applied: { ...BASE, genre_name: ['Action'], genre_mode: 'all', top_percent: 20, upcoming_main: false } },
 		});
+		expect(screen.getByLabelText('Filters')).toHaveTextContent('2');
 	});
 
-	it('does not refetch filter options when remounted', async () => {
-		// The reason the cache exists: SearchBar mounts on BOTH / and /search, so
-		// every hop between them used to re-run an 8-15 round-trip endpoint.
+	it("the sheet's Clear all clears the filters and keeps the sort", async () => {
+		const onSearch = vi.fn();
+		render(SearchBar, {
+			props: { onSearch, applied: { ...BASE, genre_name: ['Action'], top_percent: 20, sort: 'aired', sort_dir: 'asc' } },
+		});
+		await openSheet();
+		await fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Show results' }));
+		const sent = onSearch.mock.calls[0][0];
+		expect(sent).toMatchObject({ sort: 'aired', sort_dir: 'asc' });
+		expect(sent.genre_name).toBeUndefined();
+		expect(sent.top_percent).toBeUndefined();
+	});
+
+	it('an untouched sheet applies no range filter', async () => {
+		// Opening the sheet must not turn a slider's snap onto its step grid into a filter.
+		// Two defences stop it — track ends on the grid (`sliderGrid`) and writing only on
+		// commit (DoubleRangeSlider) — and either holds alone, so this fails only with both
+		// gone. `sliderGrid`'s own test pins the first.
+		const onSearch = vi.fn();
+		render(SearchBar, { props: { onSearch, applied: BASE } });
+		await openSheet();
+		await fireEvent.click(screen.getByRole('button', { name: 'Show results' }));
+		const sent = onSearch.mock.calls[0][0];
+		for (const key of Object.keys(sent)) expect(key).not.toMatch(/_(min|max)$/);
+	});
+
+	it('an unset range reads the catalogue bounds, its thumbs at the track ends', async () => {
+		// The bound's own position rounds to 21.5 on a track ending at 21.6: a thumb put
+		// there sits a step short of the end and reads 2,965,820.
+		render(SearchBar, { props: { applied: BASE } });
+		await openSheet();
+		expect(screen.getByText('0 – 3,023,456')).toBeInTheDocument();
+		const scoredBy = screen.getByText('Scored by').closest('div')!.parentElement!;
+		const thumbs = scoredBy.querySelectorAll('[role="slider"]');
+		expect([...thumbs].map((t) => t.getAttribute('aria-valuenow'))).toEqual(['0', '21.6']);
+	});
+
+	it('a one-sided range comes back as it was sent', async () => {
+		const onSearch = vi.fn();
+		render(SearchBar, { props: { onSearch, applied: { ...BASE, scored_by_max: 2_965_820 } } });
+		await openSheet();
+		await fireEvent.click(screen.getByRole('button', { name: 'Show results' }));
+		expect(onSearch.mock.calls[0][0]).toMatchObject({ scored_by_max: 2_965_820 });
+		expect(onSearch.mock.calls[0][0].scored_by_min).toBeUndefined();
+	});
+
+	it('applies staged edits on "Show results" and discards them on dismiss', async () => {
+		const onSearch = vi.fn();
+		render(SearchBar, { props: { onSearch, applied: BASE } });
+		await openSheet();
+		await fireEvent.click(screen.getByRole('button', { name: 'Dropped' }));
+		await fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+		await openSheet();
+		expect(screen.getByRole('button', { name: 'Dropped' })).toHaveAttribute('aria-pressed', 'false');
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Dropped' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Show results' }));
+		expect(onSearch).toHaveBeenCalledWith(expect.objectContaining({ rated: ['dropped'] }));
+	});
+
+	it('notes mode is shown to a guest but not selectable', async () => {
+		const onSearch = vi.fn();
+		render(SearchBar, { props: { onSearch }, context: new Map([['userRole', () => 'restricted_user']]) });
+		await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'cozy' } });
+		const notes = screen.getByRole('button', { name: 'My notes' });
+		expect(notes).toHaveAttribute('aria-disabled', 'true');
+		await fireEvent.click(notes);
+		expect(onSearch).not.toHaveBeenCalled();
+		expect(screen.queryByPlaceholderText('Search your notes...')).not.toBeInTheDocument();
+	});
+
+	it('a guest gets an explanation in place of the personal filters', async () => {
+		render(SearchBar, { context: new Map([['userRole', () => 'restricted_user']]) });
+		await openSheet();
+		expect(screen.getByText(/Guest accounts have no ratings or watchlist/)).toBeInTheDocument();
+		expect(screen.queryByRole('button', { name: 'Dropped' })).not.toBeInTheDocument();
+	});
+
+	it('fetches the filter options once per view, not per mount', async () => {
+		// SearchBar mounts on both / and /search, and the options only change when the
+		// catalogue does.
 		const { unmount } = render(SearchBar);
-		await vi.waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
+		await openSheet();
+		expect(globalThis.fetch).toHaveBeenCalledWith(
+			'http://localhost:8000/filters/options?view_type=anime',
+			expect.objectContaining({ headers: { Authorization: 'Bearer test-token' } }),
+		);
 		unmount();
 
 		render(SearchBar);
-		// Give a stray fetch a chance to land before asserting its absence.
-		await new Promise((r) => setTimeout(r, 20));
+		await openSheet();
 		expect(globalThis.fetch).toHaveBeenCalledTimes(1);
 	});
 });

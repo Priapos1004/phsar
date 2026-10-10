@@ -55,6 +55,29 @@ async def test_schedule_seasonal_creates_job_and_sets_banner(cron_client, db_ses
     assert job.kind is JobKind.seasonal_sweep
     assert job.status is JobStatus.queued
     assert job.not_before_at is not None
+    # No season named → the dispatcher falls back to the clock.
+    assert job.payload == {}
+
+
+@pytest.mark.asyncio
+async def test_schedule_seasonal_explicit_season_lands_in_payload(cron_client, db_session):
+    resp = await cron_client.post(
+        URL + "?season=Winter&year=2025&delay_minutes=0", headers=GOOD_HEADER,
+    )
+    assert resp.status_code == 200, resp.text
+
+    job = (
+        await db_session.execute(select(Job).where(Job.uuid == resp.json()["job_uuid"]))
+    ).scalars().one()
+    # MAL's lowercase spelling — what the dispatcher hands to fetch_season.
+    assert job.payload == {"year": 2025, "season": "winter"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", ["season=Winter", "year=2025"])
+async def test_schedule_seasonal_rejects_half_a_season(cron_client, query):
+    resp = await cron_client.post(f"{URL}?{query}", headers=GOOD_HEADER)
+    assert resp.status_code == 422
 
 
 @pytest.mark.asyncio

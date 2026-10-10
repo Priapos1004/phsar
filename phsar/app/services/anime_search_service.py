@@ -7,6 +7,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.anime_dao import AnimeDAO
+from app.daos.rating_dao import RatingDAO
 from app.daos.watchlist_dao import WatchlistDAO
 from app.exceptions import AnimeNotFoundByUuidError
 from app.models.media import (
@@ -37,6 +38,7 @@ from app.services.rating_service import rated_states_by_anime_id
 logger = logging.getLogger(__name__)
 
 anime_dao = AnimeDAO()
+rating_dao = RatingDAO()
 watchlist_dao = WatchlistDAO()
 
 
@@ -254,6 +256,9 @@ async def search_anime_by_query(
         sort=sort, sort_dir=sort_dir, name_language=name_language, limit=limit,
         user_id=user_id, include_ids=include, exclude_ids=exclude,
     )
+    notes = await rating_dao.best_note_by_anime_id(
+        db, user_id, query, [a.id for a in anime_list],
+    ) if query and search_type == SearchType.RATING_NOTES else {}
 
     results = []
     for anime in anime_list:
@@ -265,6 +270,7 @@ async def search_anime_by_query(
             name_jap=anime.name_jap,
             cover_image=anime.cover_image,
             is_finished=anime.completion is not None,
+            matched_note=notes.get(anime.id),
             **agg,
         ))
 

@@ -28,8 +28,7 @@ bulk write of one row per media. What the shape buys downstream:
 A `WatchStatus` enum (`completed` / `on_hold` / `dropped`) on `Ratings`.
 `on_hold` is split out from `dropped` so a future "continue watching"
 recommendation can resume paused-but-not-abandoned shows; both carry
-`episodes_watched`. The search filter (`RatingSearchFilters.watch_status`) is a
-list, so the library can filter several statuses at once.
+`episodes_watched`.
 
 ## Guards on a write
 
@@ -131,9 +130,7 @@ primary-key tiebreak is load-bearing, see
 
 ## Notes are searchable
 
-Notes are embedded for search — see [search.md](search.md). `/search/ratings`
-takes the full media filter set plus the rating-specific ones, scoped to the
-caller's own ratings.
+Notes are embedded for search — see [search.md](search.md#notes-search).
 
 ## Coupling to other subsystems
 
