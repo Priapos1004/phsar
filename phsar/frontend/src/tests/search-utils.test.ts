@@ -152,6 +152,7 @@ describe('effectiveSort', () => {
 		expect(effectiveSort(BASE)).toMatchObject({ sort: 'top_rated', dir: 'desc' });
 		expect(effectiveSort({ ...BASE, sort: 'relevance' })).toMatchObject({ sort: 'top_rated', dir: 'desc' });
 		expect(effectiveSort({ ...BASE, query: 'frieren' })).toMatchObject({ sort: 'relevance', dir: null });
+		expect(effectiveSort({ ...BASE, sort: 'relevance', sort_dir: 'asc' })).toMatchObject({ sort: 'top_rated', dir: 'desc' });
 	});
 
 	it('gives a shuffle no direction', () => {

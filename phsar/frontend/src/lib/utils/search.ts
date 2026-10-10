@@ -171,14 +171,15 @@ export function offeredSorts(params: MediaSearchFilters): SortOption[] {
 	return SORT_OPTIONS.filter((o) => o.value !== 'relevance' || params.query?.trim());
 }
 
-/** The order the results are actually in. Without a query, relevance falls back to top
- * rated — the backend's rule, shown rather than hidden. */
+/** The order the results are actually in: relevance read as the backend reads it
+ * (docs/features/search.md, Sorting), shown rather than hidden. */
 export function effectiveSort(params: MediaSearchFilters): { sort: SortKey; option: SortOption; dir: SortDir | null } {
 	const requested = params.sort ?? 'relevance';
 	const sort = requested === 'relevance' && !params.query?.trim() ? 'top_rated' : requested;
 	const option = SORT_OPTIONS.find((o) => o.value === sort)!;
 	if (!option.dir) return { sort, option, dir: null };
-	return { sort, option, dir: params.sort_dir ?? (ASCENDING_SORTS.includes(sort) ? 'asc' : 'desc') };
+	const dir = requested === 'relevance' ? undefined : params.sort_dir;
+	return { sort, option, dir: dir ?? (ASCENDING_SORTS.includes(sort) ? 'asc' : 'desc') };
 }
 
 /** The applied search with a new query and mode. A different query starts from Best match:

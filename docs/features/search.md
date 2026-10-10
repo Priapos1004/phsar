@@ -173,7 +173,8 @@ the displayed number, the ranking and the "Top N%" pill from drifting apart.
 **A query decides which rows match; the sort decides their order.** Every query
 keeps its match set (every pass's restriction, the
 strict-then-loose retry), and `sort` only replaces the ORDER BY. `relevance`, the
-default, is the query's own match order, and top rated without a query. `limit` runs 1–1000,
+default, is the query's own match order, and top rated in its default direction without a
+query, whatever `sort_dir` says. `limit` runs 1–1000,
 default 50.
 
 `sort_order` is the one implementation at both grains, and its docstring gives the
