@@ -17,7 +17,11 @@ from app.schemas.media_filter_schema import (
     SortKey,
 )
 from app.schemas.media_schema import MediaDetail, MediaSearchResult, MediaSibling
-from app.services.filter_service import chronological_media_key, personal_scope
+from app.services.filter_service import (
+    chronological_media_key,
+    personal_scope,
+    sort_values,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -117,11 +121,16 @@ async def search_media_by_query(
     # Filled after the search, not inside it — see "Personal filters and sort" in
     # docs/features/search.md for why it stays out of `daos/search_filters`.
     # A media carries at most one of the caller's ratings, so its note is the one matched.
-    rated = await rating_dao.notes_by_rated_media_id(db, user_id, [m.id for m in media_list])
+    ids = [m.id for m in media_list]
+    rated = await rating_dao.notes_by_rated_media_id(db, user_id, ids)
     quote = bool(query) and search_type == SearchType.RATING_NOTES
+    shown = await sort_values(db, sort, query, ids, user_id, per_anime=False)
     return [
         MediaSearchResult(
-            **media_to_dict(m), is_rated=m.id in rated, matched_note=rated.get(m.id) if quote else None,
+            **media_to_dict(m), is_rated=m.id in rated, added_at=m.created_at,
+            matched_note=rated.get(m.id) if quote else None,
+            score_top_percent=shown.top_percent.get(m.id), sort_season=shown.season.get(m.id),
+            your_rating=shown.your_rating.get(m.id),
         )
         for m in media_list
     ]

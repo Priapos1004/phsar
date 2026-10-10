@@ -1,12 +1,19 @@
 import logging
+from typing import NamedTuple
 
 from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.genre_dao import GenreDAO
 from app.daos.media_dao import MediaDAO
+from app.daos.rating_dao import RatingDAO
 from app.daos.search_filters import (
+    SEASON_SORT_KEYS,
     anime_genre_majority_relation,
+    ranked_by,
+    season_filter,
+    sort_season_by_id,
+    top_percents,
     weighted_mean_votes_expr,
 )
 from app.daos.studio_dao import StudioDAO
@@ -18,13 +25,41 @@ from app.models.media import (
     RelationType,
 )
 from app.schemas.genre_schema import GenreOut
-from app.schemas.media_filter_schema import CatalogueSearchFilters, RatedState, ViewType
+from app.schemas.media_filter_schema import (
+    CatalogueSearchFilters,
+    RatedState,
+    SortKey,
+    ViewType,
+)
 
 logger = logging.getLogger(__name__)
 
 media_dao = MediaDAO()
 genre_dao = GenreDAO()
+rating_dao = RatingDAO()
 studio_dao = StudioDAO()
+
+
+class SortValues(NamedTuple):
+    """Per id, what a search's sort orders a row by — only the active sort's is filled."""
+    top_percent: dict[int, int]
+    season: dict[int, str | None]
+    your_rating: dict[int, float]
+
+
+async def sort_values(
+    db: AsyncSession, sort: SortKey, query: str, ids: list[int], user_id: int, *, per_anime: bool,
+) -> SortValues:
+    """See docs/features/search.md#sorting."""
+    ranked = ranked_by(sort, query)
+    if not ids:
+        return SortValues({}, {}, {})
+    return SortValues(
+        await top_percents(db, ids, per_anime=per_anime) if ranked == SortKey.TOP_RATED else {},
+        await sort_season_by_id(db, ranked, ids, per_anime=per_anime) if ranked in SEASON_SORT_KEYS else {},
+        await rating_dao.your_rating_by_id(db, user_id, ids, per_anime=per_anime)
+        if ranked == SortKey.YOUR_RATING else {},
+    )
 
 
 def chronological_media_key(
@@ -181,7 +216,7 @@ async def _fetch_shared_filter_values(db: AsyncSession) -> dict:
     airing_status = sorted(await media_dao.get_unique_in_field(db, field_name="airing_status"), key=str.casefold)
 
     anime_seasons_tuple = await media_dao.get_unique_in_fields(db, field_names=["anime_season_name", "anime_season_year"])
-    anime_seasons = sort_seasons([f"{name.value} {year}" for name, year in anime_seasons_tuple if name and year])
+    anime_seasons = sort_seasons([season_filter(name, year) for name, year in anime_seasons_tuple if name and year])
 
     studio_names = await studio_dao.get_distinct_used_studios(db)
 

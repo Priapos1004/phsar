@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -57,8 +57,13 @@ class MediaSearchResult(MediaConnected):
     rated.
     """
     is_rated: bool
+    added_at: datetime
     # Notes search only: the caller's note on this media.
     matched_note: str | None = None
+    # Each only under the sort that orders by it (`filter_service.sort_values`).
+    score_top_percent: int | None = None
+    sort_season: str | None = None
+    your_rating: float | None = None
 
 
 class MediaSibling(BaseModel):

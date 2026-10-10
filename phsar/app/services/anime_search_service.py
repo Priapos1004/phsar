@@ -32,7 +32,11 @@ from app.schemas.media_filter_schema import (
     SortDir,
     SortKey,
 )
-from app.services.filter_service import chronological_media_key, personal_scope
+from app.services.filter_service import (
+    chronological_media_key,
+    personal_scope,
+    sort_values,
+)
 from app.services.rating_service import rated_states_by_anime_id
 
 logger = logging.getLogger(__name__)
@@ -256,9 +260,11 @@ async def search_anime_by_query(
         sort=sort, sort_dir=sort_dir, name_language=name_language, limit=limit,
         user_id=user_id, include_ids=include, exclude_ids=exclude,
     )
+    ids = [a.id for a in anime_list]
     notes = await rating_dao.best_note_by_anime_id(
-        db, user_id, query, [a.id for a in anime_list],
+        db, user_id, query, ids,
     ) if query and search_type == SearchType.RATING_NOTES else {}
+    shown = await sort_values(db, sort, query, ids, user_id, per_anime=True)
 
     results = []
     for anime in anime_list:
@@ -270,7 +276,11 @@ async def search_anime_by_query(
             name_jap=anime.name_jap,
             cover_image=anime.cover_image,
             is_finished=anime.completion is not None,
+            added_at=anime.created_at,
             matched_note=notes.get(anime.id),
+            score_top_percent=shown.top_percent.get(anime.id),
+            sort_season=shown.season.get(anime.id),
+            your_rating=shown.your_rating.get(anime.id),
             **agg,
         ))
 

@@ -20,7 +20,7 @@ The caller's own ratings and watchlist filter and sort it too. Their fixtures ra
 list through the real endpoints, as the caller and, where another user's rating must
 not count, as the admin.
 
-Every query goes through `_ordered_fixture_titles`, which scopes it to the fixture.
+Every query goes through `_fixture_rows`, which scopes it to the fixture.
 """
 
 import hashlib
@@ -30,7 +30,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.daos import search_filters
 from app.daos.anime_dao import AnimeDAO
@@ -95,12 +95,12 @@ async def _make_anime(
     return anime
 
 
-async def _ordered_fixture_titles(
+async def _fixture_rows(
     client, headers, *, url: str, expect: set[str], in_season: bool = True, **params,
-) -> list[str]:
+) -> list[dict]:
     """The fixture's rows in response order, checked to be exactly `expect`.
 
-    Every caller's assertion passes on an empty or truncated list, so the check
+    Order assertions pass on an empty or truncated list, so the check
     that makes them mean anything belongs here rather than in each test that
     remembers to write it. `expect` is the subset of the fixture the query must
     match: equality catches a match lost and a non-match let through alike, and
@@ -118,7 +118,11 @@ async def _ordered_fixture_titles(
         f"response is not the expected match set: missing {sorted(expect - set(titles))}, "
         f"unexpected {sorted(set(titles) - expect)}"
     )
-    return titles
+    return resp.json()
+
+
+async def _ordered_fixture_titles(client, headers, **kwargs) -> list[str]:
+    return [row["title"] for row in await _fixture_rows(client, headers, **kwargs)]
 
 
 # ---------------------------------------------------------------------------
@@ -607,6 +611,7 @@ async def _make_single(
 
 
 _FEW_VOTES, _BALANCED, _CROWD, _UNSCORED = "Sort Few Votes", "Sort Balanced", "Sort Crowd", "Sort Unscored"
+_SCORE_TITLES = {_FEW_VOTES, _BALANCED, _CROWD, _UNSCORED}
 
 
 @pytest.fixture
@@ -828,10 +833,12 @@ async def release_set(db_session):
 # its latest aired, Winter 2015 (not Fall 2003) · Announced its next announced, Winter
 # 2030 (not Spring 2031, and not its undated one or its aired Summer 2020) · Sequel Fall
 # 2030 · Someday TBA, though it aired Fall 2018 · Undated nothing, last either way.
-_ANIME_RELEASE_ASC = [
-    "Zqv Old", "Zqv Middle", "Zqv Recap", "Zqv Newer", "Zqv Announced", "Zqv Sequel", "Zqv Someday",
-    "Zqv Undated",
-]
+_ANIME_RELEASE_SEASONS = {
+    "Zqv Old": "Spring 2001", "Zqv Middle": "Summer 2008", "Zqv Recap": "Spring 2012",
+    "Zqv Newer": "Winter 2015", "Zqv Announced": "Winter 2030", "Zqv Sequel": "Fall 2030",
+    "Zqv Someday": "TBA", "Zqv Undated": None,
+}
+_ANIME_RELEASE_ASC = list(_ANIME_RELEASE_SEASONS)
 
 
 # Each media at its own season, side stories included; the undated announcements tie at
@@ -893,10 +900,12 @@ _AIRED_FIXTURE = {
 # Winter 2027 — its Fall 2027 would put it above Airing Only · Finished Announced Fall
 # 2020, its announcement ignored · Side Later its main story's Spring 2019, not the OVA ·
 # Finished Airing Spring 2017, finished before airing · Nothing, last either way.
-_ANIME_AIRED_DESC = [
-    "Zqa Undated Only", "Zqa Airing Only", "Zqa Announced Only", "Zqa Finished Announced",
-    "Zqa Side Later", "Zqa Finished Airing", "Zqa Nothing",
-]
+_ANIME_AIRED_SEASONS = {
+    "Zqa Undated Only": "TBA", "Zqa Airing Only": "Spring 2027", "Zqa Announced Only": "Winter 2027",
+    "Zqa Finished Announced": "Fall 2020", "Zqa Side Later": "Spring 2019",
+    "Zqa Finished Airing": "Spring 2017", "Zqa Nothing": None,
+}
+_ANIME_AIRED_DESC = list(_ANIME_AIRED_SEASONS)
 
 
 @pytest.mark.parametrize("params", [{"sort": "aired"}, {"sort": "aired", "sort_dir": "asc"}], ids=["desc", "asc"])
@@ -923,6 +932,67 @@ def test_the_search_menu_knows_which_sorts_ascend():
     match = _CLIENT_ASCENDING.search(CLIENT_SEARCH.read_text())
     assert match, f"no ASCENDING_SORTS line in {CLIENT_SEARCH}"
     assert {key.strip(" '") for key in match.group(1).split(",")} == {key.value for key in ASCENDING_SORTS}
+
+
+# ---------------------------------------------------------------------------
+# What a row is sorted by, carried for the card
+# ---------------------------------------------------------------------------
+
+def _own_season(columns: dict) -> str | None:
+    if "anime_season_name" in columns:
+        return f"{columns['anime_season_name'].value} {columns['anime_season_year']}"
+    return "TBA" if columns.get("airing_status") == AIRING_STATUS_NOT_YET_AIRED else None
+
+
+@pytest.mark.parametrize(("url", "fixture", "sort", "query", "seasons"), [
+    (ANIME_SEARCH_URL, _RELEASE_FIXTURE, "release", "zqv", _ANIME_RELEASE_SEASONS),
+    (ANIME_SEARCH_URL, _AIRED_FIXTURE, "aired", "zqa", _ANIME_AIRED_SEASONS),
+    (MEDIA_SEARCH_URL, _RELEASE_FIXTURE, "release", "zqv", {
+        title: _own_season(columns) for media in _RELEASE_FIXTURE.values() for title, columns in media
+    }),
+], ids=["anime_release", "anime_aired", "media_release"])
+async def test_season_sorts_carry_the_season_each_row_sits_at(
+    client, user_auth_headers, db_session, url, fixture, sort, query, seasons,
+):
+    await _make_franchises(db_session, fixture, mal_id=87691, in_season=False)
+    rows = await _fixture_rows(
+        client, user_auth_headers, url=url, expect=set(seasons), in_season=False, query=query, sort=sort,
+    )
+    assert {row["title"]: row["sort_season"] for row in rows} == seasons
+
+
+@_BOTH_VIEWS
+@pytest.mark.parametrize("params", [{}, {"sort": "top_rated"}], ids=["no_query", "top_rated"])
+async def test_top_rated_rows_carry_their_badge(client, user_auth_headers, db_session, score_set, url, params):
+    """The number the detail page's "Top N%" badge reads, for every row."""
+    rows = await _fixture_rows(client, user_auth_headers, url=url, expect=_SCORE_TITLES, **params)
+    shown = {row["title"]: row["score_top_percent"] for row in rows}
+    assert shown == await _badges(db_session, url, _SCORE_TITLES)
+    assert any(shown.values())
+
+
+@_BOTH_VIEWS
+@pytest.mark.parametrize("params", [
+    {"sort": "score"}, {"sort": "title"}, {"sort": "relevance", "query": "sort"},
+], ids=["score", "title", "query_match_order"])
+async def test_other_sorts_carry_no_sort_value(client, user_auth_headers, db_session, score_set, url, params):
+    """A query keeps its own match order, so even relevance is no top rated there. One row
+    is the caller's own, so a rating filled under every sort would show."""
+    uuids = await _media_uuids(db_session, [_BALANCED])
+    await rate_media(client, user_auth_headers, uuids[_BALANCED], _DONE, 8.0)
+    rows = await _fixture_rows(client, user_auth_headers, url=url, expect=_SCORE_TITLES, **params)
+    assert all(row[field] is None for row in rows for field in ("score_top_percent", "sort_season", "your_rating"))
+
+
+@_BOTH_VIEWS
+async def test_rows_carry_when_they_were_added(client, user_auth_headers, db_session, score_set, url):
+    """Stamped apart from `modified_at`, which the fixture's own transaction sets to the
+    same instant."""
+    added = datetime(2001, 2, 3, tzinfo=UTC)
+    model = _grain(url)
+    await db_session.execute(update(model).where(model.title.in_(_SCORE_TITLES)).values(created_at=added))
+    rows = await _fixture_rows(client, user_auth_headers, url=url, expect=_SCORE_TITLES)
+    assert {datetime.fromisoformat(row["added_at"]) for row in rows} == {added}
 
 
 async def test_aired_sort_at_the_media_grain_is_each_media_season(client, user_auth_headers, release_set):
@@ -1004,10 +1074,10 @@ def _grain(url: str) -> type[Anime] | type[Media]:
     return Anime if url == ANIME_SEARCH_URL else Media
 
 
-async def _badges(db_session, url: str) -> dict[str, int | None]:
+async def _badges(db_session, url: str, titles=_TOP_FIXTURE) -> dict[str, int | None]:
     """Each fixture row's "Top N%" badge, read through the badge's DAO."""
     dao = AnimeDAO() if url == ANIME_SEARCH_URL else MediaDAO()
-    ids = await _ids(db_session, _grain(url), _TOP_FIXTURE)
+    ids = await _ids(db_session, _grain(url), titles)
     return {title: await dao.score_top_percent(db_session, id_) for title, id_ in ids.items()}
 
 
@@ -1319,6 +1389,36 @@ _YOURS = {
 }
 
 
+async def _rate_yours(client, user_headers, admin_headers, db_session) -> None:
+    """`_YOURS`, rated by the user as it says — and "Yr Unrated" by the admin alone."""
+    await _make_franchises(db_session, {
+        anime: [(title, {**columns, "scored_by": 100_000}) for title, columns, _ in media]
+        for anime, media in _YOURS.items()
+    }, mal_id=87821)
+    ratings = {title: rating for media in _YOURS.values() for title, _, rating in media if rating}
+    uuids = await _media_uuids(db_session, [*ratings, "Yr Unrated"])
+    for title, rating in ratings.items():
+        await rate_media(client, user_headers, uuids[title], _DONE, rating)
+    await rate_media(client, admin_headers, uuids["Yr Unrated"], _DONE, 10.0)
+
+
+@pytest.mark.parametrize(("url", "yours"), [
+    (ANIME_SEARCH_URL, {"Yr Six": 6.0, "Yr Mixed": 7.0, "Yr Eight": 8.0, "Yr Unrated": None}),
+    (MEDIA_SEARCH_URL, {
+        "Yr Six": 6.0, "Yr Mixed": 9.0, "Yr Mixed 2": 5.0, "Yr Mixed Side": None, "Yr Eight": 8.0,
+        "Yr Unrated": None,
+    }),
+], ids=["anime", "media"])
+async def test_your_rating_rows_carry_the_value_they_sort_by(
+    client, user_auth_headers, admin_auth_headers, db_session, url, yours,
+):
+    """The anime grain's mean over its rated media, the media's own rating, and nothing
+    for a row only someone else rated."""
+    await _rate_yours(client, user_auth_headers, admin_auth_headers, db_session)
+    rows = await _fixture_rows(client, user_auth_headers, url=url, expect=set(yours), sort="your_rating")
+    assert {row["title"]: row["your_rating"] for row in rows} == yours
+
+
 @pytest.mark.parametrize(("url", "descending", "unrated"), [
     (ANIME_SEARCH_URL, ["Yr Eight", "Yr Mixed", "Yr Six"], ["Yr Unrated"]),
     (MEDIA_SEARCH_URL, ["Yr Mixed", "Yr Eight", "Yr Six", "Yr Mixed 2"], ["Yr Unrated", "Yr Mixed Side"]),
@@ -1332,16 +1432,7 @@ async def test_your_rating_sorts_by_the_callers_mean(
     story counted as 0 would put it elsewhere. A media sorts at its own rating. Top rated
     runs the other way (Unrated, Six, Mixed, Eight). Unrated rows come last both ways —
     Unrated although the admin rated it 10 — in the weighted score's order."""
-    await _make_franchises(db_session, {
-        anime: [(title, {**columns, "scored_by": 100_000}) for title, columns, _ in media]
-        for anime, media in _YOURS.items()
-    }, mal_id=87821)
-    ratings = {title: rating for media in _YOURS.values() for title, _, rating in media if rating}
-    uuids = await _media_uuids(db_session, [*ratings, "Yr Unrated"])
-    for title, rating in ratings.items():
-        await rate_media(client, user_auth_headers, uuids[title], _DONE, rating)
-    await rate_media(client, admin_auth_headers, uuids["Yr Unrated"], _DONE, 10.0)
-
+    await _rate_yours(client, user_auth_headers, admin_auth_headers, db_session)
     expected = [*(reversed(descending) if sort_dir == "asc" else descending), *unrated]
     params = {"sort": "your_rating"} | ({"sort_dir": sort_dir} if sort_dir else {})
     ordered = await _ordered_fixture_titles(client, user_auth_headers, url=url, expect=set(expected), **params)

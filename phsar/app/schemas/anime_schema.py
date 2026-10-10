@@ -82,8 +82,13 @@ class AnimeAggregatedBase(BaseModel):
 
 class AnimeSearchResult(AnimeAggregatedBase):
     """Aggregated anime search result for the search card."""
+    added_at: datetime
     # Notes search only: the caller's note that best matches the query.
     matched_note: str | None = None
+    # Each only under the sort that orders by it (`filter_service.sort_values`).
+    score_top_percent: int | None = None
+    sort_season: str | None = None
+    your_rating: float | None = None
 
 
 # --- Anime detail schemas ---

@@ -11,7 +11,7 @@ from app.daos import search_filters
 from app.daos.browse_dao import BrowseCarouselDAO
 from app.exceptions import CarouselNotFoundError
 from app.models.browse import BrowseCarousel
-from app.models.media import SEASON_ORDER, SeasonType
+from app.models.media import SEASONS_IN_ORDER
 from app.schemas.browse_schema import (
     BrowseCarouselOut,
     BrowseFilterSetOut,
@@ -31,8 +31,7 @@ def _season_filter(day: date, ahead: int = 0) -> str:
     """The `anime_season` filter value ("Fall 2026") for the season holding `day`, or
     `ahead` seasons after it. Seasons are calendar quarters, as MAL counts them."""
     index = (day.month - 1) // 3 + ahead
-    season = sorted(SEASON_ORDER, key=SEASON_ORDER.__getitem__)[index % 4]
-    return f"{SeasonType(season).value} {day.year + index // 4}"
+    return search_filters.season_filter(SEASONS_IN_ORDER[index % 4], day.year + index // 4)
 
 
 def _fill(value: Any, placeholders: dict[str, str]) -> Any:

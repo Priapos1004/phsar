@@ -31,6 +31,7 @@ from app.models.media import (
     MAIN_STORY_RELATIONS,
     RELATION_SCORE_WEIGHTS,
     SEASON_ORDER,
+    SEASONS_IN_ORDER,
     Media,
     SeasonType,
 )
@@ -136,6 +137,13 @@ def top_percent_ranking(*, per_anime: bool):
     return select(population.c.id, ((rank * 100 + total - 1) // total).label("top_percent")).subquery()
 
 
+async def top_percents(db: AsyncSession, ids: list[int], *, per_anime: bool) -> dict[int, int]:
+    """Each of `ids`' "Top N%" badge; an unscored row has none."""
+    ranking = top_percent_ranking(per_anime=per_anime)
+    stmt = select(ranking.c.id, ranking.c.top_percent).where(ranking.c.id.in_(ids))
+    return dict((await db.execute(stmt)).tuples().all())
+
+
 def _top_percent_ids(top_percent: int, *, per_anime: bool):
     ranking = top_percent_ranking(per_anime=per_anime)
     return select(ranking.c.id).where(ranking.c.top_percent <= top_percent)
@@ -169,6 +177,11 @@ def _parse_season_filters(anime_season: list[str]) -> list[tuple]:
         except (ValueError, KeyError):
             logger.warning("Ignoring malformed anime_season filter: %s", part)
     return filter_pairs
+
+
+def season_filter(season: SeasonType, year: int) -> str:
+    """The 'Season Year' value `_parse_season_filters` reads ("Fall 2026")."""
+    return f"{season.value} {year}"
 
 
 def _build_categorical_conditions(
@@ -639,6 +652,16 @@ def _release_key(*, having: bool):
     return func.coalesce(*_announced_keys(), func.max(SEASON_KEY).filter(MAIN_STORY & ~unaired))
 
 
+def season_label(key: int | None) -> str | None:
+    """A season key as the `anime_season` value it encodes, or "TBA"."""
+    if key is None:
+        return None
+    if key == TBA_SEASON_KEY:
+        return "TBA"
+    year, rank = divmod(key, 10)
+    return season_filter(SEASONS_IN_ORDER[rank - 1], year)
+
+
 def _aired_key(*, having: bool):
     """The latest-aired sort's key, per media or, with `having`, per anime:
     docs/features/search.md#sorting."""
@@ -649,6 +672,11 @@ def _aired_key(*, having: bool):
         func.max(SEASON_KEY).filter(MAIN_STORY & (Media.airing_status == AIRING_STATUS_CURRENTLY_AIRING)),
         *_announced_keys(),
     )
+
+
+# The season-timeline sorts and their keys: one table for the ORDER BY and the fill, so the
+# season a row shows is the one it is ordered by.
+SEASON_SORT_KEYS = {SortKey.RELEASE: _release_key, SortKey.AIRED: _aired_key}
 
 
 def display_title(model: type[Anime] | type[Media], name_language: NameLanguage):
@@ -669,6 +697,13 @@ def utc_today() -> date:
 ASCENDING_SORTS = frozenset({SortKey.TITLE, SortKey.RELEASE})
 
 
+def ranked_by(sort: SortKey, query: str) -> SortKey:
+    """What a search is ordered by, for the ORDER BY and the value a card shows alike:
+    docs/features/search.md#sorting. RELEVANCE comes back only with a query, meaning its
+    own match order."""
+    return SortKey.TOP_RATED if sort == SortKey.RELEVANCE and not query else sort
+
+
 def sort_order(
     sort: SortKey, sort_dir: SortDir | None, name_language: NameLanguage, *, query: str,
     having: bool = False, your_rating=None,
@@ -687,10 +722,12 @@ def sort_order(
 
     YOUR_RATING orders by `your_rating`, which the DAO that joins the caller's ratings
     passes (docs/features/search.md, Personal filters and sort)."""
-    if sort == SortKey.RELEVANCE:
-        if query:
-            return None
+    ranked = ranked_by(sort, query)
+    if ranked == SortKey.RELEVANCE:
+        return None
+    if ranked != sort:
         sort_dir = None
+    sort = ranked
     model: type[Anime] | type[Media] = Anime if having else Media
     if having:
         score, votes = weighted_mean_score_expr(), weighted_mean_votes_expr()
@@ -704,10 +741,8 @@ def sort_order(
             key = votes
         case SortKey.ADDED:
             key = model.created_at
-        case SortKey.RELEASE:
-            key = _release_key(having=having)
-        case SortKey.AIRED:
-            key = _aired_key(having=having)
+        case SortKey.RELEASE | SortKey.AIRED:
+            key = SEASON_SORT_KEYS[sort](having=having)
         case SortKey.TITLE:
             key = display_title(model, name_language)
         case SortKey.RANDOM:
@@ -715,11 +750,21 @@ def sort_order(
         case SortKey.YOUR_RATING:
             assert your_rating is not None
             key = your_rating
-        case SortKey.TOP_RATED | SortKey.RELEVANCE:
+        case SortKey.TOP_RATED:
             key = weighted
     ascending = sort_dir == SortDir.ASC if sort_dir else sort in ASCENDING_SORTS
     direction = asc if ascending else desc
     return [direction(key).nulls_last(), weighted.desc().nulls_last(), direction(model.id)]
+
+
+async def sort_season_by_id(
+    db: AsyncSession, sort: SortKey, ids: list[int], *, per_anime: bool,
+) -> dict[int, str | None]:
+    """The season each of `ids` sits at under a `SEASON_SORT_KEYS` sort."""
+    owner = Media.anime_id if per_anime else Media.id
+    stmt = select(owner, SEASON_SORT_KEYS[sort](having=per_anime)).where(owner.in_(ids))
+    rows = await db.execute(stmt.group_by(owner) if per_anime else stmt)
+    return {id_: season_label(key) for id_, key in rows.all()}
 
 
 async def fetch_search_results(db: AsyncSession, *passes, order: list | None = None) -> list:
