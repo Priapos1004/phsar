@@ -315,6 +315,7 @@ phsar/
 │   │   │       ├── chartColors.ts
 │   │   │       ├── backupStatus.ts
 │   │   │       ├── chartTheme.ts
+│   │   │       ├── clickThrough.ts
 │   │   │       ├── cn.ts
 │   │   │       ├── color.ts
 │   │   │       ├── download.ts
@@ -390,6 +391,7 @@ phsar/
 │   │       ├── backups-card.test.ts
 │   │       ├── bulk-watchlist-dialog.test.ts
 │   │       ├── chart-theme.test.ts
+│   │       ├── click-through.test.ts
 │   │       ├── color.test.ts
 │   │       ├── completion-status-card.test.ts
 │   │       ├── dismissed-decisions-section.test.ts
@@ -665,7 +667,7 @@ curl -fsS -X POST -H "Authorization: Bearer $JOBS_CRON_TOKEN" \
 
 - `POST /admin/backups/auto` — backup only
 - `POST /admin/jobs/schedule-sweep?delay_minutes=N` — `update_sweep` only
-- `POST /admin/jobs/schedule-seasonal?delay_minutes=N` — `seasonal_sweep` only
+- `POST /admin/jobs/schedule-seasonal?delay_minutes=N[&season=Winter&year=2025]` — `seasonal_sweep` only
 - `POST /admin/jobs/schedule-upcoming?delay_minutes=N` — `upcoming_sweep` only
 
 `delay_minutes` is bound to `[0, 1440]` on every sweep endpoint and drives the frontend's maintenance-banner countdown.

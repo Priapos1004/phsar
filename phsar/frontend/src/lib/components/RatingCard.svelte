@@ -81,9 +81,9 @@
 	let loggingRewatch = $state(false);
 	let rewatchOpen = $state(false);
 	let downgradeOpen = $state(false);
-	// A first rating or a rewatch means a fresh watch, so this media is probably no longer
-	// "want to watch" — offer to take it off the watchlist via an auto-checked inline box
-	// (only when it's actually listed). Default checked; mirrors BulkRateDialog's yellow block.
+	// A first rating, a rewatch, or leaving On Hold usually ends the "want to watch"
+	// intent — offer to take the media off the watchlist via an inline box (only when it's
+	// actually listed). Mirrors BulkRateDialog's yellow block.
 	let alsoRemoveWatchlist = $state(true);
 	let watchlistEntry = $derived($watchlistTags.get(mediaUuid));
 	let error = $state('');
@@ -92,6 +92,21 @@
 	// On Hold and Dropped both mean the anime wasn't finished, so the episode
 	// input is revealed and the ending fields are treated as unratable for both.
 	let revealsEpisodes = $derived(status === 'on_hold' || status === 'dropped');
+
+	// On an edit, only leaving On Hold settles the "coming back to it" question — finished
+	// or given up, either way it's resolved. Completed ↔ Dropped is a re-judgement of a
+	// watch already over, so it leaves the watchlist alone.
+	let offersWatchlistRemoval = $derived(
+		!!watchlistEntry &&
+		(!existingRating || (existingRating.watch_status === 'on_hold' && status !== 'on_hold')),
+	);
+	// On Hold only reaches here on a new rating, and an edit only off On Hold.
+	let removalDetail = $derived.by(() => {
+		if (status === 'dropped') return "Dropping a title usually means you're no longer planning to watch it.";
+		if (status === 'on_hold') return "On Hold usually means you're coming back to it, so it stays listed unless you check this.";
+		if (existingRating) return "You've finished it, so it's probably no longer something you're planning to watch.";
+		return "Rating a title usually means it's no longer something you're planning to watch.";
+	});
 
 	// The ending can't be judged on an unfinished watch, so both ending fields are
 	// auto-set to the not_applicable sentinel + disabled when on_hold/dropped, and
@@ -140,6 +155,9 @@
 			score = 5.0;
 			// No episode total → can't be Completed, so a new rating starts as On Hold.
 			status = canComplete ? 'completed' : 'on_hold';
+			// selectStatus's rule (unchecked only for On Hold), stated without reading
+			// `status` — that read would subscribe the reset effect to every status click.
+			alsoRemoveWatchlist = canComplete;
 			episodesWatched = totalEpisodes?.toString() ?? '';
 			note = '';
 			for (const key of Object.keys(RATING_ATTRIBUTE_OPTIONS)) {
@@ -158,6 +176,7 @@
 	function selectStatus(next: WatchStatus) {
 		if (next === status) return;
 		status = next;
+		alsoRemoveWatchlist = next !== 'on_hold';
 		// Switching to Completed means the full run was watched: fill to the total when it's
 		// known, else clear so a stale on-hold count doesn't linger. Driven by the click (not a
 		// mount effect) so it also fires when editing an existing rating. On_hold/dropped keep
@@ -210,10 +229,9 @@
 	async function doSave(deleteWatchHistory: boolean) {
 		saving = true;
 		error = '';
-		// Captured before onSaved flips the prop: only a FIRST rating implies a fresh watch
-		// that ends the "want to watch" intent. Editing an existing rating never touches the
-		// watchlist (that choice was made when the rating was first created).
-		const wasNewRating = existingRating === null;
+		// Captured before onSaved flips the prop, which would turn a first rating into an
+		// edit and close the offer.
+		const removeAfterSave = offersWatchlistRemoval && alsoRemoveWatchlist;
 
 		const attrFields: Record<string, string | null> = {};
 		for (const key of Object.keys(RATING_ATTRIBUTE_OPTIONS)) {
@@ -235,10 +253,7 @@
 			onSaved(result);
 			editing = false;
 			downgradeOpen = false;
-			// A first rating on a watchlisted media, with the inline box left checked, takes
-			// it off the watchlist (the checkbox only renders for new ratings, so an edit
-			// never reaches here with wasNewRating true).
-			if (wasNewRating && alsoRemoveWatchlist && watchlistEntry) {
+			if (removeAfterSave) {
 				await removeFromWatchlist();
 			}
 		} catch (err) {
@@ -496,13 +511,11 @@
 				     anime, so the user can keep their scale consistent. -->
 				<RatingNeighbors score={snappedScore} {animeUuid} {genres} {studios} {ageRatingNumeric} currentAttributes={attributes} />
 
-				{#if !existingRating && watchlistEntry}
-					<!-- New rating on a watchlisted media: rating it usually means it's no longer
-					     "want to watch", so offer to remove it inline (auto-checked). -->
+				{#if offersWatchlistRemoval && watchlistEntry}
 					<RemoveFromWatchlistToggle
 						bind:checked={alsoRemoveWatchlist}
 						label={`Also remove from your “${watchlistEntry.tag_name}” list`}
-						detail="Rating a title usually means it's no longer something you're planning to watch."
+						detail={removalDetail}
 					/>
 				{/if}
 

@@ -22,7 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_db, require_jobs_cron_token
 from app.core.job_versions import make_job
 from app.core.maintenance import set_scheduled_at
+from app.exceptions import IncompleteSeasonTargetError
 from app.models.job import JobKind, JobStatus
+from app.models.media import SeasonType
 from app.schemas import admin_schema, backup_schema
 from app.services.backup_service import enqueue_backup_job
 from app.services.job_worker import job_worker
@@ -31,9 +33,9 @@ router = APIRouter()
 
 
 async def _enqueue_scheduled_sweep(
-    db: AsyncSession, kind: JobKind, delay_minutes: int,
+    db: AsyncSession, kind: JobKind, delay_minutes: int, payload: dict | None = None,
 ) -> admin_schema.ScheduledSweepResponse:
-    """Shared enqueue path for the two cron-authed sweep schedulers.
+    """Shared enqueue path for the cron-authed sweep schedulers.
 
     Set the banner timestamp *after* the commit so a failed insert
     doesn't leave a phantom countdown on the frontend. notify() is
@@ -44,7 +46,7 @@ async def _enqueue_scheduled_sweep(
     job = make_job(
         kind,
         status=JobStatus.queued,
-        payload={},
+        payload=payload or {},
         not_before_at=not_before,
     )
     db.add(job)
@@ -75,6 +77,11 @@ async def schedule_sweep(
 # Same cron-auth pattern as schedule-sweep; the dispatcher is thin (one MAL
 # paginate + N row inserts) so the maintenance window is brief. Child
 # user_scrapes run afterwards while the site is live.
+#
+# `season` + `year` target a chosen season for a manual backfill; without them the
+# dispatcher reads the clock at run time, which is what the cron path wants. The
+# payload stores MAL's lowercase spelling, the one `fetch_season` takes. 1917 is
+# the earliest season MAL lists.
 @router.post(
     "/jobs/schedule-seasonal",
     response_model=admin_schema.ScheduledSweepResponse,
@@ -82,9 +89,16 @@ async def schedule_sweep(
 )
 async def schedule_seasonal(
     delay_minutes: int = Query(20, ge=0, le=1440),
+    season: SeasonType | None = None,
+    year: int | None = Query(None, ge=1917),
     db: AsyncSession = Depends(get_db),
 ):
-    return await _enqueue_scheduled_sweep(db, JobKind.seasonal_sweep, delay_minutes)
+    if (season is None) != (year is None):
+        raise IncompleteSeasonTargetError()
+    payload = {"year": year, "season": season.value.lower()} if season is not None else None
+    return await _enqueue_scheduled_sweep(
+        db, JobKind.seasonal_sweep, delay_minutes, payload,
+    )
 
 
 # The next-season sweep — same dispatcher as seasonal, targeting next season so

@@ -1,9 +1,10 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import RatingCard from '$lib/components/RatingCard.svelte';
 import { api } from '$lib/api';
 import { UNKNOWN_EPISODES_CAP } from '$lib/utils/ratingLimits';
-import type { RatingOut } from '$lib/types/api';
+import type { RatingOut, WatchlistMediaTag } from '$lib/types/api';
+import { watchlistTags } from '$lib/stores/watchlist';
 
 vi.mock('$lib/api', () => ({
 	api: {
@@ -200,5 +201,68 @@ describe('episodes cap', () => {
 		const episodes = document.querySelector('input[type="number"]') as HTMLInputElement;
 		expect(episodes).not.toBeNull();
 		expect(episodes.max).toBe(String(UNKNOWN_EPISODES_CAP));
+	});
+});
+
+describe('watchlist removal offer', () => {
+	const listed: WatchlistMediaTag = {
+		media_uuid: 'media-uuid-1',
+		anime_uuid: 'anime-uuid-1',
+		tag_uuid: 'tag-uuid-1',
+		tag_name: 'Plan',
+		tag_color: '#000000',
+	};
+
+	beforeEach(() => watchlistTags.set(new Map([[listed.media_uuid, listed]])));
+	afterEach(() => {
+		watchlistTags.set(new Map());
+		vi.clearAllMocks();
+	});
+
+	function renderCard(existingRating: RatingOut | null) {
+		render(RatingCard, {
+			props: { mediaUuid: 'media-uuid-1', totalEpisodes: 12, existingRating, onSaved: vi.fn(), onDeleted: vi.fn() },
+		});
+	}
+
+	const checkbox = () => screen.queryByRole('checkbox');
+	const status = (name: string) => fireEvent.click(screen.getByRole('button', { name }));
+
+	it('defaults the box off for On Hold and back on for Dropped on a new rating', async () => {
+		renderCard(null);
+		await fireEvent.click(screen.getByText('Rate This'));
+		expect(checkbox()).toHaveAttribute('aria-checked', 'true');
+		await status('On Hold');
+		expect(checkbox()).toHaveAttribute('aria-checked', 'false');
+		await status('Dropped');
+		expect(checkbox()).toHaveAttribute('aria-checked', 'true');
+	});
+
+	it('offers removal on an edit once it leaves On Hold, whichever way', async () => {
+		renderCard({ ...mockExistingRating, watch_status: 'on_hold' });
+		await fireEvent.click(screen.getByText(/Edit/));
+		expect(checkbox()).toBeNull();
+		await status('Dropped');
+		expect(checkbox()).toHaveAttribute('aria-checked', 'true');
+		await status('Completed');
+		expect(checkbox()).toHaveAttribute('aria-checked', 'true');
+		await status('On Hold');
+		expect(checkbox()).toBeNull();
+	});
+
+	it('does not offer removal when an edit swaps Completed and Dropped', async () => {
+		renderCard(mockExistingRating);
+		await fireEvent.click(screen.getByText(/Edit/));
+		await status('Dropped');
+		expect(checkbox()).toBeNull();
+	});
+
+	it('removes from the watchlist when an edit off On Hold is saved with the box checked', async () => {
+		vi.mocked(api.put).mockResolvedValue({ ...mockExistingRating, watch_status: 'dropped' });
+		renderCard({ ...mockExistingRating, watch_status: 'on_hold' });
+		await fireEvent.click(screen.getByText(/Edit/));
+		await status('Dropped');
+		await fireEvent.click(screen.getByText('Update Rating'));
+		await vi.waitFor(() => expect(api.del).toHaveBeenCalledWith('/watchlist/media/media-uuid-1'));
 	});
 });

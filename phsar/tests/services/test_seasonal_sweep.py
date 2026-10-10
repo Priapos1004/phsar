@@ -150,14 +150,15 @@ def _patch_progress(monkeypatch) -> None:
     )
 
 
-async def _run_dispatcher(kind: JobKind = JobKind.seasonal_sweep) -> dict:
+async def _run_dispatcher(
+    kind: JobKind = JobKind.seasonal_sweep, payload: dict | None = None,
+) -> dict:
     """Insert a real sweep row (seasonal or upcoming) so the dispatcher's
-    children can set parent_job_id=<row.id> without tripping the FK. Pre-FK
-    tests passed a synthetic id via a fake-object shim; that no longer works.
+    children can set parent_job_id=<row.id> without tripping the FK.
     `cleanup_seasonal_children` removes both the parent and the spawned
     children by created_at window."""
     async with async_session_maker() as session:
-        parent = Job(kind=kind, status=JobStatus.running)
+        parent = Job(kind=kind, status=JobStatus.running, payload=payload or {})
         session.add(parent)
         await session.commit()
         await session.refresh(parent)
@@ -256,6 +257,21 @@ async def test_dispatcher_targets_season_by_kind(
     # with. Title-cased to match the catalog's stored SeasonType values.
     assert (seasonal_summary["season_year"], seasonal_summary["season_name"]) == (2026, "Summer")
     assert (upcoming_summary["season_year"], upcoming_summary["season_name"]) == (2026, "Fall")
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_payload_season_overrides_the_clock(
+    cleanup_seasonal_children, monkeypatch,
+):
+    """A manual backfill names its season in the payload; the clock (summer 2026
+    here) must not leak into it."""
+    monkeypatch.setattr("app.services.seasonal_sweep_dispatcher.job_worker.notify", lambda: None)
+    _patch_progress(monkeypatch)
+
+    fetched = _patch_scraper(monkeypatch, [], current=(2026, "summer"))
+    summary = await _run_dispatcher(payload={"year": 2025, "season": "winter"})
+    assert fetched == [(2025, "winter")]
+    assert (summary["season_year"], summary["season_name"]) == (2025, "Winter")
 
 
 @pytest.mark.asyncio

@@ -622,3 +622,12 @@ class BackupUploadTooLargeError(PhsarBaseError):
             f"(limit: {max_mb:.0f} MB)."
         )
         super().__init__(message)
+
+
+class IncompleteSeasonTargetError(PhsarBaseError):
+    """Raised when a manual seasonal sweep names a season without a year or a year
+    without a season — guessing the missing half would sweep a season nobody asked for."""
+    status_code = 422
+
+    def __init__(self):
+        super().__init__("Pass both `season` and `year`, or neither for the current season.")

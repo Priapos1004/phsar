@@ -70,8 +70,9 @@ deliberate absence of a global 401 handler, both argued at the throw site.
 
 - `lib/components/ui/` — shadcn-svelte primitives. Mostly untouched, but not
   off-limits: `ui/tooltip/tooltip-content.svelte` carries the app's themed surface, and
-  other primitives carry local edits too (theming, row styling, a slider key the comment
-  there explains). Diff against upstream before re-syncing one from shadcn.
+  other primitives carry local edits too (e.g. theming, row styling, a slider key the
+  comment there explains, the select item's iOS click-through guard). Diff against upstream
+  before re-syncing one from shadcn.
 - `app.css` — the theme system: `@property` registration, `@theme inline` `var()`
   indirection, the `.theme-*` override classes and the gradients. The file itself
   explains why the `:root` defaults cannot be left to `@property` alone.

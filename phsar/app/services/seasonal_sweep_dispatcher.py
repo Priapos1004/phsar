@@ -4,7 +4,7 @@ user_scrape jobs for any mal_id the catalog doesn't already know about.
 Handles BOTH the `seasonal_sweep` (current season, weekly) and the
 `upcoming_sweep` (next season, so users can pre-add next-quarter shows to
 their watchlists) JobKinds off the same machinery — the only difference is
-which season is targeted, chosen by `job.kind`.
+which season is targeted, chosen by `job.kind` unless the payload names one.
 
 Lives in its own module rather than alongside user_scrape / update_sweep
 because it shares no helpers with them: a season sweep does no per-anime
@@ -33,7 +33,9 @@ async def seasonal_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     (`Anime.mal_id ∪ Media.mal_id ∪ MediaUnwanted.mal_id`), and enqueue
     one `user_scrape` job per new mal_id. The target season is chosen by
     `job.kind`: `seasonal_sweep` → the current season; `upcoming_sweep` →
-    the next season (so users can pre-add next-quarter releases). Children
+    the next season (so users can pre-add next-quarter releases). A payload
+    carrying `year` + `season` overrides the kind's pick and targets exactly
+    that season. Children
     carry the seed mal_id so the BFS skips the fuzzy q= lookup that would
     otherwise pull unrelated top-3 matches into the catalog.
 
@@ -48,9 +50,12 @@ async def seasonal_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
     await progress.update(stage="Fetching season", force=True)
 
     async with MalScraper() as scraper:
-        year, season = scraper.current_season()
-        if job.kind == JobKind.upcoming_sweep:
-            year, season = next_season(year, season)
+        if "season" in job.payload:
+            year, season = job.payload["year"], job.payload["season"]
+        else:
+            year, season = scraper.current_season()
+            if job.kind == JobKind.upcoming_sweep:
+                year, season = next_season(year, season)
         entries = await scraper.fetch_season(year, season)
 
     # Three sequential reads — SQLAlchemy's AsyncSession isn't safe for

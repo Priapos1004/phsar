@@ -196,7 +196,9 @@ added, which is why the record is per media.
 
 `seasonal_sweep` and `upcoming_sweep` share one dispatcher; `job.kind` picks the
 season. MAL v2 has no `/seasons/now`, so the current season is computed from the
-clock, and the upcoming sweep targets `next_season` of it.
+clock, and the upcoming sweep targets `next_season` of it. A `year` + `season` in
+the payload overrides that pick, for a manual backfill of a chosen season through
+`schedule-seasonal`.
 
 The pass is pure discovery: paginate the season, dedupe against
 `Anime.mal_id ∪ Media.mal_id ∪ MediaUnwanted.mal_id` (plus per-run dedupe, since
