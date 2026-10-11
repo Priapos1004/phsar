@@ -9,7 +9,7 @@
 	import type { WatchlistTabKey } from '$lib/stores/watchlistFilter';
 	import { watchlistSummary, type WatchlistSummary } from '$lib/utils/watchlistStats';
 	import { loginUrlReturningTo } from '$lib/utils/returnTo';
-	import TabNav from '$lib/components/TabNav.svelte';
+	import TabNav, { activeTab } from '$lib/components/TabNav.svelte';
 	import WatchlistListTab from '$lib/components/watchlist/WatchlistListTab.svelte';
 	import WatchlistTagsTab from '$lib/components/watchlist/WatchlistTagsTab.svelte';
 	import WatchlistStatsTab from '$lib/components/watchlist/WatchlistStatsTab.svelte';
@@ -22,12 +22,8 @@
 		{ key: 'tags', label: 'Lists' },
 	];
 	const DEFAULT_TAB: WatchlistTabKey = 'watchlists';
-	const TAB_KEYS = new Set(TABS.map((t) => t.key));
 
-	let active = $derived.by(() => {
-		const raw = page.url.searchParams.get('tab');
-		return raw && TAB_KEYS.has(raw as WatchlistTabKey) ? (raw as WatchlistTabKey) : DEFAULT_TAB;
-	});
+	let active = $derived(activeTab(page.url, TABS, DEFAULT_TAB));
 
 	const getUserRole = getContext<() => string | null>('userRole');
 	let isRestricted = $derived(getUserRole() === 'restricted_user');
@@ -112,7 +108,7 @@
 	<!-- Subtabs stay visible for guests too (like the ratings page) so they see what their
 	     own account would offer; the writes are gated server-side, so each tab explains that
 	     rather than the page dead-ending on a single "not available" notice. -->
-	<TabNav tabs={TABS} defaultTab={DEFAULT_TAB} basePath="/watchlist" ariaLabel="Watchlist sections" />
+	<TabNav tabs={TABS} {active} basePath="/watchlist" ariaLabel="Watchlist sections" />
 
 	{#if isRestricted}
 		<!-- Soft muted empty-state (not the yellow Notice) — matches the watchlist/ratings

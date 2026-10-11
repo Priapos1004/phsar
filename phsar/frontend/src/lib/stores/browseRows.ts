@@ -1,6 +1,6 @@
 import { api } from '$lib/api';
 import type { AnimeSearchResult, BrowseCarousel } from '$lib/types/api';
-import { fetchAnimeSearchResults, stripForGuest, type MediaSearchFilters } from '$lib/utils/search';
+import { fetchAnimeSearchResults, readsOwnData, type MediaSearchFilters } from '$lib/utils/search';
 
 /**
  * Session cache for Browse's requests: a page's carousel list, a see-all's carousel, and
@@ -51,15 +51,14 @@ export function browseCarousel(key: string, on: string[], off: string[]): Promis
 }
 
 /** A row's results, keyed by the search itself, which already names everything that
- *  changes them — under `slot` when given, which keeps only the latest search. "Personal"
- *  is the test a guest's shared link is stripped by. */
+ *  changes them — under `slot` when given, which keeps only the latest search. */
 export function browseRow(params: MediaSearchFilters, limit: number, slot?: string): Promise<AnimeSearchResult[]> {
 	const id = JSON.stringify([params, limit]);
 	return cached(
 		slot ? `see-all:${slot}` : `row:${id}`,
 		id,
 		() => fetchAnimeSearchResults(params, limit),
-		stripForGuest(params).stripped,
+		readsOwnData(params),
 	);
 }
 

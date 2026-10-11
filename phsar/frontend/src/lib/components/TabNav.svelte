@@ -1,8 +1,15 @@
-<script lang="ts">
-	// Generic `?tab=` section nav shared by the admin, ratings, and watchlist pages
-	// (previously three byte-identical copies). The active tab reads from the URL.
-	import { page } from '$app/state';
+<script lang="ts" module>
+	/** The `?tab=` the URL names, or `fallback` for a missing or unknown one — so a stale
+	 *  bookmark or a retired key never lands on a blank page. */
+	export function activeTab<K extends string>(url: URL, tabs: readonly { key: K }[], fallback: K): K {
+		const raw = url.searchParams.get('tab');
+		return tabs.find((t) => t.key === raw)?.key ?? fallback;
+	}
+</script>
 
+<script lang="ts">
+	// Generic `?tab=` section nav. The page passes the tab it shows (`activeTab`), so the
+	// highlighted tab and the panel shown never disagree.
 	interface Tab {
 		key: string;
 		label: string;
@@ -10,18 +17,13 @@
 
 	interface Props {
 		tabs: Tab[];
-		defaultTab: string;
+		active: string;
 		/** e.g. "/watchlist" — hrefs are `${basePath}?tab=${key}`. */
 		basePath: string;
 		ariaLabel: string;
 	}
 
-	let { tabs, defaultTab, basePath, ariaLabel }: Props = $props();
-
-	let active = $derived.by(() => {
-		const raw = page.url.searchParams.get('tab');
-		return tabs.some((t) => t.key === raw) ? raw! : defaultTab;
-	});
+	let { tabs, active, basePath, ariaLabel }: Props = $props();
 </script>
 
 <nav class="flex flex-wrap gap-1 border-b border-white/10" aria-label={ariaLabel}>

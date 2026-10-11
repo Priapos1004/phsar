@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-from app.models.media import MediaType
+from app.schemas.media_filter_schema import SortValueFields
 
 
 class AnimeRecentItem(BaseModel):
@@ -82,17 +82,11 @@ class AnimeAggregatedBase(BaseModel):
     is_finished: bool = False
 
 
-class AnimeSearchResult(AnimeAggregatedBase):
+class AnimeSearchResult(AnimeAggregatedBase, SortValueFields):
     """Aggregated anime search result for the search card."""
     added_at: datetime
     # Notes search only: the caller's note that best matches the query.
     matched_note: str | None = None
-    # Each only under the sort that orders by it (`filter_service.sort_values`).
-    score_top_percent: int | None = None
-    sort_season: str | None = None
-    announced_at: datetime | None = None
-    announced_type: MediaType | None = None
-    your_rating: float | None = None
 
 
 # --- Anime detail schemas ---

@@ -2,7 +2,7 @@
 	import { getContext, onMount } from 'svelte';
 	import { page } from '$app/state';
 	import { ApiError } from '$lib/api';
-	import TabNav from '$lib/components/TabNav.svelte';
+	import TabNav, { activeTab } from '$lib/components/TabNav.svelte';
 	import BrowseCarousel from '$lib/components/BrowseCarousel.svelte';
 	import { browsePage } from '$lib/stores/browseRows';
 	import { ensureRatingCoverage } from '$lib/stores/ratingCoverage';
@@ -15,10 +15,7 @@
 	];
 	const DEFAULT_TAB = 'news';
 
-	let active = $derived.by(() => {
-		const raw = page.url.searchParams.get('tab');
-		return TABS.some((t) => t.key === raw) ? raw! : DEFAULT_TAB;
-	});
+	let active = $derived(activeTab(page.url, TABS, DEFAULT_TAB));
 
 	const getUserRole = getContext<() => string | null>('userRole');
 	let isGuest = $derived(getUserRole?.() === 'restricted_user');
@@ -47,7 +44,7 @@
 <div class="mx-auto max-w-5xl space-y-6">
 	<h1 class="text-2xl font-bold text-white">Browse</h1>
 
-	<TabNav tabs={TABS} defaultTab={DEFAULT_TAB} basePath="/browse" ariaLabel="Browse sections" />
+	<TabNav tabs={TABS} {active} basePath="/browse" ariaLabel="Browse sections" />
 
 	{#if active === 'discover'}
 		<div class="py-12 text-center text-white/60">Will come soon :-)</div>

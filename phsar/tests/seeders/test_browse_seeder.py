@@ -93,6 +93,20 @@ def test_the_top_steps_are_the_search_sheets():
     assert seeded == [int(n) for n in match.group(1).split(",")]
 
 
+CLIENT_SEE_ALL = CLIENT_SEARCH.parents[2] / "routes" / "browse" / "[key]" / "+page.svelte"
+_CLIENT_HEADINGS = re.compile(r"const GROUP_HEADINGS: Record<string, string> = \{([^}]*)\}")
+
+
+def test_every_shared_param_has_a_heading():
+    """The see-all names a group of sets after the param they share, from its own table, so
+    a group over a param missing there would render with no heading and no label."""
+    match = _CLIENT_HEADINGS.search(CLIENT_SEE_ALL.read_text())
+    assert match, f"no GROUP_HEADINGS line in {CLIENT_SEE_ALL}"
+    headed = set(re.findall(r"(\w+):", match.group(1)))
+    params = [p for s in FILTER_SETS for p in s.params]
+    assert {p for p in params if params.count(p) > 1} <= headed
+
+
 def test_a_sortable_carousel_sees_its_whole_search():
     """A see-all's limit is taken in the order its rows come in, so a sortable carousel
     capped below the search's own limit would hold different anime under another order."""

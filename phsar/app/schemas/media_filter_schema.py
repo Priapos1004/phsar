@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 from typing import Annotated
 
@@ -40,6 +41,16 @@ class SortKey(str, Enum):
 class SortDir(str, Enum):
     ASC = "asc"
     DESC = "desc"
+
+
+class SortValueFields(BaseModel):
+    """What a search result's sort orders it by, on both grains' results — each set only
+    under that sort (`filter_service.sort_values`)."""
+    score_top_percent: int | None = None
+    sort_season: str | None = None
+    announced_at: datetime | None = None
+    announced_type: MediaType | None = None
+    your_rating: float | None = None
 
 
 class MatchMode(str, Enum):

@@ -1,6 +1,4 @@
 import logging
-from datetime import datetime
-from typing import NamedTuple
 
 from sqlalchemy import distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +29,7 @@ from app.schemas.media_filter_schema import (
     CatalogueSearchFilters,
     RatedState,
     SortKey,
+    SortValueFields,
     ViewType,
 )
 
@@ -42,31 +41,29 @@ rating_dao = RatingDAO()
 studio_dao = StudioDAO()
 
 
-class SortValues(NamedTuple):
-    """Per id, what a search's sort orders a row by — only the active sort's is filled."""
-    top_percent: dict[int, int]
-    season: dict[int, str | None]
-    announced_at: dict[int, datetime | None]
-    announced_type: dict[int, MediaType | None]
-    your_rating: dict[int, float]
-
-
 async def sort_values(
     db: AsyncSession, sort: SortKey, query: str, ids: list[int], user_id: int, *, per_anime: bool,
-) -> SortValues:
-    """See docs/features/search.md#sorting."""
+) -> dict[int, SortValueFields]:
+    """Each of `ids`' value under the search's sort: docs/features/search.md#sorting."""
     ranked = ranked_by(sort, query)
     if not ids:
-        return SortValues({}, {}, {}, {}, {})
+        return {}
+    top = await top_percents(db, ids, per_anime=per_anime) if ranked == SortKey.TOP_RATED else {}
+    season = await sort_season_by_id(db, ranked, ids, per_anime=per_anime) if ranked in SEASON_SORT_KEYS else {}
     announced = await announcements_by_id(db, ids, per_anime=per_anime) if ranked == SortKey.ANNOUNCED else {}
-    return SortValues(
-        await top_percents(db, ids, per_anime=per_anime) if ranked == SortKey.TOP_RATED else {},
-        await sort_season_by_id(db, ranked, ids, per_anime=per_anime) if ranked in SEASON_SORT_KEYS else {},
-        {id_: at for id_, (at, _) in announced.items()},
-        {id_: kind for id_, (_, kind) in announced.items()},
+    yours = (
         await rating_dao.your_rating_by_id(db, user_id, ids, per_anime=per_anime)
-        if ranked == SortKey.YOUR_RATING else {},
+        if ranked == SortKey.YOUR_RATING else {}
     )
+
+    def fields(id_: int) -> SortValueFields:
+        at, kind = announced.get(id_, (None, None))
+        return SortValueFields(
+            score_top_percent=top.get(id_), sort_season=season.get(id_),
+            announced_at=at, announced_type=kind, your_rating=yours.get(id_),
+        )
+
+    return {id_: fields(id_) for id_ in ids}
 
 
 def chronological_media_key(

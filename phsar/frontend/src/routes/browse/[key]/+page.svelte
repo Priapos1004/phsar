@@ -19,7 +19,7 @@
 	import { ensureRatingCoverage } from '$lib/stores/ratingCoverage';
 	import type { AnimeSearchResult, BrowseCarousel, BrowseFilterSet } from '$lib/types/api';
 	import { buildDetailHref, navigateToSearch } from '$lib/utils/navigation';
-	import { pinnedSeason, stripForGuest, type SortDir, type SortKey } from '$lib/utils/search';
+	import { pinnedSeason, readsOwnData, type SortDir, type SortKey } from '$lib/utils/search';
 
 	// A group of key-sharing sets is named after the param they share, as the filter sheet
 	// names it; a lone set's label says it all.
@@ -54,7 +54,7 @@
 			carousel = c;
 			const s = refinedSearch(c, r);
 			// Guests: docs/features/browse.md#guests.
-			if (isGuest && stripForGuest(s).stripped) {
+			if (isGuest && readsOwnData(s)) {
 				notice = 'This list is built from your own ratings and watchlist — guest accounts have neither.';
 				return;
 			}
@@ -76,7 +76,7 @@
 	}
 
 	function guestInert(set: BrowseFilterSet): boolean {
-		return isGuest && stripForGuest({ query: '', search_type: 'title', ...set.params }).stripped;
+		return isGuest && readsOwnData(set.params);
 	}
 </script>
 

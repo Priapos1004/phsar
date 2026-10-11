@@ -10,7 +10,7 @@
 	import AdminJobsLogTab from '$lib/components/admin/AdminJobsLogTab.svelte';
 	import AdminOverviewTab from '$lib/components/admin/AdminOverviewTab.svelte';
 	import RegistrationTokensCard from '$lib/components/admin/RegistrationTokensCard.svelte';
-	import TabNav from '$lib/components/TabNav.svelte';
+	import TabNav, { activeTab } from '$lib/components/TabNav.svelte';
 	import type { AdminTabKey } from '$lib/components/admin/types';
 
 	const getUserRole = getContext<() => string | null>('userRole');
@@ -25,14 +25,8 @@
 		{ key: 'backups', label: 'Backups' },
 	];
 	const DEFAULT_TAB: AdminTabKey = 'overview';
-	const TAB_KEYS = new Set(TABS.map((t) => t.key));
 
-	// Fall back to DEFAULT_TAB on unknown values so a stale bookmark or a
-	// retired tab key never lands the admin on a blank page.
-	let active = $derived.by(() => {
-		const raw = page.url.searchParams.get('tab');
-		return raw && TAB_KEYS.has(raw as AdminTabKey) ? (raw as AdminTabKey) : DEFAULT_TAB;
-	});
+	let active = $derived(activeTab(page.url, TABS, DEFAULT_TAB));
 	let jobsVisible = $derived(active === 'jobs');
 
 	onMount(() => {
@@ -47,7 +41,7 @@
 <div class="mx-auto max-w-3xl space-y-6">
 	<h1 class="text-2xl font-bold text-white">Admin</h1>
 
-	<TabNav tabs={TABS} defaultTab={DEFAULT_TAB} basePath="/admin" ariaLabel="Admin sections" />
+	<TabNav tabs={TABS} {active} basePath="/admin" ariaLabel="Admin sections" />
 
 	<!-- Tabs eager-render and stay mounted; visibility toggles via class:hidden.
 		 Admin sessions usually touch several tabs in a row (tokens → curation →

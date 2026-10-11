@@ -278,11 +278,7 @@ async def search_anime_by_query(
             is_finished=anime.completion is not None,
             added_at=anime.created_at,
             matched_note=notes.get(anime.id),
-            score_top_percent=shown.top_percent.get(anime.id),
-            sort_season=shown.season.get(anime.id),
-            announced_at=shown.announced_at.get(anime.id),
-            announced_type=shown.announced_type.get(anime.id),
-            your_rating=shown.your_rating.get(anime.id),
+            **shown[anime.id].model_dump(),
             **agg,
         ))
 

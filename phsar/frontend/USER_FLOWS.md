@@ -136,7 +136,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 - A row built from your own ratings or watchlist shows a **guest** a card saying guest accounts have neither; the rest load.
 - Coming back from an anime or media page shows the rows already loaded, without reloading them. They load afresh after leaving Browse for any other page; a row built from your ratings or watchlist also reloads after you change either.
 
-**Tiles:** cover, title, the watchlist bookmark (as in 5.2), and the rated-coverage marking of 5.3 as an outline, gold and obsidian also tinting the title area. Under the title, one line shows the value the row is ordered by — e.g. "Announced Oct 10", a season, a vote count. Under the newest-announcement order, a tile names the announcement's type on its cover ("Movie") when it isn't the franchise's usual kind. Clicking a tile opens the anime page (7.6 for the way back).
+**Tiles:** cover, title, the watchlist bookmark (as in 5.2), and the rated-coverage marking of 5.3 as an outline, gold and obsidian also tinting the title area. Under the title, one line shows the value the row is ordered by — e.g. "Announced Oct 10", a season, a vote count. Under the newest-announcement order, a tile names the announcement's type on its cover ("Movie") when it isn't the kind the rest of the franchise mostly is (a movie announced for a TV show). Clicking a tile opens the anime page (7.6 for the way back).
 
 ## 3b. See-all Pages
 

@@ -39,7 +39,7 @@ that carry an area's reasoning; it is not an inventory of the tree.
 | Watchlist | `WatchlistBookmarkIcon` (the mask gradient), `WatchlistDialog`, `BulkWatchlistDialog`, and `watchlist/` for the page's own tabs |
 | Admin | `admin/`, plus `BackupsCard`, `MergeCandidatesCard`, `SplitCandidatesCard`, `DeleteCandidatesCard`. The job-detail page argues its own case in `src/routes/admin/jobs/[uuid]/+page.svelte` |
 | Session + status | `SessionTimeoutBanner` with `$lib/utils/sessionTimeout.ts`, `MaintenanceBanner`, `JobBell`, `Toast`/`ToastHost` |
-| Browse | `BrowseCarousel.svelte` (one row: lazy load, arrows, the guest card, the return to a tile), `PosterCard.svelte` (the tile and its coverage marking), `SeeAllResults.svelte` (a see-all's grid and its return to a tile), `stores/browseRefinements.ts` (a see-all's toggles and the groups they form), and `sortLine` / `unusualAnnouncedType` in `$lib/utils/search.ts` |
+| Browse | `BrowseCarousel.svelte` (one row: lazy load, arrows, the guest card, the return to a tile), `PosterCard.svelte` (the tile, its coverage marking, and its line and badge from the list's sort), `SeeAllResults.svelte` (a see-all's grid and its return to a tile), `stores/browseRefinements.ts` (a see-all's toggles and the groups they form), and `sortLine` / `unusualAnnouncedType` in `$lib/utils/search.ts` |
 | Search | `SearchBar.svelte` (the staged filter sheet), `SortControl.svelte` (the sort menu the search and the see-alls share), `DoubleRangeSlider.svelte` (the step grid, and why it writes only on commit), and `$lib/utils/search.ts` for the filter tables, the sort options, the chips and the anime↔media carry |
 
 Several of these render a verdict the backend owns — restorability, cycle membership,

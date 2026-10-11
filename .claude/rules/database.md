@@ -119,15 +119,16 @@ An enum whose values are display labels (`OriginalSource`) persists them through
 comparator wherever a name differs from its value, and the round-trip test
 `test_enum_columns_store_their_label` covers the test DB.
 
-A migration that creates a type drops a leftover one first. `pg_restore --clean` only
-drops what the dump contains, so restoring a dump older than the type leaves it
-orphaned, and a bare `CREATE TYPE` then fails the next boot's upgrade.
-
 ## A `case()` over an enum column takes the searched form
 
 `case((col == member, value), …)`, never the `case(mapping, value=col)` shorthand: it
 binds its keys untyped and asyncpg refuses the comparison. Compiling the statement
 doesn't show it, only a real database does.
+
+## A migration that creates a type or a table drops a leftover one first
+
+`pg_restore --clean` only drops what the dump contains, so restoring a dump older than
+the object leaves it orphaned, and a bare `CREATE` then fails the next boot's upgrade.
 
 ## A migration docstring is frozen, so it may narrate
 

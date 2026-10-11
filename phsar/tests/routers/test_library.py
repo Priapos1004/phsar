@@ -25,11 +25,12 @@ async def test_recent_requires_authentication(client):
 async def test_recent_returns_newest_first(client, user_auth_headers, db_session):
     """created_at is stamped explicitly. Left to `server_default=func.now()` the
     two rows would take the transaction-start time and tie exactly, and the
-    assertion would be riding the id tiebreak instead of the sort column.
+    assertion would be riding the id tiebreak instead of the sort column. Ahead of
+    now, so the rows a dev database already holds can't push them past the requested limit.
     """
     now = datetime.now(timezone.utc)
-    older = Anime(mal_id=83001, title="Library Older", created_at=now - timedelta(days=2))
-    newer = Anime(mal_id=83002, title="Library Newer", created_at=now - timedelta(days=1))
+    older = Anime(mal_id=83001, title="Library Older", created_at=now + timedelta(days=1))
+    newer = Anime(mal_id=83002, title="Library Newer", created_at=now + timedelta(days=2))
     db_session.add_all([older, newer])
     await db_session.flush()
 

@@ -250,6 +250,14 @@ describe('unusualAnnouncedType', () => {
 		expect(unusualAnnouncedType(franchise('Movie', [['TV', 3], ['Movie', 1]]))).toBe('Movie');
 	});
 
+	it('leaves the announcement out of what the franchise usually is', () => {
+		// One season and the announced movie: counted in, the movie would tie the TV.
+		expect(unusualAnnouncedType(franchise('Movie', [['TV', 1], ['Movie', 1]]))).toBe('Movie');
+		expect(unusualAnnouncedType(franchise('TV', [['TV', 1], ['Movie', 1]]))).toBe('TV');
+		// An anime that is only its announcement has nothing to differ from.
+		expect(unusualAnnouncedType(franchise('TV', [['TV', 1]]))).toBeNull();
+	});
+
 	it('names nothing when the announcement is what the franchise usually is', () => {
 		expect(unusualAnnouncedType(franchise('ONA', [['ONA', 2]]))).toBeNull();
 		expect(unusualAnnouncedType(franchise('TV', [['TV', 2], ['Movie', 1]]))).toBeNull();
@@ -259,7 +267,8 @@ describe('unusualAnnouncedType', () => {
 		expect(unusualAnnouncedType(franchise(null, [['TV', 1]]))).toBeNull();
 	});
 
-	it('breaks a tie between usual types by name, so a tile never flips between loads', () => {
-		expect(unusualAnnouncedType(franchise('TV', [['TV', 1], ['Movie', 1]]))).toBe('TV');
+	it('names nothing on a tie, whatever the types are called', () => {
+		expect(unusualAnnouncedType(franchise('TV', [['TV', 2], ['Movie', 1]]))).toBeNull();
+		expect(unusualAnnouncedType(franchise('Movie', [['TV', 1], ['Movie', 2]]))).toBeNull();
 	});
 });

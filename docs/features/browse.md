@@ -39,7 +39,9 @@ says why. Every seeded carousel is run as a real search by
 
 ## Definitions are seeded, layouts are code
 
-The core carousels and filter sets are a repo list, synced by key on every boot.
+The core carousels and filter sets are a repo list, synced by key on every boot, and
+again after a backup restore: the page looks carousels up by key, so a restored set would
+miss one added since the dump.
 Unlike the genre seeder, whatever the list drops is deleted, and links are updated in
 place, so an unchanged link keeps its row. Which carousels a page shows, top to
 bottom, is `PAGE_LAYOUT` in the service — a constant rather than a table, since no
@@ -66,8 +68,8 @@ A viewer's choices are kept per carousel (`browseRefinements`).
 Every carousel is listed for everyone, a guest included. One over the caller's own
 ratings or watchlist resolves for a guest too; [the search it runs](search.md#personal-filters-and-sort)
 is where a guest is refused, so the row shows a guest why instead of running it. It
-decides "personal" with `stripForGuest`, the test that strips a shared search link, and
-the same test leaves a see-all's toggle over the caller's data inert.
+decides "personal" with `readsOwnData`, the same test that strips a guest's shared link
+and leaves a see-all's toggle over the caller's data inert.
 
 ---
 

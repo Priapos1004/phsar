@@ -10,16 +10,14 @@
 	import PosterCard from '$lib/components/PosterCard.svelte';
 	import * as cls from '$lib/styles/classes';
 	import type { AnimeSearchResult, BrowseCarousel } from '$lib/types/api';
+	import { NO_REFINEMENT, refinedSearch } from '$lib/stores/browseRefinements';
 	import { browseRow } from '$lib/stores/browseRows';
-	import { userSettings } from '$lib/stores/userSettings';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import { carouselFocus, revealFocused } from '$lib/utils/scrollFocus';
 	import {
 		effectiveSort,
 		pinnedSeason,
-		sortLine,
-		stripForGuest,
-		unusualAnnouncedType,
+		readsOwnData,
 		type MediaSearchFilters,
 	} from '$lib/utils/search';
 
@@ -36,14 +34,12 @@
 
 	let { carousel, isGuest, focus = null }: Props = $props();
 
-	let search = $derived<MediaSearchFilters>({ query: '', search_type: 'title', ...carousel.params, view_type: 'anime' });
+	let search = $derived<MediaSearchFilters>({ ...refinedSearch(carousel, NO_REFINEMENT), view_type: 'anime' });
 	// Guests: docs/features/browse.md#guests.
-	let guestBlocked = $derived(isGuest && stripForGuest(search).stripped);
+	let guestBlocked = $derived(isGuest && readsOwnData(search));
 	let sort = $derived(effectiveSort(search).sort);
 	// A row pinned to one season names it; no carousel field says so.
 	let season = $derived(pinnedSeason(search));
-	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
-	let ratingStep = $derived(Number($userSettings?.rating_step ?? '0.5'));
 
 	let items = $state<AnimeSearchResult[] | null>(null);
 	let failed = $state(false);
@@ -129,13 +125,13 @@
 				<ChevronRight class="size-5 transition group-hover:translate-x-0.5" />
 			</a>
 			{#if season}
-				<span class="rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-medium text-white/70">{season}</span>
+				<span class={cls.seasonPill}>{season}</span>
 			{/if}
 		{/if}
 	</header>
 
 	{#if guestBlocked}
-		<div class="rounded-xl border border-white/10 bg-card/40 px-4 py-6 text-sm text-white/60">
+		<div class={cls.noticeCard}>
 			This row is built from your own ratings and watchlist — guest accounts have neither.
 		</div>
 	{:else}
@@ -157,9 +153,7 @@
 								<PosterCard
 									row={item}
 									href={buildDetailHref('anime', item.uuid, { from: 'browse', focus: focusId })}
-									{nameLanguage}
-									line={sortLine(sort, item, ratingStep)}
-									badge={unusualAnnouncedType(item)}
+									{sort}
 								/>
 							</div>
 						{/each}

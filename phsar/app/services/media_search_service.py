@@ -128,10 +128,7 @@ async def search_media_by_query(
     return [
         MediaSearchResult(
             **media_to_dict(m), is_rated=m.id in rated, added_at=m.created_at,
-            matched_note=rated.get(m.id) if quote else None,
-            score_top_percent=shown.top_percent.get(m.id), sort_season=shown.season.get(m.id),
-            announced_at=shown.announced_at.get(m.id), announced_type=shown.announced_type.get(m.id),
-            your_rating=shown.your_rating.get(m.id),
+            matched_note=rated.get(m.id) if quote else None, **shown[m.id].model_dump(),
         )
         for m in media_list
     ]

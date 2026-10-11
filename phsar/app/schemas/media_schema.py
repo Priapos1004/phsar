@@ -4,6 +4,7 @@ from uuid import UUID
 from pydantic import BaseModel
 
 from app.models.media import AgeRating, MediaType, OriginalSource, RelationType
+from app.schemas.media_filter_schema import SortValueFields
 
 
 class MediaBase(BaseModel):
@@ -48,7 +49,7 @@ class MediaConnected(MediaUnconnected):
     age_rating_numeric: int | None
 
 
-class MediaSearchResult(MediaConnected):
+class MediaSearchResult(MediaConnected, SortValueFields):
     """A media search hit, plus whether the caller has already rated it.
 
     A subclass rather than a field on `MediaConnected`, because the schemas that
@@ -60,12 +61,6 @@ class MediaSearchResult(MediaConnected):
     added_at: datetime
     # Notes search only: the caller's note on this media.
     matched_note: str | None = None
-    # Each only under the sort that orders by it (`filter_service.sort_values`).
-    score_top_percent: int | None = None
-    sort_season: str | None = None
-    announced_at: datetime | None = None
-    announced_type: MediaType | None = None
-    your_rating: float | None = None
 
 
 class MediaSibling(BaseModel):

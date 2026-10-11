@@ -13,7 +13,7 @@ const base = { uuid: 'm1', title: 'Sequel', name_eng: null, name_jap: null, cove
 const media = { ...base, score: 8, scored_by: 10, is_rated: false } as unknown as MediaSearchResult;
 const anime = { ...base, avg_score: 8, avg_scored_by: 10, media_types: [] } as unknown as AnimeSearchResult;
 const tile = (row: AnimeSearchResult | MediaSearchResult) =>
-	render(PosterCard, { props: { row, href: '/x', nameLanguage: 'english', line: null } });
+	render(PosterCard, { props: { row, href: '/x', sort: null } });
 
 beforeEach(() => {
 	userSettings.set({ theme: 'default', name_language: 'english', default_search_view: 'anime', rating_step: '0.5', spoiler_level: 'blur' });

@@ -6,15 +6,12 @@
 	import BackLink from '$lib/components/BackLink.svelte';
 	import PosterCard from '$lib/components/PosterCard.svelte';
 	import SortControl from '$lib/components/SortControl.svelte';
-	import { userSettings } from '$lib/stores/userSettings';
+	import * as cls from '$lib/styles/classes';
 	import type { AnimeSearchResult, MediaSearchResult } from '$lib/types/api';
 	import type { DetailHrefOptions } from '$lib/utils/navigation';
 	import { consumeFocus, pageCovering, revealFocused } from '$lib/utils/scrollFocus';
 	import {
 		effectiveSort,
-		isAnimeResult,
-		sortLine,
-		unusualAnnouncedType,
 		type MediaSearchFilters,
 		type SortDir,
 		type SortKey,
@@ -52,8 +49,6 @@
 	/** One "Show More" step: a whole number of rows at 3–6 columns. */
 	const PAGE_STEP = 60;
 
-	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
-	let ratingStep = $derived(Number($userSettings?.rating_step ?? '0.5'));
 	let order = $derived(params ? effectiveSort(params) : null);
 	let sort = $derived(order?.sort ?? null);
 	let orderLabel = $derived(
@@ -92,7 +87,7 @@
 	<div class="flex flex-wrap items-center gap-2">
 		<h1 class="text-2xl font-bold text-white">{title}</h1>
 		{#if season}
-			<span class="rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-medium text-white/70">{season}</span>
+			<span class={cls.seasonPill}>{season}</span>
 		{/if}
 		{#if actions && !notice}
 			<div class="ml-auto">{@render actions()}</div>
@@ -102,7 +97,7 @@
 	{@render children?.()}
 
 	{#if notice}
-		<div class="rounded-xl border border-white/10 bg-card/40 px-4 py-6 text-sm text-white/60">{notice}</div>
+		<div class={cls.noticeCard}>{notice}</div>
 	{:else}
 		{#if params}
 			<div class="flex flex-wrap items-center gap-2">
@@ -122,9 +117,7 @@
 						<PosterCard
 							{row}
 							href={tileHref(row.uuid)}
-							{nameLanguage}
-							line={sort ? sortLine(sort, row, ratingStep) : null}
-							badge={isAnimeResult(row) ? unusualAnnouncedType(row) : null}
+							{sort}
 						/>
 					</div>
 				{/each}

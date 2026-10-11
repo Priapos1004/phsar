@@ -8,24 +8,30 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { ratingCoverage } from '$lib/stores/ratingCoverage';
 	import { visibleMediaSet } from '$lib/stores/spoilerVisibility';
+	import { userSettings } from '$lib/stores/userSettings';
 	import { watchlistAnimeColors, watchlistTags } from '$lib/stores/watchlist';
 	import * as cls from '$lib/styles/classes';
 	import type { AnimeSearchResult, MediaSearchResult } from '$lib/types/api';
 	import { formatMediaType, resolveTitle } from '$lib/utils/formatString';
-	import { isAnimeResult } from '$lib/utils/search';
+	import { isAnimeResult, sortLine, unusualAnnouncedType, type SortKey } from '$lib/utils/search';
 	import { COVERAGE_STYLE } from '$lib/utils/ratingCoverage';
 
 	interface Props {
 		row: AnimeSearchResult | MediaSearchResult;
 		href: string;
-		nameLanguage: 'english' | 'japanese' | 'romaji';
-		/** What the list is ordered by, for this row; nothing when the order has no value to show. */
-		line: string | null;
-		/** A media type to name on the cover, when the list has one worth naming. */
-		badge?: string | null;
+		/** What the list is ordered by: the tile's one line is this row's value under it, and
+		 *  null (still loading) shows none. */
+		sort: SortKey | null;
 	}
 
-	let { row, href, nameLanguage, line, badge = null }: Props = $props();
+	let { row, href, sort }: Props = $props();
+
+	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
+	let ratingStep = $derived(Number($userSettings?.rating_step ?? '0.5'));
+	let line = $derived(sort ? sortLine(sort, row, ratingStep) : null);
+	// Shows only under the announced sort, the one that fills `announced_type`; anime only,
+	// since a media has no franchise to differ from.
+	let badge = $derived(isAnimeResult(row) ? unusualAnnouncedType(row) : null);
 
 	let title = $derived(resolveTitle(row.title, row.name_eng, row.name_jap, nameLanguage));
 	let bookmarkColors = $derived.by(() => {

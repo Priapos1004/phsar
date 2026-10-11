@@ -36,6 +36,7 @@ from app.schemas.backup_schema import (
     BackupSource,
     BackupStatus,
 )
+from app.seeders.browse_seeder import seed_browse
 from app.services._pg_subprocess import run_capture
 from app.services.job_worker import job_worker
 
@@ -887,6 +888,16 @@ async def restore_backup(
             )
         except Exception:
             logger.exception("Post-restore jobs-audit merge / restore-row insert failed")
+
+        # Re-seed browse (docs/features/browse.md, Definitions are seeded) before the gate
+        # lifts, so no request sees the dump's set.
+        if restore_error is None:
+            try:
+                async with async_session_maker() as session:
+                    await asyncio.wait_for(seed_browse(session), timeout=30.0)
+                    await session.commit()
+            except Exception:
+                logger.exception("Post-restore browse re-seed failed")
 
         # set_maintenance writes a log line with stack-tag extraction; a
         # logger handler failure here would otherwise leave the flag

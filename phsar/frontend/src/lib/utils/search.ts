@@ -238,15 +238,14 @@ export function sortLine(
 	}
 }
 
-/** The announced entry's type, when it isn't what the franchise usually is — a movie for a
- * TV show — and so worth naming on the tile. Usual is the most common type over the
- * anime's media; an ONA continuing an ONA series names nothing. */
+/** The announced entry's type, when another type outnumbers it in the rest of the franchise —
+ * a movie for a TV show — and so is worth naming on the tile; a tie names nothing. The
+ * announcement is in `media_types` itself, so it is left out, or it would tie a one-season TV. */
 export function unusualAnnouncedType(row: AnimeSearchResult): string | null {
-	if (!row.announced_type) return null;
-	const [usual] = [...row.media_types].sort(
-		(a, b) => b.count - a.count || a.media_type.localeCompare(b.media_type),
-	);
-	return row.announced_type === usual?.media_type ? null : row.announced_type;
+	const announced = row.announced_type;
+	if (!announced) return null;
+	const rest = (row.media_types.find((t) => t.media_type === announced)?.count ?? 1) - 1;
+	return row.media_types.some((t) => t.media_type !== announced && t.count > rest) ? announced : null;
 }
 
 /** The applied search with a new query and mode. A different query starts from Best match:
@@ -420,13 +419,19 @@ export function carryAcrossView(params: MediaSearchFilters, view: ViewType): Med
 export const GUEST_STRIPPED_NOTICE =
 	"This link used ratings, notes or the watchlist, which guest accounts don't have, so it opened without them — a notes search runs on titles instead.";
 
-/** A shared link opened by a guest: drop what reads the caller's own ratings, notes and
- * watchlist, which a guest is refused (docs/features/search.md, Personal filters and sort), and
- * say whether anything went, so the page can tell them. Notes fall back to a title search. */
+/** Whether a search, or a filter set's part of one, reads the caller's own ratings, notes
+ * or watchlist — what a guest is refused (docs/features/search.md, Personal filters and sort). */
+export function readsOwnData(params: Partial<MediaSearchFilters>): boolean {
+	return !!params.rated?.length || params.watchlisted != null || params.sort === 'your_rating'
+		|| params.search_type === 'rating_notes';
+}
+
+/** A shared link opened by a guest: drop what `readsOwnData` names, and say whether anything
+ * went, so the page can tell them. Notes fall back to a title search. */
 export function stripForGuest(params: MediaSearchFilters): { params: MediaSearchFilters; stripped: boolean } {
 	const byRating = params.sort === 'your_rating';
 	const notes = params.search_type === 'rating_notes';
-	const stripped = !!params.rated?.length || params.watchlisted != null || byRating || notes;
+	const stripped = readsOwnData(params);
 	if (!stripped) return { params, stripped };
 	const kept = omitKeys(params, byRating ? ['rated', 'watchlisted', 'sort', 'sort_dir'] : ['rated', 'watchlisted']);
 	return { params: notes ? { ...kept, search_type: 'title' } : kept, stripped };
