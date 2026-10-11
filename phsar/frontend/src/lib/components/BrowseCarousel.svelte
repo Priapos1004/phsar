@@ -6,15 +6,17 @@
 	// row a back link names loads at once instead, since it is the one the page is about
 	// to scroll to.
 	import { onMount, tick } from 'svelte';
-	import { ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-svelte';
 	import PosterCard from '$lib/components/PosterCard.svelte';
+	import * as cls from '$lib/styles/classes';
 	import type { AnimeSearchResult, BrowseCarousel } from '$lib/types/api';
 	import { browseRow } from '$lib/stores/browseRows';
 	import { userSettings } from '$lib/stores/userSettings';
-	import { buildDetailHref, navigateToSearch } from '$lib/utils/navigation';
+	import { buildDetailHref } from '$lib/utils/navigation';
 	import { carouselFocus, revealFocused } from '$lib/utils/scrollFocus';
 	import {
 		effectiveSort,
+		pinnedSeason,
 		sortLine,
 		stripForGuest,
 		unusualAnnouncedType,
@@ -39,7 +41,7 @@
 	let guestBlocked = $derived(isGuest && stripForGuest(search).stripped);
 	let sort = $derived(effectiveSort(search).sort);
 	// A row pinned to one season names it; no carousel field says so.
-	let season = $derived(search.anime_season?.length === 1 ? search.anime_season[0] : null);
+	let season = $derived(pinnedSeason(search));
 	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
 	let ratingStep = $derived(Number($userSettings?.rating_step ?? '0.5'));
 
@@ -111,26 +113,32 @@
 </script>
 
 <section bind:this={section} data-focus-uuid={carousel.key} class="space-y-2">
+	<!-- A return to the row centres the section and flashes this header alone: a ring
+	     round a whole carousel reads as a frame, not as a landing. -->
+	<header data-flash-target class="-mx-2 flex items-center gap-2 rounded-lg px-2">
+		{#if guestBlocked}
+			<h2 class="text-lg font-semibold text-white">{carousel.title}</h2>
+		{:else}
+			<!-- The title and the end tile both open the see-all, as a row's title does in
+			     most catalogue apps; opening the row as a search is the see-all's own link. -->
+			<a
+				href="/browse/{carousel.key}"
+				class="group inline-flex items-center gap-1 text-lg font-semibold text-white hover:text-primary transition"
+			>
+				{carousel.title}
+				<ChevronRight class="size-5 transition group-hover:translate-x-0.5" />
+			</a>
+			{#if season}
+				<span class="rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-medium text-white/70">{season}</span>
+			{/if}
+		{/if}
+	</header>
+
 	{#if guestBlocked}
-		<h2 class="text-lg font-semibold text-white">{carousel.title}</h2>
 		<div class="rounded-xl border border-white/10 bg-card/40 px-4 py-6 text-sm text-white/60">
 			This row is built from your own ratings and watchlist — guest accounts have neither.
 		</div>
 	{:else}
-		<div class="flex items-center gap-2">
-			<button
-				type="button"
-				class="group inline-flex items-center gap-1 text-lg font-semibold text-white hover:text-primary transition"
-				onclick={() => navigateToSearch(search)}
-			>
-				{carousel.title}
-				<ChevronRight class="size-5 transition group-hover:translate-x-0.5" />
-			</button>
-			{#if season}
-				<span class="rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-medium text-white/70">{season}</span>
-			{/if}
-		</div>
-
 		{#if failed}
 			<p class="text-sm text-white/60">Couldn't load this row.</p>
 		{:else if items && items.length === 0}
@@ -155,6 +163,23 @@
 								/>
 							</div>
 						{/each}
+						<!-- The see-all again, for whoever scrolled to the end. A tile of the row's
+						     own height and shell; the tint deepens rather than appears on hover, so
+						     it reads as part of the row rather than as a button. -->
+						<a
+							href="/browse/{carousel.key}"
+							class="group/all snap-start shrink-0 w-32 sm:w-36 transition duration-200 hover:-translate-y-0.5"
+						>
+							<div class="{cls.cardGlass} relative h-full overflow-hidden rounded-xl border border-border shadow-sm transition group-hover/all:shadow-md group-hover/all:ring-1 group-hover/all:ring-primary/40">
+								<div class="absolute inset-0 bg-gradient-to-br from-primary/45 via-primary/15 to-primary/5 opacity-70 transition-opacity duration-300 group-hover/all:opacity-100"></div>
+								<div class="relative flex h-full flex-col items-center justify-center gap-3">
+									<span class="flex size-11 items-center justify-center rounded-full border border-primary/40 bg-primary/10 text-primary transition duration-300 group-hover/all:scale-105 group-hover/all:bg-primary/20">
+										<ArrowRight class="size-5" />
+									</span>
+									<span class="text-sm font-medium text-card-foreground/80 transition group-hover/all:text-card-foreground">See all</span>
+								</div>
+							</div>
+						</a>
 					{:else}
 						{#each { length: 8 } as _}
 							<div class="snap-start shrink-0 w-32 sm:w-36">

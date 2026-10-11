@@ -3,7 +3,7 @@ and the links between them (docs/features/browse.md)."""
 
 from typing import Any
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -18,6 +18,8 @@ class BrowseCarousel(BaseModel):
     title: Mapped[str] = mapped_column(String(100), nullable=False)
     params: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     see_all_limit: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Whether its see-all offers a sort.
+    sortable: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("false"))
 
     filter_sets: Mapped[list["CarouselFilterSet"]] = relationship(
         order_by="CarouselFilterSet.position",

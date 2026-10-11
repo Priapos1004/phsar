@@ -113,6 +113,8 @@ const RETURN_LABELS: Record<string, string> = {
 	'/anime': 'the anime page',
 	'/media': 'the media page',
 	'/search': 'your search',
+	'/search/all': 'all results of your search',
+	'/browse': 'the browse page',
 	'/ratings': 'your ratings',
 	'/watchlist': 'your watchlist',
 	'/settings': 'your settings',
@@ -121,5 +123,9 @@ const RETURN_LABELS: Record<string, string> = {
 };
 
 export function describeReturn(path: string): string {
-	return RETURN_LABELS[path.split('?')[0]] ?? 'the page you opened';
+	const pathname = path.split('?')[0];
+	// A carousel's see-all by prefix: its key is a dynamic segment, and naming the carousel
+	// would take the fetch this page can't make.
+	return RETURN_LABELS[pathname]
+		?? (pathname.startsWith('/browse/') ? 'a list on the browse page' : 'the page you opened');
 }

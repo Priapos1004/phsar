@@ -61,6 +61,7 @@ def resolve(carousel: BrowseCarousel, on: Collection[str] = (), off: Collection[
         title=carousel.title,
         params=checked.model_dump(mode="json", exclude_unset=True),
         see_all_limit=carousel.see_all_limit,
+        sortable=carousel.sortable,
         filter_sets=[
             BrowseFilterSetOut(
                 key=link.filter_set.key,

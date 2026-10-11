@@ -2,21 +2,20 @@
 	import SearchBar from '$lib/components/SearchBar.svelte';
 	import GrainToggle from '$lib/components/GrainToggle.svelte';
 	import Notice from '$lib/components/Notice.svelte';
-	import Tooltip from '$lib/components/Tooltip.svelte';
-	import * as Select from '$lib/components/ui/select';
-	import { ArrowDown, ArrowUp, X } from 'lucide-svelte';
+	import SortControl from '$lib/components/SortControl.svelte';
+	import { X } from 'lucide-svelte';
 	import { page } from '$app/state';
 	import {
+		GUEST_STRIPPED_NOTICE,
 		SEARCH_LIMIT,
 		carryAcrossView,
-		effectiveSort,
 		fetchAnimeSearchResults,
 		fetchSearchResults,
 		filterChips,
-		offeredSorts,
 		omitKeys,
 		stripForGuest,
 		type MediaSearchFilters,
+		type SortDir,
 		type SortKey,
 		type ViewType,
 	} from '$lib/utils/search';
@@ -63,9 +62,6 @@
 	let countLabel = $derived(
 		`${fetched.length > SEARCH_LIMIT ? `${SEARCH_LIMIT}+` : currentResults.length} ${viewType === 'anime' ? 'anime' : 'media'}`,
 	);
-
-	let order = $derived(effectiveSort(decodedParams));
-	let sortOptions = $derived(offeredSorts(decodedParams));
 
 	function showMore() {
 		visibleCount = Math.min(visibleCount + PAGE_STEP, currentResults.length);
@@ -189,14 +185,8 @@
 	}
 
 	// A sort reorders the same results, so it applies at once rather than through the sheet.
-	// A new key starts at its own default direction.
-	function setSort(sort: SortKey) {
-		applySearch({ ...omitKeys(decodedParams, ['sort', 'sort_dir']), sort });
-	}
-
-	function flipDirection() {
-		if (!order.dir) return;
-		applySearch({ ...decodedParams, sort: order.sort, sort_dir: order.dir === 'asc' ? 'desc' : 'asc' });
+	function setSort(change: { sort: SortKey; sort_dir?: SortDir }) {
+		applySearch({ ...omitKeys(decodedParams, ['sort', 'sort_dir']), ...change });
 	}
 </script>
 
@@ -214,7 +204,7 @@
 
 	{#if strippedForGuest}
 		<div class="max-w-xl mx-auto">
-			<Notice>This link used ratings, notes or the watchlist, which guest accounts don't have, so it opened without them — a notes search runs on titles instead.</Notice>
+			<Notice>{GUEST_STRIPPED_NOTICE}</Notice>
 		</div>
 	{/if}
 
@@ -247,40 +237,7 @@
 
 	<div class="flex flex-wrap items-center gap-2">
 		<span class="mr-auto text-sm text-white/70">{isLoading || error ? '' : countLabel}</span>
-		<Select.Root type="single" value={order.sort} onValueChange={(v) => v && v !== order.sort && setSort(v as SortKey)}>
-			<Select.Trigger size="sm" class={cls.pageControl} aria-label="Sort by">
-				{order.option.label}
-			</Select.Trigger>
-			<!-- Each option says what it orders by in place, rather than in a hover tooltip,
-			     which neither touch nor arrow-key navigation would ever show. -->
-			<Select.Content class="w-80">
-				{#each sortOptions as opt (opt.value)}
-					{@const guestOnly = opt.value === 'your_rating' && isGuest}
-					<Select.Item value={opt.value} label={opt.label} disabled={guestOnly}>
-						<div class="flex flex-col">
-							<span>{opt.label}</span>
-							<span class="text-xs text-muted-foreground">
-								{guestOnly ? 'Guest accounts have no ratings to sort by' : opt.hint}
-							</span>
-						</div>
-					</Select.Item>
-				{/each}
-			</Select.Content>
-		</Select.Root>
-		<Tooltip text={order.option.dir && order.dir ? `${order.option.dir[order.dir]} (click to reverse)` : `${order.option.label} has no direction`}>
-			{#snippet trigger(props)}
-				<button
-					{...props}
-					type="button"
-					class="size-8 flex items-center justify-center {cls.pageControl} disabled:opacity-40 disabled:hover:text-white/80"
-					aria-label="Reverse the order"
-					disabled={!order.dir}
-					onclick={flipDirection}
-				>
-					{#if order.dir === 'asc'}<ArrowUp class="size-4" />{:else}<ArrowDown class="size-4" />{/if}
-				</button>
-			{/snippet}
-		</Tooltip>
+		<SortControl params={decodedParams} {isGuest} onChange={setSort} />
 	</div>
 
 	{#if isLoading}
@@ -343,14 +300,26 @@
 			{/if}
 		</div>
 
-		{#if currentResults.length > visibleCount}
-			<div class="text-center">
-				<button
-					onclick={showMore}
-					class="mt-4 px-4 py-2 bg-primary text-primary-foreground rounded-full hover:bg-primary/80 transition"
-				>
-					Show More
-				</button>
+		{#if currentResults.length > visibleCount || fetched.length > SEARCH_LIMIT}
+			<div class="mt-4 flex flex-wrap justify-center gap-3">
+				{#if currentResults.length > visibleCount}
+					<button
+						onclick={showMore}
+						class="px-4 py-2 bg-primary text-primary-foreground rounded-full hover:bg-primary/80 transition"
+					>
+						Show More
+					</button>
+				{/if}
+				<!-- Past the cap: the same search on a page without one. A fresh token, since the
+				     default search has none. -->
+				{#if fetched.length > SEARCH_LIMIT}
+					<button
+						onclick={() => navigateToSearch(decodedParams, '/search/all')}
+						class="px-4 py-2 rounded-full border border-primary/40 text-primary hover:bg-primary/15 transition"
+					>
+						See all results
+					</button>
+				{/if}
 			</div>
 		{/if}
 	{:else if !isLoading && !error}

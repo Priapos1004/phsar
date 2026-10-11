@@ -26,7 +26,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 - `next` is only honoured when it resolves **same-origin** and isn't one of the pages that ask for credentials or the liveness endpoint (`/login`, `/register`, `/health`). An off-origin, protocol-relative (`//host`) or backslash-authority (`/\host`) value is discarded and the user goes to `/`
 - Whether the path names a real route is **not** checked: any same-origin path is honoured, so `?next=quark` lands on `/quark`'s 404 and `/admin/jobs/<uuid>` round-trips without needing to be enumerated
 - The home page is never captured — a redirect from `/` produces a bare `/login`
-- When `next` is present the card shows a line above the form naming the destination ("After signing in you'll be taken to your watchlist."), derived from the pathname, so a route it doesn't name reads "the page you opened". The Register link carries `next` across
+- When `next` is present the card shows a line above the form naming the destination ("After signing in you'll be taken to your watchlist."), derived from the pathname, so a route it doesn't name reads "the page you opened" — a Browse row's see-all reads "a list on the browse page". The Register link carries `next` across
 - On invalid credentials: error message appears below the form in red
 - On network error: "An unexpected error occurred." message appears
 - While submitting: button shows "Logging in..." and is disabled
@@ -102,7 +102,9 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 | `/login?next=<path>` | Login form; optional validated post-login destination (1.1) | No |
 | `/register?next=<path>` | Registration form (requires token); `next` carried over from the login link | No |
 | `/browse?tab=news\|discover` | Browse: rows of anime (`news`, default) + a Discover placeholder (`discover`) | Yes |
+| `/browse/<key>` | A Browse row's see-all (3b) | Yes |
 | `/search?q=<token>` | Search results (anime or media view) | Yes |
+| `/search/all?q=<token>` | A search's see-all, past the 50 the search shows (3b) | Yes |
 | `/anime?uuid=<uuid>` | Anime detail (aggregated metadata + media table) | Yes |
 | `/media?uuid=<uuid>` | Media detail + rating | Yes |
 | `/ratings?tab=ratings\|stats` | Your ratings: anime-level list (`ratings`, default) + ECharts statistics (`stats`) | Yes |
@@ -129,12 +131,29 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 
 **News** is a column of rows in the order the backend lays them out, each a saved search of up to 25 anime:
 - A row loads when you scroll near it, showing a skeleton until then; an empty one says "Nothing here right now."
-- The row's title opens `/search` with that row's search and sort. A row pinned to one season names it in a pill beside the title ("Fall 2026").
+- The row's title, and a **See all** tile ending the row, open the row's see-all page (3b). A row pinned to one season names it in a pill beside the title ("Fall 2026").
 - The row scrolls sideways (snapping per tile). On a mouse or trackpad, round arrows page it by about a screen width and appear only where there is more to scroll.
 - A row built from your own ratings or watchlist shows a **guest** a card saying guest accounts have neither; the rest load.
 - Coming back from an anime or media page shows the rows already loaded, without reloading them. They load afresh after leaving Browse for any other page; a row built from your ratings or watchlist also reloads after you change either.
 
 **Tiles:** cover, title, the watchlist bookmark (as in 5.2), and the rated-coverage marking of 5.3 as an outline, gold and obsidian also tinting the title area. Under the title, one line shows the value the row is ordered by — e.g. "Announced Oct 10", a season, a vote count. Under the newest-announcement order, a tile names the announcement's type on its cover ("Movie") when it isn't the franchise's usual kind. Clicking a tile opens the anime page (7.6 for the way back).
+
+## 3b. See-all Pages
+
+The see-all pages list past a cap as a grid of the 3a tiles, 60 at a time behind **Show More**. Returning from a tile re-expands the list far enough to show it, as the search does (4.3). The count reads "N anime" (or "media"), with a "+" when the list reached its limit.
+
+**A row's see-all** (`/browse/<key>`) lists the row's search up to the row's own limit:
+- "Back to browse" returns to the row, centred, its header flashing briefly.
+- The title, with the row's season pill. **Open in search ›** at the end of the title row opens `/search` with the list's search as currently refined.
+- Toggles grouped as the filter sheet (4.4) groups them, each with "Any" first: its Top and Watchlist choices, plus `Watched: Any | Not yet | Already` ("Already": at least one entry rated). A row offers only what fits it (Announced continuations, built from your ratings, has no Watched). A choice a row makes by default is lit from the start (Fresh: Top 75%); tapping the lit choice clears it.
+- Some rows offer the **sort** menu of 4.3 (New this season, for one); the others name their order instead ("Latest aired · Newest first").
+- Toggles and sort are kept per row across opening a tile and coming back, and reset on leaving Browse for any other page.
+- A **guest** sees the toggles over ratings or the watchlist dimmed, with a tooltip; a row built from them shows the guest card of 3a instead of a list.
+
+**A search's see-all** (`/search/all?q=<token>`) lists the same search up to 1000:
+- "Back to search" returns to `/search`. The title is "All results for “…”", or "All results" without a query.
+- A card names the mode (only with a query) and shows the search's filters as chips that can't be changed here; with neither, it is left out.
+- The sort menu of 4.3; a change stays on this page. Tiles follow the search's view: a media tile hides its cover past your spoiler frontier as 5.1 does.
 
 ---
 
@@ -162,7 +181,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 4. The query box, the mode and the filter chips show the decoded search. A **guest** opening a shared link that reads the caller's own ratings, notes or watchlist gets the search without those parts (a notes search becomes a title search) and a yellow notice saying so
 5. `GET /search/anime?...` or `GET /search/media?...` fetches results based on view type
 6. Results display as cards in a grid
-7. "Show More" button loads 20 more results per click
+7. "Show More" button loads 20 more results per click; when more than 50 match, **See all results** beside it opens the search's see-all (3b)
 8. If no results: "No results found :-("
 
 **Results header:** above the cards, the result count ("50+ anime" when more than 50 match), a **sort** menu and a direction arrow. Each sort option says under its name what it orders by. Best match appears only with a query — without one the list is Top rated; Random is daily, the same shuffle for everyone today; Your rating is disabled for a guest. The arrow reverses the order, its tooltip naming the current direction; it is disabled where reversing means nothing (the query's own order, a daily shuffle). A sort applies at once and lives in the link, so a reload or "Back to search" keeps it. Submitting a **different query** starts again from Best match and keeps the filters; switching mode keeps the sort.
@@ -399,6 +418,8 @@ can rate.
   - `?from=ratings-stats` → "Back to statistics" (a You-vs-MAL scatter point **or** an Activity score-trend point → `/ratings?tab=stats`, landing back on the section you came from)
   - `?from=watchlist` → "Back to watchlist" (a `/watchlist` entry → its media/anime detail → `/watchlist`)
   - `?from=browse` → "Back to browse" (a Browse tile → `/browse`, scrolled to that row and the row to that tile)
+  - `?from=carousel&carousel=<key>` → "Back to the list" (a row's see-all tile → `/browse/<key>`, at that tile)
+  - `?from=search-all&q=<token>` → "Back to all results" (a search's see-all tile → `/search/all?q=token`, at that tile)
   - neither → no back button (direct-URL arrivals stay clean)
 - These flags propagate across the entire anime↔media jump chain (anime → media tile, media → anime link, related-media carousel) via `buildDetailHref`'s options bag, so a deep dive like curation → anime → media → sibling stays linkable back to the origin
 - The set above is closed. An unrecognised `from` falls through to the search token if one is present, and otherwise renders no back button — never a broken one. `lib/utils/navigation.ts` owns the union and says what adding to it touches
@@ -705,9 +726,10 @@ own.
 | `/filters/genres` | GET | Genre-badge tooltips (cached once per session by the `genres` store) |
 | `/filters/create-token` | POST | Search submission |
 | `/filters/verify-token` | POST | Search page load |
-| `/browse/news` | GET | Browse page load (News tab): its rows, each with the search it runs |
-| `/search/anime` | GET | Anime-view search after token verification (with the token's `sort`/`sort_dir`, and `limit=51` so a full page reads "50+"); each Browse row's search (`limit=25`); the Completion tab's search-to-mark (12.9) |
-| `/search/media` | GET | Media-view search after token verification (same params) |
+| `/browse/{page}` | GET | Browse page load, `news` for the News tab: its rows, each with the search it runs |
+| `/browse/carousels/{key}` | GET | A row's see-all load: the row with its toggles switched (`on` / `off` filter-set keys) |
+| `/search/anime` | GET | Anime-view search after token verification (with the token's `sort`/`sort_dir`, and `limit=51` so a full page reads "50+"); each Browse row's search (`limit=25`); a row's see-all (its own limit) and a search's (`limit=1000`); the Completion tab's search-to-mark (12.9) |
+| `/search/media` | GET | Media-view search after token verification (same params); a media-view search's see-all (`limit=1000`) |
 | `/media/anime/{uuid}` | GET | Anime detail page load |
 | `/media/{uuid}` | GET | Media detail page load |
 | `/ratings/scores` | GET | The `/ratings` page, the watchlist Statistics subtab, and the rating-consistency panel — one shared session-cached fetch (`ratingScores` store), invalidated by any rating write |

@@ -120,6 +120,18 @@ describe('revealFocused', () => {
 		expect(document.querySelector('[data-focus-uuid="one"]')).not.toHaveClass('focus-flash');
 	});
 
+	// A browse row is centred whole but flashes only its header: a ring round a carousel
+	// reads as a frame.
+	it('flashes the part a target names, and centres the target', async () => {
+		document.body.innerHTML = `
+			<section data-focus-uuid="fresh"><header data-flash-target>Fresh</header><div>tiles</div></section>`;
+		revealFocused('fresh');
+		await frames(2);
+		expect(document.querySelector('header')).toHaveClass('focus-flash');
+		expect(document.querySelector('section')).not.toHaveClass('focus-flash');
+		expect(scrollIntoView.mock.contexts[0]).toBe(document.querySelector('section'));
+	});
+
 	it('touches nothing synchronously', () => {
 		revealFocused('two');
 		expect(scrollIntoView).not.toHaveBeenCalled();

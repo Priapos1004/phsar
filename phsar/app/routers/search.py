@@ -32,7 +32,9 @@ from app.services.user_settings_service import get_settings
 
 router = APIRouter(prefix="/search", tags=["search"])
 
-SearchLimit = Annotated[int, Query(ge=1, le=1000, description="How many results to return.")]
+# The most one search returns.
+MAX_SEARCH_LIMIT = 1000
+SearchLimit = Annotated[int, Query(ge=1, le=MAX_SEARCH_LIMIT, description="How many results to return.")]
 SortDirParam = Annotated[SortDir | None, Query(
     description="Direction; by default `title` and `release` ascend and the rest descend. "
     "Ignored with `relevance`.",

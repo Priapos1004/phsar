@@ -42,6 +42,16 @@ describe('browse row cache', () => {
 		expect(rowCalls()).toBe(3);
 	});
 
+	// A see-all's toggles change its search; each combination's list must not stay.
+	it('keeps only the latest search under a see-all slot', async () => {
+		const top20 = { ...FRESH, top_percent: 20 };
+		await browseRow(FRESH, 250, 'fresh');
+		await browseRow(top20, 250, 'fresh');
+		await browseRow(FRESH, 250, 'fresh');
+		await browseRow(FRESH, 250, 'fresh');
+		expect(rowCalls()).toBe(3);
+	});
+
 	it('keeps the page and its rows across a detail detour', async () => {
 		await browsePage('news');
 		await browseRow(FRESH, 25);

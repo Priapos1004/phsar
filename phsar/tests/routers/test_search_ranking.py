@@ -60,6 +60,7 @@ from app.models.media_studio import MediaStudio
 from app.models.rating_search import RatingSearch
 from app.models.ratings import Ratings
 from app.models.studio import Studio
+from app.routers.search import MAX_SEARCH_LIMIT
 from app.services import anime_search_service, media_search_service
 from app.services.media_search_service import media_title_texts
 from app.services.vector_embedding_service import (
@@ -932,6 +933,16 @@ def test_the_search_menu_knows_which_sorts_ascend():
     match = _CLIENT_ASCENDING.search(CLIENT_SEARCH.read_text())
     assert match, f"no ASCENDING_SORTS line in {CLIENT_SEARCH}"
     assert {key.strip(" '") for key in match.group(1).split(",")} == {key.value for key in ASCENDING_SORTS}
+
+
+_CLIENT_SEE_ALL = re.compile(r"^export const SEE_ALL_LIMIT = (\d+);$", re.M)
+
+
+def test_a_search_see_all_asks_for_the_whole_search():
+    """The see-all reads "+" at its limit on the premise that the limit is the endpoint's own."""
+    match = _CLIENT_SEE_ALL.search(CLIENT_SEARCH.read_text())
+    assert match, f"no SEE_ALL_LIMIT line in {CLIENT_SEARCH}"
+    assert int(match.group(1)) == MAX_SEARCH_LIMIT
 
 
 # ---------------------------------------------------------------------------

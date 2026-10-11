@@ -247,6 +247,7 @@ phsar/
 │   │   │   │   ├── ScoreDial.svelte
 │   │   │   │   ├── ScorePercentile.svelte
 │   │   │   │   ├── ScrollableCard.svelte
+│   │   │   │   ├── SeeAllResults.svelte
 │   │   │   │   ├── SegmentedControl.svelte
 │   │   │   │   ├── SessionTimeoutBanner.svelte
 │   │   │   │   ├── ShareButton.svelte
@@ -256,6 +257,7 @@ phsar/
 │   │   │   │   ├── SearchBar.svelte
 │   │   │   │   ├── SearchLinks.svelte
 │   │   │   │   ├── SkeletonMediaInfo.svelte
+│   │   │   │   ├── SortControl.svelte
 │   │   │   │   ├── SplitCandidatesCard.svelte
 │   │   │   │   ├── TabNav.svelte
 │   │   │   │   ├── TagBarLabel.svelte
@@ -301,6 +303,7 @@ phsar/
 │   │   │   │   ├── adminJobsFilter.ts
 │   │   │   │   ├── auth.ts
 │   │   │   │   ├── bell-session.ts
+│   │   │   │   ├── browseRefinements.ts
 │   │   │   │   ├── browseRows.ts
 │   │   │   │   ├── filterOptions.ts
 │   │   │   │   ├── genres.ts
@@ -366,7 +369,9 @@ phsar/
 │   │   │   ├── anime/
 │   │   │   │   └── +page.svelte
 │   │   │   ├── browse/
-│   │   │   │   └── +page.svelte
+│   │   │   │   ├── +page.svelte
+│   │   │   │   └── [key]/
+│   │   │   │       └── +page.svelte
 │   │   │   ├── health/
 │   │   │   │   └── +server.ts
 │   │   │   ├── library/
@@ -381,7 +386,9 @@ phsar/
 │   │   │   ├── register/
 │   │   │   │   └── +page.svelte
 │   │   │   ├── search/
-│   │   │   │   └── +page.svelte
+│   │   │   │   ├── +page.svelte
+│   │   │   │   └── all/
+│   │   │   │       └── +page.svelte
 │   │   │   ├── settings/
 │   │   │   │   └── +page.svelte
 │   │   │   └── watchlist/
@@ -401,6 +408,7 @@ phsar/
 │   │       ├── backup-status.test.ts
 │   │       ├── backups-card.test.ts
 │   │       ├── browse-carousel.test.ts
+│   │       ├── browse-refinements.test.ts
 │   │       ├── browse-rows.test.ts
 │   │       ├── bulk-watchlist-dialog.test.ts
 │   │       ├── chart-theme.test.ts
@@ -425,6 +433,7 @@ phsar/
 │   │       ├── navbar.test.ts
 │   │       ├── navigation.test.ts
 │   │       ├── persisted-filter.test.ts
+│   │       ├── poster-card.test.ts
 │   │       ├── rating-attributes.test.ts
 │   │       ├── rating-coverage-store.test.ts
 │   │       ├── rating-coverage.test.ts

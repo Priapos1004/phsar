@@ -3,6 +3,7 @@ import { clearRatingsFilter } from '$lib/stores/ratingsFilter';
 import { clearWatchlistFilter } from '$lib/stores/watchlistFilter';
 import { clearJobsFilter } from '$lib/stores/adminJobsFilter';
 import { clearBrowseRows } from '$lib/stores/browseRows';
+import { clearBrowseRefinements } from '$lib/stores/browseRefinements';
 
 /**
  * When a section's list state — its filters, and any cache of what it loaded — is reset.
@@ -37,7 +38,13 @@ export const SECTION_RESETS: readonly SectionReset[] = [
 	{ prefix: '/ratings', clear: clearRatingsFilter },
 	{ prefix: '/watchlist', clear: clearWatchlistFilter },
 	{ prefix: '/admin', clear: clearJobsFilter },
-	{ prefix: '/browse', clear: clearBrowseRows },
+	{
+		prefix: '/browse',
+		clear: () => {
+			clearBrowseRows();
+			clearBrowseRefinements();
+		},
+	},
 ];
 
 /** Exact match or a `/`-delimited child, so `/ratings` never matches `/ratings-archive`. */

@@ -4,10 +4,14 @@ Runs against whatever the database already holds (a booted dev DB has the rows,
 CI's is empty), so each test seeds once to reach a known state before it acts.
 """
 
+import re
+from pathlib import Path
+
 from sqlalchemy import event, select
 from sqlalchemy.orm import selectinload
 
 from app.models.browse import BrowseCarousel, BrowseFilterSet, CarouselFilterSet
+from app.routers.search import MAX_SEARCH_LIMIT
 from app.seeders import browse_seeder
 from app.seeders.browse_seeder import CAROUSELS, FILTER_SETS, seed_browse
 
@@ -74,3 +78,24 @@ async def test_what_the_lists_drop_is_deleted(db_session, monkeypatch):
     assert all(key != dropped_set for _, _, links in after.values() for key, *_ in links)
     sets = (await db_session.execute(select(BrowseFilterSet.key))).scalars().all()
     assert dropped_set not in sets
+
+
+CLIENT_SEARCH = Path(__file__).resolve().parents[2] / "frontend" / "src" / "lib" / "utils" / "search.ts"
+_CLIENT_TOP = re.compile(r"^export const TOP_PRESETS = \[(.*)\];$", re.M)
+
+
+def test_the_top_steps_are_the_search_sheets():
+    """A carousel refines in the top steps the search sheet offers, so a see-all and a
+    search over the same anime read the same."""
+    match = _CLIENT_TOP.search(CLIENT_SEARCH.read_text())
+    assert match, f"no TOP_PRESETS line in {CLIENT_SEARCH}"
+    seeded = [s.params["top_percent"] for s in FILTER_SETS if "top_percent" in s.params]
+    assert seeded == [int(n) for n in match.group(1).split(",")]
+
+
+def test_a_sortable_carousel_sees_its_whole_search():
+    """A see-all's limit is taken in the order its rows come in, so a sortable carousel
+    capped below the search's own limit would hold different anime under another order."""
+    sortable = [c for c in CAROUSELS if c.sortable]
+    assert sortable
+    assert all(c.see_all_limit == MAX_SEARCH_LIMIT for c in sortable)

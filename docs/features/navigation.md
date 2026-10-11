@@ -44,9 +44,9 @@ states that invariant and tabulates which helper each kind of departure uses;
 A path carries its own `?tab=`, so restoring one restores the section a user was
 looking at, not just the page.
 
-The origin markers ride `buildDetailHref`'s options bag, and every anime↔media jump
-rebuilds the href with the whole bag intact, so a deep dive stays linkable back to
-where it started. `navigation.ts` owns the bag and the closed `DetailOrigin` set;
+The origin markers ride `buildDetailHref`'s options bag. A detail page reads it off its
+URL whole (`detailOrigin`) and every anime↔media jump rebuilds the href with it intact,
+so a deep dive stays linkable back to where it started. `navigation.ts` owns the bag and the closed `DetailOrigin` set;
 USER_FLOWS §7.6 owns what each one renders.
 
 ## The position
@@ -66,8 +66,8 @@ would land on the first — `carouselFocus` in `scrollFocus.ts`; `BrowseCarousel
 says how its row lands on the tile.
 
 A page must render the target before it can centre it, so a list that renders lazily or
-in slices acts first: `/search` slices its one response behind "Show More" and expands
-far enough, and the Browse row a focus names loads at once. `scrollFocus.ts` argues the timing, which is the
+in slices acts first: `/search` and the see-all pages slice their one response behind
+"Show More" and expand far enough, and the Browse row a focus names loads at once. `scrollFocus.ts` argues the timing, which is the
 part that is not obvious.
 
 ## The controls

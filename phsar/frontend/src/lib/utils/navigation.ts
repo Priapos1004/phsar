@@ -17,9 +17,11 @@ export function rowClickNavigate(e: MouseEvent, href: string): void {
 
 /** Closed set of non-search origin markers that detail pages handle.
  * Extend this union (and BackLink.svelte's `target` switch) when a new
- * entry point needs a labeled back button. */
+ * entry point needs a labeled back button — and, for one carrying an id the
+ * way `job` does, `DetailHrefOptions`, `buildDetailHref` and `detailOrigin`. */
 export type DetailOrigin =
-    | 'library' | 'job' | 'completion' | 'curation' | 'ratings' | 'ratings-stats' | 'watchlist' | 'browse';
+    | 'library' | 'job' | 'completion' | 'curation' | 'ratings' | 'ratings-stats' | 'watchlist' | 'browse'
+    | 'carousel' | 'search-all';
 
 export interface DetailHrefOptions {
     /** Search token to propagate so the detail page renders "Back to search". */
@@ -31,6 +33,9 @@ export interface DetailHrefOptions {
      * to that specific `/admin/jobs/[uuid]` row (the admin came from a sweep
      * audit). Propagated on anime↔media jumps like `q`/`from`. */
     job?: string | null;
+    /** Carousel key carried alongside `from: 'carousel'`, so the back button can link
+     * to that carousel's see-all page. Propagated like `job`. */
+    carousel?: string | null;
     /** Uuid of the list item this detour started from, so the back button can
      * scroll it into view — see `utils/scrollFocus`. Propagated on anime↔media
      * jumps like `q`/`from`. */
@@ -54,8 +59,26 @@ export function buildDetailHref(
     if (opts?.q) params.set('q', opts.q);
     if (opts?.from) params.set('from', opts.from);
     if (opts?.job) params.set('job', opts.job);
+    if (opts?.carousel) params.set('carousel', opts.carousel);
     if (opts?.focus) params.set(FOCUS_PARAM, opts.focus);
     return `/${type}?${params.toString()}`;
+}
+
+/**
+ * The origin a detail page arrived with — the bag every anime↔media hop forwards whole.
+ *
+ * This page IS the item that was clicked, so its own uuid is the focus unless a deeper
+ * hop already named one — see `utils/scrollFocus`.
+ */
+export function detailOrigin(url: URL): DetailHrefOptions {
+    const p = url.searchParams;
+    return {
+        q: p.get('q'),
+        from: p.get('from') as DetailOrigin | null,
+        job: p.get('job'),
+        carousel: p.get('carousel'),
+        focus: p.get(FOCUS_PARAM) ?? p.get('uuid'),
+    };
 }
 
 /**
@@ -82,14 +105,15 @@ export function searchBySource(source: string): void {
 	void navigateToSearch({ query: '', search_type: 'title', view_type: 'anime', original_source: [source] });
 }
 
-/** Create a search token from the filters and navigate to /search. Best-effort and
+/** Create a search token from the filters and navigate to `path` with it — /search, or
+ * a search's see-all page. Best-effort and
  * fire-and-forget: a 401 redirects to login; any other failure is logged, not thrown,
- * so every caller (the detail-page links, the stats charts, the home + search pages) can
- * invoke it without a `.catch` and never trip an unhandled promise rejection. */
-export async function navigateToSearch(params: MediaSearchFilters) {
+ * so any caller can invoke it without a `.catch` and never trip an unhandled promise
+ * rejection. */
+export async function navigateToSearch(params: MediaSearchFilters, path: '/search' | '/search/all' = '/search') {
     try {
         const data = await api.post<SearchTokenResponse>('/filters/create-token', params);
-        goto(`/search?q=${encodeURIComponent(data.token)}`);
+        goto(`${path}?q=${encodeURIComponent(data.token)}`);
     } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
             // Captured before the clear, as captureReturnTarget requires — the

@@ -61,9 +61,27 @@ export interface MediaSearchFilters {
 	sort_dir?: SortDir | null;
 }
 
+/** The top-N% steps the filter sheet offers. One line, because
+ * `test_the_top_steps_are_the_search_sheets` reads it. */
+export const TOP_PRESETS = [5, 10, 20, 50, 75];
+
 /** How many results a search shows. One more is requested, so a full page can say "50+"
  * rather than a count that would be a guess. */
 export const SEARCH_LIMIT = 50;
+
+/** The most a search returns, and so what a search's see-all asks for. One line, because
+ * `test_a_search_see_all_asks_for_the_whole_search` reads it against `MAX_SEARCH_LIMIT`. */
+export const SEE_ALL_LIMIT = 1000;
+
+/** What each search mode is called, wherever the user sees it. */
+export const SEARCH_MODE_LABELS: Record<SearchType, string> = {
+	title: 'Title', description: 'Description', rating_notes: 'My notes',
+};
+
+/** Which grain a result is: only an anime result carries the aggregate score. */
+export function isAnimeResult(row: AnimeSearchResult | MediaSearchResult): row is AnimeSearchResult {
+	return 'avg_score' in row;
+}
 
 const LIST_FILTER_KEYS = [
 	'airing_status', 'anime_season', 'genre_name', 'studio_name', 'original_source',
@@ -188,12 +206,17 @@ export function effectiveSort(params: MediaSearchFilters): { sort: SortKey; opti
 	return { sort, option, dir: dir ?? (ASCENDING_SORTS.includes(sort) ? 'asc' : 'desc') };
 }
 
+/** The one season a search is pinned to, which a browse row names in a pill. */
+export function pinnedSeason(params: MediaSearchFilters): string | null {
+	return params.anime_season?.length === 1 ? params.anime_season[0] : null;
+}
+
 /** A poster tile's one line: what its list is ordered by, where the tile has no other
  * place for it. `sort` is the order the results are actually in (`effectiveSort`). */
 export function sortLine(
 	sort: SortKey, row: AnimeSearchResult | MediaSearchResult, ratingStep: number,
 ): string | null {
-	const [score, votes] = 'avg_score' in row ? [row.avg_score, row.avg_scored_by] : [row.score, row.scored_by];
+	const [score, votes] = isAnimeResult(row) ? [row.avg_score, row.avg_scored_by] : [row.score, row.scored_by];
 	switch (sort) {
 		case 'top_rated':
 			return row.score_top_percent != null ? `Top ${row.score_top_percent}%` : null;
@@ -392,6 +415,10 @@ export function carryAcrossView(params: MediaSearchFilters, view: ViewType): Med
 // ---------------------------------------------------------------------------
 // Guests
 // ---------------------------------------------------------------------------
+
+/** What a guest is told when `stripForGuest` dropped something from their link. */
+export const GUEST_STRIPPED_NOTICE =
+	"This link used ratings, notes or the watchlist, which guest accounts don't have, so it opened without them — a notes search runs on titles instead.";
 
 /** A shared link opened by a guest: drop what reads the caller's own ratings, notes and
  * watchlist, which a guest is refused (docs/features/search.md, Personal filters and sort), and

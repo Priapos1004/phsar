@@ -5,7 +5,8 @@ The browse pages: rows of anime (carousels), each one a saved search.
 **Code**: `seeders/browse_seeder.py` (the core definitions) → `models/browse.py` →
 `services/browse_service.py` (layout + resolver, checked by `schemas/browse_schema.py`)
 → `routers/browse.py` → `routes/browse/+page.svelte` → `BrowseCarousel.svelte` →
-`PosterCard.svelte`.
+`PosterCard.svelte`; a carousel's see-all is `routes/browse/[key]/+page.svelte` →
+`SeeAllResults.svelte`, with `stores/browseRefinements.ts`.
 
 ## A carousel is a saved search
 
@@ -44,12 +45,29 @@ place, so an unchanged link keeps its row. Which carousels a page shows, top to
 bottom, is `PAGE_LAYOUT` in the service — a constant rather than a table, since no
 user or admin chooses it.
 
+## A see-all lists the rest
+
+Every carousel has a see-all page: its search up to `see_all_limit`, with the filter sets
+it offers as toggles. The limit is taken in the carousel's order, so a carousel is
+`sortable` — its see-all offers another order — only where its params rather than its
+order are what it is, and then its limit is the search's own: under a lower one, another
+order would change which anime the list holds (`test_a_sortable_carousel_sees_its_whole_search`).
+
+Sets sharing a param exclude each other, since the resolver lets only the later one
+count, so the page offers them as one control (`filterSetGroups`). For the same reason a
+carousel is offered only the sets that leave its own params alone, which the seeder
+works out rather than lists. The top steps are the
+filter sheet's own `TOP_PRESETS`, pinned by `test_the_top_steps_are_the_search_sheets`.
+
+A viewer's choices are kept per carousel (`browseRefinements`).
+
 ## Guests
 
 Every carousel is listed for everyone, a guest included. One over the caller's own
 ratings or watchlist resolves for a guest too; [the search it runs](search.md#personal-filters-and-sort)
 is where a guest is refused, so the row shows a guest why instead of running it. It
-decides "personal" with `stripForGuest`, the test that strips a shared search link.
+decides "personal" with `stripForGuest`, the test that strips a shared search link, and
+the same test leaves a see-all's toggle over the caller's data inert.
 
 ---
 

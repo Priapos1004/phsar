@@ -94,7 +94,8 @@ export function revealFocused(uuid: string | null): void {
 	requestAnimationFrame(() => {
 		const el = document.querySelector<HTMLElement>(`[data-focus-uuid="${CSS.escape(uuid)}"]`);
 		if (!el) return;
-		flash(el);
+		// A target too big to ring whole names the part of it that flashes instead.
+		flash(el.querySelector<HTMLElement>(':scope > [data-flash-target]') ?? el);
 		pinCentred(el);
 	});
 }

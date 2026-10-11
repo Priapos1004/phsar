@@ -2,7 +2,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { formatSeason, resolveTitle, formatRelationType, formatMediaType, formatAiringStatus } from '$lib/utils/formatString';
-	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
+	import { buildDetailHref, type DetailHrefOptions } from '$lib/utils/navigation';
 	import { userSettings } from '$lib/stores/userSettings';
 	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
 	import WatchlistBookmarkIcon from '$lib/components/WatchlistBookmarkIcon.svelte';
@@ -18,13 +18,11 @@
 		/** Index in the chronological sibling chain where the current media slots.
 		 * 0 = before every sibling, siblings.length = after the last. */
 		currentPosition: number;
-		searchToken?: string | null;
-		fromParam?: DetailOrigin | null;
-		jobUuid?: string | null;
-		focusUuid?: string | null;
+		/** The page's origin, forwarded whole to each sibling. */
+		origin?: DetailHrefOptions;
 	}
 
-	let { siblings, currentPosition, searchToken = null, fromParam = null, jobUuid = null, focusUuid = null }: Props = $props();
+	let { siblings, currentPosition, origin = {} }: Props = $props();
 
 	let imgFailed = $state<Record<string, boolean>>({});
 
@@ -60,7 +58,7 @@
 	{#each siblings as sibling, i}
 		{#if i === currentPosition}{@render hereMarker()}{/if}
 		<a
-			href={buildDetailHref('media', sibling.uuid, { q: searchToken, from: fromParam, job: jobUuid, focus: focusUuid })}
+			href={buildDetailHref('media', sibling.uuid, origin)}
 			class="snap-start shrink-0 w-40 transition duration-200 transform hover:scale-[1.03]"
 		>
 			<Card.Root class="h-full {cls.cardGlass}">

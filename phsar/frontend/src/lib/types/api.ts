@@ -1006,5 +1006,7 @@ export interface BrowseCarousel {
 	title: string;
 	params: Partial<MediaSearchFilters>;
 	see_all_limit: number;
+	/** Whether its see-all offers a sort; otherwise the carousel's order is shown. */
+	sortable: boolean;
 	filter_sets: BrowseFilterSet[];
 }
