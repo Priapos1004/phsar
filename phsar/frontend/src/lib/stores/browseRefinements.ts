@@ -47,6 +47,10 @@ export function isSetActive(set: BrowseFilterSet, refinement: Refinement): boole
 	return set.default_on ? !refinement.off.includes(set.key) : refinement.on.includes(set.key);
 }
 
+/** A group's heading, by the param its sets share; a lone set's label says it all. Every param the seeded sets share needs one
+ *  (`test_every_shared_param_has_a_heading`). */
+export const GROUP_HEADINGS: Record<string, string> = { top_percent: 'Top', watchlisted: 'Watchlist', rated: 'Watched' };
+
 /** The offered sets grouped by a shared param (docs/features/browse.md). Position order;
  *  a set joins the first group sharing a param with it. */
 export function filterSetGroups(sets: BrowseFilterSet[]): BrowseFilterSet[][] {

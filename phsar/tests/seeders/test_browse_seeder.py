@@ -93,15 +93,15 @@ def test_the_top_steps_are_the_search_sheets():
     assert seeded == [int(n) for n in match.group(1).split(",")]
 
 
-CLIENT_SEE_ALL = CLIENT_SEARCH.parents[2] / "routes" / "browse" / "[key]" / "+page.svelte"
-_CLIENT_HEADINGS = re.compile(r"const GROUP_HEADINGS: Record<string, string> = \{([^}]*)\}")
+CLIENT_REFINEMENTS = CLIENT_SEARCH.parents[1] / "stores" / "browseRefinements.ts"
+_CLIENT_HEADINGS = re.compile(r"GROUP_HEADINGS[^=]*=\s*\{([^}]*)\}")
 
 
 def test_every_shared_param_has_a_heading():
-    """The see-all names a group of sets after the param they share, from its own table, so
-    a group over a param missing there would render with no heading and no label."""
-    match = _CLIENT_HEADINGS.search(CLIENT_SEE_ALL.read_text())
-    assert match, f"no GROUP_HEADINGS line in {CLIENT_SEE_ALL}"
+    """The see-all names a group of sets after the param they share (`GROUP_HEADINGS`), so a
+    group over a param missing there would render with no heading and no label."""
+    match = _CLIENT_HEADINGS.search(CLIENT_REFINEMENTS.read_text())
+    assert match, f"no GROUP_HEADINGS line in {CLIENT_REFINEMENTS}"
     headed = set(re.findall(r"(\w+):", match.group(1)))
     params = [p for s in FILTER_SETS for p in s.params]
     assert {p for p in params if params.count(p) > 1} <= headed

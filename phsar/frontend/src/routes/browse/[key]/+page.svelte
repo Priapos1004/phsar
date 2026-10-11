@@ -9,6 +9,7 @@
 	import {
 		browseRefinements,
 		filterSetGroups,
+		GROUP_HEADINGS,
 		isSetActive,
 		NO_REFINEMENT,
 		refinedSearch,
@@ -21,9 +22,6 @@
 	import { buildDetailHref, navigateToSearch } from '$lib/utils/navigation';
 	import { pinnedSeason, readsOwnData, type SortDir, type SortKey } from '$lib/utils/search';
 
-	// A group of key-sharing sets is named after the param they share, as the filter sheet
-	// names it; a lone set's label says it all.
-	const GROUP_HEADINGS: Record<string, string> = { top_percent: 'Top', watchlisted: 'Watchlist', rated: 'Watched' };
 	const GUEST_HINT = 'Guest accounts have no ratings or watchlist';
 
 	const getUserRole = getContext<() => string | null>('userRole');
