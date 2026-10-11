@@ -301,6 +301,7 @@ phsar/
 │   │   │   │   ├── adminJobsFilter.ts
 │   │   │   │   ├── auth.ts
 │   │   │   │   ├── bell-session.ts
+│   │   │   │   ├── browseRows.ts
 │   │   │   │   ├── filterOptions.ts
 │   │   │   │   ├── genres.ts
 │   │   │   │   ├── jobs.ts
@@ -400,6 +401,7 @@ phsar/
 │   │       ├── backup-status.test.ts
 │   │       ├── backups-card.test.ts
 │   │       ├── browse-carousel.test.ts
+│   │       ├── browse-rows.test.ts
 │   │       ├── bulk-watchlist-dialog.test.ts
 │   │       ├── chart-theme.test.ts
 │   │       ├── click-through.test.ts

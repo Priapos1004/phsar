@@ -4,13 +4,13 @@ import {
 	applyFilterLifecycle,
 	isDetailRoute,
 	sectionsToClearFor,
-	SECTION_FILTERS,
+	SECTION_RESETS,
 } from '$lib/utils/filterLifecycle';
 import { ratingsFilter, DEFAULT_RATINGS_FILTER } from '$lib/stores/ratingsFilter';
 import { watchlistFilter, DEFAULT_WATCHLIST_FILTER } from '$lib/stores/watchlistFilter';
 import { jobsFilter } from '$lib/stores/adminJobsFilter';
 
-const ALL = ['/ratings', '/watchlist', '/admin'];
+const ALL = ['/ratings', '/watchlist', '/admin', '/browse'];
 const clearedFor = (to: string) => sectionsToClearFor(to).map((s) => s.prefix);
 
 describe('isDetailRoute', () => {
@@ -31,8 +31,8 @@ describe('isDetailRoute', () => {
 });
 
 describe('sectionsToClearFor', () => {
-	it('registers exactly the three filtered sections', () => {
-		expect(SECTION_FILTERS.map((s) => s.prefix)).toEqual(ALL);
+	it('registers exactly the sections that reset', () => {
+		expect(SECTION_RESETS.map((s) => s.prefix)).toEqual(ALL);
 	});
 
 	it('clears nothing when the destination is a detail page', () => {
@@ -41,8 +41,8 @@ describe('sectionsToClearFor', () => {
 	});
 
 	it('keeps the destination section and clears the others', () => {
-		expect(clearedFor('/ratings')).toEqual(['/watchlist', '/admin']);
-		expect(clearedFor('/watchlist')).toEqual(['/ratings', '/admin']);
+		expect(clearedFor('/ratings')).toEqual(['/watchlist', '/admin', '/browse']);
+		expect(clearedFor('/watchlist')).toEqual(['/ratings', '/admin', '/browse']);
 	});
 
 	it('keeps a section across an in-section child route', () => {

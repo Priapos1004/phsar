@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { getContext, onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { api, ApiError } from '$lib/api';
+	import { ApiError } from '$lib/api';
 	import TabNav from '$lib/components/TabNav.svelte';
 	import BrowseCarousel from '$lib/components/BrowseCarousel.svelte';
+	import { browsePage } from '$lib/stores/browseRows';
 	import { ensureRatingCoverage } from '$lib/stores/ratingCoverage';
 	import type { BrowseCarousel as Carousel } from '$lib/types/api';
 	import { consumeFocus, splitCarouselFocus } from '$lib/utils/scrollFocus';
@@ -34,7 +35,7 @@
 		// Unawaited: the tiers decorate tiles, so they must not hold the rows back.
 		if (!isGuest) void ensureRatingCoverage();
 		try {
-			carousels = await api.get<Carousel[]>('/browse/news');
+			carousels = await browsePage('news');
 		} catch (e) {
 			error = e instanceof ApiError ? e.detail : 'Failed to load browse.';
 		}
@@ -43,7 +44,7 @@
 
 <svelte:head><title>Browse — Phsar</title></svelte:head>
 
-<div class="mx-auto max-w-6xl space-y-6">
+<div class="mx-auto max-w-5xl space-y-6">
 	<h1 class="text-2xl font-bold text-white">Browse</h1>
 
 	<TabNav tabs={TABS} defaultTab={DEFAULT_TAB} basePath="/browse" ariaLabel="Browse sections" />
@@ -51,7 +52,8 @@
 	{#if active === 'discover'}
 		<div class="py-12 text-center text-white/60">Will come soon :-)</div>
 	{/if}
-	<!-- Hidden rather than unmounted on another tab, so coming back doesn't refetch. -->
+	<!-- Hidden rather than unmounted on another tab, so coming back keeps each row where it
+	     was scrolled, with no skeletons while the rows re-observe. -->
 	<div hidden={active !== 'news'}>
 		{#if error}
 			<div class="py-12 text-center text-white/60">{error}</div>

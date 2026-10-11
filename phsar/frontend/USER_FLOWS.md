@@ -74,7 +74,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 
 ### 2.1 NavBar
 - Sticky bar at the top of every page except `/login` (sits inside a sticky wrapper shared with `MaintenanceBanner` — see 1.5)
-- Left: logo + "PHSAR" text linking to `/`, then "Browse", "Ratings" and "Watchlist". The section you are in — its own sub-pages included — shows in the theme colour; a detail page belongs to none
+- Left: the logo linking to `/`, with the "PHSAR" wordmark beside it except on a phone, then "Browse", "Ratings" and "Watchlist". The section you are in — its own sub-pages included — shows in the theme colour; a detail page belongs to none
 - Right (when authenticated):
   - **JobBell** (bell icon next to the user button): polls `GET /jobs/mine` every 2s while any of your jobs is queued/running, 30s when idle. Badge count surfaces session-scoped active jobs PLUS unseen-completed jobs since the tab opened (`bellLoginAt` + `bellSeenJobs` set in sessionStorage; cleared on every logout transition via `clearBellSession()` so a relogin in the same tab doesn't inherit the previous session). **Opening the dropdown acknowledges every visible job — including still-running ones — so the badge clears even while a job is fetching** (v0.14.13); the completion toast below announces the result afterward. Clicking opens a dropdown listing up to 5 entries (active + recently-finished); a "View all in Library" tail links to `/library/add` for older jobs. Rendering is JobKind-aware:
     - `user_scrape`: `Add: "<query>"`, stage Fetching → Saving → Done with `items_done/items_total` progress. On succeeded: `Added to your library` substext and the **whole row is a link to `/library/add`** (chevron affordance; dropdown closes on click).
@@ -132,6 +132,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 - The row's title opens `/search` with that row's search and sort. A row pinned to one season names it in a pill beside the title ("Fall 2026").
 - The row scrolls sideways (snapping per tile). On a mouse or trackpad, round arrows page it by about a screen width and appear only where there is more to scroll.
 - A row built from your own ratings or watchlist shows a **guest** a card saying guest accounts have neither; the rest load.
+- Coming back from an anime or media page shows the rows already loaded, without reloading them. They load afresh after leaving Browse for any other page; a row built from your ratings or watchlist also reloads after you change either.
 
 **Tiles:** cover, title, the watchlist bookmark (as in 5.2), and the rated-coverage marking of 5.3 as an outline, gold and obsidian also tinting the title area. Under the title, one line shows the value the row is ordered by — e.g. "Announced Oct 10", a season, a vote count. Under the newest-announcement order, a tile names the announcement's type on its cover ("Movie") when it isn't the franchise's usual kind. Clicking a tile opens the anime page (7.6 for the way back).
 

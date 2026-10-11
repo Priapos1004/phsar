@@ -2,18 +2,19 @@
 	// One browse row. Its params are final: docs/features/browse.md.
 	//
 	// Items load when the row nears the viewport, so a page of rows costs one search per
-	// row the user actually reaches. The row a back link names loads at once instead,
-	// since it is the one the page is about to scroll to.
+	// row the user actually reaches — once per visit to Browse (`stores/browseRows`). The
+	// row a back link names loads at once instead, since it is the one the page is about
+	// to scroll to.
 	import { onMount, tick } from 'svelte';
 	import { ChevronLeft, ChevronRight } from 'lucide-svelte';
 	import PosterCard from '$lib/components/PosterCard.svelte';
 	import type { AnimeSearchResult, BrowseCarousel } from '$lib/types/api';
+	import { browseRow } from '$lib/stores/browseRows';
 	import { userSettings } from '$lib/stores/userSettings';
 	import { buildDetailHref, navigateToSearch } from '$lib/utils/navigation';
 	import { carouselFocus, revealFocused } from '$lib/utils/scrollFocus';
 	import {
 		effectiveSort,
-		fetchAnimeSearchResults,
 		sortLine,
 		stripForGuest,
 		unusualAnnouncedType,
@@ -51,7 +52,7 @@
 
 	async function load() {
 		try {
-			items = await fetchAnimeSearchResults(search, ROW_SIZE);
+			items = await browseRow(search, ROW_SIZE);
 		} catch {
 			failed = true;
 			return;

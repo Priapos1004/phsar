@@ -1,5 +1,6 @@
 import { writable, derived } from 'svelte/store';
 import { api } from '$lib/api';
+import { dropPersonalRows } from '$lib/stores/browseRows';
 import type { WatchlistMediaTag, WatchlistMediaTags } from '$lib/types/api';
 
 // media UUID → the tag it's watchlisted under. Drives the bookmark icon state
@@ -33,6 +34,8 @@ export const watchlistAnimeColors = derived(watchlistTags, ($map) => {
 
 /** Re-fetch the watchlisted-media→tag set. Call after any watchlist add/remove. */
 export async function refreshWatchlist(): Promise<void> {
+	// Browse's rows over the watchlist, and every write already routes here.
+	dropPersonalRows();
 	try {
 		const res = await api.get<WatchlistMediaTags>('/watchlist/media-tags');
 		watchlistTags.set(new Map(res.entries.map((e) => [e.media_uuid, e])));

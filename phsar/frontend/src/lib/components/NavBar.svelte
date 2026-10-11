@@ -31,11 +31,13 @@
     const isActive = (href: string) => isWithin(page.url.pathname, href);
 </script>
 
-<nav class="h-16 flex justify-between items-center px-8 py-4 bg-black/10 backdrop-blur">
-    <div class="flex items-end gap-4 sm:gap-6">
-        <a href="/" class="flex items-end hover:opacity-80 transition">
+<nav class="h-16 flex justify-between items-center gap-3 px-4 sm:px-8 py-4 bg-black/10 backdrop-blur">
+    <!-- On a phone the wordmark goes: with it, the sections, the bell and the
+         avatar overflow a ~390px row. -->
+    <div class="flex items-end gap-3 sm:gap-6">
+        <a href="/" class="shrink-0 flex items-end hover:opacity-80 transition">
             <img src="/phsar_logo_transparent.png" alt="Phsar Logo" class="w-8 h-8" />
-            <span class="ml-1 text-xl font-bold text-white">PHSAR</span>
+            <span class="hidden sm:inline ml-1 text-xl font-bold text-white">PHSAR</span>
         </a>
         {#each sections as section (section.href)}
             {@const active = isActive(section.href)}
@@ -50,13 +52,13 @@
     </div>
 
     {#if isAuthenticated}
-        <div class="flex items-center gap-2">
+        <div class="shrink-0 flex items-center gap-2">
             <!-- Bell + Add to Library are visible to restricted users too. The bell
                  will always be empty (they can't enqueue jobs) but they can browse
                  the recent-additions list on /library/add. -->
             <JobBell />
             <DropdownMenu.Root>
-                <DropdownMenu.Trigger class="ml-2 w-8 h-8 rounded-full bg-primary hover:bg-primary/80 flex items-center justify-center transition">
+                <DropdownMenu.Trigger class="sm:ml-2 w-8 h-8 rounded-full bg-primary hover:bg-primary/80 flex items-center justify-center transition">
                     <span class="text-white text-sm font-semibold">{username ? username[0].toUpperCase() : 'U'}</span>
                 </DropdownMenu.Trigger>
                 <DropdownMenu.Content class="w-48" align="end">
