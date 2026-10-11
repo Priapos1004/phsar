@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { replaceState } from '$app/navigation';
-import { consumeFocus, hrefWithFocus, pageCovering, revealFocused } from '$lib/utils/scrollFocus';
+import {
+	carouselFocus,
+	consumeFocus,
+	hrefWithFocus,
+	pageCovering,
+	revealFocused,
+	splitCarouselFocus,
+} from '$lib/utils/scrollFocus';
 
 describe('hrefWithFocus', () => {
 	it('opens a query string on a bare path', () => {
@@ -18,6 +25,16 @@ describe('hrefWithFocus', () => {
 
 	it('percent-encodes the uuid', () => {
 		expect(hrefWithFocus('/search', 'a b&c')).toBe('/search?focus=a%20b%26c');
+	});
+});
+
+describe('carousel focus', () => {
+	it('round-trips a tile through the param', () => {
+		expect(splitCarouselFocus(carouselFocus('fresh', 'abc-123'))).toEqual({ key: 'fresh', uuid: 'abc-123' });
+	});
+
+	it('reads a bare key as the row alone', () => {
+		expect(splitCarouselFocus('new-this-season')).toEqual({ key: 'new-this-season', uuid: null });
 	});
 });
 

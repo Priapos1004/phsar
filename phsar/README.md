@@ -186,6 +186,7 @@ phsar/
 │   │   │   │   ├── AttributeRadar.svelte
 │   │   │   │   ├── BackLink.svelte
 │   │   │   │   ├── BackupsCard.svelte
+│   │   │   │   ├── BrowseCarousel.svelte
 │   │   │   │   ├── admin/
 │   │   │   │   │   ├── AdminJobsLogTab.svelte
 │   │   │   │   │   ├── AdminOverviewTab.svelte
@@ -219,6 +220,7 @@ phsar/
 │   │   │   │   ├── NavBar.svelte
 │   │   │   │   ├── Notice.svelte
 │   │   │   │   ├── PillToggle.svelte
+│   │   │   │   ├── PosterCard.svelte
 │   │   │   │   ├── PriorityPicker.svelte
 │   │   │   │   ├── RatingCard.svelte
 │   │   │   │   ├── RatingNeighbors.svelte
@@ -362,6 +364,8 @@ phsar/
 │   │   │   │           └── +page.svelte
 │   │   │   ├── anime/
 │   │   │   │   └── +page.svelte
+│   │   │   ├── browse/
+│   │   │   │   └── +page.svelte
 │   │   │   ├── health/
 │   │   │   │   └── +server.ts
 │   │   │   ├── library/
@@ -395,6 +399,7 @@ phsar/
 │   │       ├── auth-store.test.ts
 │   │       ├── backup-status.test.ts
 │   │       ├── backups-card.test.ts
+│   │       ├── browse-carousel.test.ts
 │   │       ├── bulk-watchlist-dialog.test.ts
 │   │       ├── chart-theme.test.ts
 │   │       ├── click-through.test.ts

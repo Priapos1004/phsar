@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import NavBar from '$lib/components/NavBar.svelte';
+import { page } from '$app/state';
 
 describe('NavBar', () => {
 	it('renders logo and brand text', () => {
@@ -78,5 +79,26 @@ describe('NavBar', () => {
 		expect(homeLink).toHaveAttribute('href', '/');
 		expect(ratingsLink).toHaveAttribute('href', '/ratings');
 		expect(watchlistLink).toHaveAttribute('href', '/watchlist');
+	});
+
+	it('marks the section the page is in, its sub-routes included, and no other', () => {
+		// The mock is a plain object; the cast drops SvelteKit's typed-route pathname.
+		const mocked = page as { url: URL };
+		const home = mocked.url;
+		mocked.url = new URL('http://localhost:5173/browse/fresh');
+		try {
+			render(NavBar, { props: { isAuthenticated: true, username: 'testuser', isAdmin: false, onLogout: vi.fn() } });
+			expect(screen.getByText('Browse').closest('a')).toHaveAttribute('aria-current', 'page');
+			expect(screen.getByText('Ratings').closest('a')).not.toHaveAttribute('aria-current');
+		} finally {
+			mocked.url = home;
+		}
+	});
+
+	it('marks nothing on a page outside the sections', () => {
+		render(NavBar, { props: { isAuthenticated: true, username: 'testuser', isAdmin: false, onLogout: vi.fn() } });
+		for (const label of ['Browse', 'Ratings', 'Watchlist']) {
+			expect(screen.getByText(label).closest('a')).not.toHaveAttribute('aria-current');
+		}
 	});
 });

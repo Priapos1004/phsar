@@ -6,10 +6,13 @@ import {
 	filterChips,
 	normalizeRated,
 	omitKeys,
+	sortLine,
+	unusualAnnouncedType,
 	stripForGuest,
 	withQuery,
 	type MediaSearchFilters,
 } from '$lib/utils/search';
+import type { AnimeSearchResult, MediaSearchResult } from '$lib/types/api';
 import { sliderGrid, thumbValue, toGrid } from '$lib/components/DoubleRangeSlider.svelte';
 import { api } from '$lib/api';
 
@@ -192,5 +195,71 @@ describe('the search request', () => {
 		expect(params.has('score_min')).toBe(false);
 		expect(params.has('query')).toBe(false);
 		get.mockRestore();
+	});
+});
+
+describe('sortLine', () => {
+	const anime = {
+		avg_score: 8.42, avg_scored_by: 1_234_567, added_at: '2026-10-03T12:00:00Z',
+		score_top_percent: 12, sort_season: 'Winter 2030', your_rating: 7.333,
+		announced_at: '2026-10-09T12:00:00Z',
+	} as unknown as AnimeSearchResult;
+	const media = { ...anime, score: 6.1, scored_by: 900 } as unknown as MediaSearchResult;
+
+	it.each([
+		['top_rated', 'Top 12%'],
+		['score', '⭐ 8.42'],
+		['popularity', '1,234,567 votes'],
+		['added', 'Added Oct 3'],
+		['announced', 'Announced Oct 9'],
+		['release', 'Winter 2030'],
+		['aired', 'Winter 2030'],
+		['your_rating', 'You: 7.33'],
+		['title', null],
+		['random', null],
+		['relevance', null],
+	] as const)('shows what %s orders by', (sort, line) => {
+		expect(sortLine(sort, anime, 0.5)).toBe(line);
+	});
+
+	it('reads the media grain its own score and votes', () => {
+		const row = { ...media } as Record<string, unknown>;
+		delete row.avg_score;
+		delete row.avg_scored_by;
+		expect(sortLine('score', row as unknown as MediaSearchResult, 0.5)).toBe('⭐ 6.1');
+		expect(sortLine('popularity', row as unknown as MediaSearchResult, 0.5)).toBe('900 votes');
+	});
+
+	it('shows nothing where the row has no value for the order', () => {
+		const bare = { avg_score: null, avg_scored_by: 0, added_at: '2026-10-03T12:00:00Z' } as unknown as AnimeSearchResult;
+		expect(sortLine('top_rated', bare, 0.5)).toBeNull();
+		expect(sortLine('score', bare, 0.5)).toBeNull();
+		expect(sortLine('release', bare, 0.5)).toBeNull();
+		expect(sortLine('your_rating', bare, 0.5)).toBeNull();
+		expect(sortLine('announced', bare, 0.5)).toBeNull();
+	});
+});
+
+describe('unusualAnnouncedType', () => {
+	const franchise = (announced: string | null, types: [string, number][]) => ({
+		announced_type: announced,
+		media_types: types.map(([media_type, count]) => ({ media_type, count })),
+	}) as unknown as AnimeSearchResult;
+
+	it('names a movie announced for a TV show', () => {
+		expect(unusualAnnouncedType(franchise('Movie', [['TV', 3], ['Movie', 1]]))).toBe('Movie');
+	});
+
+	it('names nothing when the announcement is what the franchise usually is', () => {
+		expect(unusualAnnouncedType(franchise('ONA', [['ONA', 2]]))).toBeNull();
+		expect(unusualAnnouncedType(franchise('TV', [['TV', 2], ['Movie', 1]]))).toBeNull();
+	});
+
+	it('names nothing outside the announcement sort, where no type is carried', () => {
+		expect(unusualAnnouncedType(franchise(null, [['TV', 1]]))).toBeNull();
+	});
+
+	it('breaks a tie between usual types by name, so a tile never flips between loads', () => {
+		expect(unusualAnnouncedType(franchise('TV', [['TV', 1], ['Movie', 1]]))).toBe('TV');
 	});
 });

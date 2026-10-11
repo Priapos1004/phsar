@@ -13,7 +13,12 @@ from app.daos.media_projections import (
     media_identity_columns,
     media_studio_names,
 )
-from app.daos.search_filters import SEMANTIC_MARGIN, literal_matches, match_passes
+from app.daos.search_filters import (
+    SEMANTIC_MARGIN,
+    literal_matches,
+    match_passes,
+    per_owner,
+)
 from app.models.anime import Anime
 from app.models.media import MAIN_STORY_RELATIONS, Media
 from app.models.rating_search import RatingSearch
@@ -148,14 +153,8 @@ class RatingDAO(BaseDAO[Ratings]):
         self, db: AsyncSession, user_id: int, ids: list[int], *, per_anime: bool,
     ) -> dict[int, float]:
         """`your_rating_key` for each of `ids` the user has rated."""
-        owner = Media.anime_id if per_anime else Media.id
-        stmt = (
-            select(owner, your_rating_key(per_anime=per_anime))
-            .select_from(Media)
-            .join(self.model, rating_of(user_id))
-            .where(owner.in_(ids))
-        )
-        return dict((await db.execute(stmt.group_by(owner) if per_anime else stmt)).tuples().all())
+        stmt = per_owner(your_rating_key(per_anime=per_anime), ids=ids, per_anime=per_anime)
+        return dict((await db.execute(stmt.join(self.model, rating_of(user_id)))).tuples().all())
 
     async def best_note_by_anime_id(
         self, db: AsyncSession, user_id: int, query: str, anime_ids: list[int],

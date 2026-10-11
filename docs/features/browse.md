@@ -4,7 +4,8 @@ The browse pages: rows of anime (carousels), each one a saved search.
 
 **Code**: `seeders/browse_seeder.py` (the core definitions) → `models/browse.py` →
 `services/browse_service.py` (layout + resolver, checked by `schemas/browse_schema.py`)
-→ `routers/browse.py`.
+→ `routers/browse.py` → `routes/browse/+page.svelte` → `BrowseCarousel.svelte` →
+`PosterCard.svelte`.
 
 ## A carousel is a saved search
 
@@ -12,6 +13,8 @@ A carousel stores raw `/search/anime` params — never a search token, which wou
 freeze the filters as they stood the day it was minted. The client runs whatever the
 backend resolves through the ordinary search endpoint, so a carousel sorts and
 filters exactly as [search](search.md) does and has no query of its own.
+
+A tile's line is the sort value [search carries](search.md#sorting) (`sortLine`).
 
 A **filter set** is a partial params dict ("Top 20%" is `{top_percent: 20}`) that a
 carousel offers as a refinement. `carousel_filter_set` links the two, with a
@@ -45,7 +48,8 @@ user or admin chooses it.
 
 Every carousel is listed for everyone, a guest included. One over the caller's own
 ratings or watchlist resolves for a guest too; [the search it runs](search.md#personal-filters-and-sort)
-is where a guest is refused.
+is where a guest is refused, so the row shows a guest why instead of running it. It
+decides "personal" with `stripForGuest`, the test that strips a shared search link.
 
 ---
 

@@ -1,4 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
+import { render, screen } from '@testing-library/svelte';
+import BackLink from '$lib/components/BackLink.svelte';
 import { absoluteDetailUrl, buildDetailHref, searchBySource, searchByStudio } from '$lib/utils/navigation';
 import { api } from '$lib/api';
 
@@ -79,6 +81,15 @@ describe('searchBySource', () => {
 		expect(api.post).toHaveBeenCalledWith(
 			'/filters/create-token',
 			expect.objectContaining({ original_source: ['Light Novel'], view_type: 'anime', search_type: 'title', query: '' }),
+		);
+	});
+});
+
+describe('BackLink', () => {
+	it('returns a browse detail to the tile it was opened from', () => {
+		render(BackLink, { props: { searchToken: null, fromParam: 'browse', focusUuid: 'fresh:abc-123' } });
+		expect(screen.getByText('Back to browse').closest('a')).toHaveAttribute(
+			'href', '/browse?focus=fresh%3Aabc-123',
 		);
 	});
 });

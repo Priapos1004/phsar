@@ -205,9 +205,15 @@ that day. **Your rating** is the mean of the caller's ratings over the anime's r
 media, whatever their status — the `/ratings` page's mean — or the media's own rating;
 unrated rows come last.
 
+**Newest announcement says when the next part became known here**: an anime sits at the
+moment its newest-added announced main-story entry joined the library, a media at its own
+when it is one, and the rest come last. A sequel is a new media under an old anime, so
+newest added — the anime's own `created_at` — can't surface it.
+
 **A result carries what its sort orders by**, where no other field does: the "Top N%"
 badge under top rated (relevance without a query included), the season a row sits at
-under release and latest aired, the caller's rating under your rating.
+under release and latest aired, the announcement's date and media type under newest
+announcement, the caller's rating under your rating.
 `filter_service.sort_values` reads it after the search, over the page of hits, from the
 definitions the ORDER BY uses, so the value shown is the one ordered by. Newest added
 needs no fill: every result carries `added_at`.

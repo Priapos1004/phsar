@@ -995,6 +995,81 @@ async def test_rows_carry_when_they_were_added(client, user_auth_headers, db_ses
     assert {datetime.fromisoformat(row["added_at"]) for row in rows} == {added}
 
 
+def _added(month: int, day: int) -> dict:
+    return {"created_at": datetime(2026, month, day, tzinfo=UTC)}
+
+
+_MOVIE, _OVA = {"media_type": MediaType.Movie}, {"media_type": MediaType.OVA}
+
+# Anime → its media, every title holding "Zqn", each media stamped with when it joined the
+# library. Older's newest announcement is a TV entry inserted before its older movie, so the
+# date decides, not the id; Side's side-story OVA and aired entry joined after everything
+# else and count for nothing. The anime rows themselves are stamped in the reverse of the
+# announced order, so newest added would order them the other way.
+_ANNOUNCED_FIXTURE = {
+    "Zqn Nothing": [("Zqn Nothing", _added(10, 10))],
+    "Zqn Side": [
+        ("Zqn Side", _added(10, 10)),
+        ("Zqn Side OVA", {**_UNAIRED, **_SIDE, **_OVA, **_added(10, 10)}),
+        ("Zqn Side 2", {**_UNAIRED, **_added(8, 1)}),
+    ],
+    "Zqn Older": [
+        ("Zqn Older", _added(1, 1)),
+        ("Zqn Older 2", {**_UNAIRED, **_added(10, 1)}),
+        ("Zqn Older 3", {**_UNAIRED, **_MOVIE, **_added(9, 1)}),
+    ],
+    "Zqn Newest": [("Zqn Newest", _added(1, 1)), ("Zqn Newest 2", {**_UNAIRED, **_MOVIE, **_added(10, 9)})],
+}
+# When each anime's newest announcement joined, and that announcement's type.
+_ANIME_ANNOUNCED = {
+    "Zqn Newest": (datetime(2026, 10, 9, tzinfo=UTC), "Movie"),
+    "Zqn Older": (datetime(2026, 10, 1, tzinfo=UTC), "TV"),
+    "Zqn Side": (datetime(2026, 8, 1, tzinfo=UTC), "TV"),
+    "Zqn Nothing": (None, None),
+}
+
+
+@pytest.fixture
+async def announced_set(db_session):
+    for offset, (title, media) in enumerate(_ANNOUNCED_FIXTURE.items()):
+        await _make_anime(
+            db_session, mal_id=87711 + offset, title=title, in_season=False,
+            **_added(2, len(_ANNOUNCED_FIXTURE) - offset),
+            media=[{"title": media_title, **columns} for media_title, columns in media],
+        )
+
+
+@pytest.mark.parametrize("sort_dir", [None, "asc"], ids=["desc", "asc"])
+async def test_announced_sort_is_the_newest_main_story_announcement(
+    client, user_auth_headers, announced_set, sort_dir,
+):
+    """Newest first by default; ascending reverses the announced rows, and an anime with
+    nothing announced stays last. Each hit carries the moment it is ordered by, and the type
+    of the announcement that moment dates."""
+    params = {"sort": "announced"} | ({"sort_dir": sort_dir} if sort_dir else {})
+    rows = await _fixture_rows(
+        client, user_auth_headers, url=ANIME_SEARCH_URL, expect=set(_ANIME_ANNOUNCED),
+        in_season=False, query="zqn", **params,
+    )
+    announced = list(_ANIME_ANNOUNCED)[:-1]
+    assert [row["title"] for row in rows] == [*(reversed(announced) if sort_dir else announced), "Zqn Nothing"]
+    assert {
+        row["title"]: (row["announced_at"] and datetime.fromisoformat(row["announced_at"]), row["announced_type"])
+        for row in rows
+    } == _ANIME_ANNOUNCED
+
+
+async def test_announced_sort_at_the_media_grain_is_each_announcement(client, user_auth_headers, announced_set):
+    """A main-story announcement sits at when it joined; a side story's or an aired
+    entry's does not count, however recent."""
+    titles = {title for media in _ANNOUNCED_FIXTURE.values() for title, _ in media}
+    rows = await _fixture_rows(
+        client, user_auth_headers, url=MEDIA_SEARCH_URL, expect=titles, in_season=False, query="zqn", sort="announced",
+    )
+    assert [row["title"] for row in rows][:4] == ["Zqn Newest 2", "Zqn Older 2", "Zqn Older 3", "Zqn Side 2"]
+    assert all(row["announced_at"] is None for row in rows[4:])
+
+
 async def test_aired_sort_at_the_media_grain_is_each_media_season(client, user_auth_headers, release_set):
     """One media has one season, so the media grain orders as the release key does."""
     ordered = await _ordered_fixture_titles(

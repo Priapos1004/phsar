@@ -1,6 +1,8 @@
 <script lang="ts">
+    import { page } from '$app/state';
     import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
     import JobBell from '$lib/components/JobBell.svelte';
+    import { isWithin } from '$lib/utils/filterLifecycle';
 
     interface Props {
         isAuthenticated: boolean;
@@ -19,20 +21,32 @@
     ];
 
     let visibleMenuItems = $derived(menuItems.filter((i) => !i.adminOnly || isAdmin));
+
+    const sections = [
+        { href: '/browse', label: 'Browse' },
+        { href: '/ratings', label: 'Ratings' },
+        { href: '/watchlist', label: 'Watchlist' },
+    ];
+
+    const isActive = (href: string) => isWithin(page.url.pathname, href);
 </script>
 
 <nav class="h-16 flex justify-between items-center px-8 py-4 bg-black/10 backdrop-blur">
-    <div class="flex items-end gap-6">
+    <div class="flex items-end gap-4 sm:gap-6">
         <a href="/" class="flex items-end hover:opacity-80 transition">
             <img src="/phsar_logo_transparent.png" alt="Phsar Logo" class="w-8 h-8" />
             <span class="ml-1 text-xl font-bold text-white">PHSAR</span>
         </a>
-        <a href="/ratings" class="text-white hover:text-primary/70 transition text-sm md:text-base">
-            Ratings
-        </a>
-        <a href="/watchlist" class="text-white hover:text-primary/70 transition text-sm md:text-base">
-            Watchlist
-        </a>
+        {#each sections as section (section.href)}
+            {@const active = isActive(section.href)}
+            <a
+                href={section.href}
+                class="transition text-sm md:text-base {active ? 'text-primary' : 'text-white hover:text-primary/70'}"
+                aria-current={active ? 'page' : undefined}
+            >
+                {section.label}
+            </a>
+        {/each}
     </div>
 
     {#if isAuthenticated}

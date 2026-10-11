@@ -8,10 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.browse_dao import BrowseCarouselDAO
 from app.models.browse import BrowseCarousel, BrowseFilterSet, CarouselFilterSet
-from app.models.media import (
-    AIRING_STATUS_CURRENTLY_AIRING,
-    AIRING_STATUS_FINISHED_AIRING,
-)
+from app.models.media import AIRING_STATUS_FINISHED_AIRING
 
 
 class CoreFilterSet(NamedTuple):
@@ -30,6 +27,7 @@ class CoreCarousel(NamedTuple):
 
 
 FILTER_SETS = [
+    CoreFilterSet("top-75", "Top 75%", {"top_percent": 75}),
     CoreFilterSet("not-watched", "Not watched yet", {"rated": ["none"]}),
     CoreFilterSet("on-watchlist", "On my watchlist", {"watchlisted": True}),
     CoreFilterSet("not-on-watchlist", "Not on my watchlist", {"watchlisted": False}),
@@ -49,11 +47,11 @@ CAROUSELS = [
     CoreCarousel(
         "fresh", "Fresh out of the oven",
         {"airing_status": [AIRING_STATUS_FINISHED_AIRING], "sort": "aired"},
-        250, _CATALOGUE_SETS,
+        250, [("top-75", True), *_CATALOGUE_SETS],
     ),
     CoreCarousel(
-        "airing-now", "Airing now",
-        {"airing_status": [AIRING_STATUS_CURRENTLY_AIRING], "sort": "popularity"},
+        "just-announced", "Just announced",
+        {"upcoming_main": True, "sort": "announced"},
         1000, _CATALOGUE_SETS,
     ),
     CoreCarousel(

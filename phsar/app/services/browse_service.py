@@ -23,7 +23,7 @@ browse_carousel_dao = BrowseCarouselDAO()
 
 # Each page's carousels, top to bottom.
 PAGE_LAYOUT: dict[BrowsePage, tuple[str, ...]] = {
-    BrowsePage.NEWS: ("announced-continuations", "fresh", "airing-now", "new-this-season", "next-season"),
+    BrowsePage.NEWS: ("just-announced", "fresh", "announced-continuations", "new-this-season", "next-season"),
 }
 
 

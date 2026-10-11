@@ -82,9 +82,8 @@
 							{/if}
 						</SpoilerGuard>
 						{#if $watchlistTags.get(sibling.uuid)}
-							<!-- Overlaid top-right so it doesn't shift the title alignment below.
-							     Fixed square + flex-center so the inline SVG sits dead-centre. -->
-							<div class="absolute top-1 right-1 flex size-6 items-center justify-center rounded-md bg-black/45 backdrop-blur-sm">
+							<!-- Overlaid top-right so it doesn't shift the title alignment below. -->
+							<div class={cls.coverBookmark}>
 								<WatchlistBookmarkIcon colors={[$watchlistTags.get(sibling.uuid)!.tag_color]} iconClass="size-3.5 block" />
 							</div>
 						{/if}

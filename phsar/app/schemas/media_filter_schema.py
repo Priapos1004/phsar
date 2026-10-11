@@ -34,6 +34,7 @@ class SortKey(str, Enum):
     TITLE = "title"
     RANDOM = "random"
     YOUR_RATING = "your_rating"
+    ANNOUNCED = "announced"
 
 
 class SortDir(str, Enum):

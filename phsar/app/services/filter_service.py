@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from typing import NamedTuple
 
 from sqlalchemy import distinct, func, select
@@ -10,6 +11,7 @@ from app.daos.rating_dao import RatingDAO
 from app.daos.search_filters import (
     SEASON_SORT_KEYS,
     anime_genre_majority_relation,
+    announcements_by_id,
     ranked_by,
     season_filter,
     sort_season_by_id,
@@ -44,6 +46,8 @@ class SortValues(NamedTuple):
     """Per id, what a search's sort orders a row by — only the active sort's is filled."""
     top_percent: dict[int, int]
     season: dict[int, str | None]
+    announced_at: dict[int, datetime | None]
+    announced_type: dict[int, MediaType | None]
     your_rating: dict[int, float]
 
 
@@ -53,10 +57,13 @@ async def sort_values(
     """See docs/features/search.md#sorting."""
     ranked = ranked_by(sort, query)
     if not ids:
-        return SortValues({}, {}, {})
+        return SortValues({}, {}, {}, {}, {})
+    announced = await announcements_by_id(db, ids, per_anime=per_anime) if ranked == SortKey.ANNOUNCED else {}
     return SortValues(
         await top_percents(db, ids, per_anime=per_anime) if ranked == SortKey.TOP_RATED else {},
         await sort_season_by_id(db, ranked, ids, per_anime=per_anime) if ranked in SEASON_SORT_KEYS else {},
+        {id_: at for id_, (at, _) in announced.items()},
+        {id_: kind for id_, (_, kind) in announced.items()},
         await rating_dao.your_rating_by_id(db, user_id, ids, per_anime=per_anime)
         if ranked == SortKey.YOUR_RATING else {},
     )

@@ -74,7 +74,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 
 ### 2.1 NavBar
 - Sticky bar at the top of every page except `/login` (sits inside a sticky wrapper shared with `MaintenanceBanner` — see 1.5)
-- Left: logo + "PHSAR" text linking to `/`, "Ratings" link, "Watchlist" link, "Add to Library" link → `/library/add`
+- Left: logo + "PHSAR" text linking to `/`, then "Browse", "Ratings" and "Watchlist". The section you are in — its own sub-pages included — shows in the theme colour; a detail page belongs to none
 - Right (when authenticated):
   - **JobBell** (bell icon next to the user button): polls `GET /jobs/mine` every 2s while any of your jobs is queued/running, 30s when idle. Badge count surfaces session-scoped active jobs PLUS unseen-completed jobs since the tab opened (`bellLoginAt` + `bellSeenJobs` set in sessionStorage; cleared on every logout transition via `clearBellSession()` so a relogin in the same tab doesn't inherit the previous session). **Opening the dropdown acknowledges every visible job — including still-running ones — so the badge clears even while a job is fetching** (v0.14.13); the completion toast below announces the result afterward. Clicking opens a dropdown listing up to 5 entries (active + recently-finished); a "View all in Library" tail links to `/library/add` for older jobs. Rendering is JobKind-aware:
     - `user_scrape`: `Add: "<query>"`, stage Fetching → Saving → Done with `items_done/items_total` progress. On succeeded: `Added to your library` substext and the **whole row is a link to `/library/add`** (chevron affordance; dropdown closes on click).
@@ -101,6 +101,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 | `/` | Home (search bar + placeholders) | Yes |
 | `/login?next=<path>` | Login form; optional validated post-login destination (1.1) | No |
 | `/register?next=<path>` | Registration form (requires token); `next` carried over from the login link | No |
+| `/browse?tab=news\|discover` | Browse: rows of anime (`news`, default) + a Discover placeholder (`discover`) | Yes |
 | `/search?q=<token>` | Search results (anime or media view) | Yes |
 | `/anime?uuid=<uuid>` | Anime detail (aggregated metadata + media table) | Yes |
 | `/media?uuid=<uuid>` | Media detail + rating | Yes |
@@ -119,6 +120,20 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 - **Hero banner** (InfoDiashow): Full-width rounded card showing the active theme's character pic as background (`object-cover`, per-theme focal point). A subtle bottom-up dark scrim (for legibility only, no color cast over the art) anchors the "Current Season" label and season name (e.g., "Spring 2026") bottom-left with a soft drop shadow. Pic updates reactively when the user changes theme.
 - The search bar (4.2) — the same query box, mode pills and filter sheet as the search page; submitting or applying goes to `/search`
 - Three placeholder cards: "Recommended", "Lucky Find", "Upcoming"
+
+---
+
+## 3a. Browse Page
+
+`/browse` has a **News** tab (default) and a **Discover** tab, which shows "Will come soon :-)".
+
+**News** is a column of rows in the order the backend lays them out, each a saved search of up to 25 anime:
+- A row loads when you scroll near it, showing a skeleton until then; an empty one says "Nothing here right now."
+- The row's title opens `/search` with that row's search and sort. A row pinned to one season names it in a pill beside the title ("Fall 2026").
+- The row scrolls sideways (snapping per tile). On a mouse or trackpad, round arrows page it by about a screen width and appear only where there is more to scroll.
+- A row built from your own ratings or watchlist shows a **guest** a card saying guest accounts have neither; the rest load.
+
+**Tiles:** cover, title, the watchlist bookmark (as in 5.2), and the rated-coverage marking of 5.3 as an outline, gold and obsidian also tinting the title area. Under the title, one line shows the value the row is ordered by — e.g. "Announced Oct 10", a season, a vote count. Under the newest-announcement order, a tile names the announcement's type on its cover ("Movie") when it isn't the franchise's usual kind. Clicking a tile opens the anime page (7.6 for the way back).
 
 ---
 
@@ -153,7 +168,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 
 **Returning from a card** (7.6) re-expands the list far enough to render the one you opened before scrolling to it, so a result deep in the list doesn't need its "Show More" clicks repeated. Expanding issues no request — the results are already in hand. An expansion wider than that card needs is left alone.
 
-**No token** (`/search` with no `q` — the navbar link, or the "Browse anime" buttons on the ratings/watchlist empty states): the page runs an **empty search** (no query, no filters) in the user's default view, so it lands on a browsable, ranked list (the backend orders an empty query by weighted score) instead of a blank page. Typing a query / applying filters then navigates to a normal `?q=<token>` search.
+**No token** (`/search` with no `q`): the page runs an **empty search** (no query, no filters) in the user's default view, so it lands on a browsable, ranked list (the backend orders an empty query by weighted score) instead of a blank page. Typing a query / applying filters then navigates to a normal `?q=<token>` search.
 9. If no search performed yet: "Start searching!!!"
 
 **No-query ranking:** With no query (browsing, or filters only — e.g. arriving from a studio link), results are ordered by the vote-weighted MAL score each card shows, highest first, with unscored anime last. Filters choose which anime appear and never change a card's score or where it sits relative to the others, so a filtered list reads in the same order as the unfiltered one.
@@ -382,6 +397,7 @@ can rate.
   - `?from=ratings` → "Back to ratings" (a rated card or table row in the `/ratings` list → `/ratings`)
   - `?from=ratings-stats` → "Back to statistics" (a You-vs-MAL scatter point **or** an Activity score-trend point → `/ratings?tab=stats`, landing back on the section you came from)
   - `?from=watchlist` → "Back to watchlist" (a `/watchlist` entry → its media/anime detail → `/watchlist`)
+  - `?from=browse` → "Back to browse" (a Browse tile → `/browse`, scrolled to that row and the row to that tile)
   - neither → no back button (direct-URL arrivals stay clean)
 - These flags propagate across the entire anime↔media jump chain (anime → media tile, media → anime link, related-media carousel) via `buildDetailHref`'s options bag, so a deep dive like curation → anime → media → sibling stays linkable back to the origin
 - The set above is closed. An unrecognised `from` falls through to the search token if one is present, and otherwise renders no back button — never a broken one. `lib/utils/navigation.ts` owns the union and says what adding to it touches
@@ -395,7 +411,7 @@ can rate.
 
 ### 8.1 Tab Navigation
 - Two tabs via a `?tab=` query param: **Ratings** (`ratings`, default) and **Statistics** (`stats`). An unknown/missing value falls back to `ratings`.
-- Page-level states cover both tabs: a loading state while the fetch is in flight, an error state with a retry button on failure, and an empty state ("You haven't rated anything yet" → link to search) when the user has no ratings.
+- Page-level states cover both tabs: a loading state while the fetch is in flight, an error state with a retry button on failure, and an empty state ("You haven't rated anything yet" → link to Browse) when the user has no ratings.
 - Filter state survives a hard refresh, a browser back/forward, and a round-trip to an anime or media detail page (open a card, press back — the genre filter is still applied, and you land back on the card, per 7.6). Switching between the two tabs preserves it. Leaving `/ratings` for any *other* page (search, settings, the watchlist) resets the value filters, keeping the chosen view, grain and stats section. State is per browser tab and is discarded on logout or a user switch.
 
 ### 8.2 Ratings List Tab
@@ -688,12 +704,13 @@ own.
 | `/filters/genres` | GET | Genre-badge tooltips (cached once per session by the `genres` store) |
 | `/filters/create-token` | POST | Search submission |
 | `/filters/verify-token` | POST | Search page load |
-| `/search/anime` | GET | Anime-view search after token verification (with the token's `sort`/`sort_dir`, and `limit=51` so a full page reads "50+") |
+| `/browse/news` | GET | Browse page load (News tab): its rows, each with the search it runs |
+| `/search/anime` | GET | Anime-view search after token verification (with the token's `sort`/`sort_dir`, and `limit=51` so a full page reads "50+"); each Browse row's search (`limit=25`); the Completion tab's search-to-mark (12.9) |
 | `/search/media` | GET | Media-view search after token verification (same params) |
 | `/media/anime/{uuid}` | GET | Anime detail page load |
 | `/media/{uuid}` | GET | Media detail page load |
 | `/ratings/scores` | GET | The `/ratings` page, the watchlist Statistics subtab, and the rating-consistency panel — one shared session-cached fetch (`ratingScores` store), invalidated by any rating write |
-| `/ratings/coverage` | GET | `/search` (anime view) and `/ratings` on mount, when stale — per-anime rated-coverage tiers (`ratingCoverage` store) for the card marking in 5.3 |
+| `/ratings/coverage` | GET | `/search` (anime view), `/ratings` and `/browse` on mount, when stale — per-anime rated-coverage tiers (`ratingCoverage` store) for the card marking in 5.3 |
 | `/ratings/media/{uuid}` | GET | Media detail page load (fetch user's rating) |
 | `/ratings/anime/{uuid}` | GET | Anime detail page load (fetch user's ratings for all media) |
 | `/ratings/media/{uuid}` | PUT | Create or update a rating |

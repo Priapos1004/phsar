@@ -60,9 +60,13 @@ side down to one `data-focus-uuid` attribute per component. A `focus` already on
 URL wins, which is what makes a deep dive return to the anime card rather than the
 media one.
 
-A page must render the target before it can centre it. Only `/search` has to act on
-that: its whole result set arrives in one request and is sliced behind "Show More",
-so it expands far enough first. `scrollFocus.ts` argues the timing, which is the
+A list that can show the same anime twice on one page builds one, since the uuid alone
+would land on the first — `carouselFocus` in `scrollFocus.ts`; `BrowseCarousel.svelte`
+says how its row lands on the tile.
+
+A page must render the target before it can centre it, so a list that renders lazily or
+in slices acts first: `/search` slices its one response behind "Show More" and expands
+far enough, and the Browse row a focus names loads at once. `scrollFocus.ts` argues the timing, which is the
 part that is not obvious.
 
 ## The controls

@@ -18,7 +18,8 @@ export function rowClickNavigate(e: MouseEvent, href: string): void {
 /** Closed set of non-search origin markers that detail pages handle.
  * Extend this union (and BackLink.svelte's `target` switch) when a new
  * entry point needs a labeled back button. */
-export type DetailOrigin = 'library' | 'job' | 'completion' | 'curation' | 'ratings' | 'ratings-stats' | 'watchlist';
+export type DetailOrigin =
+    | 'library' | 'job' | 'completion' | 'curation' | 'ratings' | 'ratings-stats' | 'watchlist' | 'browse';
 
 export interface DetailHrefOptions {
     /** Search token to propagate so the detail page renders "Back to search". */

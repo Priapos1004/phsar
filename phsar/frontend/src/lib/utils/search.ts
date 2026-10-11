@@ -5,6 +5,8 @@ import {
 	formatDurationCompact,
 	formatNumber,
 	formatRelationType,
+	formatMonthDay,
+	formatScoreWithStep,
 	watchStatusLabel,
 } from '$lib/utils/formatString';
 
@@ -14,7 +16,7 @@ export type MatchMode = 'any' | 'all';
 export type RatedState = 'none' | 'in_progress' | 'on_hold' | 'dropped' | 'main' | 'all' | 'completed';
 export type SortKey =
 	| 'relevance' | 'top_rated' | 'score' | 'popularity' | 'added' | 'release' | 'aired' | 'title' | 'random'
-	| 'your_rating';
+	| 'your_rating' | 'announced';
 export type SortDir = 'asc' | 'desc';
 
 /** The search's parameters, as the token carries them. A token verifies to every field,
@@ -147,6 +149,10 @@ export const SORT_OPTIONS: SortOption[] = [
 		dir: { desc: 'Newest first', asc: 'Oldest first' },
 	},
 	{
+		value: 'announced', label: 'Newest announcement', hint: 'When its latest announcement was added',
+		dir: { desc: 'Newest first', asc: 'Oldest first' },
+	},
+	{
 		value: 'release', label: 'Release date', hint: 'Next announced, else last aired season',
 		dir: { asc: 'Oldest first', desc: 'Newest first' },
 	},
@@ -180,6 +186,44 @@ export function effectiveSort(params: MediaSearchFilters): { sort: SortKey; opti
 	if (!option.dir) return { sort, option, dir: null };
 	const dir = requested === 'relevance' ? undefined : params.sort_dir;
 	return { sort, option, dir: dir ?? (ASCENDING_SORTS.includes(sort) ? 'asc' : 'desc') };
+}
+
+/** A poster tile's one line: what its list is ordered by, where the tile has no other
+ * place for it. `sort` is the order the results are actually in (`effectiveSort`). */
+export function sortLine(
+	sort: SortKey, row: AnimeSearchResult | MediaSearchResult, ratingStep: number,
+): string | null {
+	const [score, votes] = 'avg_score' in row ? [row.avg_score, row.avg_scored_by] : [row.score, row.scored_by];
+	switch (sort) {
+		case 'top_rated':
+			return row.score_top_percent != null ? `Top ${row.score_top_percent}%` : null;
+		case 'score':
+			return score != null ? `⭐ ${score}` : null;
+		case 'popularity':
+			return `${formatNumber(votes)} votes`;
+		case 'added':
+			return `Added ${formatMonthDay(row.added_at)}`;
+		case 'announced':
+			return row.announced_at ? `Announced ${formatMonthDay(row.announced_at)}` : null;
+		case 'release':
+		case 'aired':
+			return row.sort_season ?? null;
+		case 'your_rating':
+			return row.your_rating != null ? `You: ${formatScoreWithStep(row.your_rating, ratingStep)}` : null;
+		default:
+			return null;
+	}
+}
+
+/** The announced entry's type, when it isn't what the franchise usually is — a movie for a
+ * TV show — and so worth naming on the tile. Usual is the most common type over the
+ * anime's media; an ONA continuing an ONA series names nothing. */
+export function unusualAnnouncedType(row: AnimeSearchResult): string | null {
+	if (!row.announced_type) return null;
+	const [usual] = [...row.media_types].sort(
+		(a, b) => b.count - a.count || a.media_type.localeCompare(b.media_type),
+	);
+	return row.announced_type === usual?.media_type ? null : row.announced_type;
 }
 
 /** The applied search with a new query and mode. A different query starts from Best match:

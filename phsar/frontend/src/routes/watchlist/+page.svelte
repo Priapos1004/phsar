@@ -131,7 +131,7 @@
 			<div class="py-12 text-center space-y-3">
 				<p class="text-white/70">Guest accounts can't save to a watchlist.</p>
 				<p class="text-white/50 text-sm">Sign in with your own account to bookmark anime and plan what to watch next.</p>
-				<Button href="/search">Browse anime</Button>
+				<Button href="/browse">Browse anime</Button>
 			</div>
 		{/if}
 	{:else}
@@ -152,7 +152,7 @@
 				<div class="py-12 text-center space-y-3">
 					<p class="text-white/70">Your watchlist is empty.</p>
 					<p class="text-white/50 text-sm">Bookmark anime and media to plan what to watch next.</p>
-					<Button href="/search">Browse anime</Button>
+					<Button href="/browse">Browse anime</Button>
 				</div>
 			{:else if items}
 				<WatchlistListTab {items} {nameLanguage} />

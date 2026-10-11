@@ -62,6 +62,11 @@ export const badgeAgeRating = `${badgeAgeRatingColor} ${badgeSize}`;
 // Card glass effect
 export const cardGlass = 'bg-card/80 backdrop-blur';
 
+// The watchlist bookmark's backing square, top-right on a cover. Fixed square + flex
+// centre so the inline SVG sits dead-centre.
+export const coverBookmark =
+	'absolute top-1 right-1 flex size-6 items-center justify-center rounded-md bg-black/45 backdrop-blur-sm';
+
 // Read-only score circle (the rating shown on the media page + the share card).
 // Size is composed at the call site; the editable ScoreDial keeps its own chrome
 // since it wraps an input.

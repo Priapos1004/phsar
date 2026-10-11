@@ -91,7 +91,7 @@
 		<div class="py-12 text-center space-y-3">
 			<p class="text-white/70">You haven't rated anything yet.</p>
 			<p class="text-white/50 text-sm">Find a show and rate it to start building your collection.</p>
-			<Button href="/search">Browse anime</Button>
+			<Button href="/browse">Browse anime</Button>
 		</div>
 	{:else if items}
 		<!-- Ratings tab stays mounted (preserves list scroll/state); Statistics mounts only

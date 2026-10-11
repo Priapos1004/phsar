@@ -45,6 +45,22 @@ export function hrefWithFocus(base: string, uuid: string | null | undefined): st
 }
 
 /**
+ * The focus a browse carousel's tile carries: the carousel and the anime, since one
+ * anime can sit in several carousels on the page and the uuid alone would land on the
+ * first. The tile's `data-focus-uuid` holds the same value.
+ */
+export function carouselFocus(key: string, uuid: string): string {
+	return `${key}:${uuid}`;
+}
+
+/** A browse focus split back into its carousel and, for a tile, the anime — a bare
+ *  carousel key names the row alone. */
+export function splitCarouselFocus(focus: string): { key: string; uuid: string | null } {
+	const [key, uuid] = focus.split(':');
+	return { key, uuid: uuid ?? null };
+}
+
+/**
  * How far a "Show More" list must be expanded to render `index`.
  *
  * Floored at `current` so a return never *shrinks* a list the user had already
@@ -93,7 +109,12 @@ function flash(el: HTMLElement): void {
 	el.addEventListener('animationend', () => el.classList.remove(FLASH_CLASS), { once: true });
 }
 
-/** Keep `el` centred until the page has stopped moving under it, then let go. */
+/** Keep `el` centred until the page has stopped moving under it, then let go.
+ *
+ *  Vertical only: every focus return runs through here, so a list inside an
+ *  `overflow-x-auto` wrapper — the ratings, watchlist and jobs tables — would be scrolled
+ *  to its middle, and with the pin watching only `window.scrollY` a sideways swipe would
+ *  be undone. A sideways row centres its own target first (`BrowseCarousel`). */
 function pinCentred(el: HTMLElement): void {
 	const until = Date.now() + PIN_MS;
 	el.scrollIntoView({ block: 'center' });

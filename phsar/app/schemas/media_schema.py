@@ -63,6 +63,8 @@ class MediaSearchResult(MediaConnected):
     # Each only under the sort that orders by it (`filter_service.sort_values`).
     score_top_percent: int | None = None
     sort_season: str | None = None
+    announced_at: datetime | None = None
+    announced_type: MediaType | None = None
     your_rating: float | None = None
 
 

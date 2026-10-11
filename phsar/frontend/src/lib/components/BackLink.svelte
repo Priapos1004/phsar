@@ -28,6 +28,7 @@
 		if (fromParam === 'ratings') return { href: withFocus('/ratings'), label: 'Back to ratings' };
 		if (fromParam === 'ratings-stats') return { href: '/ratings?tab=stats', label: 'Back to statistics' };
 		if (fromParam === 'watchlist') return { href: withFocus('/watchlist'), label: 'Back to watchlist' };
+		if (fromParam === 'browse') return { href: withFocus('/browse'), label: 'Back to browse' };
 		if (fromParam === 'library') return { href: '/library/add', label: 'Back to library' };
 		if (searchToken) return { href: withFocus(`/search?q=${encodeURIComponent(searchToken)}`), label: 'Back to search' };
 		return null;

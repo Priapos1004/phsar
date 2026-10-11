@@ -39,7 +39,7 @@ export const SECTION_FILTERS: readonly SectionFilter[] = [
 ];
 
 /** Exact match or a `/`-delimited child, so `/ratings` never matches `/ratings-archive`. */
-function isWithin(pathname: string, prefix: string): boolean {
+export function isWithin(pathname: string, prefix: string): boolean {
 	return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
 

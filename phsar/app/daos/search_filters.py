@@ -18,6 +18,7 @@ from sqlalchemy import (
     select,
     tuple_,
 )
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -33,6 +34,7 @@ from app.models.media import (
     SEASON_ORDER,
     SEASONS_IN_ORDER,
     Media,
+    MediaType,
     SeasonType,
 )
 from app.models.media_genre import MediaGenre
@@ -674,6 +676,22 @@ def _aired_key(*, having: bool):
     )
 
 
+def _announced_key(*, having: bool):
+    """The newest-announcement sort's key, per media or, with `having`, per anime:
+    docs/features/search.md#sorting."""
+    if not having:
+        return case((ANNOUNCED_MAIN_STORY, Media.created_at))
+    return func.max(Media.created_at).filter(ANNOUNCED_MAIN_STORY)
+
+
+def _announced_type(*, having: bool):
+    """The media type of the announcement `_announced_key` dates: the newest-added one."""
+    if not having:
+        return case((ANNOUNCED_MAIN_STORY, Media.media_type))
+    newest_first = aggregate_order_by(Media.media_type, Media.created_at.desc(), Media.id.desc())
+    return func.array_agg(newest_first).filter(ANNOUNCED_MAIN_STORY)[1]
+
+
 # The season-timeline sorts and their keys: one table for the ORDER BY and the fill, so the
 # season a row shows is the one it is ordered by.
 SEASON_SORT_KEYS = {SortKey.RELEASE: _release_key, SortKey.AIRED: _aired_key}
@@ -743,6 +761,8 @@ def sort_order(
             key = model.created_at
         case SortKey.RELEASE | SortKey.AIRED:
             key = SEASON_SORT_KEYS[sort](having=having)
+        case SortKey.ANNOUNCED:
+            key = _announced_key(having=having)
         case SortKey.TITLE:
             key = display_title(model, name_language)
         case SortKey.RANDOM:
@@ -757,14 +777,28 @@ def sort_order(
     return [direction(key).nulls_last(), weighted.desc().nulls_last(), direction(model.id)]
 
 
+def per_owner(*columns, ids: list[int], per_anime: bool):
+    """`(id, *columns)` for each of `ids` — an anime over its media, grouped, or a media
+    alone: the shape every value read over a page of hits takes."""
+    owner = Media.anime_id if per_anime else Media.id
+    stmt = select(owner, *columns).select_from(Media).where(owner.in_(ids))
+    return stmt.group_by(owner) if per_anime else stmt
+
+
+async def announcements_by_id(
+    db: AsyncSession, ids: list[int], *, per_anime: bool,
+) -> dict[int, tuple[datetime | None, MediaType | None]]:
+    """Each of `ids`' newest-announcement key and the type of the announcement it dates."""
+    stmt = per_owner(_announced_key(having=per_anime), _announced_type(having=per_anime), ids=ids, per_anime=per_anime)
+    return {id_: (at, kind) for id_, at, kind in (await db.execute(stmt)).tuples().all()}
+
+
 async def sort_season_by_id(
     db: AsyncSession, sort: SortKey, ids: list[int], *, per_anime: bool,
 ) -> dict[int, str | None]:
     """The season each of `ids` sits at under a `SEASON_SORT_KEYS` sort."""
-    owner = Media.anime_id if per_anime else Media.id
-    stmt = select(owner, SEASON_SORT_KEYS[sort](having=per_anime)).where(owner.in_(ids))
-    rows = await db.execute(stmt.group_by(owner) if per_anime else stmt)
-    return {id_: season_label(key) for id_, key in rows.all()}
+    stmt = per_owner(SEASON_SORT_KEYS[sort](having=per_anime), ids=ids, per_anime=per_anime)
+    return {id_: season_label(key) for id_, key in (await db.execute(stmt)).tuples().all()}
 
 
 async def fetch_search_results(db: AsyncSession, *passes, order: list | None = None) -> list:
