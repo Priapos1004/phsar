@@ -132,7 +132,8 @@ creation-time `label` which becomes a filename suffix.
 
 The UI requires the admin's username as a confirmation string. A pre-restore
 snapshot is taken automatically, then `pg_restore --clean --if-exists --no-owner
---no-privileges` runs with maintenance active.
+--no-privileges` runs with maintenance active; a successful one re-syncs the browse
+definitions before it lifts ([browse](browse.md#definitions-are-seeded-layouts-are-code)).
 
 On success the pre-restore's sidecar is stamped with `restored_to`, and the current
 row derives a "Previous state saved as …" link from it. The persisted `restored_to`

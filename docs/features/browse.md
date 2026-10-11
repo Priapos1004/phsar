@@ -40,8 +40,7 @@ says why. Every seeded carousel is run as a real search by
 ## Definitions are seeded, layouts are code
 
 The core carousels and filter sets are a repo list, synced by key on every boot, and
-again after a backup restore: the page looks carousels up by key, so a restored set would
-miss one added since the dump.
+again after a backup restore, since the page looks carousels up by key.
 Unlike the genre seeder, whatever the list drops is deleted, and links are updated in
 place, so an unchanged link keeps its row. Which carousels a page shows, top to
 bottom, is `PAGE_LAYOUT` in the service — a constant rather than a table, since no
