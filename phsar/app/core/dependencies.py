@@ -1,9 +1,9 @@
 import secrets
 from collections.abc import AsyncGenerator
 
+import jwt
 from fastapi import Depends, Header
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -33,11 +33,12 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db), token: str = Depends(oauth2_scheme)
 ) -> Users:
     try:
-        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise CouldNotValidateCredentialsError()
-    except JWTError:
+        # PyJWT rejects a non-string sub on its own; `require` adds the missing one.
+        payload = jwt.decode(
+            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM], options={"require": ["sub"]}
+        )
+        username: str = payload["sub"]
+    except jwt.InvalidTokenError:
         raise CouldNotValidateCredentialsError() from None
     user = await user_dao.get_by_username(db, username)
     if user is None:
@@ -89,11 +90,14 @@ def verify_url_token(token: str) -> dict:
         payload = jwt.decode(
             token,
             settings.SEARCH_SECRET_KEY,
-            algorithms=[settings.ALGORITHM]
+            algorithms=[settings.ALGORITHM],
+            # Every issued token carries ver, so one without it is malformed
+            # rather than a version mismatch.
+            options={"require": ["ver"]},
         )
 
         # Check API version
-        payload_version = payload.get("ver")
+        payload_version = payload["ver"]
         if payload_version != settings.CURRENT_SEARCH_API_VERSION:
             raise TokenVersionMismatchError(payload_version)
 
@@ -104,5 +108,5 @@ def verify_url_token(token: str) -> dict:
 
         return decompress_and_decode(compressed_data)
 
-    except JWTError:
+    except jwt.InvalidTokenError:
         raise MalformedTokenError() from None
