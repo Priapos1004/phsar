@@ -2,9 +2,11 @@ import { DETAIL_TYPES } from '$lib/utils/navigation';
 import { clearRatingsFilter } from '$lib/stores/ratingsFilter';
 import { clearWatchlistFilter } from '$lib/stores/watchlistFilter';
 import { clearJobsFilter } from '$lib/stores/adminJobsFilter';
+import { clearBrowseRows } from '$lib/stores/browseRows';
+import { clearBrowseRefinements } from '$lib/stores/browseRefinements';
 
 /**
- * When a section's list filter is reset.
+ * When a section's list state — its filters, and any cache of what it loaded — is reset.
  *
  * The rule: **clear section S when navigating to a page that is neither inside
  * S nor a detail page.** A detail page is a detour, not a destination — the
@@ -27,19 +29,26 @@ import { clearJobsFilter } from '$lib/stores/adminJobsFilter';
 /** Detour routes, derived from the detail grains so the pair is stated once. */
 const DETAIL_ROUTES = DETAIL_TYPES.map((type) => `/${type}`);
 
-interface SectionFilter {
+interface SectionReset {
 	prefix: string;
 	clear: () => void;
 }
 
-export const SECTION_FILTERS: readonly SectionFilter[] = [
+export const SECTION_RESETS: readonly SectionReset[] = [
 	{ prefix: '/ratings', clear: clearRatingsFilter },
 	{ prefix: '/watchlist', clear: clearWatchlistFilter },
 	{ prefix: '/admin', clear: clearJobsFilter },
+	{
+		prefix: '/browse',
+		clear: () => {
+			clearBrowseRows();
+			clearBrowseRefinements();
+		},
+	},
 ];
 
 /** Exact match or a `/`-delimited child, so `/ratings` never matches `/ratings-archive`. */
-function isWithin(pathname: string, prefix: string): boolean {
+export function isWithin(pathname: string, prefix: string): boolean {
 	return pathname === prefix || pathname.startsWith(`${prefix}/`);
 }
 
@@ -48,9 +57,9 @@ export function isDetailRoute(pathname: string): boolean {
 }
 
 /** The sections a navigation to `to` should reset. */
-export function sectionsToClearFor(to: string): readonly SectionFilter[] {
+export function sectionsToClearFor(to: string): readonly SectionReset[] {
 	if (isDetailRoute(to)) return [];
-	return SECTION_FILTERS.filter((section) => !isWithin(to, section.prefix));
+	return SECTION_RESETS.filter((section) => !isWithin(to, section.prefix));
 }
 
 export function applyFilterLifecycle(to: string): void {

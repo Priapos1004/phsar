@@ -1,8 +1,8 @@
 import logging
 from datetime import timedelta
 
+import jwt
 import pytest
-from jose import jwt
 
 from app.core.config import settings
 from app.core.security import create_access_token
@@ -199,5 +199,17 @@ async def test_refresh_with_expired_token(client, create_user_with_role):
     refresh_resp = await client.post(
         "/auth/refresh",
         headers={"Authorization": f"Bearer {expired_token}"},
+    )
+    assert refresh_resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_validly_signed_token_without_sub_is_rejected(client):
+    # Signed with the real key, so only the claim check stands between it and a
+    # user lookup on a missing username.
+    token = create_access_token(data={"role": RoleType.User.value})
+    refresh_resp = await client.post(
+        "/auth/refresh",
+        headers={"Authorization": f"Bearer {token}"},
     )
     assert refresh_resp.status_code == 401

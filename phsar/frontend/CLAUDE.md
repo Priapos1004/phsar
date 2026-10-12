@@ -16,6 +16,7 @@ the way it is sits in the page itself.
 | `/ratings`, `/watchlist` | a `?tab=` switcher over a list tab and a Statistics tab. The page owns the fetches, so a tab switch never refetches. Whether a tab stays mounted or remounts differs between the two on purpose — each page states which and why |
 | `/admin` | `?tab=` again, tabs eager-rendered and kept mounted. `AdminTabKey` in `lib/components/admin/types.ts` lists what adding one touches |
 | `/admin/jobs/[uuid]` | the sweep audit trail, rendered per `result_summary` version — the versions themselves are in [jobs](../../docs/features/jobs.md) |
+| `/browse` | rows of anime; `BrowseCarousel.svelte` states why a row loads lazily. `/browse/[key]` and `/search/all` are the see-all pages, both over `SeeAllResults.svelte` |
 | `/search` | `SearchBar.svelte`'s header states the one-source rule the page, the sheet and the chips follow; what survives an anime↔media switch is `carryAcrossView` in `lib/utils/search.ts` |
 | `/library/add` | enqueues a scrape; the navbar bell owns everything after that |
 | `/health` | liveness for the container platform |
@@ -38,7 +39,8 @@ that carry an area's reasoning; it is not an inventory of the tree.
 | Watchlist | `WatchlistBookmarkIcon` (the mask gradient), `WatchlistDialog`, `BulkWatchlistDialog`, and `watchlist/` for the page's own tabs |
 | Admin | `admin/`, plus `BackupsCard`, `MergeCandidatesCard`, `SplitCandidatesCard`, `DeleteCandidatesCard`. The job-detail page argues its own case in `src/routes/admin/jobs/[uuid]/+page.svelte` |
 | Session + status | `SessionTimeoutBanner` with `$lib/utils/sessionTimeout.ts`, `MaintenanceBanner`, `JobBell`, `Toast`/`ToastHost` |
-| Search | `SearchBar.svelte` (the staged filter sheet), `DoubleRangeSlider.svelte` (the step grid, and why it writes only on commit), and `$lib/utils/search.ts` for the filter tables, the sort options, the chips and the anime↔media carry |
+| Browse | `BrowseCarousel.svelte` (one row: lazy load, arrows, the guest card, the return to a tile), `PosterCard.svelte` (the tile, its coverage marking, and its line and badge from the list's sort), `SeeAllResults.svelte` (a see-all's grid and its return to a tile), `stores/browseRefinements.ts` (a see-all's toggles and the groups they form), and `sortLine` / `unusualAnnouncedType` in `$lib/utils/search.ts` |
+| Search | `SearchBar.svelte` (the staged filter sheet), `SortControl.svelte` (the sort menu the search and the see-alls share), `DoubleRangeSlider.svelte` (the step grid, and why it writes only on commit), and `$lib/utils/search.ts` for the filter tables, the sort options, the chips and the anime↔media carry |
 
 Several of these render a verdict the backend owns — restorability, cycle membership,
 merge, split and delete candidates, sibling order — and must not recompute it; the relevant
@@ -54,7 +56,7 @@ deliberate absence of a global 401 handler, both argued at the throw site.
 
 | Area | Start here |
 |---|---|
-| Stores | `stores/` — each file's header carries its own lifecycle. The one that catches people is `ratingScores.ts`: a real cache, so every rating write has to invalidate it. `ratingCoverage.ts` hangs off that same call rather than adding a second list of sites. `filterOptions.ts` is the opposite case — catalogue-global, and deliberately survives a logout |
+| Stores | `stores/` — each file's header carries its own lifecycle. The one that catches people is `ratingScores.ts`: a real cache, so every rating write has to invalidate it. Caches derived from the ratings hang off that same call — its body is the list — and caches over the watchlist off `refreshWatchlist`, rather than adding a second list of sites. `filterOptions.ts` is the opposite case — catalogue-global, and deliberately survives a logout |
 | Filter persistence | `stores/persistedFilter.ts` — the factory, its version envelope, and the reset/snapshot/restore registry — under every section's filter store. `utils/filterLifecycle.ts` decides *when* a section resets; [navigation](../../docs/features/navigation.md) covers the rule |
 | Per-user cleanup | `clearPerUserStores` in `routes/+layout.svelte`; anything keyed to *which* user belongs in it |
 | Formatting | `utils/formatString.ts`, where the score rounding and step-awareness rules live |

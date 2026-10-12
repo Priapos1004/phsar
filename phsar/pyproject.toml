@@ -54,5 +54,5 @@ warn_redundant_casts = true
 # Imports app/ makes that carry no types. mypy errors on a new one, so this list
 # cannot silently fall behind.
 [[tool.mypy.overrides]]
-module = ["pgvector.*", "jose.*", "passlib.*"]
+module = ["pgvector.*", "passlib.*"]
 ignore_missing_imports = true

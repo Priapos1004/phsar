@@ -29,6 +29,7 @@ phsar/
 │   │   ├── anime_dao.py
 │   │   ├── base_dao.py
 │   │   ├── base_mal_id_dao.py
+│   │   ├── browse_dao.py
 │   │   ├── delete_candidate_dao.py
 │   │   ├── genre_dao.py
 │   │   ├── job_dao.py
@@ -54,6 +55,7 @@ phsar/
 │   │   ├── anime_freshness.py
 │   │   ├── anime_search.py
 │   │   ├── base.py
+│   │   ├── browse.py
 │   │   ├── delete_candidate.py
 │   │   ├── genre.py
 │   │   ├── job.py
@@ -84,6 +86,7 @@ phsar/
 │   │   ├── admin_merge.py
 │   │   ├── admin_split.py
 │   │   ├── auth.py
+│   │   ├── browse.py
 │   │   ├── filters.py
 │   │   ├── jobs.py
 │   │   ├── library.py
@@ -100,6 +103,7 @@ phsar/
 │   │   ├── anime_schema.py
 │   │   ├── auth_schema.py
 │   │   ├── backup_schema.py
+│   │   ├── browse_schema.py
 │   │   ├── common_schema.py
 │   │   ├── genre_schema.py
 │   │   ├── job_schema.py
@@ -113,6 +117,7 @@ phsar/
 │   │   └── watchlist_schema.py
 │   ├── seeders/
 │   │   ├── anime_title_backfiller.py
+│   │   ├── browse_seeder.py
 │   │   ├── embedding_backfiller.py
 │   │   ├── genre_seeder.py
 │   │   ├── media_seeder.py
@@ -130,6 +135,7 @@ phsar/
 │       ├── auth_service.py
 │       ├── backup_dispatcher.py
 │       ├── backup_service.py
+│       ├── browse_service.py
 │       ├── completion_service.py
 │       ├── delete_candidate_service.py
 │       ├── export_service.py
@@ -180,6 +186,7 @@ phsar/
 │   │   │   │   ├── AttributeRadar.svelte
 │   │   │   │   ├── BackLink.svelte
 │   │   │   │   ├── BackupsCard.svelte
+│   │   │   │   ├── BrowseCarousel.svelte
 │   │   │   │   ├── admin/
 │   │   │   │   │   ├── AdminJobsLogTab.svelte
 │   │   │   │   │   ├── AdminOverviewTab.svelte
@@ -213,6 +220,7 @@ phsar/
 │   │   │   │   ├── NavBar.svelte
 │   │   │   │   ├── Notice.svelte
 │   │   │   │   ├── PillToggle.svelte
+│   │   │   │   ├── PosterCard.svelte
 │   │   │   │   ├── PriorityPicker.svelte
 │   │   │   │   ├── RatingCard.svelte
 │   │   │   │   ├── RatingNeighbors.svelte
@@ -239,6 +247,7 @@ phsar/
 │   │   │   │   ├── ScoreDial.svelte
 │   │   │   │   ├── ScorePercentile.svelte
 │   │   │   │   ├── ScrollableCard.svelte
+│   │   │   │   ├── SeeAllResults.svelte
 │   │   │   │   ├── SegmentedControl.svelte
 │   │   │   │   ├── SessionTimeoutBanner.svelte
 │   │   │   │   ├── ShareButton.svelte
@@ -248,6 +257,7 @@ phsar/
 │   │   │   │   ├── SearchBar.svelte
 │   │   │   │   ├── SearchLinks.svelte
 │   │   │   │   ├── SkeletonMediaInfo.svelte
+│   │   │   │   ├── SortControl.svelte
 │   │   │   │   ├── SplitCandidatesCard.svelte
 │   │   │   │   ├── TabNav.svelte
 │   │   │   │   ├── TagBarLabel.svelte
@@ -293,6 +303,8 @@ phsar/
 │   │   │   │   ├── adminJobsFilter.ts
 │   │   │   │   ├── auth.ts
 │   │   │   │   ├── bell-session.ts
+│   │   │   │   ├── browseRefinements.ts
+│   │   │   │   ├── browseRows.ts
 │   │   │   │   ├── filterOptions.ts
 │   │   │   │   ├── genres.ts
 │   │   │   │   ├── jobs.ts
@@ -356,6 +368,10 @@ phsar/
 │   │   │   │           └── +page.svelte
 │   │   │   ├── anime/
 │   │   │   │   └── +page.svelte
+│   │   │   ├── browse/
+│   │   │   │   ├── +page.svelte
+│   │   │   │   └── [key]/
+│   │   │   │       └── +page.svelte
 │   │   │   ├── health/
 │   │   │   │   └── +server.ts
 │   │   │   ├── library/
@@ -370,7 +386,9 @@ phsar/
 │   │   │   ├── register/
 │   │   │   │   └── +page.svelte
 │   │   │   ├── search/
-│   │   │   │   └── +page.svelte
+│   │   │   │   ├── +page.svelte
+│   │   │   │   └── all/
+│   │   │   │       └── +page.svelte
 │   │   │   ├── settings/
 │   │   │   │   └── +page.svelte
 │   │   │   └── watchlist/
@@ -389,6 +407,9 @@ phsar/
 │   │       ├── auth-store.test.ts
 │   │       ├── backup-status.test.ts
 │   │       ├── backups-card.test.ts
+│   │       ├── browse-carousel.test.ts
+│   │       ├── browse-refinements.test.ts
+│   │       ├── browse-rows.test.ts
 │   │       ├── bulk-watchlist-dialog.test.ts
 │   │       ├── chart-theme.test.ts
 │   │       ├── click-through.test.ts
@@ -412,6 +433,7 @@ phsar/
 │   │       ├── navbar.test.ts
 │   │       ├── navigation.test.ts
 │   │       ├── persisted-filter.test.ts
+│   │       ├── poster-card.test.ts
 │   │       ├── rating-attributes.test.ts
 │   │       ├── rating-coverage-store.test.ts
 │   │       ├── rating-coverage.test.ts
@@ -483,6 +505,7 @@ phsar/
     │   ├── test_admin_upcoming.py
     │   ├── test_anime_detail.py
     │   ├── test_auth.py
+    │   ├── test_browse.py
     │   ├── test_compression.py
     │   ├── test_filters_genres.py
     │   ├── test_filters_options.py
@@ -506,6 +529,7 @@ phsar/
     │   ├── test_user_settings.py
     │   └── test_watchlist.py
     ├── seeders/
+    │   ├── test_browse_seeder.py
     │   ├── test_embedding_backfiller.py
     │   ├── test_relation_backfiller.py
     │   └── test_split_candidate_backfiller.py

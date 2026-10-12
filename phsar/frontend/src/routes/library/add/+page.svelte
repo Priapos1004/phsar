@@ -12,6 +12,7 @@
 	import WatchlistBookmarkIcon from '$lib/components/WatchlistBookmarkIcon.svelte';
 	import { formatShortDate, resolveTitle } from '$lib/utils/formatString';
 	import { buildDetailHref } from '$lib/utils/navigation';
+	import * as cls from '$lib/styles/classes';
 	import type { Job } from '$lib/types/api';
 
 	const MIN_QUERY_LENGTH = 4;
@@ -174,7 +175,7 @@
 							{#if bookmarkColors.length > 0}
 								<!-- Watchlist state overlaid on the cover (matches RelatedMediaCarousel).
 								     Anime-level cards → aggregate list colors (gradient when several). -->
-								<div class="absolute top-1 right-1 flex size-6 items-center justify-center rounded-md bg-black/45 backdrop-blur-sm">
+								<div class={cls.coverBookmark}>
 									<WatchlistBookmarkIcon colors={bookmarkColors} iconClass="size-3.5 block" />
 								</div>
 							{/if}

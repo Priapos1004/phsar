@@ -7,6 +7,7 @@
     import { refreshWatchlist, clearWatchlist } from '$lib/stores/watchlist';
     import { refreshTags, clearTags } from '$lib/stores/tags';
     import { clearRatingScores } from '$lib/stores/ratingScores';
+    import { clearBrowseRows } from '$lib/stores/browseRows';
   import { clearRatingCoverage } from '$lib/stores/ratingCoverage';
     import { resetAllPersistedFilters } from '$lib/stores/persistedFilter';
     import { applyFilterLifecycle } from '$lib/utils/filterLifecycle';
@@ -50,6 +51,7 @@
       clearTags();
       clearRatingScores();
       clearRatingCoverage();
+      clearBrowseRows();
       resetAllPersistedFilters();
     }
 

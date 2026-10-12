@@ -1,5 +1,6 @@
 /** TypeScript types mirroring backend Pydantic schemas */
 import type { ThemeKey } from '$lib/themes';
+import type { MediaSearchFilters } from '$lib/utils/search';
 
 // Auth
 export interface TokenResponse {
@@ -50,10 +51,20 @@ export interface MediaConnected {
 }
 
 // A media-view search hit: MediaConnected plus whether the caller has rated it.
-export interface MediaSearchResult extends MediaConnected {
+export interface MediaSearchResult extends MediaConnected, SortValues {
 	is_rated: boolean;
 	/** Notes search only: the caller's note on this media. */
 	matched_note?: string | null;
+}
+
+/** What a search hit is ordered by: docs/features/search.md#sorting. */
+export interface SortValues {
+	added_at: string;
+	score_top_percent?: number | null;
+	sort_season?: string | null;
+	announced_at?: string | null;
+	announced_type?: string | null;
+	your_rating?: number | null;
 }
 
 // How completely the caller has rated one anime (GET /ratings/coverage). Tiers and
@@ -306,7 +317,7 @@ export interface AnimeAggregatedBase {
 	is_finished: boolean;
 }
 
-export interface AnimeSearchResult extends AnimeAggregatedBase {
+export interface AnimeSearchResult extends AnimeAggregatedBase, SortValues {
 	/** Notes search only: the caller's note that best matches the query. */
 	matched_note?: string | null;
 }
@@ -980,4 +991,22 @@ export interface CurationPendingCounts {
 	merge: number;
 	split: number;
 	delete: number;
+}
+
+// Browse (GET /browse/{page}, /browse/carousels/{key}); params per docs/features/browse.md.
+export interface BrowseFilterSet {
+	key: string;
+	label: string;
+	default_on: boolean;
+	params: Partial<MediaSearchFilters>;
+}
+
+export interface BrowseCarousel {
+	key: string;
+	title: string;
+	params: Partial<MediaSearchFilters>;
+	see_all_limit: number;
+	/** Whether its see-all offers a sort; otherwise the carousel's order is shown. */
+	sortable: boolean;
+	filter_sets: BrowseFilterSet[];
 }

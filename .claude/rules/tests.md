@@ -1,5 +1,5 @@
 ---
-description: Test-authoring invariants — proving a new test is a guard, asserting on the path rather than an environment-dependent output, teardown for anything that outlives its call, and what jsdom cannot assert.
+description: Test-authoring invariants — what makes a test a guard, and what the test environment (a shared database, jsdom, process-wide state) can't be trusted to show.
 paths: "phsar/{tests,frontend/src/tests}/**/*"
 ---
 
@@ -32,6 +32,13 @@ Spy the call that must not happen, rather than the output it would have produced
 `TZ` is the standing case: Node reads it **once at startup**, so a per-test
 reassignment changes nothing and the loop that looks like a matrix runs one
 zone. `rules/frontend.md` carries the date-formatter instance and its guard.
+
+## A fixture in a database-wide list must outrank what the database holds
+
+The backend suite rolls back but shares a dev database's rows, so a fixture asserted in a
+capped, database-wide list passes on CI's empty database and drops out once the dev one
+fills. Give it a `created_at` ahead of now, and apart from each other fixture's: one
+transaction shares `now()`.
 
 ## Anything that outlives its call needs teardown
 

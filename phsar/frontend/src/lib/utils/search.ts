@@ -5,6 +5,8 @@ import {
 	formatDurationCompact,
 	formatNumber,
 	formatRelationType,
+	formatMonthDay,
+	formatScoreWithStep,
 	watchStatusLabel,
 } from '$lib/utils/formatString';
 
@@ -14,7 +16,7 @@ export type MatchMode = 'any' | 'all';
 export type RatedState = 'none' | 'in_progress' | 'on_hold' | 'dropped' | 'main' | 'all' | 'completed';
 export type SortKey =
 	| 'relevance' | 'top_rated' | 'score' | 'popularity' | 'added' | 'release' | 'aired' | 'title' | 'random'
-	| 'your_rating';
+	| 'your_rating' | 'announced';
 export type SortDir = 'asc' | 'desc';
 
 /** The search's parameters, as the token carries them. A token verifies to every field,
@@ -59,9 +61,27 @@ export interface MediaSearchFilters {
 	sort_dir?: SortDir | null;
 }
 
+/** The top-N% steps the filter sheet offers. One line, because
+ * `test_the_top_steps_are_the_search_sheets` reads it. */
+export const TOP_PRESETS = [5, 10, 20, 50, 75];
+
 /** How many results a search shows. One more is requested, so a full page can say "50+"
  * rather than a count that would be a guess. */
 export const SEARCH_LIMIT = 50;
+
+/** The most a search returns, and so what a search's see-all asks for. One line, because
+ * `test_a_search_see_all_asks_for_the_whole_search` reads it against `MAX_SEARCH_LIMIT`. */
+export const SEE_ALL_LIMIT = 1000;
+
+/** What each search mode is called, wherever the user sees it. */
+export const SEARCH_MODE_LABELS: Record<SearchType, string> = {
+	title: 'Title', description: 'Description', rating_notes: 'My notes',
+};
+
+/** Which grain a result is: only an anime result carries the aggregate score. */
+export function isAnimeResult(row: AnimeSearchResult | MediaSearchResult): row is AnimeSearchResult {
+	return 'avg_score' in row;
+}
 
 const LIST_FILTER_KEYS = [
 	'airing_status', 'anime_season', 'genre_name', 'studio_name', 'original_source',
@@ -147,6 +167,10 @@ export const SORT_OPTIONS: SortOption[] = [
 		dir: { desc: 'Newest first', asc: 'Oldest first' },
 	},
 	{
+		value: 'announced', label: 'Newest announcement', hint: 'When its latest announcement was added',
+		dir: { desc: 'Newest first', asc: 'Oldest first' },
+	},
+	{
 		value: 'release', label: 'Release date', hint: 'Next announced, else last aired season',
 		dir: { asc: 'Oldest first', desc: 'Newest first' },
 	},
@@ -180,6 +204,48 @@ export function effectiveSort(params: MediaSearchFilters): { sort: SortKey; opti
 	if (!option.dir) return { sort, option, dir: null };
 	const dir = requested === 'relevance' ? undefined : params.sort_dir;
 	return { sort, option, dir: dir ?? (ASCENDING_SORTS.includes(sort) ? 'asc' : 'desc') };
+}
+
+/** The one season a search is pinned to, which a browse row names in a pill. */
+export function pinnedSeason(params: MediaSearchFilters): string | null {
+	return params.anime_season?.length === 1 ? params.anime_season[0] : null;
+}
+
+/** A poster tile's one line: what its list is ordered by, where the tile has no other
+ * place for it. `sort` is the order the results are actually in (`effectiveSort`). */
+export function sortLine(
+	sort: SortKey, row: AnimeSearchResult | MediaSearchResult, ratingStep: number,
+): string | null {
+	const [score, votes] = isAnimeResult(row) ? [row.avg_score, row.avg_scored_by] : [row.score, row.scored_by];
+	switch (sort) {
+		case 'top_rated':
+			return row.score_top_percent != null ? `Top ${row.score_top_percent}%` : null;
+		case 'score':
+			return score != null ? `⭐ ${score}` : null;
+		case 'popularity':
+			return `${formatNumber(votes)} votes`;
+		case 'added':
+			return `Added ${formatMonthDay(row.added_at)}`;
+		case 'announced':
+			return row.announced_at ? `Announced ${formatMonthDay(row.announced_at)}` : null;
+		case 'release':
+		case 'aired':
+			return row.sort_season ?? null;
+		case 'your_rating':
+			return row.your_rating != null ? `You: ${formatScoreWithStep(row.your_rating, ratingStep)}` : null;
+		default:
+			return null;
+	}
+}
+
+/** The announced entry's type, when another type outnumbers it in the rest of the franchise —
+ * a movie for a TV show — and so is worth naming on the tile; a tie names nothing. The
+ * announcement is in `media_types` itself, so it is left out, or it would tie a one-season TV. */
+export function unusualAnnouncedType(row: AnimeSearchResult): string | null {
+	const announced = row.announced_type;
+	if (!announced) return null;
+	const rest = (row.media_types.find((t) => t.media_type === announced)?.count ?? 1) - 1;
+	return row.media_types.some((t) => t.media_type !== announced && t.count > rest) ? announced : null;
 }
 
 /** The applied search with a new query and mode. A different query starts from Best match:
@@ -349,13 +415,23 @@ export function carryAcrossView(params: MediaSearchFilters, view: ViewType): Med
 // Guests
 // ---------------------------------------------------------------------------
 
-/** A shared link opened by a guest: drop what reads the caller's own ratings, notes and
- * watchlist, which a guest is refused (docs/features/search.md, Personal filters and sort), and
- * say whether anything went, so the page can tell them. Notes fall back to a title search. */
+/** What a guest is told when `stripForGuest` dropped something from their link. */
+export const GUEST_STRIPPED_NOTICE =
+	"This link used ratings, notes or the watchlist, which guest accounts don't have, so it opened without them — a notes search runs on titles instead.";
+
+/** Whether a search, or a filter set's part of one, reads the caller's own ratings, notes
+ * or watchlist — what a guest is refused (docs/features/search.md, Personal filters and sort). */
+export function readsOwnData(params: Partial<MediaSearchFilters>): boolean {
+	return !!params.rated?.length || params.watchlisted != null || params.sort === 'your_rating'
+		|| params.search_type === 'rating_notes';
+}
+
+/** A shared link opened by a guest: drop what `readsOwnData` names, and say whether anything
+ * went, so the page can tell them. Notes fall back to a title search. */
 export function stripForGuest(params: MediaSearchFilters): { params: MediaSearchFilters; stripped: boolean } {
 	const byRating = params.sort === 'your_rating';
 	const notes = params.search_type === 'rating_notes';
-	const stripped = !!params.rated?.length || params.watchlisted != null || byRating || notes;
+	const stripped = readsOwnData(params);
 	if (!stripped) return { params, stripped };
 	const kept = omitKeys(params, byRating ? ['rated', 'watchlisted', 'sort', 'sort_dir'] : ['rated', 'watchlisted']);
 	return { params: notes ? { ...kept, search_type: 'title' } : kept, stripped };

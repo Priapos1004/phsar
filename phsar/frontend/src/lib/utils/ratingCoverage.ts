@@ -11,14 +11,14 @@ import type { CoverageTier } from '$lib/types/api';
  *   line in the opposite key beside it. The second tone is what keeps the edge
  *   visible against both the light and the dark theme background — a near-black
  *   edge alone disappears on a dark page. They stay COLOURS rather than one
- *   composed `box-shadow`, because the two cards draw the edge with different
+ *   composed `box-shadow`, because the cards draw the edge with different
  *   properties: `/search` can use `box-shadow` (it displaces a static ring that
- *   `Card.Root` sets and nothing animates), while the `/ratings` card must use
- *   `outline` — its box-shadow is a composed Tailwind chain (`shadow-sm` plus
- *   two `group-hover:` variants) that an inline box-shadow would beat, costing
- *   marked cards their hover lift.
+ *   `Card.Root` sets and nothing animates), while the `/ratings` card and the
+ *   Browse tile must use `outline` — their box-shadow is a composed Tailwind chain
+ *   (`shadow-sm` plus its `group-hover:` variants) that an inline box-shadow would
+ *   beat, costing marked cards their hover lift.
  * - **`band`** paints the card: an inward-fading band on search, a flat footer
- *   tint on `/ratings`. Gradients need a large area to read across, which is why
+ *   tint on `/ratings` and the Browse tile. Gradients need a large area to read across, which is why
  *   the metal is legible here and is not in a thin band.
  * - **`foreground`** is the text colour `band` demands where it backs text.
  *

@@ -9,7 +9,7 @@ from sqlalchemy.orm import aliased, selectinload
 from app.daos.base_dao import recency_order
 from app.daos.base_mal_id_dao import MalIdDAO
 from app.daos.delete_candidate_dao import awaiting_review_mal_ids
-from app.daos.rating_dao import note_passes, rating_of
+from app.daos.rating_dao import note_passes, rating_of, your_rating_key
 from app.daos.search_filters import (
     apply_anime_having_filters,
     apply_anime_pre_filters,
@@ -18,7 +18,7 @@ from app.daos.search_filters import (
     sort_order,
     title_match_passes,
     title_match_score,
-    top_percent_ranking,
+    top_percents,
     weighted_mean_score_expr,
     weighted_mean_votes_expr,
     weighted_score_expr,
@@ -237,10 +237,7 @@ class AnimeDAO(MalIdDAO[Anime]):
     async def score_top_percent(self, db: AsyncSession, anime_id: int) -> int | None:
         """This anime's "Top N%" badge (`top_percent_ranking`). None when the anime has
         no scored media that `RELATION_SCORE_WEIGHTS` counts."""
-        ranking = top_percent_ranking(per_anime=True)
-        return (
-            await db.execute(select(ranking.c.top_percent).where(ranking.c.id == anime_id))
-        ).scalar_one_or_none()
+        return (await top_percents(db, [anime_id], per_anime=True)).get(anime_id)
 
     async def get_by_media_mal_id_with_media(
         self, db: AsyncSession, media_mal_id: int,
@@ -530,7 +527,7 @@ class AnimeDAO(MalIdDAO[Anime]):
         notes = bool(query) and search_type == SearchType.RATING_NOTES
         if sort == SortKey.YOUR_RATING or notes:
             stmt = stmt.outerjoin(Ratings, rating_of(user_id))
-        your_rating = func.avg(Ratings.rating) if sort == SortKey.YOUR_RATING else None
+        your_rating = your_rating_key(per_anime=True) if sort == SortKey.YOUR_RATING else None
 
         # GROUP BY the PK alone: Anime's own columns in the title match and the sort
         # keys below ride functional dependency on it, and the literal-first matches

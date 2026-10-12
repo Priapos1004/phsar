@@ -1,5 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
-import { absoluteDetailUrl, buildDetailHref, searchBySource, searchByStudio } from '$lib/utils/navigation';
+import { render, screen } from '@testing-library/svelte';
+import BackLink from '$lib/components/BackLink.svelte';
+import { goto } from '$app/navigation';
+import {
+	absoluteDetailUrl,
+	buildDetailHref,
+	detailOrigin,
+	navigateToSearch,
+	searchBySource,
+	searchByStudio,
+} from '$lib/utils/navigation';
 import { api } from '$lib/api';
 
 // `goto` is globally mocked in setup.ts; mock the API so navigateToSearch's
@@ -50,6 +60,40 @@ describe('buildDetailHref', () => {
 			`/media?uuid=${uuid}&focus=anime-1`,
 		);
 	});
+
+	it('carries the carousel a see-all tile was opened from', () => {
+		expect(buildDetailHref('anime', uuid, { from: 'carousel', carousel: 'fresh' })).toBe(
+			`/anime?uuid=${uuid}&from=carousel&carousel=fresh`,
+		);
+	});
+});
+
+describe('detailOrigin', () => {
+	const at = (href: string) => detailOrigin(new URL(href, 'https://example.test'));
+
+	it('anchors on the page itself when no hop named a focus', () => {
+		expect(at('/anime?uuid=a1&from=carousel&carousel=fresh')).toEqual({
+			q: null, from: 'carousel', job: null, carousel: 'fresh', focus: 'a1',
+		});
+	});
+
+	it('keeps a focus a deeper hop already named', () => {
+		expect(at('/media?uuid=m1&from=watchlist&focus=a1').focus).toBe('a1');
+	});
+
+	// A see-all → anime → media dive still links back to the see-all, at the anime tile.
+	it('survives an anime → media hop whole', () => {
+		const animePage = at('/anime?uuid=a1&from=carousel&carousel=fresh');
+		const mediaPage = at(buildDetailHref('media', 'm1', animePage));
+		expect(mediaPage).toEqual({ ...animePage });
+	});
+});
+
+describe('navigateToSearch', () => {
+	it('lands on the path it is given', async () => {
+		await navigateToSearch({ query: '', search_type: 'title' }, '/search/all');
+		expect(goto).toHaveBeenCalledWith('/search/all?q=tok');
+	});
 });
 
 describe('absoluteDetailUrl', () => {
@@ -80,5 +124,25 @@ describe('searchBySource', () => {
 			'/filters/create-token',
 			expect.objectContaining({ original_source: ['Light Novel'], view_type: 'anime', search_type: 'title', query: '' }),
 		);
+	});
+});
+
+describe('BackLink', () => {
+	const backLink = (label: string) => screen.getByText(label).closest('a');
+
+	it('returns a browse detail to the tile it was opened from', () => {
+		render(BackLink, { props: { origin: { from: 'browse', focus: 'fresh:abc-123' } } });
+		expect(backLink('Back to browse')).toHaveAttribute('href', '/browse?focus=fresh%3Aabc-123');
+	});
+
+	it('returns a see-all detail to its carousel, at the tile', () => {
+		render(BackLink, { props: { origin: { from: 'carousel', carousel: 'fresh', focus: 'abc-123' } } });
+		expect(backLink('Back to the list')).toHaveAttribute('href', '/browse/fresh?focus=abc-123');
+	});
+
+	// The token alone would read "Back to search" and land on the capped search.
+	it('returns a search see-all detail there rather than to the search', () => {
+		render(BackLink, { props: { origin: { from: 'search-all', q: 'tok', focus: 'abc-123' } } });
+		expect(backLink('Back to all results')).toHaveAttribute('href', '/search/all?q=tok&focus=abc-123');
 	});
 });

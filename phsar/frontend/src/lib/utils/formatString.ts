@@ -287,6 +287,12 @@ export function formatShortDate(iso: string): string {
 	});
 }
 
+/** "Oct 10": a timestamp's day without its year, for a list ordered by that date,
+ *  whose order already says which year each falls in. */
+export function formatMonthDay(iso: string): string {
+	return new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
 export function formatShortDateTime(iso: string): string {
 	return new Date(iso).toLocaleString('en-US', {
 		month: 'short',

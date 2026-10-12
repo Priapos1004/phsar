@@ -2,6 +2,9 @@ import logging
 
 import pytest
 
+from app.core.config import settings
+from app.core.security import create_token, create_url_token
+
 logger = logging.getLogger(__name__)
 
 VALID_FILTER_PAYLOAD = {
@@ -94,15 +97,11 @@ async def test_create_token_too_many_items(client, admin_auth_headers):
 @pytest.mark.asyncio
 async def test_verify_token_missing_search_data(client, admin_auth_headers):
     # Create a valid token with missing 'data' field manually
-    from jose import jwt
-
-    from app.core.config import settings
-
     bad_payload = {
         "ver": settings.CURRENT_SEARCH_API_VERSION,
         # intentionally no 'data' field
     }
-    bad_token = jwt.encode(bad_payload, settings.SEARCH_SECRET_KEY, algorithm=settings.ALGORITHM)
+    bad_token = create_token(bad_payload, settings.SEARCH_SECRET_KEY)
 
     response = await client.post(
         "/filters/verify-token",
@@ -112,6 +111,18 @@ async def test_verify_token_missing_search_data(client, admin_auth_headers):
     assert response.status_code == 400, f"Expected 400 for missing search data, got {response.status_code}"
     logger.debug(f"Verify token without search data response: {response.json()}")
     assert "missing search data" in response.text.lower()
+
+async def test_verify_token_without_version_reads_as_malformed(client, admin_auth_headers):
+    # Signed with the real key, so only the ver requirement rejects it.
+    bad_token = create_token({}, settings.SEARCH_SECRET_KEY)
+
+    response = await client.post(
+        "/filters/verify-token",
+        json={"token": bad_token},
+        headers=admin_auth_headers
+    )
+    assert response.status_code == 400
+    assert "malformed" in response.text.lower()
 
 @pytest.mark.asyncio
 async def test_create_and_verify_token_as_admin(client, admin_auth_headers):
@@ -179,8 +190,6 @@ async def test_token_carries_the_stripped_query(client, user_auth_headers):
 
 async def test_token_that_no_longer_validates_reads_as_malformed(client, user_auth_headers):
     """An earlier link over today's query cap: a 400, not a 500."""
-    from app.core.security import create_url_token
-
     token = create_url_token({**VALID_FILTER_PAYLOAD, "query": "x" * 201})
     resp = await client.post("/filters/verify-token", json={"token": token}, headers=user_auth_headers)
     assert resp.status_code == 400

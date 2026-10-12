@@ -362,7 +362,7 @@ The original design (a `WatchlistTag` many-to-many junction, tags and entries as
 
 ### Watchlist Page UI (as shipped)
 - `/watchlist` with a `?tab=` switcher: **Watchlists** (entries — grid priority-band grid or sortable table, anime/media grain toggle, multi-select list-union filter) + **Lists** (create/edit/delete/empty lists).
-- Deferred to later versions: the "In watchlist" search filter (`watchlisted` API v0.16.0, toggle v0.16.1) and the browse-page "Only my watchlist" toggle (v0.16.2).
+- Deferred to later versions: the "In watchlist" search filter (`watchlisted` API v0.16.0, toggle v0.16.1) and the browse page's watchlist refinement (v0.16.2).
 
 ---
 
@@ -371,7 +371,7 @@ The original design (a `WatchlistTag` many-to-many junction, tags and entries as
 ### Concept
 Separate page/route — the "deep dive" version of home page sections.
 
-**Toggle**: "All anime in DB" vs "Only my watchlist"
+**Refinements**: per-carousel filter sets — docs/features/browse.md
 
 ### Sections (horizontal scrollable card rows — Crunchyroll-style, same as home page)
 - **Recommendation algo** (top of page) — dropdown/selector to choose algorithm. Designed for experimentation — swap in new algos over time, users can try different ones. Could also be a user setting.
@@ -442,7 +442,7 @@ Eye-catching landing page — light version of browse, serves new and returning 
 
 ### General Browsing
 - Browse page (Feature 5b) covers this — sections + search bar with filters gives full browsing capability
-- No separate "all anime" page needed if browse page has "all anime in DB" toggle
+- No separate "all anime" page: an empty search lists the whole catalogue, and each carousel has its see-all page
 
 ---
 
@@ -616,7 +616,7 @@ length target.
 | **v0.15.7** | ✓ Original source | MAL's original source joins the search filters, both detail heroes (linking to search, like studios), the ratings Categories, watchlist statistics, the share card and the export. Source and age rating are stored as closed enums, source in Title Case; an unmapped MAL code is stored empty and flagged amber in the Jobs Log and job details. Studios list most frequent first, and curation highlights the studios a merge pair shares. |
 | **v0.16.0** | ✓ Search engine | Title search becomes a fuzzy substring filter over every title variant; description search ranks literal hits first; sorts, a result limit, and new filters (an announced main story, top N%, any/all genres and studios, your rated state, watchlisted). Queries are stripped where they enter, and titles no longer get an embedding of their own. |
 | **v0.16.1** | ✓ Search UI | Title / Description / My notes search modes, a sort control, a filter sheet with active-filter chips and the new filters; slider reload fixes; a dropdown tap-through fix, status-aware watchlist removal on the rating form, and a manual season target for the seasonal sweep. |
-| **v0.16.2** | Browse + News | Carousel definitions in the DB with a resolver and seeded core rows; the Browse page and its News tab; a see-all page, also reached from search. |
+| **v0.16.2** | ✓ Browse + News | Carousel definitions in the DB with a resolver and seeded core rows; the Browse page and its News tab; a see-all page, also reached from search. JWT signing and verification move from python-jose to PyJWT. |
 | **v0.16.3** | Home + Discover | Home carousels replace the placeholders; a Discover tab with a daily rotation. |
 | **v0.16.4** | Personalisation | Per-carousel refinement toggles; pinning a search to Browse as a custom carousel. |
 | **v0.16.5** | Get-started page | The `/getting-started` page. |

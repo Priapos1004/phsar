@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { replaceState } from '$app/navigation';
-import { consumeFocus, hrefWithFocus, pageCovering, revealFocused } from '$lib/utils/scrollFocus';
+import {
+	carouselFocus,
+	consumeFocus,
+	hrefWithFocus,
+	pageCovering,
+	revealFocused,
+	splitCarouselFocus,
+} from '$lib/utils/scrollFocus';
 
 describe('hrefWithFocus', () => {
 	it('opens a query string on a bare path', () => {
@@ -18,6 +25,16 @@ describe('hrefWithFocus', () => {
 
 	it('percent-encodes the uuid', () => {
 		expect(hrefWithFocus('/search', 'a b&c')).toBe('/search?focus=a%20b%26c');
+	});
+});
+
+describe('carousel focus', () => {
+	it('round-trips a tile through the param', () => {
+		expect(splitCarouselFocus(carouselFocus('fresh', 'abc-123'))).toEqual({ key: 'fresh', uuid: 'abc-123' });
+	});
+
+	it('reads a bare key as the row alone', () => {
+		expect(splitCarouselFocus('new-this-season')).toEqual({ key: 'new-this-season', uuid: null });
 	});
 });
 
@@ -101,6 +118,18 @@ describe('revealFocused', () => {
 		expect(scrollIntoView).toHaveBeenCalledWith({ block: 'center' });
 		expect(document.querySelector('[data-focus-uuid="two"]')).toHaveClass('focus-flash');
 		expect(document.querySelector('[data-focus-uuid="one"]')).not.toHaveClass('focus-flash');
+	});
+
+	// A browse row is centred whole but flashes only its header: a ring round a carousel
+	// reads as a frame.
+	it('flashes the part a target names, and centres the target', async () => {
+		document.body.innerHTML = `
+			<section data-focus-uuid="fresh"><header data-flash-target>Fresh</header><div>tiles</div></section>`;
+		revealFocused('fresh');
+		await frames(2);
+		expect(document.querySelector('header')).toHaveClass('focus-flash');
+		expect(document.querySelector('section')).not.toHaveClass('focus-flash');
+		expect(scrollIntoView.mock.contexts[0]).toBe(document.querySelector('section'));
 	});
 
 	it('touches nothing synchronously', () => {

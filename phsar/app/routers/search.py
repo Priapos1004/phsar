@@ -32,7 +32,9 @@ from app.services.user_settings_service import get_settings
 
 router = APIRouter(prefix="/search", tags=["search"])
 
-SearchLimit = Annotated[int, Query(ge=1, le=1000, description="How many results to return.")]
+# The most one search returns.
+MAX_SEARCH_LIMIT = 1000
+SearchLimit = Annotated[int, Query(ge=1, le=MAX_SEARCH_LIMIT, description="How many results to return.")]
 SortDirParam = Annotated[SortDir | None, Query(
     description="Direction; by default `title` and `release` ascend and the rest descend. "
     "Ignored with `relevance`.",
@@ -51,7 +53,8 @@ async def get_sort(
         "without a query. Any other sort orders the same matching rows. `your_rating` is your "
         "rating of a media, or the mean over an anime's rated media; unrated last. `release` is the "
         "next announced season, else the latest aired; `aired` the latest finished main season, "
-        "else the airing one, else the next announced.",
+        "else the airing one, else the next announced. `announced` is when the newest announced "
+        "main-story entry was added; nothing announced last.",
     ),
     current_user: Users = Depends(get_current_user),
 ) -> SortKey:

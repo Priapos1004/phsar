@@ -122,8 +122,10 @@ def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
 # str-enum hashes by value, so a caller holding a plain `"Fall"` looks up just as well.
 #
 # Distinct from `mal_scraper._SEASON_ORDER`, the lowercase MAL/URL vocabulary; this is
-# the catalog's title-cased one.
-SEASON_ORDER: dict[str, int] = {SeasonType.Winter: 1, SeasonType.Spring: 2, SeasonType.Summer: 3, SeasonType.Fall: 4}
+# the catalog's title-cased one. `SEASONS_IN_ORDER` is the same order as a sequence, for
+# stepping from one season to the next.
+SEASONS_IN_ORDER = (SeasonType.Winter, SeasonType.Spring, SeasonType.Summer, SeasonType.Fall)
+SEASON_ORDER: dict[str, int] = {season: rank for rank, season in enumerate(SEASONS_IN_ORDER, start=1)}
 
 # The sentinel `media.airing_status` values MAL returns. Here, beside the column
 # that stores them, for the same reason as SEASON_ORDER above: both layers read

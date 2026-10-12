@@ -62,6 +62,16 @@ export const badgeAgeRating = `${badgeAgeRatingColor} ${badgeSize}`;
 // Card glass effect
 export const cardGlass = 'bg-card/80 backdrop-blur';
 
+// The pill naming the one season a list is pinned to, and the card standing in for a list
+// that can't be shown.
+export const seasonPill = 'rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-medium text-white/70';
+export const noticeCard = 'rounded-xl border border-white/10 bg-card/40 px-4 py-6 text-sm text-white/60';
+
+// The watchlist bookmark's backing square, top-right on a cover. Fixed square + flex
+// centre so the inline SVG sits dead-centre.
+export const coverBookmark =
+	'absolute top-1 right-1 flex size-6 items-center justify-center rounded-md bg-black/45 backdrop-blur-sm';
+
 // Read-only score circle (the rating shown on the media page + the share card).
 // Size is composed at the call site; the editable ScoreDial keeps its own chrome
 // since it wraps an input.

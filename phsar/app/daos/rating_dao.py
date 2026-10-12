@@ -13,7 +13,12 @@ from app.daos.media_projections import (
     media_identity_columns,
     media_studio_names,
 )
-from app.daos.search_filters import SEMANTIC_MARGIN, literal_matches, match_passes
+from app.daos.search_filters import (
+    SEMANTIC_MARGIN,
+    literal_matches,
+    match_passes,
+    per_owner,
+)
 from app.models.anime import Anime
 from app.models.media import MAIN_STORY_RELATIONS, Media
 from app.models.rating_search import RatingSearch
@@ -35,6 +40,13 @@ def rating_of(user_id: int):
     `unique_user_media_rating` makes it 0-or-1, so as an outer join it never fans a
     media row set out and every aggregate over those rows stays a per-media one."""
     return (Ratings.media_id == Media.id) & (Ratings.user_id == user_id)
+
+
+def your_rating_key(*, per_anime: bool):
+    """The `your_rating` sort's key over `rating_of`'s join, per media or, with `per_anime`,
+    per anime: docs/features/search.md#sorting. One definition for the order and the value
+    shown."""
+    return func.avg(Ratings.rating) if per_anime else Ratings.rating
 
 
 def _note_distance(query_embedding):
@@ -136,6 +148,13 @@ class RatingDAO(BaseDAO[Ratings]):
             self.model.user_id == user_id, self.model.media_id.in_(media_ids)
         )
         return dict((await db.execute(stmt)).tuples().all())
+
+    async def your_rating_by_id(
+        self, db: AsyncSession, user_id: int, ids: list[int], *, per_anime: bool,
+    ) -> dict[int, float]:
+        """`your_rating_key` for each of `ids` the user has rated."""
+        stmt = per_owner(your_rating_key(per_anime=per_anime), ids=ids, per_anime=per_anime)
+        return dict((await db.execute(stmt.join(self.model, rating_of(user_id)))).tuples().all())
 
     async def best_note_by_anime_id(
         self, db: AsyncSession, user_id: int, query: str, anime_ids: list[int],

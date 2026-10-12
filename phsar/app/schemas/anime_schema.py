@@ -3,6 +3,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
+from app.schemas.media_filter_schema import SortValueFields
+
 
 class AnimeRecentItem(BaseModel):
     """Lightweight anime card for the /library/add 'recent additions' panel.
@@ -80,8 +82,9 @@ class AnimeAggregatedBase(BaseModel):
     is_finished: bool = False
 
 
-class AnimeSearchResult(AnimeAggregatedBase):
+class AnimeSearchResult(AnimeAggregatedBase, SortValueFields):
     """Aggregated anime search result for the search card."""
+    added_at: datetime
     # Notes search only: the caller's note that best matches the query.
     matched_note: str | None = None
 

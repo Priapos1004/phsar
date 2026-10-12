@@ -37,6 +37,10 @@ services with a different name. **A seeder does not own its transaction** — it
 leaves the commit to whoever called it, so that a caller can batch several into
 one. That is why a handler invoking one ends in a bare `db.commit()`.
 
+**A seeder whose rows the code looks up by key also runs in
+`backup_service.restore_backup`, beside `seed_browse`** — `pg_restore` swaps the rows
+without a reboot, so a key added since the dump stays missing until the next boot.
+
 ## Async — the two that bite
 
 - **Never `asyncio.gather` coroutines that share one `AsyncSession`.** An

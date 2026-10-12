@@ -13,13 +13,13 @@ import { browser } from '$app/environment';
  * its reset with no extra call.
  *
  * Adding one: export a `clearXFilter()` deciding which display prefs survive, then
- * register it in `utils/filterLifecycle`'s `SECTION_FILTERS` — and widen the `ALL`
+ * register it in `utils/filterLifecycle`'s `SECTION_RESETS` — and widen the `ALL`
  * list in `src/tests/filter-lifecycle.test.ts`, which pins the set.
  *
  * That registration also guards logout: `registered` fills at *module evaluation*,
  * so a filter clears only if its module has loaded. `filterLifecycle` imports every
  * `clearXFilter` and the root layout imports `filterLifecycle` — a filter missing
- * from `SECTION_FILTERS` loads only on its own page, so a value set there outlives
+ * from `SECTION_RESETS` loads only on its own page, so a value set there outlives
  * the logout that should have cleared it. The same caveat governs the snapshot
  * below: an unloaded filter is absent from it, and comes back at its defaults.
  */

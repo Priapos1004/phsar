@@ -27,6 +27,8 @@
 		LIST_FILTERS,
 		RANGE_FILTERS,
 		RATED_STATES,
+		SEARCH_MODE_LABELS,
+		TOP_PRESETS,
 		filterChips,
 		normalizeRated,
 		omitKeys,
@@ -72,10 +74,10 @@
 	let stagedChips = $derived(filterChips(staged, viewType));
 
 	let modes = $derived([
-		{ value: 'title' as const, label: 'Title' },
-		{ value: 'description' as const, label: 'Description' },
+		{ value: 'title' as const, label: SEARCH_MODE_LABELS.title },
+		{ value: 'description' as const, label: SEARCH_MODE_LABELS.description },
 		{
-			value: 'rating_notes' as const, label: 'My notes',
+			value: 'rating_notes' as const, label: SEARCH_MODE_LABELS.rating_notes,
 			disabled: isGuest, hint: isGuest ? 'Guest accounts have no notes to search' : undefined,
 		},
 	]);
@@ -126,9 +128,8 @@
 		staged.watchlisted == null ? 'any' : staged.watchlisted ? 'in' : 'out',
 	);
 
-	// Preset cut-offs, 75 among them for "everything but the weak ones". A shared link may
+	// `TOP_PRESETS`, 75 among them for "everything but the weak ones". A shared link may
 	// carry another value, which joins the list rather than reading as "Any".
-	const TOP_PRESETS = [5, 10, 20, 50, 75];
 	let topOptions = $derived.by(() => {
 		const current = staged.top_percent;
 		const values = current != null && !TOP_PRESETS.includes(current)

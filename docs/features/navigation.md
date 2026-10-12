@@ -5,8 +5,8 @@ brings each part.
 
 **Code**: `utils/returnTo.ts` (the route) → `utils/navigation.ts` (the origin) →
 `utils/scrollFocus.ts` (the position) → `stores/persistedFilter.ts` +
-`utils/resumeSession.ts` (the filters) → `utils/filterLifecycle.ts` (when each
-resets).
+`utils/resumeSession.ts` (the filters) → `stores/browseRows.ts` (Browse's rows) →
+`utils/filterLifecycle.ts` (when each resets).
 
 ## What travels, and on which carrier
 
@@ -17,6 +17,7 @@ resets).
 | the position in that list | `?focus=` on the back link | `scrollFocus.ts` |
 | that list's controls — filters, and the Jobs Log page | per-tab `sessionStorage` | `persistedFilter.ts` |
 | those controls across a *lapsed session* | the `phsar.resume` stash | `resumeSession.ts` |
+| the rows Browse had loaded | an in-memory cache | `stores/browseRows.ts` |
 
 **The URL carries whatever belongs to one link.** Two tabs open on two different
 searches must not share an origin or a scroll position, and a link handed to
@@ -43,9 +44,9 @@ states that invariant and tabulates which helper each kind of departure uses;
 A path carries its own `?tab=`, so restoring one restores the section a user was
 looking at, not just the page.
 
-The origin markers ride `buildDetailHref`'s options bag, and every anime↔media jump
-rebuilds the href with the whole bag intact, so a deep dive stays linkable back to
-where it started. `navigation.ts` owns the bag and the closed `DetailOrigin` set;
+The origin markers ride `buildDetailHref`'s options bag. A detail page reads it off its
+URL whole (`detailOrigin`) and every anime↔media jump rebuilds the href with it intact,
+so a deep dive stays linkable back to where it started. `navigation.ts` owns the bag and the closed `DetailOrigin` set;
 USER_FLOWS §7.6 owns what each one renders.
 
 ## The position
@@ -60,9 +61,13 @@ side down to one `data-focus-uuid` attribute per component. A `focus` already on
 URL wins, which is what makes a deep dive return to the anime card rather than the
 media one.
 
-A page must render the target before it can centre it. Only `/search` has to act on
-that: its whole result set arrives in one request and is sliced behind "Show More",
-so it expands far enough first. `scrollFocus.ts` argues the timing, which is the
+A list that can show the same anime twice on one page builds one, since the uuid alone
+would land on the first — `carouselFocus` in `scrollFocus.ts`; `BrowseCarousel.svelte`
+says how its row lands on the tile.
+
+A page must render the target before it can centre it, so a list that renders lazily or
+in slices acts first: `/search` and the see-all pages slice their one response behind
+"Show More" and expand far enough, and the Browse row a focus names loads at once. `scrollFocus.ts` argues the timing, which is the
 part that is not obvious.
 
 ## The controls
@@ -92,6 +97,8 @@ that is easy to undo by accident; `filterLifecycle.ts` states it at the rule, al
 with why SvelteKit's `snapshot` fits neither the filters nor the scroll position.
 Both are app-owned and keyed on the URL, and they follow the same call because they
 have the same lifecycle shape.
+
+Browse's row cache follows the same rule.
 
 ## Everything degrades to the default
 

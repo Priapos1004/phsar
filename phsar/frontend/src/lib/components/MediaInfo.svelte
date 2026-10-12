@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { formatNumber, formatAiringStatus, formatRelationType, formatMediaType } from '$lib/utils/formatString';
-	import { buildDetailHref, type DetailOrigin } from '$lib/utils/navigation';
+	import { buildDetailHref } from '$lib/utils/navigation';
 	import { CheckCircle2, MessageSquareQuote } from 'lucide-svelte';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -36,7 +36,6 @@
 		 *  anime grain has a denominator to be a fraction of. */
 		is_rated?: boolean;
 		searchToken?: string | null;
-		fromParam?: DetailOrigin | null;
 		/**
 		 * Anime-only: admin-marked story-complete. Renders a small badge by the title.
 		 *
@@ -57,12 +56,12 @@
 		genres = null, media_type = null, media_types = null,
 		relation_type = null, relation_types = null, watchtime = null,
 		imageUrl = null, media_uuid, is_rated = false,
-		searchToken = null, fromParam = null, is_finished = false, matched_note = null,
+		searchToken = null, is_finished = false, matched_note = null,
 	}: Props = $props();
 
 	let imgFailed = $state(false);
 
-	let href = $derived(buildDetailHref(info_type, media_uuid, { q: searchToken, from: fromParam }));
+	let href = $derived(buildDetailHref(info_type, media_uuid, { q: searchToken }));
 
 	let displaySeason = $derived(season_range ?? anime_season);
 	let displayStatus = $derived(formatAiringStatus(airing_status, has_upcoming));

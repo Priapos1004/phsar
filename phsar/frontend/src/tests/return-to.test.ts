@@ -102,6 +102,9 @@ describe('describeReturn', () => {
 		['/media?uuid=abc', 'the media page'],
 		['/watchlist?tab=stats', 'your watchlist'],
 		['/search?q=tok', 'your search'],
+		['/search/all?q=tok', 'all results of your search'],
+		['/browse?tab=news', 'the browse page'],
+		['/browse/fresh', 'a list on the browse page'],
 	])('names %s as "%s"', (path, expected) => {
 		expect(describeReturn(path)).toBe(expected);
 	});

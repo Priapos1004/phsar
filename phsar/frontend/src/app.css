@@ -192,10 +192,10 @@ a {
    under the user. Written out here rather than as a utility string because that module
    is where the class name lives, and Tailwind's scanner cannot see it there.
 
-   Each surface gets exactly one animation, and the two are selected apart rather than
+   Each surface gets exactly one animation, and they are selected apart rather than
    one overriding the other — `scrollFocus.ts` clears the class on the first
    `animationend`, which is only correct while that holds. */
-.focus-flash:not(tr) {
+.focus-flash:not(tr, [data-flash-target]) {
   @apply rounded-xl;
   animation: focus-flash 3s ease-out;
 }
@@ -206,8 +206,12 @@ a {
    would bury the Jobs Log status tints the row already carries.
 
    The band is broad and only a little brighter than the surface on purpose: a
-   narrow, high-contrast one crosses as a flicker rather than as a wash going past. */
-tr.focus-flash {
+   narrow, high-contrast one crosses as a flicker rather than as a wash going past.
+
+   A part flashing for its target (`data-flash-target`, e.g. a browse row's header) is a
+   strip, not a card, so it takes the sweep too. */
+tr.focus-flash,
+.focus-flash[data-flash-target] {
   background-image: linear-gradient(
     100deg,
     transparent 28%,

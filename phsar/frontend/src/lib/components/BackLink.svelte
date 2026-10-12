@@ -1,25 +1,22 @@
 <script lang="ts">
 	import { ArrowLeft } from 'lucide-svelte';
-	import type { DetailOrigin } from '$lib/utils/navigation';
+	import type { DetailHrefOptions } from '$lib/utils/navigation';
 	import { hrefWithFocus } from '$lib/utils/scrollFocus';
 
 	interface Props {
-		searchToken: string | null;
-		fromParam: DetailOrigin | null;
-		/** Job uuid carried with `fromParam === 'job'` (admin came from a sweep
-		 * audit) so the back button links to that specific job row. */
-		jobUuid?: string | null;
-		/** The list item to scroll back to — see `utils/scrollFocus`. */
-		focusUuid?: string | null;
+		/** Where the page was opened from: `detailOrigin(url)` on a detail page, or a
+		 * list's own way back. */
+		origin: DetailHrefOptions;
 	}
 
-	let { searchToken, fromParam, jobUuid = null, focusUuid = null }: Props = $props();
+	let { origin }: Props = $props();
+	let { q: searchToken, from: fromParam, job: jobUuid, carousel, focus } = $derived(origin);
 
 	// Only the targets whose page actually consumes `?focus=` get it — the pages
 	// calling `consumeFocus`. Appending it elsewhere leaves a param nothing reads and
 	// nothing strips; opting one of the other branches in means wrapping it here too,
 	// or the page will consume something it never receives.
-	const withFocus = (base: string) => hrefWithFocus(base, focusUuid);
+	const withFocus = (base: string) => hrefWithFocus(base, focus);
 
 	let target = $derived.by(() => {
 		if (fromParam === 'job' && jobUuid) return { href: `/admin/jobs/${jobUuid}`, label: 'Back to job' };
@@ -28,6 +25,13 @@
 		if (fromParam === 'ratings') return { href: withFocus('/ratings'), label: 'Back to ratings' };
 		if (fromParam === 'ratings-stats') return { href: '/ratings?tab=stats', label: 'Back to statistics' };
 		if (fromParam === 'watchlist') return { href: withFocus('/watchlist'), label: 'Back to watchlist' };
+		if (fromParam === 'browse') return { href: withFocus('/browse'), label: 'Back to browse' };
+		if (fromParam === 'carousel' && carousel) {
+			return { href: withFocus(`/browse/${encodeURIComponent(carousel)}`), label: 'Back to the list' };
+		}
+		if (fromParam === 'search-all' && searchToken) {
+			return { href: withFocus(`/search/all?q=${encodeURIComponent(searchToken)}`), label: 'Back to all results' };
+		}
 		if (fromParam === 'library') return { href: '/library/add', label: 'Back to library' };
 		if (searchToken) return { href: withFocus(`/search?q=${encodeURIComponent(searchToken)}`), label: 'Back to search' };
 		return null;

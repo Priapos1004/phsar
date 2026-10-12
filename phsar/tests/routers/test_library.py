@@ -28,8 +28,8 @@ async def test_recent_returns_newest_first(client, user_auth_headers, db_session
     assertion would be riding the id tiebreak instead of the sort column.
     """
     now = datetime.now(timezone.utc)
-    older = Anime(mal_id=83001, title="Library Older", created_at=now - timedelta(days=2))
-    newer = Anime(mal_id=83002, title="Library Newer", created_at=now - timedelta(days=1))
+    older = Anime(mal_id=83001, title="Library Older", created_at=now + timedelta(days=1))
+    newer = Anime(mal_id=83002, title="Library Newer", created_at=now + timedelta(days=2))
     db_session.add_all([older, newer])
     await db_session.flush()
 

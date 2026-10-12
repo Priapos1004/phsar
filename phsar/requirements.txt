@@ -19,5 +19,5 @@ sentence-transformers==5.6.0
 # vectors first.
 transformers==5.18.0
 tokenizers==0.23.2
-python-jose==3.4.0
+PyJWT==2.15.1
 python-multipart==0.0.32

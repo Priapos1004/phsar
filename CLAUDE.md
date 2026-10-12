@@ -45,6 +45,7 @@ that touches its area, before settling on an approach.
 | [spoilers](docs/features/spoilers.md) | Frontier algorithm, visibility cache |
 | [readiness](docs/features/readiness.md) | "Can I start this tonight?" — media temporal classes, the per-anime verdict, the standalone rule |
 | [watchlist](docs/features/watchlist.md) | Entries and lists, bulk writes and the note target, what the bookmarks and the page read |
+| [browse](docs/features/browse.md) | Carousel definitions and filter sets, the resolver, page layouts |
 | [navigation](docs/features/navigation.md) | What survives leaving a page and coming back: route, origin, scroll position, filters — and when each resets |
 
 **`compound-docs/`** — why something changed, dated and frozen; feature docs say how
@@ -145,6 +146,7 @@ several `admin_*` modules). The live contract is FastAPI's own
 | Prefix | Purpose |
 |---|---|
 | `/auth` | login, register, validate, refresh (sliding session) |
+| `/browse` | page carousels, one carousel with its filter sets switched |
 | `/search` | `/media` per-entry, `/anime` aggregated, `/mal` |
 | `/media` | media + anime detail |
 | `/ratings` | rating CRUD, rewatch, scores projection, rated coverage, spoiler visibility |
@@ -182,7 +184,7 @@ of its keys the Jobs Log list projects away),
 by the single handler in `main.py`. `PermanentPhsarError` marks a failure
 non-retryable; `TransientUpstreamError` sits outside it and stays retryable.
 
-**`seeders/`** — run from the lifespan: genres, admin + optional guest user, then
+**`seeders/`** — run from the lifespan: genres, the browse carousels, admin + optional guest user, then
 idempotent backfills (settings, default tags, spoiler visibility and its
 restricted-user purge, title suffixes, embeddings) before the yield; the backup
 self-heal and the catalogue-wide passes (relations, merge candidates, split
