@@ -1,5 +1,6 @@
 <script lang="ts">
 	import SearchBar from '$lib/components/SearchBar.svelte';
+	import BrowsePageRows from '$lib/components/BrowsePageRows.svelte';
 	import { navigateToSearch } from '$lib/utils/navigation';
 	import { userSettings } from '$lib/stores/userSettings';
 	import type { MediaSearchFilters } from '$lib/utils/search';
@@ -28,7 +29,6 @@
 	<!-- Sections below -->
 	<div class={cls.sectionSpacing}>
         <ScrollableCard title="Recommended" text="Your recommended animes will appear here." />
-        <ScrollableCard title="Lucky Find" text="Surprise anime picks coming soon!" />
-        <ScrollableCard title="Upcoming" text="Upcoming animes will be listed here." />
+        <BrowsePageRows page="home" />
     </div>
 </div>

@@ -98,7 +98,7 @@ with why SvelteKit's `snapshot` fits neither the filters nor the scroll position
 Both are app-owned and keyed on the URL, and they follow the same call because they
 have the same lifecycle shape.
 
-Browse's row cache follows the same rule.
+Browse's row cache follows the same rule, and Home sits inside Browse's section.
 
 ## Everything degrades to the default
 

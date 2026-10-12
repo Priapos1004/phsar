@@ -11,7 +11,7 @@
     import { get } from 'svelte/store';
     import DangerZone from '$lib/components/DangerZone.svelte';
     import { pushToast } from '$lib/stores/toast';
-    import { THEMES, isValidTheme } from '$lib/themes';
+    import { THEMES, isValidTheme, themeArt } from '$lib/themes';
     import type { ThemeKey } from '$lib/themes';
     import type { UserSettings, UserSettingsUpdate } from '$lib/types/api';
 
@@ -91,7 +91,7 @@
                             onclick={() => saveSetting({ theme: key })}
                         >
                             <img
-                                src={theme.pic}
+                                src={themeArt(key).pic}
                                 alt={theme.label}
                                 class="w-full aspect-video object-cover"
                             />

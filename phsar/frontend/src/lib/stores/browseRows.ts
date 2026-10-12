@@ -1,5 +1,5 @@
 import { api } from '$lib/api';
-import type { AnimeSearchResult, BrowseCarousel } from '$lib/types/api';
+import type { AnimeSearchResult, BrowseCarousel, BrowsePageKey } from '$lib/types/api';
 import { fetchAnimeSearchResults, readsOwnData, type MediaSearchFilters } from '$lib/utils/search';
 
 /**
@@ -8,7 +8,7 @@ import { fetchAnimeSearchResults, readsOwnData, type MediaSearchFilters } from '
  *
  * Opening a tile and coming back would otherwise refetch every row the user had
  * scrolled past, skeletons and all. It follows the section rule instead
- * (`utils/filterLifecycle`): a detail page is a detour and keeps it, leaving Browse
+ * (`utils/filterLifecycle`): a detail page is a detour and keeps it, leaving its section
  * drops it, so a later visit sees today's rows.
  *
  * A row over the caller's own ratings or watchlist goes stale on a write to either,
@@ -35,7 +35,7 @@ function cached<T>(slot: string, id: string, load: () => Promise<T>, personal = 
 	return pending;
 }
 
-export function browsePage(page: string): Promise<BrowseCarousel[]> {
+export function browsePage(page: BrowsePageKey): Promise<BrowseCarousel[]> {
 	const key = `page:${page}`;
 	return cached(key, key, () => api.get<BrowseCarousel[]>(`/browse/${page}`));
 }

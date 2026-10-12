@@ -1001,6 +1001,9 @@ export interface BrowseFilterSet {
 	params: Partial<MediaSearchFilters>;
 }
 
+/** A browse page that lays out carousels (`BrowsePage`). */
+export type BrowsePageKey = 'home' | 'news';
+
 export interface BrowseCarousel {
 	key: string;
 	title: string;
@@ -1009,4 +1012,6 @@ export interface BrowseCarousel {
 	/** Whether its see-all offers a sort; otherwise the carousel's order is shown. */
 	sortable: boolean;
 	filter_sets: BrowseFilterSet[];
+	/** Its page in `PAGE_LAYOUT`; null when no page lays it out. */
+	page: BrowsePageKey | null;
 }

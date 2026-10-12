@@ -25,6 +25,7 @@
 		if (fromParam === 'ratings') return { href: withFocus('/ratings'), label: 'Back to ratings' };
 		if (fromParam === 'ratings-stats') return { href: '/ratings?tab=stats', label: 'Back to statistics' };
 		if (fromParam === 'watchlist') return { href: withFocus('/watchlist'), label: 'Back to watchlist' };
+		if (fromParam === 'home') return { href: withFocus('/'), label: 'Back to home' };
 		if (fromParam === 'browse') return { href: withFocus('/browse'), label: 'Back to browse' };
 		if (fromParam === 'carousel' && carousel) {
 			return { href: withFocus(`/browse/${encodeURIComponent(carousel)}`), label: 'Back to the list' };

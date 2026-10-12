@@ -4,6 +4,7 @@ import {
 	effectiveSort,
 	fetchAnimeSearchResults,
 	filterChips,
+	forGuest,
 	normalizeRated,
 	omitKeys,
 	sortLine,
@@ -132,6 +133,17 @@ describe('carryAcrossView', () => {
 
 	it('drops the rated filter when no state survives', () => {
 		expect(carryAcrossView({ ...BASE, rated: ['completed'] }, 'anime')).not.toHaveProperty('rated');
+	});
+});
+
+describe('forGuest', () => {
+	it('drops a filter every anime passes for a guest, and keeps one none would', () => {
+		expect(forGuest({ ...BASE, rated: ['none', 'in_progress'], watchlisted: false, sort: 'random' })).toEqual({
+			...BASE, sort: 'random',
+		});
+		expect(forGuest({ ...BASE, rated: ['in_progress'], watchlisted: true })).toEqual({
+			...BASE, rated: ['in_progress'], watchlisted: true,
+		});
 	});
 });
 

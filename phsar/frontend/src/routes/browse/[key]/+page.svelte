@@ -19,7 +19,7 @@
 	import { browseCarousel, browseRow } from '$lib/stores/browseRows';
 	import { ensureRatingCoverage } from '$lib/stores/ratingCoverage';
 	import type { AnimeSearchResult, BrowseCarousel, BrowseFilterSet } from '$lib/types/api';
-	import { buildDetailHref, navigateToSearch } from '$lib/utils/navigation';
+	import { buildDetailHref, carouselOrigin, navigateToSearch } from '$lib/utils/navigation';
 	import { pinnedSeason, readsOwnData, type SortDir, type SortKey } from '$lib/utils/search';
 
 	const GUEST_HINT = 'Guest accounts have no ratings or watchlist';
@@ -34,7 +34,7 @@
 	let rows = $state<AnimeSearchResult[] | null>(null);
 	let notice = $state('');
 
-	let search = $derived(carousel ? refinedSearch(carousel, refinement) : null);
+	let search = $derived(carousel ? refinedSearch(carousel, refinement, isGuest) : null);
 	let groups = $derived(carousel ? filterSetGroups(carousel.filter_sets) : []);
 
 	let request = 0;
@@ -50,7 +50,7 @@
 			const c = await browseCarousel(key, r.on, r.off);
 			if (id !== request) return;
 			carousel = c;
-			const s = refinedSearch(c, r);
+			const s = refinedSearch(c, r, isGuest);
 			// Guests: docs/features/browse.md#guests.
 			if (isGuest && readsOwnData(s)) {
 				notice = 'This list is built from your own ratings and watchlist — guest accounts have neither.';
@@ -81,7 +81,7 @@
 <svelte:head><title>{carousel?.title ?? 'Browse'} — Phsar</title></svelte:head>
 
 <SeeAllResults
-	back={{ from: 'browse', focus: key }}
+	back={{ from: carouselOrigin(carousel?.page), focus: key }}
 	title={carousel?.title ?? ''}
 	season={search ? pinnedSeason(search) : null}
 	grain="anime"

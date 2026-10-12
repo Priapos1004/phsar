@@ -11,7 +11,7 @@ import { watchlistFilter, DEFAULT_WATCHLIST_FILTER } from '$lib/stores/watchlist
 import { jobsFilter } from '$lib/stores/adminJobsFilter';
 
 const ALL = ['/ratings', '/watchlist', '/admin', '/browse'];
-const clearedFor = (to: string) => sectionsToClearFor(to).map((s) => s.prefix);
+const clearedFor = (to: string) => sectionsToClearFor(to).map((s) => s.prefixes[0]);
 
 describe('isDetailRoute', () => {
 	it('matches the two query-param detail routes', () => {
@@ -32,7 +32,7 @@ describe('isDetailRoute', () => {
 
 describe('sectionsToClearFor', () => {
 	it('registers exactly the sections that reset', () => {
-		expect(SECTION_RESETS.map((s) => s.prefix)).toEqual(ALL);
+		expect(SECTION_RESETS.map((s) => s.prefixes[0])).toEqual(ALL);
 	});
 
 	it('clears nothing when the destination is a detail page', () => {
@@ -52,6 +52,10 @@ describe('sectionsToClearFor', () => {
 	it('clears every section for an unrelated destination', () => {
 		expect(clearedFor('/search')).toEqual(ALL);
 		expect(clearedFor('/settings')).toEqual(ALL);
+	});
+
+	it('keeps Browse on the home page, whose rows are its carousels', () => {
+		expect(clearedFor('/')).toEqual(['/ratings', '/watchlist', '/admin']);
 	});
 
 	it('does not treat a prefix collision as the same section', () => {

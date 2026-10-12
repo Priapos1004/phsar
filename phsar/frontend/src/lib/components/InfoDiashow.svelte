@@ -1,12 +1,11 @@
 <script lang="ts">
 	import { getCurrentSeason } from '$lib/utils/getSeason';
 	import { userSettings } from '$lib/stores/userSettings';
-	import { getThemePic, getThemeFocal } from '$lib/themes';
+	import { themeArt } from '$lib/themes';
 
 	const currentSeason = getCurrentSeason();
 	let themeKey = $derived($userSettings?.theme ?? 'default');
-	let pic = $derived(getThemePic(themeKey));
-	let focal = $derived(getThemeFocal(themeKey));
+	let { pic, focal } = $derived(themeArt(themeKey));
 </script>
 
 <div class="relative w-full overflow-hidden rounded-xl">

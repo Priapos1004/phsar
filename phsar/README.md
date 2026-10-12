@@ -187,6 +187,7 @@ phsar/
 │   │   │   │   ├── BackLink.svelte
 │   │   │   │   ├── BackupsCard.svelte
 │   │   │   │   ├── BrowseCarousel.svelte
+│   │   │   │   ├── BrowsePageRows.svelte
 │   │   │   │   ├── admin/
 │   │   │   │   │   ├── AdminJobsLogTab.svelte
 │   │   │   │   │   ├── AdminOverviewTab.svelte
@@ -455,6 +456,7 @@ phsar/
 │   │       ├── split-candidates-card.test.ts
 │   │       ├── spoiler-frontier.test.ts
 │   │       ├── spoiler-guard.test.ts
+│   │       ├── themes.test.ts
 │   │       ├── toast.test.ts
 │   │       ├── watchlist-ready.test.ts
 │   │       ├── watchlist-stats.test.ts

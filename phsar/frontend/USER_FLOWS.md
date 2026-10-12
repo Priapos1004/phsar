@@ -98,7 +98,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 ### 2.3 Route Structure
 | Route | Page | Auth Required |
 |-------|------|---------------|
-| `/` | Home (search bar + placeholders) | Yes |
+| `/` | Home: hero banner, search bar, rows of anime (see 3) | Yes |
 | `/login?next=<path>` | Login form; optional validated post-login destination (1.1) | No |
 | `/register?next=<path>` | Registration form (requires token); `next` carried over from the login link | No |
 | `/browse?tab=news\|discover` | Browse: rows of anime (`news`, default) + a Discover placeholder (`discover`) | Yes |
@@ -119,9 +119,11 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 
 ## 3. Home Page
 
-- **Hero banner** (InfoDiashow): Full-width rounded card showing the active theme's character pic as background (`object-cover`, per-theme focal point). A subtle bottom-up dark scrim (for legibility only, no color cast over the art) anchors the "Current Season" label and season name (e.g., "Spring 2026") bottom-left with a soft drop shadow. Pic updates reactively when the user changes theme.
+- **Hero banner** (InfoDiashow): Full-width rounded card showing the active theme's character pic as background (`object-cover`, per-theme focal point). A subtle bottom-up dark scrim (for legibility only, no color cast over the art) anchors the "Current Season" label and season name (e.g., "Spring 2026") bottom-left with a soft drop shadow. Pic updates reactively when the user changes theme. From 1 to 31 October every theme shows its Halloween version instead, each cropped at its own focal point.
 - The search bar (4.2) — the same query box, mode pills and filter sheet as the search page; submitting or applying goes to `/search`
-- Three placeholder cards: "Recommended", "Lucky Find", "Upcoming"
+- A "Recommended" placeholder card, then rows that work as Browse's do (3a), see-all included:
+  - **Lucky find** — top 75% of what you haven't rated or are still watching, in the day's shuffle.
+  - **New to the catalogue** — top 75%, newest added first.
 
 ---
 
@@ -133,8 +135,8 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 - A row loads when you scroll near it, showing a skeleton until then; an empty one says "Nothing here right now."
 - The row's title, and a **See all** tile ending the row, open the row's see-all page (3b). A row pinned to one season names it in a pill beside the title ("Fall 2026").
 - The row scrolls sideways (snapping per tile). On a mouse or trackpad, round arrows page it by about a screen width and appear only where there is more to scroll.
-- A row built from your own ratings or watchlist shows a **guest** a card saying guest accounts have neither; the rest load.
-- Coming back from an anime or media page shows the rows already loaded, without reloading them. They load afresh after leaving Browse for any other page; a row built from your ratings or watchlist also reloads after you change either.
+- A row that needs your own ratings or watchlist shows a **guest** a card saying guest accounts have neither; the rest load. A row that only leaves out what you have rated or listed runs for a guest over everything (Lucky find).
+- Coming back from an anime or media page shows the rows already loaded, without reloading them. They load afresh after leaving Browse or Home for any other page; a row built from your ratings or watchlist also reloads after you change either.
 
 **Tiles:** cover, title, the watchlist bookmark (as in 5.2), and the rated-coverage marking of 5.3 as an outline, gold and obsidian also tinting the title area. Under the title, one line shows the value the row is ordered by — e.g. "Announced Oct 10", a season, a vote count. Under the newest-announcement order, a tile names the announcement's type on its cover ("Movie") when it isn't the kind the rest of the franchise mostly is (a movie announced for a TV show). Clicking a tile opens the anime page (7.6 for the way back).
 
@@ -143,11 +145,11 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 The see-all pages list past a cap as a grid of the 3a tiles, 60 at a time behind **Show More**. Returning from a tile re-expands the list far enough to show it, as the search does (4.3). The count reads "N anime" (or "media"), with a "+" when the list reached its limit.
 
 **A row's see-all** (`/browse/<key>`) lists the row's search up to the row's own limit:
-- "Back to browse" returns to the row, centred, its header flashing briefly.
+- "Back to browse" ("Back to home" for a home row) returns to the row, centred, its header flashing briefly.
 - The title, with the row's season pill. **Open in search ›** at the end of the title row opens `/search` with the list's search as currently refined.
 - Toggles grouped as the filter sheet (4.4) groups them, each with "Any" first: its Top and Watchlist choices, plus `Watched: Any | Not yet | Already` ("Already": at least one entry rated). A row offers only what fits it (Announced continuations, built from your ratings, has no Watched). A choice a row makes by default is lit from the start (Fresh: Top 75%); tapping the lit choice clears it.
 - Some rows offer the **sort** menu of 4.3 (New this season, for one); the others name their order instead ("Latest aired · Newest first").
-- Toggles and sort are kept per row across opening a tile and coming back, and reset on leaving Browse for any other page.
+- Toggles and sort are kept per row across opening a tile and coming back, and reset on leaving Browse or Home for any other page.
 - A **guest** sees the toggles over ratings or the watchlist dimmed, with a tooltip; a row built from them shows the guest card of 3a instead of a list.
 
 **A search's see-all** (`/search/all?q=<token>`) lists the same search up to 1000:
@@ -418,6 +420,7 @@ can rate.
   - `?from=ratings-stats` → "Back to statistics" (a You-vs-MAL scatter point **or** an Activity score-trend point → `/ratings?tab=stats`, landing back on the section you came from)
   - `?from=watchlist` → "Back to watchlist" (a `/watchlist` entry → its media/anime detail → `/watchlist`)
   - `?from=browse` → "Back to browse" (a Browse tile → `/browse`, scrolled to that row and the row to that tile)
+  - `?from=home` → "Back to home" (a home row's tile → `/`, landing as `?from=browse` does)
   - `?from=carousel&carousel=<key>` → "Back to the list" (a row's see-all tile → `/browse/<key>`, at that tile)
   - `?from=search-all&q=<token>` → "Back to all results" (a search's see-all tile → `/search/all?q=token`, at that tile)
   - neither → no back button (direct-URL arrivals stay clean)
@@ -520,7 +523,7 @@ own.
 ### 10.1 Theme
 - "Theme" card with "Design your lobby" subtitle
 - Horizontal scrollable row of theme cards (snap scrolling, `overflow-x-auto`)
-- Each card: landscape character pic (`aspect-video`), theme label below, `w-48 sm:w-56`
+- Each card: landscape character pic (`aspect-video`) — its seasonal version during a seasonal window, as on the home banner (3) — theme label below, `w-48 sm:w-56`
 - Selected theme highlighted with `border-primary ring-2`
 - Clicking a card saves immediately via `PUT /users/settings` with `{ theme: key }`
 - Selecting a theme changes: app background gradient, login/register background gradient, all primary-colored UI elements (buttons, rings, badges, links, charts), the LoadingScreen sakura-ring color, and the home page hero banner character pic
@@ -726,7 +729,7 @@ own.
 | `/filters/genres` | GET | Genre-badge tooltips (cached once per session by the `genres` store) |
 | `/filters/create-token` | POST | Search submission |
 | `/filters/verify-token` | POST | Search page load |
-| `/browse/{page}` | GET | Browse page load, `news` for the News tab: its rows, each with the search it runs |
+| `/browse/{page}` | GET | `news` for Browse's News tab, `home` for the home page's rows: each with the search it runs and the page it sits on |
 | `/browse/carousels/{key}` | GET | A row's see-all load: the row with its toggles switched (`on` / `off` filter-set keys) |
 | `/search/anime` | GET | Anime-view search after token verification (with the token's `sort`/`sort_dir`, and `limit=51` so a full page reads "50+"); each Browse row's search (`limit=25`); a row's see-all (its own limit) and a search's (`limit=1000`); the Completion tab's search-to-mark (12.9) |
 | `/search/media` | GET | Media-view search after token verification (same params); a media-view search's see-all (`limit=1000`) |

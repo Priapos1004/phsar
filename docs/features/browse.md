@@ -4,7 +4,7 @@ The browse pages: rows of anime (carousels), each one a saved search.
 
 **Code**: `seeders/browse_seeder.py` (the core definitions) → `models/browse.py` →
 `services/browse_service.py` (layout + resolver, checked by `schemas/browse_schema.py`)
-→ `routers/browse.py` → `routes/browse/+page.svelte` → `BrowseCarousel.svelte` →
+→ `routers/browse.py` → `BrowsePageRows.svelte` (on Browse and on Home) → `BrowseCarousel.svelte` →
 `PosterCard.svelte`; a carousel's see-all is `routes/browse/[key]/+page.svelte` →
 `SeeAllResults.svelte`, with `stores/browseRefinements.ts`.
 
@@ -44,7 +44,8 @@ again after a backup restore, since the page looks carousels up by key.
 Unlike the genre seeder, whatever the list drops is deleted, and links are updated in
 place, so an unchanged link keeps its row. Which carousels a page shows, top to
 bottom, is `PAGE_LAYOUT` in the service — a constant rather than a table, since no
-user or admin chooses it.
+user or admin chooses it. Home is one of those pages. A carousel sits on one page only and
+says which (`page`), since its tiles and its see-all link back there.
 
 ## A see-all lists the rest
 
@@ -64,8 +65,10 @@ A viewer's choices are kept per carousel (`browseRefinements`).
 
 ## Guests
 
-Every carousel is listed for everyone, a guest included. One over the caller's own
-ratings or watchlist resolves for a guest too; [the search it runs](search.md#personal-filters-and-sort)
+Every carousel is listed for everyone, a guest included. For a guest, `refinedSearch`
+first drops, with `forGuest`, any filter every anime passes for one, so the row, its
+see-all and Open in search run the same search. One still over the caller's own ratings
+or watchlist resolves for a guest too; [the search it runs](search.md#personal-filters-and-sort)
 is where a guest is refused, so the row shows a guest why instead of running it. It
 decides "personal" with `readsOwnData`, the same test that strips a guest's shared link
 and leaves a see-all's toggle over the caller's data inert.

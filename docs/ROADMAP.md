@@ -407,11 +407,10 @@ Separate page/route — the "deep dive" version of home page sections.
 ### Concept
 Eye-catching landing page — light version of browse, serves new and returning users.
 
-### Sections (keep existing placeholders, horizontal scrollable card rows — Crunchyroll-style)
+### Sections (horizontal scrollable card rows — Crunchyroll-style)
 - **Current season diashow** (existing) — rotate through new anime of the season
 - **Recommended** (existing placeholder) — from selected algo
-- **Lucky Find** (existing placeholder) — surprise/random picks
-- **Upcoming** (existing placeholder) — upcoming anime releases
+- **Lucky find**, **New to the catalogue** — built in v0.16.3 (USER_FLOWS §3). The planned Upcoming row is dropped: the News tab covers it
 
 ### UI Pattern
 - Horizontal scrollable card rows (like Crunchyroll app) for all sections
@@ -617,7 +616,7 @@ length target.
 | **v0.16.0** | ✓ Search engine | Title search becomes a fuzzy substring filter over every title variant; description search ranks literal hits first; sorts, a result limit, and new filters (an announced main story, top N%, any/all genres and studios, your rated state, watchlisted). Queries are stripped where they enter, and titles no longer get an embedding of their own. |
 | **v0.16.1** | ✓ Search UI | Title / Description / My notes search modes, a sort control, a filter sheet with active-filter chips and the new filters; slider reload fixes; a dropdown tap-through fix, status-aware watchlist removal on the rating form, and a manual season target for the seasonal sweep. |
 | **v0.16.2** | ✓ Browse + News | Carousel definitions in the DB with a resolver and seeded core rows; the Browse page and its News tab; a see-all page, also reached from search. JWT signing and verification move from python-jose to PyJWT. |
-| **v0.16.3** | Home + Discover | Home carousels replace the placeholders; a Discover tab with a daily rotation. |
+| **v0.16.3** | Home + Discover | Home rows Lucky find and New to the catalogue replace two placeholders; seasonal hero art (Halloween); a Discover tab with a daily rotation. |
 | **v0.16.4** | Personalisation | Per-carousel refinement toggles; pinning a search to Browse as a custom carousel. |
 | **v0.16.5** | Get-started page | The `/getting-started` page. |
 | **v0.17.0** | Advanced analytics (v2) | Heavy/precomputed analytics that go beyond v0.14.12's client-side stats: embedding/taste clustering (HDBSCAN), production-company deep-dives, monthly pre-computed reports, and a true watch-history time series from the `watch_event` table (actual watch moments + rewatches, vs v0.14.12's `created_at` proxy). The standard graphs (score histogram, genre distribution, watch-time) already shipped client-side in **v0.14.12**. |

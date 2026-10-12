@@ -72,6 +72,12 @@ CAROUSELS = [
         {"anime_season": ["$next_season"], "sort": "popularity"},
         1000, sortable=True,
     ),
+    _carousel(
+        "lucky-find", "Lucky find",
+        {"rated": [RatedState.NONE.value, RatedState.IN_PROGRESS.value], "sort": "random"},
+        250, on="top-75",
+    ),
+    _carousel("new-to-catalogue", "New to the catalogue", {"sort": "added"}, 250, on="top-75"),
 ]
 
 

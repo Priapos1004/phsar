@@ -13,6 +13,7 @@ from app.schemas.media_filter_schema import (
 
 
 class BrowsePage(str, Enum):
+    HOME = "home"
     NEWS = "news"
 
 
@@ -45,3 +46,4 @@ class BrowseCarouselOut(BaseModel):
     see_all_limit: int
     sortable: bool
     filter_sets: list[BrowseFilterSetOut]
+    page: BrowsePage | None

@@ -23,8 +23,11 @@ browse_carousel_dao = BrowseCarouselDAO()
 
 # Each page's carousels, top to bottom.
 PAGE_LAYOUT: dict[BrowsePage, tuple[str, ...]] = {
+    BrowsePage.HOME: ("lucky-find", "new-to-catalogue"),
     BrowsePage.NEWS: ("just-announced", "fresh", "announced-continuations", "new-this-season", "next-season"),
 }
+# Each carousel's page; one only, pinned by `test_each_carousel_names_the_one_page_laying_it_out`.
+_PAGE_OF = {key: page for page, keys in PAGE_LAYOUT.items() for key in keys}
 
 
 def _season_filter(day: date, ahead: int = 0) -> str:
@@ -71,6 +74,7 @@ def resolve(carousel: BrowseCarousel, on: Collection[str] = (), off: Collection[
             )
             for link in carousel.filter_sets
         ],
+        page=_PAGE_OF.get(carousel.key),
     )
 
 

@@ -2,7 +2,7 @@
 	// One browse row. Its params are final: docs/features/browse.md.
 	//
 	// Items load when the row nears the viewport, so a page of rows costs one search per
-	// row the user actually reaches — once per visit to Browse (`stores/browseRows`). The
+	// row the user actually reaches — once per visit to the section (`stores/browseRows`). The
 	// row a back link names loads at once instead, since it is the one the page is about
 	// to scroll to.
 	import { onMount, tick } from 'svelte';
@@ -12,7 +12,7 @@
 	import type { AnimeSearchResult, BrowseCarousel } from '$lib/types/api';
 	import { NO_REFINEMENT, refinedSearch } from '$lib/stores/browseRefinements';
 	import { browseRow } from '$lib/stores/browseRows';
-	import { buildDetailHref } from '$lib/utils/navigation';
+	import { buildDetailHref, carouselOrigin } from '$lib/utils/navigation';
 	import { carouselFocus, revealFocused } from '$lib/utils/scrollFocus';
 	import {
 		effectiveSort,
@@ -34,7 +34,7 @@
 
 	let { carousel, isGuest, focus = null }: Props = $props();
 
-	let search = $derived<MediaSearchFilters>({ ...refinedSearch(carousel, NO_REFINEMENT), view_type: 'anime' });
+	let search = $derived<MediaSearchFilters>({ ...refinedSearch(carousel, NO_REFINEMENT, isGuest), view_type: 'anime' });
 	// Guests: docs/features/browse.md#guests.
 	let guestBlocked = $derived(isGuest && readsOwnData(search));
 	let sort = $derived(effectiveSort(search).sort);
@@ -152,7 +152,7 @@
 							<div class="snap-start shrink-0 w-32 sm:w-36" data-focus-uuid={focusId}>
 								<PosterCard
 									row={item}
-									href={buildDetailHref('anime', item.uuid, { from: 'browse', focus: focusId })}
+									href={buildDetailHref('anime', item.uuid, { from: carouselOrigin(carousel.page), focus: focusId })}
 									{sort}
 								/>
 							</div>

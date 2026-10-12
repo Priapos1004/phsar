@@ -135,6 +135,11 @@ describe('BackLink', () => {
 		expect(backLink('Back to browse')).toHaveAttribute('href', '/browse?focus=fresh%3Aabc-123');
 	});
 
+	it('returns a home row\'s detail to home, at the tile', () => {
+		render(BackLink, { props: { origin: { from: 'home', focus: 'lucky-find:abc-123' } } });
+		expect(backLink('Back to home')).toHaveAttribute('href', '/?focus=lucky-find%3Aabc-123');
+	});
+
 	it('returns a see-all detail to its carousel, at the tile', () => {
 		render(BackLink, { props: { origin: { from: 'carousel', carousel: 'fresh', focus: 'abc-123' } } });
 		expect(backLink('Back to the list')).toHaveAttribute('href', '/browse/fresh?focus=abc-123');

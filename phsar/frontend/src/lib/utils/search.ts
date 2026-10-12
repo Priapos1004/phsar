@@ -426,6 +426,16 @@ export function readsOwnData(params: Partial<MediaSearchFilters>): boolean {
 		|| params.search_type === 'rating_notes';
 }
 
+/** The search as a guest would get it: with no ratings or watchlist, a guest passes a filter
+ * on that empty side for every anime, so it goes. Anything over their data that is left
+ * still `readsOwnData`. */
+export function forGuest(params: MediaSearchFilters): MediaSearchFilters {
+	const passesAll: (keyof MediaSearchFilters)[] = [];
+	if (params.rated?.includes('none')) passesAll.push('rated');
+	if (params.watchlisted === false) passesAll.push('watchlisted');
+	return omitKeys(params, passesAll);
+}
+
 /** A shared link opened by a guest: drop what `readsOwnData` names, and say whether anything
  * went, so the page can tell them. Notes fall back to a title search. */
 export function stripForGuest(params: MediaSearchFilters): { params: MediaSearchFilters; stripped: boolean } {

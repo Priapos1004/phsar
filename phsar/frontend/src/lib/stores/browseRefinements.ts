@@ -1,5 +1,5 @@
 import type { BrowseCarousel, BrowseFilterSet } from '$lib/types/api';
-import { SORT_OPTIONS, type MediaSearchFilters, type SortDir, type SortKey } from '$lib/utils/search';
+import { forGuest, SORT_OPTIONS, type MediaSearchFilters, type SortDir, type SortKey } from '$lib/utils/search';
 import { createPersistedFilter, DIRECTION_KEYS, pickStrings } from './persistedFilter';
 
 /**
@@ -76,12 +76,14 @@ export function selectInGroup(group: BrowseFilterSet[], refinement: Refinement, 
 	return { ...refinement, on, off };
 }
 
-/** The search a see-all runs: the resolved carousel, re-sorted where it is sortable. A
+/** The search a carousel runs, for its row and its see-all alike, so those and Open in
+ *  search agree for a guest: the resolved carousel, re-sorted where it is sortable. A
  *  stored sort counts only while it is, so unflagging a carousel overrides any viewer's
  *  choice. */
-export function refinedSearch(carousel: BrowseCarousel, refinement: Refinement): MediaSearchFilters {
+export function refinedSearch(carousel: BrowseCarousel, refinement: Refinement, isGuest: boolean): MediaSearchFilters {
 	const base: MediaSearchFilters = { query: '', search_type: 'title', ...carousel.params };
-	return carousel.sortable && refinement.sort
+	const search = carousel.sortable && refinement.sort
 		? { ...base, sort: refinement.sort, sort_dir: refinement.sort_dir }
 		: base;
+	return isGuest ? forGuest(search) : search;
 }

@@ -34,6 +34,13 @@ async def test_pages_list_their_layout_in_order(client, user_auth_headers):
         assert [c["key"] for c in resp.json()] == list(PAGE_LAYOUT[page])
 
 
+async def test_each_carousel_names_the_one_page_laying_it_out(client, user_auth_headers):
+    laid_out = [(key, page) for page, keys in PAGE_LAYOUT.items() for key in keys]
+    assert len({key for key, _ in laid_out}) == len(laid_out), "a carousel sits on two pages"
+    for key, page in laid_out:
+        assert (await _carousel(client, user_auth_headers, key))["page"] == page.value
+
+
 async def test_season_placeholders_resolve_to_today(client, user_auth_headers, monkeypatch):
     """Fall rolls over into the next year's winter."""
     monkeypatch.setattr(search_filters, "utc_today", lambda: date(2026, 11, 3))

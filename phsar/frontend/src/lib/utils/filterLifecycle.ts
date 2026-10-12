@@ -30,16 +30,18 @@ import { clearBrowseRefinements } from '$lib/stores/browseRefinements';
 const DETAIL_ROUTES = DETAIL_TYPES.map((type) => `/${type}`);
 
 interface SectionReset {
-	prefix: string;
+	/** The section's own routes; `/` matches the home page alone. */
+	prefixes: readonly string[];
 	clear: () => void;
 }
 
 export const SECTION_RESETS: readonly SectionReset[] = [
-	{ prefix: '/ratings', clear: clearRatingsFilter },
-	{ prefix: '/watchlist', clear: clearWatchlistFilter },
-	{ prefix: '/admin', clear: clearJobsFilter },
+	{ prefixes: ['/ratings'], clear: clearRatingsFilter },
+	{ prefixes: ['/watchlist'], clear: clearWatchlistFilter },
+	{ prefixes: ['/admin'], clear: clearJobsFilter },
 	{
-		prefix: '/browse',
+		// Home's rows are browse carousels, so its detours keep them too.
+		prefixes: ['/browse', '/'],
 		clear: () => {
 			clearBrowseRows();
 			clearBrowseRefinements();
@@ -59,7 +61,7 @@ export function isDetailRoute(pathname: string): boolean {
 /** The sections a navigation to `to` should reset. */
 export function sectionsToClearFor(to: string): readonly SectionReset[] {
 	if (isDetailRoute(to)) return [];
-	return SECTION_RESETS.filter((section) => !isWithin(to, section.prefix));
+	return SECTION_RESETS.filter((section) => !section.prefixes.some((prefix) => isWithin(to, prefix)));
 }
 
 export function applyFilterLifecycle(to: string): void {

@@ -95,15 +95,15 @@ describe('browseRefinements lifecycle', () => {
 describe('refinedSearch', () => {
 	const carousel = (sortable: boolean): BrowseCarousel => ({
 		key: 'next-season', title: 'Coming next season', params: { sort: 'popularity' }, see_all_limit: 1000,
-		sortable, filter_sets: [],
+		sortable, filter_sets: [], page: 'news',
 	});
 	const chosen = { on: [], off: [], sort: 'score' as const, sort_dir: 'asc' as const };
 
 	it('applies a chosen sort to a sortable carousel', () => {
-		expect(refinedSearch(carousel(true), chosen)).toMatchObject({ sort: 'score', sort_dir: 'asc' });
+		expect(refinedSearch(carousel(true), chosen, false)).toMatchObject({ sort: 'score', sort_dir: 'asc' });
 	});
 
 	it('keeps an unsortable carousel in its own order whatever was stored', () => {
-		expect(refinedSearch(carousel(false), chosen)).toEqual({ query: '', search_type: 'title', sort: 'popularity' });
+		expect(refinedSearch(carousel(false), chosen, false)).toEqual({ query: '', search_type: 'title', sort: 'popularity' });
 	});
 });
