@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import MaintenanceBanner from '../lib/components/MaintenanceBanner.svelte';
+import { catalogueChanged, onBump } from '$lib/stores/jobs';
 
 describe('MaintenanceBanner', () => {
 	const originalFetch = globalThis.fetch;
@@ -62,6 +63,21 @@ describe('MaintenanceBanner', () => {
 			expect(screen.getByRole('status')).toBeInTheDocument();
 		});
 		expect(screen.getByRole('status')).toHaveTextContent(/Maintenance in progress/);
+	});
+
+	it('signals a catalogue change once when a window it saw closes', async () => {
+		const ended = vi.fn();
+		const unsubscribe = onBump(catalogueChanged, ended);
+		mockStatus(true, null);
+		render(MaintenanceBanner);
+		await vi.waitFor(() => expect(screen.getByRole('status')).toBeInTheDocument());
+		expect(ended).not.toHaveBeenCalled();
+
+		mockStatus(false, null);
+		await vi.advanceTimersByTimeAsync(30_000);
+		await vi.advanceTimersByTimeAsync(30_000);
+		expect(ended).toHaveBeenCalledTimes(1);
+		unsubscribe();
 	});
 
 	it('uses singular "minute" for the 1-minute case', async () => {

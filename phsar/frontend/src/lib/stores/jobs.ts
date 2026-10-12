@@ -6,10 +6,6 @@ import { createBumpStore } from './_bumpStore';
 // after enqueue, instead of waiting for its 30s idle poll.
 export const [jobsRefresh, bumpJobsRefresh] = createBumpStore();
 
-// The bell bumps this whenever it observes a newly-succeeded user_scrape job;
-// /library/add's "Recent additions" panel subscribes and refetches.
-export const [librarySaved, bumpLibrarySaved] = createBumpStore();
-
 // The bell bumps this whenever it observes a newly-succeeded backup job; the
 // admin panel's BackupsCard subscribes and refetches the dump list. Cron
 // backups stay system jobs and never reach the bell — the card's onMount
@@ -22,6 +18,12 @@ export const [backupSaved, bumpBackupSaved] = createBumpStore();
 // jobsRefresh — pages bump after a state-changing action, bell subscribes
 // and refetches in milliseconds.
 export const [curationRefresh, bumpCurationRefresh] = createBumpStore();
+
+// The catalogue changed under whatever caches it, as far as this client can see: a scrape
+// of yours landing, a merge, split or remove, or a maintenance window closing — the
+// nightly sweeps and a restore run in one. A window shorter than the banner's poll, or
+// another user's scrape, goes unseen until a reload.
+export const [catalogueChanged, bumpCatalogueChanged] = createBumpStore();
 
 /**
  * In-memory list of jobs that callers (e.g. BackupsCard, /library/add) push

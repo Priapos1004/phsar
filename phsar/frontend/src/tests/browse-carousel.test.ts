@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/svelte';
 import BrowseCarousel from '$lib/components/BrowseCarousel.svelte';
 import { api } from '$lib/api';
-import { clearBrowseRows } from '$lib/stores/browseRows';
+import { clearBrowseRows, clearSectionRows } from '$lib/stores/browseRows';
 import type { AnimeSearchResult, BrowseCarousel as Carousel } from '$lib/types/api';
 
 const continuations: Carousel = {
@@ -60,6 +60,17 @@ describe('BrowseCarousel', () => {
 		await waitFor(() => expect(screen.getByRole('link', { name: /Hit/ })).toHaveAttribute(
 			'href', '/anime?uuid=abc-123&from=home&focus=lucky-find%3Aabc-123',
 		));
+	});
+
+	it("keeps a home row's results when Browse is left", async () => {
+		const get = vi.spyOn(api, 'get').mockResolvedValue([]);
+		const fresh: Carousel = { ...continuations, key: 'new-to-catalogue', params: { sort: 'added' }, page: 'home' };
+		render(BrowseCarousel, { props: { carousel: fresh, isGuest: false } }).unmount();
+		await waitFor(() => expect(get).toHaveBeenCalledTimes(1));
+		clearSectionRows();
+		render(BrowseCarousel, { props: { carousel: fresh, isGuest: false } });
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(get).toHaveBeenCalledTimes(1);
 	});
 
 	it('runs the same row for a full account', async () => {

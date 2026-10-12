@@ -2,7 +2,7 @@
 	// One browse row. Its params are final: docs/features/browse.md.
 	//
 	// Items load when the row nears the viewport, so a page of rows costs one search per
-	// row the user actually reaches — once per visit to the section (`stores/browseRows`). The
+	// row the user actually reaches — once while `stores/browseRows` keeps it. The
 	// row a back link names loads at once instead, since it is the one the page is about
 	// to scroll to.
 	import { onMount, tick } from 'svelte';
@@ -50,7 +50,7 @@
 
 	async function load() {
 		try {
-			items = await browseRow(search, ROW_SIZE);
+			items = await browseRow(search, ROW_SIZE, { page: carousel.page });
 		} catch {
 			failed = true;
 			return;

@@ -1,6 +1,6 @@
 import { api } from '$lib/api';
 import type { FilterOptions } from '$lib/types/api';
-import { librarySaved, onBump } from './jobs';
+import { catalogueChanged, onBump } from './jobs';
 
 /** The endpoint's two variants. Typed rather than `string` because the key set
  *  is what makes this cache correct — a typo would silently allocate a third
@@ -50,16 +50,10 @@ export function clearFilterOptions(): void {
 	cache.clear();
 }
 
-// A finished scrape adds media, which can widen a slider's bounds or introduce a
-// new season/studio/genre. `librarySaved` is bumped by the JobBell when it sees a
-// user_scrape succeed, so hooking it here keeps the dominant staleness case right
-// without any component having to remember. `onBump` (not a raw subscribe) skips
-// svelte's initial synchronous fire.
+// A catalogue change can widen a slider's bounds or introduce a new season/studio/genre,
+// so `catalogueChanged` drops the cache. `onBump` (not a raw subscribe) skips svelte's
+// initial synchronous fire.
 //
 // Module scope rather than a component: the bump can land while no SearchBar is
 // mounted, and only the NEXT opening of the sheet cares.
-//
-// A catalogue change from another user or the nightly sweep still needs a reload.
-// `genres.ts` accepts the same limit; both are session caches of catalogue data,
-// not live views of it.
-onBump(librarySaved, clearFilterOptions);
+onBump(catalogueChanged, clearFilterOptions);

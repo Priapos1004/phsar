@@ -1,9 +1,10 @@
 /**
  * Browse's row cache: kept across a detail detour, dropped on leaving Browse, and on a
  * rating or watchlist write for the rows that read them — the ways it must not show
- * stale rows, and the write that must not cost the rows it can't change.
+ * stale rows, and the write that must not cost the rows it can't change. Home's rows
+ * outlive the section; a catalogue change and the end of the day drop every entry.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 vi.mock('$lib/api', () => ({
 	api: { get: vi.fn() },
@@ -12,6 +13,7 @@ vi.mock('$lib/api', () => ({
 
 import { api } from '$lib/api';
 import { browsePage, browseRow, clearBrowseRows } from '$lib/stores/browseRows';
+import { bumpCatalogueChanged } from '$lib/stores/jobs';
 import { applyFilterLifecycle } from '$lib/utils/filterLifecycle';
 import { invalidateRatingScores } from '$lib/stores/ratingScores';
 import { refreshWatchlist } from '$lib/stores/watchlist';
@@ -28,6 +30,7 @@ describe('browse row cache', () => {
 		get.mockResolvedValue([]);
 		clearBrowseRows();
 	});
+	afterEach(() => vi.useRealTimers());
 
 	it('fetches a row once for many readers', async () => {
 		await browseRow(FRESH, 25);
@@ -45,10 +48,10 @@ describe('browse row cache', () => {
 	// A see-all's toggles change its search; each combination's list must not stay.
 	it('keeps only the latest search under a see-all slot', async () => {
 		const top20 = { ...FRESH, top_percent: 20 };
-		await browseRow(FRESH, 250, 'fresh');
-		await browseRow(top20, 250, 'fresh');
-		await browseRow(FRESH, 250, 'fresh');
-		await browseRow(FRESH, 250, 'fresh');
+		await browseRow(FRESH, 250, { slot: 'fresh' });
+		await browseRow(top20, 250, { slot: 'fresh' });
+		await browseRow(FRESH, 250, { slot: 'fresh' });
+		await browseRow(FRESH, 250, { slot: 'fresh' });
 		expect(rowCalls()).toBe(3);
 	});
 
@@ -65,6 +68,29 @@ describe('browse row cache', () => {
 	it('refetches after leaving Browse', async () => {
 		await browseRow(FRESH, 25);
 		applyFilterLifecycle('/ratings');
+		await browseRow(FRESH, 25);
+		expect(rowCalls()).toBe(2);
+	});
+
+	it("keeps Home's rows after leaving Browse, and refetches them when the catalogue changes", async () => {
+		const home = async () => {
+			await browsePage('home');
+			await browseRow(FRESH, 25, { page: 'home' });
+		};
+		await home();
+		applyFilterLifecycle('/ratings');
+		await home();
+		expect(get).toHaveBeenCalledTimes(2);
+		bumpCatalogueChanged();
+		await home();
+		expect(get).toHaveBeenCalledTimes(4);
+	});
+
+	it('refetches on a new UTC day', async () => {
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(new Date('2026-10-12T23:59:00Z'));
+		await browseRow(FRESH, 25);
+		vi.setSystemTime(new Date('2026-10-13T00:01:00Z'));
 		await browseRow(FRESH, 25);
 		expect(rowCalls()).toBe(2);
 	});

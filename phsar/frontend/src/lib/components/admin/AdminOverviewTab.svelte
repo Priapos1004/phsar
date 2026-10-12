@@ -6,7 +6,7 @@
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { formatJobKind, formatNumber, percentOf } from '$lib/utils/formatString';
 	import { byWindow } from '$lib/utils/jobHealth';
-	import { librarySaved, onBump } from '$lib/stores/jobs';
+	import { catalogueChanged, onBump } from '$lib/stores/jobs';
 	import type { AdminOverviewStats } from '$lib/types/api';
 
 	let stats = $state<AdminOverviewStats | null>(null);
@@ -26,11 +26,9 @@
 
 	onMount(load);
 
-	// Refetch when the bell observes a new succeeded user_scrape — catalog
-	// counts and the activity panel shift, and the admin shouldn't have to
-	// reload to see them. Same pattern as the /library/add recent-additions
-	// panel uses to stay current without manual refresh.
-	$effect(() => onBump(librarySaved, () => void load()));
+	// Refetch when the catalogue changes — catalog counts and the activity panel
+	// shift, and the admin shouldn't have to reload to see them.
+	$effect(() => onBump(catalogueChanged, () => void load()));
 
 	const JOB_HEALTH_COLUMNS = ['Ok', 'Failed', 'Rate'];
 </script>

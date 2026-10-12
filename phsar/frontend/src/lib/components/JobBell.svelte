@@ -5,7 +5,7 @@
 	import { api, ApiError } from '$lib/api';
 	import {
 		bumpBackupSaved,
-		bumpLibrarySaved,
+		bumpCatalogueChanged,
 		curationRefresh,
 		jobsRefresh,
 		onBump,
@@ -96,9 +96,8 @@
 	let dropdownOpen = $state(false);
 	let pollTimer: ReturnType<typeof setTimeout> | null = null;
 	let stopped = false;
-	// UUIDs of user_scrape jobs we've already announced to /library/add via
-	// bumpLibrarySaved — prevents the bell from re-triggering a refresh on
-	// every poll while a succeeded job is still in the response window.
+	// Succeeded jobs already announced, so one still in /jobs/mine's window doesn't
+	// re-bump on every poll.
 	let announcedSavedUuids = new Set<string>();
 	// Per-fetch status snapshot + a once-only toast guard, both non-reactive.
 	// A completion toast fires only on an active→finished TRANSITION (prev
@@ -162,10 +161,9 @@
 			// Drop any optimistic rows that have now landed in /jobs/mine so the
 			// dropdown shows a single canonical entry per UUID.
 			reconcileOptimisticJobs(fresh);
-			// Announce newly-succeeded jobs to the consumer pages so they can
-			// refresh without a manual reload. user_scrape → /library/add;
-			// backup → BackupsCard. The same UUID set covers both because job
-			// UUIDs are globally unique.
+			// Announce newly-succeeded jobs so their listeners refresh without a
+			// manual reload. One UUID set covers both kinds because job UUIDs are
+			// globally unique.
 			let anyScrape = false;
 			let anyBackup = false;
 			for (const job of fresh) {
@@ -180,7 +178,7 @@
 					anyBackup = true;
 				}
 			}
-			if (anyScrape) bumpLibrarySaved();
+			if (anyScrape) bumpCatalogueChanged();
 			if (anyBackup) bumpBackupSaved();
 
 			// Completion toasts: fire once when a job we watched go active

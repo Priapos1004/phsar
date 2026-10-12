@@ -7,7 +7,7 @@
     import Tooltip from '$lib/components/Tooltip.svelte';
     import DismissedDecisionsSection from '$lib/components/admin/DismissedDecisionsSection.svelte';
     import { Split, X, RefreshCw, Search, ChevronRight, ChevronDown } from 'lucide-svelte';
-    import { bumpCurationRefresh } from '$lib/stores/jobs';
+    import { bumpCatalogueChanged, bumpCurationRefresh } from '$lib/stores/jobs';
     import { buildDetailHref } from '$lib/utils/navigation';
     import { formatRelationType, resolveTitle } from '$lib/utils/formatString';
     import { userSettings } from '$lib/stores/userSettings';
@@ -73,6 +73,7 @@
             // detection re-runs against the new anime), so bump curation
             // refresh — covers both surfaces in one signal.
             bumpCurationRefresh();
+            bumpCatalogueChanged();
         } catch (err) {
             error = err instanceof ApiError ? err.detail : 'Failed to split';
         } finally {

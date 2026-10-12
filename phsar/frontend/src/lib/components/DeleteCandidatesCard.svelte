@@ -11,7 +11,7 @@
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import DismissedDecisionsSection from '$lib/components/admin/DismissedDecisionsSection.svelte';
 	import { Trash2, X, RefreshCw, Search, AlertTriangle } from 'lucide-svelte';
-	import { bumpCurationRefresh } from '$lib/stores/jobs';
+	import { bumpCatalogueChanged, bumpCurationRefresh } from '$lib/stores/jobs';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import { formatMediaType, formatShortDate, resolveTitle } from '$lib/utils/formatString';
 	import { userSettings } from '$lib/stores/userSettings';
@@ -133,6 +133,7 @@
 			// an anime deletes the anime, which can resolve sibling candidates.
 			await fetchCandidates();
 			bumpCurationRefresh();
+			bumpCatalogueChanged();
 		} catch (err) {
 			removeError = err instanceof ApiError ? err.detail : 'Failed to remove';
 		} finally {

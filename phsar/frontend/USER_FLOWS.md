@@ -83,7 +83,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
     - **Completion toast** (v0.14.13): when an `user_scrape` or `backup` job you were watching finishes, a toast slides in from the top — **green** on success (`Added "<query>" to your library.` / `Backup completed.`), **red** on failure (`Couldn't add "<query>".` / `Backup failed.`). It fires only on a live active→finished transition (jobs already finished when the tab opened don't toast), and restore/sweep jobs never toast. The toast is the single global one (`ToastHost` in the layout), so the `/library/add` enqueue toast and this completion toast never stack.
     - Optimistic-stub pattern: when `/library/add` or the BackupsCard `Create backup` button POSTs, the page pushes a `queued` row into the `optimisticJobs` store with the returned `job_uuid` so the bell renders it instantly without waiting for the next poll. The next `/jobs/mine` fetch reconciles it (UUID match) and replaces the stub with the real row.
     - **Admin pinned reminder**: when the user role is `admin`, the bell also polls `GET /admin/curation/pending-counts` each tick. If any queue has pending rows the dropdown renders a non-dismissible row at the top (Settings icon, "Admin tasks" title, a "N merges, M deletions pending" detail listing only the non-empty kinds, chevron-right) linking to `/admin?tab=curation`. The row hover-tints (no idle background) and sits flush against the top corner — `DropdownMenu.Content` is `p-0 overflow-hidden`. The badge contribution counts as "unseen" via the same session-scoped acknowledgment as jobs: `unseenCuration = max(0, totalPending − BELL_CURATION_SEEN_KEY)`. Opening the dropdown snapshots `totalPending` into the sessionStorage key (so the badge clears); resolving a candidate that drops `totalPending` below the snapshot clamps the snapshot down too, so a later-arriving candidate that brings total back up still re-bumps the badge.
-    - **Auto-refresh on curation actions**: MergeCandidatesCard, SplitCandidatesCard and DeleteCandidatesCard bump `curationRefresh` (lib/stores/jobs.ts) after a successful merge/dismiss/split/dismiss action (and after a re-detect that flagged new candidates). The bell subscribes via `onBump` and refetches the pending counts in milliseconds — same pattern as `jobsRefresh` / `librarySaved` / `backupSaved`.
+    - **Auto-refresh on curation actions**: MergeCandidatesCard, SplitCandidatesCard and DeleteCandidatesCard bump `curationRefresh` (lib/stores/jobs.ts) after a successful merge/dismiss/split/dismiss action (and after a re-detect that flagged new candidates). The bell subscribes via `onBump` and refetches the pending counts in milliseconds — same pattern as `jobsRefresh` / `catalogueChanged` / `backupSaved`.
   - User button (first letter of username) toggling a dropdown with:
     - User Settings → `/settings`
     - Admin → `/admin` (visible only to admin role)
@@ -124,6 +124,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 - A "Recommended" placeholder card, then rows that work as Browse's do (3a), see-all included:
   - **Lucky find** — top 75% of what you haven't rated or are still watching, in the day's shuffle.
   - **New to the catalogue** — top 75%, newest added first.
+  - The rows stay loaded across leaving Home and coming back. They reload on a new day (UTC) and when the catalogue changes — though another user's scrape shows only after a page reload.
 
 ---
 
@@ -136,7 +137,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 - The row's title, and a **See all** tile ending the row, open the row's see-all page (3b). A row pinned to one season names it in a pill beside the title ("Fall 2026").
 - The row scrolls sideways (snapping per tile). On a mouse or trackpad, round arrows page it by about a screen width and appear only where there is more to scroll.
 - A row that needs your own ratings or watchlist shows a **guest** a card saying guest accounts have neither; the rest load. A row that only leaves out what you have rated or listed runs for a guest over everything (Lucky find).
-- Coming back from an anime or media page shows the rows already loaded, without reloading them. They load afresh after leaving Browse or Home for any other page; a row built from your ratings or watchlist also reloads after you change either.
+- Coming back from an anime or media page shows the rows already loaded, without reloading them. They load afresh after leaving Browse for any other page, and whenever Home's do (3); a row built from your ratings or watchlist also reloads after you change either.
 
 **Tiles:** cover, title, the watchlist bookmark (as in 5.2), and the rated-coverage marking of 5.3 as an outline, gold and obsidian also tinting the title area. Under the title, one line shows the value the row is ordered by — e.g. "Announced Oct 10", a season, a vote count. Under the newest-announcement order, a tile names the announcement's type on its cover ("Movie") when it isn't the kind the rest of the franchise mostly is (a movie announced for a TV show). Clicking a tile opens the anime page (7.6 for the way back).
 
@@ -149,7 +150,7 @@ The see-all pages list past a cap as a grid of the 3a tiles, 60 at a time behind
 - The title, with the row's season pill. **Open in search ›** at the end of the title row opens `/search` with the list's search as currently refined.
 - Toggles grouped as the filter sheet (4.4) groups them, each with "Any" first: its Top and Watchlist choices, plus `Watched: Any | Not yet | Already` ("Already": at least one entry rated). A row offers only what fits it (Announced continuations, built from your ratings, has no Watched). A choice a row makes by default is lit from the start (Fresh: Top 75%); tapping the lit choice clears it.
 - Some rows offer the **sort** menu of 4.3 (New this season, for one); the others name their order instead ("Latest aired · Newest first").
-- Toggles and sort are kept per row across opening a tile and coming back, and reset on leaving Browse or Home for any other page.
+- Toggles and sort are kept per row across opening a tile and coming back, and reset on leaving Browse for any other page.
 - A **guest** sees the toggles over ratings or the watchlist dimmed, with a tooltip; a row built from them shows the guest card of 3a instead of a list.
 
 **A search's see-all** (`/search/all?q=<token>`) lists the same search up to 1000:
@@ -575,7 +576,7 @@ own.
 - Server-rendered list from `GET /library/recent` returning the most recent anime saved across the catalog (not just this user's scrapes). Each row links to the anime detail page with `?from=library` so the destination renders a "Back to library" button (see 7.6).
 - Carries `name_eng` + `name_jap` so the frontend can call `resolveTitle(...)` with the user's `name_language` setting — no second fetch.
 - Each card's cover shows a watchlist bookmark overlay (top-right) when the anime is on your watchlist, colored by the list(s) in play (gradient when it spans several) — the same indicator as the media-page related-media carousel; nothing shows when it isn't watchlisted (so guests see none).
-- Refreshes automatically when the bell observes a NEW `succeeded` `user_scrape` (bumps `librarySaved` in `lib/stores/jobs.ts`; this panel subscribes via `onBump`). No manual reload required.
+- Refreshes automatically when the catalogue changes — above all when the bell observes a NEW `succeeded` `user_scrape` (it bumps `catalogueChanged` in `lib/stores/jobs.ts`; this panel subscribes via `onBump`). No manual reload required.
 
 ---
 
@@ -596,7 +597,7 @@ own.
   - **Job health**: per-kind succeeded/failed counts in aligned Ok / Failed / Rate columns, with a colored success-rate percentage (green at ≥90%, amber at 75–89%, red below 75%); a kind with nothing in its window reads "—" rather than 0%. A zero is dimmed and a non-zero Failed is `destructive`, so the column reads as a single vertical line broken only where something failed. The retryable-failed subset is a native hover `title` on the Failed cell — deliberately not inline, since it qualifies the count rather than adding one, and it is therefore unavailable on touch. Kinds are **grouped by the window their counts cover** under a "Last N days" subheading, shortest first. Each kind's window is sized server-side to how often that kind runs, so the grouping is also the signal for which kinds run often. Percent cell is fixed-width + `tabular-nums` so the column edge stays aligned. The `user_scrape` row counts user-initiated submissions only — seasonal-sweep children (system-attributed user_scrapes) are excluded so a Sunday burst of Music/PV-filtered shows doesn't drag the user-facing signal down. Retryable-failed counts ALSO drop system jobs (sweeps, cron backups) since the bell's retry button only fires on user-owned rows; counting cron retries would imply admin action is available when it isn't
   - **Sweep tiers**: where every row sits in the update-sweep cycle, with an **Anime / Media toggle** (default Anime). Five rows in priority cascade — Airing now (emerald) > Stabilizing (amber) > Weekly cycle (sky) > 180-day cycle (violet) > 90-day cycle (indigo). Each row has a horizontal share-of-total bar, count, percentage, and tooltip paraphrasing the predicate (stabilize = first 3 sweeps; 90-day long cycle; 180-day cycle for anything that premiered over a decade ago, whose MAL metadata has effectively frozen). The Stabilizing row expands into indented per-check sub-rows ("0 checks / 1 check / …", one per stabilize sweep) showing how the stabilization pipeline is distributed — for media each row is bucketed by its own check count, for anime by its least-settled member. The number of sub-rows tracks the stabilize threshold automatically. The backend exposes these as 5 mutually-exclusive **cycle-membership** buckets at each grain (`AnimeDAO.count_by_sweep_tier_priority` / `count_media_by_sweep_tier_priority` → `sweep_tiers` / `media_sweep_tiers`); the card renders the selected grain 1:1. Membership, not due-ness — a tier counts where a row *belongs* (e.g. "Weekly cycle" = has/is a recent main), so a row doesn't empty itself when a sweep refreshes its members. Sum equals the grain's catalog total (anime count / media count)
   - **User activity (7d)**: active users (distinct user_ids touching ratings or jobs), new ratings, scrapes submitted (user-attributed only)
-- Refresh: subscribes to the `librarySaved` bump in `lib/stores/jobs.ts`, so the panel reloads in milliseconds whenever the bell observes a new succeeded `user_scrape` — admin sees the catalog + activity counters move without a manual refresh. No periodic polling
+- Refresh: subscribes to the `catalogueChanged` bump in `lib/stores/jobs.ts`, so the panel reloads in milliseconds whenever the catalogue changes — admin sees the catalog + activity counters move without a manual refresh. No periodic polling
 - All counts are aggregate. The Overview tab is leaderboard-free — per-user breakdowns are scoped to the Jobs Log tab where they're needed for debugging
 - Cache: none. Admin-only, queries are sub-150ms
 
@@ -725,7 +726,7 @@ own.
 | Endpoint | Method | When |
 |----------|--------|------|
 | `/auth/login` | POST | Login form submission |
-| `/filters/options?view_type=anime\|media` | GET | The filter sheet's first opening per view (cached for the session by the `filterOptions` store; cleared when a scrape lands) |
+| `/filters/options?view_type=anime\|media` | GET | The filter sheet's first opening per view (cached for the session by the `filterOptions` store; cleared when the catalogue changes, as Home's rows are (3)) |
 | `/filters/genres` | GET | Genre-badge tooltips (cached once per session by the `genres` store) |
 | `/filters/create-token` | POST | Search submission |
 | `/filters/verify-token` | POST | Search page load |

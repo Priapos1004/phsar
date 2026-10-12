@@ -58,7 +58,7 @@
 			}
 			// Unawaited: the tiers decorate tiles, so they must not hold the list back.
 			if (!isGuest) void ensureRatingCoverage();
-			const results = await browseRow(s, c.see_all_limit, key);
+			const results = await browseRow(s, c.see_all_limit, { slot: key });
 			if (id === request) rows = results;
 		} catch (e) {
 			if (id === request) notice = e instanceof ApiError ? e.detail : "Couldn't load this list.";
