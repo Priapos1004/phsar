@@ -320,6 +320,8 @@ export interface AnimeAggregatedBase {
 export interface AnimeSearchResult extends AnimeAggregatedBase, SortValues {
 	/** Notes search only: the caller's note that best matches the query. */
 	matched_note?: string | null;
+	/** Beside an `announced_type` only: `media_types` over the main story alone. */
+	main_story_types: MediaTypeSummary[];
 }
 
 // Anime detail

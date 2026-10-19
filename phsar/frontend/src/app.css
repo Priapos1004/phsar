@@ -168,8 +168,13 @@ body {
   line-height: 1.5;
 }
 
-a {
-  @apply outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm;
+/* In the base layer so a link's own classes override it: unlayered CSS beats every
+   Tailwind layer, utilities included. The radius rounds the focus ring alone — at rest a
+   link stays square, or a one-sided border like a tab's underline curls up at its ends. */
+@layer base {
+  a {
+    @apply outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:rounded-sm;
+  }
 }
 
 /* The ring a card takes on a back-button return. */

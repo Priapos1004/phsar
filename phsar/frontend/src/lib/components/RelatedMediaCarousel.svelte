@@ -8,6 +8,7 @@
 	import WatchlistBookmarkIcon from '$lib/components/WatchlistBookmarkIcon.svelte';
 	import { visibleMediaSet } from '$lib/stores/spoilerVisibility';
 	import { watchlistTags } from '$lib/stores/watchlist';
+	import ScrollRow from '$lib/components/ScrollRow.svelte';
 	import * as cls from '$lib/styles/classes';
 	import type { MediaSibling } from '$lib/types/api';
 
@@ -54,7 +55,7 @@
 	</div>
 {/snippet}
 
-<div bind:this={scrollEl} class="flex gap-3 overflow-x-auto snap-x snap-mandatory pb-2 no-scrollbar">
+<ScrollRow bind:scroller={scrollEl} class="gap-3 pb-2">
 	{#each siblings as sibling, i}
 		{#if i === currentPosition}{@render hereMarker()}{/if}
 		<a
@@ -113,4 +114,4 @@
 		</a>
 	{/each}
 	{#if currentPosition === siblings.length}{@render hereMarker()}{/if}
-</div>
+</ScrollRow>

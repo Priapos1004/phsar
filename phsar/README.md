@@ -248,6 +248,7 @@ phsar/
 │   │   │   │   ├── ScoreDial.svelte
 │   │   │   │   ├── ScorePercentile.svelte
 │   │   │   │   ├── ScrollableCard.svelte
+│   │   │   │   ├── ScrollRow.svelte
 │   │   │   │   ├── SeeAllResults.svelte
 │   │   │   │   ├── SegmentedControl.svelte
 │   │   │   │   ├── SessionTimeoutBanner.svelte

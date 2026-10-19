@@ -216,7 +216,10 @@ under release and latest aired, the announcement's date and media type under new
 announcement, the caller's rating under your rating.
 `filter_service.sort_values` reads it after the search, over the page of hits, from the
 definitions the ORDER BY uses, so the value shown is the one ordered by. Newest added
-needs no fill: every result carries `added_at`.
+needs no fill: every result carries `added_at`. Beside an announced type an anime also
+carries its main story's type counts (`main_story_types`, from the media the search
+already loaded), which the tile measures the announcement against: an announcement is
+always main story, so side stories would skew the comparison.
 
 ## Personal filters and sort
 

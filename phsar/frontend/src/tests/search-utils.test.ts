@@ -255,7 +255,7 @@ describe('sortLine', () => {
 describe('unusualAnnouncedType', () => {
 	const franchise = (announced: string | null, types: [string, number][]) => ({
 		announced_type: announced,
-		media_types: types.map(([media_type, count]) => ({ media_type, count })),
+		main_story_types: types.map(([media_type, count]) => ({ media_type, count })),
 	}) as unknown as AnimeSearchResult;
 
 	it('names a movie announced for a TV show', () => {

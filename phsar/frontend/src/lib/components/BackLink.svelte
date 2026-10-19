@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { ArrowLeft } from 'lucide-svelte';
+	import * as cls from '$lib/styles/classes';
 	import type { DetailHrefOptions } from '$lib/utils/navigation';
 	import { hrefWithFocus } from '$lib/utils/scrollFocus';
 
@@ -40,10 +41,7 @@
 </script>
 
 {#if target}
-	<a
-		href={target.href}
-		class="inline-flex items-center gap-1.5 text-sm text-white/70 hover:text-white transition mb-2"
-	>
+	<a href={target.href} class={cls.pageNavLink}>
 		<ArrowLeft class="size-4" /> {target.label}
 	</a>
 {/if}

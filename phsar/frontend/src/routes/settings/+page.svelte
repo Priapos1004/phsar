@@ -10,6 +10,7 @@
     import { userSettings } from '$lib/stores/userSettings';
     import { get } from 'svelte/store';
     import DangerZone from '$lib/components/DangerZone.svelte';
+    import ScrollRow from '$lib/components/ScrollRow.svelte';
     import { pushToast } from '$lib/stores/toast';
     import { THEMES, isValidTheme, themeArt } from '$lib/themes';
     import type { ThemeKey } from '$lib/themes';
@@ -84,7 +85,7 @@
                 <p class="text-sm text-muted-foreground">Design your lobby</p>
             </Card.Header>
             <Card.Content>
-                <div class="flex gap-4 overflow-x-auto snap-x snap-mandatory pb-2 no-scrollbar">
+                <ScrollRow class="gap-4 pb-2">
                     {#each themeEntries as [key, theme]}
                         <button
                             class="flex-shrink-0 snap-start rounded-lg overflow-hidden border-2 transition w-48 sm:w-56 {isSelectedTheme(settings.theme, key) ? 'border-primary ring-2 ring-primary/50' : 'border-transparent hover:border-muted-foreground/30'}"
@@ -98,7 +99,7 @@
                             <span class="block text-center text-sm text-card-foreground py-1.5 font-medium">{theme.label}</span>
                         </button>
                     {/each}
-                </div>
+                </ScrollRow>
             </Card.Content>
         </Card.Root>
 

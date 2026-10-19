@@ -139,7 +139,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 - A row that needs your own ratings or watchlist shows a **guest** a card saying guest accounts have neither; the rest load. A row that only leaves out what you have rated or listed runs for a guest over everything (Lucky find).
 - Coming back from an anime or media page shows the rows already loaded, without reloading them. They load afresh after leaving Browse for any other page, and whenever Home's do (3); a row built from your ratings or watchlist also reloads after you change either.
 
-**Tiles:** cover, title, the watchlist bookmark (as in 5.2), and the rated-coverage marking of 5.3 as an outline, gold and obsidian also tinting the title area. Under the title, one line shows the value the row is ordered by — e.g. "Announced Oct 10", a season, a vote count. Under the newest-announcement order, a tile names the announcement's type on its cover ("Movie") when it isn't the kind the rest of the franchise mostly is (a movie announced for a TV show). Clicking a tile opens the anime page (7.6 for the way back).
+**Tiles:** cover, title, the watchlist bookmark (as in 5.2), and the rated-coverage marking of 5.3 as an outline, gold and obsidian also tinting the title area. Under the title, one line shows the value the row is ordered by — e.g. "Announced Oct 10", a season, a vote count. Under the newest-announcement order, a tile names the announcement's type on its cover ("Movie") when it isn't the kind the rest of the main story mostly is (a movie announced for a TV show). Clicking a tile opens the anime page (7.6 for the way back).
 
 ## 3b. See-all Pages
 
@@ -408,6 +408,7 @@ can rate.
   - Each card: cover image (with fallback; blurred when spoiler-protected, and a colored bookmark overlaid top-right when the sibling is on your watchlist), title, media type + relation type badges, season or episode count
   - Clicking a sibling card navigates to that media's detail page (origin params preserved — see 7.6)
   - **"You are here" marker**: a thin primary-colored vertical divider with a small pill label slots into the row at the position the current media occupies in the chronological chain. Backend computes the index (`current_position`) so the frontend doesn't need to compare dates client-side. Position 0 = current is the oldest entry (marker leads the row); position == siblings.length = current is the newest (marker trails the row). On load the row auto-scrolls to center the marker, so a long chain opens at the current entry instead of the far left.
+  - Arrows page the row as on a Browse row (3a)
 - If no siblings: "No other media in this anime" message
 
 ### 7.6 Back Navigation
@@ -428,6 +429,7 @@ can rate.
 - These flags propagate across the entire anime↔media jump chain (anime → media tile, media → anime link, related-media carousel) via `buildDetailHref`'s options bag, so a deep dive like curation → anime → media → sibling stays linkable back to the origin
 - The set above is closed. An unrecognised `from` falls through to the search token if one is present, and otherwise renders no back button — never a broken one. `lib/utils/navigation.ts` owns the union and says what adding to it touches
 - **Back returns you to the item you opened, not the top of the list.** The list scrolls that card or row to centre and flashes it briefly, then strips the `?focus=` param it arrived with, so a refresh doesn't re-scroll. It survives the anime↔media chain like the flags above: search → anime → a media tile → back centres the **anime** card originally clicked. Which origins carry it is decided in `BackLink`, beside the labels above; the rest link back unchanged. When the item is not on the page the list lands at the top, and a share link never carries a `focus`
+- **To anime →** sits top right on the back link's line, alone there when there is no back link, and opens the parent anime
 
 ---
 
@@ -523,7 +525,7 @@ own.
 
 ### 10.1 Theme
 - "Theme" card with "Design your lobby" subtitle
-- Horizontal scrollable row of theme cards (snap scrolling, `overflow-x-auto`)
+- Horizontal row of theme cards (snap scrolling), paged by arrows as a Browse row is (3a)
 - Each card: landscape character pic (`aspect-video`) — its seasonal version during a seasonal window, as on the home banner (3) — theme label below, `w-48 sm:w-56`
 - Selected theme highlighted with `border-primary ring-2`
 - Clicking a card saves immediately via `PUT /users/settings` with `{ theme: key }`

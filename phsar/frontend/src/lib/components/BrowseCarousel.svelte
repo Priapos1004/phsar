@@ -6,8 +6,9 @@
 	// row a back link names loads at once instead, since it is the one the page is about
 	// to scroll to.
 	import { onMount, tick } from 'svelte';
-	import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { ArrowRight, ChevronRight } from 'lucide-svelte';
 	import PosterCard from '$lib/components/PosterCard.svelte';
+	import ScrollRow from '$lib/components/ScrollRow.svelte';
 	import * as cls from '$lib/styles/classes';
 	import type { AnimeSearchResult, BrowseCarousel } from '$lib/types/api';
 	import { NO_REFINEMENT, refinedSearch } from '$lib/stores/browseRefinements';
@@ -22,8 +23,6 @@
 	} from '$lib/utils/search';
 
 	const ROW_SIZE = 25;
-	const ARROW =
-		'absolute top-[40%] -translate-y-1/2 z-10 flex size-9 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur hover:bg-black/80 transition pointer-coarse:hidden';
 
 	interface Props {
 		carousel: BrowseCarousel;
@@ -44,9 +43,6 @@
 	let items = $state<AnimeSearchResult[] | null>(null);
 	let failed = $state(false);
 	let section = $state<HTMLElement>();
-	let scroller = $state<HTMLDivElement>();
-	let atStart = $state(true);
-	let atEnd = $state(true);
 
 	async function load() {
 		try {
@@ -64,7 +60,7 @@
 	async function reveal(uuid: string | null) {
 		await tick();
 		const id = uuid ? carouselFocus(carousel.key, uuid) : null;
-		const tile = id ? scroller?.querySelector<HTMLElement>(`[data-focus-uuid="${CSS.escape(id)}"]`) : null;
+		const tile = id ? section?.querySelector<HTMLElement>(`[data-focus-uuid="${CSS.escape(id)}"]`) : null;
 		if (!tile) return revealFocused(carousel.key);
 		tile.scrollIntoView({ block: 'nearest', inline: 'center' });
 		revealFocused(id);
@@ -87,25 +83,6 @@
 		observer.observe(section!);
 		return () => observer.disconnect();
 	});
-
-	function updateArrows() {
-		if (!scroller) return;
-		atStart = scroller.scrollLeft <= 1;
-		atEnd = scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 1;
-	}
-
-	// Once the tiles are in — a ResizeObserver reports as it starts observing — and again
-	// whenever the row itself resizes, which the window is not the only thing to change.
-	$effect(() => {
-		if (!items || !scroller || typeof ResizeObserver === 'undefined') return;
-		const observer = new ResizeObserver(updateArrows);
-		observer.observe(scroller);
-		return () => observer.disconnect();
-	});
-
-	function page(direction: 1 | -1) {
-		scroller?.scrollBy({ left: direction * scroller.clientWidth * 0.9, behavior: 'smooth' });
-	}
 </script>
 
 <section bind:this={section} data-focus-uuid={carousel.key} class="space-y-2">
@@ -139,60 +116,45 @@
 			<p class="text-sm text-white/60">Couldn't load this row.</p>
 		{:else if items && items.length === 0}
 			<p class="text-sm text-white/60">Nothing here right now.</p>
-		{:else}
-			<div class="relative">
-				<div
-					bind:this={scroller}
-					onscroll={updateArrows}
-					class="flex gap-3 overflow-x-auto snap-x snap-mandatory pt-1 pb-2 no-scrollbar"
+		{:else if items}
+			<ScrollRow class="gap-3 pt-1 pb-2">
+				{#each items as item (item.uuid)}
+					{@const focusId = carouselFocus(carousel.key, item.uuid)}
+					<div class="snap-start shrink-0 w-32 sm:w-36" data-focus-uuid={focusId}>
+						<PosterCard
+							row={item}
+							href={buildDetailHref('anime', item.uuid, { from: carouselOrigin(carousel.page), focus: focusId })}
+							{sort}
+						/>
+					</div>
+				{/each}
+				<!-- The see-all again, for whoever scrolled to the end. A tile of the row's
+				     own height and shell; the tint deepens rather than appears on hover, so
+				     it reads as part of the row rather than as a button. -->
+				<a
+					href="/browse/{carousel.key}"
+					class="group/all snap-start shrink-0 w-32 sm:w-36 transition duration-200 hover:-translate-y-0.5"
 				>
-					{#if items}
-						{#each items as item (item.uuid)}
-							{@const focusId = carouselFocus(carousel.key, item.uuid)}
-							<div class="snap-start shrink-0 w-32 sm:w-36" data-focus-uuid={focusId}>
-								<PosterCard
-									row={item}
-									href={buildDetailHref('anime', item.uuid, { from: carouselOrigin(carousel.page), focus: focusId })}
-									{sort}
-								/>
-							</div>
-						{/each}
-						<!-- The see-all again, for whoever scrolled to the end. A tile of the row's
-						     own height and shell; the tint deepens rather than appears on hover, so
-						     it reads as part of the row rather than as a button. -->
-						<a
-							href="/browse/{carousel.key}"
-							class="group/all snap-start shrink-0 w-32 sm:w-36 transition duration-200 hover:-translate-y-0.5"
-						>
-							<div class="{cls.cardGlass} relative h-full overflow-hidden rounded-xl border border-border shadow-sm transition group-hover/all:shadow-md group-hover/all:ring-1 group-hover/all:ring-primary/40">
-								<div class="absolute inset-0 bg-gradient-to-br from-primary/45 via-primary/15 to-primary/5 opacity-70 transition-opacity duration-300 group-hover/all:opacity-100"></div>
-								<div class="relative flex h-full flex-col items-center justify-center gap-3">
-									<span class="flex size-11 items-center justify-center rounded-full border border-primary/40 bg-primary/10 text-primary transition duration-300 group-hover/all:scale-105 group-hover/all:bg-primary/20">
-										<ArrowRight class="size-5" />
-									</span>
-									<span class="text-sm font-medium text-card-foreground/80 transition group-hover/all:text-card-foreground">See all</span>
-								</div>
-							</div>
-						</a>
-					{:else}
-						{#each { length: 8 } as _}
-							<div class="snap-start shrink-0 w-32 sm:w-36">
-								<div class="aspect-[2/3] rounded-xl bg-white/5 animate-pulse"></div>
-								<div class="h-10"></div>
-							</div>
-						{/each}
-					{/if}
-				</div>
-				{#if items && !atStart}
-					<button type="button" aria-label="Scroll left" class="{ARROW} left-1" onclick={() => page(-1)}>
-						<ChevronLeft class="size-5" />
-					</button>
-				{/if}
-				{#if items && !atEnd}
-					<button type="button" aria-label="Scroll right" class="{ARROW} right-1" onclick={() => page(1)}>
-						<ChevronRight class="size-5" />
-					</button>
-				{/if}
+					<div class="{cls.cardGlass} relative h-full overflow-hidden rounded-xl border border-border shadow-sm transition group-hover/all:shadow-md group-hover/all:ring-1 group-hover/all:ring-primary/40">
+						<div class="absolute inset-0 bg-gradient-to-br from-primary/45 via-primary/15 to-primary/5 opacity-70 transition-opacity duration-300 group-hover/all:opacity-100"></div>
+						<div class="relative flex h-full flex-col items-center justify-center gap-3">
+							<span class="flex size-11 items-center justify-center rounded-full border border-primary/40 bg-primary/10 text-primary transition duration-300 group-hover/all:scale-105 group-hover/all:bg-primary/20">
+								<ArrowRight class="size-5" />
+							</span>
+							<span class="text-sm font-medium text-card-foreground/80 transition group-hover/all:text-card-foreground">See all</span>
+						</div>
+					</div>
+				</a>
+			</ScrollRow>
+		{:else}
+			<!-- Outside ScrollRow: a skeleton is nothing to page through. -->
+			<div class="flex gap-3 overflow-hidden pt-1 pb-2">
+				{#each { length: 8 } as _}
+					<div class="shrink-0 w-32 sm:w-36">
+						<div class="aspect-[2/3] rounded-xl bg-white/5 animate-pulse"></div>
+						<div class="h-10"></div>
+					</div>
+				{/each}
 			</div>
 		{/if}
 	{/if}

@@ -1070,6 +1070,18 @@ async def test_announced_sort_is_the_newest_main_story_announcement(
     } == _ANIME_ANNOUNCED
 
 
+async def test_an_announcement_is_compared_against_the_main_story_alone(client, user_auth_headers, announced_set):
+    """A side story's type stays out of what the announced type is measured against, or a
+    franchise with more OVAs than seasons would name every new TV season as unusual."""
+    rows = await _fixture_rows(
+        client, user_auth_headers, url=ANIME_SEARCH_URL, expect=set(_ANIME_ANNOUNCED),
+        in_season=False, query="zqn", sort="announced",
+    )
+    side = next(row for row in rows if row["title"] == "Zqn Side")
+    assert {t["media_type"] for t in side["media_types"]} == {"TV", "OVA"}
+    assert side["main_story_types"] == [{"media_type": "TV", "count": 2}]
+
+
 async def test_announced_sort_at_the_media_grain_is_each_announcement(client, user_auth_headers, announced_set):
     """A main-story announcement sits at when it joined; a side story's or an aired
     entry's does not count, however recent."""

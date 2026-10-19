@@ -238,14 +238,16 @@ export function sortLine(
 	}
 }
 
-/** The announced entry's type, when another type outnumbers it in the rest of the franchise —
+/** The announced entry's type, when another type outnumbers it in the rest of the main story —
  * a movie for a TV show — and so is worth naming on the tile; a tie names nothing. The
- * announcement is in `media_types` itself, so it is left out, or it would tie a one-season TV. */
+ * announcement is in `main_story_types` itself, so it is left out, or it would tie a
+ * one-season TV. */
 export function unusualAnnouncedType(row: AnimeSearchResult): string | null {
 	const announced = row.announced_type;
 	if (!announced) return null;
-	const rest = (row.media_types.find((t) => t.media_type === announced)?.count ?? 1) - 1;
-	return row.media_types.some((t) => t.media_type !== announced && t.count > rest) ? announced : null;
+	const types = row.main_story_types;
+	const rest = (types.find((t) => t.media_type === announced)?.count ?? 1) - 1;
+	return types.some((t) => t.media_type !== announced && t.count > rest) ? announced : null;
 }
 
 /** The applied search with a new query and mode. A different query starts from Best match:

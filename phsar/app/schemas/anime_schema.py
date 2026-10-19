@@ -87,6 +87,8 @@ class AnimeSearchResult(AnimeAggregatedBase, SortValueFields):
     added_at: datetime
     # Notes search only: the caller's note that best matches the query.
     matched_note: str | None = None
+    # Beside an `announced_type` only: `media_types` over the main story alone.
+    main_story_types: list[MediaTypeSummary] = []
 
 
 # --- Anime detail schemas ---

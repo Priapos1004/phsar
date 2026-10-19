@@ -17,7 +17,7 @@
 	import GenreBadges from '$lib/components/GenreBadges.svelte';
 	import ScorePercentile from '$lib/components/ScorePercentile.svelte';
 	import Tooltip from '$lib/components/Tooltip.svelte';
-	import { Star, Tv, Clock, Calendar, Film } from 'lucide-svelte';
+	import { ArrowRight, Star, Tv, Clock, Calendar, Film } from 'lucide-svelte';
 	import * as cls from '$lib/styles/classes';
 	import { userSettings } from '$lib/stores/userSettings';
 	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
@@ -58,6 +58,8 @@
 
 	let isRestricted = $derived(getUserRole() === 'restricted_user');
 	let origin = $derived(detailOrigin(page.url));
+	// The origin travels on, so the anime page's back link still leads where this one does.
+	let animeHref = $derived(media ? buildDetailHref('anime', media.anime_uuid, origin) : '');
 
 	let cleanedDescription = $derived(media?.description ? cleanDescription(media.description) : null);
 	// OR with userRating prevents a brief blur flash after rating: the local
@@ -143,7 +145,12 @@
 	{:else if error}
 		<div class="text-center text-destructive py-20">{error}</div>
 	{:else if media}
-		<BackLink {origin} />
+		<div class="flex items-center">
+			<BackLink {origin} />
+			<a href={animeHref} class="ml-auto {cls.pageNavLink}">
+				To anime <ArrowRight class="size-4" />
+			</a>
+		</div>
 
 		<div class="relative rounded-xl overflow-hidden">
 			{#if media.cover_image && !coverFailed}
@@ -344,7 +351,7 @@
 				<p class="text-muted-foreground {media.sibling_media.length ? 'mb-3' : ''}">
 					Part of anime:
 					<a
-						href={buildDetailHref('anime', media.anime_uuid, origin)}
+						href={animeHref}
 						class="text-primary font-medium hover:underline"
 					>{resolveTitle(media.anime_title, media.anime_name_eng, media.anime_name_jap, nameLanguage)}</a>
 				</p>
