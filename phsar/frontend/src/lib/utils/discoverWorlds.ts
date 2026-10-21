@@ -7,10 +7,10 @@
  */
 import { Bot, Coffee, Compass, Flame, Ghost, Mic, Orbit, Puzzle, Sparkles, Swords, Zap } from 'lucide-svelte';
 
-export type ParticleMotion = 'rise' | 'fall' | 'drift' | 'twinkle';
+export type ParticleMotion = 'rise' | 'fall' | 'drift' | 'twinkle' | 'fly';
 
 /** The signature a world's reveal plays after the spin (`utils/worldReveal.ts`). */
-export type RevealKind = 'bolt' | 'drift';
+export type RevealKind = 'bolt' | 'swords' | 'blaze' | 'portal' | 'glitch' | 'spiral' | 'lights-out' | 'spotlight' | 'hearth' | 'ripples';
 
 export interface WorldLook {
 	icon: typeof Flame;
@@ -21,20 +21,32 @@ export interface WorldLook {
 
 /** Keyed by the backend's world key (`browse_service.WORLDS`). */
 export const WORLD_LOOK: Record<string, WorldLook> = {
-	beasts: { icon: Flame, color: '#f0883e', particle: { glyph: '•', motion: 'rise' }, reveal: 'drift' },
-	'other-worlds': { icon: Orbit, color: '#9d8cf7', particle: { glyph: '✦', motion: 'twinkle' }, reveal: 'drift' },
-	cozy: { icon: Coffee, color: '#e8a07a', particle: { glyph: '🍂', motion: 'fall' }, reveal: 'drift' },
-	twists: { icon: Puzzle, color: '#2db7ae', particle: { glyph: '?', motion: 'drift' }, reveal: 'drift' },
-	steel: { icon: Swords, color: '#e2534e', particle: { glyph: '✧', motion: 'rise' }, reveal: 'drift' },
-	'after-dark': { icon: Ghost, color: '#8f98f2', particle: { glyph: '🦇', motion: 'drift' }, reveal: 'drift' },
-	future: { icon: Bot, color: '#3dbcf5', particle: { glyph: '▪', motion: 'fall' }, reveal: 'drift' },
+	beasts: { icon: Flame, color: '#f0883e', particle: { glyph: '•', motion: 'rise' }, reveal: 'blaze' },
+	'other-worlds': { icon: Orbit, color: '#9d8cf7', particle: { glyph: '✦', motion: 'twinkle' }, reveal: 'portal' },
+	cozy: { icon: Coffee, color: '#e8a07a', particle: { glyph: '🍂', motion: 'fall' }, reveal: 'hearth' },
+	twists: { icon: Puzzle, color: '#2db7ae', particle: { glyph: '?', motion: 'drift' }, reveal: 'spiral' },
+	steel: { icon: Swords, color: '#e2534e', particle: { glyph: '✧', motion: 'rise' }, reveal: 'swords' },
+	'after-dark': { icon: Ghost, color: '#8f98f2', particle: { glyph: '🦇', motion: 'fly' }, reveal: 'lights-out' },
+	future: { icon: Bot, color: '#3dbcf5', particle: { glyph: '▪', motion: 'fall' }, reveal: 'glitch' },
 	'power-up': { icon: Zap, color: '#f4c543', particle: { glyph: '⚡', motion: 'twinkle' }, reveal: 'bolt' },
-	spotlight: { icon: Mic, color: '#ec62a9', particle: { glyph: '★', motion: 'fall' }, reveal: 'drift' },
-	offbeat: { icon: Compass, color: '#a8cf4c', particle: { glyph: '•', motion: 'drift' }, reveal: 'drift' },
+	spotlight: { icon: Mic, color: '#ec62a9', particle: { glyph: '★', motion: 'fall' }, reveal: 'spotlight' },
+	offbeat: { icon: Compass, color: '#a8cf4c', particle: { glyph: '•', motion: 'drift' }, reveal: 'ripples' },
 };
 
 // A world the backend adds before this map knows it still gets a segment and a page.
-const FALLBACK: WorldLook = { icon: Sparkles, color: '#b9a6e8', particle: { glyph: '✦', motion: 'twinkle' }, reveal: 'drift' };
+const FALLBACK: WorldLook = { icon: Sparkles, color: '#b9a6e8', particle: { glyph: '✦', motion: 'twinkle' }, reveal: 'ripples' };
+
+/**
+ * After Dark's bat, as SVG paths in a 100 × 60 box: a body, and one wing the other mirrors,
+ * hinged at `shoulder` so it can beat between `beat`'s two angles (degrees, up then down).
+ * The banner and the reveal fly the same one, where an emoji would only be dragged along.
+ */
+export const BAT = {
+	body: 'M47 24 L48 18 L50 21.5 L52 18 L53 24 Q55.5 31 52 38.5 Q50 41.5 48 38.5 Q44.5 31 47 24 Z',
+	wing: 'M47.5 26 Q36 13 19 16.5 Q8 19 1.5 28 Q9.5 26.5 13.5 32 Q18.5 27.5 23.5 33 Q28.5 28.5 33 35 Q38.5 30 47.5 32.5 Z',
+	shoulder: { x: 47.5, y: 28 },
+	beat: [38, -28],
+} as const;
 
 export function worldLook(key: string): WorldLook {
 	return WORLD_LOOK[key] ?? FALLBACK;

@@ -45,7 +45,7 @@ WORLDS: dict[str, World] = {
     "future": World("Future Shock", ("mecha", "aliens", "after-the-end", "in-the-game")),
     "power-up": World("Power Up", ("superhuman", "fists", "tournament", "shinobi", "samurai")),
     "spotlight": World("Spotlight", ("idols", "on-stage", "game-on", "otaku")),
-    "offbeat": World("Off the Beaten Path", ("hidden-gems", "one-evening", "originals", "grown-ups", "nine-to-five")),
+    "offbeat": World("Off the Beat", ("hidden-gems", "one-evening", "originals", "grown-ups", "nine-to-five")),
 }
 
 # Each page's carousels, top to bottom.

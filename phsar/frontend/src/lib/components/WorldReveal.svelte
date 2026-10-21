@@ -10,7 +10,7 @@
 	// small shapes. The canvas side is `utils/worldReveal.ts`.
 	import { onDestroy, tick } from 'svelte';
 	import { reducedMotion, worldLook, type WorldLook } from '$lib/utils/discoverWorlds';
-	import { BEAT, punches, runReveal } from '$lib/utils/worldReveal';
+	import { BEAT, runReveal, softness } from '$lib/utils/worldReveal';
 
 	const SKIP_FADE_MS = 160;
 	// Where the glyph burst flies, in vmin from the centre: evenly round, off the axes.
@@ -76,11 +76,14 @@
 
 {#if shown}
 	{@const { look, title } = shown}
+	{@const soft = softness(look.reveal)}
 	<div
 		class="stage"
 		class:leaving
+		data-kind={look.reveal}
 		aria-hidden="true"
 		style:--world={look.color}
+		style:--wash="{soft?.wash ?? 0}%"
 		style:--t-impact="{BEAT.impact}ms"
 		style:--t-peak="{BEAT.peak}ms"
 		style:--t-title="{BEAT.title}ms"
@@ -89,14 +92,18 @@
 	>
 		<!-- The shake moves everything inside the frame and never the frame itself, the way a camera
 		     shakes under its letterbox. Its overhang keeps the page from showing at the edges. -->
-		<div class="shake" class:punch={punches(look.reveal)}>
+		<div class="shake" class:punch={!soft}>
 			<div class="dim"></div>
 			<canvas bind:this={canvas}></canvas>
 			<div class="flash"></div>
-			<div class="ring"></div>
-			{#each BURST as b}
-				<span class="glyph" style:--dx="{b.dx}vmin" style:--dy="{b.dy}vmin" style:--turn="{b.turn}deg">{look.particle.glyph}</span>
-			{/each}
+			{#if !soft || soft.ring}
+				<div class="ring"></div>
+			{/if}
+			{#if !soft}
+				{#each BURST as b}
+					<span class="glyph" style:--dx="{b.dx}vmin" style:--dy="{b.dy}vmin" style:--turn="{b.turn}deg">{look.particle.glyph}</span>
+				{/each}
+			{/if}
 			<div class="card">
 				<p class="kicker">Today's mood</p>
 				<p class="name"><span class="swipe"></span><span class="relative">{title}</span></p>
@@ -144,9 +151,9 @@
 			dim-out 450ms ease-in var(--t-clear) forwards;
 	}
 	/* A hard cut to white, then a long fall-off — not a fade in. A soft signature washes in
-	   its colour instead. */
+	   its colour instead, as strongly as its `wash`. */
 	.flash {
-		background: color-mix(in oklab, var(--world) 55%, transparent);
+		background: color-mix(in oklab, var(--world) var(--wash), transparent);
 		opacity: 0;
 		animation: flash 480ms cubic-bezier(0.3, 0, 0.6, 1) var(--t-peak) forwards;
 	}
@@ -214,6 +221,13 @@
 			0 0 0.35em var(--world),
 			0 0.06em 0 rgb(0 0 0 / 0.5);
 	}
+	/* A glitch signature's title arrives as a broken signal and stutters once mid-hold. The cyan and
+	   magenta are a split signal's, whatever the theme. */
+	[data-kind='glitch'] .name {
+		animation:
+			name-glitch 420ms steps(1, end) var(--t-title) both,
+			name-glitch 260ms steps(1, end) calc(var(--t-title) + 900ms);
+	}
 	.swipe {
 		position: absolute;
 		left: -0.4em;
@@ -274,6 +288,16 @@
 	}
 	@keyframes card-out {
 		to { transform: scale(1.12); opacity: 0; }
+	}
+	@keyframes name-glitch {
+		0% { clip-path: inset(10% 0 60% 0); transform: translateX(-8px); text-shadow: -3px 0 #0ff, 3px 0 #f0f; }
+		15% { clip-path: inset(50% 0 20% 0); transform: translateX(10px); }
+		30% { clip-path: inset(0 0 80% 0); transform: translateX(-4px); }
+		45% { clip-path: inset(70% 0 5% 0); transform: translateX(6px); }
+		60% { clip-path: inset(20% 0 40% 0); transform: translateX(-10px); }
+		75% { clip-path: inset(0); transform: translateX(3px); text-shadow: -2px 0 #0ff, 2px 0 #f0f; }
+		/* Held through the card: the inset crops the swipe and the glow to the title's box. */
+		100% { clip-path: inset(0); }
 	}
 	@keyframes swipe {
 		from { transform: skewX(-14deg) scaleX(0); }

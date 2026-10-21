@@ -165,9 +165,9 @@ The see-all pages list past a cap as a grid of the 3a tiles, 60 at a time behind
 
 The Discover tab shows one **mood** a day: a themed group of rows (Beasts & Legends, Cozy Corner, Twists & Turns …).
 - Before today's spin: "Spin for today's mood" over a wheel with a segment per mood. **Spin the wheel** (or a click on the wheel) spins it for about five seconds; it overshoots a touch, settles on the drawn mood and dims the rest.
-- Then a full-screen reveal of about three seconds: letterbox bars, the mood's signature (Power Up: a lightning storm onto the centre; the others: their glyph spiralling in), a flash under which the tab turns to the mood, and its name as a title card. A tap or any key skips it.
+- Then a full-screen reveal of about three seconds: letterbox bars, a signature of the mood's own — a punching one lands with a freeze, a black-and-white impact frame and a shake, a gentle one flows straight through on a soft wash of its colour — a flash under which the tab turns to the mood, and its name as a title card. A tap or any key skips it.
 - One spin a day: after it, the tab opens straight on today's mood — on a reload, from another device, after leaving Browse. Each mood comes round once before any repeats.
-- The mood: a banner in its colour with its icon, drifting particles, and "Today's mood. Spin the wheel again tomorrow.", then its rows (3a) — starting on what you haven't watched. Inside the tab everything drawn in your theme's accent takes the mood's colour instead; the navbar and the tab bar keep your theme.
+- The mood: a banner in its colour with its icon, drifting particles (After Dark's bats fly across, wings beating), and "Today's mood. Spin the wheel again tomorrow.", then its rows (3a) — starting on what you haven't watched. Inside the tab everything drawn in your theme's accent takes the mood's colour instead; the navbar and the tab bar keep your theme.
 - A **guest** can't spin: the wheel and the reveal play once per visit to Browse and land on the day's mood.
 - With reduced motion the wheel doesn't turn, no reveal plays and no particles show.
 

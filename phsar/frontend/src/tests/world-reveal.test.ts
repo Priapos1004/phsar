@@ -7,7 +7,8 @@
 import { render } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import WorldReveal from '$lib/components/WorldReveal.svelte';
-import { BEAT, bolt } from '$lib/utils/worldReveal';
+import { WORLD_LOOK } from '$lib/utils/discoverWorlds';
+import { BEAT, bolt, runReveal } from '$lib/utils/worldReveal';
 
 // mulberry32: a seeded stand-in for Math.random, so a failing bolt can be replayed.
 function seeded(seed: number) {
@@ -95,3 +96,81 @@ describe('bolt', () => {
 		}
 	});
 });
+
+/**
+ * A 2D context that records what a scene asks of it: every alpha it sets, and every call or
+ * setting handed a number that isn't finite. Each goes wrong without throwing — a canvas
+ * ignores an alpha outside 0–1 and keeps drawing with the last one, and a NaN draws nothing
+ * — so this is the check that a signature draws what it means to, short of a human looking
+ * at it.
+ */
+function recordingContext() {
+	const seen = { alphas: [] as number[], broken: [] as string[] };
+	const check = (key: PropertyKey, args: unknown[]) => {
+		if (args.some((a) => typeof a === 'number' && !Number.isFinite(a))) seen.broken.push(String(key));
+	};
+	const gradient = { addColorStop: () => {} };
+	const state: Record<PropertyKey, unknown> = {};
+	const ctx = new Proxy(state, {
+		get: (target, key) =>
+			key in target
+				? target[key]
+				: (...args: unknown[]) => {
+						check(key, args);
+						return gradient;
+					},
+		set: (target, key, value) => {
+			if (key === 'globalAlpha') seen.alphas.push(value);
+			check(key, [value]);
+			target[key] = value;
+			return true;
+		},
+	});
+	// A function, not an arrow, so `new Path2D()` can construct it.
+	const path = function () {
+		return new Proxy({}, { get: (_, key) => (...args: unknown[]) => check(key, args) });
+	};
+	return { ctx, seen, path };
+}
+
+describe('every signature', () => {
+	let frames: FrameRequestCallback[] = [];
+	afterEach(() => {
+		frames = [];
+		vi.unstubAllGlobals();
+		vi.restoreAllMocks();
+	});
+
+	const kinds = [...new Map(Object.values(WORLD_LOOK).map((look) => [look.reveal, look])).values()];
+	for (const look of kinds) {
+		for (const [w, h] of [
+			[390, 844],
+			[1440, 900],
+		]) {
+			it(`${look.reveal} plays through at ${w}×${h}, in range, and stops by itself`, () => {
+				const { ctx, seen, path } = recordingContext();
+				vi.stubGlobal('Path2D', path);
+				vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => frames.push(cb));
+				vi.stubGlobal('cancelAnimationFrame', () => {});
+				// The sprites a scene paints once are drawn through the same recording context.
+				vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(ctx as never);
+				const canvas = { getContext: () => ctx, clientWidth: w, clientHeight: h, width: 0, height: 0 } as unknown as HTMLCanvasElement;
+
+				runReveal(canvas, look, seeded(7));
+				let now = 0;
+				while (frames.length && now <= BEAT.end + 100) {
+					const due = frames;
+					frames = [];
+					due.forEach((cb) => cb(now));
+					now += 1000 / 60;
+				}
+
+				expect(frames, 'still scheduling frames after the reveal ended').toHaveLength(0);
+				expect(seen.broken).toEqual([]);
+				expect(seen.alphas.length).toBeGreaterThan(0);
+				expect(seen.alphas.filter((a) => !(a >= 0 && a <= 1))).toEqual([]);
+			});
+		}
+	}
+});
+
