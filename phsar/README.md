@@ -277,6 +277,7 @@ phsar/
 │   │   │   │   ├── WatchlistDialog.svelte
 │   │   │   │   ├── WatchlistTagSelect.svelte
 │   │   │   │   ├── WorldParticles.svelte
+│   │   │   │   ├── WorldReveal.svelte
 │   │   │   │   ├── watchlist/       # /watchlist page (list + tag management)
 │   │   │   │   │   ├── TagColorPicker.svelte
 │   │   │   │   │   ├── WatchlistCard.svelte
@@ -363,7 +364,8 @@ phsar/
 │   │   │       ├── spoilerFrontier.ts
 │   │   │       ├── watchlist.ts
 │   │   │       ├── watchlistReady.ts
-│   │   │       └── watchlistStats.ts
+│   │   │       ├── watchlistStats.ts
+│   │   │       └── worldReveal.ts
 │   │   ├── routes/
 │   │   │   ├── +layout.svelte
 │   │   │   ├── +layout.ts
@@ -467,7 +469,8 @@ phsar/
 │   │       ├── toast.test.ts
 │   │       ├── watchlist-ready.test.ts
 │   │       ├── watchlist-stats.test.ts
-│   │       └── watchlist-uniform-entries.test.ts
+│   │       ├── watchlist-uniform-entries.test.ts
+│   │       └── world-reveal.test.ts
 │   ├── static/
 │   │   ├── apple-touch-icon.png
 │   │   ├── favicon-192x192.png

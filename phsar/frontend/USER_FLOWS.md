@@ -101,7 +101,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 | `/` | Home: hero banner, search bar, rows of anime (see 3) | Yes |
 | `/login?next=<path>` | Login form; optional validated post-login destination (1.1) | No |
 | `/register?next=<path>` | Registration form (requires token); `next` carried over from the login link | No |
-| `/browse?tab=news\|discover` | Browse: rows of anime (`news`, default) + the day's world of anime (`discover`, 3c) | Yes |
+| `/browse?tab=news\|discover` | Browse: rows of anime (`news`, default) + the day's mood of anime (`discover`, 3c) | Yes |
 | `/browse/<key>` | A Browse row's see-all (3b) | Yes |
 | `/search?q=<token>` | Search results (anime or media view) | Yes |
 | `/search/all?q=<token>` | A search's see-all, past the 50 the search shows (3b) | Yes |
@@ -163,12 +163,13 @@ The see-all pages list past a cap as a grid of the 3a tiles, 60 at a time behind
 
 ## 3c. Discover
 
-The Discover tab shows one **world** a day: a themed group of rows (Beasts & Legends, Cozy Corner, Twists & Turns …).
-- Before today's spin: "Spin for today's world" over a wheel with a segment per world. **Spin the wheel** (or a click on the wheel) spins it for about five seconds; it overshoots a touch, settles on the drawn world and dims the rest.
-- One spin a day: after it, the tab opens straight on today's world — on a reload, from another device, after leaving Browse. Each world comes round once before any repeats.
-- The world: a banner in its colour with its icon, drifting particles, and "Today's world. Spin the wheel again tomorrow.", then its rows (3a) — starting on what you haven't watched. Inside the tab everything drawn in your theme's accent takes the world's colour instead; the navbar and the tab bar keep your theme.
-- A **guest** can't spin: the wheel plays once per visit to Browse and lands on the day's world.
-- With reduced motion the wheel doesn't turn and no particles show.
+The Discover tab shows one **mood** a day: a themed group of rows (Beasts & Legends, Cozy Corner, Twists & Turns …).
+- Before today's spin: "Spin for today's mood" over a wheel with a segment per mood. **Spin the wheel** (or a click on the wheel) spins it for about five seconds; it overshoots a touch, settles on the drawn mood and dims the rest.
+- Then a full-screen reveal of about three seconds: letterbox bars, the mood's signature (Power Up: a lightning storm onto the centre; the others: their glyph spiralling in), a flash under which the tab turns to the mood, and its name as a title card. A tap or any key skips it.
+- One spin a day: after it, the tab opens straight on today's mood — on a reload, from another device, after leaving Browse. Each mood comes round once before any repeats.
+- The mood: a banner in its colour with its icon, drifting particles, and "Today's mood. Spin the wheel again tomorrow.", then its rows (3a) — starting on what you haven't watched. Inside the tab everything drawn in your theme's accent takes the mood's colour instead; the navbar and the tab bar keep your theme.
+- A **guest** can't spin: the wheel and the reveal play once per visit to Browse and land on the day's mood.
+- With reduced motion the wheel doesn't turn, no reveal plays and no particles show.
 
 ---
 

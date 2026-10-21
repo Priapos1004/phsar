@@ -2,12 +2,14 @@
 	// Discover: spin the wheel for today's world, then that world's rows
 	// (docs/features/browse.md). Before the spin the tab wears the user's theme; after it the
 	// world's colour stands in for `--primary` inside this tab only, so the navbar and the
-	// tab bar above keep the theme and switching tabs never changes the page's mood.
+	// tab bar above keep the theme and switching tabs never changes the page's look.
 	import { getContext, onMount } from 'svelte';
+	import { page } from '$app/state';
 	import { ApiError } from '$lib/api';
 	import BrowsePageRows from '$lib/components/BrowsePageRows.svelte';
 	import DiscoverWheel from '$lib/components/DiscoverWheel.svelte';
 	import WorldParticles from '$lib/components/WorldParticles.svelte';
+	import WorldReveal from '$lib/components/WorldReveal.svelte';
 	import { discoverWorlds, spinWorld, type DiscoverState } from '$lib/stores/browseRows';
 	import { worldLook } from '$lib/utils/discoverWorlds';
 
@@ -18,9 +20,12 @@
 	let loadError = $state('');
 	let spinError = $state('');
 	let spinning = $state(false);
-	// Set by a spin in this visit, so only a fresh draw plays the reveal — not a return.
+	// Set by a spin in this visit, so only a fresh draw unfolds the banner — not a return.
 	let revealed = $state(false);
 	let wheel = $state<ReturnType<typeof DiscoverWheel>>();
+	let stage = $state<ReturnType<typeof WorldReveal>>();
+
+	const titleOf = (state: DiscoverState, key: string) => state.worlds.find((w) => w.key === key)?.title ?? '';
 
 	onMount(async () => {
 		try {
@@ -28,6 +33,11 @@
 		} catch (e) {
 			loadError = e instanceof ApiError ? e.detail : 'Discover could not load. Reload the page to try again.';
 		}
+		// The spin comes once a day, so tuning a reveal needs a way to replay one: `?reveal=<key>`.
+		// `import.meta.env.DEV`, not `$app/environment`'s `dev`: the config's `resolve.conditions`
+		// leaves that one reading `process` at runtime, which a browser doesn't have.
+		const replay = import.meta.env.DEV && page.url.searchParams.get('reveal');
+		if (replay && discover) stage?.play(replay, titleOf(discover, replay));
 	});
 
 	async function spin() {
@@ -36,7 +46,9 @@
 		spinError = '';
 		try {
 			const spun = await spinWorld(isGuest);
-			await wheel?.spinTo(spun.today!.world);
+			const key = spun.today!.world;
+			await wheel?.spinTo(key);
+			await stage?.play(key, titleOf(spun, key));
 			revealed = true;
 			discover = spun;
 		} catch (e) {
@@ -48,7 +60,7 @@
 
 	let today = $derived(discover?.spun ? discover.today : null);
 	let look = $derived(today ? worldLook(today.world) : null);
-	let title = $derived(discover?.worlds.find((w) => w.key === today?.world)?.title ?? '');
+	let title = $derived(discover && today ? titleOf(discover, today.world) : '');
 </script>
 
 {#if loadError}
@@ -58,8 +70,8 @@
 {:else if !today || !look}
 	<section class="flex flex-col items-center gap-6 py-2 text-center">
 		<div class="space-y-2">
-			<h2 class="text-2xl font-bold text-white sm:text-3xl">Spin for today's world</h2>
-			<p class="mx-auto max-w-md text-white/70">One spin a day lands you in a world of anime to discover.</p>
+			<h2 class="text-2xl font-bold text-white sm:text-3xl">Spin for today's mood</h2>
+			<p class="mx-auto max-w-md text-white/70">One spin a day sets the mood for what to discover.</p>
 		</div>
 		<DiscoverWheel bind:this={wheel} worlds={discover.worlds} disabled={spinning} onspin={spin} />
 		<button
@@ -96,7 +108,7 @@
 			<look.icon class="absolute -bottom-10 -right-6 size-52 rotate-12 text-white opacity-20 sm:size-64" aria-hidden="true" />
 			<div class="relative">
 				<h2 class="text-4xl font-black tracking-tight text-white drop-shadow sm:text-5xl">{title}</h2>
-				<p class="mt-3 text-white/85">Today's world. Spin the wheel again tomorrow.</p>
+				<p class="mt-3 text-white/85">Today's mood. Spin the wheel again tomorrow.</p>
 			</div>
 		</header>
 		<div>
@@ -104,6 +116,9 @@
 		</div>
 	</div>
 {/if}
+
+<!-- Outside the branches, so the swap it hides doesn't unmount it. -->
+<WorldReveal bind:this={stage} />
 
 <style>
 	.reveal > header {

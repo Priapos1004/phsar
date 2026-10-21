@@ -8,7 +8,7 @@
 	// around its own SVG, so the browser composites a drawn layer instead of repainting the
 	// gradients and the glow every frame, as a transform on an SVG group makes it.
 	import type { DiscoverWorld } from '$lib/types/api';
-	import { labelLines, landingRotation, worldLook } from '$lib/utils/discoverWorlds';
+	import { labelLines, landingRotation, reducedMotion, worldLook } from '$lib/utils/discoverWorlds';
 
 	interface Props {
 		worlds: DiscoverWorld[];
@@ -27,8 +27,6 @@
 	let spinning = $state(false);
 	let landed = $state<string | null>(null);
 
-	const reducedMotion = () =>
-		typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 	const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 	/** Turn onto `key`; resolves once the wheel has settled on it. */
@@ -120,20 +118,23 @@
 						</g>
 					{/each}
 				</g>
+				<!-- Centred by `dy`, not `dominant-baseline`: not every engine passes that down to a
+				     `<tspan>`, and one that doesn't sets the lines on their alphabetic baseline, a
+				     third of an em off the segment's centre line. The 0.35em drops the baseline far
+				     enough to put the middle of a capital on the anchor. -->
 				{#each segments as s (s.world.key)}
 					<text
 						class="piece"
 						class:dimmed={dim(s.world.key)}
 						transform="rotate({s.mid}) translate(0 -47) rotate(-90)"
 						text-anchor="middle"
-						dominant-baseline="middle"
 						font-size="6.4"
 						font-weight="700"
 						fill="white"
 						fill-opacity="0.92"
 					>
 						{#each s.lines as line, i (i)}
-							<tspan x="0" dy={i === 0 ? `${-(s.lines.length - 1) * 0.55}em` : '1.1em'}>{line}</tspan>
+							<tspan x="0" dy={i === 0 ? `${0.35 - (s.lines.length - 1) * 0.55}em` : '1.1em'}>{line}</tspan>
 						{/each}
 					</text>
 				{/each}

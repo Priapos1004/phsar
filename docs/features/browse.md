@@ -7,8 +7,9 @@ The browse pages: rows of anime (carousels), each one a saved search.
 → `routers/browse.py` → `BrowsePageRows.svelte` (on Browse and on Home) → `BrowseCarousel.svelte` →
 `PosterCard.svelte`; a carousel's see-all is `routes/browse/[key]/+page.svelte` →
 `SeeAllResults.svelte`, with `stores/browseRefinements.ts`. Discover: `DiscoverTab.svelte`
-(with `DiscoverWheel.svelte` and `utils/discoverWorlds.ts`) over `/browse/worlds`; its
-spins are counted in `models/discover_progress.py`.
+(with `DiscoverWheel.svelte`, `WorldParticles.svelte`, `WorldReveal.svelte`,
+`utils/discoverWorlds.ts` and `utils/worldReveal.ts`) over `/browse/worlds`; its spins are counted in
+`models/discover_progress.py`.
 
 ## A carousel is a saved search
 
@@ -70,7 +71,9 @@ with the same anime each time. A description row takes a Top N% too: best match 
 leads with tiny shows that merely say the word.
 
 The wheel decides nothing: the spin returns the drawn world first and the wheel turns onto
-it. A world's look is the frontend's (`utils/discoverWorlds.ts`), keyed by world key.
+it. A world's look is the frontend's (`utils/discoverWorlds.ts`), keyed by world key. A
+fresh spin then cuts to the world under a full-screen reveal: the tab swaps under its flash,
+so the cut is never seen, and the rows load behind its title card (`WorldReveal.svelte`).
 
 ## A thin row widens
 

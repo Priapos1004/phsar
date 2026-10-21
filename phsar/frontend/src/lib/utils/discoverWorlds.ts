@@ -9,32 +9,39 @@ import { Bot, Coffee, Compass, Flame, Ghost, Mic, Orbit, Puzzle, Sparkles, Sword
 
 export type ParticleMotion = 'rise' | 'fall' | 'drift' | 'twinkle';
 
+/** The signature a world's reveal plays after the spin (`utils/worldReveal.ts`). */
+export type RevealKind = 'bolt' | 'drift';
+
 export interface WorldLook {
 	icon: typeof Flame;
 	color: string;
 	particle: { glyph: string; motion: ParticleMotion };
+	reveal: RevealKind;
 }
 
 /** Keyed by the backend's world key (`browse_service.WORLDS`). */
 export const WORLD_LOOK: Record<string, WorldLook> = {
-	beasts: { icon: Flame, color: '#f0883e', particle: { glyph: '•', motion: 'rise' } },
-	'other-worlds': { icon: Orbit, color: '#9d8cf7', particle: { glyph: '✦', motion: 'twinkle' } },
-	cozy: { icon: Coffee, color: '#e8a07a', particle: { glyph: '🍂', motion: 'fall' } },
-	twists: { icon: Puzzle, color: '#2db7ae', particle: { glyph: '?', motion: 'drift' } },
-	steel: { icon: Swords, color: '#e2534e', particle: { glyph: '✧', motion: 'rise' } },
-	'after-dark': { icon: Ghost, color: '#8f98f2', particle: { glyph: '🦇', motion: 'drift' } },
-	future: { icon: Bot, color: '#3dbcf5', particle: { glyph: '▪', motion: 'fall' } },
-	'power-up': { icon: Zap, color: '#f4c543', particle: { glyph: '⚡', motion: 'twinkle' } },
-	spotlight: { icon: Mic, color: '#ec62a9', particle: { glyph: '★', motion: 'fall' } },
-	offbeat: { icon: Compass, color: '#a8cf4c', particle: { glyph: '•', motion: 'drift' } },
+	beasts: { icon: Flame, color: '#f0883e', particle: { glyph: '•', motion: 'rise' }, reveal: 'drift' },
+	'other-worlds': { icon: Orbit, color: '#9d8cf7', particle: { glyph: '✦', motion: 'twinkle' }, reveal: 'drift' },
+	cozy: { icon: Coffee, color: '#e8a07a', particle: { glyph: '🍂', motion: 'fall' }, reveal: 'drift' },
+	twists: { icon: Puzzle, color: '#2db7ae', particle: { glyph: '?', motion: 'drift' }, reveal: 'drift' },
+	steel: { icon: Swords, color: '#e2534e', particle: { glyph: '✧', motion: 'rise' }, reveal: 'drift' },
+	'after-dark': { icon: Ghost, color: '#8f98f2', particle: { glyph: '🦇', motion: 'drift' }, reveal: 'drift' },
+	future: { icon: Bot, color: '#3dbcf5', particle: { glyph: '▪', motion: 'fall' }, reveal: 'drift' },
+	'power-up': { icon: Zap, color: '#f4c543', particle: { glyph: '⚡', motion: 'twinkle' }, reveal: 'bolt' },
+	spotlight: { icon: Mic, color: '#ec62a9', particle: { glyph: '★', motion: 'fall' }, reveal: 'drift' },
+	offbeat: { icon: Compass, color: '#a8cf4c', particle: { glyph: '•', motion: 'drift' }, reveal: 'drift' },
 };
 
 // A world the backend adds before this map knows it still gets a segment and a page.
-const FALLBACK: WorldLook = { icon: Sparkles, color: '#b9a6e8', particle: { glyph: '✦', motion: 'twinkle' } };
+const FALLBACK: WorldLook = { icon: Sparkles, color: '#b9a6e8', particle: { glyph: '✦', motion: 'twinkle' }, reveal: 'drift' };
 
 export function worldLook(key: string): WorldLook {
 	return WORLD_LOOK[key] ?? FALLBACK;
 }
+
+export const reducedMotion = () =>
+	typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /**
  * The wheel's rotation (degrees, clockwise) that stops segment `index` of `count` under
