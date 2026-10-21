@@ -15,6 +15,7 @@ from app.schemas.media_filter_schema import (
 class BrowsePage(str, Enum):
     HOME = "home"
     NEWS = "news"
+    DISCOVER = "discover"
 
 
 class CarouselParams(CatalogueSearchFilters):
@@ -47,3 +48,20 @@ class BrowseCarouselOut(BaseModel):
     sortable: bool
     filter_sets: list[BrowseFilterSetOut]
     page: BrowsePage | None
+
+
+class WorldOut(BaseModel):
+    """One segment of Discover's wheel. Its look is the frontend's, keyed by `key`."""
+    key: str
+    title: str
+
+
+class DiscoverTodayOut(BaseModel):
+    """Today's world, with its rows top to bottom."""
+    world: str
+    carousels: list[BrowseCarouselOut]
+
+
+class DiscoverOut(BaseModel):
+    worlds: list[WorldOut]
+    today: DiscoverTodayOut | None

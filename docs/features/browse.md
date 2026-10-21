@@ -6,7 +6,8 @@ The browse pages: rows of anime (carousels), each one a saved search.
 `services/browse_service.py` (layout + resolver, checked by `schemas/browse_schema.py`)
 → `routers/browse.py` → `BrowsePageRows.svelte` (on Browse and on Home) → `BrowseCarousel.svelte` →
 `PosterCard.svelte`; a carousel's see-all is `routes/browse/[key]/+page.svelte` →
-`SeeAllResults.svelte`, with `stores/browseRefinements.ts`.
+`SeeAllResults.svelte`, with `stores/browseRefinements.ts`. Discover's spins are counted in
+`models/discover_progress.py`.
 
 ## A carousel is a saved search
 
@@ -47,6 +48,25 @@ bottom, is `PAGE_LAYOUT` in the service — a constant rather than a table, sinc
 user or admin chooses it. Home is one of those pages. A carousel sits on one page only and
 says which (`page`), since its tiles and its see-all link back there.
 
+## Discover draws one world a day
+
+Discover's rows are grouped into worlds (`WORLDS`): umbrella themes, one of which a
+spin of the wheel shows. A row may sit in several worlds; Discover's `PAGE_LAYOUT` entry
+holds every world's rows once, so each is still on one page. The world is what combines
+kinds — no row unions searches, which would leave it with no search to open or see in
+full.
+
+A spin draws the viewer's next world from a shuffle bag of their own (`world_for`). The
+bag moves on a spin rather than on the calendar, so a viewer who comes by every few days
+still meets every world once a cycle. A user's first spin of the UTC day is counted
+(`discover_progress`), and any later one that day draws the same world. A guest is
+read-only and cannot spin: the day stands in for its count, so its world for the day is
+always there.
+
+A row starts on what the viewer hasn't watched. A big pool draws at random over its
+better part, since a world comes back every few spins and a top-rated order would lead
+with the same anime each time.
+
 ## A see-all lists the rest
 
 Every carousel has a see-all page: its search up to `see_all_limit`, with the filter sets
@@ -77,3 +97,4 @@ and leaves a see-all's toggle over the caller's data inert.
 
 **Why it is this way**
 - [Browse + News](../../compound-docs/2026-10-10-v0.16.2-browse.md) — the decisions behind the definition tables, the see-all routes and the tiles
+- [Home + Discover](../../compound-docs/2026-10-12-v0.16.3-home-and-discover.md) — the worlds, the draw, and the count and overlap studies behind Discover's rows

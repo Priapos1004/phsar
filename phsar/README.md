@@ -57,6 +57,7 @@ phsar/
 │   │   ├── base.py
 │   │   ├── browse.py
 │   │   ├── delete_candidate.py
+│   │   ├── discover_progress.py
 │   │   ├── genre.py
 │   │   ├── job.py
 │   │   ├── media.py
@@ -544,6 +545,7 @@ phsar/
         ├── test_base_dao_min_max.py
         ├── test_curation_row_locks.py
         ├── test_delete_candidate_service.py
+        ├── test_discover_draw.py
         ├── test_job_dao.py
         ├── test_job_worker.py
         ├── test_jobs_scrape_index.py

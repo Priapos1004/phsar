@@ -146,7 +146,7 @@ several `admin_*` modules). The live contract is FastAPI's own
 | Prefix | Purpose |
 |---|---|
 | `/auth` | login, register, validate, refresh (sliding session) |
-| `/browse` | page carousels, one carousel with its filter sets switched |
+| `/browse` | page carousels, one carousel with its filter sets switched, Discover's worlds and the day's spin |
 | `/search` | `/media` per-entry, `/anime` aggregated, `/mal` |
 | `/media` | media + anime detail |
 | `/ratings` | rating CRUD, rewatch, scores projection, rated coverage, spoiler visibility |
@@ -170,7 +170,7 @@ Query invariants are in [.claude/rules/database.md](.claude/rules/database.md).
 **`models/`** — SQLAlchemy ORM, 2.0 declarative style (`Mapped[T] = mapped_column(...)`
 on a `DeclarativeBase` root). Alongside the canonical tables sit the deliberate
 shapes covered by `rules/database.md`: **1:1 sidecars** for operational state
-(`anime_freshness`, `media_freshness`, `media_relation_edges`, `anime_completion`),
+(e.g. `anime_freshness`, `media_relation_edges`, `discover_progress`),
 **search tables** holding pgvector embeddings (`anime_search`, `media_search`,
 `rating_search`), and **caches** (`user_visible_media`).
 
