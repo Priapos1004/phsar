@@ -207,6 +207,8 @@ phsar/
 │   │   │   │   ├── DangerZone.svelte
 │   │   │   │   ├── DeleteCandidatesCard.svelte
 │   │   │   │   ├── DeleteWatchHistoryToggle.svelte
+│   │   │   │   ├── DiscoverTab.svelte
+│   │   │   │   ├── DiscoverWheel.svelte
 │   │   │   │   ├── DoubleRangeSlider.svelte
 │   │   │   │   ├── EChart.svelte
 │   │   │   │   ├── GenreBadges.svelte
@@ -274,6 +276,7 @@ phsar/
 │   │   │   │   ├── WatchlistBookmarkIcon.svelte
 │   │   │   │   ├── WatchlistDialog.svelte
 │   │   │   │   ├── WatchlistTagSelect.svelte
+│   │   │   │   ├── WorldParticles.svelte
 │   │   │   │   ├── watchlist/       # /watchlist page (list + tag management)
 │   │   │   │   │   ├── TagColorPicker.svelte
 │   │   │   │   │   ├── WatchlistCard.svelte
@@ -333,6 +336,7 @@ phsar/
 │   │   │       ├── clickThrough.ts
 │   │   │       ├── cn.ts
 │   │   │       ├── color.ts
+│   │   │       ├── discoverWorlds.ts
 │   │   │       ├── download.ts
 │   │   │       ├── filterLifecycle.ts
 │   │   │       ├── formatString.ts
@@ -418,6 +422,7 @@ phsar/
 │   │       ├── click-through.test.ts
 │   │       ├── color.test.ts
 │   │       ├── completion-status-card.test.ts
+│   │       ├── discover-worlds.test.ts
 │   │       ├── dismissed-decisions-section.test.ts
 │   │       ├── filter-lifecycle.test.ts
 │   │       ├── format-string.test.ts

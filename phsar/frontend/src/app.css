@@ -121,6 +121,13 @@
  *   text-2xl  = 1.5rem    — page titles
  *   text-3xl  = 1.875rem  — hero titles
  */
+/* The canvas past the page's end — an overscroll, or the page shrinking under a reader at
+   its bottom — shows the gradient's last colour. Without its own background, html would take
+   over the body's gradient and repeat it there, starting again from its lightest colour. */
+html {
+  background-color: var(--gradient-to);
+}
+
 body {
   background-image: linear-gradient(to bottom right, var(--gradient-from), var(--gradient-via), var(--gradient-to));
   @apply text-white;

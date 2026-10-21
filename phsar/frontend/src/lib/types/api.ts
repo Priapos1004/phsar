@@ -1004,7 +1004,7 @@ export interface BrowseFilterSet {
 }
 
 /** A browse page that lays out carousels (`BrowsePage`). */
-export type BrowsePageKey = 'home' | 'news';
+export type BrowsePageKey = 'home' | 'news' | 'discover';
 
 export interface BrowseCarousel {
 	key: string;
@@ -1016,4 +1016,22 @@ export interface BrowseCarousel {
 	filter_sets: BrowseFilterSet[];
 	/** Its page in `PAGE_LAYOUT`; null when no page lays it out. */
 	page: BrowsePageKey | null;
+}
+
+/** One segment of Discover's wheel; its look is `utils/discoverWorlds`'. */
+export interface DiscoverWorld {
+	key: string;
+	title: string;
+}
+
+/** Today's world, with its rows top to bottom. */
+export interface DiscoverToday {
+	world: string;
+	carousels: BrowseCarousel[];
+}
+
+export interface DiscoverWorlds {
+	worlds: DiscoverWorld[];
+	/** Once the caller has spun today — always, for a guest, whose world the day draws. */
+	today: DiscoverToday | null;
 }

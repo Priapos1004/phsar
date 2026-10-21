@@ -17,7 +17,7 @@ brings each part.
 | the position in that list | `?focus=` on the back link | `scrollFocus.ts` |
 | that list's controls — filters, and the Jobs Log page | per-tab `sessionStorage` | `persistedFilter.ts` |
 | those controls across a *lapsed session* | the `phsar.resume` stash | `resumeSession.ts` |
-| the rows Browse and Home had loaded | an in-memory cache | `stores/browseRows.ts` |
+| the rows Browse and Home had loaded, and Discover's spin | an in-memory cache | `stores/browseRows.ts` |
 
 **The URL carries whatever belongs to one link.** Two tabs open on two different
 searches must not share an origin or a scroll position, and a link handed to

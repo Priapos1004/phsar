@@ -6,8 +6,9 @@ The browse pages: rows of anime (carousels), each one a saved search.
 `services/browse_service.py` (layout + resolver, checked by `schemas/browse_schema.py`)
 → `routers/browse.py` → `BrowsePageRows.svelte` (on Browse and on Home) → `BrowseCarousel.svelte` →
 `PosterCard.svelte`; a carousel's see-all is `routes/browse/[key]/+page.svelte` →
-`SeeAllResults.svelte`, with `stores/browseRefinements.ts`. Discover's spins are counted in
-`models/discover_progress.py`.
+`SeeAllResults.svelte`, with `stores/browseRefinements.ts`. Discover: `DiscoverTab.svelte`
+(with `DiscoverWheel.svelte` and `utils/discoverWorlds.ts`) over `/browse/worlds`; its
+spins are counted in `models/discover_progress.py`.
 
 ## A carousel is a saved search
 
@@ -65,7 +66,23 @@ always there.
 
 A row starts on what the viewer hasn't watched. A big pool draws at random over its
 better part, since a world comes back every few spins and a top-rated order would lead
-with the same anime each time.
+with the same anime each time. A description row takes a Top N% too: best match alone
+leads with tiny shows that merely say the word.
+
+The wheel decides nothing: the spin returns the drawn world first and the wheel turns onto
+it. A world's look is the frontend's (`utils/discoverWorlds.ts`), keyed by world key.
+
+## A thin row widens
+
+`widened` (`stores/browseRefinements.ts`) steps a carousel's default Top 50% up to Top 75%
+where it leaves fewer than `WIDEN_BELOW` — that one step, so a row widens into its better
+part rather than its whole pool — and only while the viewer hasn't chosen in the Top group.
+The row and its see-all both list through `carouselResults` (`stores/browseRows.ts`), so the
+two agree; the see-all takes the widened step as its default, what Reset returns to, so a
+chosen step is recorded even where it is a default (`selectInGroup`). A count that widened
+is remembered with its rows, for the toggles it ran under, so the see-all and a return
+start at 75% rather than passing through 50%. Rows set Top 50% and let this lift a small
+pool, rather than defaulting to 75% themselves.
 
 ## A see-all lists the rest
 

@@ -9,24 +9,30 @@
 	import type { BrowseCarousel as Carousel, BrowsePageKey } from '$lib/types/api';
 	import { consumeFocus, splitCarouselFocus } from '$lib/utils/scrollFocus';
 
-	let { page }: { page: BrowsePageKey } = $props();
+	// `carousels` when the page already has them — Discover's come with today's world.
+	let { page, carousels: given }: { page: BrowsePageKey; carousels?: Carousel[] } = $props();
 
 	const getUserRole = getContext<() => string | null>('userRole');
 	let isGuest = $derived(getUserRole?.() === 'restricted_user');
 
-	let carousels = $state<Carousel[] | null>(null);
+	let fetched = $state<Carousel[] | null>(null);
 	let error = $state('');
 	// The row, and the tile in it, a back link returned to — read once (`consumeFocus`
-	// strips it), before the rows mount.
+	// strips it), before the rows mount: a row reads its focus only as it mounts, so even
+	// given rows wait for it.
 	let focus = $state<{ key: string; uuid: string | null } | null>(null);
+	let focusRead = $state(false);
+	let carousels = $derived(focusRead ? (given ?? fetched) : null);
 
 	onMount(async () => {
 		const raw = consumeFocus(route.url);
 		focus = raw ? splitCarouselFocus(raw) : null;
+		focusRead = true;
 		// Unawaited: the tiers decorate tiles, so they must not hold the rows back.
 		if (!isGuest) void ensureRatingCoverage();
+		if (given) return;
 		try {
-			carousels = await browsePage(page);
+			fetched = await browsePage(page);
 		} catch (e) {
 			error = e instanceof ApiError ? e.detail : 'Failed to load these rows.';
 		}

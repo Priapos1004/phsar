@@ -101,7 +101,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 | `/` | Home: hero banner, search bar, rows of anime (see 3) | Yes |
 | `/login?next=<path>` | Login form; optional validated post-login destination (1.1) | No |
 | `/register?next=<path>` | Registration form (requires token); `next` carried over from the login link | No |
-| `/browse?tab=news\|discover` | Browse: rows of anime (`news`, default) + a Discover placeholder (`discover`) | Yes |
+| `/browse?tab=news\|discover` | Browse: rows of anime (`news`, default) + the day's world of anime (`discover`, 3c) | Yes |
 | `/browse/<key>` | A Browse row's see-all (3b) | Yes |
 | `/search?q=<token>` | Search results (anime or media view) | Yes |
 | `/search/all?q=<token>` | A search's see-all, past the 50 the search shows (3b) | Yes |
@@ -130,10 +130,11 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 
 ## 3a. Browse Page
 
-`/browse` has a **News** tab (default) and a **Discover** tab, which shows "Will come soon :-)".
+`/browse` has a **News** tab (default) and a **Discover** tab (3c).
 
 **News** is a column of rows in the order the backend lays them out, each a saved search of up to 25 anime:
-- A row loads when you scroll near it, showing a skeleton until then; an empty one says "Nothing here right now."
+- A row loads when you scroll near it, showing a skeleton until then, and eases to its new height rather than jumping the page below. An empty one shows a "Nothing here right now" note; where the row narrows by default, the note names **See all** as the place to switch a filter off.
+- A row whose default Top 50% leaves fewer than 35 anime shows Top 75% instead.
 - The row's title, and a **See all** tile ending the row, open the row's see-all page (3b). A row pinned to one season names it in a pill beside the title ("Fall 2026").
 - The row scrolls sideways (snapping per tile). On a mouse or trackpad, round arrows page it by about a screen width and appear only where there is more to scroll.
 - A row that needs your own ratings or watchlist shows a **guest** a card saying guest accounts have neither; the rest load. A row that only leaves out what you have rated or listed runs for a guest over everything (Lucky find).
@@ -146,10 +147,12 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 The see-all pages list past a cap as a grid of the 3a tiles, 60 at a time behind **Show More**. Returning from a tile re-expands the list far enough to show it, as the search does (4.3). The count reads "N anime" (or "media"), with a "+" when the list reached its limit.
 
 **A row's see-all** (`/browse/<key>`) lists the row's search up to the row's own limit:
-- "Back to browse" ("Back to home" for a home row) returns to the row, centred, its header flashing briefly.
+- "Back to browse" ("Back to home" for a home row, "Back to discover" for a Discover one) returns to the row, centred, its header flashing briefly.
 - The title, with the row's season pill. **Open in search ›** at the end of the title row opens `/search` with the list's search as currently refined.
 - Toggles grouped as the filter sheet (4.4) groups them, each with "Any" first: its Top and Watchlist choices, plus `Watched: Any | Not yet | Already` ("Already": at least one entry rated). A row offers only what fits it (Announced continuations, built from your ratings, has no Watched). A choice a row makes by default is lit from the start (Fresh: Top 75%); tapping the lit choice clears it.
 - Some rows offer the **sort** menu of 4.3 (New this season, for one); the others name their order instead ("Latest aired · Newest first").
+- A row showing Top 75% for a thin Top 50% (3a) opens on 75%, lit from the start; picking 50% sticks.
+- **Reset**, shown while the list differs from its defaults (a toggle or the sort changed), returns it to them — the widened 75% included.
 - Toggles and sort are kept per row across opening a tile and coming back, and reset on leaving Browse for any other page.
 - A **guest** sees the toggles over ratings or the watchlist dimmed, with a tooltip; a row built from them shows the guest card of 3a instead of a list.
 
@@ -157,6 +160,15 @@ The see-all pages list past a cap as a grid of the 3a tiles, 60 at a time behind
 - "Back to search" returns to `/search`. The title is "All results for “…”", or "All results" without a query.
 - A card names the mode (only with a query) and shows the search's filters as chips that can't be changed here; with neither, it is left out.
 - The sort menu of 4.3; a change stays on this page. Tiles follow the search's view: a media tile hides its cover past your spoiler frontier as 5.1 does.
+
+## 3c. Discover
+
+The Discover tab shows one **world** a day: a themed group of rows (Beasts & Legends, Cozy Corner, Twists & Turns …).
+- Before today's spin: "Spin for today's world" over a wheel with a segment per world. **Spin the wheel** (or a click on the wheel) spins it for about five seconds; it overshoots a touch, settles on the drawn world and dims the rest.
+- One spin a day: after it, the tab opens straight on today's world — on a reload, from another device, after leaving Browse. Each world comes round once before any repeats.
+- The world: a banner in its colour with its icon, drifting particles, and "Today's world. Spin the wheel again tomorrow.", then its rows (3a) — starting on what you haven't watched. Inside the tab everything drawn in your theme's accent takes the world's colour instead; the navbar and the tab bar keep your theme.
+- A **guest** can't spin: the wheel plays once per visit to Browse and lands on the day's world.
+- With reduced motion the wheel doesn't turn and no particles show.
 
 ---
 
@@ -423,6 +435,7 @@ can rate.
   - `?from=watchlist` → "Back to watchlist" (a `/watchlist` entry → its media/anime detail → `/watchlist`)
   - `?from=browse` → "Back to browse" (a Browse tile → `/browse`, scrolled to that row and the row to that tile)
   - `?from=home` → "Back to home" (a home row's tile → `/`, landing as `?from=browse` does)
+  - `?from=discover` → "Back to discover" (a Discover row's tile → `/browse?tab=discover`, landing as `?from=browse` does)
   - `?from=carousel&carousel=<key>` → "Back to the list" (a row's see-all tile → `/browse/<key>`, at that tile)
   - `?from=search-all&q=<token>` → "Back to all results" (a search's see-all tile → `/search/all?q=token`, at that tile)
   - neither → no back button (direct-URL arrivals stay clean)
@@ -734,6 +747,8 @@ own.
 | `/filters/verify-token` | POST | Search page load |
 | `/browse/{page}` | GET | `news` for Browse's News tab, `home` for the home page's rows: each with the search it runs and the page it sits on |
 | `/browse/carousels/{key}` | GET | A row's see-all load: the row with its toggles switched (`on` / `off` filter-set keys) |
+| `/browse/worlds` | GET | The Discover tab: the wheel's worlds, and today's world with its rows once spun — always, for a guest |
+| `/browse/worlds/spin` | POST | **Spin the wheel**: today's world with its rows, the day's first spin counted; never sent for a guest |
 | `/search/anime` | GET | Anime-view search after token verification (with the token's `sort`/`sort_dir`, and `limit=51` so a full page reads "50+"); each Browse row's search (`limit=25`); a row's see-all (its own limit) and a search's (`limit=1000`); the Completion tab's search-to-mark (12.9) |
 | `/search/media` | GET | Media-view search after token verification (same params); a media-view search's see-all (`limit=1000`) |
 | `/media/anime/{uuid}` | GET | Anime detail page load |

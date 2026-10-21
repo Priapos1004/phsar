@@ -1,11 +1,15 @@
 import { api } from '$lib/api';
-import type { AnimeSearchResult, BrowseCarousel, BrowsePageKey } from '$lib/types/api';
-import { fetchAnimeSearchResults, readsOwnData, type MediaSearchFilters } from '$lib/utils/search';
+import type {
+	AnimeSearchResult, BrowseCarousel, BrowsePageKey, DiscoverToday, DiscoverWorlds,
+} from '$lib/types/api';
+import { effectiveSort, fetchAnimeSearchResults, readsOwnData, type MediaSearchFilters } from '$lib/utils/search';
+import {
+	isSetActive, NO_REFINEMENT, refinedSearch, WIDEN_BELOW, widened, type Refinement, type Step,
+} from './browseRefinements';
 import { catalogueChanged, onBump } from './jobs';
 
 /**
- * Session cache for the browse requests: a page's carousel list, a see-all's carousel, and
- * the results of rows and see-alls.
+ * Session cache for what Browse fetched or worked out today.
  *
  * Opening a tile and coming back would otherwise refetch every row the user had
  * scrolled past, skeletons and all. Browse's entries follow the section rule
@@ -24,21 +28,34 @@ import { catalogueChanged, onBump } from './jobs';
 // One entry per slot, holding the request it was last asked: a see-all keeps a slot per
 // carousel, so switching its toggles replaces its list rather than piling one up per
 // combination until Browse is left.
-const cache = new Map<string, { id: string; pending: Promise<unknown>; personal: boolean; home: boolean }>();
+// `value` is set once `pending` settles, so a reader can take what is already in hand
+// without waiting a tick (`settledResults`).
+type Entry = { id: string; pending: Promise<unknown>; value?: unknown; personal: boolean; home: boolean };
+const cache = new Map<string, Entry>();
 
-// Concurrent callers share one request. A failure drops its own entry — only while
-// it is still the cached one, as in `ratingScores` — so a retry re-requests.
-function cached<T>(
-	slot: string, id: string, load: () => Promise<T>, { personal = false, home = false } = {},
-): Promise<T> {
-	const dayId = `${new Date().toISOString().slice(0, 10)} ${id}`;
+const dayId = (id: string) => `${new Date().toISOString().slice(0, 10)} ${id}`;
+
+type Lifetime = { personal?: boolean; home?: boolean };
+
+// A failure drops its own entry — only while it is still the cached one, as in
+// `ratingScores` — so a retry re-requests.
+function put(slot: string, id: string, pending: Promise<unknown>, { personal = false, home = false }: Lifetime = {}) {
+	const entry: Entry = { id: dayId(id), pending, personal, home };
+	cache.set(slot, entry);
+	pending.then(
+		(value) => (entry.value = value),
+		() => {
+			if (cache.get(slot) === entry) cache.delete(slot);
+		},
+	);
+}
+
+// Concurrent callers share one request.
+function cached<T>(slot: string, id: string, load: () => Promise<T>, lifetime: Lifetime = {}): Promise<T> {
 	const hit = cache.get(slot);
-	if (hit?.id === dayId) return hit.pending as Promise<T>;
+	if (hit?.id === dayId(id)) return hit.pending as Promise<T>;
 	const pending = load();
-	cache.set(slot, { id: dayId, pending, personal, home });
-	pending.catch(() => {
-		if (cache.get(slot)?.pending === pending) cache.delete(slot);
-	});
+	put(slot, id, pending, lifetime);
 	return pending;
 }
 
@@ -63,13 +80,106 @@ export function browseCarousel(key: string, on: string[], off: string[]): Promis
 export function browseRow(
 	params: MediaSearchFilters, limit: number, { slot, page }: { slot?: string; page?: BrowsePageKey | null } = {},
 ): Promise<AnimeSearchResult[]> {
-	const id = JSON.stringify([params, limit]);
+	const id = rowId(params, limit);
 	return cached(
 		slot ? `see-all:${slot}` : `row:${id}`,
 		id,
 		() => fetchAnimeSearchResults(params, limit),
 		{ personal: readsOwnData(params), home: page === 'home' },
 	);
+}
+
+const rowId = (params: MediaSearchFilters, limit: number) => JSON.stringify([params, limit]);
+
+/** Discover's wheel and today's world. `spun` says whether this viewer has seen the wheel
+ *  land today: a user once their spin is counted, a guest — whose world the day draws —
+ *  once it has spun in this visit. */
+export interface DiscoverState extends DiscoverWorlds {
+	spun: boolean;
+}
+
+export function discoverWorlds(isGuest: boolean): Promise<DiscoverState> {
+	return cached('worlds', 'worlds', async () => {
+		const worlds = await api.get<DiscoverWorlds>('/browse/worlds');
+		return { ...worlds, spun: worlds.today !== null && !isGuest };
+	});
+}
+
+/** Spin the wheel: Discover with today's world, kept so a detail page and back lands on it
+ *  rather than on the wheel. A guest can't spin (read-only), so its spin lands on the world
+ *  it was given. */
+export async function spinWorld(isGuest: boolean): Promise<DiscoverState> {
+	const state = await discoverWorlds(isGuest);
+	const today = isGuest && state.today ? state.today : await api.post<DiscoverToday>('/browse/worlds/spin');
+	const spun = { ...state, today, spun: true };
+	put('worlds', 'worlds', Promise.resolve(spun));
+	return spun;
+}
+
+/**
+ * A carousel's list under `refinement`, widened where `widened` says
+ * (docs/features/browse.md#a-thin-row-widens), with the carousel and refinement it ran. It
+ * asks for enough to tell, unless an earlier count today already told, and remembers a
+ * count that widened: kept like the rows it was counted off, dropped with them and on a
+ * write to the data they read.
+ */
+export async function carouselResults(
+	carousel: BrowseCarousel, refinement: Refinement, isGuest: boolean, limit: number,
+	where: { slot?: string; page?: BrowsePageKey | null } = {},
+): Promise<Step & { results: AnimeSearchResult[] }> {
+	const run = (at: Step, n: number) => browseRow(refinedSearch(at.carousel, at.refinement, isGuest), n, where);
+	const wide = widened(carousel, refinement);
+	const asked = { carousel, refinement };
+	if (!wide) return { ...asked, results: await run(asked, limit) };
+	if (isWidened(carousel, refinement)) return { ...wide, results: await run(wide, limit) };
+	const search = refinedSearch(carousel, refinement, isGuest);
+	const narrow = await browseRow(search, Math.max(limit, WIDEN_BELOW), where);
+	if (narrow.length >= WIDEN_BELOW) return { ...asked, results: narrow.slice(0, limit) };
+	put(widenedSlot(carousel, refinement), 'widened', Promise.resolve(true), { personal: readsOwnData(search) });
+	return { ...wide, results: await run(wide, limit) };
+}
+
+// A count stands for the toggles it ran under: a see-all's toggle narrowing the pool must
+// not widen the row. Only toggles outside the Top group can be on here (`widened`).
+const widenedSlot = (carousel: BrowseCarousel, refinement: Refinement) =>
+	`widened:${carousel.key}:${[...refinement.on].sort()}|${[...refinement.off].sort()}`;
+
+const isWidened = (carousel: BrowseCarousel, refinement: Refinement) =>
+	cache.get(widenedSlot(carousel, refinement))?.id === dayId('widened');
+
+/** The step `refinement` lists at, where it is known before running it: as asked when it
+ *  can't widen, widened when today's count already said so — or null, still to be counted. */
+export function knownStep(carousel: BrowseCarousel, refinement: Refinement): Step | null {
+	const wide = widened(carousel, refinement);
+	if (!wide) return { carousel, refinement };
+	return isWidened(carousel, refinement) ? wide : null;
+}
+
+/** A row's list under `refinement` if it is already in hand: the lookup `carouselResults`
+ *  makes, without running anything. */
+export function settledResults(
+	carousel: BrowseCarousel, refinement: Refinement, isGuest: boolean, limit: number,
+): AnimeSearchResult[] | undefined {
+	const peek = (at: Step, n: number) => {
+		const id = rowId(refinedSearch(at.carousel, at.refinement, isGuest), n);
+		const hit = cache.get(`row:${id}`);
+		return hit?.id === dayId(id) ? (hit.value as AnimeSearchResult[] | undefined) : undefined;
+	};
+	const known = knownStep(carousel, refinement);
+	if (known) return peek(known, limit);
+	const narrow = peek({ carousel, refinement }, Math.max(limit, WIDEN_BELOW));
+	return narrow && narrow.length >= WIDEN_BELOW ? narrow.slice(0, limit) : undefined;
+}
+
+/** Whether a see-all showing `shown` lists other than its defaults — what Reset returns to,
+ *  widened where the row is: a set lit or dark against them, or another order. Compared by
+ *  effect rather than by what was stored, so a choice undone by hand reads as none. */
+export function refinedFromDefaults(carousel: BrowseCarousel, shown: Refinement): boolean {
+	const defaults = knownStep(carousel, NO_REFINEMENT)?.refinement ?? NO_REFINEMENT;
+	if (carousel.filter_sets.some((s) => isSetActive(s, shown) !== isSetActive(s, defaults))) return true;
+	const sortOf = (r: Refinement) => effectiveSort(refinedSearch(carousel, r, false));
+	const [now, base] = [sortOf(shown), sortOf(NO_REFINEMENT)];
+	return now.sort !== base.sort || now.dir !== base.dir;
 }
 
 /** After a rating or watchlist write: drop the rows that read them. */

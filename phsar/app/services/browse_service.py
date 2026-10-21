@@ -42,7 +42,7 @@ WORLDS: dict[str, World] = {
     "twists": World("Twists & Turns", ("death-games", "detective", "time-travel", "five-steps", "whodunit")),
     "steel": World("Blood & Steel", ("samurai", "war", "revenge", "assassins", "family-business")),
     "after-dark": World("After Dark", ("lights-off", "haunting", "beyond", "city-magic", "vampires")),
-    "future": World("Future Shock", ("mecha", "robots", "after-the-end", "in-the-game")),
+    "future": World("Future Shock", ("mecha", "aliens", "after-the-end", "in-the-game")),
     "power-up": World("Power Up", ("superhuman", "fists", "tournament", "shinobi", "samurai")),
     "spotlight": World("Spotlight", ("idols", "on-stage", "game-on", "otaku")),
     "offbeat": World("Off the Beaten Path", ("hidden-gems", "one-evening", "originals", "grown-ups", "nine-to-five")),

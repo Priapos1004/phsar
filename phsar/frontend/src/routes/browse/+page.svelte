@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import TabNav, { activeTab } from '$lib/components/TabNav.svelte';
 	import BrowsePageRows from '$lib/components/BrowsePageRows.svelte';
+	import DiscoverTab from '$lib/components/DiscoverTab.svelte';
 
 	const TABS = [
 		{ key: 'news', label: 'News' },
@@ -10,6 +11,11 @@
 	const DEFAULT_TAB = 'news';
 
 	let active = $derived(activeTab(page.url, TABS, DEFAULT_TAB));
+	// Discover mounts on its first visit, so opening Browse never loads the wheel unseen.
+	let discoverOpened = $state(false);
+	$effect(() => {
+		if (active === 'discover') discoverOpened = true;
+	});
 </script>
 
 <svelte:head><title>Browse — Phsar</title></svelte:head>
@@ -19,12 +25,14 @@
 
 	<TabNav tabs={TABS} {active} basePath="/browse" ariaLabel="Browse sections" />
 
-	{#if active === 'discover'}
-		<div class="py-12 text-center text-white/60">Will come soon :-)</div>
-	{/if}
 	<!-- Hidden rather than unmounted on another tab, so coming back keeps each row where it
 	     was scrolled, with no skeletons while the rows re-observe. -->
 	<div hidden={active !== 'news'}>
 		<BrowsePageRows page="news" />
 	</div>
+	{#if discoverOpened}
+		<div hidden={active !== 'discover'}>
+			<DiscoverTab />
+		</div>
+	{/if}
 </div>
