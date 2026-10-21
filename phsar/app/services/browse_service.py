@@ -39,11 +39,11 @@ WORLDS: dict[str, World] = {
     "beasts": World("Beasts & Legends", ("dragons", "vampires", "demon-lords", "myths", "witches", "paws")),
     "other-worlds": World("Other Worlds", ("isekai", "reborn", "in-the-game", "magic-academy", "space")),
     "cozy": World("Cozy Corner", ("healing", "gourmet", "cgdct", "tiny-humans", "paws")),
-    "twists": World("Twists & Turns", ("death-games", "detective", "time-travel", "five-steps", "whodunit")),
+    "twists": World("Twists & Turns", ("death-games", "detective", "time-travel", "five-steps", "mystery")),
     "steel": World("Blood & Steel", ("samurai", "war", "revenge", "assassins", "family-business")),
     "after-dark": World("After Dark", ("lights-off", "haunting", "beyond", "city-magic", "vampires")),
     "future": World("Future Shock", ("mecha", "aliens", "after-the-end", "in-the-game")),
-    "power-up": World("Power Up", ("superhuman", "fists", "tournament", "shinobi", "samurai")),
+    "power-up": World("Power Up", ("superhuman", "fists", "tournament", "strongest", "samurai")),
     "spotlight": World("Spotlight", ("idols", "on-stage", "game-on", "otaku")),
     "offbeat": World("Off the Beat", ("hidden-gems", "one-evening", "originals", "grown-ups", "nine-to-five")),
 }

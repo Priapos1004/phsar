@@ -67,8 +67,9 @@ always there.
 
 A row starts on what the viewer hasn't watched. A big pool draws at random over its
 better part, since a world comes back every few spins and a top-rated order would lead
-with the same anime each time. A description row takes a Top N% too: best match alone
-leads with tiny shows that merely say the word.
+with the same anime each time. A description row draws at random whatever its size: its
+query picks a set rather than ranking one, and its Top N% cuts the tiny shows that merely
+say the word.
 
 The wheel decides nothing: the spin returns the drawn world first and the wheel turns onto
 it. A world's look is the frontend's (`utils/discoverWorlds.ts`), keyed by world key. A

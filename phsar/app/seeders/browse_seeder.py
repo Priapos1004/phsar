@@ -65,8 +65,9 @@ def _tags(*names: str, sort: str = "top_rated") -> dict[str, Any]:
 
 def _about(query: str) -> dict[str, Any]:
     """Anime whose description is about `query`. One or two plain words — a longer
-    phrase loses its literal hits and keeps few."""
-    return {"query": query, "search_type": "description", "sort": "relevance"}
+    phrase loses its literal hits and keeps few. A plural misses its singular and a stem
+    takes every form (`search_filters.literal_matches`)."""
+    return {"query": query, "search_type": "description", "sort": "random"}
 
 
 CAROUSELS = [
@@ -117,23 +118,24 @@ CAROUSELS = [
     _discover("detective", "The detective's desk", _tags("Detective")),
     _discover("time-travel", "Loops & paradoxes", _tags("Time Travel")),
     _discover("five-steps", "Five steps ahead", _tags("Strategy Game", "Psychological")),
-    _discover("whodunit", "Whodunit", _about("murder mystery"), "top-50"),
+    _discover("mystery", "Unsolved", _tags("Mystery", sort="random"), "top-50"),
     _discover("samurai", "Way of the sword", _tags("Samurai")),
     _discover("war", "Fog of war", _tags("Military")),
     _discover("revenge", "Served cold", _about("revenge"), "top-50"),
     _discover("assassins", "Contract killers", _about("assassin"), "top-50"),
     _discover("family-business", "Family business", _tags("Organized Crime")),
     _discover("lights-off", "Lights off", _tags("Horror")),
-    _discover("haunting", "Something's haunting", _about("ghosts"), "top-50"),
+    # A stem on purpose: exorcist, exorcism and exorcise alike.
+    _discover("haunting", "Something's haunting", _about("exorcis"), "top-50"),
     _discover("beyond", "Beyond explanation", _tags("Supernatural", sort="random"), "top-50"),
     _discover("city-magic", "Magic in the city", _tags("Urban Fantasy")),
     _discover("mecha", "Get in the robot", _tags("Mecha")),
     _discover("aliens", "First contact", _about("alien"), "top-50"),
-    _discover("after-the-end", "After the end", _about("post-apocalyptic world"), "top-50"),
+    _discover("after-the-end", "After the end", _about("apocalypse"), "top-50"),
     _discover("superhuman", "Superhuman", _tags("Super Power")),
     _discover("fists", "Fists of fury", _tags("Martial Arts", "Combat Sports", sort="random"), "top-50"),
     _discover("tournament", "Tournament arc", _about("tournament"), "top-50"),
-    _discover("shinobi", "Shinobi", _about("ninja"), "top-50"),
+    _discover("strongest", "Overpowered", _about("strongest"), "top-50"),
     _discover("idols", "Idol life", _tags("Idols (Female)", "Idols (Male)")),
     _discover("on-stage", "On stage", _tags("Performing Arts", "Showbiz", "Music")),
     _discover("game-on", "Game on", _tags("Team Sports", "Sports")),
