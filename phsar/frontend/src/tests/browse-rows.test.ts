@@ -163,7 +163,7 @@ describe("Discover's worlds", () => {
 	});
 });
 
-describe('refinedFromDefaults', () => {
+describe("a thin row's widening, and Reset", () => {
 	const sets = [
 		{ key: 'top-50', label: '50%', default_on: true, params: { top_percent: 50 } },
 		{ key: 'top-75', label: '75%', default_on: false, params: { top_percent: 75 } },
@@ -206,5 +206,13 @@ describe('refinedFromDefaults', () => {
 		await carouselResults(dragons, NO_REFINEMENT, false, 1000);
 		expect(refinedFromDefaults(dragons, { on: ['top-75'], off: ['top-50'] })).toBe(false);
 		expect(refinedFromDefaults(dragons, { on: ['top-50'], off: [] })).toBe(true);
+	});
+
+	it('keeps a widening for the day, leaving Browse included', async () => {
+		await carouselResults(dragons, NO_REFINEMENT, false, 25);
+		applyFilterLifecycle('/ratings');
+		expect(knownStep(dragons, NO_REFINEMENT)?.refinement).toMatchObject({ on: ['top-75'], off: ['top-50'] });
+		bumpCatalogueChanged();
+		expect(knownStep(dragons, NO_REFINEMENT)).toBeNull();
 	});
 });

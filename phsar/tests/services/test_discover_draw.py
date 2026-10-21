@@ -23,7 +23,7 @@ def test_every_cycle_is_a_new_order():
     assert differ == len(SEEDS)
 
 
-def test_a_drawn_world_sits_out_the_next_three_draws():
+def test_a_drawn_world_sits_out_its_rest():
     """Across cycle edges too, where two independent orders meet."""
     clashes = sum(
         bool(set(_cycle(seed, cycle)[:_REST]) & set(_cycle(seed, cycle - 1)[-_REST:]))

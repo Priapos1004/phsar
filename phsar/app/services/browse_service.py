@@ -10,7 +10,8 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos import search_filters
-from app.daos.browse_dao import BrowseCarouselDAO, DiscoverProgressDAO
+from app.daos.browse_dao import BrowseCarouselDAO
+from app.daos.discover_progress_dao import DiscoverProgressDAO
 from app.exceptions import CarouselNotFoundError, WorldNotFoundError
 from app.models.browse import BrowseCarousel
 from app.models.media import SEASONS_IN_ORDER
@@ -154,23 +155,33 @@ async def _drawn(db: AsyncSession, world: str) -> DiscoverTodayOut:
     return DiscoverTodayOut(world=world, carousels=await _resolve_all(db, WORLDS[world].carousels))
 
 
+def _kept(user: Users, spin_count: int, stored: str) -> str:
+    """The world a user's spin drew today, as stored — drawn again from the bag where it
+    names none in `WORLDS`: an empty one, or one a release dropped."""
+    return stored if stored in WORLDS else world_for(user.uuid, spin_count - 1)
+
+
 async def get_discover(db: AsyncSession, user: Users) -> DiscoverOut:
     day = search_filters.utc_today()
+    world: str | None
     if user.role == RoleType.RestrictedUser:
-        n: int | None = day.toordinal()
+        world = world_for(user.uuid, day.toordinal())
     else:
         progress = await discover_progress_dao.get_by_field(db, user_id=user.id, spun_on=day)
-        n = progress.spin_count - 1 if progress else None
+        world = _kept(user, progress.spin_count, progress.world) if progress else None
     return DiscoverOut(
-        worlds=[WorldOut(key=key, title=world.title) for key, world in WORLDS.items()],
-        today=await _drawn(db, world_for(user.uuid, n)) if n is not None else None,
+        worlds=[WorldOut(key=key, title=w.title) for key, w in WORLDS.items()],
+        today=await _drawn(db, world) if world else None,
     )
 
 
 async def spin(db: AsyncSession, user: Users) -> DiscoverTodayOut:
-    n = await discover_progress_dao.record_spin(db, user.id, search_filters.utc_today()) - 1
+    # Kept only if this is the day's first spin.
+    progress = await discover_progress_dao.get_by_field(db, user_id=user.id)
+    first = world_for(user.uuid, progress.spin_count if progress else 0)
+    count, stored = await discover_progress_dao.record_spin(db, user.id, search_filters.utc_today(), first)
     await db.commit()
-    return await _drawn(db, world_for(user.uuid, n))
+    return await _drawn(db, _kept(user, count, stored))
 
 
 async def preview(db: AsyncSession, world: str) -> DiscoverTodayOut:

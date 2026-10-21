@@ -136,7 +136,6 @@ const SIGNATURES: Record<RevealKind, Signature> = {
 
 /** A soft signature's stage, or nothing for one that punches. */
 export const softness = (kind: RevealKind) => SIGNATURES[kind].soft;
-export const punches = (kind: RevealKind) => !softness(kind);
 
 /** Run `look`'s signature on `canvas` until the reveal ends; returns the stop. A canvas with
  *  no 2D context (jsdom) draws nothing, and the stage around it still plays. */
@@ -154,7 +153,7 @@ export function runReveal(canvas: HTMLCanvasElement, look: WorldLook, rand: Rand
 	ctx.lineCap = 'round';
 	ctx.lineJoin = 'round';
 
-	const punch = punches(look.reveal);
+	const punch = !softness(look.reveal);
 	const hold = punch ? HOLD : 0;
 	const scene = SIGNATURES[look.reveal].scene({
 		ctx,

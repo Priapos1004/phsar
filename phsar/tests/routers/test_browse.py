@@ -10,7 +10,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.daos import search_filters
-from app.daos.browse_dao import DiscoverProgressDAO
+from app.daos.discover_progress_dao import DiscoverProgressDAO
 from app.daos.user_dao import UserDAO
 from app.models.browse import BrowseCarousel, BrowseFilterSet, CarouselFilterSet
 from app.models.users import Users
@@ -177,6 +177,30 @@ async def test_a_spin_counts_once_a_day_and_moves_on_the_next(client, user_auth_
     progress = await DiscoverProgressDAO().get_by_field(db_session, user_id=user.id)
     assert progress is not None
     assert (progress.spin_count, progress.spun_on) == (2, date(2026, 11, 4))
+
+    # A spin sent before midnight, committing after this one.
+    monkeypatch.setattr(search_filters, "utc_today", lambda: date(2026, 11, 3))
+    await _spin(client, user_auth_headers)
+    await db_session.refresh(progress)
+    assert (progress.spin_count, progress.spun_on) == (2, date(2026, 11, 4))
+
+
+async def test_the_day_s_world_is_the_one_its_spin_stored(client, user_auth_headers, db_session, monkeypatch):
+    """So a release editing the worlds leaves a drawn one in place; one it dropped is drawn again."""
+    user = await _user(db_session, "normaluser")
+    monkeypatch.setattr(search_filters, "utc_today", lambda: date(2026, 11, 3))
+    drawn = (await _spin(client, user_auth_headers))["world"]
+    progress = await DiscoverProgressDAO().get_by_field(db_session, user_id=user.id)
+    assert progress is not None
+    # Not what the bag draws, as a draw under another list of worlds would be.
+    progress.world = next(key for key in WORLDS if key != drawn)
+    await db_session.flush()
+    assert (await _today(client, user_auth_headers))["world"] == progress.world
+    assert (await _spin(client, user_auth_headers))["world"] == progress.world
+
+    progress.world = "dropped-since"
+    await db_session.flush()
+    assert (await _today(client, user_auth_headers))["world"] == drawn
 
 
 async def test_an_admin_previews_a_world_without_spinning(client, admin_auth_headers, monkeypatch):

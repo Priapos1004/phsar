@@ -83,7 +83,7 @@ export function labelLines(title: string): string[] {
 	return [title.slice(0, cut), title.slice(cut + 1)];
 }
 
-export interface Particle {
+interface Particle {
 	left: number;
 	top: number;
 	delay: number;

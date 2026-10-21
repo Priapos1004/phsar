@@ -22,6 +22,8 @@
 	let spinError = $state('');
 	let spinning = $state(false);
 	// Set by a spin in this visit, so only a fresh draw unfolds the banner — not a return.
+	// Cleared once the unfold has played: Browse hides a tab with `display: none`, which
+	// restarts its animations when it is shown again.
 	let revealed = $state(false);
 	let wheel = $state<ReturnType<typeof DiscoverWheel>>();
 	let stage = $state<ReturnType<typeof WorldReveal>>();
@@ -116,7 +118,8 @@
 				<p class="mt-3 text-white/85">Today's mood. Spin the wheel again tomorrow.</p>
 			</div>
 		</header>
-		<div>
+		<!-- The rows ease in last; a tile's own animations bubble up here too. -->
+		<div onanimationend={(e) => e.target === e.currentTarget && (revealed = false)}>
 			<BrowsePageRows page="discover" carousels={today.carousels} />
 		</div>
 	</div>

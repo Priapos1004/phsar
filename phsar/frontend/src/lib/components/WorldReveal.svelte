@@ -121,7 +121,8 @@
 		inset: 0;
 		z-index: 60;
 		overflow: hidden;
-		pointer-events: none;
+		/* Takes the tap that skips it: let through, its click would land on the rows already
+		   swapped in underneath. */
 		transition: opacity var(--skip-fade) ease-out;
 	}
 	.stage.leaving {

@@ -31,6 +31,7 @@ phsar/
 │   │   ├── base_mal_id_dao.py
 │   │   ├── browse_dao.py
 │   │   ├── delete_candidate_dao.py
+│   │   ├── discover_progress_dao.py
 │   │   ├── genre_dao.py
 │   │   ├── job_dao.py
 │   │   ├── media_dao.py

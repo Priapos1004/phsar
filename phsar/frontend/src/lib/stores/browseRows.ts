@@ -15,9 +15,10 @@ import { catalogueChanged, onBump } from './jobs';
  * scrolled past, skeletons and all. Browse's entries follow the section rule
  * (`utils/filterLifecycle`): a detail page is a detour and keeps them, leaving Browse
  * drops them, so a later visit sees today's rows. Home's outlive any navigation, since it
- * is the page users keep returning to and its rows change only with the catalogue. A
- * catalogue change (`catalogueChanged`) drops every entry, and every entry ends with its
- * UTC day, when the daily shuffle moves on.
+ * is the page users keep returning to and its rows change only with the catalogue. So does
+ * a count that widened (`carouselResults`): the pool it counted changes with the catalogue
+ * or the viewer's own data, not by leaving Browse. A catalogue change (`catalogueChanged`)
+ * drops every entry, and every entry ends with its UTC day, when the daily shuffle moves on.
  *
  * A row over the caller's own ratings or watchlist goes stale on a write to either,
  * so the post-write hooks — `invalidateRatingScores` and `refreshWatchlist` — drop
@@ -30,17 +31,18 @@ import { catalogueChanged, onBump } from './jobs';
 // combination until Browse is left.
 // `value` is set once `pending` settles, so a reader can take what is already in hand
 // without waiting a tick (`settledResults`).
-type Entry = { id: string; pending: Promise<unknown>; value?: unknown; personal: boolean; home: boolean };
+type Entry = { id: string; pending: Promise<unknown>; value?: unknown; personal: boolean; lasting: boolean };
 const cache = new Map<string, Entry>();
 
 const dayId = (id: string) => `${new Date().toISOString().slice(0, 10)} ${id}`;
 
-type Lifetime = { personal?: boolean; home?: boolean };
+// `lasting` outlives leaving Browse.
+type Lifetime = { personal?: boolean; lasting?: boolean };
 
 // A failure drops its own entry — only while it is still the cached one, as in
 // `ratingScores` — so a retry re-requests.
-function put(slot: string, id: string, pending: Promise<unknown>, { personal = false, home = false }: Lifetime = {}) {
-	const entry: Entry = { id: dayId(id), pending, personal, home };
+function put(slot: string, id: string, pending: Promise<unknown>, { personal = false, lasting = false }: Lifetime = {}) {
+	const entry: Entry = { id: dayId(id), pending, personal, lasting };
 	cache.set(slot, entry);
 	pending.then(
 		(value) => (entry.value = value),
@@ -61,7 +63,7 @@ function cached<T>(slot: string, id: string, load: () => Promise<T>, lifetime: L
 
 export function browsePage(page: BrowsePageKey): Promise<BrowseCarousel[]> {
 	const key = `page:${page}`;
-	return cached(key, key, () => api.get<BrowseCarousel[]>(`/browse/${page}`), { home: page === 'home' });
+	return cached(key, key, () => api.get<BrowseCarousel[]>(`/browse/${page}`), { lasting: page === 'home' });
 }
 
 /** One carousel resolved with its filter sets switched — a see-all's search. */
@@ -82,14 +84,15 @@ export function browseRow(
 ): Promise<AnimeSearchResult[]> {
 	const id = rowId(params, limit);
 	return cached(
-		slot ? `see-all:${slot}` : `row:${id}`,
+		slot ? `see-all:${slot}` : rowSlot(id),
 		id,
 		() => fetchAnimeSearchResults(params, limit),
-		{ personal: readsOwnData(params), home: page === 'home' },
+		{ personal: readsOwnData(params), lasting: page === 'home' },
 	);
 }
 
 const rowId = (params: MediaSearchFilters, limit: number) => JSON.stringify([params, limit]);
+const rowSlot = (id: string) => `row:${id}`;
 
 /** Discover's wheel and today's world. `spun` says whether this viewer has seen the wheel
  *  land today: a user once their spin is counted, a guest — whose world the day draws —
@@ -128,22 +131,22 @@ export async function previewWorld(key: string, isGuest: boolean): Promise<Disco
  * A carousel's list under `refinement`, widened where `widened` says
  * (docs/features/browse.md#a-thin-row-widens), with the carousel and refinement it ran. It
  * asks for enough to tell, unless an earlier count today already told, and remembers a
- * count that widened: kept like the rows it was counted off, dropped with them and on a
- * write to the data they read.
+ * count that widened.
  */
 export async function carouselResults(
 	carousel: BrowseCarousel, refinement: Refinement, isGuest: boolean, limit: number,
 	where: { slot?: string; page?: BrowsePageKey | null } = {},
 ): Promise<Step & { results: AnimeSearchResult[] }> {
 	const run = (at: Step, n: number) => browseRow(refinedSearch(at.carousel, at.refinement, isGuest), n, where);
-	const wide = widened(carousel, refinement);
+	const known = knownStep(carousel, refinement);
+	if (known) return { ...known, results: await run(known, limit) };
 	const asked = { carousel, refinement };
-	if (!wide) return { ...asked, results: await run(asked, limit) };
-	if (isWidened(carousel, refinement)) return { ...wide, results: await run(wide, limit) };
-	const search = refinedSearch(carousel, refinement, isGuest);
-	const narrow = await browseRow(search, Math.max(limit, WIDEN_BELOW), where);
+	const narrow = await run(asked, Math.max(limit, WIDEN_BELOW));
 	if (narrow.length >= WIDEN_BELOW) return { ...asked, results: narrow.slice(0, limit) };
-	put(widenedSlot(carousel, refinement), 'widened', Promise.resolve(true), { personal: readsOwnData(search) });
+	put(widenedSlot(carousel, refinement), 'widened', Promise.resolve(true), {
+		personal: readsOwnData(refinedSearch(carousel, refinement, isGuest)), lasting: true,
+	});
+	const wide = widened(carousel, refinement)!; // unknown means it can widen
 	return { ...wide, results: await run(wide, limit) };
 }
 
@@ -170,7 +173,7 @@ export function settledResults(
 ): AnimeSearchResult[] | undefined {
 	const peek = (at: Step, n: number) => {
 		const id = rowId(refinedSearch(at.carousel, at.refinement, isGuest), n);
-		const hit = cache.get(`row:${id}`);
+		const hit = cache.get(rowSlot(id));
 		return hit?.id === dayId(id) ? (hit.value as AnimeSearchResult[] | undefined) : undefined;
 	};
 	const known = knownStep(carousel, refinement);
@@ -195,9 +198,9 @@ export function dropPersonalRows(): void {
 	for (const [key, entry] of cache) if (entry.personal) cache.delete(key);
 }
 
-/** Leaving Browse: drop its entries, and keep Home's. */
+/** Leaving Browse: drop its entries, and keep the lasting ones. */
 export function clearSectionRows(): void {
-	for (const [key, entry] of cache) if (!entry.home) cache.delete(key);
+	for (const [key, entry] of cache) if (!entry.lasting) cache.delete(key);
 }
 
 export function clearBrowseRows(): void {

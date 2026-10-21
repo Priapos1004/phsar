@@ -98,7 +98,7 @@ with why SvelteKit's `snapshot` fits neither the filters nor the scroll position
 Both are app-owned and keyed on the URL, and they follow the same call because they
 have the same lifecycle shape.
 
-Browse's row cache follows the same rule. Home's rows sit in no section, so no navigation drops them; `stores/browseRows.ts` says what does.
+Browse's row cache follows the same rule, but for the entries `stores/browseRows.ts` names as outliving it — Home's rows among them — and says what drops those.
 
 ## Everything degrades to the default
 

@@ -60,10 +60,11 @@ full.
 
 A spin draws the viewer's next world from a shuffle bag of their own (`world_for`). The
 bag moves on a spin rather than on the calendar, so a viewer who comes by every few days
-still meets every world once a cycle. A user's first spin of the UTC day is counted
-(`discover_progress`), and any later one that day draws the same world. A guest is
-read-only and cannot spin: the day stands in for its count, so its world for the day is
-always there.
+still meets every world once a cycle. A user's first spin of the UTC day is counted and
+the world it drew kept (`discover_progress`), so any later one that day lands there, and a
+release editing the worlds leaves the day's world in place unless it drops it — only the
+bag reshuffles. A guest is read-only and cannot spin: the day stands in for its count, so
+its world for the day is always there, though with nothing kept an edit may change it.
 
 A row starts on what the viewer hasn't watched. A big pool draws at random over its
 better part, since a world comes back every few spins and a top-rated order would lead
@@ -87,8 +88,8 @@ part rather than its whole pool — and only while the viewer hasn't chosen in t
 The row and its see-all both list through `carouselResults` (`stores/browseRows.ts`), so the
 two agree; the see-all takes the widened step as its default, what Reset returns to, so a
 chosen step is recorded even where it is a default (`selectInGroup`). A count that widened
-is remembered with its rows, for the toggles it ran under, so the see-all and a return
-start at 75% rather than passing through 50%. Rows set Top 50% and let this lift a small
+is remembered, for the toggles it ran under, so the see-all and a return start at 75%
+without counting again or passing through 50%. Rows set Top 50% and let this lift a small
 pool, rather than defaulting to 75% themselves.
 
 ## A see-all lists the rest
