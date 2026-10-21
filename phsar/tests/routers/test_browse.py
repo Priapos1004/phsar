@@ -179,6 +179,25 @@ async def test_a_spin_counts_once_a_day_and_moves_on_the_next(client, user_auth_
     assert (progress.spin_count, progress.spun_on) == (2, date(2026, 11, 4))
 
 
+async def test_an_admin_previews_a_world_without_spinning(client, admin_auth_headers, monkeypatch):
+    # A day the database holds no spin for, so "still unspun" means the previews counted none.
+    monkeypatch.setattr(search_filters, "utc_today", lambda: date(2099, 1, 1))
+    # Two, so the world shown is the one asked for rather than one the endpoint settled on.
+    for key in list(WORLDS)[:2]:
+        resp = await client.get(f"/browse/worlds/{key}", headers=admin_auth_headers)
+        assert resp.status_code == 200, resp.text
+        assert _drawn(resp.json())["world"] == key
+    assert await _today(client, admin_auth_headers) is None
+
+
+async def test_only_an_admin_previews_a_world(client, user_auth_headers):
+    assert (await client.get(f"/browse/worlds/{next(iter(WORLDS))}", headers=user_auth_headers)).status_code == 403
+
+
+async def test_previewing_an_unknown_world_is_404(client, admin_auth_headers):
+    assert (await client.get("/browse/worlds/no-such-world", headers=admin_auth_headers)).status_code == 404
+
+
 async def test_a_guest_cannot_spin_and_gets_the_day_s_world(client, restricted_user_auth_headers, db_session, monkeypatch):
     guest = await _user(db_session, "restricteduser")
     day = date(2026, 11, 3)

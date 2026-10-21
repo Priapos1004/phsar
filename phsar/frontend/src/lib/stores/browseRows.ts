@@ -116,6 +116,14 @@ export async function spinWorld(isGuest: boolean): Promise<DiscoverState> {
 	return spun;
 }
 
+/** Discover with `key`'s world in today's place. Not kept, unlike a spin: Discover goes on
+ *  showing today's draw. */
+export async function previewWorld(key: string, isGuest: boolean): Promise<DiscoverState> {
+	const state = await discoverWorlds(isGuest);
+	const today = await api.get<DiscoverToday>(`/browse/worlds/${encodeURIComponent(key)}`);
+	return { ...state, today, spun: true };
+}
+
 /**
  * A carousel's list under `refinement`, widened where `widened` says
  * (docs/features/browse.md#a-thin-row-widens), with the carousel and refinement it ran. It

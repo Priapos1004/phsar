@@ -3,14 +3,15 @@
 	// (docs/features/browse.md). Before the spin the tab wears the user's theme; after it the
 	// world's colour stands in for `--primary` inside this tab only, so the navbar and the
 	// tab bar above keep the theme and switching tabs never changes the page's look.
-	import { getContext, onMount } from 'svelte';
+	import { getContext, onMount, tick } from 'svelte';
+	import { dev } from '$app/environment';
 	import { page } from '$app/state';
 	import { ApiError } from '$lib/api';
 	import BrowsePageRows from '$lib/components/BrowsePageRows.svelte';
 	import DiscoverWheel from '$lib/components/DiscoverWheel.svelte';
 	import WorldParticles from '$lib/components/WorldParticles.svelte';
 	import WorldReveal from '$lib/components/WorldReveal.svelte';
-	import { discoverWorlds, spinWorld, type DiscoverState } from '$lib/stores/browseRows';
+	import { discoverWorlds, previewWorld, spinWorld, type DiscoverState } from '$lib/stores/browseRows';
 	import { worldLook } from '$lib/utils/discoverWorlds';
 
 	const getUserRole = getContext<() => string | null>('userRole');
@@ -27,17 +28,21 @@
 
 	const titleOf = (state: DiscoverState, key: string) => state.worlds.find((w) => w.key === key)?.title ?? '';
 
+	// Dev only: `?reveal=<key>` replays the spin onto that world (docs/features/browse.md).
+	const replay = dev ? page.url.searchParams.get('reveal') : null;
+
 	onMount(async () => {
 		try {
 			discover = await discoverWorlds(isGuest);
 		} catch (e) {
 			loadError = e instanceof ApiError ? e.detail : 'Discover could not load. Reload the page to try again.';
 		}
-		// The spin comes once a day, so tuning a reveal needs a way to replay one: `?reveal=<key>`.
-		// `import.meta.env.DEV`, not `$app/environment`'s `dev`: the config's `resolve.conditions`
-		// leaves that one reading `process` at runtime, which a browser doesn't have.
-		const replay = import.meta.env.DEV && page.url.searchParams.get('reveal');
-		if (replay && discover) stage?.play(replay, titleOf(discover, replay));
+		if (replay && discover) {
+			// Unspun first, so the wheel comes back even after today's spin.
+			discover = { ...discover, spun: false };
+			await tick();
+			spin();
+		}
 	});
 
 	async function spin() {
@@ -45,7 +50,7 @@
 		spinning = true;
 		spinError = '';
 		try {
-			const spun = await spinWorld(isGuest);
+			const spun = await (replay ? previewWorld(replay, isGuest) : spinWorld(isGuest));
 			const key = spun.today!.world;
 			await wheel?.spinTo(key);
 			await stage?.play(key, titleOf(spun, key));

@@ -74,6 +74,9 @@ The wheel decides nothing: the spin returns the drawn world first and the wheel 
 it. A world's look is the frontend's (`utils/discoverWorlds.ts`), keyed by world key. A
 fresh spin then cuts to the world under a full-screen reveal: the tab swaps under its flash,
 so the cut is never seen, and the rows load behind its title card (`WorldReveal.svelte`).
+The dev-only `?reveal=<key>` spins the wheel onto any world through an admin-only preview
+(`GET /browse/worlds/{world}`) that counts no spin: how a world and its reveal are checked
+without waiting for the draw.
 
 ## A thin row widens
 

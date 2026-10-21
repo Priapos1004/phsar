@@ -5,7 +5,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user, get_db, require_user_or_admin
+from app.core.dependencies import (
+    get_current_user,
+    get_db,
+    require_roles,
+    require_user_or_admin,
+)
+from app.models.users import RoleType
 from app.schemas.browse_schema import (
     BrowseCarouselOut,
     BrowsePage,
@@ -15,6 +21,7 @@ from app.schemas.browse_schema import (
 from app.services import browse_service
 
 router = APIRouter(prefix="/browse", tags=["browse"])
+require_admin = require_roles(RoleType.Admin)
 
 
 @router.get("/carousels/{key}", response_model=BrowseCarouselOut)
@@ -46,6 +53,17 @@ async def spin_world(
     """Today's world: the day's first spin draws the caller's next one, later spins
     the same again."""
     return await browse_service.spin(db, current_user)
+
+
+@router.get("/worlds/{world}", response_model=DiscoverTodayOut)
+async def preview_world(
+    world: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_admin),
+):
+    """Any world with its rows, without a spin. Admins only, because the draw is the game —
+    a viewer who could open any world would have no reason to spin."""
+    return await browse_service.preview(db, world)
 
 
 @router.get("/{page}", response_model=list[BrowseCarouselOut])

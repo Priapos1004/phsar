@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos import search_filters
 from app.daos.browse_dao import BrowseCarouselDAO, DiscoverProgressDAO
-from app.exceptions import CarouselNotFoundError
+from app.exceptions import CarouselNotFoundError, WorldNotFoundError
 from app.models.browse import BrowseCarousel
 from app.models.media import SEASONS_IN_ORDER
 from app.models.users import RoleType, Users
@@ -171,3 +171,9 @@ async def spin(db: AsyncSession, user: Users) -> DiscoverTodayOut:
     n = await discover_progress_dao.record_spin(db, user.id, search_filters.utc_today()) - 1
     await db.commit()
     return await _drawn(db, world_for(user.uuid, n))
+
+
+async def preview(db: AsyncSession, world: str) -> DiscoverTodayOut:
+    if world not in WORLDS:
+        raise WorldNotFoundError(world)
+    return await _drawn(db, world)

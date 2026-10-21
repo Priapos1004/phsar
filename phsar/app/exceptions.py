@@ -640,3 +640,12 @@ class CarouselNotFoundError(PhsarBaseError):
     def __init__(self, key: str):
         message = f"Carousel not found: '{key}'."
         super().__init__(message)
+
+
+class WorldNotFoundError(PhsarBaseError):
+    """Raised when a Discover world key is not one of the wheel's worlds."""
+    status_code = 404
+
+    def __init__(self, key: str):
+        message = f"World not found: '{key}'."
+        super().__init__(message)

@@ -146,7 +146,7 @@ several `admin_*` modules). The live contract is FastAPI's own
 | Prefix | Purpose |
 |---|---|
 | `/auth` | login, register, validate, refresh (sliding session) |
-| `/browse` | page carousels, one carousel with its filter sets switched, Discover's worlds and the day's spin |
+| `/browse` | page carousels, one carousel with its filter sets switched, Discover's worlds, the day's spin and an admin's preview of any world |
 | `/search` | `/media` per-entry, `/anime` aggregated, `/mal` |
 | `/media` | media + anime detail |
 | `/ratings` | rating CRUD, rewatch, scores projection, rated coverage, spoiler visibility |
@@ -325,7 +325,7 @@ mypy's settings sit in the same file, with the reasoning beside them. Its suppre
 ## Test Config
 
 - **Backend** (`pytest.ini`): `asyncio_mode = auto`, so no `@pytest.mark.asyncio` decorators. Tests run against the real database, not mocks; each test rolls back after itself.
-- **Frontend** (`vite.config.ts`): Vitest with jsdom and `@testing-library/svelte`; `resolve.conditions: ['browser']` for Svelte 5. SvelteKit modules (`$app/navigation`, `$app/environment`, `$app/state`) are mocked in `src/tests/setup.ts`.
+- **Frontend** (`vite.config.ts`): Vitest with jsdom and `@testing-library/svelte`; `resolve.conditions: ['browser']` for Svelte 5, applied in Vitest's `test` mode only (`vite.config.ts` says why). SvelteKit modules (`$app/navigation`, `$app/environment`, `$app/state`) are mocked in `src/tests/setup.ts`.
 
 ## License
 
