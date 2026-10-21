@@ -1,6 +1,13 @@
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+
+import numpy as np
 import pytest
 
+from app.services import vector_embedding_service
 from app.services.vector_embedding_service import (
+    _encode,
     _encode_query_cached,
     generate_embedding,
     generate_query_embedding,
@@ -88,3 +95,25 @@ async def test_query_and_document_paths_produce_the_same_vector():
     text = "Kurokos Basketball"
     assert await generate_query_embedding(text) == await generate_embedding(text)
     assert await generate_query_embedding(text.upper()) == await generate_embedding(text.lower())
+
+
+def test_encodes_never_overlap(monkeypatch):
+    """Concurrent encodes on the one model hang or crash the process, so `_encode` runs
+    them one at a time however many threads call it."""
+    running, most = 0, 0
+    guard = threading.Lock()
+
+    def fake_encode(text, **_):
+        nonlocal running, most
+        with guard:
+            running += 1
+            most = max(most, running)
+        time.sleep(0.02)
+        with guard:
+            running -= 1
+        return np.zeros(384)
+
+    monkeypatch.setattr(vector_embedding_service.model, "encode", fake_encode)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        list(pool.map(_encode, ["dragon", "vampire", "witch", "ninja"]))
+    assert most == 1

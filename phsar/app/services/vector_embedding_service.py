@@ -1,4 +1,5 @@
 import logging
+import threading
 from functools import lru_cache
 
 from anyio import to_thread
@@ -13,6 +14,12 @@ from app.models.rating_search import RatingSearch
 logger = logging.getLogger(__name__)
 
 model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+
+# One encode at a time. Encodes run on worker threads (`_run_encode`), and the tokenizer
+# and torch's native kernels are not safe to drive from several at once: concurrent
+# encodes hang or segfault the process. An encode takes ~30 ms, so the queue costs little;
+# a query cache hit never takes it.
+_encode_lock = threading.Lock()
 
 # Bounded at ~4 MB: each 384-float tuple measures ~12 kB in CPython (the boxed
 # floats dominate at 24 B apiece — not the 3 kB the raw values suggest), plus the
@@ -29,7 +36,8 @@ def _encode(text: str) -> tuple[float, ...]:
     stdout. We encode one short string per call (search queries, saves, sweeps,
     re-embed), so the bar is pure noise — it flooded the Coolify logs.
     """
-    return tuple(model.encode(text, show_progress_bar=False).tolist())
+    with _encode_lock:
+        return tuple(model.encode(text, show_progress_bar=False).tolist())
 
 
 @lru_cache(maxsize=EMBEDDING_CACHE_SIZE)
