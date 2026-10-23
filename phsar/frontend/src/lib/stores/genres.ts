@@ -4,7 +4,8 @@ import type { GenreOut } from '$lib/types/api';
 
 // Lowercased genre name → description. Genre descriptions are a global, static
 // set (~90 rows), so we fetch them once per session and cache the lookup map
-// rather than threading descriptions through every detail/search response.
+// rather than threading descriptions through every detail/search response. Not hung off
+// `catalogueChanged`: a genre a scrape introduces gets its description on the next reload.
 export const genreDescriptions = writable<Map<string, string>>(new Map());
 
 let loadPromise: Promise<void> | null = null;

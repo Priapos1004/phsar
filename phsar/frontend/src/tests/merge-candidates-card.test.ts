@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import MergeCandidatesCard from '../lib/components/MergeCandidatesCard.svelte';
 import type { MergeCandidateListItem } from '../lib/types/api';
+import { get } from 'svelte/store';
+import { catalogueChanged } from '$lib/stores/jobs';
 import { jsonResponse } from './fixtures/response';
 
 vi.mock('$lib/stores/auth', async () => {
@@ -87,6 +89,7 @@ describe('MergeCandidatesCard', () => {
 
 		render(MergeCandidatesCard);
 		await vi.waitFor(() => expect(screen.getByText('Anime A')).toBeInTheDocument());
+		const catalogueBaseline = get(catalogueChanged);
 
 		await fireEvent.click(screen.getByRole('button', { name: /merge/i }));
 		await fireEvent.click(screen.getByRole('button', { name: /confirm merge/i }));
@@ -97,6 +100,7 @@ describe('MergeCandidatesCard', () => {
 			const body = JSON.parse((mergeCall![1] as RequestInit).body as string);
 			expect(body.keep_uuid).toBe(A_UUID);
 		});
+		await vi.waitFor(() => expect(get(catalogueChanged)).toBe(catalogueBaseline + 1));
 	});
 
 	it('after Swap, merge POSTs the swapped side (anime_b) as keep_uuid', async () => {

@@ -1,7 +1,7 @@
 import { goto } from '$app/navigation';
 import type { MediaSearchFilters } from '$lib/utils/search';
 import { api, ApiError } from '$lib/api';
-import type { SearchTokenResponse } from '$lib/types/api';
+import type { BrowsePageKey, SearchTokenResponse } from '$lib/types/api';
 import { token } from '$lib/stores/auth';
 import { captureReturnTarget } from '$lib/utils/resumeSession';
 import { FOCUS_PARAM } from '$lib/utils/scrollFocus';
@@ -21,7 +21,15 @@ export function rowClickNavigate(e: MouseEvent, href: string): void {
  * way `job` does, `DetailHrefOptions`, `buildDetailHref` and `detailOrigin`. */
 export type DetailOrigin =
     | 'library' | 'job' | 'completion' | 'curation' | 'ratings' | 'ratings-stats' | 'watchlist' | 'browse'
-    | 'carousel' | 'search-all';
+    | 'carousel' | 'search-all' | 'home' | 'discover';
+
+// Every page mapped, so a new browse page fails to compile until its way back is chosen.
+const PAGE_ORIGIN = { home: 'home', news: 'browse', discover: 'discover' } as const satisfies Record<BrowsePageKey, DetailOrigin>;
+
+/** The origin a carousel's tiles and see-all link back through: the page laying it out. */
+export function carouselOrigin(page?: BrowsePageKey | null): DetailOrigin {
+    return page ? PAGE_ORIGIN[page] : 'browse';
+}
 
 export interface DetailHrefOptions {
     /** Search token to propagate so the detail page renders "Back to search". */

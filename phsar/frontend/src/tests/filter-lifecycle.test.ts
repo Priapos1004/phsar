@@ -52,6 +52,7 @@ describe('sectionsToClearFor', () => {
 	it('clears every section for an unrelated destination', () => {
 		expect(clearedFor('/search')).toEqual(ALL);
 		expect(clearedFor('/settings')).toEqual(ALL);
+		expect(clearedFor('/')).toEqual(ALL);
 	});
 
 	it('does not treat a prefix collision as the same section', () => {

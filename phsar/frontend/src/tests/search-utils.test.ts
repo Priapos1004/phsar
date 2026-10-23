@@ -4,6 +4,7 @@ import {
 	effectiveSort,
 	fetchAnimeSearchResults,
 	filterChips,
+	forGuest,
 	normalizeRated,
 	omitKeys,
 	sortLine,
@@ -135,6 +136,17 @@ describe('carryAcrossView', () => {
 	});
 });
 
+describe('forGuest', () => {
+	it('drops a filter every anime passes for a guest, and keeps one none would', () => {
+		expect(forGuest({ ...BASE, rated: ['none', 'in_progress'], watchlisted: false, sort: 'random' })).toEqual({
+			...BASE, sort: 'random',
+		});
+		expect(forGuest({ ...BASE, rated: ['in_progress'], watchlisted: true })).toEqual({
+			...BASE, rated: ['in_progress'], watchlisted: true,
+		});
+	});
+});
+
 describe('stripForGuest', () => {
 	it('drops what reads your own ratings and watchlist, watchlisted=false included', () => {
 		expect(stripForGuest({ ...BASE, watchlisted: false, genre_name: ['Action'] })).toEqual({
@@ -243,7 +255,7 @@ describe('sortLine', () => {
 describe('unusualAnnouncedType', () => {
 	const franchise = (announced: string | null, types: [string, number][]) => ({
 		announced_type: announced,
-		media_types: types.map(([media_type, count]) => ({ media_type, count })),
+		main_story_types: types.map(([media_type, count]) => ({ media_type, count })),
 	}) as unknown as AnimeSearchResult;
 
 	it('names a movie announced for a TV show', () => {

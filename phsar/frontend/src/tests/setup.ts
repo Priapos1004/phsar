@@ -59,3 +59,11 @@ vi.mock('$app/state', () => ({
 vi.mock('$lib/config', () => ({
 	API_URL: 'http://localhost:8000',
 }));
+
+// jsdom has no ResizeObserver, which Svelte's `bind:clientHeight` needs; a size never
+// changes without layout anyway, so an observer that never fires is the faithful stand-in.
+globalThis.ResizeObserver ??= class {
+	observe() {}
+	unobserve() {}
+	disconnect() {}
+};

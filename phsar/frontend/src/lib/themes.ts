@@ -26,14 +26,36 @@ export function getThemeCssClass(key: string): string | null {
 	return null;
 }
 
-export function getThemePic(key: string): string {
-	if (isValidTheme(key)) return THEMES[key].pic;
-	return THEMES.default.pic;
+type MonthDay = readonly [month: number, day: number];
+
+/**
+ * Yearly variants of every theme's pic, `/profile_pics/<color>_<suffix>.png`, shown from
+ * `from` to `to` inclusive. A suffix needs a file for every theme. A range may cross New
+ * Year. Read off the viewer's own clock: it is decoration, so no two viewers need agree.
+ *
+ * `focal` overrides the theme's own where a variant's subject sits elsewhere in the
+ * frame. Tune it at the banner's widest (`cls.container` wide, `sm:h-80` tall), where it crops the most.
+ */
+const SEASONAL_PICS: readonly {
+	suffix: string; from: MonthDay; to: MonthDay; focal?: Partial<Record<ThemeKey, string>>;
+}[] = [
+	{ suffix: 'halloween', from: [10, 1], to: [10, 31], focal: { red: '70%', green: '55%' } },
+];
+
+/** Whether `today` falls in the yearly range — one whose start comes after its end wraps over New Year. */
+export function inYearlyRange(today: Date, from: MonthDay, to: MonthDay): boolean {
+	const day = (today.getMonth() + 1) * 100 + today.getDate();
+	const [start, end] = [from[0] * 100 + from[1], to[0] * 100 + to[1]];
+	return start <= end ? start <= day && day <= end : day >= start || day <= end;
 }
 
-export function getThemeFocal(key: string): string {
-	if (isValidTheme(key)) return THEMES[key].focal;
-	return THEMES.default.focal;
+/** A theme's art today, and the vertical point the banner crops it at. */
+export function themeArt(key: string, today = new Date()): { pic: string; focal: string } {
+	const theme: ThemeKey = isValidTheme(key) ? key : 'default';
+	const { pic, focal } = THEMES[theme];
+	const season = SEASONAL_PICS.find(({ from, to }) => inYearlyRange(today, from, to));
+	if (!season) return { pic, focal };
+	return { pic: pic.replace(/\.png$/, `_${season.suffix}.png`), focal: season.focal?.[theme] ?? focal };
 }
 
 /** Detects the active theme from the CSS class on <html>. */

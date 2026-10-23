@@ -7,6 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.models.base import BaseModel
 
 if TYPE_CHECKING:
+    from app.models.discover_progress import DiscoverProgress
     from app.models.ratings import Ratings
     from app.models.registration_token import RegistrationToken
     from app.models.tag import Tag
@@ -39,3 +40,6 @@ class Users(BaseModel):
         lazy="raise",
     )
     settings: Mapped["UserSettings | None"] = relationship("UserSettings", back_populates="users", uselist=False, cascade="all, delete-orphan", lazy="raise")
+    discover_progress: Mapped["DiscoverProgress | None"] = relationship(
+        "DiscoverProgress", back_populates="users", uselist=False, cascade="all, delete-orphan", lazy="raise",
+    )

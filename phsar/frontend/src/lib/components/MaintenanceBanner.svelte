@@ -3,7 +3,7 @@
 	import { API_URL } from '$lib/config';
 	import { token } from '$lib/stores/auth';
 	import { maintenanceRefresh } from '$lib/stores/maintenance';
-	import { onBump } from '$lib/stores/jobs';
+	import { bumpCatalogueChanged, onBump } from '$lib/stores/jobs';
 	import Notice from './Notice.svelte';
 	import type { MaintenanceStatus } from '$lib/types/api';
 
@@ -40,7 +40,10 @@
 			// Change guards — Svelte 5 $state setters notify subscribers even
 			// when the value is unchanged, which would cascade through the
 			// $derived chain on every poll for nothing.
-			if (active !== body.active) active = body.active;
+			if (active !== body.active) {
+				if (active) bumpCatalogueChanged();
+				active = body.active;
+			}
 			if (minutesUntil !== newMinutesUntil) minutesUntil = newMinutesUntil;
 		} catch {
 			// Network blip — keep last-known state. The next poll will heal.

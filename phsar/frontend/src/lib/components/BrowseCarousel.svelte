@@ -2,17 +2,18 @@
 	// One browse row. Its params are final: docs/features/browse.md.
 	//
 	// Items load when the row nears the viewport, so a page of rows costs one search per
-	// row the user actually reaches — once per visit to Browse (`stores/browseRows`). The
+	// row the user actually reaches — once while `stores/browseRows` keeps it. The
 	// row a back link names loads at once instead, since it is the one the page is about
 	// to scroll to.
-	import { onMount, tick } from 'svelte';
-	import { ArrowRight, ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { onMount, tick, untrack } from 'svelte';
+	import { ArrowRight, ChevronRight, SearchX } from 'lucide-svelte';
 	import PosterCard from '$lib/components/PosterCard.svelte';
+	import ScrollRow from '$lib/components/ScrollRow.svelte';
 	import * as cls from '$lib/styles/classes';
 	import type { AnimeSearchResult, BrowseCarousel } from '$lib/types/api';
-	import { NO_REFINEMENT, refinedSearch } from '$lib/stores/browseRefinements';
-	import { browseRow } from '$lib/stores/browseRows';
-	import { buildDetailHref } from '$lib/utils/navigation';
+	import { NO_REFINEMENT, refinedSearch, ROW_SIZE } from '$lib/stores/browseRefinements';
+	import { carouselResults, settledResults } from '$lib/stores/browseRows';
+	import { buildDetailHref, carouselOrigin } from '$lib/utils/navigation';
 	import { carouselFocus, revealFocused } from '$lib/utils/scrollFocus';
 	import {
 		effectiveSort,
@@ -20,10 +21,6 @@
 		readsOwnData,
 		type MediaSearchFilters,
 	} from '$lib/utils/search';
-
-	const ROW_SIZE = 25;
-	const ARROW =
-		'absolute top-[40%] -translate-y-1/2 z-10 flex size-9 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur hover:bg-black/80 transition pointer-coarse:hidden';
 
 	interface Props {
 		carousel: BrowseCarousel;
@@ -34,23 +31,27 @@
 
 	let { carousel, isGuest, focus = null }: Props = $props();
 
-	let search = $derived<MediaSearchFilters>({ ...refinedSearch(carousel, NO_REFINEMENT), view_type: 'anime' });
+	let search = $derived<MediaSearchFilters>({ ...refinedSearch(carousel, NO_REFINEMENT, isGuest), view_type: 'anime' });
 	// Guests: docs/features/browse.md#guests.
 	let guestBlocked = $derived(isGuest && readsOwnData(search));
 	let sort = $derived(effectiveSort(search).sort);
 	// A row pinned to one season names it; no carousel field says so.
 	let season = $derived(pinnedSeason(search));
 
-	let items = $state<AnimeSearchResult[] | null>(null);
+	// A row already in hand (a return to the page) shows at once, at its final height. Read
+	// once, as the row mounts: it loads once per mount either way.
+	let items = $state<AnimeSearchResult[] | null>(
+		untrack(() => settledResults(carousel, NO_REFINEMENT, isGuest, ROW_SIZE) ?? null),
+	);
 	let failed = $state(false);
 	let section = $state<HTMLElement>();
-	let scroller = $state<HTMLDivElement>();
-	let atStart = $state(true);
-	let atEnd = $state(true);
+	// The body's height as last seen on screen. A hidden tab (Browse keeps its tabs mounted)
+	// measures 0, and easing from that on the way back would grow every row from nothing.
+	let bodyHeight = $state<number>();
 
 	async function load() {
 		try {
-			items = await browseRow(search, ROW_SIZE);
+			items = (await carouselResults(carousel, NO_REFINEMENT, isGuest, ROW_SIZE, { page: carousel.page })).results;
 		} catch {
 			failed = true;
 			return;
@@ -64,7 +65,7 @@
 	async function reveal(uuid: string | null) {
 		await tick();
 		const id = uuid ? carouselFocus(carousel.key, uuid) : null;
-		const tile = id ? scroller?.querySelector<HTMLElement>(`[data-focus-uuid="${CSS.escape(id)}"]`) : null;
+		const tile = id ? section?.querySelector<HTMLElement>(`[data-focus-uuid="${CSS.escape(id)}"]`) : null;
 		if (!tile) return revealFocused(carousel.key);
 		tile.scrollIntoView({ block: 'nearest', inline: 'center' });
 		revealFocused(id);
@@ -72,7 +73,8 @@
 
 	onMount(() => {
 		if (guestBlocked) return;
-		if (focus || typeof IntersectionObserver === 'undefined') {
+		// In hand, it still runs `load` (a cache hit) for the return to a tile it may owe.
+		if (items || focus || typeof IntersectionObserver === 'undefined') {
 			void load();
 			return;
 		}
@@ -87,25 +89,6 @@
 		observer.observe(section!);
 		return () => observer.disconnect();
 	});
-
-	function updateArrows() {
-		if (!scroller) return;
-		atStart = scroller.scrollLeft <= 1;
-		atEnd = scroller.scrollLeft + scroller.clientWidth >= scroller.scrollWidth - 1;
-	}
-
-	// Once the tiles are in — a ResizeObserver reports as it starts observing — and again
-	// whenever the row itself resizes, which the window is not the only thing to change.
-	$effect(() => {
-		if (!items || !scroller || typeof ResizeObserver === 'undefined') return;
-		const observer = new ResizeObserver(updateArrows);
-		observer.observe(scroller);
-		return () => observer.disconnect();
-	});
-
-	function page(direction: 1 | -1) {
-		scroller?.scrollBy({ left: direction * scroller.clientWidth * 0.9, behavior: 'smooth' });
-	}
 </script>
 
 <section bind:this={section} data-focus-uuid={carousel.key} class="space-y-2">
@@ -135,24 +118,43 @@
 			This row is built from your own ratings and watchlist — guest accounts have neither.
 		</div>
 	{:else}
-		{#if failed}
-			<p class="text-sm text-white/60">Couldn't load this row.</p>
-		{:else if items && items.length === 0}
-			<p class="text-sm text-white/60">Nothing here right now.</p>
-		{:else}
-			<div class="relative">
-				<div
-					bind:this={scroller}
-					onscroll={updateArrows}
-					class="flex gap-3 overflow-x-auto snap-x snap-mandatory pt-1 pb-2 no-scrollbar"
-				>
-					{#if items}
+		<!-- A row coming back empty or failed eases down to its line, so the page below glides
+		     rather than jolts. Only then: a row filling with tiles takes its height at once, or
+		     every row would visibly settle from the skeleton's two-line footer on each load.
+		     `clip`, not `hidden`: a hidden box is a scroll container, which a return's
+		     `scrollIntoView` could scroll. -->
+		<div
+			class="row-body"
+			class:ease={failed || items?.length === 0}
+			style:height={bodyHeight ? `${bodyHeight}px` : null}
+		>
+			<div bind:clientHeight={null, (h) => { if (h) bodyHeight = h; }}>
+				{#if failed}
+					<p class="text-sm text-white/60">Couldn't load this row.</p>
+				{:else if items && items.length === 0}
+					<!-- A row's own filters can empty it (Discover's start on "Not yet"), so the way out
+					     is named: the see-all, where they switch. -->
+					<div class="flex items-center gap-4 rounded-xl border border-dashed border-white/20 bg-white/5 px-5 py-5">
+						<span class="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+							<SearchX class="size-5" />
+						</span>
+						<div class="space-y-0.5">
+							<p class="font-medium text-white">Nothing here right now</p>
+							{#if carousel.filter_sets.some((s) => s.default_on)}
+								<p class="text-sm text-white/60">
+									Switch off a filter in <a href="/browse/{carousel.key}" class="text-primary hover:underline">See all</a> to show more.
+								</p>
+							{/if}
+						</div>
+					</div>
+				{:else if items}
+					<ScrollRow class="gap-3 pt-1 pb-2">
 						{#each items as item (item.uuid)}
 							{@const focusId = carouselFocus(carousel.key, item.uuid)}
 							<div class="snap-start shrink-0 w-32 sm:w-36" data-focus-uuid={focusId}>
 								<PosterCard
 									row={item}
-									href={buildDetailHref('anime', item.uuid, { from: 'browse', focus: focusId })}
+									href={buildDetailHref('anime', item.uuid, { from: carouselOrigin(carousel.page), focus: focusId })}
 									{sort}
 								/>
 							</div>
@@ -174,26 +176,38 @@
 								</div>
 							</div>
 						</a>
-					{:else}
+					</ScrollRow>
+				{:else}
+					<!-- Outside ScrollRow: a skeleton is nothing to page through. Each slot is a tile's
+					     footprint — PosterCard's border, cover and a footer as tall as its two-line
+					     title and line — so the skeleton stands as tall as the tiles replacing it. -->
+					<div class="flex gap-3 overflow-hidden pt-1 pb-2">
 						{#each { length: 8 } as _}
-							<div class="snap-start shrink-0 w-32 sm:w-36">
+							<div class="shrink-0 w-32 sm:w-36 rounded-xl border border-transparent">
 								<div class="aspect-[2/3] rounded-xl bg-white/5 animate-pulse"></div>
-								<div class="h-10"></div>
+								<div class="invisible flex flex-col gap-0.5 p-2" aria-hidden="true">
+									<span class="text-xs leading-snug">&nbsp;<br />&nbsp;</span>
+									<span class="text-[11px]">&nbsp;</span>
+								</div>
 							</div>
 						{/each}
-					{/if}
-				</div>
-				{#if items && !atStart}
-					<button type="button" aria-label="Scroll left" class="{ARROW} left-1" onclick={() => page(-1)}>
-						<ChevronLeft class="size-5" />
-					</button>
-				{/if}
-				{#if items && !atEnd}
-					<button type="button" aria-label="Scroll right" class="{ARROW} right-1" onclick={() => page(1)}>
-						<ChevronRight class="size-5" />
-					</button>
+					</div>
 				{/if}
 			</div>
-		{/if}
+		</div>
 	{/if}
 </section>
+
+<style>
+	.row-body {
+		overflow: clip;
+	}
+	.row-body.ease {
+		transition: height 350ms ease;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.row-body.ease {
+			transition: none;
+		}
+	}
+</style>

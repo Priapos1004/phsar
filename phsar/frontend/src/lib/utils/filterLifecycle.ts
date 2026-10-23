@@ -2,7 +2,7 @@ import { DETAIL_TYPES } from '$lib/utils/navigation';
 import { clearRatingsFilter } from '$lib/stores/ratingsFilter';
 import { clearWatchlistFilter } from '$lib/stores/watchlistFilter';
 import { clearJobsFilter } from '$lib/stores/adminJobsFilter';
-import { clearBrowseRows } from '$lib/stores/browseRows';
+import { clearSectionRows } from '$lib/stores/browseRows';
 import { clearBrowseRefinements } from '$lib/stores/browseRefinements';
 
 /**
@@ -41,7 +41,7 @@ export const SECTION_RESETS: readonly SectionReset[] = [
 	{
 		prefix: '/browse',
 		clear: () => {
-			clearBrowseRows();
+			clearSectionRows();
 			clearBrowseRefinements();
 		},
 	},

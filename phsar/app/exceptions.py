@@ -640,3 +640,12 @@ class CarouselNotFoundError(PhsarBaseError):
     def __init__(self, key: str):
         message = f"Carousel not found: '{key}'."
         super().__init__(message)
+
+
+class MoodNotFoundError(PhsarBaseError):
+    """Raised when a Discover mood key is not one of the wheel's moods."""
+    status_code = 404
+
+    def __init__(self, key: str):
+        message = f"Mood not found: '{key}'."
+        super().__init__(message)

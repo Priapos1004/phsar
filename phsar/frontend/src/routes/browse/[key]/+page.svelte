@@ -2,7 +2,7 @@
 	// A carousel's see-all (docs/features/browse.md).
 	import { getContext } from 'svelte';
 	import { page } from '$app/state';
-	import { ChevronRight } from 'lucide-svelte';
+	import { ChevronRight, RotateCcw } from 'lucide-svelte';
 	import { ApiError } from '$lib/api';
 	import PillToggle from '$lib/components/PillToggle.svelte';
 	import SeeAllResults from '$lib/components/SeeAllResults.svelte';
@@ -15,11 +15,12 @@
 		refinedSearch,
 		selectInGroup,
 		type Refinement,
+		type Step,
 	} from '$lib/stores/browseRefinements';
-	import { browseCarousel, browseRow } from '$lib/stores/browseRows';
+	import { browseCarousel, carouselResults, knownStep, refinedFromDefaults } from '$lib/stores/browseRows';
 	import { ensureRatingCoverage } from '$lib/stores/ratingCoverage';
 	import type { AnimeSearchResult, BrowseCarousel, BrowseFilterSet } from '$lib/types/api';
-	import { buildDetailHref, navigateToSearch } from '$lib/utils/navigation';
+	import { buildDetailHref, carouselOrigin, navigateToSearch } from '$lib/utils/navigation';
 	import { pinnedSeason, readsOwnData, type SortDir, type SortKey } from '$lib/utils/search';
 
 	const GUEST_HINT = 'Guest accounts have no ratings or watchlist';
@@ -33,8 +34,12 @@
 	let carousel = $state<BrowseCarousel | null>(null);
 	let rows = $state<AnimeSearchResult[] | null>(null);
 	let notice = $state('');
+	// What the list shows: the viewer's refinement, widened where its row is, so the toggles
+	// light the Top step actually applied — the step Reset comes back to. Null until the first
+	// list decides it, so the toggles never show a step it is about to leave.
+	let shown = $state<Refinement | null>(null);
 
-	let search = $derived(carousel ? refinedSearch(carousel, refinement) : null);
+	let search = $derived(carousel && shown ? refinedSearch(carousel, shown, isGuest) : null);
 	let groups = $derived(carousel ? filterSetGroups(carousel.filter_sets) : []);
 
 	let request = 0;
@@ -42,24 +47,35 @@
 		void load(key, refinement);
 	});
 
-	async function load(key: string, r: Refinement) {
+	function show(at: Step) {
+		carousel = at.carousel;
+		shown = at.refinement;
+	}
+
+	async function load(key: string, asked: Refinement) {
 		const id = ++request;
 		rows = null;
 		notice = '';
 		try {
-			const c = await browseCarousel(key, r.on, r.off);
+			const c = await browseCarousel(key, asked.on, asked.off);
 			if (id !== request) return;
-			carousel = c;
-			const s = refinedSearch(c, r);
 			// Guests: docs/features/browse.md#guests.
-			if (isGuest && readsOwnData(s)) {
+			if (isGuest && readsOwnData(refinedSearch(c, asked, isGuest))) {
+				show({ carousel: c, refinement: asked });
 				notice = 'This list is built from your own ratings and watchlist — guest accounts have neither.';
 				return;
 			}
+			// Shown at once where the step is known; a list still to be counted keeps the
+			// toggles where they were until it decides.
+			const known = knownStep(c, asked);
+			if (known) show(known);
+			else carousel = c;
 			// Unawaited: the tiers decorate tiles, so they must not hold the list back.
 			if (!isGuest) void ensureRatingCoverage();
-			const results = await browseRow(s, c.see_all_limit, key);
-			if (id === request) rows = results;
+			const listed = await carouselResults(c, asked, isGuest, c.see_all_limit, { slot: key });
+			if (id !== request) return;
+			show(listed);
+			rows = listed.results;
 		} catch (e) {
 			if (id === request) notice = e instanceof ApiError ? e.detail : "Couldn't load this list.";
 		}
@@ -73,6 +89,13 @@
 		refine({ ...refinement, sort: change.sort, sort_dir: change.sort_dir });
 	}
 
+	// Reset shows while the list differs from what it returns to.
+	let refined = $derived(carousel && shown ? refinedFromDefaults(carousel, shown) : false);
+
+	function reset() {
+		browseRefinements.update(({ [key]: _, ...rest }) => rest);
+	}
+
 	function guestInert(set: BrowseFilterSet): boolean {
 		return isGuest && readsOwnData(set.params);
 	}
@@ -81,7 +104,7 @@
 <svelte:head><title>{carousel?.title ?? 'Browse'} — Phsar</title></svelte:head>
 
 <SeeAllResults
-	back={{ from: 'browse', focus: key }}
+	back={{ from: carouselOrigin(carousel?.page), focus: key }}
 	title={carousel?.title ?? ''}
 	season={search ? pinnedSeason(search) : null}
 	grain="anime"
@@ -106,10 +129,10 @@
 			</button>
 		{/if}
 	{/snippet}
-	{#if groups.length && !notice}
+	{#if shown && (groups.length || refined) && !notice}
 		<div class="flex flex-wrap items-center gap-x-5 gap-y-2">
 			{#each groups as group (group[0].key)}
-				{@const active = group.find((s) => isSetActive(s, refinement))?.key ?? ''}
+				{@const active = group.find((s) => isSetActive(s, shown!))?.key ?? ''}
 				{@const heading = GROUP_HEADINGS[Object.keys(group[0].params)[0]]}
 				{@const options = group.map((s) => {
 					const inert = guestInert(s);
@@ -123,11 +146,21 @@
 					<PillToggle
 						options={group.length > 1 ? [{ value: '', label: 'Any' }, ...options] : options}
 						value={active}
-						onSelect={(v) => refine(selectInGroup(group, refinement, v && v !== active ? v : null))}
+						onSelect={(v) => refine(selectInGroup(group, shown!, v && v !== active ? v : null))}
 						ariaLabel={heading}
 					/>
 				</div>
 			{/each}
+			{#if refined}
+				<button
+					type="button"
+					class="inline-flex items-center gap-1.5 text-sm font-medium text-white/70 transition hover:text-white"
+					onclick={reset}
+				>
+					<RotateCcw class="size-4" />
+					Reset
+				</button>
+			{/if}
 		</div>
 	{/if}
 </SeeAllResults>

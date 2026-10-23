@@ -325,6 +325,14 @@ Foundation for any destructive/long-running periodic job. Consumed by both the d
 - Deduplication rules apply (MAL ID check, title similarity flagging)
 - Starts from the season the feature launches, going forward only
 
+### Retire "umbrella" from the code
+
+Out of the UI already ([UI copy](../.claude/rules/frontend.md#ui-copy)), not yet out of the
+code. A branch of its own, because the word is stored: `update_sweep`'s `result_summary`
+keys `anime_umbrella_changes` and `counters.umbrella_reclassed` change shape
+([versioning](features/jobs.md#result_summary-versioning)). Settle the replacement first —
+bare "anime" already means the row, so "the umbrella fields" need a name of their own.
+
 ---
 
 ## Feature 5: Watchlist ✓ shipped (v0.15.0)
@@ -377,7 +385,7 @@ Separate page/route — the "deep dive" version of home page sections.
 - **Recommendation algo** (top of page) — dropdown/selector to choose algorithm. Designed for experimentation — swap in new algos over time, users can try different ones. Could also be a user setting.
 - **Give it a second chance** — dropped anime (from ratings data)
 - **Continue watching** — anime on watchlist with partial ratings (e.g. watched S1, S2 waiting)
-- **Genre-based sections** — "Vampire Lovers", "Isekai Adventures", etc. (derived from user's top-rated genres)
+- **Genre-based sections** — ✓ built as Discover's moods (v0.16.3, [browse](features/browse.md#discover-draws-one-mood-a-day))
 - **Unexplored territory** — cluster-based discovery, anime outside user's usual selection
 - **Others also liked** — cross-user signal (users who rated similar anime highly)
 - **Rising on MAL** — high `log(scored_by) * score` weighting
@@ -395,6 +403,10 @@ Separate page/route — the "deep dive" version of home page sections.
 - HDBSCAN clustering over description embeddings — find gaps in user's coverage
 - Production company analysis over embeddings
 
+### Parked tabs (right of Discover)
+- **Galaxy** — a 2D map of the catalogue over combined embeddings (description, genres …): zoom, hop between neighbours, "six degrees" from one anime to another
+- **Games** — tonight's tournament (a bracket ending in one pick), higher or lower on MAL score, a swipe deck onto the watchlist; new row formats (ranked top-10, spotlight, blind box, versus) may live here too
+
 ### Key Decisions
 - Algorithm selector (dropdown or user setting) keeps backend flexible for experimentation
 - Advanced recommendation algos are separate work items — not blocking browse page v1
@@ -407,11 +419,10 @@ Separate page/route — the "deep dive" version of home page sections.
 ### Concept
 Eye-catching landing page — light version of browse, serves new and returning users.
 
-### Sections (keep existing placeholders, horizontal scrollable card rows — Crunchyroll-style)
+### Sections (horizontal scrollable card rows — Crunchyroll-style)
 - **Current season diashow** (existing) — rotate through new anime of the season
 - **Recommended** (existing placeholder) — from selected algo
-- **Lucky Find** (existing placeholder) — surprise/random picks
-- **Upcoming** (existing placeholder) — upcoming anime releases
+- **Lucky find**, **New to the catalogue** — built in v0.16.3 (USER_FLOWS §3). The planned Upcoming row is dropped: the News tab covers it
 
 ### UI Pattern
 - Horizontal scrollable card rows (like Crunchyroll app) for all sections
@@ -617,7 +628,7 @@ length target.
 | **v0.16.0** | ✓ Search engine | Title search becomes a fuzzy substring filter over every title variant; description search ranks literal hits first; sorts, a result limit, and new filters (an announced main story, top N%, any/all genres and studios, your rated state, watchlisted). Queries are stripped where they enter, and titles no longer get an embedding of their own. |
 | **v0.16.1** | ✓ Search UI | Title / Description / My notes search modes, a sort control, a filter sheet with active-filter chips and the new filters; slider reload fixes; a dropdown tap-through fix, status-aware watchlist removal on the rating form, and a manual season target for the seasonal sweep. |
 | **v0.16.2** | ✓ Browse + News | Carousel definitions in the DB with a resolver and seeded core rows; the Browse page and its News tab; a see-all page, also reached from search. JWT signing and verification move from python-jose to PyJWT. |
-| **v0.16.3** | Home + Discover | Home carousels replace the placeholders; a Discover tab with a daily rotation. |
+| **v0.16.3** | ✓ Home + Discover | Home rows Lucky find and New to the catalogue replace two placeholders; seasonal hero art (Halloween); a Discover tab whose wheel draws each user one themed mood a day, cut to with a full-screen reveal; a To-anime link on the media page; paging arrows on every sideways row. |
 | **v0.16.4** | Personalisation | Per-carousel refinement toggles; pinning a search to Browse as a custom carousel. |
 | **v0.16.5** | Get-started page | The `/getting-started` page. |
 | **v0.17.0** | Advanced analytics (v2) | Heavy/precomputed analytics that go beyond v0.14.12's client-side stats: embedding/taste clustering (HDBSCAN), production-company deep-dives, monthly pre-computed reports, and a true watch-history time series from the `watch_event` table (actual watch moments + rewatches, vs v0.14.12's `created_at` proxy). The standard graphs (score histogram, genre distribution, watch-time) already shipped client-side in **v0.14.12**. |

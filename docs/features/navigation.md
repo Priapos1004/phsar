@@ -5,7 +5,7 @@ brings each part.
 
 **Code**: `utils/returnTo.ts` (the route) → `utils/navigation.ts` (the origin) →
 `utils/scrollFocus.ts` (the position) → `stores/persistedFilter.ts` +
-`utils/resumeSession.ts` (the filters) → `stores/browseRows.ts` (Browse's rows) →
+`utils/resumeSession.ts` (the filters) → `stores/browseRows.ts` (Browse's and Home's rows) →
 `utils/filterLifecycle.ts` (when each resets).
 
 ## What travels, and on which carrier
@@ -17,7 +17,7 @@ brings each part.
 | the position in that list | `?focus=` on the back link | `scrollFocus.ts` |
 | that list's controls — filters, and the Jobs Log page | per-tab `sessionStorage` | `persistedFilter.ts` |
 | those controls across a *lapsed session* | the `phsar.resume` stash | `resumeSession.ts` |
-| the rows Browse had loaded | an in-memory cache | `stores/browseRows.ts` |
+| the rows Browse and Home had loaded, and Discover's spin | an in-memory cache | `stores/browseRows.ts` |
 
 **The URL carries whatever belongs to one link.** Two tabs open on two different
 searches must not share an origin or a scroll position, and a link handed to
@@ -98,7 +98,7 @@ with why SvelteKit's `snapshot` fits neither the filters nor the scroll position
 Both are app-owned and keyed on the URL, and they follow the same call because they
 have the same lifecycle shape.
 
-Browse's row cache follows the same rule.
+Browse's row cache follows the same rule, but for the entries `stores/browseRows.ts` names as outliving it — Home's rows among them — and says what drops those.
 
 ## Everything degrades to the default
 

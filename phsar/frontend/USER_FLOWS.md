@@ -83,7 +83,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
     - **Completion toast** (v0.14.13): when an `user_scrape` or `backup` job you were watching finishes, a toast slides in from the top — **green** on success (`Added "<query>" to your library.` / `Backup completed.`), **red** on failure (`Couldn't add "<query>".` / `Backup failed.`). It fires only on a live active→finished transition (jobs already finished when the tab opened don't toast), and restore/sweep jobs never toast. The toast is the single global one (`ToastHost` in the layout), so the `/library/add` enqueue toast and this completion toast never stack.
     - Optimistic-stub pattern: when `/library/add` or the BackupsCard `Create backup` button POSTs, the page pushes a `queued` row into the `optimisticJobs` store with the returned `job_uuid` so the bell renders it instantly without waiting for the next poll. The next `/jobs/mine` fetch reconciles it (UUID match) and replaces the stub with the real row.
     - **Admin pinned reminder**: when the user role is `admin`, the bell also polls `GET /admin/curation/pending-counts` each tick. If any queue has pending rows the dropdown renders a non-dismissible row at the top (Settings icon, "Admin tasks" title, a "N merges, M deletions pending" detail listing only the non-empty kinds, chevron-right) linking to `/admin?tab=curation`. The row hover-tints (no idle background) and sits flush against the top corner — `DropdownMenu.Content` is `p-0 overflow-hidden`. The badge contribution counts as "unseen" via the same session-scoped acknowledgment as jobs: `unseenCuration = max(0, totalPending − BELL_CURATION_SEEN_KEY)`. Opening the dropdown snapshots `totalPending` into the sessionStorage key (so the badge clears); resolving a candidate that drops `totalPending` below the snapshot clamps the snapshot down too, so a later-arriving candidate that brings total back up still re-bumps the badge.
-    - **Auto-refresh on curation actions**: MergeCandidatesCard, SplitCandidatesCard and DeleteCandidatesCard bump `curationRefresh` (lib/stores/jobs.ts) after a successful merge/dismiss/split/dismiss action (and after a re-detect that flagged new candidates). The bell subscribes via `onBump` and refetches the pending counts in milliseconds — same pattern as `jobsRefresh` / `librarySaved` / `backupSaved`.
+    - **Auto-refresh on curation actions**: MergeCandidatesCard, SplitCandidatesCard and DeleteCandidatesCard bump `curationRefresh` (lib/stores/jobs.ts) after a successful merge/dismiss/split/dismiss action (and after a re-detect that flagged new candidates). The bell subscribes via `onBump` and refetches the pending counts in milliseconds — same pattern as `jobsRefresh` / `catalogueChanged` / `backupSaved`.
   - User button (first letter of username) toggling a dropdown with:
     - User Settings → `/settings`
     - Admin → `/admin` (visible only to admin role)
@@ -98,10 +98,10 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 ### 2.3 Route Structure
 | Route | Page | Auth Required |
 |-------|------|---------------|
-| `/` | Home (search bar + placeholders) | Yes |
+| `/` | Home: hero banner, search bar, rows of anime (see 3) | Yes |
 | `/login?next=<path>` | Login form; optional validated post-login destination (1.1) | No |
 | `/register?next=<path>` | Registration form (requires token); `next` carried over from the login link | No |
-| `/browse?tab=news\|discover` | Browse: rows of anime (`news`, default) + a Discover placeholder (`discover`) | Yes |
+| `/browse?tab=news\|discover` | Browse: rows of anime (`news`, default) + the day's mood of anime (`discover`, 3c) | Yes |
 | `/browse/<key>` | A Browse row's see-all (3b) | Yes |
 | `/search?q=<token>` | Search results (anime or media view) | Yes |
 | `/search/all?q=<token>` | A search's see-all, past the 50 the search shows (3b) | Yes |
@@ -119,34 +119,40 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 
 ## 3. Home Page
 
-- **Hero banner** (InfoDiashow): Full-width rounded card showing the active theme's character pic as background (`object-cover`, per-theme focal point). A subtle bottom-up dark scrim (for legibility only, no color cast over the art) anchors the "Current Season" label and season name (e.g., "Spring 2026") bottom-left with a soft drop shadow. Pic updates reactively when the user changes theme.
+- **Hero banner** (InfoDiashow): Full-width rounded card showing the active theme's character pic as background (`object-cover`, per-theme focal point). A subtle bottom-up dark scrim (for legibility only, no color cast over the art) anchors the "Current Season" label and season name (e.g., "Spring 2026") bottom-left with a soft drop shadow. Pic updates reactively when the user changes theme. From 1 to 31 October every theme shows its Halloween version instead, each cropped at its own focal point.
 - The search bar (4.2) — the same query box, mode pills and filter sheet as the search page; submitting or applying goes to `/search`
-- Three placeholder cards: "Recommended", "Lucky Find", "Upcoming"
+- A "Recommended" placeholder card, then rows that work as Browse's do (3a), see-all included:
+  - **Lucky find** — top 75% of what you haven't rated or are still watching, in the day's shuffle.
+  - **New to the catalogue** — top 75%, newest added first.
+  - The rows stay loaded across leaving Home and coming back. They reload on a new day (UTC) and when the catalogue changes — though another user's scrape shows only after a page reload.
 
 ---
 
 ## 3a. Browse Page
 
-`/browse` has a **News** tab (default) and a **Discover** tab, which shows "Will come soon :-)".
+`/browse` has a **News** tab (default) and a **Discover** tab (3c).
 
 **News** is a column of rows in the order the backend lays them out, each a saved search of up to 25 anime:
-- A row loads when you scroll near it, showing a skeleton until then; an empty one says "Nothing here right now."
+- A row loads when you scroll near it, showing a skeleton until then, and eases to its new height rather than jumping the page below. An empty one shows a "Nothing here right now" note; where the row narrows by default, the note names **See all** as the place to switch a filter off.
+- A row whose default Top 50% leaves fewer than 35 anime shows Top 75% instead.
 - The row's title, and a **See all** tile ending the row, open the row's see-all page (3b). A row pinned to one season names it in a pill beside the title ("Fall 2026").
 - The row scrolls sideways (snapping per tile). On a mouse or trackpad, round arrows page it by about a screen width and appear only where there is more to scroll.
-- A row built from your own ratings or watchlist shows a **guest** a card saying guest accounts have neither; the rest load.
-- Coming back from an anime or media page shows the rows already loaded, without reloading them. They load afresh after leaving Browse for any other page; a row built from your ratings or watchlist also reloads after you change either.
+- A row that needs your own ratings or watchlist shows a **guest** a card saying guest accounts have neither; the rest load. A row that only leaves out what you have rated or listed runs for a guest over everything (Lucky find).
+- Coming back from an anime or media page shows the rows already loaded, without reloading them. They load afresh after leaving Browse for any other page, and whenever Home's do (3); a row built from your ratings or watchlist also reloads after you change either.
 
-**Tiles:** cover, title, the watchlist bookmark (as in 5.2), and the rated-coverage marking of 5.3 as an outline, gold and obsidian also tinting the title area. Under the title, one line shows the value the row is ordered by — e.g. "Announced Oct 10", a season, a vote count. Under the newest-announcement order, a tile names the announcement's type on its cover ("Movie") when it isn't the kind the rest of the franchise mostly is (a movie announced for a TV show). Clicking a tile opens the anime page (7.6 for the way back).
+**Tiles:** cover, title, the watchlist bookmark (as in 5.2), and the rated-coverage marking of 5.3 as an outline, gold and obsidian also tinting the title area. Under the title, one line shows the value the row is ordered by — e.g. "Announced Oct 10", a season, a vote count. Under the newest-announcement order, a tile names the announcement's type on its cover ("Movie") when it isn't the kind the rest of the main story mostly is (a movie announced for a TV show). Clicking a tile opens the anime page (7.6 for the way back).
 
 ## 3b. See-all Pages
 
 The see-all pages list past a cap as a grid of the 3a tiles, 60 at a time behind **Show More**. Returning from a tile re-expands the list far enough to show it, as the search does (4.3). The count reads "N anime" (or "media"), with a "+" when the list reached its limit.
 
 **A row's see-all** (`/browse/<key>`) lists the row's search up to the row's own limit:
-- "Back to browse" returns to the row, centred, its header flashing briefly.
+- "Back to browse" ("Back to home" for a home row, "Back to discover" for a Discover one) returns to the row, centred, its header flashing briefly.
 - The title, with the row's season pill. **Open in search ›** at the end of the title row opens `/search` with the list's search as currently refined.
 - Toggles grouped as the filter sheet (4.4) groups them, each with "Any" first: its Top and Watchlist choices, plus `Watched: Any | Not yet | Already` ("Already": at least one entry rated). A row offers only what fits it (Announced continuations, built from your ratings, has no Watched). A choice a row makes by default is lit from the start (Fresh: Top 75%); tapping the lit choice clears it.
 - Some rows offer the **sort** menu of 4.3 (New this season, for one); the others name their order instead ("Latest aired · Newest first").
+- A row showing Top 75% for a thin Top 50% (3a) opens on 75%, lit from the start; picking 50% sticks.
+- **Reset**, shown while the list differs from its defaults (a toggle or the sort changed), returns it to them — the widened 75% included.
 - Toggles and sort are kept per row across opening a tile and coming back, and reset on leaving Browse for any other page.
 - A **guest** sees the toggles over ratings or the watchlist dimmed, with a tooltip; a row built from them shows the guest card of 3a instead of a list.
 
@@ -154,6 +160,16 @@ The see-all pages list past a cap as a grid of the 3a tiles, 60 at a time behind
 - "Back to search" returns to `/search`. The title is "All results for “…”", or "All results" without a query.
 - A card names the mode (only with a query) and shows the search's filters as chips that can't be changed here; with neither, it is left out.
 - The sort menu of 4.3; a change stays on this page. Tiles follow the search's view: a media tile hides its cover past your spoiler frontier as 5.1 does.
+
+## 3c. Discover
+
+The Discover tab shows one **mood** a day: a themed group of rows (Beasts & Legends, Cozy Corner, Twists & Turns …).
+- Before today's spin: "Spin for today's mood" over a wheel with a segment per mood. **Spin the wheel** (or a click on the wheel) spins it for about five seconds; it overshoots a touch, settles on the drawn mood and dims the rest.
+- Then a full-screen reveal of about three seconds: letterbox bars, a signature of the mood's own — a punching one lands with a freeze, a black-and-white impact frame and a shake, a gentle one flows straight through on a soft wash of its colour — a flash under which the tab turns to the mood, and its name as a title card. A tap or any key skips it.
+- One spin a day: after it, the tab opens straight on today's mood — on a reload, from another device, after leaving Browse. Each mood comes round once before any repeats.
+- The mood: a banner in its colour with its icon, drifting particles (After Dark's bats fly across, wings beating), and "Today's mood. Spin the wheel again tomorrow.", then its rows (3a) — starting on what you haven't watched. Inside the tab everything drawn in your theme's accent takes the mood's colour instead; the navbar and the tab bar keep your theme.
+- A **guest** can't spin: the wheel and the reveal play once per visit to Browse and land on the day's mood.
+- With reduced motion the wheel doesn't turn, no reveal plays and no particles show.
 
 ---
 
@@ -405,6 +421,7 @@ can rate.
   - Each card: cover image (with fallback; blurred when spoiler-protected, and a colored bookmark overlaid top-right when the sibling is on your watchlist), title, media type + relation type badges, season or episode count
   - Clicking a sibling card navigates to that media's detail page (origin params preserved — see 7.6)
   - **"You are here" marker**: a thin primary-colored vertical divider with a small pill label slots into the row at the position the current media occupies in the chronological chain. Backend computes the index (`current_position`) so the frontend doesn't need to compare dates client-side. Position 0 = current is the oldest entry (marker leads the row); position == siblings.length = current is the newest (marker trails the row). On load the row auto-scrolls to center the marker, so a long chain opens at the current entry instead of the far left.
+  - Arrows page the row as on a Browse row (3a)
 - If no siblings: "No other media in this anime" message
 
 ### 7.6 Back Navigation
@@ -418,12 +435,15 @@ can rate.
   - `?from=ratings-stats` → "Back to statistics" (a You-vs-MAL scatter point **or** an Activity score-trend point → `/ratings?tab=stats`, landing back on the section you came from)
   - `?from=watchlist` → "Back to watchlist" (a `/watchlist` entry → its media/anime detail → `/watchlist`)
   - `?from=browse` → "Back to browse" (a Browse tile → `/browse`, scrolled to that row and the row to that tile)
+  - `?from=home` → "Back to home" (a home row's tile → `/`, landing as `?from=browse` does)
+  - `?from=discover` → "Back to discover" (a Discover row's tile → `/browse?tab=discover`, landing as `?from=browse` does)
   - `?from=carousel&carousel=<key>` → "Back to the list" (a row's see-all tile → `/browse/<key>`, at that tile)
   - `?from=search-all&q=<token>` → "Back to all results" (a search's see-all tile → `/search/all?q=token`, at that tile)
   - neither → no back button (direct-URL arrivals stay clean)
 - These flags propagate across the entire anime↔media jump chain (anime → media tile, media → anime link, related-media carousel) via `buildDetailHref`'s options bag, so a deep dive like curation → anime → media → sibling stays linkable back to the origin
 - The set above is closed. An unrecognised `from` falls through to the search token if one is present, and otherwise renders no back button — never a broken one. `lib/utils/navigation.ts` owns the union and says what adding to it touches
 - **Back returns you to the item you opened, not the top of the list.** The list scrolls that card or row to centre and flashes it briefly, then strips the `?focus=` param it arrived with, so a refresh doesn't re-scroll. It survives the anime↔media chain like the flags above: search → anime → a media tile → back centres the **anime** card originally clicked. Which origins carry it is decided in `BackLink`, beside the labels above; the rest link back unchanged. When the item is not on the page the list lands at the top, and a share link never carries a `focus`
+- **To anime →** sits top right on the back link's line, alone there when there is no back link, and opens the parent anime
 
 ---
 
@@ -519,8 +539,8 @@ own.
 
 ### 10.1 Theme
 - "Theme" card with "Design your lobby" subtitle
-- Horizontal scrollable row of theme cards (snap scrolling, `overflow-x-auto`)
-- Each card: landscape character pic (`aspect-video`), theme label below, `w-48 sm:w-56`
+- Horizontal row of theme cards (snap scrolling), paged by arrows as a Browse row is (3a)
+- Each card: landscape character pic (`aspect-video`) — its seasonal version during a seasonal window, as on the home banner (3) — theme label below, `w-48 sm:w-56`
 - Selected theme highlighted with `border-primary ring-2`
 - Clicking a card saves immediately via `PUT /users/settings` with `{ theme: key }`
 - Selecting a theme changes: app background gradient, login/register background gradient, all primary-colored UI elements (buttons, rings, badges, links, charts), the LoadingScreen sakura-ring color, and the home page hero banner character pic
@@ -572,7 +592,7 @@ own.
 - Server-rendered list from `GET /library/recent` returning the most recent anime saved across the catalog (not just this user's scrapes). Each row links to the anime detail page with `?from=library` so the destination renders a "Back to library" button (see 7.6).
 - Carries `name_eng` + `name_jap` so the frontend can call `resolveTitle(...)` with the user's `name_language` setting — no second fetch.
 - Each card's cover shows a watchlist bookmark overlay (top-right) when the anime is on your watchlist, colored by the list(s) in play (gradient when it spans several) — the same indicator as the media-page related-media carousel; nothing shows when it isn't watchlisted (so guests see none).
-- Refreshes automatically when the bell observes a NEW `succeeded` `user_scrape` (bumps `librarySaved` in `lib/stores/jobs.ts`; this panel subscribes via `onBump`). No manual reload required.
+- Refreshes automatically when the catalogue changes — above all when the bell observes a NEW `succeeded` `user_scrape` (it bumps `catalogueChanged` in `lib/stores/jobs.ts`; this panel subscribes via `onBump`). No manual reload required.
 
 ---
 
@@ -593,7 +613,7 @@ own.
   - **Job health**: per-kind succeeded/failed counts in aligned Ok / Failed / Rate columns, with a colored success-rate percentage (green at ≥90%, amber at 75–89%, red below 75%); a kind with nothing in its window reads "—" rather than 0%. A zero is dimmed and a non-zero Failed is `destructive`, so the column reads as a single vertical line broken only where something failed. The retryable-failed subset is a native hover `title` on the Failed cell — deliberately not inline, since it qualifies the count rather than adding one, and it is therefore unavailable on touch. Kinds are **grouped by the window their counts cover** under a "Last N days" subheading, shortest first. Each kind's window is sized server-side to how often that kind runs, so the grouping is also the signal for which kinds run often. Percent cell is fixed-width + `tabular-nums` so the column edge stays aligned. The `user_scrape` row counts user-initiated submissions only — seasonal-sweep children (system-attributed user_scrapes) are excluded so a Sunday burst of Music/PV-filtered shows doesn't drag the user-facing signal down. Retryable-failed counts ALSO drop system jobs (sweeps, cron backups) since the bell's retry button only fires on user-owned rows; counting cron retries would imply admin action is available when it isn't
   - **Sweep tiers**: where every row sits in the update-sweep cycle, with an **Anime / Media toggle** (default Anime). Five rows in priority cascade — Airing now (emerald) > Stabilizing (amber) > Weekly cycle (sky) > 180-day cycle (violet) > 90-day cycle (indigo). Each row has a horizontal share-of-total bar, count, percentage, and tooltip paraphrasing the predicate (stabilize = first 3 sweeps; 90-day long cycle; 180-day cycle for anything that premiered over a decade ago, whose MAL metadata has effectively frozen). The Stabilizing row expands into indented per-check sub-rows ("0 checks / 1 check / …", one per stabilize sweep) showing how the stabilization pipeline is distributed — for media each row is bucketed by its own check count, for anime by its least-settled member. The number of sub-rows tracks the stabilize threshold automatically. The backend exposes these as 5 mutually-exclusive **cycle-membership** buckets at each grain (`AnimeDAO.count_by_sweep_tier_priority` / `count_media_by_sweep_tier_priority` → `sweep_tiers` / `media_sweep_tiers`); the card renders the selected grain 1:1. Membership, not due-ness — a tier counts where a row *belongs* (e.g. "Weekly cycle" = has/is a recent main), so a row doesn't empty itself when a sweep refreshes its members. Sum equals the grain's catalog total (anime count / media count)
   - **User activity (7d)**: active users (distinct user_ids touching ratings or jobs), new ratings, scrapes submitted (user-attributed only)
-- Refresh: subscribes to the `librarySaved` bump in `lib/stores/jobs.ts`, so the panel reloads in milliseconds whenever the bell observes a new succeeded `user_scrape` — admin sees the catalog + activity counters move without a manual refresh. No periodic polling
+- Refresh: subscribes to the `catalogueChanged` bump in `lib/stores/jobs.ts`, so the panel reloads in milliseconds whenever the catalogue changes — admin sees the catalog + activity counters move without a manual refresh. No periodic polling
 - All counts are aggregate. The Overview tab is leaderboard-free — per-user breakdowns are scoped to the Jobs Log tab where they're needed for debugging
 - Cache: none. Admin-only, queries are sub-150ms
 
@@ -722,12 +742,15 @@ own.
 | Endpoint | Method | When |
 |----------|--------|------|
 | `/auth/login` | POST | Login form submission |
-| `/filters/options?view_type=anime\|media` | GET | The filter sheet's first opening per view (cached for the session by the `filterOptions` store; cleared when a scrape lands) |
+| `/filters/options?view_type=anime\|media` | GET | The filter sheet's first opening per view (cached for the session by the `filterOptions` store; cleared when the catalogue changes, as Home's rows are (3)) |
 | `/filters/genres` | GET | Genre-badge tooltips (cached once per session by the `genres` store) |
 | `/filters/create-token` | POST | Search submission |
 | `/filters/verify-token` | POST | Search page load |
-| `/browse/{page}` | GET | Browse page load, `news` for the News tab: its rows, each with the search it runs |
+| `/browse/{page}` | GET | `news` for Browse's News tab, `home` for the home page's rows: each with the search it runs and the page it sits on |
 | `/browse/carousels/{key}` | GET | A row's see-all load: the row with its toggles switched (`on` / `off` filter-set keys) |
+| `/browse/moods` | GET | The Discover tab: the wheel's moods, and today's mood with its rows once spun — always, for a guest |
+| `/browse/moods/spin` | POST | **Spin the wheel**: today's mood with its rows, the day's first spin counted; never sent for a guest |
+| `/browse/moods/{mood}` | GET | Dev replay only (`?reveal=<key>`, admin): any mood with its rows, counting no spin |
 | `/search/anime` | GET | Anime-view search after token verification (with the token's `sort`/`sort_dir`, and `limit=51` so a full page reads "50+"); each Browse row's search (`limit=25`); a row's see-all (its own limit) and a search's (`limit=1000`); the Completion tab's search-to-mark (12.9) |
 | `/search/media` | GET | Media-view search after token verification (same params); a media-view search's see-all (`limit=1000`) |
 | `/media/anime/{uuid}` | GET | Anime detail page load |

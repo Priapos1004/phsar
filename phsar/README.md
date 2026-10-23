@@ -31,6 +31,7 @@ phsar/
 │   │   ├── base_mal_id_dao.py
 │   │   ├── browse_dao.py
 │   │   ├── delete_candidate_dao.py
+│   │   ├── discover_progress_dao.py
 │   │   ├── genre_dao.py
 │   │   ├── job_dao.py
 │   │   ├── media_dao.py
@@ -57,6 +58,7 @@ phsar/
 │   │   ├── base.py
 │   │   ├── browse.py
 │   │   ├── delete_candidate.py
+│   │   ├── discover_progress.py
 │   │   ├── genre.py
 │   │   ├── job.py
 │   │   ├── media.py
@@ -187,6 +189,7 @@ phsar/
 │   │   │   │   ├── BackLink.svelte
 │   │   │   │   ├── BackupsCard.svelte
 │   │   │   │   ├── BrowseCarousel.svelte
+│   │   │   │   ├── BrowsePageRows.svelte
 │   │   │   │   ├── admin/
 │   │   │   │   │   ├── AdminJobsLogTab.svelte
 │   │   │   │   │   ├── AdminOverviewTab.svelte
@@ -205,6 +208,8 @@ phsar/
 │   │   │   │   ├── DangerZone.svelte
 │   │   │   │   ├── DeleteCandidatesCard.svelte
 │   │   │   │   ├── DeleteWatchHistoryToggle.svelte
+│   │   │   │   ├── DiscoverTab.svelte
+│   │   │   │   ├── DiscoverWheel.svelte
 │   │   │   │   ├── DoubleRangeSlider.svelte
 │   │   │   │   ├── EChart.svelte
 │   │   │   │   ├── GenreBadges.svelte
@@ -217,6 +222,8 @@ phsar/
 │   │   │   │   ├── MediaInfo.svelte
 │   │   │   │   ├── MediaShare.svelte
 │   │   │   │   ├── MergeCandidatesCard.svelte
+│   │   │   │   ├── MoodParticles.svelte
+│   │   │   │   ├── MoodReveal.svelte
 │   │   │   │   ├── NavBar.svelte
 │   │   │   │   ├── Notice.svelte
 │   │   │   │   ├── PillToggle.svelte
@@ -247,6 +254,7 @@ phsar/
 │   │   │   │   ├── ScoreDial.svelte
 │   │   │   │   ├── ScorePercentile.svelte
 │   │   │   │   ├── ScrollableCard.svelte
+│   │   │   │   ├── ScrollRow.svelte
 │   │   │   │   ├── SeeAllResults.svelte
 │   │   │   │   ├── SegmentedControl.svelte
 │   │   │   │   ├── SessionTimeoutBanner.svelte
@@ -330,6 +338,7 @@ phsar/
 │   │   │       ├── clickThrough.ts
 │   │   │       ├── cn.ts
 │   │   │       ├── color.ts
+│   │   │       ├── discoverMoods.ts
 │   │   │       ├── download.ts
 │   │   │       ├── filterLifecycle.ts
 │   │   │       ├── formatString.ts
@@ -339,6 +348,7 @@ phsar/
 │   │   │       ├── jobHealth.ts
 │   │   │       ├── jobSummary.ts
 │   │   │       ├── mediaChangeSort.ts
+│   │   │       ├── moodReveal.ts
 │   │   │       ├── navigation.ts
 │   │   │       ├── ratingAttributes.ts
 │   │   │       ├── ratingCoverage.ts
@@ -415,6 +425,7 @@ phsar/
 │   │       ├── click-through.test.ts
 │   │       ├── color.test.ts
 │   │       ├── completion-status-card.test.ts
+│   │       ├── discover-moods.test.ts
 │   │       ├── dismissed-decisions-section.test.ts
 │   │       ├── filter-lifecycle.test.ts
 │   │       ├── format-string.test.ts
@@ -430,6 +441,7 @@ phsar/
 │   │       ├── media-change-sort.test.ts
 │   │       ├── media-detail.test.ts
 │   │       ├── merge-candidates-card.test.ts
+│   │       ├── mood-reveal.test.ts
 │   │       ├── navbar.test.ts
 │   │       ├── navigation.test.ts
 │   │       ├── persisted-filter.test.ts
@@ -455,6 +467,7 @@ phsar/
 │   │       ├── split-candidates-card.test.ts
 │   │       ├── spoiler-frontier.test.ts
 │   │       ├── spoiler-guard.test.ts
+│   │       ├── themes.test.ts
 │   │       ├── toast.test.ts
 │   │       ├── watchlist-ready.test.ts
 │   │       ├── watchlist-stats.test.ts
@@ -541,6 +554,7 @@ phsar/
         ├── test_base_dao_min_max.py
         ├── test_curation_row_locks.py
         ├── test_delete_candidate_service.py
+        ├── test_discover_draw.py
         ├── test_job_dao.py
         ├── test_job_worker.py
         ├── test_jobs_scrape_index.py

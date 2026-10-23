@@ -1,5 +1,6 @@
 import logging
 from collections import Counter
+from collections.abc import Iterable
 from datetime import date
 from typing import TypedDict
 from uuid import UUID
@@ -14,6 +15,7 @@ from app.models.media import (
     AIRING_STATUS_CURRENTLY_AIRING,
     AIRING_STATUS_FINISHED_AIRING,
     AIRING_STATUS_NOT_YET_AIRED,
+    MAIN_STORY_RELATIONS,
     RELATION_SCORE_WEIGHTS,
     SEASON_ORDER,
     Media,
@@ -107,6 +109,11 @@ def most_frequent_first(counts: Counter[str]) -> list[str]:
     return sorted(counts, key=lambda name: (-counts[name], name.casefold()))
 
 
+def _media_type_summaries(media: Iterable[Media]) -> list[MediaTypeSummary]:
+    counts = Counter(m.media_type.value for m in media)
+    return [MediaTypeSummary(media_type=mt, count=c) for mt, c in counts.most_common()]
+
+
 class AnimeAggregates(TypedDict):
     avg_score: float | None
     avg_scored_by: int
@@ -134,7 +141,6 @@ def _compute_anime_aggregates(media_list: list[Media]) -> AnimeAggregates:
     all_statuses: list[str] = []
     all_seasons: list[tuple[str, int]] = []
     relation_type_counts: Counter[str] = Counter()
-    media_type_counts: Counter[str] = Counter()
     # Relation-weighted score accumulators (RELATION_SCORE_WEIGHTS: Main+Alt only).
     # Python twin of search_filters.weighted_mean_score_expr / _votes_expr, so the
     # displayed avg matches the ranking/pill. Only scored, positively-weighted
@@ -159,8 +165,6 @@ def _compute_anime_aggregates(media_list: list[Media]) -> AnimeAggregates:
             all_statuses.append(m.airing_status)
         if m.relation_type:
             relation_type_counts[m.relation_type.value] += 1
-        if m.media_type:
-            media_type_counts[m.media_type.value] += 1
 
         if m.anime_season_name and m.anime_season_year:
             all_seasons.append((m.anime_season_name.value, m.anime_season_year))
@@ -194,10 +198,7 @@ def _compute_anime_aggregates(media_list: list[Media]) -> AnimeAggregates:
             RelationTypeSummary(relation_type=rt, count=c)
             for rt, c in relation_type_counts.most_common()
         ],
-        "media_types": [
-            MediaTypeSummary(media_type=mt, count=c)
-            for mt, c in media_type_counts.most_common()
-        ],
+        "media_types": _media_type_summaries(media_list),
         "genres": majority_genres,
         "studios": most_frequent_first(studio_counts),
         "original_sources": most_frequent_first(source_counts),
@@ -269,6 +270,11 @@ async def search_anime_by_query(
     results = []
     for anime in anime_list:
         agg = _compute_anime_aggregates(list(anime.media))
+        # Read only beside an announcement, so built only where one is carried.
+        main_story = (
+            _media_type_summaries(m for m in anime.media if m.relation_type in MAIN_STORY_RELATIONS)
+            if shown[anime.id].announced_type else []
+        )
         results.append(AnimeSearchResult(
             uuid=anime.uuid,
             title=anime.title,
@@ -278,6 +284,7 @@ async def search_anime_by_query(
             is_finished=anime.completion is not None,
             added_at=anime.created_at,
             matched_note=notes.get(anime.id),
+            main_story_types=main_story,
             **shown[anime.id].model_dump(),
             **agg,
         ))

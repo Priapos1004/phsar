@@ -320,6 +320,8 @@ export interface AnimeAggregatedBase {
 export interface AnimeSearchResult extends AnimeAggregatedBase, SortValues {
 	/** Notes search only: the caller's note that best matches the query. */
 	matched_note?: string | null;
+	/** Beside an `announced_type` only: `media_types` over the main story alone. */
+	main_story_types: MediaTypeSummary[];
 }
 
 // Anime detail
@@ -1001,6 +1003,9 @@ export interface BrowseFilterSet {
 	params: Partial<MediaSearchFilters>;
 }
 
+/** A browse page that lays out carousels (`BrowsePage`). */
+export type BrowsePageKey = 'home' | 'news' | 'discover';
+
 export interface BrowseCarousel {
 	key: string;
 	title: string;
@@ -1009,4 +1014,24 @@ export interface BrowseCarousel {
 	/** Whether its see-all offers a sort; otherwise the carousel's order is shown. */
 	sortable: boolean;
 	filter_sets: BrowseFilterSet[];
+	/** Its page in `PAGE_LAYOUT`; null when no page lays it out. */
+	page: BrowsePageKey | null;
+}
+
+/** One segment of Discover's wheel; its look is `utils/discoverMoods`'. */
+export interface DiscoverMood {
+	key: string;
+	title: string;
+}
+
+/** Today's mood, with its rows top to bottom. */
+export interface DiscoverToday {
+	mood: string;
+	carousels: BrowseCarousel[];
+}
+
+export interface DiscoverMoods {
+	moods: DiscoverMood[];
+	/** Once the caller has spun today — always, for a guest, whose mood the day draws. */
+	today: DiscoverToday | null;
 }

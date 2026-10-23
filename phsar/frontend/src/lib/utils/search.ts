@@ -238,14 +238,16 @@ export function sortLine(
 	}
 }
 
-/** The announced entry's type, when another type outnumbers it in the rest of the franchise —
+/** The announced entry's type, when another type outnumbers it in the rest of the main story —
  * a movie for a TV show — and so is worth naming on the tile; a tie names nothing. The
- * announcement is in `media_types` itself, so it is left out, or it would tie a one-season TV. */
+ * announcement is in `main_story_types` itself, so it is left out, or it would tie a
+ * one-season TV. */
 export function unusualAnnouncedType(row: AnimeSearchResult): string | null {
 	const announced = row.announced_type;
 	if (!announced) return null;
-	const rest = (row.media_types.find((t) => t.media_type === announced)?.count ?? 1) - 1;
-	return row.media_types.some((t) => t.media_type !== announced && t.count > rest) ? announced : null;
+	const types = row.main_story_types;
+	const rest = (types.find((t) => t.media_type === announced)?.count ?? 1) - 1;
+	return types.some((t) => t.media_type !== announced && t.count > rest) ? announced : null;
 }
 
 /** The applied search with a new query and mode. A different query starts from Best match:
@@ -424,6 +426,16 @@ export const GUEST_STRIPPED_NOTICE =
 export function readsOwnData(params: Partial<MediaSearchFilters>): boolean {
 	return !!params.rated?.length || params.watchlisted != null || params.sort === 'your_rating'
 		|| params.search_type === 'rating_notes';
+}
+
+/** The search as a guest would get it: with no ratings or watchlist, a guest passes a filter
+ * on that empty side for every anime, so it goes. Anything over their data that is left
+ * still `readsOwnData`. */
+export function forGuest(params: MediaSearchFilters): MediaSearchFilters {
+	const passesAll: (keyof MediaSearchFilters)[] = [];
+	if (params.rated?.includes('none')) passesAll.push('rated');
+	if (params.watchlisted === false) passesAll.push('watchlisted');
+	return omitKeys(params, passesAll);
 }
 
 /** A shared link opened by a guest: drop what `readsOwnData` names, and say whether anything

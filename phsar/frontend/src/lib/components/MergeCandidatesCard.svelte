@@ -7,7 +7,7 @@
     import Tooltip from '$lib/components/Tooltip.svelte';
     import DismissedDecisionsSection from '$lib/components/admin/DismissedDecisionsSection.svelte';
     import { GitMerge, X, RefreshCw, ArrowLeftRight, Search, ChevronRight, ChevronDown } from 'lucide-svelte';
-    import { bumpCurationRefresh } from '$lib/stores/jobs';
+    import { bumpCatalogueChanged, bumpCurationRefresh } from '$lib/stores/jobs';
     import { buildDetailHref } from '$lib/utils/navigation';
     import { formatRelationType, resolveTitle } from '$lib/utils/formatString';
     import { userSettings } from '$lib/stores/userSettings';
@@ -82,6 +82,7 @@
             // re-detection may surface fresh pairs against the survivor.
             await fetchCandidates();
             bumpCurationRefresh();
+            bumpCatalogueChanged();
         } catch (err) {
             error = err instanceof ApiError ? err.detail : 'Failed to merge';
         } finally {

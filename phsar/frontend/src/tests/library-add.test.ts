@@ -98,7 +98,7 @@ describe('Library Add page', () => {
 		});
 	});
 
-	it('refreshes recent additions when librarySaved bumps', async () => {
+	it('refreshes recent additions when the catalogue changes', async () => {
 		const recentMock = vi.fn().mockResolvedValue({
 			ok: true,
 			status: 200,
@@ -109,8 +109,8 @@ describe('Library Add page', () => {
 		render(LibraryAddPage);
 		await vi.waitFor(() => expect(recentMock).toHaveBeenCalledTimes(1));
 
-		const { bumpLibrarySaved } = await import('../lib/stores/jobs');
-		bumpLibrarySaved();
+		const { bumpCatalogueChanged } = await import('../lib/stores/jobs');
+		bumpCatalogueChanged();
 		await vi.waitFor(() => {
 			expect(recentMock).toHaveBeenCalledTimes(2);
 		});

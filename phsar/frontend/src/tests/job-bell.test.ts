@@ -291,7 +291,7 @@ describe('JobBell', () => {
 		});
 	});
 
-	it('bumps librarySaved exactly once per newly-succeeded job', async () => {
+	it('bumps catalogueChanged exactly once per newly-succeeded scrape', async () => {
 		// vi.waitFor doesn't play well with fake timers across module-scoped
 		// store updates here — use real timers for this assertion.
 		vi.useRealTimers();
@@ -306,16 +306,16 @@ describe('JobBell', () => {
 		mockJobsResponse([succeeded]);
 
 		const { get } = await import('svelte/store');
-		const { librarySaved, bumpJobsRefresh } = await import('../lib/stores/jobs');
-		const baseline = get(librarySaved);
+		const { catalogueChanged, bumpJobsRefresh } = await import('../lib/stores/jobs');
+		const baseline = get(catalogueChanged);
 
 		render(JobBell);
-		await vi.waitFor(() => expect(get(librarySaved)).toBe(baseline + 1));
+		await vi.waitFor(() => expect(get(catalogueChanged)).toBe(baseline + 1));
 
 		// Trigger a second poll with the same data — no additional bump.
 		bumpJobsRefresh();
 		await new Promise((r) => setTimeout(r, 50));
-		expect(get(librarySaved)).toBe(baseline + 1);
+		expect(get(catalogueChanged)).toBe(baseline + 1);
 	});
 
 	it('renders the backup kind label for queued backup jobs', async () => {

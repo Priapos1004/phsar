@@ -5,7 +5,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
-	import { bumpJobsRefresh, librarySaved, onBump } from '$lib/stores/jobs';
+	import { bumpJobsRefresh, catalogueChanged, onBump } from '$lib/stores/jobs';
 	import { pushToast } from '$lib/stores/toast';
 	import { userSettings } from '$lib/stores/userSettings';
 	import { watchlistAnimeColors } from '$lib/stores/watchlist';
@@ -50,10 +50,10 @@
 
 	onMount(loadRecent);
 
-	// Refresh whenever the bell announces a newly-succeeded user_scrape via
-	// the librarySaved store. onBump skips the initial synchronous fire so
-	// this doesn't double-fetch with onMount's loadRecent.
-	$effect(() => onBump(librarySaved, () => void loadRecent()));
+	// Refresh whenever the catalogue changes — a scrape of yours landing above all.
+	// onBump skips the initial synchronous fire so this doesn't double-fetch with
+	// onMount's loadRecent.
+	$effect(() => onBump(catalogueChanged, () => void loadRecent()));
 
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
@@ -67,7 +67,7 @@
 			query = '';
 			// Tell the bell to refetch immediately so the new job shows up
 			// without waiting for its 30s idle poll. The bell will bump
-			// librarySaved once the job completes — that's what refreshes
+			// catalogueChanged once the job completes — that's what refreshes
 			// the recent-additions panel below, no fixed-delay timer needed.
 			bumpJobsRefresh();
 		} catch (err) {

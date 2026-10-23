@@ -4,9 +4,12 @@ The browse pages: rows of anime (carousels), each one a saved search.
 
 **Code**: `seeders/browse_seeder.py` (the core definitions) → `models/browse.py` →
 `services/browse_service.py` (layout + resolver, checked by `schemas/browse_schema.py`)
-→ `routers/browse.py` → `routes/browse/+page.svelte` → `BrowseCarousel.svelte` →
+→ `routers/browse.py` → `BrowsePageRows.svelte` (on Browse and on Home) → `BrowseCarousel.svelte` →
 `PosterCard.svelte`; a carousel's see-all is `routes/browse/[key]/+page.svelte` →
-`SeeAllResults.svelte`, with `stores/browseRefinements.ts`.
+`SeeAllResults.svelte`, with `stores/browseRefinements.ts`. Discover: `DiscoverTab.svelte`
+(with `DiscoverWheel.svelte`, `MoodParticles.svelte`, `MoodReveal.svelte`,
+`utils/discoverMoods.ts` and `utils/moodReveal.ts`) over `/browse/moods`; its spins are counted in
+`models/discover_progress.py`.
 
 ## A carousel is a saved search
 
@@ -44,7 +47,50 @@ again after a backup restore, since the page looks carousels up by key.
 Unlike the genre seeder, whatever the list drops is deleted, and links are updated in
 place, so an unchanged link keeps its row. Which carousels a page shows, top to
 bottom, is `PAGE_LAYOUT` in the service — a constant rather than a table, since no
-user or admin chooses it.
+user or admin chooses it. Home is one of those pages. A carousel sits on one page only and
+says which (`page`), since its tiles and its see-all link back there.
+
+## Discover draws one mood a day
+
+Discover's rows are grouped into moods (`MOODS`): broad themes, one of which a
+spin of the wheel shows. A row may sit in several moods; Discover's `PAGE_LAYOUT` entry
+holds every mood's rows once, so each is still on one page. The mood is what combines
+kinds — no row unions searches, which would leave it with no search to open or see in
+full.
+
+A spin draws the viewer's next mood from a shuffle bag of their own (`mood_for`). The
+bag moves on a spin rather than on the calendar, so a viewer who comes by every few days
+still meets every mood once a cycle. A user's first spin of the UTC day is counted and
+the mood it drew kept (`discover_progress`), so any later one that day lands there, and a
+release editing the moods leaves the day's mood in place unless it drops it — only the
+bag reshuffles. A guest is read-only and cannot spin: the day stands in for its count, so
+its mood for the day is always there, though with nothing kept an edit may change it.
+
+A row starts on what the viewer hasn't watched. A big pool draws at random over its
+better part, since a mood comes back every few spins and a top-rated order would lead
+with the same anime each time. A description row draws at random whatever its size: its
+query picks a set rather than ranking one, and its Top N% cuts the tiny shows that merely
+say the word.
+
+The wheel decides nothing: the spin returns the drawn mood first and the wheel turns onto
+it. A mood's look is the frontend's (`utils/discoverMoods.ts`), keyed by mood key. A
+fresh spin then cuts to the mood under a full-screen reveal: the tab swaps under its flash,
+so the cut is never seen, and the rows load behind its title card (`MoodReveal.svelte`).
+The dev-only `?reveal=<key>` spins the wheel onto any mood through an admin-only preview
+(`GET /browse/moods/{mood}`) that counts no spin: how a mood and its reveal are checked
+without waiting for the draw.
+
+## A thin row widens
+
+`widened` (`stores/browseRefinements.ts`) steps a carousel's default Top 50% up to Top 75%
+where it leaves fewer than `WIDEN_BELOW` — that one step, so a row widens into its better
+part rather than its whole pool — and only while the viewer hasn't chosen in the Top group.
+The row and its see-all both list through `carouselResults` (`stores/browseRows.ts`), so the
+two agree; the see-all takes the widened step as its default, what Reset returns to, so a
+chosen step is recorded even where it is a default (`selectInGroup`). A count that widened
+is remembered, for the toggles it ran under, so the see-all and a return start at 75%
+without counting again or passing through 50%. Rows set Top 50% and let this lift a small
+pool, rather than defaulting to 75% themselves.
 
 ## A see-all lists the rest
 
@@ -64,8 +110,10 @@ A viewer's choices are kept per carousel (`browseRefinements`).
 
 ## Guests
 
-Every carousel is listed for everyone, a guest included. One over the caller's own
-ratings or watchlist resolves for a guest too; [the search it runs](search.md#personal-filters-and-sort)
+Every carousel is listed for everyone, a guest included. For a guest, `refinedSearch`
+first drops, with `forGuest`, any filter every anime passes for one, so the row, its
+see-all and Open in search run the same search. One still over the caller's own ratings
+or watchlist resolves for a guest too; [the search it runs](search.md#personal-filters-and-sort)
 is where a guest is refused, so the row shows a guest why instead of running it. It
 decides "personal" with `readsOwnData`, the same test that strips a guest's shared link
 and leaves a see-all's toggle over the caller's data inert.
@@ -74,3 +122,4 @@ and leaves a see-all's toggle over the caller's data inert.
 
 **Why it is this way**
 - [Browse + News](../../compound-docs/2026-10-10-v0.16.2-browse.md) — the decisions behind the definition tables, the see-all routes and the tiles
+- [Home + Discover](../../compound-docs/2026-10-12-v0.16.3-home-and-discover.md) — the moods, the draw, and the count and overlap studies behind Discover's rows

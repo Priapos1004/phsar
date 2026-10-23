@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { ArrowLeft } from 'lucide-svelte';
+	import * as cls from '$lib/styles/classes';
 	import type { DetailHrefOptions } from '$lib/utils/navigation';
 	import { hrefWithFocus } from '$lib/utils/scrollFocus';
 
@@ -25,7 +26,9 @@
 		if (fromParam === 'ratings') return { href: withFocus('/ratings'), label: 'Back to ratings' };
 		if (fromParam === 'ratings-stats') return { href: '/ratings?tab=stats', label: 'Back to statistics' };
 		if (fromParam === 'watchlist') return { href: withFocus('/watchlist'), label: 'Back to watchlist' };
+		if (fromParam === 'home') return { href: withFocus('/'), label: 'Back to home' };
 		if (fromParam === 'browse') return { href: withFocus('/browse'), label: 'Back to browse' };
+		if (fromParam === 'discover') return { href: withFocus('/browse?tab=discover'), label: 'Back to discover' };
 		if (fromParam === 'carousel' && carousel) {
 			return { href: withFocus(`/browse/${encodeURIComponent(carousel)}`), label: 'Back to the list' };
 		}
@@ -39,10 +42,7 @@
 </script>
 
 {#if target}
-	<a
-		href={target.href}
-		class="inline-flex items-center gap-1.5 text-sm text-white/70 hover:text-white transition mb-2"
-	>
+	<a href={target.href} class={cls.pageNavLink}>
 		<ArrowLeft class="size-4" /> {target.label}
 	</a>
 {/if}
