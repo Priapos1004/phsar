@@ -11,6 +11,7 @@
 	// `applied`. One source and one direction is what keeps a reload, a view switch and an
 	// open sheet from racing each other.
 	import { getContext } from 'svelte';
+	import { MediaQuery } from 'svelte/reactivity';
 	import { SlidersHorizontal, Search } from 'lucide-svelte';
 	import { ensureFilterOptions } from '$lib/stores/filterOptions';
 	import TagSelect from '$lib/components/TagSelect.svelte';
@@ -81,8 +82,11 @@
 			disabled: isGuest, hint: isGuest ? 'Guest accounts have no notes to search' : undefined,
 		},
 	]);
+	// A placeholder is text CSS cannot swap, so the width is read here; on a phone the
+	// long one is cut off mid-word.
+	const wide = new MediaQuery('min-width: 640px');
 	let placeholder = $derived(
-		mode === 'description' ? 'Describe a story, a character, a theme...'
+		mode === 'description' ? (wide.current ? 'Describe a story, a character, a theme...' : 'Describe a story...')
 			: mode === 'rating_notes' ? 'Search your notes...'
 			: viewType === 'anime' ? 'Search anime...' : 'Search media...',
 	);

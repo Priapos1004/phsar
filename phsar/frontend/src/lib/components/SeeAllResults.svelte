@@ -81,7 +81,7 @@
 	});
 </script>
 
-<div class="mx-auto max-w-5xl space-y-4">
+<div class="{cls.pageWidth} space-y-4">
 	<BackLink origin={back} />
 
 	<div class="flex flex-wrap items-center gap-2">

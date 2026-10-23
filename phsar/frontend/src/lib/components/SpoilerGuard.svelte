@@ -39,8 +39,10 @@
 {#if shouldBlur || revealed}
 	<!-- Wrapper and blurred child stay mounted after reveal. transform:
 	     translateZ(0) pins a persistent GPU layer so removing the blur
-	     does not leave horizontal ghost lines in Safari. -->
-	<div class="relative">
+	     does not leave horizontal ghost lines in Safari. h-fit because the overlay
+	     centres on this box: a flex row stretching it would centre the label below
+	     the cover's middle. -->
+	<div class="relative h-fit">
 		<div
 			class="transition-[filter] duration-200 {blurClass}"
 			style:transform="translateZ(0)"
@@ -55,10 +57,10 @@
 				onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') reveal(e); }}
 				role="button"
 				tabindex={0}
-				aria-label="Click to reveal spoiler"
+				aria-label="Reveal spoiler"
 			>
-				<span class="text-white/90 text-xs font-medium bg-black/50 rounded px-2 py-1">
-					Click to reveal
+				<span class="text-center text-white/90 text-xs font-medium bg-black/50 rounded px-2 py-1">
+					Reveal
 				</span>
 			</div>
 		{/if}

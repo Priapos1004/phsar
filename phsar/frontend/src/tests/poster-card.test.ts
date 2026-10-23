@@ -23,17 +23,17 @@ beforeEach(() => {
 describe('PosterCard', () => {
 	it('guards a media cover past the frontier', () => {
 		tile(media);
-		expect(screen.getByText('Click to reveal')).toBeInTheDocument();
+		expect(screen.getByText('Reveal')).toBeInTheDocument();
 	});
 
 	it('shows a media cover inside the frontier', () => {
 		spoilerVisibility.set({ visible_media_uuids: ['m1'] });
 		tile(media);
-		expect(screen.queryByText('Click to reveal')).not.toBeInTheDocument();
+		expect(screen.queryByText('Reveal')).not.toBeInTheDocument();
 	});
 
 	it('never guards an anime cover', () => {
 		tile(anime);
-		expect(screen.queryByText('Click to reveal')).not.toBeInTheDocument();
+		expect(screen.queryByText('Reveal')).not.toBeInTheDocument();
 	});
 });

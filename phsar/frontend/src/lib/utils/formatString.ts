@@ -101,6 +101,13 @@ export function formatNumber(value: number | string): string {
 	return decimalPart ? `${formattedInt}.${decimalPart}` : formattedInt;
 }
 
+const compactNumber = new Intl.NumberFormat('en-US', { notation: 'compact' });
+
+/** A count at a glance: 1159220 -> "1.2M", 763827 -> "764K". */
+export function formatCompactNumber(value: number): string {
+	return compactNumber.format(value);
+}
+
 /**
  * Convert seconds into a readable duration string: "1d 4h 12m 33s"
  */
@@ -193,11 +200,14 @@ export function formatSeason(name: string | null, year: number | null): string |
 /**
  * Format a season range string from start and end seasons.
  * Returns the single season if they are the same or end is null.
+ * Non-breaking inside each season and before the dash, so a range that wraps breaks
+ * after the dash ("Fall 2020 -" / "Winter 2026"), never inside a season.
  */
 export function formatSeasonRange(start: string | null, end: string | null): string | null {
 	if (!start) return null;
 	if (!end || end === start) return start;
-	return `${start} - ${end}`;
+	const glued = (season: string) => season.replaceAll(' ', '\u00a0');
+	return `${glued(start)}\u00a0- ${glued(end)}`;
 }
 
 /** True when start/end describe a genuine multi-season run, not one season repeated —

@@ -629,10 +629,14 @@ length target.
 | **v0.16.1** | ✓ Search UI | Title / Description / My notes search modes, a sort control, a filter sheet with active-filter chips and the new filters; slider reload fixes; a dropdown tap-through fix, status-aware watchlist removal on the rating form, and a manual season target for the seasonal sweep. |
 | **v0.16.2** | ✓ Browse + News | Carousel definitions in the DB with a resolver and seeded core rows; the Browse page and its News tab; a see-all page, also reached from search. JWT signing and verification move from python-jose to PyJWT. |
 | **v0.16.3** | ✓ Home + Discover | Home rows Lucky find and New to the catalogue replace two placeholders; seasonal hero art (Halloween); a Discover tab whose wheel draws each user one themed mood a day, cut to with a full-screen reveal; a To-anime link on the media page; paging arrows on every sideways row. |
-| **v0.16.4** | Personalisation | Per-carousel refinement toggles; pinning a search to Browse as a custom carousel. |
-| **v0.16.5** | Get-started page | The `/getting-started` page. |
+| **v0.16.4** | Responsive pass | Every page on a phone and at the widest layout. |
+| **v0.16.5** | Galaxy | Browse's parked Galaxy tab (Feature 5b): a 2D map of the catalogue. |
+| **v0.16.6** | Recommended | Home's Recommended row, from the user's own algorithm. |
+| **v0.16.7** | Streaming availability | A country and the user's services in settings; an "available for me" refinement. |
 | **v0.17.0** | Advanced analytics (v2) | Heavy/precomputed analytics that go beyond v0.14.12's client-side stats: embedding/taste clustering (HDBSCAN), production-company deep-dives, monthly pre-computed reports, and a true watch-history time series from the `watch_event` table (actual watch moments + rewatches, vs v0.14.12's `created_at` proxy). The standard graphs (score histogram, genre distribution, watch-time) already shipped client-side in **v0.14.12**. |
 | **v0.18.0+** | Advanced recommendations, achievements, advanced analytics | HDBSCAN clustering, pattern prediction, "love it or hate it", achievements system with titles. Iterative. |
+
+Parked, unscheduled: personalisation (per-carousel refinement toggles; pinning a search to Browse as a custom carousel) and the get-started page (Feature 10).
 
 ### Key Dependencies
 - v0.10.0 (media pages) depends on v0.9.0 (ratings backend)

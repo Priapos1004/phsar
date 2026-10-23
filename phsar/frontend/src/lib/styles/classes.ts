@@ -1,13 +1,16 @@
 /** Shared Tailwind class strings for reuse across components */
 
 // Layout
-export const container = 'max-w-5xl mx-auto px-4';
+// The one width every anime page shares (rules/frontend.md, "Pages share one width").
+// Wider from 2xl, where 1024px would leave half of a 1920 screen empty.
+export const pageWidth = 'mx-auto max-w-5xl 2xl:max-w-7xl';
+export const container = `${pageWidth} px-4`;
 export const sectionSpacing = 'space-y-8';
 // A page's navigation links above its content: they can share one line, so they share one look.
 export const pageNavLink = 'inline-flex items-center gap-1.5 text-sm text-white/70 hover:text-white transition mb-2';
 
 // MediaInfo
-export const mediaInfoGrid = 'grid grid-cols-1 lg:grid-cols-2 gap-4 auto-rows-fr';
+export const mediaInfoGrid = 'grid grid-cols-1 lg:grid-cols-2 gap-4';
 
 // Badge colors (color only — composable with size variants)
 export const badgeMediaTypeColor = 'bg-green-100 text-green-800';
@@ -63,6 +66,10 @@ export const badgeAgeRating = `${badgeAgeRatingColor} ${badgeSize}`;
 
 // Card glass effect
 export const cardGlass = 'bg-card/80 backdrop-blur';
+// An icon inline with text (a score's star, a watch time's clock): the theme colour as a
+// solid outline over a tinted fill, so it follows the theme the way an emoji cannot.
+// Inline because Tailwind's preflight makes an svg a block.
+export const glassIcon = 'inline-block size-4 align-[-0.2em] text-primary fill-primary/25';
 
 // The pill naming the one season a list is pinned to, and the card standing in for a list
 // that can't be shown.

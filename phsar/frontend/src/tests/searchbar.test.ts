@@ -72,7 +72,7 @@ describe('SearchBar', () => {
 		render(SearchBar, { props: { onSearch } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Description' }));
 		expect(onSearch).not.toHaveBeenCalled();
-		expect(screen.getByPlaceholderText('Describe a story, a character, a theme...')).toBeInTheDocument();
+		expect(screen.getByPlaceholderText('Describe a story...')).toBeInTheDocument();
 
 		await fireEvent.input(screen.getByRole('textbox'), { target: { value: 'time travel' } });
 		await fireEvent.click(screen.getByRole('button', { name: 'Title' }));

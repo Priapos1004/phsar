@@ -197,10 +197,10 @@ export function shareChips(values: string[], max = Infinity): string[] {
 }
 
 /**
- * How many of a one-line fact row's chips to show: all of them when the row fits whole,
- * else as many as fit beside a "+N" chip for the rest — the arithmetic half of the
- * card's fit, here because jsdom can't lay anything out. Never below 1: a first chip
- * too wide even alone still shows (the card ellipsizes it).
+ * How many of a one-line row's chips to show: all of them when the row fits whole, else
+ * as many as fit beside a "+N" for the rest — the arithmetic half of a row's fit, apart
+ * from the DOM because jsdom can't lay anything out. Never below 1: a first chip too wide
+ * even alone still shows, and its row decides how to cut it.
  */
 export function fitChipCount(widths: number[], available: number, gap: number, overflowWidth: number): number {
 	let used = -gap;

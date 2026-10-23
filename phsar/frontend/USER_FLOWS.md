@@ -184,7 +184,7 @@ The Discover tab shows one **mood** a day: a themed group of rows (Beasts & Lege
 
 ### 4.2 Submitting a Search
 1. User types a query in the search box (filter button on the left, showing how many filter groups are applied; search button on the right)
-2. Optionally picks a mode with the pills under the box: **Title** (default), **Description** or **My notes** (shown to a guest but disabled, with "Guest accounts have no notes to search"). With text in the box a mode click re-runs the search; with nothing typed it only changes the placeholder
+2. Optionally picks a mode with the pills under the box: **Title** (default), **Description** or **My notes** (shown to a guest but disabled, with "Guest accounts have no notes to search"). With text in the box a mode click re-runs the search; with nothing typed it only changes the placeholder (Description's "Describe a story, a character, a theme..." shortens to "Describe a story..." on a phone)
 3. Optionally opens the filter sheet (left icon) and applies filters (4.4)
 4. Submits via the Enter key or the search button on the right of the input; the filters already applied stay
 5. Frontend POSTs filter params (including `view_type`) to `/filters/create-token` → receives a search token
@@ -200,7 +200,7 @@ The Discover tab shows one **mood** a day: a themed group of rows (Beasts & Lege
 7. "Show More" button loads 20 more results per click; when more than 50 match, **See all results** beside it opens the search's see-all (3b)
 8. If no results: "No results found :-("
 
-**Results header:** above the cards, the result count ("50+ anime" when more than 50 match), a **sort** menu and a direction arrow. Each sort option says under its name what it orders by. Best match appears only with a query — without one the list is Top rated; Random is daily, the same shuffle for everyone today; Your rating is disabled for a guest. The arrow reverses the order, its tooltip naming the current direction; it is disabled where reversing means nothing (the query's own order, a daily shuffle). A sort applies at once and lives in the link, so a reload or "Back to search" keeps it. Submitting a **different query** starts again from Best match and keeps the filters; switching mode keeps the sort.
+**Results header:** above the cards, the result count ("50+ anime" when more than 50 match), a **sort** menu and a direction arrow. The menu opens with its right edge under the arrow, and each sort option says under its name what it orders by. Best match appears only with a query — without one the list is Top rated; Random is daily, the same shuffle for everyone today; Your rating is disabled for a guest. The arrow reverses the order, its tooltip naming the current direction; it is disabled where reversing means nothing (the query's own order, a daily shuffle). A sort applies at once and lives in the link, so a reload or "Back to search" keeps it. Submitting a **different query** starts again from Best match and keeps the filters; switching mode keeps the sort.
 
 **Returning from a card** (7.6) re-expands the list far enough to render the one you opened before scrolling to it, so a result deep in the list doesn't need its "Show More" clicks repeated. Expanding issues no request — the results are already in hand. An expansion wider than that card needs is left alone.
 
@@ -237,10 +237,12 @@ Filters live in a **sheet** that slides in from the right (full width on a phone
 
 ## 5. Search Result Cards
 
+**On a phone** (below 640px) the card narrows: a smaller cover; the season, the airing status and the age rating on a line each; the score with its count stacked above the watch time. The anime view leaves out the relation and media-type counts (the anime page has them); the media view moves its relation and media-type badges under the cover. The genres become one line under the cover — as many whole names as fit, then "+N". **From 640px** the season, age rating and "(status)" share a line, every badge sits beside the cover, and the watch time and score span the card's foot — the watch time under the cover, the score at the right — level with the card beside it where results run two columns (from 1024px). The score's star and the watch time's clock are in your theme colour.
+
 ### 5.1 Media Card (media view)
 Each media search result card shows:
-- Cover image (lazy-loaded, with fallback; blurred with click-to-reveal when spoiler-protected)
-- Title, score + scored-by count, anime season, airing status, age rating
+- Cover image (lazy-loaded, with fallback; blurred until revealed when spoiler-protected, 10.2)
+- Title, score + scored-by count ("1.2M ratings"), anime season, airing status, age rating
 - Genre tags, media type tag, relation type tag
 - Total watch time
 - A colored bookmark icon when the media is on your watchlist (tinted to its list's color)
@@ -252,10 +254,10 @@ Each media search result card shows:
 Each anime search result card shows:
 - Cover image (from anime, lazy-loaded with fallback)
 - Title, with a small emerald "✓ Complete" badge when an admin has marked the anime story-complete (no tooltip in search — the full explanation lives on the detail page)
-- Average score + average scored-by ("ratings/media"), season range (e.g., "Spring 2017 - Winter 2024")
+- Average score + average scored-by ("1.2M ratings/media"), season range (e.g., "Spring 2017 - Winter 2024", wrapping only after the dash)
 - Airing status for active/upcoming anime ("Currently Airing + upcoming content", "Not yet aired", or "upcoming content" for finished anime with announced sequels)
 - Age rating (max across media)
-- Genre tags (strict majority rule: genre must be on >50% of media)
+- Genre tags (strict majority rule: genre must be on >50% of media), the one on most of its media first
 - Relation type badges with counts (e.g., "Main Story: 5", "Side Story: 2")
 - Media type badges with counts (e.g., "TV: 3", "Movie: 1")
 - Total watch time (summed across media)
@@ -296,7 +298,7 @@ can rate.
 - Average MAL score with "ratings/media" label, computed over the anime's main entries only (Main + AlternativeVersion; side stories and recaps excluded); hovering the score pill shows a tooltip clarifying it's the MyAnimeList community score across the main entries, not Phsar users' ratings
 - A small "Top N%" chip after the rating-count text (always visible, color-ramped) showing where this anime ranks among all scored anime by its vote-weighted MAL score (main entries only); hovering explains the top-N% standing and the vote weighting. Hidden when the anime has no scored main entries
 - Relation type badges with counts (e.g., "main: 5"), media type badges with counts (e.g., "TV: 3")
-- Age rating badge (max across media), genre badges (strict majority rule) — hovering a genre badge shows its description when one is seeded
+- Age rating badge (max across media), genre badges (strict majority rule, most frequent first) — hovering a genre badge shows its description when one is seeded
 - Stats grid: total episodes, media count, season range, total watch time
 - Source names — every source its media have, most frequent first — each a button linking to an anime-view search filtered to that source
 - Studio names — most frequent first — each a button linking to an anime-view search filtered to that studio ("other anime from this studio"). The Source and Studio rows' badges line up
@@ -376,7 +378,7 @@ can rate.
 
 ### 7.2 Hero Card
 - Blurred cover image background with card overlay
-- Cover image (with fallback placeholder if missing or load fails; spoiler-guarded with blur + click-to-reveal when media is beyond the spoiler frontier)
+- Cover image (with fallback placeholder if missing or load fails; spoiler-guarded with blur (10.2) when media is beyond the spoiler frontier)
 - Title (English preferred, falls back to default title)
 - Japanese title and romaji subtitle (if different from displayed title)
 - Airing status badge: green pulsing dot for "Currently Airing", yellow for "Not yet aired", muted for finished. The green badge names this entry's end date when MAL has published one ("Currently Airing until Sep 19")
@@ -393,7 +395,7 @@ can rate.
 ### 7.3 Synopsis
 - Collapsible description card (4-line clamp by default)
 - "Read more" / "Show less" toggle shown only when text actually overflows the 4-line clamp (DOM overflow detection with 2px threshold)
-- Synopsis blurred with click-to-reveal when media is spoiler-protected; "Read more" button is behind the blur
+- Synopsis blurred until revealed (10.2) when media is spoiler-protected; "Read more" button is behind the blur
 - HTML entities cleaned from description text; MAL attribution tags (`[Written by MAL Rewrite]`) and trailing `(Source: …)` / `[Source: …]` attributions stripped before display
 
 ### 7.4 Rating Card
@@ -550,7 +552,7 @@ own.
 ### 10.2 Spoiler Protection
 - Three-level dropdown: Off, Blur, Hide
 - **Off**: No spoiler protection
-- **Blur**: "Blur covers and descriptions to avoid spoilers" — media beyond the spoiler frontier are blurred with a "Click to reveal" overlay on covers and descriptions
+- **Blur**: "Blur covers and descriptions to avoid spoilers" — media beyond the spoiler frontier are blurred with a "Reveal" overlay on covers and descriptions
 - **Hide**: "Blur covers and descriptions, and hide spoiler media from search results" — same as blur, plus media search results are filtered to only show visible media
 - Spoiler frontier: per anime, all media up to and including the next unwatched **anchor** entry are visible; individually rated media beyond the frontier are also visible. Anchors are `main` AND `alternative_version` — retellings extend the story, so each alt-version gates the next (rating Evangelion TV reveals Rebuild Movie 1 but not Movies 2-4)
 - Anime covers and anime-level descriptions are never spoiler-protected

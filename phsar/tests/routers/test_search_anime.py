@@ -286,3 +286,28 @@ async def test_large_anime_genre_majority_in_display(client, user_auth_headers, 
     assert "TestMajority" in anime_result["genres"]
 
 
+async def test_anime_genres_come_most_frequent_first(client, user_auth_headers, db_session):
+    """Genres order like studios and sources — by how many media carry them — so the
+    phone card's line, which shows only what fits, leads with the franchise's own.
+    The rarer genre sorts first A→Z, so a name sort would fail this."""
+    common = Genre(name="ZetaFrequent", genre_type=GenreType.Genres)
+    rarer = Genre(name="AlphaRarer", genre_type=GenreType.Genres)
+    anime = Anime(mal_id=99950, title="Genre Order Anime", description="Order test.")
+    db_session.add_all([common, rarer, anime])
+    await db_session.flush()
+
+    for i in range(3):
+        m = Media(**media_kwargs(anime.id, 99950 + i + 1, title=f"Genre Order Media {i+1}"))
+        db_session.add(m)
+        await db_session.flush()
+        db_session.add(MediaGenre(media_id=m.id, genre_id=common.id))
+        if i < 2:  # 2 of 3 is still a majority
+            db_session.add(MediaGenre(media_id=m.id, genre_id=rarer.id))
+    await db_session.flush()
+
+    response = await client.get("/search/anime", params={"query": "Genre Order Anime"}, headers=user_auth_headers)
+    assert response.status_code == 200
+    anime_result = next(a for a in response.json() if a["title"] == "Genre Order Anime")
+    assert anime_result["genres"] == ["ZetaFrequent", "AlphaRarer"]
+
+

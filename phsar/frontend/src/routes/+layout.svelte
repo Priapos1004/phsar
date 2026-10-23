@@ -218,7 +218,7 @@
       {/if}
     </div>
 
-    <main class="min-h-screen px-8 pt-4 pb-8">
+    <main class="min-h-screen px-4 sm:px-8 pt-4 pb-8">
       {@render children()}
     </main>
 

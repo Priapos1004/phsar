@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { formatNumber, formatAiringStatus, formatRelationType, formatMediaType } from '$lib/utils/formatString';
+	import { formatCompactNumber, formatAiringStatus, formatRelationType, formatMediaType } from '$lib/utils/formatString';
+	import { fitChipCount } from '$lib/utils/shareContent';
 	import { buildDetailHref } from '$lib/utils/navigation';
-	import { CheckCircle2, MessageSquareQuote } from 'lucide-svelte';
+	import { CheckCircle2, Clock, MessageSquareQuote, Star } from 'lucide-svelte';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as cls from '$lib/styles/classes';
@@ -61,10 +62,32 @@
 
 	let imgFailed = $state(false);
 
+	// The phone genre line: how many genres fold into its "+N" (`fitChipCount`). The line
+	// is observed, not the row inside it, because the "+N" narrows only the row; a hidden
+	// line (from sm) measures nothing. Reads `genres` so a reused card (the result list is
+	// unkeyed) re-counts on new props.
+	let genreLine = $state<HTMLElement | null>(null);
+	let hiddenGenres = $state(0);
+	$effect(() => {
+		const line = genreLine;
+		if (!line || !genres?.length) return;
+		const width = (el: Element) => el.getBoundingClientRect().width;
+		const observer = new ResizeObserver(([entry]) => {
+			if (!entry.contentRect.width) return;
+			const row = line.firstElementChild!;
+			const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
+			const probe = line.querySelector('[data-overflow-probe]')!;
+			hiddenGenres = row.children.length - fitChipCount([...row.children].map(width), width(line), gap, width(probe));
+		});
+		observer.observe(line);
+		return () => observer.disconnect();
+	});
+
 	let href = $derived(buildDetailHref(info_type, media_uuid, { q: searchToken }));
 
 	let displaySeason = $derived(season_range ?? anime_season);
 	let displayStatus = $derived(formatAiringStatus(airing_status, has_upcoming));
+	let showStatus = $derived(airing_status === 'Not yet aired' || airing_status === 'Currently Airing' || has_upcoming);
 	// Spoiler: anime cards are always visible; media cards check the frontier store
 	let isCoverVisible = $derived(info_type === 'anime' || $visibleMediaSet.has(media_uuid));
 	// Watchlist indicator colors: a media card maps to its single tag; an anime card
@@ -89,6 +112,24 @@
 			: undefined
 	);
 </script>
+
+{#snippet typeBadges()}
+	{#if relation_type}
+		<Badge variant="secondary" class={cls.badgeRelationType}>{formatRelationType(relation_type)}</Badge>
+	{/if}
+	{#if media_type}
+		<Badge variant="secondary" class={cls.badgeMediaType}>{formatMediaType(media_type)}</Badge>
+	{/if}
+{/snippet}
+
+{#snippet stats()}
+	<span><Clock class={cls.glassIcon} aria-hidden="true" /><span class="sr-only">Watch time:</span> {watchtime ?? 'N/A'}</span>
+	{#if score !== null && scoredBy !== null}
+		<span><Star class={cls.glassIcon} aria-hidden="true" /> {score} <span class="whitespace-nowrap">({formatCompactNumber(scoredBy)} {info_type === 'anime' ? 'ratings/media' : 'ratings'})</span></span>
+	{:else}
+		<span>No ratings</span>
+	{/if}
+{/snippet}
 
 <a
 	{href}
@@ -119,51 +160,56 @@
 				aria-label={coverage.label}
 			></div>
 		{/if}
-		<Card.Content class="flex gap-4">
+		<!-- A smaller cover and tighter padding on a phone, so the column beside the cover
+		     holds a vote count down to 320px. flex-1 fills a card its grid row stretched,
+		     and content-between keeps the stats line at its bottom, level with the
+		     neighbour's. -->
+		<Card.Content class="flex-1 flex flex-wrap content-between gap-x-3 sm:gap-x-4 gap-y-3 px-3 sm:px-4">
 			<SpoilerGuard visible={isCoverVisible} mode="image">
 				{#if imageUrl && !imgFailed}
 				<img
 					src={imageUrl}
 					alt={`Cover of ${title}`}
-					class="w-24 h-36 object-cover rounded-lg shadow-sm"
+					class="w-20 h-30 sm:w-24 sm:h-36 object-cover rounded-lg shadow-sm"
 					loading="lazy"
 					onerror={() => { imgFailed = true; }}
 				/>
 				{:else}
-					<div class="w-24 h-36 bg-muted rounded-lg flex items-center justify-center text-muted-foreground text-sm italic">
+					<div class="w-20 h-30 sm:w-24 sm:h-36 bg-muted rounded-lg flex items-center justify-center text-muted-foreground text-sm italic">
 						No image
 					</div>
 				{/if}
 			</SpoilerGuard>
 
-			<!-- min-w-0 lets the note quote truncate; a flex item won't shrink below its content. -->
-			<div class="flex flex-col justify-between flex-grow min-w-0 space-y-2">
+			<!-- flex-1's zero basis keeps the column beside the cover — an auto basis lets a
+			     long title wrap it under. min-w-0 lets the note quote truncate. -->
+			<div class="flex flex-col flex-1 min-w-0 space-y-2">
 				<div class="flex items-start justify-between">
 					<div>
-						<h3 class="text-lg font-bold text-card-foreground inline-flex items-center gap-1.5">
+						<!-- Plain flow, not flex: the badge follows the last word, where a flex row
+						     would squeeze the title to a word per line beside it. -->
+						<h3 class="text-lg font-bold text-card-foreground">
 							{title}
 							{#if is_finished}
-								<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-semibold border align-middle {cls.badgeComplete}">
+								<span class="ml-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-semibold border align-middle whitespace-nowrap {cls.badgeComplete}">
 									<CheckCircle2 class="size-3" /> Complete
 								</span>
 							{/if}
 						</h3>
-						{#if displaySeason || airing_status === 'Not yet aired' || airing_status === 'Currently Airing' || has_upcoming}
-							<p class="text-primary">
+						<!-- From sm the status shares the season's line, so brackets set it apart
+						     as an aside; on a line of its own it needs none. -->
+						{#if displaySeason || showStatus || age_rating_numeric !== null}
+							<div class="flex flex-col sm:flex-row sm:flex-wrap sm:gap-x-2">
 								{#if displaySeason}
-									{displaySeason}
+									<span class="text-primary">{displaySeason}</span>
 								{/if}
-
+								{#if showStatus}
+									<span class="text-primary/70 sm:order-last sm:before:content-['('] sm:after:content-[')']">{displayStatus}</span>
+								{/if}
 								{#if age_rating_numeric !== null}
-									<span class="text-card-foreground px-1 py-0.5">
-										{age_rating_numeric}+
-									</span>
+									<span class="text-card-foreground">{age_rating_numeric}+</span>
 								{/if}
-
-								{#if airing_status === 'Not yet aired' || airing_status === 'Currently Airing' || has_upcoming}
-									<span class="ml-2 text-sm text-primary/70">({displayStatus})</span>
-								{/if}
-							</p>
+							</div>
 						{/if}
 					</div>
 					{#if watchlistColors.length}
@@ -172,22 +218,17 @@
 				</div>
 
 				{#if media_type || relation_type || media_types?.length || relation_types?.length || genres?.length}
-					<div class="flex flex-wrap gap-2">
-						{#if relation_types?.length}
-							{#each relation_types as rt}
-								<Badge variant="secondary" class={cls.badgeRelationType}>{formatRelationType(rt.relation_type)}: {rt.count}</Badge>
-							{/each}
-						{:else if relation_type}
-							<Badge variant="secondary" class={cls.badgeRelationType}>{formatRelationType(relation_type)}</Badge>
-						{/if}
-
-						{#if media_types?.length}
-							{#each media_types as mt}
-								<Badge variant="secondary" class={cls.badgeMediaType}>{formatMediaType(mt.media_type)}: {mt.count}</Badge>
-							{/each}
-						{:else if media_type}
-							<Badge variant="secondary" class={cls.badgeMediaType}>{formatMediaType(media_type)}</Badge>
-						{/if}
+					<!-- Not on a phone, where the column is too narrow for them: the anime grain's
+					     counts stay on the anime page, and the media grain's badges and the genres
+					     move under the cover. -->
+					<div class="flex flex-wrap gap-2 max-sm:hidden">
+						{#each relation_types ?? [] as rt}
+							<Badge variant="secondary" class={cls.badgeRelationType}>{formatRelationType(rt.relation_type)}: {rt.count}</Badge>
+						{/each}
+						{#each media_types ?? [] as mt}
+							<Badge variant="secondary" class={cls.badgeMediaType}>{formatMediaType(mt.media_type)}: {mt.count}</Badge>
+						{/each}
+						{@render typeBadges()}
 
 						{#each genres ?? [] as genre}
 							<Badge variant="secondary" class={cls.badgeGenre}>{genre}</Badge>
@@ -202,14 +243,38 @@
 					</p>
 				{/if}
 
-				<div class="flex justify-between text-sm text-muted-foreground">
-					<span>{watchtime ? `Watch time: ${watchtime}` : 'Watch time: N/A'}</span>
-					{#if score !== null && scoredBy !== null}
-						<span>⭐ {score} — {formatNumber(scoredBy)} {info_type === 'anime' ? 'ratings/media' : 'ratings'}</span>
-					{:else}
-						<span>No ratings</span>
-					{/if}
+				<!-- On a phone, stacked beside the cover with the score first: the card's full
+				     width can't hold both on one line. From sm it spans the card below. -->
+				<div class="flex flex-col-reverse text-sm text-muted-foreground sm:hidden">
+					{@render stats()}
 				</div>
+			</div>
+
+			{#if relation_type || media_type}
+				<div class="basis-full flex flex-wrap gap-2 sm:hidden">
+					{@render typeBadges()}
+				</div>
+			{/if}
+			{#if genres?.length}
+				<!-- Whole genres only: the row wraps but shows one line, so what doesn't fit
+				     beside the "+N" drops out of sight still measurable. The line's gap
+				     matches the row's, which is the gap fitChipCount assumes before the "+N". -->
+				<div bind:this={genreLine} class="relative basis-full flex gap-x-1 text-primary sm:hidden">
+					<div class="flex flex-wrap gap-x-1 h-[1lh] overflow-hidden min-w-0 flex-1">
+						{#each genres as genre, i}
+							<span>{i ? '· ' : ''}{genre}</span>
+						{/each}
+					</div>
+					{#if hiddenGenres}
+						<span class="shrink-0 text-muted-foreground">+{hiddenGenres}</span>
+					{/if}
+					<span data-overflow-probe class="invisible absolute">+{genres.length}</span>
+				</div>
+			{/if}
+			<!-- From sm, the card's full width, so every card shows its stats in the same place:
+			     the watch time under the cover's edge, the score at the right. -->
+			<div class="basis-full flex justify-between gap-x-4 text-sm text-muted-foreground max-sm:hidden">
+				{@render stats()}
 			</div>
 		</Card.Content>
 	</Card.Root>
