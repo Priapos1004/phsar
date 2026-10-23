@@ -1,8 +1,8 @@
 <script lang="ts">
-	// A world's ambient layer: its glyph drifting over whatever holds the layer — or, for a
-	// world whose particles fly, its bat crossing it with its wings beating. Pure CSS, sized in
+	// A mood's ambient layer: its glyph drifting over whatever holds the layer — or, for a
+	// mood whose particles fly, its bat crossing it with its wings beating. Pure CSS, sized in
 	// container units so the keyframes fit whatever size of banner holds them.
-	import { BAT, particles, type ParticleMotion } from '$lib/utils/discoverWorlds';
+	import { BAT, particles, type ParticleMotion } from '$lib/utils/discoverMoods';
 
 	interface Props {
 		glyph: string;
@@ -21,7 +21,7 @@
 <div
 	class="layer"
 	aria-hidden="true"
-	style:--world={color}
+	style:--mood={color}
 	style:--hinge="{BAT.shoulder.x}px {BAT.shoulder.y}px"
 	style:--up="{BAT.beat[0]}deg"
 	style:--down="{BAT.beat[1]}deg"
@@ -70,8 +70,8 @@
 	.particle {
 		position: absolute;
 		line-height: 1;
-		color: var(--world);
-		text-shadow: 0 0 0.6em var(--world);
+		color: var(--mood);
+		text-shadow: 0 0 0.6em var(--mood);
 		opacity: 0;
 		animation-iteration-count: infinite;
 		animation-timing-function: linear;
@@ -96,10 +96,10 @@
 		position: absolute;
 		left: -12%;
 		overflow: visible;
-		fill: var(--world);
+		fill: var(--mood);
 		/* The glow hugs the silhouette and its beating wings. The wings repaint the bat every
 		   frame anyway, so the shadow re-run with them is a small cost on a bat this size. */
-		filter: drop-shadow(0 0 0.3rem var(--world));
+		filter: drop-shadow(0 0 0.3rem var(--mood));
 		opacity: 0;
 		animation: fly linear infinite;
 	}

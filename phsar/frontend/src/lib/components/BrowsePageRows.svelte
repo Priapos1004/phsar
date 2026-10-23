@@ -9,7 +9,7 @@
 	import type { BrowseCarousel as Carousel, BrowsePageKey } from '$lib/types/api';
 	import { consumeFocus, splitCarouselFocus } from '$lib/utils/scrollFocus';
 
-	// `carousels` when the page already has them — Discover's come with today's world.
+	// `carousels` when the page already has them — Discover's come with today's mood.
 	let { page, carousels: given }: { page: BrowsePageKey; carousels?: Carousel[] } = $props();
 
 	const getUserRole = getContext<() => string | null>('userRole');

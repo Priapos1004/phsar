@@ -146,7 +146,7 @@ several `admin_*` modules). The live contract is FastAPI's own
 | Prefix | Purpose |
 |---|---|
 | `/auth` | login, register, validate, refresh (sliding session) |
-| `/browse` | page carousels, one carousel with its filter sets switched, Discover's worlds, the day's spin and an admin's preview of any world |
+| `/browse` | page carousels, one carousel with its filter sets switched, Discover's moods, the day's spin and an admin's preview of any mood |
 | `/search` | `/media` per-entry, `/anime` aggregated, `/mal` |
 | `/media` | media + anime detail |
 | `/ratings` | rating CRUD, rewatch, scores projection, rated coverage, spoiler visibility |

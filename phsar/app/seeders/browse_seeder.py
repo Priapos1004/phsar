@@ -51,7 +51,7 @@ def _carousel(
 
 
 def _discover(key: str, title: str, params: dict[str, Any], *on: str) -> CoreCarousel:
-    """A row of Discover's worlds. Its params are what it is, so its see-all may sort."""
+    """A row of Discover's moods. Its params are what it is, so its see-all may sort."""
     return _carousel(key, title, params, 1000, on=("not-watched", *on), sortable=True)
 
 
@@ -98,7 +98,7 @@ CAROUSELS = [
         250, on=("top-75",),
     ),
     _carousel("new-to-catalogue", "New to the catalogue", {"sort": "added"}, 250, on=("top-75",)),
-    # Discover's rows; `browse_service.WORLDS` groups them.
+    # Discover's rows; `browse_service.MOODS` groups them.
     _discover("dragons", "Born of fire", _about("dragon"), "top-50"),
     _discover("vampires", "Fangs at midnight", _about("vampire"), "top-50"),
     _discover("demon-lords", "All hail the demon lord", _about("demon lord"), "top-50"),

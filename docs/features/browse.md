@@ -7,8 +7,8 @@ The browse pages: rows of anime (carousels), each one a saved search.
 → `routers/browse.py` → `BrowsePageRows.svelte` (on Browse and on Home) → `BrowseCarousel.svelte` →
 `PosterCard.svelte`; a carousel's see-all is `routes/browse/[key]/+page.svelte` →
 `SeeAllResults.svelte`, with `stores/browseRefinements.ts`. Discover: `DiscoverTab.svelte`
-(with `DiscoverWheel.svelte`, `WorldParticles.svelte`, `WorldReveal.svelte`,
-`utils/discoverWorlds.ts` and `utils/worldReveal.ts`) over `/browse/worlds`; its spins are counted in
+(with `DiscoverWheel.svelte`, `MoodParticles.svelte`, `MoodReveal.svelte`,
+`utils/discoverMoods.ts` and `utils/moodReveal.ts`) over `/browse/moods`; its spins are counted in
 `models/discover_progress.py`.
 
 ## A carousel is a saved search
@@ -50,34 +50,34 @@ bottom, is `PAGE_LAYOUT` in the service — a constant rather than a table, sinc
 user or admin chooses it. Home is one of those pages. A carousel sits on one page only and
 says which (`page`), since its tiles and its see-all link back there.
 
-## Discover draws one world a day
+## Discover draws one mood a day
 
-Discover's rows are grouped into worlds (`WORLDS`): umbrella themes, one of which a
-spin of the wheel shows. A row may sit in several worlds; Discover's `PAGE_LAYOUT` entry
-holds every world's rows once, so each is still on one page. The world is what combines
+Discover's rows are grouped into moods (`MOODS`): broad themes, one of which a
+spin of the wheel shows. A row may sit in several moods; Discover's `PAGE_LAYOUT` entry
+holds every mood's rows once, so each is still on one page. The mood is what combines
 kinds — no row unions searches, which would leave it with no search to open or see in
 full.
 
-A spin draws the viewer's next world from a shuffle bag of their own (`world_for`). The
+A spin draws the viewer's next mood from a shuffle bag of their own (`mood_for`). The
 bag moves on a spin rather than on the calendar, so a viewer who comes by every few days
-still meets every world once a cycle. A user's first spin of the UTC day is counted and
-the world it drew kept (`discover_progress`), so any later one that day lands there, and a
-release editing the worlds leaves the day's world in place unless it drops it — only the
+still meets every mood once a cycle. A user's first spin of the UTC day is counted and
+the mood it drew kept (`discover_progress`), so any later one that day lands there, and a
+release editing the moods leaves the day's mood in place unless it drops it — only the
 bag reshuffles. A guest is read-only and cannot spin: the day stands in for its count, so
-its world for the day is always there, though with nothing kept an edit may change it.
+its mood for the day is always there, though with nothing kept an edit may change it.
 
 A row starts on what the viewer hasn't watched. A big pool draws at random over its
-better part, since a world comes back every few spins and a top-rated order would lead
+better part, since a mood comes back every few spins and a top-rated order would lead
 with the same anime each time. A description row draws at random whatever its size: its
 query picks a set rather than ranking one, and its Top N% cuts the tiny shows that merely
 say the word.
 
-The wheel decides nothing: the spin returns the drawn world first and the wheel turns onto
-it. A world's look is the frontend's (`utils/discoverWorlds.ts`), keyed by world key. A
-fresh spin then cuts to the world under a full-screen reveal: the tab swaps under its flash,
-so the cut is never seen, and the rows load behind its title card (`WorldReveal.svelte`).
-The dev-only `?reveal=<key>` spins the wheel onto any world through an admin-only preview
-(`GET /browse/worlds/{world}`) that counts no spin: how a world and its reveal are checked
+The wheel decides nothing: the spin returns the drawn mood first and the wheel turns onto
+it. A mood's look is the frontend's (`utils/discoverMoods.ts`), keyed by mood key. A
+fresh spin then cuts to the mood under a full-screen reveal: the tab swaps under its flash,
+so the cut is never seen, and the rows load behind its title card (`MoodReveal.svelte`).
+The dev-only `?reveal=<key>` spins the wheel onto any mood through an admin-only preview
+(`GET /browse/moods/{mood}`) that counts no spin: how a mood and its reveal are checked
 without waiting for the draw.
 
 ## A thin row widens
@@ -122,4 +122,4 @@ and leaves a see-all's toggle over the caller's data inert.
 
 **Why it is this way**
 - [Browse + News](../../compound-docs/2026-10-10-v0.16.2-browse.md) — the decisions behind the definition tables, the see-all routes and the tiles
-- [Home + Discover](../../compound-docs/2026-10-12-v0.16.3-home-and-discover.md) — the worlds, the draw, and the count and overlap studies behind Discover's rows
+- [Home + Discover](../../compound-docs/2026-10-12-v0.16.3-home-and-discover.md) — the moods, the draw, and the count and overlap studies behind Discover's rows

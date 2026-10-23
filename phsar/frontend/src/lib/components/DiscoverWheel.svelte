@@ -1,22 +1,22 @@
 <script lang="ts">
-	// Discover's wheel: a segment per world, turned onto the world the backend already drew.
+	// Discover's wheel: a segment per mood, turned onto the mood the backend already drew.
 	// The spin is one CSS transition onto `landingRotation`, overshooting a touch before it
 	// settles, then a short wobble and the winner lit.
 	//
-	// Glass and neon like the rest of the app: a translucent disc tinted by each world,
-	// lit by a rim of glowing arcs in the worlds' colours. The rotor turns as one HTML box
+	// Glass and neon like the rest of the app: a translucent disc tinted by each mood,
+	// lit by a rim of glowing arcs in the moods' colours. The rotor turns as one HTML box
 	// around its own SVG, so the browser composites a drawn layer instead of repainting the
 	// gradients and the glow every frame, as a transform on an SVG group makes it.
-	import type { DiscoverWorld } from '$lib/types/api';
-	import { labelLines, landingRotation, reducedMotion, worldLook } from '$lib/utils/discoverWorlds';
+	import type { DiscoverMood } from '$lib/types/api';
+	import { labelLines, landingRotation, reducedMotion, moodLook } from '$lib/utils/discoverMoods';
 
 	interface Props {
-		worlds: DiscoverWorld[];
+		moods: DiscoverMood[];
 		disabled?: boolean;
 		onspin: () => void;
 	}
 
-	let { worlds, disabled = false, onspin }: Props = $props();
+	let { moods, disabled = false, onspin }: Props = $props();
 
 	const id = $props.id();
 	const SPIN_MS = 5200;
@@ -31,15 +31,15 @@
 
 	/** Turn onto `key`; resolves once the wheel has settled on it. */
 	export async function spinTo(key: string): Promise<void> {
-		const index = worlds.findIndex((w) => w.key === key);
+		const index = moods.findIndex((mood) => mood.key === key);
 		landed = null;
 		if (reducedMotion()) {
-			rotation = landingRotation(rotation, index, worlds.length, 0);
+			rotation = landingRotation(rotation, index, moods.length, 0);
 			landed = key;
 			return;
 		}
 		spinning = true;
-		rotation = landingRotation(rotation, index, worlds.length, 6, Math.random() - 0.5);
+		rotation = landingRotation(rotation, index, moods.length, 6, Math.random() - 0.5);
 		await wait(SPIN_MS);
 		spinning = false;
 		landed = key;
@@ -52,17 +52,17 @@
 	}
 
 	let segments = $derived(
-		worlds.map((world, i) => {
-			const size = 360 / worlds.length;
+		moods.map((mood, i) => {
+			const size = 360 / moods.length;
 			const from = i * size;
 			const to = (i + 1) * size;
 			return {
-				world,
-				look: worldLook(world.key),
+				mood,
+				look: moodLook(mood.key),
 				mid: from + size / 2,
 				wedge: `M 0 0 L ${point(from, R)} A ${R} ${R} 0 0 1 ${point(to, R)} Z`,
 				arc: `M ${point(from + 2.5, 96)} A 96 96 0 0 1 ${point(to - 2.5, 96)}`,
-				lines: labelLines(world.title),
+				lines: labelLines(mood.title),
 			};
 		}),
 	);
@@ -92,28 +92,28 @@
 							<feMergeNode in="SourceGraphic" />
 						</feMerge>
 					</filter>
-					{#each segments as s (s.world.key)}
-						<radialGradient id="{id}-{s.world.key}" cx="0" cy="0" r={R} gradientUnits="userSpaceOnUse">
+					{#each segments as s (s.mood.key)}
+						<radialGradient id="{id}-{s.mood.key}" cx="0" cy="0" r={R} gradientUnits="userSpaceOnUse">
 							<stop offset="0.15" stop-color={s.look.color} stop-opacity="0.04" />
 							<stop offset="1" stop-color={s.look.color} stop-opacity="0.42" />
 						</radialGradient>
 					{/each}
 				</defs>
-				{#each segments as s (s.world.key)}
+				{#each segments as s (s.mood.key)}
 					<path
 						class="piece"
-						class:dimmed={dim(s.world.key)}
-						class:winner={landed === s.world.key}
+						class:dimmed={dim(s.mood.key)}
+						class:winner={landed === s.mood.key}
 						d={s.wedge}
-						fill="url(#{id}-{s.world.key})"
+						fill="url(#{id}-{s.mood.key})"
 						stroke="rgb(255 255 255 / 0.14)"
 						stroke-width="0.6"
 					/>
 				{/each}
 				<g filter="url(#{id}-glow)">
-					{#each segments as s (s.world.key)}
-						<path class="piece" class:dimmed={dim(s.world.key)} d={s.arc} fill="none" stroke={s.look.color} stroke-width="3" stroke-linecap="round" />
-						<g class="piece" class:dimmed={dim(s.world.key)} transform="rotate({s.mid}) translate(0 -80)">
+					{#each segments as s (s.mood.key)}
+						<path class="piece" class:dimmed={dim(s.mood.key)} d={s.arc} fill="none" stroke={s.look.color} stroke-width="3" stroke-linecap="round" />
+						<g class="piece" class:dimmed={dim(s.mood.key)} transform="rotate({s.mid}) translate(0 -80)">
 							<s.look.icon x={-8.5} y={-8.5} size={17} color={s.look.color} strokeWidth={2.2} />
 						</g>
 					{/each}
@@ -122,10 +122,10 @@
 				     `<tspan>`, and one that doesn't sets the lines on their alphabetic baseline, a
 				     third of an em off the segment's centre line. The 0.35em drops the baseline far
 				     enough to put the middle of a capital on the anchor. -->
-				{#each segments as s (s.world.key)}
+				{#each segments as s (s.mood.key)}
 					<text
 						class="piece"
-						class:dimmed={dim(s.world.key)}
+						class:dimmed={dim(s.mood.key)}
 						transform="rotate({s.mid}) translate(0 -47) rotate(-90)"
 						text-anchor="middle"
 						font-size="6.4"

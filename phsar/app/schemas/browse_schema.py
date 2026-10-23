@@ -50,18 +50,18 @@ class BrowseCarouselOut(BaseModel):
     page: BrowsePage | None
 
 
-class WorldOut(BaseModel):
+class MoodOut(BaseModel):
     """One segment of Discover's wheel. Its look is the frontend's, keyed by `key`."""
     key: str
     title: str
 
 
 class DiscoverTodayOut(BaseModel):
-    """Today's world, with its rows top to bottom."""
-    world: str
+    """Today's mood, with its rows top to bottom."""
+    mood: str
     carousels: list[BrowseCarouselOut]
 
 
 class DiscoverOut(BaseModel):
-    worlds: list[WorldOut]
+    moods: list[MoodOut]
     today: DiscoverTodayOut | None

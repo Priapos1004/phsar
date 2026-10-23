@@ -1,26 +1,26 @@
 /**
- * Discover's worlds as the page draws them — presentation only, so it lives here; which
- * worlds exist and what they hold is the backend's (docs/features/browse.md).
+ * Discover's moods as the page draws them — presentation only, so it lives here; which
+ * moods exist and what they hold is the backend's (docs/features/browse.md).
  *
- * The colours are literal on purpose: inside Discover a world's colour stands in for the
+ * The colours are literal on purpose: inside Discover a mood's colour stands in for the
  * theme's `--primary`, so it cannot be a theme token itself.
  */
 import { Bot, Coffee, Compass, Flame, Ghost, Mic, Orbit, Puzzle, Sparkles, Swords, Zap } from 'lucide-svelte';
 
 export type ParticleMotion = 'rise' | 'fall' | 'drift' | 'twinkle' | 'fly';
 
-/** The signature a world's reveal plays after the spin (`utils/worldReveal.ts`). */
+/** The signature a mood's reveal plays after the spin (`utils/moodReveal.ts`). */
 export type RevealKind = 'bolt' | 'swords' | 'blaze' | 'portal' | 'glitch' | 'spiral' | 'lights-out' | 'spotlight' | 'hearth' | 'ripples';
 
-export interface WorldLook {
+export interface MoodLook {
 	icon: typeof Flame;
 	color: string;
 	particle: { glyph: string; motion: ParticleMotion };
 	reveal: RevealKind;
 }
 
-/** Keyed by the backend's world key (`browse_service.WORLDS`). */
-export const WORLD_LOOK: Record<string, WorldLook> = {
+/** Keyed by the backend's mood key (`browse_service.MOODS`). */
+export const MOOD_LOOK: Record<string, MoodLook> = {
 	beasts: { icon: Flame, color: '#f0883e', particle: { glyph: '•', motion: 'rise' }, reveal: 'blaze' },
 	'other-worlds': { icon: Orbit, color: '#9d8cf7', particle: { glyph: '✦', motion: 'twinkle' }, reveal: 'portal' },
 	cozy: { icon: Coffee, color: '#e8a07a', particle: { glyph: '🍂', motion: 'fall' }, reveal: 'hearth' },
@@ -33,8 +33,8 @@ export const WORLD_LOOK: Record<string, WorldLook> = {
 	offbeat: { icon: Compass, color: '#a8cf4c', particle: { glyph: '•', motion: 'drift' }, reveal: 'ripples' },
 };
 
-// A world the backend adds before this map knows it still gets a segment and a page.
-const FALLBACK: WorldLook = { icon: Sparkles, color: '#b9a6e8', particle: { glyph: '✦', motion: 'twinkle' }, reveal: 'ripples' };
+// A mood the backend adds before this map knows it still gets a segment and a page.
+const FALLBACK: MoodLook = { icon: Sparkles, color: '#b9a6e8', particle: { glyph: '✦', motion: 'twinkle' }, reveal: 'ripples' };
 
 /**
  * After Dark's bat, as SVG paths in a 100 × 60 box: a body, and one wing the other mirrors,
@@ -48,8 +48,8 @@ export const BAT = {
 	beat: [38, -28],
 } as const;
 
-export function worldLook(key: string): WorldLook {
-	return WORLD_LOOK[key] ?? FALLBACK;
+export function moodLook(key: string): MoodLook {
+	return MOOD_LOOK[key] ?? FALLBACK;
 }
 
 export const reducedMotion = () =>

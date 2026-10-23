@@ -1,11 +1,11 @@
 /**
  * The reveal's canvas side: each signature's light and particles, drawn additively so
- * overlapping glow brightens the way light does. `WorldReveal.svelte` owns the stage, the
+ * overlapping glow brightens the way light does. `MoodReveal.svelte` owns the stage, the
  * DOM layers and the swap; both are timed from `BEAT`, so the canvas and the CSS hit the
  * same frames.
  */
 import { cubicInOut, cubicOut, quadOut } from 'svelte/easing';
-import { BAT, type RevealKind, type WorldLook } from './discoverWorlds';
+import { BAT, type RevealKind, type MoodLook } from './discoverMoods';
 
 /** The reveal's beats, in ms from its start. */
 export const BEAT = {
@@ -139,7 +139,7 @@ export const softness = (kind: RevealKind) => SIGNATURES[kind].soft;
 
 /** Run `look`'s signature on `canvas` until the reveal ends; returns the stop. A canvas with
  *  no 2D context (jsdom) draws nothing, and the stage around it still plays. */
-export function runReveal(canvas: HTMLCanvasElement, look: WorldLook, rand: Rand = Math.random): () => void {
+export function runReveal(canvas: HTMLCanvasElement, look: MoodLook, rand: Rand = Math.random): () => void {
 	const ctx = canvas.getContext('2d');
 	const w = canvas.clientWidth;
 	const h = canvas.clientHeight;
@@ -684,7 +684,7 @@ function portalScene({ w, h, centre, span, room, color, glyph, rand, peak }: Sta
  * The glitch signature: the signal breaks up. Scanlines, a refresh beam sweeping the screen,
  * data raining down its columns, and tears and blocks of corrupt colour that grow as the
  * strike nears. Through the title card the rain thins and the signal stutters now and then;
- * the card itself arrives as a broken signal (`WorldReveal.svelte`).
+ * the card itself arrives as a broken signal (`MoodReveal.svelte`).
  *
  * The corruption is redrawn every 50ms rather than every frame — a stutter, not a strobe —
  * and every tear and block is small or part-width, so it never lights a large area at once.
@@ -710,7 +710,7 @@ function glitchScene({ w, h, room, color, glyph, rand, peak }: Stage): Scene {
 				y: rand() * h,
 				w: tear ? w * (0.15 + rand() * 0.3) : 8 + rand() * 36,
 				h: tear ? 2 + rand() * 10 : 6 + rand() * 24,
-				// The world's colour, and the cyan and magenta of a split signal.
+				// The mood's colour, and the cyan and magenta of a split signal.
 				ink: [color, '#0ff', '#f0f'][Math.floor(rand() * 3)],
 			};
 		});
@@ -856,7 +856,7 @@ function spotlightScene({ w, h, centre, span, room, color, glyph, rand, peak, cl
 		const r = span * (0.3 + rand() * 0.2);
 		return { x: centre.x + Math.cos(a) * r * 1.35, y: centre.y + Math.sin(a) * r * 0.75, phase: rand() * Math.PI * 2, size: 8 + rand() * 9 };
 	});
-	// Paper in the world's colour, white and gold.
+	// Paper in the mood's colour, white and gold.
 	const INKS = [color, '#fff', '#ffd54a'];
 	let confetti: { x: number; y: number; vy: number; w: number; h: number; turn: number; spin: number; wobble: number; ink: string }[] = [];
 	const drop = (count: number, top: number) => {
@@ -1468,7 +1468,7 @@ function lightsOutScene({ ctx: canvas, w, h, centre, span, room, color, rand, pe
 function hearthScene({ w, h, room, color, glyph, rand }: Stage): Scene {
 	const leaf = glyphSprite(glyph, color, 48);
 	const bokeh = blobSprite(color, 64, 0);
-	// Bulbs in the world's colour and two warmer golds.
+	// Bulbs in the mood's colour and two warmer golds.
 	const BULB = 26;
 	const bulbs = [color, '#ffd28a', '#ffb070'].map((ink) => blobSprite(ink, BULB, 0.12));
 	// Hung below the letterbox bar, sagging between its ends.

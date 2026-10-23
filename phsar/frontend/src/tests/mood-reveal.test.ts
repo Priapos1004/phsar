@@ -6,9 +6,9 @@
  */
 import { render } from '@testing-library/svelte';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import WorldReveal from '$lib/components/WorldReveal.svelte';
-import { WORLD_LOOK } from '$lib/utils/discoverWorlds';
-import { BEAT, bolt, runReveal } from '$lib/utils/worldReveal';
+import MoodReveal from '$lib/components/MoodReveal.svelte';
+import { MOOD_LOOK } from '$lib/utils/discoverMoods';
+import { BEAT, bolt, runReveal } from '$lib/utils/moodReveal';
 
 // mulberry32: a seeded stand-in for Math.random, so a failing bolt can be replayed.
 function seeded(seed: number) {
@@ -20,7 +20,7 @@ function seeded(seed: number) {
 	};
 }
 
-describe('WorldReveal', () => {
+describe('MoodReveal', () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
 		// jsdom has no 2D context; returning none on purpose keeps its not-implemented warning out.
@@ -33,7 +33,7 @@ describe('WorldReveal', () => {
 	});
 
 	function start(key = 'power-up') {
-		const { component } = render(WorldReveal);
+		const { component } = render(MoodReveal);
 		const state = { peaked: false };
 		void component.play(key, 'Power Up').then(() => (state.peaked = true));
 		return state;
@@ -141,7 +141,7 @@ describe('every signature', () => {
 		vi.restoreAllMocks();
 	});
 
-	const kinds = [...new Map(Object.values(WORLD_LOOK).map((look) => [look.reveal, look])).values()];
+	const kinds = [...new Map(Object.values(MOOD_LOOK).map((look) => [look.reveal, look])).values()];
 	for (const look of kinds) {
 		for (const [w, h] of [
 			[390, 844],

@@ -748,9 +748,9 @@ own.
 | `/filters/verify-token` | POST | Search page load |
 | `/browse/{page}` | GET | `news` for Browse's News tab, `home` for the home page's rows: each with the search it runs and the page it sits on |
 | `/browse/carousels/{key}` | GET | A row's see-all load: the row with its toggles switched (`on` / `off` filter-set keys) |
-| `/browse/worlds` | GET | The Discover tab: the wheel's worlds, and today's world with its rows once spun — always, for a guest |
-| `/browse/worlds/spin` | POST | **Spin the wheel**: today's world with its rows, the day's first spin counted; never sent for a guest |
-| `/browse/worlds/{world}` | GET | Dev replay only (`?reveal=<key>`, admin): any world with its rows, counting no spin |
+| `/browse/moods` | GET | The Discover tab: the wheel's moods, and today's mood with its rows once spun — always, for a guest |
+| `/browse/moods/spin` | POST | **Spin the wheel**: today's mood with its rows, the day's first spin counted; never sent for a guest |
+| `/browse/moods/{mood}` | GET | Dev replay only (`?reveal=<key>`, admin): any mood with its rows, counting no spin |
 | `/search/anime` | GET | Anime-view search after token verification (with the token's `sort`/`sort_dir`, and `limit=51` so a full page reads "50+"); each Browse row's search (`limit=25`); a row's see-all (its own limit) and a search's (`limit=1000`); the Completion tab's search-to-mark (12.9) |
 | `/search/media` | GET | Media-view search after token verification (same params); a media-view search's see-all (`limit=1000`) |
 | `/media/anime/{uuid}` | GET | Anime detail page load |

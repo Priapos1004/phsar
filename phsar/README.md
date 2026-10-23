@@ -222,6 +222,8 @@ phsar/
 │   │   │   │   ├── MediaInfo.svelte
 │   │   │   │   ├── MediaShare.svelte
 │   │   │   │   ├── MergeCandidatesCard.svelte
+│   │   │   │   ├── MoodParticles.svelte
+│   │   │   │   ├── MoodReveal.svelte
 │   │   │   │   ├── NavBar.svelte
 │   │   │   │   ├── Notice.svelte
 │   │   │   │   ├── PillToggle.svelte
@@ -277,8 +279,6 @@ phsar/
 │   │   │   │   ├── WatchlistBookmarkIcon.svelte
 │   │   │   │   ├── WatchlistDialog.svelte
 │   │   │   │   ├── WatchlistTagSelect.svelte
-│   │   │   │   ├── WorldParticles.svelte
-│   │   │   │   ├── WorldReveal.svelte
 │   │   │   │   ├── watchlist/       # /watchlist page (list + tag management)
 │   │   │   │   │   ├── TagColorPicker.svelte
 │   │   │   │   │   ├── WatchlistCard.svelte
@@ -338,7 +338,7 @@ phsar/
 │   │   │       ├── clickThrough.ts
 │   │   │       ├── cn.ts
 │   │   │       ├── color.ts
-│   │   │       ├── discoverWorlds.ts
+│   │   │       ├── discoverMoods.ts
 │   │   │       ├── download.ts
 │   │   │       ├── filterLifecycle.ts
 │   │   │       ├── formatString.ts
@@ -348,6 +348,7 @@ phsar/
 │   │   │       ├── jobHealth.ts
 │   │   │       ├── jobSummary.ts
 │   │   │       ├── mediaChangeSort.ts
+│   │   │       ├── moodReveal.ts
 │   │   │       ├── navigation.ts
 │   │   │       ├── ratingAttributes.ts
 │   │   │       ├── ratingCoverage.ts
@@ -365,8 +366,7 @@ phsar/
 │   │   │       ├── spoilerFrontier.ts
 │   │   │       ├── watchlist.ts
 │   │   │       ├── watchlistReady.ts
-│   │   │       ├── watchlistStats.ts
-│   │   │       └── worldReveal.ts
+│   │   │       └── watchlistStats.ts
 │   │   ├── routes/
 │   │   │   ├── +layout.svelte
 │   │   │   ├── +layout.ts
@@ -425,7 +425,7 @@ phsar/
 │   │       ├── click-through.test.ts
 │   │       ├── color.test.ts
 │   │       ├── completion-status-card.test.ts
-│   │       ├── discover-worlds.test.ts
+│   │       ├── discover-moods.test.ts
 │   │       ├── dismissed-decisions-section.test.ts
 │   │       ├── filter-lifecycle.test.ts
 │   │       ├── format-string.test.ts
@@ -441,6 +441,7 @@ phsar/
 │   │       ├── media-change-sort.test.ts
 │   │       ├── media-detail.test.ts
 │   │       ├── merge-candidates-card.test.ts
+│   │       ├── mood-reveal.test.ts
 │   │       ├── navbar.test.ts
 │   │       ├── navigation.test.ts
 │   │       ├── persisted-filter.test.ts
@@ -470,8 +471,7 @@ phsar/
 │   │       ├── toast.test.ts
 │   │       ├── watchlist-ready.test.ts
 │   │       ├── watchlist-stats.test.ts
-│   │       ├── watchlist-uniform-entries.test.ts
-│   │       └── world-reveal.test.ts
+│   │       └── watchlist-uniform-entries.test.ts
 │   ├── static/
 │   │   ├── apple-touch-icon.png
 │   │   ├── favicon-192x192.png

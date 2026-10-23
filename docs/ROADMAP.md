@@ -325,6 +325,14 @@ Foundation for any destructive/long-running periodic job. Consumed by both the d
 - Deduplication rules apply (MAL ID check, title similarity flagging)
 - Starts from the season the feature launches, going forward only
 
+### Retire "umbrella" from the code
+
+Out of the UI already ([UI copy](../.claude/rules/frontend.md#ui-copy)), not yet out of the
+code. A branch of its own, because the word is stored: `update_sweep`'s `result_summary`
+keys `anime_umbrella_changes` and `counters.umbrella_reclassed` change shape
+([versioning](features/jobs.md#result_summary-versioning)). Settle the replacement first —
+bare "anime" already means the row, so "the umbrella fields" need a name of their own.
+
 ---
 
 ## Feature 5: Watchlist ✓ shipped (v0.15.0)
@@ -377,7 +385,7 @@ Separate page/route — the "deep dive" version of home page sections.
 - **Recommendation algo** (top of page) — dropdown/selector to choose algorithm. Designed for experimentation — swap in new algos over time, users can try different ones. Could also be a user setting.
 - **Give it a second chance** — dropped anime (from ratings data)
 - **Continue watching** — anime on watchlist with partial ratings (e.g. watched S1, S2 waiting)
-- **Genre-based sections** — ✓ built as Discover's worlds (v0.16.3, [browse](features/browse.md#discover-draws-one-world-a-day))
+- **Genre-based sections** — ✓ built as Discover's moods (v0.16.3, [browse](features/browse.md#discover-draws-one-mood-a-day))
 - **Unexplored territory** — cluster-based discovery, anime outside user's usual selection
 - **Others also liked** — cross-user signal (users who rated similar anime highly)
 - **Rising on MAL** — high `log(scored_by) * score` weighting

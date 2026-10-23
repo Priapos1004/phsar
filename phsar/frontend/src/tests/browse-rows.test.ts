@@ -13,8 +13,8 @@ vi.mock('$lib/api', () => ({
 
 import { api } from '$lib/api';
 import {
-	browsePage, browseRow, carouselResults, clearBrowseRows, discoverWorlds, knownStep, refinedFromDefaults,
-	spinWorld,
+	browsePage, browseRow, carouselResults, clearBrowseRows, discoverMoods, knownStep, refinedFromDefaults,
+	spinMood,
 } from '$lib/stores/browseRows';
 import { NO_REFINEMENT } from '$lib/stores/browseRefinements';
 import type { BrowseCarousel } from '$lib/types/api';
@@ -128,9 +128,9 @@ describe('browse row cache', () => {
 	});
 });
 
-describe("Discover's worlds", () => {
-	const WORLDS = [{ key: 'cozy', title: 'Cozy Corner' }, { key: 'steel', title: 'Blood & Steel' }];
-	const COZY = { world: 'cozy', carousels: [] };
+describe("Discover's moods", () => {
+	const MOODS = [{ key: 'cozy', title: 'Cozy Corner' }, { key: 'steel', title: 'Blood & Steel' }];
+	const COZY = { mood: 'cozy', carousels: [] };
 
 	beforeEach(() => {
 		get.mockReset();
@@ -138,28 +138,28 @@ describe("Discover's worlds", () => {
 		clearBrowseRows();
 	});
 
-	// A return from a detail page must land on the world, not on the wheel again.
-	it("keeps a user's spin, so the worlds then carry today", async () => {
-		get.mockResolvedValue({ worlds: WORLDS, today: null });
+	// A return from a detail page must land on the mood, not on the wheel again.
+	it("keeps a user's spin, so the moods then carry today", async () => {
+		get.mockResolvedValue({ moods: MOODS, today: null });
 		post.mockResolvedValue(COZY);
-		expect((await discoverWorlds(false)).spun).toBe(false);
-		expect(await spinWorld(false)).toMatchObject({ today: COZY, spun: true });
-		expect(await discoverWorlds(false)).toMatchObject({ today: COZY, spun: true });
+		expect((await discoverMoods(false)).spun).toBe(false);
+		expect(await spinMood(false)).toMatchObject({ today: COZY, spun: true });
+		expect(await discoverMoods(false)).toMatchObject({ today: COZY, spun: true });
 		expect(get).toHaveBeenCalledTimes(1);
 	});
 
-	it('shows a user who spun elsewhere today the world, not the wheel', async () => {
-		get.mockResolvedValue({ worlds: WORLDS, today: COZY });
-		expect((await discoverWorlds(false)).spun).toBe(true);
+	it('shows a user who spun elsewhere today the mood, not the wheel', async () => {
+		get.mockResolvedValue({ moods: MOODS, today: COZY });
+		expect((await discoverMoods(false)).spun).toBe(true);
 	});
 
-	// A guest is read-only: its world is drawn for it, and its spin only lands there.
-	it("spins a guest onto the world it was given, without a request", async () => {
-		get.mockResolvedValue({ worlds: WORLDS, today: COZY });
-		expect((await discoverWorlds(true)).spun).toBe(false);
-		expect(await spinWorld(true)).toMatchObject({ today: COZY, spun: true });
+	// A guest is read-only: its mood is drawn for it, and its spin only lands there.
+	it("spins a guest onto the mood it was given, without a request", async () => {
+		get.mockResolvedValue({ moods: MOODS, today: COZY });
+		expect((await discoverMoods(true)).spun).toBe(false);
+		expect(await spinMood(true)).toMatchObject({ today: COZY, spun: true });
 		expect(post).not.toHaveBeenCalled();
-		expect((await discoverWorlds(true)).spun).toBe(true);
+		expect((await discoverMoods(true)).spun).toBe(true);
 	});
 });
 

@@ -1,7 +1,7 @@
 <script lang="ts">
-	// Discover: spin the wheel for today's world, then that world's rows
+	// Discover: spin the wheel for today's mood, then that mood's rows
 	// (docs/features/browse.md). Before the spin the tab wears the user's theme; after it the
-	// world's colour stands in for `--primary` inside this tab only, so the navbar and the
+	// mood's colour stands in for `--primary` inside this tab only, so the navbar and the
 	// tab bar above keep the theme and switching tabs never changes the page's look.
 	import { getContext, onMount, tick } from 'svelte';
 	import { dev } from '$app/environment';
@@ -9,10 +9,10 @@
 	import { ApiError } from '$lib/api';
 	import BrowsePageRows from '$lib/components/BrowsePageRows.svelte';
 	import DiscoverWheel from '$lib/components/DiscoverWheel.svelte';
-	import WorldParticles from '$lib/components/WorldParticles.svelte';
-	import WorldReveal from '$lib/components/WorldReveal.svelte';
-	import { discoverWorlds, previewWorld, spinWorld, type DiscoverState } from '$lib/stores/browseRows';
-	import { worldLook } from '$lib/utils/discoverWorlds';
+	import MoodParticles from '$lib/components/MoodParticles.svelte';
+	import MoodReveal from '$lib/components/MoodReveal.svelte';
+	import { discoverMoods, previewMood, spinMood, type DiscoverState } from '$lib/stores/browseRows';
+	import { moodLook } from '$lib/utils/discoverMoods';
 
 	const getUserRole = getContext<() => string | null>('userRole');
 	let isGuest = $derived(getUserRole?.() === 'restricted_user');
@@ -26,16 +26,16 @@
 	// restarts its animations when it is shown again.
 	let revealed = $state(false);
 	let wheel = $state<ReturnType<typeof DiscoverWheel>>();
-	let stage = $state<ReturnType<typeof WorldReveal>>();
+	let stage = $state<ReturnType<typeof MoodReveal>>();
 
-	const titleOf = (state: DiscoverState, key: string) => state.worlds.find((w) => w.key === key)?.title ?? '';
+	const titleOf = (state: DiscoverState, key: string) => state.moods.find((mood) => mood.key === key)?.title ?? '';
 
-	// Dev only: `?reveal=<key>` replays the spin onto that world (docs/features/browse.md).
+	// Dev only: `?reveal=<key>` replays the spin onto that mood (docs/features/browse.md).
 	const replay = dev ? page.url.searchParams.get('reveal') : null;
 
 	onMount(async () => {
 		try {
-			discover = await discoverWorlds(isGuest);
+			discover = await discoverMoods(isGuest);
 		} catch (e) {
 			loadError = e instanceof ApiError ? e.detail : 'Discover could not load. Reload the page to try again.';
 		}
@@ -52,8 +52,8 @@
 		spinning = true;
 		spinError = '';
 		try {
-			const spun = await (replay ? previewWorld(replay, isGuest) : spinWorld(isGuest));
-			const key = spun.today!.world;
+			const spun = await (replay ? previewMood(replay, isGuest) : spinMood(isGuest));
+			const key = spun.today!.mood;
 			await wheel?.spinTo(key);
 			await stage?.play(key, titleOf(spun, key));
 			revealed = true;
@@ -66,8 +66,8 @@
 	}
 
 	let today = $derived(discover?.spun ? discover.today : null);
-	let look = $derived(today ? worldLook(today.world) : null);
-	let title = $derived(discover && today ? titleOf(discover, today.world) : '');
+	let look = $derived(today ? moodLook(today.mood) : null);
+	let title = $derived(discover && today ? titleOf(discover, today.mood) : '');
 </script>
 
 {#if loadError}
@@ -80,7 +80,7 @@
 			<h2 class="text-2xl font-bold text-white sm:text-3xl">Spin for today's mood</h2>
 			<p class="mx-auto max-w-md text-white/70">One spin a day sets the mood for what to discover.</p>
 		</div>
-		<DiscoverWheel bind:this={wheel} worlds={discover.worlds} disabled={spinning} onspin={spin} />
+		<DiscoverWheel bind:this={wheel} moods={discover.moods} disabled={spinning} onspin={spin} />
 		<button
 			type="button"
 			class="rounded-full bg-primary px-7 py-2.5 text-base font-semibold text-primary-foreground shadow-lg shadow-primary/30 transition hover:brightness-110 disabled:opacity-60"
@@ -94,10 +94,10 @@
 		{/if}
 	</section>
 {:else}
-	<!-- The flash a back link lands with takes the world's colour too; its token is mixed
+	<!-- The flash a back link lands with takes the mood's colour too; its token is mixed
 	     where it is declared (`app.css`), so overriding `--primary` alone would not reach it. -->
 	<div
-		class="world space-y-8"
+		class="space-y-8"
 		class:reveal={revealed}
 		style:--primary={look.color}
 		style:--ring={look.color}
@@ -109,7 +109,7 @@
 			class="relative overflow-hidden rounded-2xl border border-white/15 bg-origin-border px-6 py-9 shadow-lg sm:px-10 sm:py-12"
 			style:background-image="linear-gradient(115deg, color-mix(in oklab, {look.color} 62%, transparent), color-mix(in oklab, {look.color} 14%, transparent) 70%)"
 		>
-			<WorldParticles glyph={look.particle.glyph} motion={look.particle.motion} color={look.color} />
+			<MoodParticles glyph={look.particle.glyph} motion={look.particle.motion} color={look.color} />
 			<!-- `opacity` on the whole icon, not a translucent colour, so its overlapping strokes
 			     don't add up where they cross. -->
 			<look.icon class="absolute -bottom-10 -right-6 size-52 rotate-12 text-white opacity-20 sm:size-64" aria-hidden="true" />
@@ -126,7 +126,7 @@
 {/if}
 
 <!-- Outside the branches, so the swap it hides doesn't unmount it. -->
-<WorldReveal bind:this={stage} />
+<MoodReveal bind:this={stage} />
 
 <style>
 	.reveal > header {

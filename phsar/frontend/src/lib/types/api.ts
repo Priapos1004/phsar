@@ -1018,20 +1018,20 @@ export interface BrowseCarousel {
 	page: BrowsePageKey | null;
 }
 
-/** One segment of Discover's wheel; its look is `utils/discoverWorlds`'. */
-export interface DiscoverWorld {
+/** One segment of Discover's wheel; its look is `utils/discoverMoods`'. */
+export interface DiscoverMood {
 	key: string;
 	title: string;
 }
 
-/** Today's world, with its rows top to bottom. */
+/** Today's mood, with its rows top to bottom. */
 export interface DiscoverToday {
-	world: string;
+	mood: string;
 	carousels: BrowseCarousel[];
 }
 
-export interface DiscoverWorlds {
-	worlds: DiscoverWorld[];
-	/** Once the caller has spun today — always, for a guest, whose world the day draws. */
+export interface DiscoverMoods {
+	moods: DiscoverMood[];
+	/** Once the caller has spun today — always, for a guest, whose mood the day draws. */
 	today: DiscoverToday | null;
 }

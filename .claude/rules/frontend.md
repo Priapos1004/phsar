@@ -226,10 +226,6 @@ Say **"anime"**, never "umbrella". That term is internal jargon for the row grou
 media and reads as nonsense to a user. It stays in code, comments and established symbol
 names (`AnimeUmbrellaCard`, `umbrella_diff`); this rule governs new user-facing strings.
 
-Discover says **"mood"**, never "world". "World" is the code's word (`WORLDS`, `world_for`,
-`/browse/worlds`) and stays there; to a user it reads too grand for a theme like Future
-Shock.
-
 ## The user verifies UI
 
 After a UI-touching change, hand off with a concise **"what to check"** list and wait for

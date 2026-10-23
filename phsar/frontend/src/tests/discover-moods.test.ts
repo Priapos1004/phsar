@@ -1,9 +1,9 @@
 /**
- * The wheel's drawing maths: whatever the start and the nudge, the drawn world stops under
+ * The wheel's drawing maths: whatever the start and the nudge, the drawn mood stops under
  * the pointer after the whole turns asked for; and long labels split to fit.
  */
 import { describe, it, expect } from 'vitest';
-import { labelLines, landingRotation } from '$lib/utils/discoverWorlds';
+import { labelLines, landingRotation } from '$lib/utils/discoverMoods';
 
 // The segment under the pointer once the wheel has turned by `rotation`.
 const underPointer = (rotation: number, count: number) =>

@@ -36,34 +36,34 @@ async def get_carousel(
     return await browse_service.get_carousel(db, key, on or [], off or [])
 
 
-@router.get("/worlds", response_model=DiscoverOut)
-async def get_worlds(
+@router.get("/moods", response_model=DiscoverOut)
+async def get_moods(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
-    """Discover's worlds, and today's once the caller has spun — always, for a guest."""
+    """Discover's moods, and today's once the caller has spun — always, for a guest."""
     return await browse_service.get_discover(db, current_user)
 
 
-@router.post("/worlds/spin", response_model=DiscoverTodayOut)
-async def spin_world(
+@router.post("/moods/spin", response_model=DiscoverTodayOut)
+async def spin_mood(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_user_or_admin),
 ):
-    """Today's world: the day's first spin draws the caller's next one, later spins
+    """Today's mood: the day's first spin draws the caller's next one, later spins
     the same again."""
     return await browse_service.spin(db, current_user)
 
 
-@router.get("/worlds/{world}", response_model=DiscoverTodayOut)
-async def preview_world(
-    world: str,
+@router.get("/moods/{mood}", response_model=DiscoverTodayOut)
+async def preview_mood(
+    mood: str,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_admin),
 ):
-    """Any world with its rows, without a spin. Admins only, because the draw is the game —
-    a viewer who could open any world would have no reason to spin."""
-    return await browse_service.preview(db, world)
+    """Any mood with its rows, without a spin. Admins only, because the draw is the game —
+    a viewer who could open any mood would have no reason to spin."""
+    return await browse_service.preview(db, mood)
 
 
 @router.get("/{page}", response_model=list[BrowseCarouselOut])

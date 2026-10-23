@@ -1,6 +1,6 @@
 import { api } from '$lib/api';
 import type {
-	AnimeSearchResult, BrowseCarousel, BrowsePageKey, DiscoverToday, DiscoverWorlds,
+	AnimeSearchResult, BrowseCarousel, BrowsePageKey, DiscoverToday, DiscoverMoods,
 } from '$lib/types/api';
 import { effectiveSort, fetchAnimeSearchResults, readsOwnData, type MediaSearchFilters } from '$lib/utils/search';
 import {
@@ -94,36 +94,36 @@ export function browseRow(
 const rowId = (params: MediaSearchFilters, limit: number) => JSON.stringify([params, limit]);
 const rowSlot = (id: string) => `row:${id}`;
 
-/** Discover's wheel and today's world. `spun` says whether this viewer has seen the wheel
- *  land today: a user once their spin is counted, a guest — whose world the day draws —
+/** Discover's wheel and today's mood. `spun` says whether this viewer has seen the wheel
+ *  land today: a user once their spin is counted, a guest — whose mood the day draws —
  *  once it has spun in this visit. */
-export interface DiscoverState extends DiscoverWorlds {
+export interface DiscoverState extends DiscoverMoods {
 	spun: boolean;
 }
 
-export function discoverWorlds(isGuest: boolean): Promise<DiscoverState> {
-	return cached('worlds', 'worlds', async () => {
-		const worlds = await api.get<DiscoverWorlds>('/browse/worlds');
-		return { ...worlds, spun: worlds.today !== null && !isGuest };
+export function discoverMoods(isGuest: boolean): Promise<DiscoverState> {
+	return cached('moods', 'moods', async () => {
+		const moods = await api.get<DiscoverMoods>('/browse/moods');
+		return { ...moods, spun: moods.today !== null && !isGuest };
 	});
 }
 
-/** Spin the wheel: Discover with today's world, kept so a detail page and back lands on it
- *  rather than on the wheel. A guest can't spin (read-only), so its spin lands on the world
+/** Spin the wheel: Discover with today's mood, kept so a detail page and back lands on it
+ *  rather than on the wheel. A guest can't spin (read-only), so its spin lands on the mood
  *  it was given. */
-export async function spinWorld(isGuest: boolean): Promise<DiscoverState> {
-	const state = await discoverWorlds(isGuest);
-	const today = isGuest && state.today ? state.today : await api.post<DiscoverToday>('/browse/worlds/spin');
+export async function spinMood(isGuest: boolean): Promise<DiscoverState> {
+	const state = await discoverMoods(isGuest);
+	const today = isGuest && state.today ? state.today : await api.post<DiscoverToday>('/browse/moods/spin');
 	const spun = { ...state, today, spun: true };
-	put('worlds', 'worlds', Promise.resolve(spun));
+	put('moods', 'moods', Promise.resolve(spun));
 	return spun;
 }
 
-/** Discover with `key`'s world in today's place. Not kept, unlike a spin: Discover goes on
+/** Discover with `key`'s mood in today's place. Not kept, unlike a spin: Discover goes on
  *  showing today's draw. */
-export async function previewWorld(key: string, isGuest: boolean): Promise<DiscoverState> {
-	const state = await discoverWorlds(isGuest);
-	const today = await api.get<DiscoverToday>(`/browse/worlds/${encodeURIComponent(key)}`);
+export async function previewMood(key: string, isGuest: boolean): Promise<DiscoverState> {
+	const state = await discoverMoods(isGuest);
+	const today = await api.get<DiscoverToday>(`/browse/moods/${encodeURIComponent(key)}`);
 	return { ...state, today, spun: true };
 }
 

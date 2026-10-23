@@ -1,4 +1,4 @@
-"""How far a user has spun Discover's wheel of worlds (docs/features/browse.md).
+"""How far a user has spun Discover's wheel of moods (docs/features/browse.md).
 
 Sidecar to `users` (`.claude/rules/database.md`). A user without a row has never spun.
 """
@@ -25,6 +25,6 @@ class DiscoverProgress(BaseModel):
     spin_count: Mapped[int] = mapped_column(Integer, nullable=False)
     spun_on: Mapped[date] = mapped_column(Date, nullable=False)
     # What that day's spin drew; empty where no spin has stored one.
-    world: Mapped[str] = mapped_column(String, nullable=False)
+    mood: Mapped[str] = mapped_column(String, nullable=False)
 
     users: Mapped["Users"] = relationship("Users", back_populates="discover_progress", lazy="raise")

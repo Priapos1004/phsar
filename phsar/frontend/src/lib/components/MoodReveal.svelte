@@ -1,16 +1,16 @@
 <script lang="ts">
-	// Discover's reveal: the cut from the wheel to the world, played full screen as a beat from
+	// Discover's reveal: the cut from the wheel to the mood, played full screen as a beat from
 	// an anime opening. Letterbox bars and a dimmed screen first, so there is a moment of
-	// anticipation; then the world's signature (a punching one lands with a hit-stop and an
+	// anticipation; then the mood's signature (a punching one lands with a hit-stop and an
 	// impact frame), the flash and the title card.
 	//
 	// Above the navbar on purpose: it is over in seconds, so it never contradicts the
 	// navbar keeping the user's theme. Two full-screen flashes at most, the impact frame and the
 	// peak, which keeps it under WCAG 2.3.1's three a second; a signature flickers only its own
-	// small shapes. The canvas side is `utils/worldReveal.ts`.
+	// small shapes. The canvas side is `utils/moodReveal.ts`.
 	import { onDestroy, tick } from 'svelte';
-	import { reducedMotion, worldLook, type WorldLook } from '$lib/utils/discoverWorlds';
-	import { BEAT, runReveal, softness } from '$lib/utils/worldReveal';
+	import { reducedMotion, moodLook, type MoodLook } from '$lib/utils/discoverMoods';
+	import { BEAT, runReveal, softness } from '$lib/utils/moodReveal';
 
 	const SKIP_FADE_MS = 160;
 	// Where the glyph burst flies, in vmin from the centre: evenly round, off the axes.
@@ -19,7 +19,7 @@
 		return { dx: Math.cos(a) * 46, dy: Math.sin(a) * 46, turn: (i % 2 ? 1 : -1) * (40 + i * 9) };
 	});
 
-	let shown = $state<{ look: WorldLook; title: string } | null>(null);
+	let shown = $state<{ look: MoodLook; title: string } | null>(null);
 	let leaving = $state(false);
 	let canvas = $state<HTMLCanvasElement>();
 	let timers: ReturnType<typeof setTimeout>[] = [];
@@ -31,7 +31,7 @@
 	export async function play(key: string, title: string): Promise<void> {
 		if (reducedMotion()) return;
 		finish();
-		shown = { look: worldLook(key), title };
+		shown = { look: moodLook(key), title };
 		await tick();
 		if (canvas) stopCanvas = runReveal(canvas, shown.look);
 		return new Promise((resolve) => {
@@ -82,7 +82,7 @@
 		class:leaving
 		data-kind={look.reveal}
 		aria-hidden="true"
-		style:--world={look.color}
+		style:--mood={look.color}
 		style:--wash="{soft?.wash ?? 0}%"
 		style:--t-impact="{BEAT.impact}ms"
 		style:--t-peak="{BEAT.peak}ms"
@@ -146,7 +146,7 @@
 		height: 100%;
 	}
 	.dim {
-		background: radial-gradient(circle, color-mix(in oklab, var(--world) 24%, black), black 75%);
+		background: radial-gradient(circle, color-mix(in oklab, var(--mood) 24%, black), black 75%);
 		animation:
 			dim-in 360ms ease-out both,
 			dim-out 450ms ease-in var(--t-clear) forwards;
@@ -154,12 +154,12 @@
 	/* A hard cut to white, then a long fall-off — not a fade in. A soft signature washes in
 	   its colour instead, as strongly as its `wash`. */
 	.flash {
-		background: color-mix(in oklab, var(--world) var(--wash), transparent);
+		background: color-mix(in oklab, var(--mood) var(--wash), transparent);
 		opacity: 0;
 		animation: flash 480ms cubic-bezier(0.3, 0, 0.6, 1) var(--t-peak) forwards;
 	}
 	.punch .flash {
-		background: color-mix(in oklab, var(--world) 14%, white);
+		background: color-mix(in oklab, var(--mood) 14%, white);
 	}
 	.ring {
 		inset: 0;
@@ -167,10 +167,10 @@
 		width: 40vmin;
 		height: 40vmin;
 		border-radius: 50%;
-		border: 3px solid var(--world);
+		border: 3px solid var(--mood);
 		box-shadow:
-			0 0 28px var(--world),
-			inset 0 0 28px var(--world);
+			0 0 28px var(--mood),
+			inset 0 0 28px var(--mood);
 		opacity: 0;
 		animation: ring 720ms cubic-bezier(0.1, 0.7, 0.3, 1) var(--t-peak) forwards;
 	}
@@ -179,8 +179,8 @@
 		top: 50%;
 		font-size: 2rem;
 		line-height: 1;
-		color: var(--world);
-		text-shadow: 0 0 0.5em var(--world);
+		color: var(--mood);
+		text-shadow: 0 0 0.5em var(--mood);
 		opacity: 0;
 		animation: burst 820ms cubic-bezier(0.15, 0.8, 0.3, 1) var(--t-peak) forwards;
 	}
@@ -219,7 +219,7 @@
 		text-wrap: balance;
 		color: white;
 		text-shadow:
-			0 0 0.35em var(--world),
+			0 0 0.35em var(--mood),
 			0 0.06em 0 rgb(0 0 0 / 0.5);
 	}
 	/* A glitch signature's title arrives as a broken signal and stutters once mid-hold. The cyan and
@@ -235,7 +235,7 @@
 		right: -0.4em;
 		top: 38%;
 		height: 0.42em;
-		background: var(--world);
+		background: var(--mood);
 		transform-origin: left;
 		animation: swipe 300ms cubic-bezier(0.6, 0, 0.2, 1) var(--t-title) both;
 	}
