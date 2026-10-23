@@ -176,12 +176,15 @@ async def get_discover(db: AsyncSession, user: Users) -> DiscoverOut:
 
 
 async def spin(db: AsyncSession, user: Users) -> DiscoverTodayOut:
-    # Kept only if this is the day's first spin.
-    progress = await discover_progress_dao.get_by_field(db, user_id=user.id)
-    first = world_for(user.uuid, progress.spin_count if progress else 0)
-    count, stored = await discover_progress_dao.record_spin(db, user.id, search_filters.utc_today(), first)
+    count, stored = await discover_progress_dao.record_spin(db, user.id, search_filters.utc_today())
+    # Drawn from the count the upsert wrote, not one read before it: two spins either side
+    # of midnight would both draw from the same count. The upsert's row lock holds to the
+    # commit, so a racing spin waits until this world is kept.
+    world = _kept(user, count, stored)
+    if world != stored:
+        await discover_progress_dao.keep_world(db, user.id, world)
     await db.commit()
-    return await _drawn(db, _kept(user, count, stored))
+    return await _drawn(db, world)
 
 
 async def preview(db: AsyncSession, world: str) -> DiscoverTodayOut:

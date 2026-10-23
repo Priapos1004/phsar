@@ -176,7 +176,7 @@ async def test_a_spin_counts_once_a_day_and_moves_on_the_next(client, user_auth_
     assert (await _spin(client, user_auth_headers))["world"] == world_for(user.uuid, 1)
     progress = await DiscoverProgressDAO().get_by_field(db_session, user_id=user.id)
     assert progress is not None
-    assert (progress.spin_count, progress.spun_on) == (2, date(2026, 11, 4))
+    assert (progress.spin_count, progress.spun_on, progress.world) == (2, date(2026, 11, 4), world_for(user.uuid, 1))
 
     # A spin sent before midnight, committing after this one.
     monkeypatch.setattr(search_filters, "utc_today", lambda: date(2026, 11, 3))
