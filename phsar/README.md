@@ -168,6 +168,8 @@ phsar/
 ├── frontend/
 │   ├── .dockerignore
 │   ├── Dockerfile
+│   ├── art/
+│   │   └── profile_pics/    # PNG originals of the theme pics — not served; convert with the cwebp lines in themes.ts
 │   ├── bun.lock
 │   ├── components.json
 │   ├── package.json
@@ -480,7 +482,7 @@ phsar/
 │   │   ├── favicon-512x512.png
 │   │   ├── favicon.ico
 │   │   ├── phsar_logo_transparent.png
-│   │   ├── profile_pics/    # theme character pics (rainbow.png, red.png, blue.png, green.png)
+│   │   ├── profile_pics/    # theme character pics as WebP, plus thumbs/ for the settings tiles
 │   │   └── robots.txt
 │   ├── svelte.config.js
 │   ├── tsconfig.json

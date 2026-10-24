@@ -1,5 +1,5 @@
 ---
-description: Frontend conventions — runes, theme tokens, shared components, page width, tooltip and chart mechanics, confirm tiers for destructive actions, dialog sizing, route titles, restricted accounts, and UI copy.
+description: Frontend conventions — runes, theme tokens, shared components, page width, phone layouts, tooltip and chart mechanics, confirm tiers for destructive actions, dialog sizing, route titles, restricted accounts, and UI copy.
 paths: "phsar/frontend/**"
 ---
 
@@ -140,6 +140,21 @@ toggle on the dark page surface is a border-fill pill instead (`PillToggle`, wit
 surface, deliberately two components: unifying them makes one of the two illegible
 against its own background.
 
+## A label's shade follows its surface
+
+A secondary label takes its own surface's secondary shade — `text-white/70` on the dark
+page, `text-card-foreground/70` on a light card — never one class for both, which is
+legible on only one of them. White here is not the hardcoded colour "Style with theme
+tokens" forbids: the dark page surface is the same under every theme.
+
+## A phone narrows the layout before it shrinks the text
+
+Below `sm`, a crowded row **stacks** (a label over its control, a badge onto the next
+line) before its text gets smaller, and a card keeps what a list is scanned by, leaving
+secondary detail to the detail page rather than squeezing it in. A long toggle takes
+`cls.stretchOnPhone`. A layout change that only makes sense
+at one width stays at that width; every other fix applies at all of them.
+
 ## A destructive action's confirm is tiered by what it costs to undo
 
 Three mechanisms, and the tier is chosen by the cost of being wrong, not by how
@@ -233,4 +248,5 @@ names (`AnimeUmbrellaCard`, `umbrella_diff`); this rule governs new user-facing 
 
 After a UI-touching change, hand off with a concise **"what to check"** list and wait for
 their verdict rather than driving the dev-browser to self-verify — they have the app open.
-Offer to look yourself only when genuinely stuck on a bug.
+Offer to look yourself only when genuinely stuck on a bug. A page-by-page pass at fixed
+widths runs as `/ui-pass`.

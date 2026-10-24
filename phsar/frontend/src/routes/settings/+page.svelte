@@ -92,7 +92,7 @@
                             onclick={() => saveSetting({ theme: key })}
                         >
                             <img
-                                src={themeArt(key).pic}
+                                src={themeArt(key).thumb}
                                 alt={theme.label}
                                 class="w-full aspect-video object-cover"
                             />

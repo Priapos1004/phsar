@@ -85,17 +85,22 @@
             // minutes — only (re)fetch settings + spoiler visibility on a real
             // login / user switch (sub changed) or after a prior failed load,
             // not on every slide, to avoid redundant traffic + a theme flicker.
-            const needsUserLoad = decoded.sub !== username || get(userSettings) === null;
+            const signingIn = decoded.sub !== username;
+            const needsUserLoad = signingIn || get(userSettings) === null;
             // A real user switch (A → B) can happen without a null-token transition
             // (login page sets the new token directly), so clear per-user stores here
             // rather than only on logout — else B could inherit A's bookmarks if a
             // refresh is skipped (restricted B) or fails silently.
-            const isUserSwitch = username !== null && decoded.sub !== username;
+            const isUserSwitch = signingIn && username !== null;
             userRole = decoded.role;
             username = decoded.sub;
 
             if (needsUserLoad) {
               if (isUserSwitch) clearPerUserStores();
+              // A newly signed-in user's page waits for their loads, as a fresh load
+              // already does, so it renders once in their theme and art — not in the
+              // default ones first, downloading both pictures.
+              if (signingIn) loading = true;
               // Fetch settings + spoiler visibility + watchlist/tags in parallel to
               // avoid serial latency. A restricted user gets none of them: they can't
               // watchlist, and they are pinned to spoiler_level `off` and excluded

@@ -78,6 +78,8 @@ deliberate absence of a global 401 handler, both argued at the throw site.
 - `app.css` — the theme system: `@property` registration, `@theme inline` `var()`
   indirection, the `.theme-*` override classes and the gradients. The file itself
   explains why the `:root` defaults cannot be left to `@property` alone.
+- `art/` (beside `src/`) — the theme pics' PNG originals, neither served nor in the image;
+  `themes.ts` carries the commands that convert them into `static/profile_pics/`.
 - `tests/` — Vitest with `@testing-library/svelte`. `setup.ts` mocks the SvelteKit
   modules and carries the one non-obvious hook, a flush for bits-ui's deferred
   body-scroll-lock restore.

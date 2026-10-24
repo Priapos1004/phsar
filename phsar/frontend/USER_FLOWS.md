@@ -22,7 +22,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 - User sees a centered card with username/password fields and a "Login" button
 - Page background is a themed light-to-deep gradient matching the active theme (purple / red / blue / green), driven by the theme class pre-applied from localStorage by the FOUC script in `app.html`
 - Submitting the form POSTs credentials to `/auth/login` (URL-encoded)
-- On success: token is stored in localStorage, and the user lands on the URL's `?next=` when it carries a valid one, otherwise `/`. The navigation **replaces** the history entry, so browser-back from the restored page doesn't return to the form
+- On success: token is stored in localStorage, and the user lands on the URL's `?next=` when it carries a valid one, otherwise `/`. The navigation **replaces** the history entry, so browser-back from the restored page doesn't return to the form. The loading screen holds until the user's settings load, so the first page already shows their theme
 - `next` is only honoured when it resolves **same-origin** and isn't one of the pages that ask for credentials or the liveness endpoint (`/login`, `/register`, `/health`). An off-origin, protocol-relative (`//host`) or backslash-authority (`/\host`) value is discarded and the user goes to `/`
 - Whether the path names a real route is **not** checked: any same-origin path is honoured, so `?next=quark` lands on `/quark`'s 404 and `/admin/jobs/<uuid>` round-trips without needing to be enumerated
 - The home page is never captured — a redirect from `/` produces a bare `/login`
@@ -119,7 +119,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 
 ## 3. Home Page
 
-- **Hero banner** (InfoDiashow): Full-width rounded card showing the active theme's character pic as background (`object-cover`, per-theme focal point). A subtle bottom-up dark scrim (for legibility only, no color cast over the art) anchors the "Current Season" label and season name (e.g., "Spring 2026") bottom-left with a soft drop shadow. Pic updates reactively when the user changes theme. From 1 to 31 October every theme shows its Halloween version instead, each cropped at its own focal point.
+- **Hero banner** (InfoDiashow): Full-width rounded card showing the active theme's character pic as background (`object-cover`, per-theme focal point), taller from 1536px wide so the art keeps its framing. A subtle bottom-up dark scrim (for legibility only, no color cast over the art) anchors the "Current Season" label and season name (e.g., "Spring 2026") bottom-left with a soft drop shadow. Pic updates reactively when the user changes theme. From 1 to 31 October every theme shows its Halloween version instead, each cropped at its own focal point.
 - The search bar (4.2) — the same query box, mode pills and filter sheet as the search page; submitting or applying goes to `/search`
 - A "Recommended" placeholder card, then rows that work as Browse's do (3a), see-all included:
   - **Lucky find** — top 75% of what you haven't rated or are still watching, in the day's shuffle.
@@ -135,7 +135,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 **News** is a column of rows in the order the backend lays them out, each a saved search of up to 25 anime:
 - A row loads when you scroll near it, showing a skeleton until then, and eases to its new height rather than jumping the page below. An empty one shows a "Nothing here right now" note; where the row narrows by default, the note names **See all** as the place to switch a filter off.
 - A row whose default Top 50% leaves fewer than 35 anime shows Top 75% instead.
-- The row's title, and a **See all** tile ending the row, open the row's see-all page (3b). A row pinned to one season names it in a pill beside the title ("Fall 2026").
+- The row's title, and a **See all** tile ending the row, open the row's see-all page (3b). A row pinned to one season names it in a pill beside the title ("Fall 2026"), which wraps below the title when the row is too narrow.
 - The row scrolls sideways (snapping per tile). On a mouse or trackpad, round arrows page it by about a screen width and appear only where there is more to scroll.
 - A row that needs your own ratings or watchlist shows a **guest** a card saying guest accounts have neither; the rest load. A row that only leaves out what you have rated or listed runs for a guest over everything (Lucky find).
 - Coming back from an anime or media page shows the rows already loaded, without reloading them. They load afresh after leaving Browse for any other page, and whenever Home's do (3); a row built from your ratings or watchlist also reloads after you change either.

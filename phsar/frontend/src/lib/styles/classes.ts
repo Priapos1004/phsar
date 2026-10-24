@@ -76,7 +76,7 @@ export const glassIcon = 'inline-block size-[1.15em] align-[-0.2em] text-primary
 
 // The pill naming the one season a list is pinned to, and the card standing in for a list
 // that can't be shown.
-export const seasonPill = 'rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-medium text-white/70';
+export const seasonPill = 'whitespace-nowrap rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-medium text-white/70';
 export const noticeCard = 'rounded-xl border border-white/10 bg-card/40 px-4 py-6 text-sm text-white/60';
 
 // The watchlist bookmark's backing square, top-right on a cover. Fixed square + flex

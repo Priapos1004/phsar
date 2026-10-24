@@ -9,11 +9,12 @@
 </script>
 
 <div class="relative w-full overflow-hidden rounded-xl">
-	<!-- Character background — transparent images scale to height, pinned right -->
-	<img src={pic} alt="" class="h-64 sm:h-80 w-full object-cover" style="object-position: 50% {focal}" />
+	<!-- Character background. 2xl:h-100 keeps the framing of the 1024 banner at
+	     cls.pageWidth's wider 2xl width. -->
+	<img src={pic} alt="" class="h-64 sm:h-80 2xl:h-100 w-full object-cover" style="object-position: 50% {focal}" />
 
 	<!-- Bottom-up dark scrim purely for text legibility — no color cast over
-	     the character art (replaces the old left primary-color overlay). -->
+	     the character art. -->
 	<div class="absolute inset-0 bg-gradient-to-t from-black/65 via-black/20 to-transparent">
 		<div class="flex flex-col justify-end h-full pl-8 pb-6 pr-4">
 			<p class="text-xs sm:text-sm uppercase tracking-[0.25em] text-white/70 font-medium">Current Season</p>

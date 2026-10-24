@@ -94,7 +94,7 @@
 <section bind:this={section} data-focus-uuid={carousel.key} class="space-y-2">
 	<!-- A return to the row centres the section and flashes this header alone: a ring
 	     round a whole carousel reads as a frame, not as a landing. -->
-	<header data-flash-target class="-mx-2 flex items-center gap-2 rounded-lg px-2">
+	<header data-flash-target class="-mx-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg px-2">
 		{#if guestBlocked}
 			<h2 class="text-lg font-semibold text-white">{carousel.title}</h2>
 		{:else}

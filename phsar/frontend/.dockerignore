@@ -10,4 +10,5 @@ build
 .env.*
 !.env.example
 coverage
+art
 *.log
