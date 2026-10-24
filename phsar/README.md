@@ -187,6 +187,7 @@ phsar/
 │   │   │   │   ├── AnimeShare.svelte
 │   │   │   │   ├── AttributeBadges.svelte
 │   │   │   │   ├── AttributeDetailBars.svelte
+│   │   │   │   ├── AttributeGrid.svelte
 │   │   │   │   ├── AttributeRadar.svelte
 │   │   │   │   ├── BackLink.svelte
 │   │   │   │   ├── BackupsCard.svelte
@@ -217,6 +218,7 @@ phsar/
 │   │   │   │   ├── GenreBadges.svelte
 │   │   │   │   ├── GrainToggle.svelte
 │   │   │   │   ├── HeroIconButton.svelte
+│   │   │   │   ├── HeroScore.svelte
 │   │   │   │   ├── InfoDiashow.svelte
 │   │   │   │   ├── JobBell.svelte
 │   │   │   │   ├── LoadingScreen.svelte
@@ -416,6 +418,8 @@ phsar/
 │   │       ├── admin-jobs-poll.test.ts
 │   │       ├── api-download.test.ts
 │   │       ├── attribute-aggregate.test.ts
+│   │       ├── attribute-detail-bars.test.ts
+│   │       ├── attribute-select.test.ts
 │   │       ├── auth-store.test.ts
 │   │       ├── backup-status.test.ts
 │   │       ├── backups-card.test.ts

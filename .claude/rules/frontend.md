@@ -1,5 +1,5 @@
 ---
-description: Frontend conventions — runes, theme tokens, shared components, page width, phone layouts, tooltip and chart mechanics, confirm tiers for destructive actions, dialog sizing, route titles, restricted accounts, and UI copy.
+description: Frontend conventions — runes, theme tokens, shared components, page width, phone layouts, tooltip and chart mechanics, confirm tiers for destructive actions, focus in dialogs, dialog sizing, route titles, restricted accounts, and UI copy.
 paths: "phsar/frontend/**"
 ---
 
@@ -149,11 +149,13 @@ tokens" forbids: the dark page surface is the same under every theme.
 
 ## A phone narrows the layout before it shrinks the text
 
-Below `sm`, a crowded row **stacks** (a label over its control, a badge onto the next
-line) before its text gets smaller, and a card keeps what a list is scanned by, leaving
-secondary detail to the detail page rather than squeezing it in. A long toggle takes
-`cls.stretchOnPhone`. A layout change that only makes sense
-at one width stays at that width; every other fix applies at all of them.
+Below `sm`, a crowded row **stacks** (a label over its control — `cls.stackOnPhone` — a
+badge onto the next line) before its text gets smaller, and a card keeps what a list is
+scanned by, leaving secondary detail to the detail page rather than squeezing it in. A
+long toggle takes `cls.stretchOnPhone`. A tweak for the narrowest phones takes the `xs`
+breakpoint (`max-xs:`, below 360px), never a literal width, so those tweaks move together.
+A layout change that only makes sense at one width stays at that width; every other fix
+applies at all of them.
 
 ## A destructive action's confirm is tiered by what it costs to undo
 
@@ -178,6 +180,21 @@ so a plain swap reflows the row. Give it a `min-w-*` sized to the wider label.
 **Gate the API at the same tier.** A confirmation the frontend could fill in on
 the user's behalf is not a control, and it reads to the next person as though one
 exists — so an ungated action's endpoint takes no confirmation argument at all.
+
+## A control that removes itself hands focus on first
+
+Every bits-ui `Dialog` — the filter sheet included — traps focus, and when the focused
+element leaves the DOM the trap focuses its first element instead, scrolling a long dialog
+to its top. A click focuses the button it lands on, so a control whose own click removes
+it triggers this: a chip's ✕, a "Clear all" shown only while something is set, a "Try
+again" swapped for "Loading…".
+
+Before the click removes the control, **move focus to an element that stays** (the field
+it belonged to, the dialog's main action), or keep the node and change its label or
+`disabled` rather than swapping it with `{#if}`. `preventDefault` on `mousedown` covers
+the mouse only; a keyboard user still lands on the removed node. A test focuses the
+control, clicks it and asserts `document.activeElement` is the survivor. Reproduce in
+Chrome or Firefox: Safari never focuses a button on click, so it hides the bug.
 
 ## Dialog children that cannot shrink
 

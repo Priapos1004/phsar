@@ -19,8 +19,10 @@ export const chartTooltipStyle = {
 	textStyle: { color: 'var(--color-popover-foreground)', fontSize: 12 },
 	// border-radius + glow have no dedicated tooltip options, so raw CSS (appended last
 	// in ECharts' style string, so it wins). Shadow mirrors tooltip-content.svelte.
+	// ECharts never wraps a tooltip's text, so a long title outgrows a phone-width chart
+	// and `confine` can't hold it; wrapping within the chart's width can.
 	extraCssText:
-		'border-radius: 6px; box-shadow: 0 6px 24px -6px color-mix(in oklch, var(--primary) 55%, transparent);',
+		'border-radius: 6px; box-shadow: 0 6px 24px -6px color-mix(in oklch, var(--primary) 55%, transparent); white-space: normal; max-width: 100%;',
 } as const;
 
 /** Axis floor for a series whose interesting variation is small next to its absolute

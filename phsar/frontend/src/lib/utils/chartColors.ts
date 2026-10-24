@@ -25,6 +25,16 @@ export const STATUS_COLORS = {
 	dropped: '#f43f5e', // rose-500
 } as const;
 
+/** An attribute value's colour, by its place in the attribute's option list: rose, orange,
+ * emerald, blue. On a quality attribute that reads worst to best (a three-step scale uses
+ * the first three); on the others the same four hues simply stay one per value — one set
+ * for every attribute, so two shades of one hue never sit side by side. Fixed across
+ * themes, as STATUS_COLORS is: the Crimson theme's colour would land on the worst end.
+ * Green↔orange is close for colour-blind eyes and orange is faint on the `bg-muted` track,
+ * which is acceptable only because each bar carries a text legend and a gap between
+ * segments — keep both. */
+export const ATTRIBUTE_COLOURS = ['#e11d48', '#f97316', '#059669', '#2563eb'] as const;
+
 /** Maps a 0–10 score to a chart color. */
 export function scoreColor(score: number): string {
 	if (score < 4) return CHART_COLORS.chart5;

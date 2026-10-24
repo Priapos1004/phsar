@@ -117,7 +117,11 @@
 	}
 
 	// Like the chips' Clear all: every filter goes, the sort stays (it isn't in the sheet).
+	// The button goes with them, so focus moves to Show results first
+	// (rules/frontend.md, "A control that removes itself hands focus on first").
+	let showResultsButton = $state<HTMLElement | null>(null);
 	function clearStaged() {
+		showResultsButton?.focus();
 		staged = omitKeys(staged, stagedChips.flatMap((c) => c.keys));
 	}
 
@@ -344,7 +348,7 @@
 					Clear all
 				</Button>
 			{/if}
-			<Button class="ml-auto" onclick={showResults}>Show results</Button>
+			<Button bind:ref={showResultsButton} class="ml-auto" onclick={showResults}>Show results</Button>
 		</Sheet.Footer>
 	</Sheet.Content>
 </Sheet.Root>

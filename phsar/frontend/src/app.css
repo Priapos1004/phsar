@@ -109,6 +109,11 @@
   --auth-gradient-to: #6b21a8;    /* tw purple-800 */
 }
 
+/* `max-xs:` — below 360px, the narrowest phones (320 among them). */
+@theme {
+  --breakpoint-xs: 22.5rem;
+}
+
 /* Lock dark: variants to class-based only (prevent OS dark mode interference) */
 @custom-variant dark (&:is(.dark *));
 

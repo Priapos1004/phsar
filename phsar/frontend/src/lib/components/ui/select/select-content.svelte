@@ -11,6 +11,8 @@
 		ref = $bindable(null),
 		class: className,
 		sideOffset = 4,
+		// 8px off the screen's edge; the why is on tooltip-content.
+		collisionPadding = 8,
 		portalProps,
 		children,
 		preventScroll = true,
@@ -24,6 +26,7 @@
 	<SelectPrimitive.Content
 		bind:ref
 		{sideOffset}
+		{collisionPadding}
 		{preventScroll}
 		data-slot="select-content"
 		class={cn(

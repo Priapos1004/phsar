@@ -27,6 +27,7 @@
 	let inputValue = $state('');
 	let isFocused = $state(false);
 	let inputEl: HTMLInputElement | undefined = $state();
+	let box: HTMLElement | undefined = $state();
 
 	const MAX_ITEMS = 5;
 	let showLimitHint = $state(false);
@@ -73,17 +74,21 @@
 	<div
 		role="button"
 		tabindex="0"
+		bind:this={box}
 		class="bg-card/80 backdrop-blur border border-input rounded-xl px-3 py-2 flex flex-wrap gap-2 items-center min-h-[48px] cursor-text"
 		onclick={handleWrapperClick}
 		onkeydown={(e) => (e.key === 'Enter' || e.key === ' ') && handleWrapperClick()}
 	>
+		<!-- A chip's ✕ hands focus to the box first, since it leaves with its chip
+		     (rules/frontend.md, "A control that removes itself hands focus on first"). -->
 		{#each selectedItems as item}
 			<Badge variant="default" class="gap-1 text-sm h-6">
 				{displayLabel(item)}
 				<button
 					type="button"
 					class="ml-1 hover:opacity-70"
-					onclick={(e) => { e.stopPropagation(); onRemove(item); }}
+					onclick={(e) => { e.stopPropagation(); box?.focus(); onRemove(item); }}
+					aria-label="Remove {displayLabel(item)}"
 				>
 					<X class="w-3 h-3" />
 				</button>
@@ -109,9 +114,8 @@
 	</div>
 
 	{#if isFocused && filteredOptions.length > 0}
-		<!-- preventDefault keeps focus in the input. Focused, the picked option would be
-		     removed from the list under focus, and a dialog's focus trap (the search's filter
-		     sheet) answers that by focusing its first element — scrolling it to the top. -->
+		<!-- preventDefault keeps focus in the input: focused, the picked option would leave the
+		     list under focus (rules/frontend.md, "A control that removes itself hands focus on first"). -->
 		<div class="absolute z-50 left-0 right-0 mt-1 bg-popover border border-border rounded-xl shadow-md max-h-40 overflow-y-auto">
 			{#each filteredOptions as option}
 				<button

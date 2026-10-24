@@ -3,7 +3,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
 	import { Textarea } from '$lib/components/ui/textarea';
-	import AttributeSelect from '$lib/components/AttributeSelect.svelte';
+	import AttributeGrid from '$lib/components/AttributeGrid.svelte';
 	import RatingNeighbors from '$lib/components/RatingNeighbors.svelte';
 	import ScoreDial from '$lib/components/ScoreDial.svelte';
 	import RemoveFromWatchlistToggle from '$lib/components/RemoveFromWatchlistToggle.svelte';
@@ -174,16 +174,7 @@
 					</button>
 
 					{#if showAttributes}
-						<div class="grid grid-cols-2 gap-3 mt-3">
-							{#each Object.entries(RATING_ATTRIBUTE_OPTIONS) as [key, config]}
-								<AttributeSelect
-									label={config.label}
-									options={config.options}
-									value={attributes[key] ?? null}
-									onChange={(v) => (attributes[key] = v)}
-								/>
-							{/each}
-						</div>
+						<AttributeGrid bind:attributes />
 					{/if}
 				</div>
 			</div>

@@ -95,6 +95,15 @@
 	// On iOS the download path reaches Files, never Photos — so there is no second button to
 	// offer, only the sheet. Elsewhere the two actions are genuinely different.
 	let sheetOnly = $derived(canShare && isIosLike());
+	// The main button's states on one node, so a focused "Try again" is never removed
+	// (rules/frontend.md, "A control that removes itself hands focus on first").
+	let primary = $derived(
+		captureFailed
+			? { label: 'Try again', icon: RefreshCw, run: () => generate(variant), disabled: false }
+			: sheetOnly
+				? { label: sharing ? 'Sharing…' : 'Save or share', icon: Share2, run: handleShare, disabled: sharing }
+				: { label: 'Save image', icon: Download, run: handleDownload, disabled: !preview },
+	);
 
 	let cardReadyResolve: (() => void) | null = null;
 	// De-races overlapping generations (reopen, retry, a variant switch mid-build): a stale run
@@ -302,25 +311,15 @@
 			{/if}
 
 			<div class="flex gap-2">
-				{#if captureFailed}
-					<Button class="flex-1" onclick={() => generate(variant)}>
-						<RefreshCw class="mr-1.5 size-4" /> Try again
+				<!-- On iOS one button only: both outcomes live behind the same sheet, "Save Image"
+				     reaching Photos and any app entry sending it. -->
+				<Button class="flex-1" onclick={primary.run} disabled={primary.disabled}>
+					<primary.icon class="mr-1.5 size-4" /> {primary.label}
+				</Button>
+				{#if canShare && !sheetOnly && !captureFailed}
+					<Button variant="secondary" onclick={handleShare} disabled={sharing}>
+						<Share2 class="mr-1.5 size-4" /> {sharing ? 'Sharing…' : 'Share'}
 					</Button>
-				{:else if sheetOnly}
-					<!-- One button, because on iOS both outcomes live behind the same sheet:
-					     "Save Image" reaches Photos, any app entry sends it. -->
-					<Button class="flex-1" onclick={handleShare} disabled={sharing}>
-						<Share2 class="mr-1.5 size-4" /> {sharing ? 'Sharing…' : 'Save or share'}
-					</Button>
-				{:else}
-					<Button class="flex-1" onclick={handleDownload} disabled={!preview}>
-						<Download class="mr-1.5 size-4" /> Save image
-					</Button>
-					{#if canShare}
-						<Button variant="secondary" onclick={handleShare} disabled={sharing}>
-							<Share2 class="mr-1.5 size-4" /> {sharing ? 'Sharing…' : 'Share'}
-						</Button>
-					{/if}
 				{/if}
 			</div>
 

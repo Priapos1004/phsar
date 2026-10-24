@@ -30,4 +30,18 @@ describe('TagSelect', () => {
 		await fireEvent.focusOut(box, { relatedTarget: document.body });
 		expect(screen.queryByRole('button', { name: 'Action' })).not.toBeInTheDocument();
 	});
+
+	// Guards the sheet's jump to the top; the why is on TagSelect's chip loop.
+	it("removing the last chip hands focus to the box, not to the chip's gone ✕", async () => {
+		const onRemove = vi.fn();
+		const { rerender } = render(TagSelect, {
+			props: { options: ['Action'], selectedItems: ['Action'], onAdd: vi.fn(), onRemove },
+		});
+		const remove = screen.getByRole('button', { name: 'Remove Action' });
+		remove.focus();
+		await fireEvent.click(remove);
+		await rerender({ options: ['Action'], selectedItems: [], onAdd: vi.fn(), onRemove });
+		expect(onRemove).toHaveBeenCalledWith('Action');
+		expect(document.activeElement).toBe(screen.getByRole('textbox').closest('[role="button"]'));
+	});
 });

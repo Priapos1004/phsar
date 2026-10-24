@@ -75,6 +75,11 @@
 		return { avgs, closestLabels, hasData };
 	});
 
+	// Below ~300px the full-size web leaves its axis names no room and clips them: the
+	// names take two lines and the web shrinks. The share card's radar is far wider.
+	let width = $state(0);
+	let narrow = $derived(width > 0 && width < 300);
+
 	let radarOption = $derived.by(() => {
 		const primaryColor = getThemedChartColorPalette()[0];
 		return {
@@ -83,11 +88,13 @@
 				indicator: RADAR_LABELS.map((name) => ({ name, max: 1 })),
 				splitNumber: 3,
 				shape: 'polygon' as const,
+				radius: narrow ? '55%' : '75%',
 				axisName: {
 					// Muted when there's nothing plotted, so an empty web reads as "not rated"
 					// rather than as a chart that failed to draw.
 					color: radarData.hasData ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.35)',
 					fontSize: 12,
+					formatter: narrow ? (name?: string) => (name ?? '').replace(' ', '\n') : undefined,
 				},
 				splitArea: {
 					areaStyle: { color: ['rgba(0,0,0,0.02)', 'rgba(0,0,0,0.04)'] },
@@ -127,4 +134,8 @@
 <!-- Always rendered, even with nothing to plot: the bare web with muted labels reads as
      "not rated yet", and it keeps the radar and the pills beside it appearing together
      instead of the pills showing alone whenever no *quality* attribute was set. -->
-<EChart option={radarOption} height="224px" {onReady} />
+<!-- w-full: in a centring flex parent a bare wrapper would shrink to the chart, and the
+     chart (width 100% of it) to nothing. -->
+<div class="w-full" bind:clientWidth={width}>
+	<EChart option={radarOption} height="224px" {onReady} />
+</div>

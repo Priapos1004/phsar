@@ -139,7 +139,7 @@
 				<!-- Tapping the lit choice clears it, in a group too. On a phone a group stacks
 				     its label over a full-width toggle: beside the label, Top's percent scale
 				     overflows a 320px screen even shared equally. -->
-				<div class="flex items-center gap-2 {multi ? 'max-sm:w-full max-sm:flex-col max-sm:items-stretch max-sm:gap-1' : ''}">
+				<div class="flex items-center gap-2 {multi ? cls.stackOnPhone : ''}">
 					{#if multi}
 						<span class="text-sm text-white/60">{heading ?? ''}</span>
 					{/if}

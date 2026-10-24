@@ -101,6 +101,17 @@ describe('SearchBar', () => {
 		expect(sent.top_percent).toBeUndefined();
 	});
 
+	// Guards the sheet's jump to the top; the why is on SearchBar's clearStaged.
+	it("the sheet's Clear all hands focus to Show results as it disappears", async () => {
+		render(SearchBar, { props: { onSearch: vi.fn(), applied: { ...BASE, top_percent: 20 } } });
+		await openSheet();
+		const clear = screen.getByRole('button', { name: 'Clear all' });
+		clear.focus();
+		await fireEvent.click(clear);
+		expect(screen.queryByRole('button', { name: 'Clear all' })).not.toBeInTheDocument();
+		expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Show results' }));
+	});
+
 	it('an untouched sheet applies no range filter', async () => {
 		// Opening the sheet must not turn a slider's snap onto its step grid into a filter.
 		// Two defences stop it — track ends on the grid (`sliderGrid`) and writing only on

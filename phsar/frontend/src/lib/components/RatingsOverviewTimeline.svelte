@@ -158,6 +158,6 @@
 		{/each}
 	</div>
 	<p class="text-sm text-muted-foreground text-center mt-1">
-		Media in release order (1 = earliest)
+		Media in release order <span class="whitespace-nowrap">(1 = earliest)</span>
 	</p>
 </div>

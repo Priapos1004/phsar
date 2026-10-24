@@ -98,8 +98,9 @@ describe('RatingCard', () => {
 			},
 		});
 
-		expect(screen.getByText('Pace: Fast')).toBeInTheDocument();
-		expect(screen.getByText('Animation Quality: Good')).toBeInTheDocument();
+		// A badge's value sits in a span of its own.
+		expect(screen.getByText('Pace:', { exact: false })).toHaveTextContent('Pace: Fast');
+		expect(screen.getByText('Animation Quality:', { exact: false })).toHaveTextContent('Animation Quality: Good');
 	});
 
 	it('displays note with quote styling', () => {

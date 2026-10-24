@@ -4,11 +4,18 @@
 // The one width every anime page shares (rules/frontend.md, "Pages share one width").
 // Wider from 2xl, where 1024px would leave half of a 1920 screen empty.
 export const pageWidth = 'mx-auto max-w-5xl 2xl:max-w-7xl';
-export const container = `${pageWidth} px-4`;
+// Below 360px the page gutters halve (with `main`'s): a detail card's rows need the width
+// there, while 375 and up keep 16 + 16.
+export const container = `${pageWidth} px-4 max-xs:px-2`;
 export const sectionSpacing = 'space-y-8';
 // A page's navigation links above its content: they can share one line, so they share one look.
 // No margin of its own — `BackLink`'s row owns the gap below them.
 export const pageNavLink = 'inline-flex items-center gap-1.5 text-sm text-white/70 hover:text-white transition';
+
+// The detail heroes (/anime, /media): the cover beside the details from md, and the stats grid,
+// whose four columns wait for lg — at md the cover takes ~85px from each.
+export const heroBody = 'relative flex flex-col md:flex-row gap-6 p-6 max-xs:p-4';
+export const heroStats = 'grid grid-cols-2 lg:grid-cols-4 gap-3 pt-1';
 
 // MediaInfo
 export const mediaInfoGrid = 'grid grid-cols-1 lg:grid-cols-2 gap-4';
@@ -125,6 +132,8 @@ export const pageControl = 'rounded-full border border-white/15 bg-transparent t
 // options — a phone's segmented control. A long scale (Top's percent presets) overflows a
 // 320px screen at its natural width.
 export const stretchOnPhone = 'max-sm:flex-1 max-sm:min-w-0 max-sm:*:flex-1 max-sm:*:px-1';
+// A label beside its control, stacked over it on a phone — the control then spans the width.
+export const stackOnPhone = 'max-sm:w-full max-sm:flex-col max-sm:items-stretch max-sm:gap-1';
 
 // The count bubble on an icon button's corner, composed onto a positioned button.
 export const countBadge =

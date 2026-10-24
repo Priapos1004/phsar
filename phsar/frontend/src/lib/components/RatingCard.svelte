@@ -11,7 +11,7 @@
 	import { RATING_ATTRIBUTE_OPTIONS, WATCH_STATUS_OPTIONS, getRatingAttr } from '$lib/types/api';
 	import type { RatingOut, RatingCreate, WatchStatus } from '$lib/types/api';
 	import DeleteWatchHistoryToggle from '$lib/components/DeleteWatchHistoryToggle.svelte';
-	import AttributeSelect from '$lib/components/AttributeSelect.svelte';
+	import AttributeGrid from '$lib/components/AttributeGrid.svelte';
 	import RatingNeighbors from '$lib/components/RatingNeighbors.svelte';
 	import ScoreDial from '$lib/components/ScoreDial.svelte';
 	import Notice from '$lib/components/Notice.svelte';
@@ -343,57 +343,65 @@
 
 		{:else if existingRating && !editing}
 			<div class="space-y-4">
-				<div class="flex items-center justify-between">
+				<!-- On a phone the actions take a line under the title: beside it they don't fit.
+				     Below 360px they drop their icons, so all three still share one line. -->
+				<div class="flex items-center justify-between max-sm:flex-col max-sm:items-start max-sm:gap-2">
 					<h2 class="text-sm font-medium text-muted-foreground uppercase tracking-wide">Your Rating</h2>
-					<div class="flex gap-1.5 items-center flex-wrap justify-end">
+					<div class="flex gap-1.5 items-center flex-wrap justify-end max-sm:justify-start">
 						<Button variant="secondary" size="sm" onclick={startEditing}>
-							<Pencil class="size-3.5 mr-1" /> Edit
+							<Pencil class="size-3.5 mr-1 max-xs:hidden" /> Edit
 						</Button>
 						{#if existingRating.watch_status === 'completed'}
 							<Button variant="secondary" size="sm" onclick={() => { alsoRemoveWatchlist = true; rewatchOpen = true; }}>
-								<RotateCcw class="size-3.5 mr-1" /> Rewatch
+								<RotateCcw class="size-3.5 mr-1 max-xs:hidden" /> Rewatch
 							</Button>
 						{/if}
 						<Button variant="destructive" size="sm" onclick={requestDelete}>
-							<Trash2 class="size-3.5 mr-1" /> Delete
+							<Trash2 class="size-3.5 mr-1 max-xs:hidden" /> Delete
 						</Button>
 					</div>
 				</div>
 
-				<div class="flex items-center gap-4">
-					<div class="w-16 h-16 {cls.scoreCircle}">
-						<span class="text-xl font-bold text-card-foreground">
+				<!-- From sm the score sits beside the status and the pills; on a phone the pills run
+				     full width under the score's row — in the column beside it a long one wraps,
+				     and a wrapped pill keeps its column's full width. -->
+				<div class="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-3 sm:gap-y-1">
+					<!-- 80px from sm, where it stands beside the status and the pills (~100px tall
+					     together); still under the edit dial's size. -->
+					<div class="w-16 h-16 sm:w-20 sm:h-20 {filledAttributes.length ? 'sm:row-span-2' : ''} {cls.scoreCircle}">
+						<span class="text-xl sm:text-2xl font-bold text-card-foreground">
 							{formatDecimalDigits(existingRating.rating, DISPLAY_DECIMALS)}
 						</span>
 					</div>
-					<div class="space-y-1">
-						<div class="flex items-center gap-2">
-							{#if existingRating.watch_status === 'dropped'}
-								<Badge variant="destructive">Dropped</Badge>
-							{:else if existingRating.watch_status === 'on_hold'}
-								<Badge variant="secondary" class={cls.badgeOnHold}>On Hold</Badge>
-							{:else}
-								<span class="text-card-foreground font-medium">Completed</span>
-							{/if}
-							{#if existingRating.episodes_watched !== null}
-								<span class="text-muted-foreground">
-									· {episodesWatchedLabel(existingRating.episodes_watched, totalEpisodes)}
-								</span>
-							{/if}
-							{#if existingRating.watched_count > 1}
-								<Badge variant="secondary">Watched {existingRating.watched_count}×</Badge>
-							{/if}
-						</div>
-						{#if filledAttributes.length}
-							<div class="flex flex-wrap gap-1">
-								{#each filledAttributes as attr}
-									<Badge variant="secondary" class="font-normal">
-										{attr.label}: {attr.value}
-									</Badge>
-								{/each}
-							</div>
+					<div class="flex items-center gap-2 {filledAttributes.length ? 'sm:self-end' : ''}">
+						{#if existingRating.watch_status === 'dropped'}
+							<Badge variant="destructive">Dropped</Badge>
+						{:else if existingRating.watch_status === 'on_hold'}
+							<Badge variant="secondary" class={cls.badgeOnHold}>On Hold</Badge>
+						{:else}
+							<span class="text-card-foreground font-medium">Completed</span>
+						{/if}
+						{#if existingRating.episodes_watched !== null}
+							<span class="text-muted-foreground">
+								· {episodesWatchedLabel(existingRating.episodes_watched, totalEpisodes)}
+							</span>
+						{/if}
+						{#if existingRating.watched_count > 1}
+							<Badge variant="secondary">Watched {existingRating.watched_count}×</Badge>
 						{/if}
 					</div>
+					{#if filledAttributes.length}
+						<div class="flex flex-wrap gap-1 max-sm:col-span-2 sm:col-start-2 sm:self-start">
+							{#each filledAttributes as attr}
+								<!-- One inline span, so it flows as text: as two of the badge's flex items the
+								     label and value sit side by side. The value never breaks inside, so a wrap
+								     lands after the colon. -->
+								<Badge variant="secondary" class="font-normal h-auto max-w-full whitespace-normal text-left">
+									<span>{attr.label}: <span class="whitespace-nowrap">{attr.value}</span></span>
+								</Badge>
+							{/each}
+						</div>
+					{/if}
 				</div>
 
 				{#if existingRating.note}
@@ -422,9 +430,9 @@
 				<div class="bg-muted/40 rounded-lg p-4 space-y-4">
 					<!-- Watch status (segmented) + Episodes -->
 					<div class="flex items-center gap-4 flex-wrap">
-						<div class="flex items-center gap-2">
+						<div class="flex items-center gap-2 {cls.stackOnPhone}">
 							<Label>Status</Label>
-							<div class="inline-flex rounded-md border border-border overflow-hidden">
+							<div class="inline-flex rounded-md border border-border overflow-hidden {cls.stretchOnPhone}">
 								{#each WATCH_STATUS_OPTIONS as opt}
 									<Button
 										type="button"
@@ -492,17 +500,10 @@
 						</button>
 
 						{#if showAttributes}
-							<div class="grid grid-cols-2 gap-3 mt-3">
-								{#each Object.entries(RATING_ATTRIBUTE_OPTIONS) as [key, config]}
-									<AttributeSelect
-										label={config.label}
-										options={config.options}
-										value={attributes[key] ?? null}
-										onChange={(v) => (attributes[key] = v)}
-										disabled={AUTO_NA_FIELDS.includes(key) && revealsEpisodes}
-									/>
-								{/each}
-							</div>
+							<AttributeGrid
+								bind:attributes
+								isDisabled={(key) => AUTO_NA_FIELDS.includes(key) && revealsEpisodes}
+							/>
 						{/if}
 					</div>
 				</div>
