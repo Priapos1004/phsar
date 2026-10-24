@@ -24,14 +24,14 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Sheet from '$lib/components/ui/sheet';
 	import {
-		DEFAULT_MODE,
 		LIST_FILTERS,
 		RANGE_FILTERS,
 		RATED_STATES,
 		SEARCH_MODE_LABELS,
 		TOP_PRESETS,
 		filterChips,
-		normalizeRated,
+		listMode,
+		normalizeFilters,
 		omitKeys,
 		rangeParams,
 		withQuery,
@@ -107,8 +107,12 @@
 		if (query.trim()) submit();
 	}
 
-	function showResults() {
-		onSearch(normalizeRated(withQuery(staged, query, mode), viewType));
+	// The options are what "every option" is measured against; the sheet has already
+	// loaded them, so the await resolves from the cache. Without them only the lists go
+	// un-normalised — the search still runs.
+	async function showResults() {
+		const offered = await ensureFilterOptions(viewType).catch(() => ({}));
+		onSearch(normalizeFilters(withQuery(staged, query, mode), viewType, offered));
 		filtersOpen = false;
 	}
 
@@ -164,7 +168,7 @@
 					<SegmentedControl
 						ariaLabel="{field.label} match mode"
 						options={MATCH_MODES}
-						value={staged[modeKey] ?? DEFAULT_MODE[modeKey]}
+						value={listMode(staged, key)}
 						onSelect={(v) => stage({ [modeKey]: v })}
 					/>
 				{/if}
@@ -279,6 +283,7 @@
 							<SegmentedControl
 								ariaLabel="Watchlist"
 								size="md"
+								stretchOnPhone
 								options={[...WATCHLIST]}
 								value={watchlistChoice}
 								onSelect={(v) => stage({ watchlisted: v === 'any' ? undefined : v === 'in' })}
@@ -310,6 +315,7 @@
 						<SegmentedControl
 							ariaLabel="Top percent"
 							size="md"
+							stretchOnPhone
 							options={topOptions}
 							value={staged.top_percent ?? 0}
 							onSelect={(v) => stage({ top_percent: v || undefined })}

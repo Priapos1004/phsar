@@ -38,7 +38,8 @@
 		tileHref: (uuid: string) => string;
 		/** Between the title and the list: a refinement bar, a notice. */
 		children?: Snippet;
-		/** At the end of the title row: an action on the whole list. */
+		/** Beside the back link, as the media page's "To anime": a link off the whole list,
+		 *  styled `cls.pageNavLink`. */
 		actions?: Snippet;
 	}
 
@@ -82,15 +83,12 @@
 </script>
 
 <div class="{cls.pageWidth} space-y-4">
-	<BackLink origin={back} />
+	<BackLink origin={back} children={notice ? undefined : actions} />
 
 	<div class="flex flex-wrap items-center gap-2">
 		<h1 class="text-2xl font-bold text-white">{title}</h1>
 		{#if season}
 			<span class={cls.seasonPill}>{season}</span>
-		{/if}
-		{#if actions && !notice}
-			<div class="ml-auto">{@render actions()}</div>
 		{/if}
 	</div>
 

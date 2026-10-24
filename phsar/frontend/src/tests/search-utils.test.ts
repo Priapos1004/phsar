@@ -5,7 +5,7 @@ import {
 	fetchAnimeSearchResults,
 	filterChips,
 	forGuest,
-	normalizeRated,
+	normalizeFilters,
 	omitKeys,
 	sortLine,
 	unusualAnnouncedType,
@@ -83,7 +83,7 @@ describe('filterChips', () => {
 			scored_by_max: 2_965_820, score_min: 8, score_max: 10,
 		}, 'anime');
 		expect(chips.map((c) => [c.label, c.keys])).toEqual([
-			['Unrated or Dropped', ['rated']],
+			['Rated: Unrated or Dropped', ['rated']],
 			['Not in watchlist', ['watchlisted']],
 			['Top 20%', ['top_percent']],
 			['Genres: Action & Comedy', ['genre_name', 'genre_mode']],
@@ -99,11 +99,29 @@ describe('filterChips', () => {
 	});
 });
 
-describe('normalizeRated', () => {
+describe('normalizeFilters', () => {
 	it('drops a selection of every state — six anime states would break the token cap', () => {
 		const all = { ...BASE, rated: ['none', 'in_progress', 'on_hold', 'dropped', 'main', 'all'] as const };
-		expect(normalizeRated({ ...all, rated: [...all.rated] }, 'anime').rated).toBeUndefined();
-		expect(normalizeRated({ ...BASE, rated: ['none', 'main'] }, 'anime').rated).toEqual(['none', 'main']);
+		expect(normalizeFilters({ ...all, rated: [...all.rated] }, 'anime', {}).rated).toBeUndefined();
+		expect(normalizeFilters({ ...BASE, rated: ['none', 'main'] }, 'anime', {}).rated).toEqual(['none', 'main']);
+	});
+
+	const offered = { airing_status: ['Finished Airing', 'Currently Airing'], genre_name: ['Action', 'Drama'] };
+
+	it('drops a list holding every offered option when it matches any of them', () => {
+		const every = normalizeFilters({ ...BASE, airing_status: ['Currently Airing', 'Finished Airing'] }, 'anime', offered);
+		expect(every.airing_status).toBeUndefined();
+		const some = normalizeFilters({ ...BASE, airing_status: ['Currently Airing'] }, 'anime', offered);
+		expect(some.airing_status).toEqual(['Currently Airing']);
+		const anyGenre = normalizeFilters({ ...BASE, genre_name: ['Drama', 'Action'], genre_mode: 'any' }, 'anime', offered);
+		expect(anyGenre.genre_name).toBeUndefined();
+		expect(anyGenre.genre_mode).toBe('any');
+	});
+
+	// The genre default is "all", so leaving the mode unset must not read as "any".
+	it('keeps a list matched by all of its values', () => {
+		const allGenres = normalizeFilters({ ...BASE, genre_name: ['Action', 'Drama'] }, 'anime', offered);
+		expect(allGenres.genre_name).toEqual(['Action', 'Drama']);
 	});
 });
 
@@ -220,7 +238,7 @@ describe('sortLine', () => {
 
 	it.each([
 		['top_rated', 'Top 12%'],
-		['score', '⭐ 8.42'],
+		['score', '8.42'],
 		['popularity', '1,234,567 votes'],
 		['added', 'Added Oct 3'],
 		['announced', 'Announced Oct 9'],
@@ -238,7 +256,7 @@ describe('sortLine', () => {
 		const row = { ...media } as Record<string, unknown>;
 		delete row.avg_score;
 		delete row.avg_scored_by;
-		expect(sortLine('score', row as unknown as MediaSearchResult, 0.5)).toBe('⭐ 6.1');
+		expect(sortLine('score', row as unknown as MediaSearchResult, 0.5)).toBe('6.1');
 		expect(sortLine('popularity', row as unknown as MediaSearchResult, 0.5)).toBe('900 votes');
 	});
 

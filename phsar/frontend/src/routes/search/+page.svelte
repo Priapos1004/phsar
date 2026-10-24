@@ -211,9 +211,9 @@
 	{#if chips.length}
 		<div class="flex flex-wrap items-center justify-center gap-2 max-w-3xl mx-auto">
 			{#each chips as chip (chip.id)}
-				<span class="inline-flex items-center rounded-full border border-primary/40 bg-primary/15 text-sm text-primary">
+				<span class="inline-flex items-center rounded-2xl border border-primary/40 bg-primary/15 text-sm text-primary">
 					<button type="button" class="pl-3 pr-1.5 py-1 hover:text-white" onclick={() => (filtersOpen = true)}>
-						{chip.label}
+						{#if chip.name}<span class="font-bold text-white/70">{chip.name}</span>{/if} {chip.value}
 					</button>
 					<button
 						type="button"

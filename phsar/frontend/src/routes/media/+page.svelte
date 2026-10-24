@@ -145,13 +145,9 @@
 	{:else if error}
 		<div class="text-center text-destructive py-20">{error}</div>
 	{:else if media}
-		<!-- mb-0 takes this row out of space-y-8: the links' own mb-2 sets the gap, as the bare back link does on /anime. -->
-		<div class="flex items-center mb-0">
-			<BackLink {origin} />
-			<a href={animeHref} class="ml-auto {cls.pageNavLink}">
-				To anime <ArrowRight class="size-4" />
-			</a>
-		</div>
+		<BackLink {origin}>
+			<a href={animeHref} class={cls.pageNavLink}>To anime <ArrowRight class="size-4" /></a>
+		</BackLink>
 
 		<div class="relative rounded-xl overflow-hidden">
 			{#if media.cover_image && !coverFailed}

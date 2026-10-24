@@ -55,8 +55,10 @@
         <div class="shrink-0 flex items-center gap-2">
             <!-- Bell + Add to Library are visible to restricted users too. The bell
                  will always be empty (they can't enqueue jobs) but they can browse
-                 the recent-additions list on /library/add. -->
-            <JobBell />
+                 the recent-additions list on /library/add.
+                 Below 360px the row overflows with the bell, so it is hidden — by CSS,
+                 not unmounted: its polling keeps the job stores and their signals live. -->
+            <div class="contents max-[22.5rem]:hidden"><JobBell /></div>
             <DropdownMenu.Root>
                 <DropdownMenu.Trigger class="sm:ml-2 w-8 h-8 rounded-full bg-primary hover:bg-primary/80 flex items-center justify-center transition">
                     <span class="text-white text-sm font-semibold">{username ? username[0].toUpperCase() : 'U'}</span>

@@ -1,5 +1,5 @@
 import { api } from '$lib/api';
-import { WATCH_STATUS_OPTIONS, type AnimeSearchResult, type MediaSearchResult } from '$lib/types/api';
+import { WATCH_STATUS_OPTIONS, type AnimeSearchResult, type FilterOptions, type MediaSearchResult } from '$lib/types/api';
 import {
 	formatDecimalDigits,
 	formatDurationCompact,
@@ -113,7 +113,7 @@ export const LIST_FILTERS: Record<ListFilterKey, ListFilter> = {
 };
 
 /** The backend's default match mode per list. */
-export const DEFAULT_MODE = { genre_mode: 'all', studio_mode: 'any' } as const satisfies Record<ModeKey, MatchMode>;
+const DEFAULT_MODE = { genre_mode: 'all', studio_mode: 'any' } as const satisfies Record<ModeKey, MatchMode>;
 
 // Every non-empty value goes out as a query param, a list as repeated keys. Null and
 // absent stay out, so a verified token's unset fields fall back to the endpoint's
@@ -221,7 +221,8 @@ export function sortLine(
 		case 'top_rated':
 			return row.score_top_percent != null ? `Top ${row.score_top_percent}%` : null;
 		case 'score':
-			return score != null ? `⭐ ${score}` : null;
+			// The number only: the tile draws its own star in front.
+			return score != null ? `${score}` : null;
 		case 'popularity':
 			return `${formatNumber(votes)} votes`;
 		case 'added':
@@ -275,13 +276,30 @@ export const RATED_STATES: Record<ViewType, { value: RatedState; label: string }
 	media: [{ value: 'none', label: 'Unrated' }, ...WATCH_STATUS_OPTIONS],
 };
 
-/** Every state chosen filters nothing, so it goes out as no filter — which also keeps the
- * anime grain's list under the token's list cap (`MAX_ITEMS`). */
-export function normalizeRated(params: MediaSearchFilters, view: ViewType): MediaSearchFilters {
-	const rated = params.rated ?? [];
-	return rated.length && RATED_STATES[view].every((s) => rated.includes(s.value))
-		? { ...params, rated: undefined }
-		: params;
+/** How a list matches: its any/all param, else the backend's default; lists without one
+ * match any of their values. */
+export function listMode(params: MediaSearchFilters, key: ListFilterKey): MatchMode {
+	const modeKey = LIST_FILTERS[key].mode;
+	return modeKey ? (params[modeKey] ?? DEFAULT_MODE[modeKey]) : 'any';
+}
+
+const coversAll = (chosen: readonly string[] | null | undefined, all: readonly string[] = []) =>
+	all.length > 0 && all.every((option) => chosen?.includes(option));
+
+/** A selection of everything filters nothing, so it goes out as no filter: every rated
+ * state — which also keeps the anime grain's list under the token's list cap
+ * (`MAX_ITEMS`) — or every option a list offers, when the list matches any of them. A
+ * list matched by "all" still filters: "has every genre" is a real ask. The mode stays,
+ * as the user's choice for the next selection. */
+export function normalizeFilters(
+	params: MediaSearchFilters, view: ViewType, offered: Partial<Pick<FilterOptions, ListFilterKey>>,
+): MediaSearchFilters {
+	const out = { ...params };
+	if (coversAll(out.rated, RATED_STATES[view].map((s) => s.value))) out.rated = undefined;
+	for (const key of LIST_FILTER_KEYS) {
+		if (listMode(out, key) === 'any' && coversAll(out[key], offered[key])) out[key] = undefined;
+	}
+	return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -316,10 +334,17 @@ export const rangeParams = (key: RangeKey): [RangeParam, RangeParam] => [`${key}
 
 export interface FilterChip {
 	id: string;
+	/** The group, shown bold; absent where the value names itself ("Top 20%"). */
+	name?: string;
+	value: string;
+	/** Both as one line: the remove button's accessible name, and what tests compare. */
 	label: string;
 	/** What removing the chip clears. */
 	keys: (keyof MediaSearchFilters)[];
 }
+
+const chip = (id: string, name: string | undefined, value: string, keys: FilterChip['keys']): FilterChip =>
+	({ id, name, value, label: name ? `${name} ${value}` : value, keys });
 
 /** One chip per applied filter group. A group set to its default (a mode alone,
  * `upcoming_main=false`) is no chip. */
@@ -328,29 +353,23 @@ export function filterChips(params: MediaSearchFilters, view: ViewType): FilterC
 
 	if (params.rated?.length) {
 		const labels = RATED_STATES[view].filter((s) => params.rated!.includes(s.value)).map((s) => s.label);
-		chips.push({ id: 'rated', label: labels.join(' or '), keys: ['rated'] });
+		chips.push(chip('rated', 'Rated:', labels.join(' or '), ['rated']));
 	}
 	if (params.watchlisted != null) {
-		chips.push({
-			id: 'watchlisted', label: params.watchlisted ? 'In watchlist' : 'Not in watchlist', keys: ['watchlisted'],
-		});
+		chips.push(chip('watchlisted', undefined, params.watchlisted ? 'In watchlist' : 'Not in watchlist', ['watchlisted']));
 	}
-	if (params.upcoming_main) chips.push({ id: 'upcoming_main', label: 'Upcoming main story', keys: ['upcoming_main'] });
+	if (params.upcoming_main) chips.push(chip('upcoming_main', undefined, 'Upcoming main story', ['upcoming_main']));
 	if (params.top_percent != null) {
-		chips.push({ id: 'top_percent', label: `Top ${params.top_percent}%`, keys: ['top_percent'] });
+		chips.push(chip('top_percent', undefined, `Top ${params.top_percent}%`, ['top_percent']));
 	}
 
 	for (const key of LIST_FILTER_KEYS) {
 		const values = params[key];
 		if (!values?.length) continue;
 		const { label, mode: modeKey, format } = LIST_FILTERS[key];
-		const mode = modeKey ? (params[modeKey] ?? DEFAULT_MODE[modeKey]) : 'any';
 		const shown = format ? values.map(format) : values;
-		chips.push({
-			id: key,
-			label: `${label}: ${shown.join(mode === 'all' ? ' & ' : ' or ')}`,
-			keys: modeKey ? [key, modeKey] : [key],
-		});
+		const joined = shown.join(listMode(params, key) === 'all' ? ' & ' : ' or ');
+		chips.push(chip(key, `${label}:`, joined, modeKey ? [key, modeKey] : [key]));
 	}
 
 	for (const [key, range] of Object.entries(RANGE_FILTERS) as [RangeKey, RangeFilter][]) {
@@ -361,7 +380,7 @@ export function filterChips(params: MediaSearchFilters, view: ViewType): FilterC
 		const text = min != null && max != null
 			? `${range.format(min)}–${range.format(max)}`
 			: min != null ? `≥ ${range.format(min)}` : `≤ ${range.format(max!)}`;
-		chips.push({ id: key, label: `${range.label} ${text}`, keys: [minKey, maxKey] });
+		chips.push(chip(key, range.label, text, [minKey, maxKey]));
 	}
 
 	return chips;

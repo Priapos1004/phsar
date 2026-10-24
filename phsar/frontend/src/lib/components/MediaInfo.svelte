@@ -113,6 +113,12 @@
 	);
 </script>
 
+{#snippet completeBadge(placement: string)}
+	<span class="{placement} inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-semibold border align-middle whitespace-nowrap {cls.badgeComplete}">
+		<CheckCircle2 class="size-3" /> Complete
+	</span>
+{/snippet}
+
 {#snippet typeBadges()}
 	{#if relation_type}
 		<Badge variant="secondary" class={cls.badgeRelationType}>{formatRelationType(relation_type)}</Badge>
@@ -187,30 +193,25 @@
 				<div class="flex items-start justify-between">
 					<div>
 						<!-- Plain flow, not flex: the badge follows the last word, where a flex row
-						     would squeeze the title to a word per line beside it. -->
+						     would squeeze the title to a word per line beside it. On a phone the
+						     title fills its line, so the badge waits behind the age instead. -->
 						<h3 class="text-lg font-bold text-card-foreground">
 							{title}
-							{#if is_finished}
-								<span class="ml-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-semibold border align-middle whitespace-nowrap {cls.badgeComplete}">
-									<CheckCircle2 class="size-3" /> Complete
-								</span>
-							{/if}
+							{#if is_finished}{@render completeBadge('ml-1 max-sm:hidden')}{/if}
 						</h3>
 						<!-- From sm the status shares the season's line, so brackets set it apart
 						     as an aside; on a line of its own it needs none. -->
-						{#if displaySeason || showStatus || age_rating_numeric !== null}
-							<div class="flex flex-col sm:flex-row sm:flex-wrap sm:gap-x-2">
-								{#if displaySeason}
-									<span class="text-primary">{displaySeason}</span>
-								{/if}
-								{#if showStatus}
-									<span class="text-primary/70 sm:order-last sm:before:content-['('] sm:after:content-[')']">{displayStatus}</span>
-								{/if}
-								{#if age_rating_numeric !== null}
-									<span class="text-card-foreground">{age_rating_numeric}+</span>
-								{/if}
-							</div>
-						{/if}
+						<div class="flex flex-col sm:flex-row sm:flex-wrap sm:gap-x-2">
+							{#if displaySeason}
+								<span class="text-primary">{displaySeason}</span>
+							{/if}
+							{#if showStatus}
+								<span class="text-primary/70 sm:order-last sm:before:content-['('] sm:after:content-[')']">{displayStatus}</span>
+							{/if}
+							{#if age_rating_numeric !== null || is_finished}
+								<span class="text-card-foreground">{#if age_rating_numeric !== null}{age_rating_numeric}+{/if}{#if is_finished}{@render completeBadge('ml-1.5 sm:hidden')}{/if}</span>
+							{/if}
+						</div>
 					</div>
 					{#if watchlistColors.length}
 						<WatchlistBookmarkIcon colors={watchlistColors} iconClass="w-5 h-5" />

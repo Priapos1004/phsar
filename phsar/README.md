@@ -467,6 +467,7 @@ phsar/
 │   │       ├── split-candidates-card.test.ts
 │   │       ├── spoiler-frontier.test.ts
 │   │       ├── spoiler-guard.test.ts
+│   │       ├── tag-select.test.ts
 │   │       ├── themes.test.ts
 │   │       ├── toast.test.ts
 │   │       ├── watchlist-ready.test.ts

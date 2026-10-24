@@ -4,6 +4,7 @@
 	// via `value` + `onSelect`.
 	// `type="button"` because it sits inside the search form, where a bare button submits.
 	import Tooltip from '$lib/components/Tooltip.svelte';
+	import * as cls from '$lib/styles/classes';
 
 	interface Option {
 		value: T;
@@ -18,9 +19,11 @@
 		value: T;
 		onSelect: (value: T) => void;
 		ariaLabel?: string;
+		/** Applies `cls.stretchOnPhone` below sm. */
+		stretchOnPhone?: boolean;
 	}
 
-	let { options, value, onSelect, ariaLabel }: Props = $props();
+	let { options, value, onSelect, ariaLabel, stretchOnPhone = false }: Props = $props();
 
 	const ON = 'bg-primary/15 text-primary font-medium';
 	const OFF = 'text-white/60 hover:text-white';
@@ -40,7 +43,11 @@
 	</button>
 {/snippet}
 
-<div class="inline-flex rounded-full border border-white/15 overflow-hidden" role="group" aria-label={ariaLabel}>
+<div
+	class="inline-flex rounded-full border border-white/15 overflow-hidden {stretchOnPhone ? cls.stretchOnPhone : ''}"
+	role="group"
+	aria-label={ariaLabel}
+>
 	{#each options as opt, i (opt.value)}
 		{#if opt.hint}
 			<Tooltip text={opt.hint}>

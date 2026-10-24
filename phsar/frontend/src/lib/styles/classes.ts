@@ -7,7 +7,8 @@ export const pageWidth = 'mx-auto max-w-5xl 2xl:max-w-7xl';
 export const container = `${pageWidth} px-4`;
 export const sectionSpacing = 'space-y-8';
 // A page's navigation links above its content: they can share one line, so they share one look.
-export const pageNavLink = 'inline-flex items-center gap-1.5 text-sm text-white/70 hover:text-white transition mb-2';
+// No margin of its own — `BackLink`'s row owns the gap below them.
+export const pageNavLink = 'inline-flex items-center gap-1.5 text-sm text-white/70 hover:text-white transition';
 
 // MediaInfo
 export const mediaInfoGrid = 'grid grid-cols-1 lg:grid-cols-2 gap-4';
@@ -66,10 +67,12 @@ export const badgeAgeRating = `${badgeAgeRatingColor} ${badgeSize}`;
 
 // Card glass effect
 export const cardGlass = 'bg-card/80 backdrop-blur';
+
 // An icon inline with text (a score's star, a watch time's clock): the theme colour as a
 // solid outline over a tinted fill, so it follows the theme the way an emoji cannot.
-// Inline because Tailwind's preflight makes an svg a block.
-export const glassIcon = 'inline-block size-4 align-[-0.2em] text-primary fill-primary/25';
+// Inline because Tailwind's preflight makes an svg a block; sized in em to match the text
+// it sits in; the fill tints `currentColor`, so a caller overriding `color` moves both.
+export const glassIcon = 'inline-block size-[1.15em] align-[-0.2em] text-primary fill-current/25';
 
 // The pill naming the one season a list is pinned to, and the card standing in for a list
 // that can't be shown.
@@ -117,6 +120,11 @@ export const chipGroup = 'bg-card/80 backdrop-blur border border-input rounded-x
 
 // A control on the dark page surface, outlined like `PillToggle`'s container.
 export const pageControl = 'rounded-full border border-white/15 bg-transparent text-white/80 hover:text-white';
+
+// A toggle that, below sm, takes the rest of its row and shares it equally between its
+// options — a phone's segmented control. A long scale (Top's percent presets) overflows a
+// 320px screen at its natural width.
+export const stretchOnPhone = 'max-sm:flex-1 max-sm:min-w-0 max-sm:*:flex-1 max-sm:*:px-1';
 
 // The count bubble on an icon button's corner, composed onto a positioned button.
 export const countBadge =

@@ -64,7 +64,12 @@
 	}
 </script>
 
-<div class="relative w-full">
+<!-- Closes only when focus leaves the whole picker: a click on the box moves focus from
+     the input to the box, inside it, and must not close the list that click opened. -->
+<div
+	class="relative w-full"
+	onfocusout={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) isFocused = false; }}
+>
 	<div
 		role="button"
 		tabindex="0"
@@ -94,7 +99,6 @@
 			class:w-0={!isFocused && !inputValue && selectedItems.length > 0}
 			class:min-w-[100px]={isFocused || inputValue !== '' || selectedItems.length === 0}
 			onfocus={() => (isFocused = true)}
-			onblur={() => setTimeout(() => (isFocused = false), 150)}
 		/>
 
 		{#if showLimitHint}
@@ -105,12 +109,15 @@
 	</div>
 
 	{#if isFocused && filteredOptions.length > 0}
+		<!-- preventDefault keeps focus in the input. Focused, the picked option would be
+		     removed from the list under focus, and a dialog's focus trap (the search's filter
+		     sheet) answers that by focusing its first element — scrolling it to the top. -->
 		<div class="absolute z-50 left-0 right-0 mt-1 bg-popover border border-border rounded-xl shadow-md max-h-40 overflow-y-auto">
 			{#each filteredOptions as option}
 				<button
 					type="button"
 					class="w-full text-left px-4 py-2 text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground"
-					onmousedown={() => handleSelect(option)}
+					onmousedown={(e) => { e.preventDefault(); handleSelect(option); }}
 				>
 					{displayLabel(option)}
 				</button>

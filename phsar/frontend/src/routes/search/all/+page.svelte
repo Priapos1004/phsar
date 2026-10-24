@@ -106,7 +106,7 @@
 			{#if chips.length}
 				<div class="flex flex-wrap gap-1.5">
 					{#each chips as chip (chip.id)}
-						<span class="rounded-full border border-primary/40 bg-primary/10 px-2.5 py-0.5 text-sm font-medium text-primary">{chip.label}</span>
+						<span class="rounded-2xl border border-primary/40 bg-primary/10 px-3 py-0.5 text-sm font-medium text-primary">{#if chip.name}<span class="font-bold text-card-foreground/70">{chip.name}</span>{/if} {chip.value}</span>
 					{/each}
 				</div>
 			{/if}
