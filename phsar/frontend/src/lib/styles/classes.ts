@@ -96,7 +96,9 @@ export const cardGlass = 'bg-card/80 backdrop-blur';
 // solid outline over a tinted fill, so it follows the theme the way an emoji cannot.
 // Inline because Tailwind's preflight makes an svg a block; sized in em to match the text
 // it sits in; the fill tints `currentColor`, so a caller overriding `color` moves both.
-export const glassIcon = 'inline-block size-[1.15em] align-[-0.2em] text-primary fill-current/25';
+// `glassTint` is the colouring alone, for an icon sized by its own slot.
+export const glassTint = 'text-primary fill-current/25';
+export const glassIcon = `inline-block size-[1.15em] align-[-0.2em] ${glassTint}`;
 
 // The pill naming the one season a list is pinned to, and the card standing in for a list
 // that can't be shown.

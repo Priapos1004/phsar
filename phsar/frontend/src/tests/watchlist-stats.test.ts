@@ -18,6 +18,11 @@ describe('filterByTags', () => {
 	it('returns the union of selected tags', () => {
 		expect(filterByTags(items, ['a', 'c']).map((i) => i.tag_uuid).sort()).toEqual(['a', 'c']);
 	});
+
+	it('returns the complement in exclude mode, and all when nothing is selected', () => {
+		expect(filterByTags(items, ['a', 'c'], 'exclude').map((i) => i.tag_uuid)).toEqual(['b']);
+		expect(filterByTags(items, [], 'exclude')).toHaveLength(3);
+	});
 });
 
 describe('filterByPriority', () => {
@@ -374,6 +379,10 @@ describe('buildWatchlistView', () => {
 		expect(verdict({ tagUuids: ['main'] })).toBe('standalone');
 		expect(verdict({ tagUuids: ['extras'] })).toBe('hot');
 		expect(verdict({})).toBe('standalone'); // no selection = the whole watchlist
+		// Excluding one list scopes exactly like including the other; fails if the pipeline
+		// drops `tagMode`.
+		expect(verdict({ tagUuids: ['extras'], tagMode: 'exclude' })).toBe('standalone');
+		expect(verdict({ tagUuids: ['main'], tagMode: 'exclude' })).toBe('hot');
 	});
 
 	it('does not let the priority or watchtime chips move a verdict', () => {

@@ -1,4 +1,4 @@
-import type { WatchlistSortKey, WatchtimeKey, WatchlistFilterState } from '$lib/utils/watchlistStats';
+import type { TagMode, WatchlistSortKey, WatchtimeKey, WatchlistFilterState } from '$lib/utils/watchlistStats';
 import type { ReadyFilterKey } from '$lib/utils/watchlistReady';
 import {
 	createPersistedFilter,
@@ -18,6 +18,7 @@ export const DEFAULT_WATCHLIST_FILTER: WatchlistFilterState = {
 	view: 'grid',
 	grain: 'anime',
 	tagUuids: [],
+	tagMode: 'include',
 	priorities: [],
 	readiness: [],
 	watchtime: [],
@@ -50,6 +51,7 @@ const READINESS_KEYS: Record<ReadyFilterKey, true> = { ready: true, hot: true, w
 // Spelled out for the same reason as the key sets above. Only VALUES are the hazard — the
 // `import type` at the top is erased before it reaches the bundler.
 const WATCHTIME_KEYS: Record<WatchtimeKey, true> = { short: true, medium: true, long: true };
+const TAG_MODES: Record<TagMode, true> = { include: true, exclude: true };
 
 // `tagUuids` needs no key set here: WatchlistFilterBar already prunes uuids
 // that aren't in the loaded `tags` store, so a rehydrated filter pointing at a
@@ -59,6 +61,7 @@ function sanitize(raw: Record<string, unknown>): WatchlistFilterState {
 		view: pickKey(raw.view, VIEW_KEYS, DEFAULT_WATCHLIST_FILTER.view),
 		grain: pickKey(raw.grain, GRAIN_KEYS, DEFAULT_WATCHLIST_FILTER.grain),
 		tagUuids: pickStrings(raw.tagUuids),
+		tagMode: pickKey(raw.tagMode, TAG_MODES, DEFAULT_WATCHLIST_FILTER.tagMode),
 		priorities: pickNumbers(raw.priorities).filter((p) => PRIORITY_VALUES.includes(p)),
 		// Whitelisted like the priority bands — a rehydrated key the chips no longer
 		// offer would filter everything out with no way to clear it from the UI.
@@ -80,7 +83,7 @@ export const watchlistFilter = createPersistedFilter<WatchlistFilterState>({
 	key: 'phsar.filter.watchlist',
 	// Bump on any field addition or sort-value change: a stale payload is discarded,
 	// not migrated.
-	version: 2,
+	version: 3,
 	defaults: DEFAULT_WATCHLIST_FILTER,
 	sanitize,
 });

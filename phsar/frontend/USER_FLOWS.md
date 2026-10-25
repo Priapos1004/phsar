@@ -497,7 +497,7 @@ The charts replay their build-up animation every time you open the tab, not just
 - **View toggle** (grid / table pills, without their icons below 360px):
   - **Grid** (default): cards grouped under **priority bands** (High / Medium / Low, High always on top), each band headed by a colored dot + the priority word + a per-grain count ("N anime" / "N media"). Within a band, cards are title-sorted. Each card shows the cover (media covers are spoiler-guarded; anime covers never are), a list-color dot (tooltip = list name, or "N lists"), a note indicator (media grain: the note text on hover; anime grain: a count badge whose hover lists each noted media's note, one per line, in media-table (chronological) order), and a runtime badge in the cover's bottom-right (9.2.2).
   - **Table**: sortable columns (list-color dot, title, priority, **Time** (9.2.2), **Note**, added date), every column at every width — on a phone the table scrolls sideways in its card; clicking a header toggles the sort — the Note column sorts by note count (media grain: noted first; anime grain: most-noted first) and its cell hover reveals the note text(s). Hovering a row highlights the title link. Whole-row click navigates to the detail page (preserving new-tab / inner-link clicks).
-- **Priority**, **Status** (9.2.1), **Watchtime** (9.2.2) and **Lists** ("show me these lists combined") each filter as a multi-select **union** where an empty selection = all; "Clear all" resets them together. A deleted list is auto-pruned from the Lists selection, and a long list name truncates in its chip.
+- **Priority**, **Status** (9.2.1) and **Watchtime** (9.2.2) each filter as a multi-select **union** where an empty selection = all. **Lists** does too, with an **In / Not in** toggle (default In): In shows the picked lists combined, Not in everything except them — per entry, so an anime spanning a kept and an excluded list keeps its kept entries. Flipping the toggle keeps the picks; under Not in a picked chip renders switched off (a faint tint of its colour, a glowing theme ring, a ban icon) at the same size. "Clear all" resets every group and the toggle. A deleted list is auto-pruned from the Lists selection, and a long list name truncates in its chip.
 - Cards/rows link to the media or anime detail page with `?from=watchlist` (→ "Back to watchlist").
 
 #### 9.2.1 Readiness ("can I start this tonight?")
@@ -510,7 +510,7 @@ Every anime gets a verdict from its watchlisted media, its ratings and what the 
 
 The **Status** filter chips are Ready (which also admits Standalone), Hot and Waiting. Under Ready, the media grain shows only the entries you could play now (an already-rated one stays, as a rewatch); under Hot or Waiting every entry stays.
 
-Selecting a **list** judges the anime on what is on that list, so the same anime can read Standalone under one and Hot under another. Selecting a **priority** or a **watchtime** band never moves a verdict.
+Filtering by **list**, In or Not in, judges the anime on what is on the lists shown, so the same anime can read Standalone under one and Hot under another. Selecting a **priority** or a **watchtime** band never moves a verdict.
 
 #### 9.2.2 Watchtime ("how big a commitment is this?")
 Every card and row carries the runtime of what you have listed, shown to two units (`4h`,
@@ -526,7 +526,7 @@ own.
 - **N/A** — nothing listed has a known runtime, which in practice is the open-ended shows.
   These match no chip, so they show with no selection and hide under any, and they sort
   last whichever way the Time column points.
-- A watchtime **follows the Lists chips**: picking a list re-sums to it, because splitting
+- A watchtime **follows the Lists chips**: it re-sums to the lists shown, because splitting
   a franchise across lists means you plan to watch those groups separately.
 
 ### 9.3 Lists Tab (list/tag management)
