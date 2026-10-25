@@ -3,8 +3,12 @@
 	// sideways, so every one carries arrows; a touch screen swipes instead (`pointer-coarse`).
 	//
 	// `class` styles the track — the flex row holding the tiles, gap and padding included.
+	//
+	// A tile's ring, outline or hover scale draws outside it and the scroller clips every side,
+	// so the track pads it and the scroller cancels that sideways (`-mx-1`, `scroll-px-1` for snapping).
 	import type { Snippet } from 'svelte';
 	import { ChevronLeft, ChevronRight } from 'lucide-svelte';
+	import { cn } from '$lib/utils';
 
 	const ARROW =
 		'absolute top-[40%] -translate-y-1/2 z-10 flex size-9 items-center justify-center rounded-full bg-black/60 text-white backdrop-blur hover:bg-black/80 transition pointer-coarse:hidden';
@@ -45,8 +49,8 @@
 </script>
 
 <div class="relative">
-	<div bind:this={scroller} onscroll={updateArrows} class="overflow-x-auto snap-x snap-mandatory no-scrollbar">
-		<div bind:this={track} class="flex w-max {trackClass}">
+	<div bind:this={scroller} onscroll={updateArrows} class="-mx-1 overflow-x-auto snap-x snap-mandatory scroll-px-1 no-scrollbar">
+		<div bind:this={track} class={cn('flex w-max px-1 pt-1 pb-2', trackClass)}>
 			{@render children()}
 		</div>
 	</div>

@@ -4,9 +4,13 @@
 // The one width every anime page shares (rules/frontend.md, "Pages share one width").
 // Wider from 2xl, where 1024px would leave half of a 1920 screen empty.
 export const pageWidth = 'mx-auto max-w-5xl 2xl:max-w-7xl';
+// The user-menu pages' width (rules/frontend.md, "Pages share one width").
+export const panelWidth = 'mx-auto max-w-3xl';
 // Below 360px the page gutters halve (with `main`'s): a detail card's rows need the width
 // there, while 375 and up keep 16 + 16.
 export const container = `${pageWidth} px-4 max-xs:px-2`;
+// The page's side gutter, `main`'s and the navbar's, so their edges line up at every width.
+export const pageGutter = 'px-4 max-xs:px-2 sm:px-8';
 export const sectionSpacing = 'space-y-8';
 // A page's navigation links above its content: they can share one line, so they share one look.
 // No margin of its own — `BackLink`'s row owns the gap below them.
@@ -142,8 +146,13 @@ export const pageControl = 'rounded-full border border-white/15 bg-transparent t
 // options — a phone's segmented control. A long scale (Top's percent presets) overflows a
 // 320px screen at its natural width.
 export const stretchOnPhone = 'max-sm:flex-1 max-sm:min-w-0 max-sm:*:flex-1 max-sm:*:px-1';
-// A label beside its control, stacked over it on a phone — the control then spans the width.
-export const stackOnPhone = 'max-sm:w-full max-sm:flex-col max-sm:items-stretch max-sm:gap-1';
+// A label beside its control, stacked over it on a phone — the control then spans the width,
+// a fixed-width one included (`*:w-full` beats its own `w-*`).
+export const stackOnPhone = 'max-sm:w-full max-sm:flex-col max-sm:gap-1 max-sm:*:w-full';
+
+// A list inside a card that stops growing and scrolls, so a long one can't push what
+// sits below it off the screen. `pr-1` keeps rows clear of the scrollbar.
+export const scrollList = 'max-h-72 overflow-y-auto pr-1';
 
 // The count bubble on an icon button's corner, composed onto a positioned button.
 export const countBadge =

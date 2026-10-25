@@ -78,8 +78,8 @@ in `cls.pageWidth`, which widens at `2xl`, so moving between them never
 shifts the edges. Always the shared class, never a literal: the width changes at a
 breakpoint, and a page with its own copy would drift from the rest at that one. Search
 stays two columns at the wider width: its cards are ranked and text-dense, and a third
-column would make each narrower than at 1024. Narrower is for pages that are a form or a
-settings panel.
+column would make each narrower than at 1024. Form and settings pages (the user-menu
+pages) take the narrower `cls.panelWidth`, under the same rule.
 
 `cls.container` adds `px-4` inside that width and the section pages' own wrappers don't,
 so the two sets of edges sit 16px apart a side — too small to see, so don't unify
@@ -111,6 +111,9 @@ don't "fix" them by adding one.
 escaping never reaches inside it.** Catalog text spliced into one — titles, genre and
 studio names — must go through `escapeHtml` (`utils/formatString.ts`). Enum labels,
 numbers and ECharts' own `marker` spans are already safe.
+
+**A colour scale is one scale for marks and text** — a score or band number takes its
+marks' colour, never a darker text shade, yellow included.
 
 ## Titles render in the user's name language
 

@@ -2,8 +2,8 @@ import { get, writable } from 'svelte/store';
 import type { Job } from '$lib/types/api';
 import { createBumpStore } from './_bumpStore';
 
-// /library/add bumps this so the bell refetches /jobs/mine immediately
-// after enqueue, instead of waiting for its 30s idle poll.
+// Anything that enqueues a job bumps this so the bell refetches /jobs/mine
+// immediately, instead of waiting for its 30s idle poll.
 export const [jobsRefresh, bumpJobsRefresh] = createBumpStore();
 
 // The bell bumps this whenever it observes a newly-succeeded backup job; the

@@ -13,6 +13,7 @@
     import ScrollRow from '$lib/components/ScrollRow.svelte';
     import { pushToast } from '$lib/stores/toast';
     import { THEMES, isValidTheme, themeArt } from '$lib/themes';
+    import * as cls from '$lib/styles/classes';
     import type { ThemeKey } from '$lib/themes';
     import type { UserSettings, UserSettingsUpdate } from '$lib/types/api';
 
@@ -60,6 +61,8 @@
     let role = $derived(getUserRole());
     let isRestricted = $derived(role === 'restricted_user');
 
+    const prefRow = `flex items-center justify-between gap-4 ${cls.stackOnPhone}`;
+
     function isSelectedTheme(storedKey: string, themeKey: string): boolean {
         if (isValidTheme(storedKey)) return storedKey === themeKey;
         return themeKey === 'default';
@@ -70,7 +73,7 @@
 	<title>Settings — Phsar</title>
 </svelte:head>
 
-<div class="mx-auto max-w-2xl space-y-6">
+<div class="{cls.panelWidth} space-y-6">
     <h1 class="text-2xl font-bold text-white">Settings</h1>
 
     {#if error}
@@ -85,7 +88,7 @@
                 <p class="text-sm text-muted-foreground">Design your lobby</p>
             </Card.Header>
             <Card.Content>
-                <ScrollRow class="gap-4 pb-2">
+                <ScrollRow class="gap-4">
                     {#each themeEntries as [key, theme]}
                         <button
                             class="flex-shrink-0 snap-start rounded-lg overflow-hidden border-2 transition w-48 sm:w-56 {isSelectedTheme(settings.theme, key) ? 'border-primary ring-2 ring-primary/50' : 'border-transparent hover:border-muted-foreground/30'}"
@@ -110,14 +113,14 @@
             </Card.Header>
             <Card.Content class="space-y-5">
                 <!-- Name Language -->
-                <div class="flex items-center justify-between">
+                <div class={prefRow}>
                     <Label>Name Language</Label>
                     <Select.Root
                         type="single"
                         value={settings.name_language}
                         onValueChange={(v) => { if (v) saveSetting({ name_language: v as UserSettings['name_language'] }); }}
                     >
-                        <Select.Trigger class="w-40">
+                        <Select.Trigger class="w-40 shrink-0">
                             {settings.name_language.charAt(0).toUpperCase() + settings.name_language.slice(1)}
                         </Select.Trigger>
                         <Select.Content>
@@ -131,14 +134,14 @@
                 <Separator />
 
                 <!-- Default Search View -->
-                <div class="flex items-center justify-between">
+                <div class={prefRow}>
                     <Label>Default Search View</Label>
                     <Select.Root
                         type="single"
                         value={settings.default_search_view}
                         onValueChange={(v) => { if (v) saveSetting({ default_search_view: v as UserSettings['default_search_view'] }); }}
                     >
-                        <Select.Trigger class="w-40">
+                        <Select.Trigger class="w-40 shrink-0">
                             {settings.default_search_view.charAt(0).toUpperCase() + settings.default_search_view.slice(1)}
                         </Select.Trigger>
                         <Select.Content>
@@ -151,7 +154,7 @@
                 <Separator />
 
                 <!-- Rating Step — disabled for guests (they can't rate) -->
-                <div class="flex items-center justify-between">
+                <div class={prefRow}>
                     <div>
                         <Label>Rating Step</Label>
                         <p class="text-xs text-muted-foreground mt-0.5">
@@ -166,7 +169,7 @@
                         disabled={isRestricted}
                         onValueChange={(v) => { if (v) saveSetting({ rating_step: v as UserSettings['rating_step'] }); }}
                     >
-                        <Select.Trigger class="w-40">
+                        <Select.Trigger class="w-40 shrink-0">
                             {settings.rating_step}
                         </Select.Trigger>
                         <Select.Content>
@@ -183,7 +186,7 @@
                 <!-- Spoiler Level — pinned off + disabled for guests: they
                      can't rate, so a frontier would freeze at episode 1 of
                      every anime and "hide" would blank the catalogue. -->
-                <div class="flex items-center justify-between">
+                <div class={prefRow}>
                     <div>
                         <Label>Spoiler Protection</Label>
                         <p class="text-xs text-muted-foreground mt-0.5">
@@ -204,7 +207,7 @@
                         disabled={isRestricted}
                         onValueChange={(v) => { if (v) saveSetting({ spoiler_level: v as UserSettings['spoiler_level'] }); }}
                     >
-                        <Select.Trigger class="w-40">
+                        <Select.Trigger class="w-40 shrink-0">
                             {@const level = isRestricted ? 'off' : settings.spoiler_level}
                             {level === 'off' ? 'Off' : level === 'blur' ? 'Blur' : 'Hide'}
                         </Select.Trigger>

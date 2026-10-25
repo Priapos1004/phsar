@@ -15,6 +15,7 @@
 	import MediaChangeCard from '$lib/components/admin/MediaChangeCard.svelte';
 	import AnimeUmbrellaCard from '$lib/components/admin/AnimeUmbrellaCard.svelte';
 	import Notice from '$lib/components/Notice.svelte';
+	import * as cls from '$lib/styles/classes';
 	import type {
 		AdminJobResponse,
 		UpdateSweepResultSummary,
@@ -237,9 +238,8 @@
 						</p>
 					</Card.Header>
 					<Card.Content>
-						<!-- Cap at ~4 rows + scroll so a long failure list doesn't bury
-						     the Anime/Media changes below. The heading (N) is the total. -->
-						<div class="max-h-72 space-y-2 overflow-y-auto pr-1">
+						<!-- The heading (N) is the total. -->
+						<div class="space-y-2 {cls.scrollList}">
 							{#each v2Summary.step1_failures ?? [] as failure (failure.anime_uuid)}
 								{@render failureRow(failure)}
 							{/each}
@@ -260,7 +260,7 @@
 						</p>
 					</Card.Header>
 					<Card.Content>
-						<div class="max-h-72 space-y-2 overflow-y-auto pr-1">
+						<div class="space-y-2 {cls.scrollList}">
 							{#each v2Summary.probe_failures ?? [] as failure (failure.anime_uuid)}
 								{@render failureRow(failure)}
 							{/each}
@@ -280,7 +280,7 @@
 						</p>
 					</Card.Header>
 					<Card.Content>
-						<div class="max-h-72 space-y-2 overflow-y-auto pr-1">
+						<div class="space-y-2 {cls.scrollList}">
 							{#each v2Summary.probe_attached_anime ?? [] as attached (attached.anime_uuid)}
 								<div class="rounded-md border border-blue-500/40 bg-blue-500/5 p-3 text-sm">
 									<a
@@ -321,7 +321,7 @@
 						</p>
 					</Card.Header>
 					<Card.Content>
-						<div class="max-h-72 space-y-2 overflow-y-auto pr-1">
+						<div class="space-y-2 {cls.scrollList}">
 							{#each v2Summary.hentai_removed ?? [] as removed (removed.anime_uuid)}
 								<div class="rounded-md border border-rose-500/40 bg-rose-500/5 p-3 text-sm">
 									<span class="font-medium text-card-foreground">
@@ -365,7 +365,7 @@
 						</a>
 					</Card.Header>
 					<Card.Content>
-						<div class="max-h-72 space-y-2 overflow-y-auto pr-1">
+						<div class="space-y-2 {cls.scrollList}">
 							{#each v2Summary.gone_upstream ?? [] as gone (gone.media_uuid)}
 								<div class="rounded-md border border-violet-500/40 bg-violet-500/5 p-3 text-sm">
 									<div class="flex items-center justify-between gap-3 flex-wrap">
@@ -415,9 +415,7 @@
 						</h2>
 					</Card.Header>
 					<Card.Content>
-						<!-- Capped like the failure lists above, so umbrella diffs can't
-						     push Media changes off-screen. -->
-						<div class="max-h-72 space-y-3 overflow-y-auto pr-1">
+						<div class="space-y-3 {cls.scrollList}">
 							{#each umbrellaChanges as change (change.anime_uuid)}
 								<AnimeUmbrellaCard {change} />
 							{/each}

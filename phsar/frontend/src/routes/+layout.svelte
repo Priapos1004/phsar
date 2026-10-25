@@ -28,6 +28,7 @@
     import '../app.css';
     import type { Snippet } from 'svelte';
     import type { UserSettings } from '$lib/types/api';
+    import * as cls from '$lib/styles/classes';
 
     let { children }: { children: Snippet } = $props();
 
@@ -160,7 +161,7 @@
       if (!$userSettings) return;
       const themeKey = $userSettings.theme;
       const el = document.documentElement;
-      const toRemove = [...el.classList].filter(cls => cls.startsWith('theme-'));
+      const toRemove = [...el.classList].filter((name) => name.startsWith('theme-'));
       toRemove.forEach(cls => el.classList.remove(cls));
       if (themeKey && isValidTheme(themeKey)) {
         const cssClass = getThemeCssClass(themeKey);
@@ -223,7 +224,7 @@
       {/if}
     </div>
 
-    <main class="min-h-screen px-4 max-xs:px-2 sm:px-8 pt-4 pb-8">
+    <main class="min-h-screen {cls.pageGutter} pt-4 pb-8">
       {@render children()}
     </main>
 

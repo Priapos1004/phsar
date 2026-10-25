@@ -94,6 +94,7 @@
 	// detection to client-server clock alignment. UUIDs are stable.
 	let seenUuids = $state(loadSeen());
 	let dropdownOpen = $state(false);
+	let contentRef = $state<HTMLElement | null>(null);
 	let pollTimer: ReturnType<typeof setTimeout> | null = null;
 	let stopped = false;
 	// Succeeded jobs already announced, so one still in /jobs/mine's window doesn't
@@ -491,7 +492,20 @@
 			<span class={cls.countBadge}>{badgeCount}</span>
 		{/if}
 	</DropdownMenu.Trigger>
-	<DropdownMenu.Content class="w-80 p-0 overflow-hidden" align="end">
+	<!-- Opening focuses the panel, not bits-ui's default first tabbable: the rows are plain
+	     links rather than menu items, so that default lands on the first finished row and
+	     can draw its focus ring as if the user had tabbed there. `alignOffset` ends it under
+	     the glyph rather than the button's invisible 36px circle, 8px further out. -->
+	<DropdownMenu.Content
+		bind:ref={contentRef}
+		onOpenAutoFocus={(e) => {
+			e.preventDefault();
+			contentRef?.focus({ preventScroll: true });
+		}}
+		class="w-80 p-0 overflow-hidden"
+		align="end"
+		alignOffset={8}
+	>
 		{#if isAdmin && totalPending > 0}
 			<a
 				href="/admin?tab=curation"
