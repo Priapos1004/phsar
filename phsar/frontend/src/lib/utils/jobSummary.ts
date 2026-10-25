@@ -102,7 +102,8 @@ function seasonSweepSummary(row: AdminJobResponse): string {
 		typeof s.season_name === 'string' && typeof s.season_year === 'number'
 			? `${s.season_name} ${s.season_year} · `
 			: '';
-	return `${season}${num(s.season_entries)} season entries · ${num(s.new_entries_enqueued)} new scrapes enqueued · ${num(s.dedup_skipped)} already known`;
+	// Short words, so the summary fits the Jobs Log's Detail column untruncated.
+	return `${season}${num(s.season_entries)} entries · ${num(s.new_entries_enqueued)} new · ${num(s.dedup_skipped)} known`;
 }
 
 /** v3+ sweeps expose a deduplicated list of MAL genre tags the seeder

@@ -88,7 +88,7 @@
 		<h2 class="text-lg font-semibold text-card-foreground">Sweep counters</h2>
 	</Card.Header>
 	<Card.Content>
-		<dl class="grid grid-cols-3 md:grid-cols-5 gap-4">
+		<dl class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
 			{#each STATS as stat (stat.key)}
 				{@const value = counters[stat.key] ?? 0}
 				{#snippet card(props: Record<string, unknown>)}

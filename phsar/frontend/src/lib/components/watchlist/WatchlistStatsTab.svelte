@@ -78,9 +78,7 @@
 						<span class="inline-flex items-center gap-1.5 {cls.statLabel}">
 							<Icon class="size-3.5 2xl:size-4 shrink-0" style="color:{t.color}" aria-hidden="true" />
 							{#if t.hint}
-								<Tooltip text={t.hint}>
-									<span class="cursor-help border-b border-dotted border-muted-foreground/40">{t.label}</span>
-								</Tooltip>
+								<Tooltip text={t.hint} class={cls.tooltipHint}>{t.label}</Tooltip>
 							{:else}
 								{t.label}
 							{/if}

@@ -129,7 +129,7 @@
 	<title>Job {uuid.slice(0, 8)} — Phsar</title>
 </svelte:head>
 
-<div class="mx-auto max-w-5xl space-y-6 p-4">
+<div class="{cls.pageWidth} space-y-6">
 	{#if loading && !job}
 		<p class="text-muted-foreground text-sm">Loading job…</p>
 	{:else if error}

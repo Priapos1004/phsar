@@ -74,12 +74,13 @@ the answer already. Don't add it to them.
 ## Pages share one width
 
 A page showing anime — the section pages, search, the detail pages — puts its content
-in `cls.pageWidth`, which widens at `2xl`, so moving between them never
-shifts the edges. Always the shared class, never a literal: the width changes at a
-breakpoint, and a page with its own copy would drift from the rest at that one. Search
-stays two columns at the wider width: its cards are ranked and text-dense, and a third
-column would make each narrower than at 1024. Form and settings pages (the user-menu
-pages) take the narrower `cls.panelWidth`, under the same rule.
+in `cls.pageWidth`, which widens at `2xl`, so moving between them never shifts the
+edges. The job detail page takes it too: its tables need the width. Always the shared
+class, never a literal: the width changes at a breakpoint, and a page with its own copy
+would drift from the rest at that one. Search stays two columns at the wider width: its
+cards are ranked and text-dense, and a third column would make each narrower than at
+1024. The user-menu pages (NavBar's `menuItems`) take the narrower `cls.panelWidth`,
+under the same rule.
 
 `cls.container` adds `px-4` inside that width and the section pages' own wrappers don't,
 so the two sets of edges sit 16px apart a side — too small to see, so don't unify

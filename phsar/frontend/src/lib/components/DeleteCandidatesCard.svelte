@@ -144,7 +144,7 @@
 	/** Why the detector flagged this row, in the admin's terms. */
 	function reasonLine(c: DeleteCandidateListItem): string {
 		if (c.detected_by === 'sweep_404') {
-			return `Gone from MAL — 404 on ${formatShortDate(c.created_at)}`;
+			return `Gone from MAL · ${formatShortDate(c.created_at)}`;
 		}
 		if (c.detected_by === 'low_signal') {
 			const votes = c.scored_by ?? 0;
@@ -383,8 +383,10 @@
 		</div>
 
 		<div class="space-y-1.5 min-w-0">
+			<!-- One span: Label is a flex row, and bare text around the <strong> would be
+			     three flex items, wrapping side by side as columns on a phone. -->
 			<Label for="delete-confirm" class="text-sm">
-				Type your admin username (<strong>{currentUsername}</strong>) to confirm.
+				<span>Type your admin username (<strong>{currentUsername}</strong>) to confirm.</span>
 			</Label>
 			<Input
 				id="delete-confirm"

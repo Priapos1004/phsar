@@ -50,7 +50,7 @@ describe('payloadSummary — season sweeps', () => {
 
 	it('renders identically for seasonal_sweep and upcoming_sweep', () => {
 		const expected =
-			'Fall 2026 · 69 season entries · 64 new scrapes enqueued · 5 already known';
+			'Fall 2026 · 69 entries · 64 new · 5 known';
 		expect(payloadSummary(row({ kind: 'seasonal_sweep', result_summary: summary }))).toBe(expected);
 		expect(payloadSummary(row({ kind: 'upcoming_sweep', result_summary: summary }))).toBe(expected);
 	});
@@ -58,14 +58,14 @@ describe('payloadSummary — season sweeps', () => {
 	it('drops the season prefix on a pre-v0.15.3 row that lacks the additive keys', () => {
 		const legacy = { season_entries: 163, new_entries_enqueued: 2, dedup_skipped: 161 };
 		expect(payloadSummary(row({ kind: 'upcoming_sweep', result_summary: legacy }))).toBe(
-			'163 season entries · 2 new scrapes enqueued · 161 already known',
+			'163 entries · 2 new · 161 known',
 		);
 	});
 
 	it('drops the prefix when only half the season pair is present', () => {
 		const half = { season_name: 'Fall', season_entries: 1, new_entries_enqueued: 1, dedup_skipped: 0 };
 		expect(payloadSummary(row({ kind: 'seasonal_sweep', result_summary: half }))).toBe(
-			'1 season entries · 1 new scrapes enqueued · 0 already known',
+			'1 entries · 1 new · 0 known',
 		);
 	});
 

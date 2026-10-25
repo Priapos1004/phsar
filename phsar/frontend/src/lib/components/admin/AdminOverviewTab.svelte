@@ -8,6 +8,7 @@
 	import { byWindow } from '$lib/utils/jobHealth';
 	import { catalogueChanged, onBump } from '$lib/stores/jobs';
 	import type { AdminOverviewStats } from '$lib/types/api';
+	import * as cls from '$lib/styles/classes';
 
 	let stats = $state<AdminOverviewStats | null>(null);
 	let loading = $state(true);
@@ -145,27 +146,27 @@
 					</div>
 					<div>
 						<div class="text-2xl font-bold text-card-foreground">{formatNumber(stats.watchlist.total_custom_lists)}</div>
-						<Tooltip text="User-created lists across all accounts. Excludes the default &quot;Watchlist&quot; list every account starts with.">
-							<span class="text-xs text-muted-foreground cursor-help border-b border-dotted border-muted-foreground/40">Custom lists</span>
-						</Tooltip>
+						<div class="text-xs text-muted-foreground">
+							<Tooltip text="User-created lists across all accounts. Excludes the default &quot;Watchlist&quot; list every account starts with." class={cls.tooltipHint}>Custom lists</Tooltip>
+						</div>
 					</div>
 					<div>
 						<div class="text-2xl font-bold text-primary">{stats.watchlist.avg_entries_per_user}</div>
-						<Tooltip text="Media per active watchlist user (accounts with at least one saved item).">
-							<span class="text-xs text-muted-foreground cursor-help border-b border-dotted border-muted-foreground/40">Avg media / user</span>
-						</Tooltip>
+						<div class="text-xs text-muted-foreground">
+							<Tooltip text="Media per active watchlist user (accounts with at least one saved item)." class={cls.tooltipHint}>Avg media / user</Tooltip>
+						</div>
 					</div>
 					<div>
 						<div class="text-2xl font-bold text-card-foreground">{formatNumber(stats.watchlist.users_with_entries)}</div>
-						<Tooltip text="Accounts with at least one saved item — not just the default list every account starts with.">
-							<span class="text-xs text-muted-foreground cursor-help border-b border-dotted border-muted-foreground/40">Users with a watchlist</span>
-						</Tooltip>
+						<div class="text-xs text-muted-foreground">
+							<Tooltip text="Accounts with at least one saved item — not just the default list every account starts with." class={cls.tooltipHint}>Users with a watchlist</Tooltip>
+						</div>
 					</div>
 					<div>
 						<div class="text-2xl font-bold text-primary">{stats.watchlist.avg_custom_lists_per_user}</div>
-						<Tooltip text="Custom lists per account, across every non-guest user — an adoption measure that counts users who made none. Excludes the default &quot;Watchlist&quot; list.">
-							<span class="text-xs text-muted-foreground cursor-help border-b border-dotted border-muted-foreground/40">Avg lists / user</span>
-						</Tooltip>
+						<div class="text-xs text-muted-foreground">
+							<Tooltip text="Custom lists per account, across every non-guest user — an adoption measure that counts users who made none. Excludes the default &quot;Watchlist&quot; list." class={cls.tooltipHint}>Avg lists / user</Tooltip>
+						</div>
 					</div>
 				</div>
 			</Card.Content>

@@ -48,6 +48,7 @@ Once all features are discussed, this becomes the basis for GitHub issues and mi
 - "Give it a second chance" browsing section (dropped anime) — computed from ratings data
 - "I break up before it breaks me" section (dropped bad anime) — computed from ratings data
 - "Love it or hate it" recommendations — derived from MAL vote distributions + user ratings
+- Unrated media: `GET /ratings/media/{uuid}` answers 200 + `null` instead of 404, and guests skip the call, so the browser logs no failed request
 
 ### Achievements System (v0.18.0+)
 

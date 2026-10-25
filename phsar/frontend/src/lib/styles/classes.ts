@@ -1,7 +1,7 @@
 /** Shared Tailwind class strings for reuse across components */
 
 // Layout
-// The one width every anime page shares (rules/frontend.md, "Pages share one width").
+// The content pages' shared width (rules/frontend.md, "Pages share one width").
 // Wider from 2xl, where 1024px would leave half of a 1920 screen empty.
 export const pageWidth = 'mx-auto max-w-5xl 2xl:max-w-7xl';
 // The user-menu pages' width (rules/frontend.md, "Pages share one width").
@@ -11,6 +11,9 @@ export const panelWidth = 'mx-auto max-w-3xl';
 export const container = `${pageWidth} px-4 max-xs:px-2`;
 // The page's side gutter, `main`'s and the navbar's, so their edges line up at every width.
 export const pageGutter = 'px-4 max-xs:px-2 sm:px-8';
+// `main` on an auth page: the gradient and the centred card, in normal flow so the document
+// scrolls natively — a fixed overlay keeps a phone's address bar from collapsing.
+export const authScreen = `min-h-dvh bg-gradient-to-br from-[var(--auth-gradient-from)] via-[var(--auth-gradient-via)] to-[var(--auth-gradient-to)] flex justify-center items-start pt-20 pb-8 ${pageGutter}`;
 export const sectionSpacing = 'space-y-8';
 // A page's navigation links above its content: they can share one line, so they share one look.
 // No margin of its own — `BackLink`'s row owns the gap below them.
@@ -44,7 +47,7 @@ export const badgeOnHold = 'bg-amber-100 text-amber-800 border-amber-200';
 // Dropped watch status (solid rose) — same visual weight as on-hold, for the ratings
 // list where the translucent built-in `destructive` variant read too faint.
 export const badgeDropped = 'bg-rose-100 text-rose-800 border-rose-200';
-// Story-complete (emerald) — shared by the anime-page badge + the anime search card badge.
+// Story-complete (emerald).
 export const badgeComplete = 'bg-emerald-100 text-emerald-800 border-emerald-200';
 
 // Airing state, the four-way cascade the anime + media heroes render and the share card
@@ -153,6 +156,18 @@ export const stackOnPhone = 'max-sm:w-full max-sm:flex-col max-sm:gap-1 max-sm:*
 // A list inside a card that stops growing and scrolls, so a long one can't push what
 // sits below it off the screen. `pr-1` keeps rows clear of the scrollbar.
 export const scrollList = 'max-h-72 overflow-y-auto pr-1';
+
+// A Field | Was | Now table. `table-fixed` with the caller's colgroup: an auto table sizes to
+// its content, and a long cover_image URL would push it out of the card. Values wrap rather than truncate — a cover_image diff differs mid-URL, so clipping
+// hides what changed. Callers colour the field cell, so it reads as a label above its values.
+// Below sm a row takes two lines — the field across, Was and Now side by side under it — since a
+// 160px field column would leave each value ~45px at 375.
+export const diffTable =
+	'w-full text-sm table-fixed max-sm:block max-sm:[&_thead]:block max-sm:[&_tbody]:block max-sm:[&_tr]:grid max-sm:[&_tr]:grid-cols-2 max-sm:[&_th:first-child]:hidden max-sm:[&_td:first-child]:col-span-2 max-sm:[&_td:first-child]:pb-0';
+
+// A label that opens a tooltip (the Tooltip's span brings the help cursor). The label's font
+// size sits on its parent, so the line box matches a plain label's beside it.
+export const tooltipHint = 'border-b border-dotted border-muted-foreground/40';
 
 // The count bubble on an icon button's corner, composed onto a positioned button.
 export const countBadge =

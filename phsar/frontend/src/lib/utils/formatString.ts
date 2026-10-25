@@ -67,7 +67,7 @@ export const JOB_KIND_LABELS: Record<JobKind, string> = {
  * they enqueue parented system children (so the row gets an expander chevron) AND
  * they emit one common `result_summary` shape (so one branch formats both). Naming it
  * for only the first would leave the second reading as a coincidence, and a future
- * kind that parents children WITHOUT season counters would render "0 season entries".
+ * kind that parents children WITHOUT season counters would render zeroed season counters.
  * Backend allows `?parent_uuid=` for any kind — this is purely a frontend guard. */
 export const SEASON_SWEEP_KINDS: ReadonlySet<JobKind> = new Set<JobKind>([
 	'seasonal_sweep',

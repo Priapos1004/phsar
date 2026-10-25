@@ -339,7 +339,8 @@
 										{#if row.status === 'failed' && row.error_message}
 											<span class="text-destructive">{row.error_message}</span>
 										{:else}
-											<div class="truncate">{payloadSummary(row)}</div>
+											{@const summary = payloadSummary(row)}
+											<div class="truncate" title={summary}>{summary}</div>
 											{#if unknownTags.length > 0}
 												<div class="mt-1 text-xs font-medium text-amber-300">
 													⚠ New genre {unknownTags.length === 1 ? 'tag needs' : 'tags need'} seeding:
@@ -385,6 +386,8 @@
 									{:else if isLoaded(childState)}
 										{#each childState.items as child (child.uuid)}
 											{@const childClickable = isClickableJob(child)}
+											{@const childFailed = child.status === 'failed' && !!child.error_message}
+											{@const childDetail = childFailed ? child.error_message : payloadSummary(child)}
 											<tr
 												class="border-b border-border/30 bg-muted/10 align-top {childClickable ? 'cursor-pointer hover:bg-muted/30 transition-colors' : ''}"
 												{...(childClickable ? clickableNavProps(child.uuid) : {})}
@@ -403,11 +406,11 @@
 												<td class="py-1.5 pr-3 text-card-foreground text-xs">
 													{child.requested_by_username ?? 'system'}
 												</td>
-												<td class="py-1.5 pr-3 text-card-foreground/80 max-w-md truncate text-xs">
-													{#if child.status === 'failed' && child.error_message}
-														<span class="text-destructive">{child.error_message}</span>
+												<td class="py-1.5 pr-3 text-card-foreground/80 max-w-md truncate text-xs" title={childDetail}>
+													{#if childFailed}
+														<span class="text-destructive">{childDetail}</span>
 													{:else}
-														{payloadSummary(child)}
+														{childDetail}
 													{/if}
 												</td>
 											</tr>

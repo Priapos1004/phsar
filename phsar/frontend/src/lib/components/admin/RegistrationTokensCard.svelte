@@ -184,7 +184,7 @@
 
 	<Card.Root>
 		<Card.Header>
-			<div class="flex items-center justify-between">
+			<div class="flex flex-wrap items-center justify-between gap-2">
 				<h2 class="text-lg font-semibold text-card-foreground">Registration Tokens ({tokens.length})</h2>
 				<div class="flex items-center gap-2">
 					<ArrowUpDown class="size-4 text-muted-foreground" />

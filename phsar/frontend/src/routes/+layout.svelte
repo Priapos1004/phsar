@@ -36,6 +36,7 @@
     let signingOut = $state(false);
     let isAuthenticated = $state(false);
     let userRole = $state<string | null>(null);
+    let onAuthPage = $derived(isAuthPage(page.url.pathname));
     let username = $state<string | null>(null);
     let showExpiryDialog = $state(false);
 
@@ -210,11 +211,11 @@
       <!-- Idle-timeout warning sits above maintenance — a "you're about to be
            signed out" countdown is more urgent than a future-window notice.
            Only runs while authenticated and off the auth pages. -->
-      {#if isAuthenticated && !isAuthPage(page.url.pathname)}
+      {#if isAuthenticated && !onAuthPage}
         <SessionTimeoutBanner onExpire={() => (showExpiryDialog = true)} />
       {/if}
       <MaintenanceBanner />
-      {#if !isAuthPage(page.url.pathname)}
+      {#if !onAuthPage}
         <NavBar
           {isAuthenticated}
           {username}
@@ -224,11 +225,14 @@
       {/if}
     </div>
 
-    <main class="min-h-screen {cls.pageGutter} pt-4 pb-8">
+    <!-- No footer on an auth page: below the full-height gradient it would sit on the bare page. -->
+    <main class={onAuthPage ? cls.authScreen : `min-h-screen ${cls.pageGutter} pt-4 pb-8`}>
       {@render children()}
     </main>
 
-    <VersionFooter />
+    {#if !onAuthPage}
+      <VersionFooter />
+    {/if}
 
     <!-- Single global toast slot — the navbar JobBell fires completion toasts
          through it (pushToast), and /library/add routes its enqueue toast here

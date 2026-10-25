@@ -3,6 +3,7 @@
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { formatNumber, percentOf } from '$lib/utils/formatString';
 	import type { AdminSweepTierBreakdown } from '$lib/types/api';
+	import * as cls from '$lib/styles/classes';
 
 	interface Props {
 		animeTiers: AdminSweepTierBreakdown;
@@ -112,6 +113,11 @@
 	type _AllTiersRendered = AssertNoTierMissing<Exclude<TierKey, (typeof ROWS)[number]['key']>>;
 
 	let total = $derived(ROWS.reduce((acc, row) => acc + (tiers[row.key] ?? 0), 0));
+
+	// Shared by the tier rows and the stabilizing sub-rows. Below sm the bar would get ~20px
+	// beside a 160px name, so it goes and the name takes the width.
+	const nameCol = 'flex-1 sm:flex-none sm:w-40 shrink-0';
+	const barTrack = 'hidden sm:block flex-1 h-2 rounded-full bg-muted/40 overflow-hidden';
 </script>
 
 <Card.Root>
@@ -142,22 +148,21 @@
 			{#each ROWS as row (row.key)}
 				{@const count = tiers[row.key] ?? 0}
 				{@const share = percentOf(count, total)}
-				<Tooltip text={row.tooltip(mode)}>
-					{#snippet trigger(props)}
-						<div {...props} class="flex items-center gap-3 text-sm cursor-help">
-							<div class="w-40 shrink-0 text-card-foreground/90">{row.label}</div>
-							<div class="flex-1 h-2 rounded-full bg-muted/40 overflow-hidden">
-								<div class="h-full {row.color}" style="width: {share}%"></div>
-							</div>
-							<div class="w-14 shrink-0 text-right tabular-nums text-card-foreground font-medium">
-								{formatNumber(count)}
-							</div>
-							<div class="w-12 shrink-0 text-right tabular-nums text-xs text-muted-foreground">
-								{share.toFixed(1)}%
-							</div>
-						</div>
-					{/snippet}
-				</Tooltip>
+				<!-- The tooltip hangs off the name, so its arrow points at what it explains. -->
+				<div class="flex items-center gap-3 text-sm">
+					<div class="{nameCol} text-card-foreground/90">
+						<Tooltip text={row.tooltip(mode)} class={cls.tooltipHint}>{row.label}</Tooltip>
+					</div>
+					<div class={barTrack}>
+						<div class="h-full {row.color}" style="width: {share}%"></div>
+					</div>
+					<div class="w-14 shrink-0 text-right tabular-nums text-card-foreground font-medium">
+						{formatNumber(count)}
+					</div>
+					<div class="w-12 shrink-0 text-right tabular-nums text-xs text-muted-foreground">
+						{share.toFixed(1)}%
+					</div>
+				</div>
 				{#if row.key === 'stabilizing'}
 					<!-- Per-check pipeline: how far each stabilizing row has progressed
 					     toward graduating. Bars share the parent's share-of-total scale
@@ -171,28 +176,24 @@
 							mode === 'anime'
 								? `Anime whose least-stabilized media has had ${sub.n} of ${stabilizeThreshold} stabilizing sweeps.`
 								: `Media that has had ${sub.n} of ${stabilizeThreshold} stabilizing sweeps (stable_check_count = ${sub.n}).`}
-						<Tooltip text={subTip}>
-							{#snippet trigger(props)}
-								<div {...props} class="flex items-center gap-3 text-sm cursor-help">
-									<div class="w-40 shrink-0 pl-5 text-xs text-card-foreground/60">
-										└ {sub.n} {sub.n === 1 ? 'check' : 'checks'}
-									</div>
-									<div class="flex-1 h-2 rounded-full bg-muted/40 overflow-hidden">
-										<div
-											class="h-full bg-amber-400"
-											style="width: {subShare}%; opacity: {stabilizeThreshold > 1
-												? 0.5 + (0.5 * sub.n) / (stabilizeThreshold - 1)
-												: 1}"
-										></div>
-									</div>
-									<div class="w-14 shrink-0 text-right tabular-nums text-card-foreground/80 text-xs">
-										{formatNumber(sub.count)}
-									</div>
-									<!-- spacer keeps the count column aligned with the tier rows' % column -->
-									<div class="w-12 shrink-0"></div>
-								</div>
-							{/snippet}
-						</Tooltip>
+						<div class="flex items-center gap-3 text-sm">
+							<div class="{nameCol} pl-5 text-xs text-card-foreground/60">
+								└ <Tooltip text={subTip} class={cls.tooltipHint}>{sub.n} {sub.n === 1 ? 'check' : 'checks'}</Tooltip>
+							</div>
+							<div class={barTrack}>
+								<div
+									class="h-full bg-amber-400"
+									style="width: {subShare}%; opacity: {stabilizeThreshold > 1
+										? 0.5 + (0.5 * sub.n) / (stabilizeThreshold - 1)
+										: 1}"
+								></div>
+							</div>
+							<div class="w-14 shrink-0 text-right tabular-nums text-card-foreground/80 text-xs">
+								{formatNumber(sub.count)}
+							</div>
+							<!-- spacer keeps the count column aligned with the tier rows' % column -->
+							<div class="w-12 shrink-0"></div>
+						</div>
 					{/each}
 				{/if}
 			{/each}
