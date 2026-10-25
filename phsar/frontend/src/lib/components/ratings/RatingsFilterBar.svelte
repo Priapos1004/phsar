@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { LayoutGrid, Table as TableIcon, ArrowDown, ArrowUp } from 'lucide-svelte';
+	import { ArrowDown, ArrowUp } from 'lucide-svelte';
 	import * as Card from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
@@ -7,6 +7,7 @@
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import SegmentedControl from '$lib/components/SegmentedControl.svelte';
 	import GrainToggle from '$lib/components/GrainToggle.svelte';
+	import ViewToggle from '$lib/components/ViewToggle.svelte';
 	import { ratingsFilter } from '$lib/stores/ratingsFilter';
 	import { AGE_RATING_LABELS } from '$lib/utils/formatString';
 	import * as cls from '$lib/styles/classes';
@@ -34,10 +35,6 @@
 		ratingsFilter.update((f) => ({ ...f, genres: [], genreMode: 'any', ageRatings: [], seasons: [] }));
 	}
 
-	// View pills — identical sizing to the Statistics inner-nav (px-3.5 py-1.5) so the
-	// control row doesn't jump when switching top-level tabs. On the dark page bg.
-	const VIEW_ON = 'border-primary bg-primary/15 text-primary font-medium';
-	const VIEW_OFF = 'border-white/15 text-white/60 hover:text-white hover:border-white/30';
 	const labelCls = 'text-muted-foreground text-xs uppercase tracking-wide';
 </script>
 
@@ -47,18 +44,7 @@
 <div class="space-y-3 mb-4 relative z-20">
 	<!-- View selection (left) + grain toggle (right), mirroring the watchlist bar. -->
 	<div class="flex flex-wrap items-center gap-2">
-		<button
-			class="px-3.5 py-1.5 rounded-full text-sm border transition-colors inline-flex items-center gap-1.5 {$ratingsFilter.view === 'grid' ? VIEW_ON : VIEW_OFF}"
-			onclick={() => ratingsFilter.update((f) => ({ ...f, view: 'grid' }))}
-		>
-			<LayoutGrid class="size-3.5" /> Grid
-		</button>
-		<button
-			class="px-3.5 py-1.5 rounded-full text-sm border transition-colors inline-flex items-center gap-1.5 {$ratingsFilter.view === 'table' ? VIEW_ON : VIEW_OFF}"
-			onclick={() => ratingsFilter.update((f) => ({ ...f, view: 'table' }))}
-		>
-			<TableIcon class="size-3.5" /> Table
-		</button>
+		<ViewToggle view={$ratingsFilter.view} onSelect={(v) => ratingsFilter.update((f) => ({ ...f, view: v }))} />
 
 		<div class="flex-grow"></div>
 

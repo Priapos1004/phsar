@@ -36,7 +36,7 @@
 		<button
 			type="button"
 			onclick={() => onSelect(opt.value)}
-			class="{pad} rounded-full transition-colors {value === opt.value
+			class="{pad} rounded-full whitespace-nowrap transition-colors {value === opt.value
 				? 'bg-primary text-white shadow-sm'
 				: 'text-card-foreground/70 hover:text-card-foreground'}"
 		>{opt.label}</button>

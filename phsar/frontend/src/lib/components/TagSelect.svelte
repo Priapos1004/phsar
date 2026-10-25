@@ -82,13 +82,15 @@
 		<!-- A chip's ✕ hands focus to the box first, since it leaves with its chip
 		     (rules/frontend.md, "A control that removes itself hands focus on first"). -->
 		{#each selectedItems as item}
-			<Badge variant="default" class="gap-1 text-sm h-6">
-				{displayLabel(item)}
+			{@const label = displayLabel(item)}
+			<!-- max-w-full + a truncating label: a studio or an age rating can outgrow the box. -->
+			<Badge variant="default" class="gap-1 text-sm h-6 max-w-full">
+				<span class="truncate" title={label}>{label}</span>
 				<button
 					type="button"
-					class="ml-1 hover:opacity-70"
+					class="ml-1 shrink-0 hover:opacity-70"
 					onclick={(e) => { e.stopPropagation(); box?.focus(); onRemove(item); }}
-					aria-label="Remove {displayLabel(item)}"
+					aria-label="Remove {label}"
 				>
 					<X class="w-3 h-3" />
 				</button>

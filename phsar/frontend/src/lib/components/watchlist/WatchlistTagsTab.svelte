@@ -190,10 +190,14 @@
 					{:else}
 						<div class="flex items-center gap-3">
 							<span class="size-4 rounded-full shrink-0 border border-border" style="background:{tag.color}"></span>
-							<span class="font-medium text-card-foreground">{tag.name}</span>
-							{#if tag.is_default}<Badge variant="secondary" class="text-[10px]">Default</Badge>{/if}
-							<span class="text-xs text-muted-foreground">{countLabel(tag)}</span>
-							<div class="flex-grow"></div>
+							<!-- Truncated, not wrapped: wrapped, a long name runs to several lines on a phone. -->
+							<div class="flex-grow min-w-0 sm:flex sm:items-center sm:gap-3">
+								<div class="flex items-center gap-3 min-w-0">
+									<span class="font-medium text-card-foreground truncate" title={tag.name}>{tag.name}</span>
+									{#if tag.is_default}<Badge variant="secondary" class="text-[10px] shrink-0">Default</Badge>{/if}
+								</div>
+								<span class="text-xs text-muted-foreground whitespace-nowrap">{countLabel(tag)}</span>
+							</div>
 							{#if tag.is_default}
 								<!-- Default list can't be deleted, only emptied -->
 								<Button size="sm" variant="ghost" onclick={() => { dialogError = ''; emptyTarget = tag; }} disabled={tag.entry_count === 0}>

@@ -267,7 +267,7 @@
 			     ones mid-word — the clamp's ellipsis has to be what trims the text, never the
 			     overflow. -->
 			<div class="min-h-0 flex-1 overflow-hidden">
-				<p class="line-clamp-10 text-sm break-words text-card-foreground">
+				<p class="line-clamp-10 text-sm text-card-foreground">
 					{body.synopsis ?? 'No synopsis on record.'}
 				</p>
 			</div>

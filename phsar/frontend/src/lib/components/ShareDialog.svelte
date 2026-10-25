@@ -263,16 +263,14 @@
 
 <Dialog.Root bind:open>
 	<Dialog.Content class="sm:max-w-md">
-		<!-- min-w-0 required (see .claude/rules/frontend.md "Dialog children that cannot shrink"). -->
-		<Dialog.Header class="min-w-0">
+		<Dialog.Header>
 			<Dialog.Title>
 				{variant === 'rating' ? 'Share your rating' : `Share this ${noun}`}
 			</Dialog.Title>
 			<Dialog.Description class="truncate text-muted-foreground">{title}</Dialog.Description>
 		</Dialog.Header>
 
-		<!-- min-w-0 again, the floor here being the preview img's aspect ratio (see below). -->
-		<div class="min-w-0 space-y-4 py-2">
+		<div class="space-y-4 py-2">
 			<!-- Offered only when there is a rating to choose between: without one the info card
 			     isn't an alternative, it's the only card. -->
 			{#if rating}
@@ -293,9 +291,10 @@
 			<div class="flex min-h-[280px] items-center justify-center rounded-xl bg-muted/40 p-2">
 				{#if preview}
 					<!-- An img transfers max-height through its aspect ratio into a min-content
-					     width, so on a tall window the 55vh alone outgrows the dialog. max-w-full
-					     can't fix that by itself — a percentage max-width is indefinite during
-					     intrinsic sizing, and only shrinks the img once the track is settled. -->
+					     width, so on a tall window the 55vh alone would outgrow the dialog. max-w-full
+					     holds it only because the dialog's column is minmax(0,1fr) (dialog-content):
+					     a percentage max-width is indefinite during intrinsic sizing, and only
+					     shrinks the img once the track is settled. -->
 					<img
 						src={preview.url}
 						alt="Preview of the shareable card"

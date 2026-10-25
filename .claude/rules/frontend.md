@@ -1,5 +1,5 @@
 ---
-description: Frontend conventions — runes, theme tokens, shared components, page width, phone layouts, tooltip and chart mechanics, confirm tiers for destructive actions, focus in dialogs, dialog sizing, route titles, restricted accounts, and UI copy.
+description: Frontend conventions and the invariants behind them — for any file under phsar/frontend.
 paths: "phsar/frontend/**"
 ---
 
@@ -135,8 +135,9 @@ than by asserting what it rendered.
 
 The exception to "prefer changing the component" above. `SegmentedControl` is the
 on-card toggle — muted track, solid thumb — and belongs on the white card surface. A
-toggle on the dark page surface is a border-fill pill instead (`PillToggle`, with
-`GrainToggle` its anime/media form; the ratings view pills). Same job, different
+toggle on the dark page surface is a border-fill pill instead — `PillToggle` and what wraps
+it (`GrainToggle`), or `cls.pagePill` where each option is a pill of its own (`ViewToggle`,
+the Statistics sub-nav). Same job, different
 surface, deliberately two components: unifying them makes one of the two illegible
 against its own background.
 
@@ -184,10 +185,11 @@ exists — so an ungated action's endpoint takes no confirmation argument at all
 ## A control that removes itself hands focus on first
 
 Every bits-ui `Dialog` — the filter sheet included — traps focus, and when the focused
-element leaves the DOM the trap focuses its first element instead, scrolling a long dialog
-to its top. A click focuses the button it lands on, so a control whose own click removes
-it triggers this: a chip's ✕, a "Clear all" shown only while something is set, a "Try
-again" swapped for "Loading…".
+element leaves the DOM the trap moves focus to its first element, without scrolling: a
+keyboard user is sent back to the top of the dialog, a screen reader to its close button.
+A click focuses the button it lands on, so a control whose own click
+removes it triggers this: a chip's ✕, a "Clear all" shown only while something is set, a
+"Try again" swapped for "Loading…".
 
 Before the click removes the control, **move focus to an element that stays** (the field
 it belonged to, the dialog's main action), or keep the node and change its label or
@@ -198,11 +200,24 @@ Chrome or Firefox: Safari never focuses a button on click, so it hides the bug.
 
 ## Dialog children that cannot shrink
 
-`Dialog.Content` is a CSS grid whose column is floored by its widest item's min-content
-width, and every item then inherits the widened track — so a single unshrinkable child
-(a `nowrap` title, an image carrying an aspect ratio) pushes the whole dialog past its
-`max-w-*`. Give the header and body `min-w-0`. `truncate` alone does not zero that
-floor, because its `overflow:hidden` only does so on a grid or flex item.
+`Dialog.Content` is a CSS grid, and an implicit `auto` column is floored by its widest
+item's min-content width — a single unshrinkable child (a `nowrap` title, a long unbroken
+name, an image carrying an aspect ratio) would push the whole dialog past its `max-w-*`.
+The primitive carries `grid-cols-1` (a `minmax(0,1fr)` column) so none can. The column then
+holds, but a child still
+has to fit it: a long word as the next section says, and in a flex row the item that
+*holds* truncating text takes `min-w-0` — `truncate` zeroes only its own element's
+minimum width, never its parent's.
+
+## A user's string can be one long word
+
+A list name runs to 50 characters with no space; a note can hold a URL, a query anything.
+`body` carries `overflow-wrap: break-word` (`app.css`), so such a word breaks at its box's
+edge instead of overflowing. Break-word never lowers a box's min-content width, though, so
+text that is itself a flex item — a label beside its checkbox, a heading in a wrapping row,
+a tooltip's inline-flex content — still pushes its row wide: give that text
+`wrap-anywhere`. A control naming a user's string (a chip, a select) truncates instead, the
+full string as its `title`.
 
 ## Every route titles its own tab
 

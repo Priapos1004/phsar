@@ -25,22 +25,19 @@ export const STATUS_COLORS = {
 	dropped: '#f43f5e', // rose-500
 } as const;
 
-/** An attribute value's colour, by its place in the attribute's option list: rose, orange,
- * emerald, blue. On a quality attribute that reads worst to best (a three-step scale uses
- * the first three); on the others the same four hues simply stay one per value — one set
- * for every attribute, so two shades of one hue never sit side by side. Fixed across
- * themes, as STATUS_COLORS is: the Crimson theme's colour would land on the worst end.
- * Green↔orange is close for colour-blind eyes and orange is faint on the `bg-muted` track,
- * which is acceptable only because each bar carries a text legend and a gap between
- * segments — keep both. */
-export const ATTRIBUTE_COLOURS = ['#e11d48', '#f97316', '#059669', '#2563eb'] as const;
+/** The one worst-to-best scale — red, yellow, green, purple — that scores (`scoreColor`)
+ * and attribute values share, so "good" reads the same on every chart. An attribute value
+ * takes the colour at its place in its option list: on a quality attribute that reads
+ * worst to best (a three-step scale uses the first three); on the others the four simply
+ * stay one per value, one set for every attribute. Fixed across themes, as STATUS_COLORS
+ * is: the Crimson theme's colour would land on the worst end.
+ * Yellow and green are faint on a light surface (under 3:1), so a bar or segment in them
+ * needs a label beside it — the attribute bars' legend and segment gaps, the charts' axes. */
+export const QUALITY_COLORS = [CHART_COLORS.chart5, CHART_COLORS.chart3, CHART_COLORS.chart2, CHART_COLORS.chart1] as const;
 
-/** Maps a 0–10 score to a chart color. */
+/** Maps a 0–10 score to its band's colour on the quality scale. */
 export function scoreColor(score: number): string {
-	if (score < 4) return CHART_COLORS.chart5;
-	if (score < 6) return CHART_COLORS.chart3;
-	if (score < 8) return CHART_COLORS.chart2;
-	return CHART_COLORS.chart1;
+	return QUALITY_COLORS[score < 4 ? 0 : score < 6 ? 1 : score < 8 ? 2 : 3];
 }
 
 /** Canonical display order for relation types. */

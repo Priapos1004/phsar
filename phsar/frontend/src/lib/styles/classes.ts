@@ -11,6 +11,16 @@ export const sectionSpacing = 'space-y-8';
 // A page's navigation links above its content: they can share one line, so they share one look.
 // No margin of its own — `BackLink`'s row owns the gap below them.
 export const pageNavLink = 'inline-flex items-center gap-1.5 text-sm text-white/70 hover:text-white transition';
+// A pill button on the dark page: the ratings Statistics sub-nav and the Grid / Table toggle
+// (ViewToggle) share it, so switching between the tabs never moves the control row.
+export const pagePill = 'px-3.5 py-1.5 rounded-full text-sm border transition-colors';
+export const pagePillOn = 'border-primary bg-primary/15 text-primary font-medium';
+export const pagePillOff = 'border-white/15 text-white/60 hover:text-white hover:border-white/30';
+
+// A headline figure over its label, in the ratings and the watchlist overviews. ×1.25 from 2xl,
+// where the page widens by the same factor.
+export const statFigure = 'text-2xl 2xl:text-3xl font-bold text-card-foreground';
+export const statLabel = 'text-sm 2xl:text-base text-muted-foreground';
 
 // The detail heroes (/anime, /media): the cover beside the details from md, and the stats grid,
 // whose four columns wait for lg — at md the cover takes ~85px from each.

@@ -16,8 +16,8 @@
 
 	let { rows, sort, sortDir, onSort }: Props = $props();
 
-	// Title takes the slack (w-full) so the fixed right-hand columns hold position when the
-	// grain toggles; Note is fixed-width for the same reason (its icon vs icon+count must not
+	// Every column at every width, as RatingsTable (the why is there). Title takes the slack (w-full) so the fixed right-hand columns hold position
+	// when the grain toggles; Note is fixed-width for the same reason (its icon vs icon+count must not
 	// resize the column). Note sorts by noteCount (media: noted-first; anime: highest first).
 	const COLS: { key: WatchlistSortKey; label: string; align: 'left' | 'right' | 'center'; width?: string }[] = [
 		{ key: 'title', label: 'Title', align: 'left', width: 'w-full' },
@@ -38,7 +38,7 @@
 			<tr class="text-muted-foreground border-b border-border bg-muted/30">
 				<th class="font-medium px-3 py-2.5 text-left w-8"></th>
 				{#each COLS as col (col.key)}
-					<th class="font-medium px-3 py-2.5 {alignClass[col.align]} {col.width ?? ''} {col.key === 'date' ? 'hidden sm:table-cell' : ''}">
+					<th class="font-medium px-3 py-2.5 {alignClass[col.align]} {col.width ?? ''}">
 						<button class="inline-flex items-center gap-1 hover:text-card-foreground transition-colors" onclick={() => onSort(col.key)}>
 							{col.label}
 							{#if sort === col.key}
@@ -60,16 +60,17 @@
 							<span class="block size-3.5 rounded-full" style="background:{tagGradient(row.colors)}"></span>
 						</Tooltip>
 					</td>
-					<td class="px-3 py-2">
-						<a href={row.href} class="text-card-foreground group-hover:text-primary font-medium">{row.title}</a>
-						{#if row.subtitle}<span class="ml-1.5 text-xs text-muted-foreground">{row.subtitle}</span>{/if}
-						{#if row.mainSide}<span class="ml-1.5 text-xs text-muted-foreground">({row.mainSide})</span>{/if}
+					<!-- The title cell as RatingsTable's (min width, gaps as right margins). -->
+					<td class="px-3 py-2 min-w-36">
+						<a href={row.href} class="mr-1.5 text-card-foreground group-hover:text-primary font-medium">{row.title}</a>
+						{#if row.subtitle}<span class="mr-1.5 text-xs text-muted-foreground">{row.subtitle}</span>{/if}
+						{#if row.mainSide}<span class="mr-1.5 text-xs text-muted-foreground whitespace-nowrap">({row.mainSide})</span>{/if}
 						<!-- Inline rather than its own column: a Ready column would be blank at media
 						     grain and would move the fixed right-hand columns, which the note above
 						     keeps still across a grain toggle. -->
 						{#if badge}
 							<!-- On the trigger span itself, for the reason given in WatchlistCard. -->
-							<Tooltip text={badge.title} class="ml-1.5 inline-block align-middle {cls.readyPill} {badge.class}">
+							<Tooltip text={badge.title} class="inline-block align-middle {cls.readyPill} {badge.class}">
 								{badge.label}
 							</Tooltip>
 						{/if}
@@ -99,7 +100,7 @@
 							<span class="text-muted-foreground/40">–</span>
 						{/if}
 					</td>
-					<td class="px-3 py-2 text-right text-muted-foreground hidden sm:table-cell whitespace-nowrap">
+					<td class="px-3 py-2 text-right text-muted-foreground whitespace-nowrap">
 						{formatShortDate(row.createdAt)}
 					</td>
 				</tr>

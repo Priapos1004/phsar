@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render } from '@testing-library/svelte';
 import AttributeDetailBars from '$lib/components/AttributeDetailBars.svelte';
-import { ATTRIBUTE_COLOURS } from '$lib/utils/chartColors';
+import { QUALITY_COLORS } from '$lib/utils/chartColors';
 import type { RatingOut } from '$lib/types/api';
 
 // Only the attribute keys are read off a rating, so a bare object stands in for one.
@@ -31,7 +31,7 @@ describe('AttributeDetailBars', () => {
 		const { container } = render(AttributeDetailBars, {
 			props: { ratings: [rating({ story_quality: 'weak' }), rating({ story_quality: 'outstanding' })] },
 		});
-		expect(dot(container, 'Weak')).toHaveStyle({ backgroundColor: ATTRIBUTE_COLOURS[0] });
-		expect(dot(container, 'Outstanding')).toHaveStyle({ backgroundColor: ATTRIBUTE_COLOURS[3] });
+		expect(dot(container, 'Weak')).toHaveStyle({ backgroundColor: QUALITY_COLORS[0] });
+		expect(dot(container, 'Outstanding')).toHaveStyle({ backgroundColor: QUALITY_COLORS[3] });
 	});
 });

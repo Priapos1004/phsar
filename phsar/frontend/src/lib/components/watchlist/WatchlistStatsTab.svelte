@@ -43,8 +43,7 @@
 	const barHover = (t: TagCount): string =>
 		t.seconds > 0 ? `${mainSideLabel(t.main, t.side)} · ${formatDurationCompact(t.seconds)}` : mainSideLabel(t.main, t.side);
 
-	// Headline tiles: an accent-tinted icon chip + the figure. Accent hues from the themed
-	// chart palette so they track the active theme.
+	// Accent hues from the themed chart palette, so the icons track the active theme.
 	let tiles = $derived(
 		summary
 			? [
@@ -68,29 +67,28 @@
 {:else if summary}
 	{@const s = summary}
 	<div class="space-y-4">
-		<!-- Headline tiles -->
-		<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-			{#each tiles as t (t.label)}
-				{@const Icon = t.icon}
-				<Card.Root class={cls.cardGlass}>
-					<Card.Content class="py-4 flex items-center gap-3">
-						<div class="size-11 shrink-0 rounded-xl flex items-center justify-center" style="background:color-mix(in srgb, {t.color} 15%, transparent); color:{t.color}">
-							<Icon class="size-5" />
-						</div>
-						<div class="min-w-0">
-							<div class="text-2xl font-bold text-card-foreground tabular-nums leading-tight">{t.value}</div>
+		<!-- Two columns below md, the last tile centred across both (the count is odd); from md
+		     one row spread edge to edge, as the ratings Overview (RatingsStatsTab says why). -->
+		<Card.Root class={cls.cardGlass}>
+			<Card.Content class="grid grid-cols-2 gap-x-4 gap-y-5 md:flex md:justify-between md:px-8">
+				{#each tiles as t (t.label)}
+					{@const Icon = t.icon}
+					<div class="flex flex-col items-center text-center max-md:last:col-span-2">
+						<span class="{cls.statFigure} tabular-nums">{t.value}</span>
+						<span class="inline-flex items-center gap-1.5 {cls.statLabel}">
+							<Icon class="size-3.5 2xl:size-4 shrink-0" style="color:{t.color}" aria-hidden="true" />
 							{#if t.hint}
 								<Tooltip text={t.hint}>
-									<span class="text-xs uppercase tracking-wide text-muted-foreground cursor-help border-b border-dotted border-muted-foreground/40">{t.label}</span>
+									<span class="cursor-help border-b border-dotted border-muted-foreground/40">{t.label}</span>
 								</Tooltip>
 							{:else}
-								<span class="text-xs uppercase tracking-wide text-muted-foreground">{t.label}</span>
+								{t.label}
 							{/if}
-						</div>
-					</Card.Content>
-				</Card.Root>
-			{/each}
-		</div>
+						</span>
+					</div>
+				{/each}
+			</Card.Content>
+		</Card.Root>
 
 		<!-- Top genres / sources / studios — palette-colored bars that grow in. -->
 		<div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">

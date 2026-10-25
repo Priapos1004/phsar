@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { LayoutGrid, Table as TableIcon } from 'lucide-svelte';
 	import * as Card from '$lib/components/ui/card';
 	import { Button } from '$lib/components/ui/button';
 	import { Label } from '$lib/components/ui/label';
 	import GrainToggle from '$lib/components/GrainToggle.svelte';
+	import ViewToggle from '$lib/components/ViewToggle.svelte';
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { watchlistFilter, type WatchlistFilterState } from '$lib/stores/watchlistFilter';
 	import { tags } from '$lib/stores/tags';
@@ -44,21 +44,13 @@
 		watchlistFilter.update((f) => ({ ...f, ...CLEARED }));
 	}
 
-	const PILL_ON = 'border-primary bg-primary/15 text-primary font-medium';
-	const PILL_OFF = 'border-white/15 text-white/60 hover:text-white hover:border-white/30';
-	const pill = 'px-3.5 py-1.5 rounded-full text-sm border transition-colors inline-flex items-center gap-1.5';
 	const labelCls = 'text-muted-foreground text-xs uppercase tracking-wide';
 </script>
 
 <div class="space-y-3 mb-4 relative z-20">
 	<!-- View (left) + grain toggle (right) -->
 	<div class="flex flex-wrap items-center gap-2">
-		<button class="{pill} {$watchlistFilter.view === 'grid' ? PILL_ON : PILL_OFF}" onclick={() => watchlistFilter.update((f) => ({ ...f, view: 'grid' }))}>
-			<LayoutGrid class="size-3.5" /> Grid
-		</button>
-		<button class="{pill} {$watchlistFilter.view === 'table' ? PILL_ON : PILL_OFF}" onclick={() => watchlistFilter.update((f) => ({ ...f, view: 'table' }))}>
-			<TableIcon class="size-3.5" /> Table
-		</button>
+		<ViewToggle view={$watchlistFilter.view} onSelect={(v) => watchlistFilter.update((f) => ({ ...f, view: v }))} />
 
 		<div class="flex-grow"></div>
 
@@ -150,16 +142,18 @@
 					{#each $tags as tag (tag.uuid)}
 						{@const on = $watchlistFilter.tagUuids.includes(tag.uuid)}
 						{@const contrast = contrastText(tag.color)}
+						<!-- max-w-full + a truncating name: a list name in a control (rules/frontend.md, "A user's string can be one long word"). -->
 						<button
-							class="{cls.chip} {on ? 'shadow-sm' : cls.chipOff}"
+							class="{cls.chip} max-w-full {on ? 'shadow-sm' : cls.chipOff}"
 							aria-pressed={on}
+							title={tag.name}
 							style={on ? `background:${tag.color}; border-color:${tag.color}; color:${contrast}` : ''}
 							onclick={() => toggle('tagUuids', tag.uuid)}
 						>
 							<!-- Selected: dot uses the pill's contrast color so a white/yellow list stays
 								 visible; unselected: the list color with a faint border. -->
-							<span class="size-2.5 rounded-full {on ? '' : 'border border-border'}" style="background:{on ? contrast : tag.color}"></span>
-							{tag.name}
+							<span class="size-2.5 shrink-0 rounded-full {on ? '' : 'border border-border'}" style="background:{on ? contrast : tag.color}"></span>
+							<span class="truncate">{tag.name}</span>
 						</button>
 					{/each}
 				</div>

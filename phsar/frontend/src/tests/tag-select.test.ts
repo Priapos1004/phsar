@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/svelte';
 import TagSelect from '$lib/components/TagSelect.svelte';
 
 describe('TagSelect', () => {
-	// Guards the sheet's jump to the top; the why is on TagSelect's option mousedown.
+	// Guards where focus lands when a picked option leaves; the why is on TagSelect's option mousedown.
 	it('picks an option without moving focus off the input', async () => {
 		const onAdd = vi.fn();
 		render(TagSelect, { props: { options: ['Action', 'Drama'], onAdd, onRemove: vi.fn() } });
@@ -31,7 +31,7 @@ describe('TagSelect', () => {
 		expect(screen.queryByRole('button', { name: 'Action' })).not.toBeInTheDocument();
 	});
 
-	// Guards the sheet's jump to the top; the why is on TagSelect's chip loop.
+	// Guards where focus lands when a chip's ✕ leaves; the why is on TagSelect's chip loop.
 	it("removing the last chip hands focus to the box, not to the chip's gone ✕", async () => {
 		const onRemove = vi.fn();
 		const { rerender } = render(TagSelect, {

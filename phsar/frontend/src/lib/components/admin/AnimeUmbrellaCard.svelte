@@ -59,10 +59,10 @@
 		<!-- table-fixed + colgroup, matching MediaChangeCard. Without it the
 		     table auto-sizes to its content and a `max-w-*` on a <td> is only a
 		     hint the algorithm may ignore — a long cover_image URL then pushes
-		     the whole table outside this card. `break-words` rather than
-		     `truncate` because a cover_image diff differs only in the CDN path
-		     segment mid-URL, so clipping to a width hides exactly what the row
-		     exists to show. -->
+		     the whole table outside this card. Wrapped (the body's break-word)
+		     rather than truncated because a cover_image diff differs only in the
+		     CDN path segment mid-URL, so clipping to a width hides exactly what
+		     the row exists to show. -->
 		<table class="w-full text-sm table-fixed">
 			<colgroup>
 				<col class="w-40" />
@@ -79,9 +79,9 @@
 			<tbody>
 				{#each change.fields as f (f.field)}
 					<tr class="border-t border-border/30 align-top">
-						<td class="py-1.5 pr-3 font-mono text-xs text-card-foreground break-words">{f.field}</td>
-						<td class="py-1.5 pr-3 text-card-foreground/80 break-words">{fmt(f.old)}</td>
-						<td class="py-1.5 pr-3 text-card-foreground break-words">{fmt(f.new)}</td>
+						<td class="py-1.5 pr-3 font-mono text-xs text-card-foreground">{f.field}</td>
+						<td class="py-1.5 pr-3 text-card-foreground/80">{fmt(f.old)}</td>
+						<td class="py-1.5 pr-3 text-card-foreground">{fmt(f.new)}</td>
 					</tr>
 				{/each}
 			</tbody>

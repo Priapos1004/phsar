@@ -205,7 +205,7 @@
 							</span>
 						{/if}
 					</div>
-					<p class="text-xs text-muted-foreground mt-1 break-words">{failure.error_message}</p>
+					<p class="text-xs text-muted-foreground mt-1">{failure.error_message}</p>
 					{#if failure.gone_media_mal_id}
 						<!-- Gated on the field, not the version: v9+ rows carry their
 						     404s in `gone_upstream` instead, so this never fires there

@@ -115,8 +115,7 @@
 
 <Dialog.Root bind:open>
 	<Dialog.Content class="sm:max-w-md">
-		<!-- min-w-0 required (see .claude/rules/frontend.md "Dialog children that cannot shrink"). -->
-		<Dialog.Header class="min-w-0">
+		<Dialog.Header>
 			<Dialog.Title>{existing ? 'Edit watchlist entry' : 'Add to watchlist'}</Dialog.Title>
 			{#if mediaTitle}
 				<Dialog.Description class="text-muted-foreground truncate">{mediaTitle}</Dialog.Description>

@@ -425,6 +425,7 @@
 	{@const Icon = statusIcon(job)}
 	{@const pct = progressPercent(job)}
 	{@const href = rowHref(job)}
+	{@const description = describeJob(job)}
 	<div class="flex items-start gap-2">
 		<Icon
 			class="w-4 h-4 mt-0.5 shrink-0 {statusColor(job)} {job.status === 'running'
@@ -432,7 +433,7 @@
 				: ''}"
 		/>
 		<div class="flex-1 min-w-0">
-			<div class="text-sm font-medium truncate">{describeJob(job)}</div>
+			<div class="text-sm font-medium truncate" title={description}>{description}</div>
 			{#if job.status === 'running' && job.stage}
 				<div class="text-xs text-muted-foreground">
 					{job.stage}{pct !== null ? ` — ${job.items_done}/${job.items_total}` : ''}
@@ -458,9 +459,10 @@
 					</div>
 				{/if}
 			{:else if job.status === 'failed'}
-				<div class="text-xs text-destructive truncate">
-					{describeError(job)}
-				</div>
+				<!-- Wraps (up to three lines) rather than truncating: the reason a job failed is
+				     the one thing the row is for. -->
+				{@const error = describeError(job)}
+				<div class="text-xs text-destructive line-clamp-3" title={error}>{error}</div>
 			{/if}
 		</div>
 		{#if canRetry(job)}

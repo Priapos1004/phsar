@@ -279,6 +279,7 @@ phsar/
 │   │   │   │   ├── TokenExpiryDialog.svelte
 │   │   │   │   ├── Tooltip.svelte
 │   │   │   │   ├── VersionFooter.svelte
+│   │   │   │   ├── ViewToggle.svelte
 │   │   │   │   ├── WatchlistBookmarkButton.svelte
 │   │   │   │   ├── WatchlistBookmarkIcon.svelte
 │   │   │   │   ├── WatchlistDialog.svelte

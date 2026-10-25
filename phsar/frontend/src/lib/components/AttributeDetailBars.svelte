@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { RATING_ATTRIBUTE_OPTIONS } from '$lib/types/api';
-	import { ATTRIBUTE_COLOURS } from '$lib/utils/chartColors';
+	import { QUALITY_COLORS } from '$lib/utils/chartColors';
 	import { tally } from '$lib/utils/ratingAttributes';
 	import type { RatingOut, RatingScoreItem } from '$lib/types/api';
 
@@ -15,7 +15,7 @@
 	interface AttrDistribution {
 		key: string;
 		label: string;
-		visibleEntries: { value: string; label: string; count: number; colour: string }[];
+		visibleEntries: { value: string; label: string; count: number; color: string }[];
 		totalSet: number;
 	}
 
@@ -34,7 +34,7 @@
 					value: opt.value,
 					label: opt.label,
 					count: counts.get(opt.value) ?? 0,
-					colour: ATTRIBUTE_COLOURS[slot % ATTRIBUTE_COLOURS.length],
+					color: QUALITY_COLORS[slot % QUALITY_COLORS.length],
 				}))
 				.filter((e) => e.count > 0);
 
@@ -60,7 +60,7 @@
 					{@const widthPercent = (entry.count / dist.totalSet) * 100}
 					<div
 						class="h-full"
-						style="width: {widthPercent}%; background: {entry.colour}"
+						style="width: {widthPercent}%; background: {entry.color}"
 					></div>
 				{/each}
 			</div>
@@ -70,7 +70,7 @@
 						<span class="text-xs text-muted-foreground">
 							<span
 								class="inline-block w-2 h-2 rounded-full mr-0.5"
-								style="background: {entry.colour}"
+								style="background: {entry.color}"
 							></span>
 							{entry.label} ({entry.count})
 						</span>

@@ -142,6 +142,8 @@
 			axisLabel: {
 				color: 'rgba(0,0,0,0.55)',
 				fontSize: 11,
+				// A phone-width chart has no room for every tick's number.
+				hideOverlap: true,
 				...(sortKey === 'watch' ? { formatter: (v: number) => formatDuration(v) } : {}),
 			},
 			splitLine: { lineStyle: { color: 'rgba(0,0,0,0.07)' } },
@@ -170,19 +172,26 @@
 			<span>Breakdown by {DIMS[dim].singular}</span>
 			{#if allMetrics.length > rows.length}<span class="font-normal text-muted-foreground">Top {rows.length} of {allMetrics.length}</span>{/if}
 		</h3>
-		<SegmentedControl
-			size="md"
-			ariaLabel="Breakdown dimension"
-			options={(Object.keys(DIMS) as TagDim[]).map((k) => ({ value: k, label: DIMS[k].label }))}
-			value={dim}
-			onSelect={(v) => (dim = v)}
-		/>
+		<!-- On a phone the toggle takes a line of its own and its options share it: at their
+		     desktop padding the five overflow the card. -->
+		<div class="max-sm:flex max-sm:w-full">
+			<SegmentedControl
+				size="md"
+				stretchOnPhone
+				ariaLabel="Breakdown dimension"
+				options={(Object.keys(DIMS) as TagDim[]).map((k) => ({ value: k, label: DIMS[k].label }))}
+				value={dim}
+				onSelect={(v) => (dim = v)}
+			/>
+		</div>
 	</div>
 
 	<div class="flex flex-wrap items-center gap-2">
 		<span class="text-muted-foreground text-xs uppercase tracking-wide">Sort by</span>
 		<Select.Root type="single" value={sortKey} onValueChange={(v) => { if (v) sortKey = v as MetricKey; }}>
-			<Select.Trigger class="w-44 bg-card/80 backdrop-blur border-input text-card-foreground">{activeMetric.label}</Select.Trigger>
+			<!-- On a phone the select takes what "Sort by" and the arrow leave, so the three
+			     share one line. -->
+			<Select.Trigger class="w-44 max-sm:flex-1 max-sm:min-w-0 bg-card/80 backdrop-blur border-input text-card-foreground">{activeMetric.label}</Select.Trigger>
 			<Select.Content>
 				{#each METRICS as m (m.key)}
 					<Select.Item value={m.key}>{m.label}</Select.Item>
@@ -205,9 +214,11 @@
 
 	{#if rows.length}
 		<!-- HTML y-axis labels (left) aligned row-for-row with the chart's bars (right).
-		     gap-2 + grid.left keep the labels off the bars. -->
+		     gap-2 + grid.left keep the labels off the bars. A fixed width, so the chart never
+		     shifts when a sort or direction change swaps the names; 6rem on a phone, where
+		     9rem of long names would leave too little chart to compare the bars. -->
 		<div class="flex gap-2">
-			<div class="shrink-0 w-36" style="padding-top:{TOP_PAD}px;padding-bottom:{AXIS_PAD}px">
+			<div class="shrink-0 w-24 sm:w-36" style="padding-top:{TOP_PAD}px;padding-bottom:{AXIS_PAD}px">
 				{#each labels as t (t.tag)}
 					<div class="flex items-center justify-end min-w-0 text-xs" style="height:{ROW}px">
 						<TagBarLabel

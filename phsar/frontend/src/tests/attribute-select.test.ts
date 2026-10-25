@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/svelte';
 import AttributeSelect from '$lib/components/AttributeSelect.svelte';
 
 describe('AttributeSelect', () => {
-	// Guards a dialog's jump to the top; the why is on AttributeSelect's ✕.
+	// Guards where focus lands when the ✕ leaves; the why is on AttributeSelect's ✕.
 	it('clears into the trigger, not into a removed button', async () => {
 		const onChange = vi.fn();
 		render(AttributeSelect, {

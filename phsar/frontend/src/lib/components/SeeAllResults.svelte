@@ -86,7 +86,8 @@
 	<BackLink origin={back} children={notice ? undefined : actions} />
 
 	<div class="flex flex-wrap items-center gap-2">
-		<h1 class="text-2xl font-bold text-white">{title}</h1>
+		<!-- wrap-anywhere: the user's query in a flex item (rules/frontend.md, "A user's string can be one long word"). -->
+		<h1 class="text-2xl font-bold text-white wrap-anywhere">{title}</h1>
 		{#if season}
 			<span class={cls.seasonPill}>{season}</span>
 		{/if}

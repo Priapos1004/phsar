@@ -20,13 +20,15 @@
 	let { rows, nameLanguage, scoreDecimals, sort, sortDir, onSort }: Props = $props();
 
 	// Every column is sortable; the table replaces the standalone sort + status controls.
-	const COLS: { key: SortKey; label: string; align: 'left' | 'right' | 'center'; hide?: string }[] = [
+	// Every width shows them all — on a phone the table scrolls sideways in its card rather
+	// than dropping a column, whose sort would then be out of reach.
+	const COLS: { key: SortKey; label: string; align: 'left' | 'right' | 'center' }[] = [
 		{ key: 'title', label: 'Title', align: 'left' },
 		{ key: 'score', label: 'Your', align: 'right' },
-		{ key: 'mal', label: 'MAL', align: 'right', hide: 'hidden sm:table-cell' },
+		{ key: 'mal', label: 'MAL', align: 'right' },
 		{ key: 'malDelta', label: 'Δ', align: 'right' },
 		{ key: 'status', label: 'Status', align: 'center' },
-		{ key: 'date', label: 'Rated', align: 'right', hide: 'hidden sm:table-cell' },
+		{ key: 'date', label: 'Rated', align: 'right' },
 	];
 	const alignClass = { left: 'text-left', right: 'text-right', center: 'text-center' } as const;
 </script>
@@ -37,7 +39,7 @@
 		<thead>
 			<tr class="text-muted-foreground border-b border-border bg-muted/30">
 				{#each COLS as col (col.key)}
-					<th class="font-medium px-3 py-2.5 {alignClass[col.align]} {col.hide ?? ''}">
+					<th class="font-medium px-3 py-2.5 {alignClass[col.align]}">
 						<button
 							class="inline-flex items-center gap-1 hover:text-card-foreground transition-colors"
 							onclick={() => onSort(col.key)}
@@ -59,14 +61,17 @@
 					: buildDetailHref('anime', row.anime_uuid, { from: 'ratings' })}
 				<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
 				<tr data-focus-uuid={row.detailUuid} class="group border-b border-border/60 last:border-0 hover:bg-muted/40 transition-colors cursor-pointer" onclick={(e) => rowClickNavigate(e, href)}>
-					<td class="px-3 py-2">
-						<a {href} class="text-card-foreground group-hover:text-primary font-medium">{title}</a>
-						<span class="ml-1.5 text-xs text-muted-foreground">({row.relationLabel ?? mainSideLabel(row.mainCount, row.sideCount)})</span>
+					<!-- min-w-36: squeezed by a scrolling table, a title would break after every word.
+					     The gap is the title's mr-1.5, not the label's ml-1.5: an inline margin still
+					     applies at a wrapped line's start. -->
+					<td class="px-3 py-2 min-w-36">
+						<a {href} class="mr-1.5 text-card-foreground group-hover:text-primary font-medium">{title}</a>
+						<span class="text-xs text-muted-foreground whitespace-nowrap">({row.relationLabel ?? mainSideLabel(row.mainCount, row.sideCount)})</span>
 					</td>
 					<td class="px-3 py-2 text-right font-bold" style="color: {scoreColor(row.userScore)}">
 						{formatDecimalDigits(row.userScore, scoreDecimals)}
 					</td>
-					<td class="px-3 py-2 text-right text-muted-foreground hidden sm:table-cell">
+					<td class="px-3 py-2 text-right text-muted-foreground">
 						{row.malScore !== null ? formatDecimalDigits(row.malScore, 2) : '—'}
 					</td>
 					<td class="px-3 py-2 text-right font-medium {row.malDelta === null ? 'text-muted-foreground/50' : row.malDelta >= 0 ? 'text-emerald-600' : 'text-rose-600'}">
@@ -81,7 +86,7 @@
 							<span class="text-emerald-600">✓</span>
 						{/if}
 					</td>
-					<td class="px-3 py-2 text-right text-muted-foreground hidden sm:table-cell whitespace-nowrap">
+					<td class="px-3 py-2 text-right text-muted-foreground whitespace-nowrap">
 						{formatShortDate(row.modifiedAt)}
 					</td>
 				</tr>

@@ -101,7 +101,7 @@ describe('SearchBar', () => {
 		expect(sent.top_percent).toBeUndefined();
 	});
 
-	// Guards the sheet's jump to the top; the why is on SearchBar's clearStaged.
+	// Guards where focus lands when Clear all leaves; the why is on SearchBar's clearStaged.
 	it("the sheet's Clear all hands focus to Show results as it disappears", async () => {
 		render(SearchBar, { props: { onSearch: vi.fn(), applied: { ...BASE, top_percent: 20 } } });
 		await openSheet();
@@ -151,6 +151,8 @@ describe('SearchBar', () => {
 		await openSheet();
 		await fireEvent.click(screen.getByRole('button', { name: 'Dropped' }));
 		await fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+		// bits-ui unmounts the closed sheet a frame later (after any exit animation).
+		await vi.waitFor(() => expect(screen.queryByText('Scored by')).not.toBeInTheDocument());
 		await openSheet();
 		expect(screen.getByRole('button', { name: 'Dropped' })).toHaveAttribute('aria-pressed', 'false');
 

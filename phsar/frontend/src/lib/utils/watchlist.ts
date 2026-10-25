@@ -114,7 +114,7 @@ export const READY_FILTERS: (ReadyBadge & { key: ReadyFilterKey })[] = [
 
 // One teal ramped by weight, so a long anime is spottable without reading the number. Teal
 // because it collides with no `.theme-*` primary; not `scoreColor`'s ramp, which means
-// "how good" and tops out on the theme primary; not the priority accents `PRIORITY_ACCENT`
+// "how good"; not the priority accents `PRIORITY_ACCENT`
 // owns one chip group over.
 //
 // `fill` and `text` are the SAME shade per band — the card badge needs a background to sit

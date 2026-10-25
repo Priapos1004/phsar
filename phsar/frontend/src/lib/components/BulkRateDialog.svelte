@@ -118,8 +118,7 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		<!-- min-w-0 required (see .claude/rules/frontend.md "Dialog children that cannot shrink"). -->
-		<div class="space-y-4 py-2 min-w-0">
+		<div class="space-y-4 py-2">
 			{#if alreadyRatedCount > 0}
 				<div class="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
 					This will overwrite {alreadyRatedCount} existing rating{alreadyRatedCount > 1 ? 's' : ''}.
