@@ -14,6 +14,7 @@
 	// The parent is responsible for calling `ensureGenresLoaded()` so descriptions exist.
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { genreDescriptions } from '$lib/stores/genres';
+	import * as cls from '$lib/styles/classes';
 
 	interface Props {
 		name: string;
@@ -35,7 +36,7 @@
 		title={name}
 	>{name}</button>
 {:else if description}
-	<Tooltip text={description} class="truncate min-w-0 text-card-foreground">{name}</Tooltip>
+	<Tooltip text={description} class="truncate min-w-0 text-card-foreground {cls.tooltipHint}">{name}</Tooltip>
 {:else}
 	<span class="truncate min-w-0 text-card-foreground" title={name}>{name}</span>
 {/if}

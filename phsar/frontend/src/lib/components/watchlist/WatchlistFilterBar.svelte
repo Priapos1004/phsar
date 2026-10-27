@@ -5,12 +5,12 @@
 	import { Label } from '$lib/components/ui/label';
 	import GrainToggle from '$lib/components/GrainToggle.svelte';
 	import ViewToggle from '$lib/components/ViewToggle.svelte';
-	import Tooltip from '$lib/components/Tooltip.svelte';
+	import InfoTip from '$lib/components/InfoTip.svelte';
 	import SegmentedControl from '$lib/components/SegmentedControl.svelte';
 	import { watchlistFilter, type WatchlistFilterState } from '$lib/stores/watchlistFilter';
 	import { tags } from '$lib/stores/tags';
 	import { contrastText } from '$lib/utils/color';
-	import { PRIORITY_ACCENT, PRIORITY_OPTIONS, READY_FILTERS, WATCHTIME_FILTERS } from '$lib/utils/watchlist';
+	import { PRIORITY_ACCENT, PRIORITY_OPTIONS, READY_FILTERS, READY_KEY, WATCHTIME_FILTERS } from '$lib/utils/watchlist';
 	import * as cls from '$lib/styles/classes';
 
 	// Prune deleted tags from the selection so a filter that pointed at a now-deleted
@@ -97,44 +97,40 @@
 			     while Priority and Watchtime cannot; the order in
 			     utils/watchlistStats.buildWatchlistView decides which. -->
 			<div class="space-y-1.5">
-				<div class="flex h-7 items-center"><Label class={labelCls}>Status</Label></div>
+				<div class="flex h-7 items-center gap-1.5">
+					<Label class={labelCls}>Status</Label>
+					<InfoTip label="What the Status filters mean" terms={READY_KEY} />
+				</div>
 				<div class={cls.chipGroup}>
 					{#each READY_FILTERS as opt (opt.key)}
 						{@const on = $watchlistFilter.readiness.includes(opt.key)}
-						<Tooltip text={opt.title}>
-							{#snippet trigger(props)}
-								<button
-									{...props}
-									class="{cls.chip} {on ? `${opt.class} shadow-sm` : cls.chipOff}"
-									aria-pressed={on}
-									onclick={() => toggle('readiness', opt.key)}
-								>
-									{opt.label}
-								</button>
-							{/snippet}
-						</Tooltip>
+						<button
+							class="{cls.chip} {on ? `${opt.class} shadow-sm` : cls.chipOff}"
+							aria-pressed={on}
+							onclick={() => toggle('readiness', opt.key)}
+						>
+							{opt.label}
+						</button>
 					{/each}
 				</div>
 			</div>
 
 			<!-- Watchtime: a union like the rest, over the size band each row's badge shows. -->
 			<div class="space-y-1.5">
-				<div class="flex h-7 items-center"><Label class={labelCls}>Watchtime</Label></div>
+				<div class="flex h-7 items-center gap-1.5">
+					<Label class={labelCls}>Watchtime</Label>
+					<InfoTip label="What the Watchtime filters mean" terms={WATCHTIME_FILTERS} />
+				</div>
 				<div class={cls.chipGroup}>
 					{#each WATCHTIME_FILTERS as opt (opt.key)}
 						{@const on = $watchlistFilter.watchtime.includes(opt.key)}
-						<Tooltip text={opt.title}>
-							{#snippet trigger(props)}
-								<button
-									{...props}
-									class="{cls.chip} {on ? `${opt.fill} shadow-sm` : cls.chipOff}"
-									aria-pressed={on}
-									onclick={() => toggle('watchtime', opt.key)}
-								>
-									{opt.label}
-								</button>
-							{/snippet}
-						</Tooltip>
+						<button
+							class="{cls.chip} {on ? `${opt.fill} shadow-sm` : cls.chipOff}"
+							aria-pressed={on}
+							onclick={() => toggle('watchtime', opt.key)}
+						>
+							{opt.label}
+						</button>
 					{/each}
 				</div>
 			</div>

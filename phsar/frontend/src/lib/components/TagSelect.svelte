@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { X } from 'lucide-svelte';
 	import { Badge } from '$lib/components/ui/badge';
+	import * as cls from '$lib/styles/classes';
 
 	interface Props {
 		placeholder?: string;
@@ -83,12 +84,13 @@
 		     (rules/frontend.md, "A control that removes itself hands focus on first"). -->
 		{#each selectedItems as item}
 			{@const label = displayLabel(item)}
-			<!-- max-w-full + a truncating label: a studio or an age rating can outgrow the box. -->
-			<Badge variant="default" class="gap-1 text-sm h-6 max-w-full">
+			<!-- max-w-full + a truncating label: a studio or an age rating can outgrow the box.
+			     overflow-visible, or the badge clips the ✕'s hit area to its own 24px. -->
+			<Badge variant="default" class="gap-1 text-sm h-6 max-w-full overflow-visible">
 				<span class="truncate" title={label}>{label}</span>
 				<button
 					type="button"
-					class="ml-1 shrink-0 hover:opacity-70"
+					class="relative ml-1 shrink-0 hover:opacity-70 {cls.hitArea}"
 					onclick={(e) => { e.stopPropagation(); box?.focus(); onRemove(item); }}
 					aria-label="Remove {label}"
 				>

@@ -26,12 +26,14 @@
 	let { tabs, active, basePath, ariaLabel }: Props = $props();
 </script>
 
+<!-- Tabs pad tighter below 360px, so a wrapping tab row (the admin's) takes no more lines at
+     320 than at 360. -->
 <nav class="flex flex-wrap gap-1 border-b border-white/10" aria-label={ariaLabel}>
 	{#each tabs as tab}
 		{@const isActive = active === tab.key}
 		<a
 			href={`${basePath}?tab=${tab.key}`}
-			class="px-4 py-2 -mb-px text-sm font-medium transition border-b-2 {isActive
+			class="px-4 max-xs:px-3 py-2 -mb-px text-sm font-medium transition border-b-2 {isActive
 				? 'text-primary border-primary'
 				: 'text-white/60 border-transparent hover:text-white'}"
 			aria-current={isActive ? 'page' : undefined}

@@ -8,6 +8,7 @@
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import { formatDecimalDigits, formatScoreWithStep, resolveTitle, escapeHtml } from '$lib/utils/formatString';
 	import { userSettings } from '$lib/stores/userSettings';
+	import * as cls from '$lib/styles/classes';
 	import type { RatingScoreItem } from '$lib/types/api';
 
 	interface Props {
@@ -163,12 +164,12 @@
 			<p class="text-card-foreground flex flex-wrap items-center gap-x-1.5">
 				<span class="font-medium">your ≈ {formatDecimalDigits(fit.slope, 2)}·mal {readout?.above}</span>
 				<span class="text-muted-foreground">·</span>
-				<Tooltip text="R² — how much of your scores the MAL score explains. 0 = no link; 1 = your score is fully predictable from MAL.">
+				<Tooltip class={cls.tooltipHint} text="R² — how much of your scores the MAL score explains. 0 = no link; 1 = your score is fully predictable from MAL.">
 					<span class="text-muted-foreground">R² {formatDecimalDigits(fit.r2, 2)}</span>
 				</Tooltip>
 				{#if rank.ok}
 					<span class="text-muted-foreground">·</span>
-					<Tooltip text="Spearman ρ — how closely your ranking order matches MAL's. −1 = exact opposite; 0 = unrelated; 1 = identical order.">
+					<Tooltip class={cls.tooltipHint} text="Spearman ρ — how closely your ranking order matches MAL's. −1 = exact opposite; 0 = unrelated; 1 = identical order.">
 						<span class="text-muted-foreground">Spearman ρ {formatDecimalDigits(rank.rho, 2)}</span>
 					</Tooltip>
 				{/if}

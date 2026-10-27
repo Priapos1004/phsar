@@ -83,8 +83,8 @@ cards are ranked and text-dense, and a third column would make each narrower tha
 under the same rule.
 
 `cls.container` adds `px-4` inside that width and the section pages' own wrappers don't,
-so the two sets of edges sit 16px apart a side — too small to see, so don't unify
-them. A new page copies the wrapper of the sibling it sits beside.
+so from 360px up the two sets of edges sit 16px apart a side — too small to see, so don't
+unify them. A new page copies the wrapper of the sibling it sits beside.
 
 ## Tooltips — pick by what the cursor is over
 
@@ -99,6 +99,13 @@ Never style raw text as a hint. Three mechanisms, and they are the whole set:
 The third is not laziness. A per-row app `Tooltip` makes every cell a keyboard tab
 stop and mounts a Provider per row, which is why the tables and cover cards use the
 native attribute instead.
+
+**Only a children-mode trigger opens on a tap.** A `trigger` snippet stays hover and focus
+only, because its tap is the control's action and a bubble left over it would hide what the
+action did; a trigger inside a link or a clickable row navigates instead. So an explanation
+that must reach a phone goes on text outside both, never on a control. A control that needs
+one (a chip, a select) gets an `InfoTip` ⓘ beside its label, and a text label that opens a
+tooltip carries `cls.tooltipHint`, the dotted underline that tells a phone it can be tapped.
 
 ## Charts
 
@@ -161,6 +168,9 @@ long toggle takes `cls.stretchOnPhone`. A tweak for the narrowest phones takes t
 breakpoint (`max-xs:`, below 360px), never a literal width, so those tweaks move together.
 A layout change that only makes sense at one width stays at that width; every other fix
 applies at all of them.
+
+A small icon control (a chip's ✕, a close, a retry) carries `cls.hitArea`, so a near miss
+on a phone still lands.
 
 ## A destructive action's confirm is tiered by what it costs to undo
 

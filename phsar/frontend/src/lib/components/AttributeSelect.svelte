@@ -2,6 +2,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Label } from '$lib/components/ui/label';
 	import { X } from 'lucide-svelte';
+	import * as cls from '$lib/styles/classes';
 
 	interface Props {
 		label: string;
@@ -57,7 +58,7 @@
 			     value (rules/frontend.md, "A control that removes itself hands focus on first"). -->
 			<button
 				type="button"
-				class="absolute top-1/2 right-3 -translate-y-1/2 z-10 text-muted-foreground hover:text-foreground"
+				class="absolute top-1/2 right-3 -translate-y-1/2 z-10 text-muted-foreground hover:text-foreground {cls.hitArea}"
 				onclick={(e) => { e.stopPropagation(); trigger?.focus(); onChange(null); }}
 				aria-label={`Clear ${label}`}
 			>

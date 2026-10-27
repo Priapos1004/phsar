@@ -28,6 +28,7 @@
     import { pushToast } from '$lib/stores/toast';
     import { formatBytes, formatShortDateTime } from '$lib/utils/formatString';
     import { addOptimisticJob, backupSaved, bumpJobsRefresh, onBump } from '$lib/stores/jobs';
+    import * as cls from '$lib/styles/classes';
     import type { BackupListResponse, BackupMetadata, BackupSource } from '$lib/types/api';
 
     interface Props {
@@ -342,6 +343,7 @@
                  row. It comes from the response envelope (see the `load` comment) —
                  null ONLY when the server could not read it, which no backup can fix. -->
             <Tooltip
+                class={cls.tooltipHint}
                 text={dbRevision
                     ? `The database is at Alembic revision ${dbRevision}. A dump on a different revision would roll the schema back if restored.`
                     : 'The live schema revision couldn’t be read from the database, so no dump can be confirmed against it.'}

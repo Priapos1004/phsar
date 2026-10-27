@@ -220,6 +220,7 @@ phsar/
 │   │   │   │   ├── HeroIconButton.svelte
 │   │   │   │   ├── HeroScore.svelte
 │   │   │   │   ├── InfoDiashow.svelte
+│   │   │   │   ├── InfoTip.svelte
 │   │   │   │   ├── JobBell.svelte
 │   │   │   │   ├── LoadingScreen.svelte
 │   │   │   │   ├── MaintenanceBanner.svelte
@@ -477,6 +478,7 @@ phsar/
 │   │       ├── tag-select.test.ts
 │   │       ├── themes.test.ts
 │   │       ├── toast.test.ts
+│   │       ├── tooltip.test.ts
 │   │       ├── watchlist-ready.test.ts
 │   │       ├── watchlist-stats.test.ts
 │   │       └── watchlist-uniform-entries.test.ts

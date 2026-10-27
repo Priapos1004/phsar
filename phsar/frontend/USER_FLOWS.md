@@ -497,7 +497,7 @@ The charts replay their build-up animation every time you open the tab, not just
 - **View toggle** (grid / table pills, without their icons below 360px):
   - **Grid** (default): cards grouped under **priority bands** (High / Medium / Low, High always on top), each band headed by a colored dot + the priority word + a per-grain count ("N anime" / "N media"). Within a band, cards are title-sorted. Each card shows the cover (media covers are spoiler-guarded; anime covers never are), a list-color dot (tooltip = list name, or "N lists"), a note indicator (media grain: the note text on hover; anime grain: a count badge whose hover lists each noted media's note, one per line, in media-table (chronological) order), and a runtime badge in the cover's bottom-right (9.2.2).
   - **Table**: sortable columns (list-color dot, title, priority, **Time** (9.2.2), **Note**, added date), every column at every width — on a phone the table scrolls sideways in its card; clicking a header toggles the sort — the Note column sorts by note count (media grain: noted first; anime grain: most-noted first) and its cell hover reveals the note text(s). Hovering a row highlights the title link. Whole-row click navigates to the detail page (preserving new-tab / inner-link clicks).
-- **Priority**, **Status** (9.2.1) and **Watchtime** (9.2.2) each filter as a multi-select **union** where an empty selection = all. **Lists** does too, with an **In / Not in** toggle (default In): In shows the picked lists combined, Not in everything except them — per entry, so an anime spanning a kept and an excluded list keeps its kept entries. Flipping the toggle keeps the picks; under Not in a picked chip renders switched off (a faint tint of its colour, a glowing theme ring, a ban icon) at the same size. "Clear all" resets every group and the toggle. A deleted list is auto-pruned from the Lists selection, and a long list name truncates in its chip.
+- **Priority**, **Status** (9.2.1) and **Watchtime** (9.2.2) each filter as a multi-select **union** where an empty selection = all. **Lists** does too, with an **In / Not in** toggle (default In): In shows the picked lists combined, Not in everything except them — per entry, so an anime spanning a kept and an excluded list keeps its kept entries. Flipping the toggle keeps the picks; under Not in a picked chip renders switched off (a faint tint of its colour, a glowing theme ring, a ban icon) at the same size. "Clear all" resets every group and the toggle. A deleted list is auto-pruned from the Lists selection, and a long list name truncates in its chip. An ⓘ beside the Status and Watchtime headers explains their chips, on hover or tap; Status's also names Standalone, which no chip shows.
 - Cards/rows link to the media or anime detail page with `?from=watchlist` (→ "Back to watchlist").
 
 #### 9.2.1 Readiness ("can I start this tonight?")
@@ -518,8 +518,8 @@ Every card and row carries the runtime of what you have listed, shown to two uni
 table. The anime grain **sums** its watchlisted media; the media grain shows that entry's
 own.
 
-- The **Watchtime** chips band it as `< 5h`, `5–10h` and `> 10h` — roughly one evening, a
-  season or two, and a long haul. The bounds are literal, so a title of exactly 5h or
+- The **Watchtime** chips band it as `< 5h`, `5–10h` and `> 10h` — about a 12-episode season
+  or less, one or two seasons, and a long haul. The bounds are literal, so a title of exactly 5h or
   exactly 10h answers the middle chip and neither outer one.
 - **`+` means "at least"** (`8h 40m+`): some of the anime's listed media have no runtime
   yet, so the sum is a lower bound.
@@ -558,6 +558,7 @@ own.
 - **Hide**: "Blur covers and descriptions, and hide spoiler media from search results" — same as blur, plus media search results are filtered to only show visible media
 - Spoiler frontier: per anime, all media up to and including the next unwatched **anchor** entry are visible; individually rated media beyond the frontier are also visible. Anchors are `main` AND `alternative_version` — retellings extend the story, so each alt-version gates the next (rating Evangelion TV reveals Rebuild Movie 1 but not Movies 2-4)
 - Anime covers and anime-level descriptions are never spoiler-protected
+- An ⓘ beside the label explains what counts as a spoiler
 - On detail pages, "hide" mode falls back to blur behavior (user explicitly navigated there)
 - Visibility data loaded on auth and refreshed after rating changes
 - **Restricted (guest) users**: the spoiler control is disabled and pinned to **Off** — guests can't rate, so a frontier would freeze at episode 1 of every anime and hide the catalogue (they're also excluded from the spoiler-visibility cache). The Rating Step and Data Export controls are likewise shown disabled rather than hidden. Enforced server-side (`PUT /users/settings` drops `spoiler_level` for restricted users)

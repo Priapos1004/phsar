@@ -202,7 +202,7 @@
 						type="button"
 						onclick={clearSearch}
 						aria-label="Clear search"
-						class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-card-foreground"
+						class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-card-foreground {cls.hitArea}"
 					>
 						<X class="size-4" />
 					</button>

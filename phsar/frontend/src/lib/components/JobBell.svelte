@@ -471,7 +471,7 @@
 				type="button"
 				onclick={(e) => retryJob(job, e)}
 				disabled={retryingUuid !== null}
-				class="shrink-0 p-1 rounded hover:bg-muted transition disabled:opacity-50 disabled:cursor-not-allowed"
+				class="relative shrink-0 p-1 rounded hover:bg-muted transition disabled:opacity-50 disabled:cursor-not-allowed {cls.hitArea}"
 				aria-label="Retry job"
 			>
 				<RefreshCw class="w-3.5 h-3.5 {retryingUuid === job.uuid ? 'animate-spin' : ''}" />

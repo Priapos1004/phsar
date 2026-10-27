@@ -11,6 +11,7 @@
     import { get } from 'svelte/store';
     import DangerZone from '$lib/components/DangerZone.svelte';
     import ScrollRow from '$lib/components/ScrollRow.svelte';
+    import InfoTip from '$lib/components/InfoTip.svelte';
     import { pushToast } from '$lib/stores/toast';
     import { THEMES, isValidTheme, themeArt } from '$lib/themes';
     import * as cls from '$lib/styles/classes';
@@ -135,7 +136,17 @@
 
                 <!-- Default Search View -->
                 <div class={prefRow}>
-                    <Label>Default Search View</Label>
+                    <div class="flex items-center gap-1.5">
+                        <Label>Default Search View</Label>
+                        <InfoTip
+                            label="What the default search view does"
+                            text="Which results a search from the Home page shows by default."
+                            terms={[
+                                { label: 'Anime', title: 'One result per anime, its seasons, movies and specials together' },
+                                { label: 'Media', title: 'Each season, movie and special as a result of its own' },
+                            ]}
+                        />
+                    </div>
                     <Select.Root
                         type="single"
                         value={settings.default_search_view}
@@ -188,7 +199,13 @@
                      every anime and "hide" would blank the catalogue. -->
                 <div class={prefRow}>
                     <div>
-                        <Label>Spoiler Protection</Label>
+                        <div class="flex items-center gap-1.5">
+                            <Label>Spoiler Protection</Label>
+                            <InfoTip
+                                label="What counts as a spoiler"
+                                text="An anime's media are its seasons, movies and specials. Every media up to the next main-story one you haven't rated stays visible; those after it are spoilers, and rating it reveals the next. Media you rated always show, and the anime's own cover and description are never hidden."
+                            />
+                        </div>
                         <p class="text-xs text-muted-foreground mt-0.5">
                             {#if isRestricted}
                                 Off for guest accounts

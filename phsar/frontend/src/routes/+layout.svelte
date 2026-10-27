@@ -226,7 +226,7 @@
     </div>
 
     <!-- No footer on an auth page: below the full-height gradient it would sit on the bare page. -->
-    <main class={onAuthPage ? cls.authScreen : `min-h-screen ${cls.pageGutter} pt-4 pb-8`}>
+    <main class={onAuthPage ? cls.authScreen : `min-h-screen ${cls.mainGutter} pt-4 pb-8`}>
       {@render children()}
     </main>
 

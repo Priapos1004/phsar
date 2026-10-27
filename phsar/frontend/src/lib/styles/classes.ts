@@ -6,14 +6,16 @@
 export const pageWidth = 'mx-auto max-w-5xl 2xl:max-w-7xl';
 // The user-menu pages' width (rules/frontend.md, "Pages share one width").
 export const panelWidth = 'mx-auto max-w-3xl';
-// Below 360px the page gutters halve (with `main`'s): a detail card's rows need the width
-// there, while 375 and up keep 16 + 16.
-export const container = `${pageWidth} px-4 max-xs:px-2`;
-// The page's side gutter, `main`'s and the navbar's, so their edges line up at every width.
-export const pageGutter = 'px-4 max-xs:px-2 sm:px-8';
+// Below 360px a container drops its own gutter: a detail card's rows need the width, and
+// `main`'s 16px then puts every page the same distance from the edge.
+export const container = `${pageWidth} px-4 max-xs:px-0`;
+// `main`'s side gutter, which never narrows: a card closer than 16px to the edge looks cramped.
+export const mainGutter = 'px-4 sm:px-8';
+// The navbar's: `main`'s, halved below 360px, where the navbar needs the room for its bell.
+export const pageGutter = `${mainGutter} max-xs:px-2`;
 // `main` on an auth page: the gradient and the centred card, in normal flow so the document
 // scrolls natively — a fixed overlay keeps a phone's address bar from collapsing.
-export const authScreen = `min-h-dvh bg-gradient-to-br from-[var(--auth-gradient-from)] via-[var(--auth-gradient-via)] to-[var(--auth-gradient-to)] flex justify-center items-start pt-20 pb-8 ${pageGutter}`;
+export const authScreen = `min-h-dvh bg-gradient-to-br from-[var(--auth-gradient-from)] via-[var(--auth-gradient-via)] to-[var(--auth-gradient-to)] flex justify-center items-start pt-20 pb-8 ${mainGutter}`;
 export const sectionSpacing = 'space-y-8';
 // A page's navigation links above its content: they can share one line, so they share one look.
 // No margin of its own — `BackLink`'s row owns the gap below them.
@@ -170,6 +172,12 @@ export const diffTable =
 // A label that opens a tooltip (the Tooltip's span brings the help cursor). The label's font
 // size sits on its parent, so the line box matches a plain label's beside it.
 export const tooltipHint = 'border-b border-dotted border-muted-foreground/40';
+
+// A 32px touch target centred on a small control, invisible, so a near miss still lands
+// without the control looking any bigger. Hangs off the control, which must be positioned —
+// `relative` at the site, never here, where it would fight an `absolute` one — and an
+// `overflow-hidden` ancestor cuts it back to that ancestor's box.
+export const hitArea = 'after:absolute after:top-1/2 after:left-1/2 after:size-8 after:-translate-1/2';
 
 // The count bubble on an icon button's corner, composed onto a positioned button.
 export const countBadge =

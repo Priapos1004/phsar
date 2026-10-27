@@ -217,7 +217,7 @@
 					</button>
 					<button
 						type="button"
-						class="pr-2 pl-0.5 py-1 hover:text-white"
+						class="relative pr-2 pl-0.5 py-1 hover:text-white {cls.hitArea}"
 						aria-label="Remove {chip.label}"
 						onclick={() => removeFilters(chip.keys)}
 					>
