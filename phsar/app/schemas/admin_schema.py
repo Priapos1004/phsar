@@ -327,6 +327,9 @@ class AdminOverviewStats(BaseModel):
     # toggles between them. Both reuse the SweepTierBreakdown shape.
     sweep_tiers: SweepTierBreakdown
     media_sweep_tiers: SweepTierBreakdown
+    # The sweep's settled nightly load (`_media_per_night`) and its cap.
+    sweep_media_per_night: int
+    sweep_max_per_run: int
 
 
 class CurationPendingCounts(BaseModel):

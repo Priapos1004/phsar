@@ -103,14 +103,14 @@ export function absoluteDetailUrl(type: DetailType, uuid: string, origin: string
 
 /** Jump to an anime-view search filtered to a single studio ("other anime from this
  * studio"). Shared by the detail pages and the stats charts so the filter shape can't
- * drift between them. */
-export function searchByStudio(studio: string): void {
-	void navigateToSearch({ query: '', search_type: 'title', view_type: 'anime', studio_name: [studio] });
+ * drift between them. `scope` adds the caller's own filters. */
+export function searchByStudio(studio: string, scope: Partial<MediaSearchFilters> = {}): void {
+	void navigateToSearch({ query: '', search_type: 'title', view_type: 'anime', studio_name: [studio], ...scope });
 }
 
 /** The same jump for an original source ("other anime adapted from light novels"). */
-export function searchBySource(source: string): void {
-	void navigateToSearch({ query: '', search_type: 'title', view_type: 'anime', original_source: [source] });
+export function searchBySource(source: string, scope: Partial<MediaSearchFilters> = {}): void {
+	void navigateToSearch({ query: '', search_type: 'title', view_type: 'anime', original_source: [source], ...scope });
 }
 
 /** Create a search token from the filters and navigate to `path` with it — /search, or

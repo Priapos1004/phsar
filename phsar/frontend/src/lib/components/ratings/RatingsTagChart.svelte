@@ -64,10 +64,11 @@
 	/** Where a bar label goes, per dimension — the single place that decides it.
 	 * Season + age drill INTO your own ratings ("what did I rate in Fall 2025"); a
 	 * studio or source asks the opposite question ("what ELSE is there") so it leaves
-	 * for search; a genre has no destination and keeps its description tooltip instead. */
+	 * for search, unrated only; a genre has no destination and keeps its description
+	 * tooltip instead. */
 	function labelAction(tag: string): (() => void) | undefined {
-		if (dim === 'studios') return () => searchByStudio(tag);
-		if (dim === 'sources') return () => searchBySource(tag);
+		if (dim === 'studios') return () => searchByStudio(tag, { rated: ['none'] });
+		if (dim === 'sources') return () => searchBySource(tag, { rated: ['none'] });
 		if (dim === 'genres') return undefined;
 		// The other value filters are CLEARED rather than intersected: clicking a bar
 		// means "show me this", not "narrow whatever was already applied".

@@ -1,8 +1,10 @@
 import { api } from '$lib/api';
 import type {
-	AnimeSearchResult, BrowseCarousel, BrowsePageKey, DiscoverToday, DiscoverMoods,
+	AnimeSearchResult, BrowseCarousel, BrowsePageKey, DiscoverToday, DiscoverMoods, MediaSearchResult,
 } from '$lib/types/api';
-import { effectiveSort, fetchAnimeSearchResults, readsOwnData, type MediaSearchFilters } from '$lib/utils/search';
+import {
+	effectiveSort, fetchAnimeSearchResults, fetchSearchResults, readsOwnData, type MediaSearchFilters, type ViewType,
+} from '$lib/utils/search';
 import {
 	isSetActive, NO_REFINEMENT, refinedSearch, WIDEN_BELOW, widened, type Refinement, type Step,
 } from './browseRefinements';
@@ -25,6 +27,11 @@ import { catalogueChanged, onBump } from './jobs';
  * those rows. The rest stay: a write can't change them, and
  * their coverage band and bookmark already follow the write through their own stores.
  * PER-USER, so `clearPerUserStores` clears it.
+ *
+ * The search pages keep their latest search here too, under the same drops, so a detail
+ * page and back renders the list at once rather than re-verifying the token and
+ * refetching. They are search's section, not Browse's: leaving search drops them, and
+ * they outlive Browse's own clear, which runs as a search page arrives from Browse.
  */
 // One entry per slot, holding the request it was last asked: a see-all keeps a slot per
 // carousel, so switching its toggles replaces its list rather than piling one up per
@@ -93,6 +100,27 @@ export function browseRow(
 
 const rowId = (params: MediaSearchFilters, limit: number) => JSON.stringify([params, limit]);
 const rowSlot = (id: string) => `row:${id}`;
+
+type SearchPage = 'search' | 'search-all';
+
+/** A search token's filters: a token always decodes to the same ones. */
+export function verifiedToken(page: SearchPage, token: string): Promise<MediaSearchFilters> {
+	return cached(`search:${page}:token`, token, () => api.post<MediaSearchFilters>('/filters/verify-token', { token }), {
+		lasting: true,
+	});
+}
+
+/** A search page's results — one slot per page, holding its latest search. */
+export function searchRows(
+	page: SearchPage, params: MediaSearchFilters, grain: ViewType, limit: number,
+): Promise<(AnimeSearchResult | MediaSearchResult)[]> {
+	return cached<(AnimeSearchResult | MediaSearchResult)[]>(
+		`search:${page}:rows`,
+		JSON.stringify([params, grain, limit]),
+		() => (grain === 'anime' ? fetchAnimeSearchResults(params, limit) : fetchSearchResults(params, limit)),
+		{ personal: readsOwnData(params), lasting: true },
+	);
+}
 
 /** Discover's wheel and today's mood. `spun` says whether this viewer has seen the wheel
  *  land today: a user once their spin is counted, a guest — whose mood the day draws —
@@ -201,6 +229,11 @@ export function dropPersonalRows(): void {
 /** Leaving Browse: drop its entries, and keep the lasting ones. */
 export function clearSectionRows(): void {
 	for (const [key, entry] of cache) if (!entry.lasting) cache.delete(key);
+}
+
+/** Leaving search: drop its pages' searches. */
+export function clearSearchRows(): void {
+	for (const key of cache.keys()) if (key.startsWith('search:')) cache.delete(key);
 }
 
 export function clearBrowseRows(): void {

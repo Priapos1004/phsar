@@ -14,7 +14,7 @@ from app.models.merge_candidate import MergeCandidate, MergeCandidateStatus
 from app.models.studio import Studio
 from app.models.users import RoleType, Users
 from app.schemas import admin_schema
-from app.services.admin_stats_service import JOB_HEALTH_WINDOW_DAYS
+from app.services.admin_stats_service import JOB_HEALTH_WINDOW_DAYS, _media_per_night
 from tests._helpers import media_kwargs
 from tests.routers.conftest import CRON_AUTH_HEADER
 
@@ -517,7 +517,9 @@ async def test_stats_overview_returns_shape(client, admin_auth_headers):
 
     assert set(data.keys()) == {
         "catalog", "jobs", "activity_7d", "watchlist", "sweep_tiers", "media_sweep_tiers",
+        "sweep_media_per_night", "sweep_max_per_run",
     }
+    assert data["sweep_max_per_run"] == settings.JOBS_SWEEP_MAX_PER_RUN
     assert set(data["catalog"].keys()) == {
         "anime_count", "media_count", "anime_added_7d", "media_added_7d",
     }
@@ -555,6 +557,16 @@ async def test_stats_overview_returns_shape(client, admin_auth_headers):
     assert {row["kind"]: row["window_days"] for row in data["jobs"]["by_kind"]} == {
         kind.value: days for kind, days in JOB_HEALTH_WINDOW_DAYS.items()
     }
+
+
+def test_media_per_night_divides_each_bucket_by_its_cadence():
+    """Every settled bucket's share is 10 here, so a bucket on the wrong cadence moves
+    the total — and the stabilizing burst, left out, would too."""
+    tiers = admin_schema.SweepTierBreakdown(
+        airing_now=10, stabilizing=10, stabilizing_by_check={0: 10},
+        weekly_cycle=70, long_cycle=900, archival_cycle=1800,
+    )
+    assert _media_per_night(tiers) == 40
 
 
 def _kind_row(resp_json: dict, kind: JobKind) -> dict:

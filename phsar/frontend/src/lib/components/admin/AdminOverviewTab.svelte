@@ -123,7 +123,12 @@
 			</Card.Content>
 		</Card.Root>
 
-		<SweepTiersCard animeTiers={stats.sweep_tiers} mediaTiers={stats.media_sweep_tiers} />
+		<SweepTiersCard
+			animeTiers={stats.sweep_tiers}
+			mediaTiers={stats.media_sweep_tiers}
+			perNight={stats.sweep_media_per_night}
+			cap={stats.sweep_max_per_run}
+		/>
 
 		<Card.Root>
 			<Card.Header>

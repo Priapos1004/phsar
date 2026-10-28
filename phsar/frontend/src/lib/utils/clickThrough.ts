@@ -4,6 +4,9 @@
 // Submit — so swallow it when it misses the item; non-iOS touch's click, landing on the
 // item, passes through. A mouse is left alone: its click goes to the element it
 // pressed, not to what the closing menu uncovers.
+// The mousedown before that click goes too: a text field takes focus — and a phone opens
+// its keyboard — on the mousedown, so cancelling only the click still lands the tap in
+// the note field below a list.
 // Never preventDefault the pointerup itself — bits-ui skips its own select on a
 // defaultPrevented pointerup.
 const GHOST_CLICK_WINDOW_MS = 400;
@@ -16,8 +19,11 @@ export function swallowClickThrough(e: PointerEvent): void {
 		ev.preventDefault();
 		ev.stopPropagation();
 	};
-	document.addEventListener('click', swallow, { capture: true, once: true });
-	// A tap that produces no ghost click must not leave the listener armed for the
+	const disarm = new AbortController();
+	for (const type of ['mousedown', 'click'] as const) {
+		document.addEventListener(type, swallow, { capture: true, once: true, signal: disarm.signal });
+	}
+	// A tap that produces no ghost click must not leave the listeners armed for the
 	// user's next real click.
-	setTimeout(() => document.removeEventListener('click', swallow, { capture: true }), GHOST_CLICK_WINDOW_MS);
+	setTimeout(() => disarm.abort(), GHOST_CLICK_WINDOW_MS);
 }

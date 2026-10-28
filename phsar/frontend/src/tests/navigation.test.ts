@@ -115,6 +115,14 @@ describe('searchByStudio', () => {
 			expect.objectContaining({ studio_name: ['Wit Studio'], view_type: 'anime', search_type: 'title', query: '' }),
 		);
 	});
+
+	it("adds the caller's scope", () => {
+		searchByStudio('Wit Studio', { watchlisted: true });
+		expect(api.post).toHaveBeenLastCalledWith(
+			'/filters/create-token',
+			expect.objectContaining({ studio_name: ['Wit Studio'], watchlisted: true }),
+		);
+	});
 });
 
 describe('searchBySource', () => {

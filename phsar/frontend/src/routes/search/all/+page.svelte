@@ -4,9 +4,9 @@
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { api } from '$lib/api';
 	import Notice from '$lib/components/Notice.svelte';
 	import SeeAllResults from '$lib/components/SeeAllResults.svelte';
+	import { searchRows, verifiedToken } from '$lib/stores/browseRows';
 	import { ensureRatingCoverage } from '$lib/stores/ratingCoverage';
 	import { userSettings } from '$lib/stores/userSettings';
 	import type { AnimeSearchResult, MediaSearchResult } from '$lib/types/api';
@@ -16,8 +16,6 @@
 		GUEST_STRIPPED_NOTICE,
 		SEARCH_MODE_LABELS,
 		SEE_ALL_LIMIT,
-		fetchAnimeSearchResults,
-		fetchSearchResults,
 		filterChips,
 		omitKeys,
 		stripForGuest,
@@ -54,15 +52,13 @@
 		rows = null;
 		notice = '';
 		try {
-			const parsed = await api.post<MediaSearchFilters>('/filters/verify-token', { token });
+			const parsed = await verifiedToken('search-all', token);
 			if (id !== request) return;
 			const stripped = isGuest ? stripForGuest(parsed) : { params: parsed, stripped: false };
 			strippedForGuest = stripped.stripped;
 			params = stripped.params;
 			if (grain === 'anime' && !isGuest) void ensureRatingCoverage();
-			const results = grain === 'anime'
-				? await fetchAnimeSearchResults(params, SEE_ALL_LIMIT)
-				: await fetchSearchResults(params, SEE_ALL_LIMIT);
+			const results = await searchRows('search-all', params, grain, SEE_ALL_LIMIT);
 			if (id === request) rows = results;
 		} catch (err) {
 			if (id === request) notice = err instanceof Error ? err.message : 'An unexpected error occurred';

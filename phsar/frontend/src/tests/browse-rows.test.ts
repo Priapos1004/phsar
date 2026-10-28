@@ -14,7 +14,7 @@ vi.mock('$lib/api', () => ({
 import { api } from '$lib/api';
 import {
 	browsePage, browseRow, carouselResults, clearBrowseRows, discoverMoods, knownStep, refinedFromDefaults,
-	spinMood,
+	searchRows, spinMood, verifiedToken,
 } from '$lib/stores/browseRows';
 import { NO_REFINEMENT } from '$lib/stores/browseRefinements';
 import type { BrowseCarousel } from '$lib/types/api';
@@ -214,5 +214,53 @@ describe("a thin row's widening, and Reset", () => {
 		expect(knownStep(dragons, NO_REFINEMENT)?.refinement).toMatchObject({ on: ['top-75'], off: ['top-50'] });
 		bumpCatalogueChanged();
 		expect(knownStep(dragons, NO_REFINEMENT)).toBeNull();
+	});
+});
+
+// The search pages' latest search rides the same cache: back from a detail page at once.
+describe('search page cache', () => {
+	beforeEach(() => {
+		get.mockReset();
+		get.mockResolvedValue([]);
+		post.mockReset();
+		post.mockResolvedValue(FRESH);
+		clearBrowseRows();
+	});
+
+	it('brings a search back without verifying or fetching it again', async () => {
+		for (let i = 0; i < 2; i++) {
+			await verifiedToken('search-all', 'token');
+			await searchRows('search-all', FRESH, 'anime', 1000);
+		}
+		expect(post).toHaveBeenCalledOnce();
+		expect(rowCalls()).toBe(1);
+	});
+
+	// Browse's clear runs once the search page has already asked.
+	it("outlives Browse's clear as a search page arrives from Browse", async () => {
+		await searchRows('search', FRESH, 'anime', 51);
+		applyFilterLifecycle('/search');
+		await searchRows('search', FRESH, 'anime', 51);
+		expect(rowCalls()).toBe(1);
+	});
+
+	it('keeps a search across a detail detour, and drops it on leaving search', async () => {
+		await searchRows('search-all', FRESH, 'anime', 1000);
+		applyFilterLifecycle('/anime');
+		applyFilterLifecycle('/search/all');
+		await searchRows('search-all', FRESH, 'anime', 1000);
+		expect(rowCalls()).toBe(1);
+		applyFilterLifecycle('/ratings');
+		await searchRows('search-all', FRESH, 'anime', 1000);
+		expect(rowCalls()).toBe(2);
+	});
+
+	it('refetches a search over your ratings after a rating write, and keeps the rest', async () => {
+		await searchRows('search', FRESH, 'anime', 51);
+		await searchRows('search-all', CONTINUATIONS, 'anime', 1000);
+		invalidateRatingScores();
+		await searchRows('search', FRESH, 'anime', 51);
+		await searchRows('search-all', CONTINUATIONS, 'anime', 1000);
+		expect(rowCalls()).toBe(3);
 	});
 });

@@ -9,8 +9,6 @@
 		GUEST_STRIPPED_NOTICE,
 		SEARCH_LIMIT,
 		carryAcrossView,
-		fetchAnimeSearchResults,
-		fetchSearchResults,
 		filterChips,
 		omitKeys,
 		stripForGuest,
@@ -20,10 +18,10 @@
 		type ViewType,
 	} from '$lib/utils/search';
 	import { getContext } from 'svelte';
+	import { searchRows, verifiedToken } from '$lib/stores/browseRows';
 	import { ensureRatingCoverage } from '$lib/stores/ratingCoverage';
 	import { navigateToSearch } from '$lib/utils/navigation';
 	import { formatDuration, formatSeason, formatSeasonRange, resolveTitle } from '$lib/utils/formatString';
-	import { api } from '$lib/api';
 	import { userSettings } from '$lib/stores/userSettings';
 	import type { MediaSearchResult, AnimeSearchResult } from '$lib/types/api';
 	import * as cls from '$lib/styles/classes';
@@ -57,10 +55,10 @@
 	let visibleCount = $state(PAGE_STEP);
 	let loadRequestId = 0;
 
-	let fetched = $derived(viewType === 'anime' ? animeResults : mediaResults);
-	let currentResults = $derived(fetched.slice(0, SEARCH_LIMIT));
+	let hasMore = $state(false);
+	let currentResults = $derived(viewType === 'anime' ? animeResults : mediaResults);
 	let countLabel = $derived(
-		`${fetched.length > SEARCH_LIMIT ? `${SEARCH_LIMIT}+` : currentResults.length} ${viewType === 'anime' ? 'anime' : 'media'}`,
+		`${hasMore ? `${SEARCH_LIMIT}+` : currentResults.length} ${viewType === 'anime' ? 'anime' : 'media'}`,
 	);
 
 	function showMore() {
@@ -108,7 +106,7 @@
 		animeResults = [];
 
 		try {
-			const parsed = await api.post<MediaSearchFilters>('/filters/verify-token', { token });
+			const parsed = await verifiedToken('search', token);
 			if (thisRequest !== loadRequestId) return;
 
 			const { params, stripped } = isGuest
@@ -125,25 +123,23 @@
 		}
 	}
 
-	async function loadSearchResults(params: MediaSearchFilters, requestId?: number) {
+	async function loadSearchResults(params: MediaSearchFilters, requestId: number) {
 		// Anime view only, and never for the one role that 403s on it — the media
 		// view reads `is_rated` off each hit and never touches the store, and the
 		// layout's rule is that a request known to fail shouldn't be sent.
 		// Unawaited: the tiers decorate cards, so they must not hold results back.
 		if (viewType === 'anime' && !isGuest) void ensureRatingCoverage();
 		try {
-			if (viewType === 'anime') {
-				const results = await fetchAnimeSearchResults(params, SEARCH_LIMIT + 1);
-				if (requestId !== undefined && requestId !== loadRequestId) return;
-				animeResults = results;
-			} else {
-				const results = await fetchSearchResults(params, SEARCH_LIMIT + 1);
-				if (requestId !== undefined && requestId !== loadRequestId) return;
-				mediaResults = results;
-			}
+			const results = await searchRows('search', params, viewType, SEARCH_LIMIT + 1);
+			if (requestId !== loadRequestId) return;
+			// The extra row only says there are more; it never renders.
+			hasMore = results.length > SEARCH_LIMIT;
+			const shown = results.slice(0, SEARCH_LIMIT);
+			if (viewType === 'anime') animeResults = shown as AnimeSearchResult[];
+			else mediaResults = shown as MediaSearchResult[];
 			visibleCount = PAGE_STEP;
 		} catch (err) {
-			if (requestId !== undefined && requestId !== loadRequestId) return;
+			if (requestId !== loadRequestId) return;
 			error = err instanceof Error ? err.message : 'An unexpected error occurred';
 		}
 	}
@@ -300,7 +296,7 @@
 			{/if}
 		</div>
 
-		{#if currentResults.length > visibleCount || fetched.length > SEARCH_LIMIT}
+		{#if currentResults.length > visibleCount || hasMore}
 			<div class="mt-4 flex flex-wrap justify-center gap-3">
 				{#if currentResults.length > visibleCount}
 					<button
@@ -312,7 +308,7 @@
 				{/if}
 				<!-- Past the cap: the same search on a page without one. A fresh token, since the
 				     default search has none. -->
-				{#if fetched.length > SEARCH_LIMIT}
+				{#if hasMore}
 					<button
 						onclick={() => navigateToSearch(decodedParams, '/search/all')}
 						class="px-4 py-2 rounded-full border border-primary/40 text-primary hover:bg-primary/15 transition"

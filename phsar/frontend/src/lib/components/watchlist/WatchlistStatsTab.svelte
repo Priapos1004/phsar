@@ -91,8 +91,8 @@
 		<!-- Top genres / sources / studios — palette-colored bars that grow in. -->
 		<div class="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
 			{@render tagBars('Top genres', s.topGenres, 'genre')}
-			{@render tagBars('Top sources', s.topSources, 'source', searchBySource)}
-			{@render tagBars('Top studios', s.topStudios, 'studio', searchByStudio)}
+			{@render tagBars('Top sources', s.topSources, 'source', (name) => searchBySource(name, { watchlisted: true }))}
+			{@render tagBars('Top studios', s.topStudios, 'studio', (name) => searchByStudio(name, { watchlisted: true }))}
 		</div>
 	</div>
 {/if}

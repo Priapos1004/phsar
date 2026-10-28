@@ -13,7 +13,13 @@ from app.models.rating_search import RatingSearch
 
 logger = logging.getLogger(__name__)
 
-model = SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')
+MODEL_NAME = 'paraphrase-multilingual-MiniLM-L12-v2'
+# Cache first: the model is pinned, so asking the Hub whether it changed only costs a
+# request and a warning every boot. A fresh machine's first run falls back to the download.
+try:
+    model = SentenceTransformer(MODEL_NAME, local_files_only=True)
+except OSError:
+    model = SentenceTransformer(MODEL_NAME)
 
 # One encode at a time. Encodes run on worker threads (`_run_encode`), and the tokenizer
 # and torch's native kernels are not safe to drive from several at once: concurrent

@@ -8,8 +8,11 @@
 	interface Props {
 		animeTiers: AdminSweepTierBreakdown;
 		mediaTiers: AdminSweepTierBreakdown;
+		/** In media: the sweep's settled nightly load, and its cap. */
+		perNight: number;
+		cap: number;
 	}
-	let { animeTiers, mediaTiers }: Props = $props();
+	let { animeTiers, mediaTiers, perNight, cap }: Props = $props();
 
 	// Refresh selection happens at media level, but the cadence-membership view is
 	// worth having at both grains — anime answers "where does each umbrella sit"
@@ -141,6 +144,13 @@
 		<p class="text-xs text-muted-foreground">
 			Where every {mode} currently sits in the update-sweep cycle.
 			Buckets are mutually exclusive — sum equals {mode} total ({formatNumber(total)}).
+		</p>
+		<!-- In media whichever grain is shown: the cap counts media. -->
+		<p class="text-xs {perNight > cap ? 'text-destructive' : 'text-muted-foreground'}">
+			≈ <Tooltip
+				text="Each settled media bucket over its cadence — airing every night, weekly ÷ 7, 90-day ÷ 90, 180-day ÷ 180. In brackets, the stabilizing media, also refreshed every night until they settle: a burst after new media arrive, so it doesn't count toward the cap warning."
+				class={cls.tooltipHint}>{formatNumber(perNight)} (+ {formatNumber(mediaTiers.stabilizing)} stabilizing) media refreshed per night</Tooltip
+			> on average · cap {formatNumber(cap)}
 		</p>
 	</Card.Header>
 	<Card.Content>
