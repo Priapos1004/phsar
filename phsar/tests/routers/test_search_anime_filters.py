@@ -31,7 +31,7 @@ from app.models.media_genre import MediaGenre
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
 from app.services.anime_search_service import most_frequent_first
-from tests._helpers import media_kwargs
+from tests._helpers import genres_param, media_kwargs
 
 ANIME_SEARCH_URL = "/search/anime"
 
@@ -545,7 +545,7 @@ async def test_genre_majority_denominator_survives_a_pre_filter(
     agreeing that a 1-of-3 genre is a majority."""
     resp = await client.get(
         ANIME_SEARCH_URL,
-        params=[("studio_name", _MAJORITY_STUDIO), ("genre_name", _MAJORITY_GENRE)],
+        params={"studio_name": _MAJORITY_STUDIO, "genres": genres_param({"include": [_MAJORITY_GENRE]})},
         headers=user_auth_headers,
     )
     assert resp.status_code == 200, resp.text
@@ -609,7 +609,7 @@ async def test_multiple_genres_all_must_reach_majority(
         client, user_auth_headers,
         fixture_titles=_MULTI_GENRE_TITLES,
         query=_MULTI_GENRE_QUERY,
-        genre_name=[_MULTI_GENRE_A, _MULTI_GENRE_B],
+        genres=genres_param({"include": [_MULTI_GENRE_A, _MULTI_GENRE_B]}),
     )
     assert titles == {"MultiScope BothMajority Anime"}
 
@@ -624,9 +624,27 @@ async def test_single_genre_matches_every_anime_that_reaches_its_majority(
         client, user_auth_headers,
         fixture_titles=_MULTI_GENRE_TITLES,
         query=_MULTI_GENRE_QUERY,
-        genre_name=[_MULTI_GENRE_A],
+        genres=genres_param({"include": [_MULTI_GENRE_A]}),
     )
     assert titles == {
         "MultiScope BothMajority Anime",
         "MultiScope OnlyAMajority Anime",
+    }
+
+
+async def test_without_a_genre_drops_exactly_the_anime_it_is_a_majority_of(
+    client, user_auth_headers, multi_genre_majority_set,
+):
+    """Without is the complement of the majority rule the badges show: B is a majority
+    only of BothMajority, so "without B" keeps the two anime carrying it on 1 of 3
+    media, and "B" and "without B" split the fixture between them."""
+    titles = await _result_fixture_titles(
+        client, user_auth_headers,
+        fixture_titles=_MULTI_GENRE_TITLES,
+        query=_MULTI_GENRE_QUERY,
+        genres=genres_param({"exclude": [_MULTI_GENRE_B]}),
+    )
+    assert titles == {
+        "MultiScope OnlyAMajority Anime",
+        "MultiScope NeitherMajority Anime",
     }

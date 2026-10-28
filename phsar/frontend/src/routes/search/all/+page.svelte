@@ -1,10 +1,12 @@
 <script lang="ts">
 	// A search past the search page's `SEARCH_LIMIT`: the same token, up to the endpoint's
 	// own limit, as poster tiles. A sort change mints a new token and stays here.
+	import { hugLines } from '$lib/utils/hugLines';
 	import { getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import Notice from '$lib/components/Notice.svelte';
+	import ExpressionText from '$lib/components/ExpressionText.svelte';
 	import SeeAllResults from '$lib/components/SeeAllResults.svelte';
 	import { searchRows, verifiedToken } from '$lib/stores/browseRows';
 	import { ensureRatingCoverage } from '$lib/stores/ratingCoverage';
@@ -102,7 +104,8 @@
 			{#if chips.length}
 				<div class="flex flex-wrap gap-1.5">
 					{#each chips as chip (chip.id)}
-						<span class="rounded-2xl border border-primary/40 bg-primary/10 px-3 py-0.5 text-sm font-medium text-primary">{#if chip.name}<span class="font-bold text-card-foreground/70">{chip.name}</span>{/if} {chip.value}</span>
+						<span class="rounded-2xl border border-primary/40 bg-primary/10 px-3 py-0.5 text-sm font-medium text-primary" {@attach hugLines}>{#if chip.name}<span class="font-bold text-card-foreground/70">{chip.name}</span>{/if}
+							<ExpressionText parts={chip.parts} /></span>
 					{/each}
 				</div>
 			{/if}

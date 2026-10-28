@@ -169,6 +169,9 @@ export const scrollList = 'max-h-72 overflow-y-auto pr-1';
 export const diffTable =
 	'w-full text-sm table-fixed max-sm:block max-sm:[&_thead]:block max-sm:[&_tbody]:block max-sm:[&_tr]:grid max-sm:[&_tr]:grid-cols-2 max-sm:[&_th:first-child]:hidden max-sm:[&_td:first-child]:col-span-2 max-sm:[&_td:first-child]:pb-0';
 
+// A field's label in the filter sheet.
+export const fieldLabel = 'text-sm font-medium text-card-foreground';
+
 // A label that opens a tooltip (the Tooltip's span brings the help cursor). The label's font
 // size sits on its parent, so the line box matches a plain label's beside it.
 export const tooltipHint = 'border-b border-dotted border-muted-foreground/40';

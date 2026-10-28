@@ -42,7 +42,8 @@ class BrowseFilterSetOut(BaseModel):
 class BrowseCarouselOut(BaseModel):
     key: str
     title: str
-    # The search to run: `/search/anime` query params, active filter sets merged in.
+    # The search to run: `/search/anime` params, active filter sets merged in — the genre
+    # groups as an object.
     params: dict[str, Any]
     see_all_limit: int
     sortable: bool

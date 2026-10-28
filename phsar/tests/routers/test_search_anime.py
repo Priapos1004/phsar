@@ -8,7 +8,7 @@ from app.models.media import Media, MediaType, RelationType, SeasonType
 from app.models.media_genre import MediaGenre
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
-from tests._helpers import media_kwargs
+from tests._helpers import genres_param, media_kwargs
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +133,7 @@ async def test_search_anime_genre_majority(client, user_auth_headers, anime_with
 async def test_search_anime_genre_filter(client, user_auth_headers, anime_with_media):
     """Filter by Action genre — anime should match (2/3 majority)."""
     response = await client.get("/search/anime", params=[
-        ("genre_name", "SearchAction"),
+        ("genres", genres_param({"include": ["SearchAction"]})),
     ], headers=user_auth_headers)
     assert response.status_code == 200
     data = response.json()
@@ -144,7 +144,7 @@ async def test_search_anime_genre_filter(client, user_auth_headers, anime_with_m
 async def test_search_anime_genre_filter_non_majority(client, user_auth_headers, anime_with_media):
     """Filter by Romance genre — anime should NOT match (only 1/3, not majority)."""
     response = await client.get("/search/anime", params=[
-        ("genre_name", "SearchRomance"),
+        ("genres", genres_param({"include": ["SearchRomance"]})),
     ], headers=user_auth_headers)
     assert response.status_code == 200
     data = response.json()
@@ -265,7 +265,7 @@ async def large_anime_with_genre_majority(db_session):
 async def test_large_anime_genre_majority_included(client, user_auth_headers, large_anime_with_genre_majority):
     """5/6 media have genre — anime should be returned by genre filter."""
     response = await client.get("/search/anime", params=[
-        ("genre_name", "TestMajority"),
+        ("genres", genres_param({"include": ["TestMajority"]})),
     ], headers=user_auth_headers)
     assert response.status_code == 200
     data = response.json()

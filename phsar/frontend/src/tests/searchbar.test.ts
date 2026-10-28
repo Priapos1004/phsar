@@ -3,7 +3,7 @@ import { render, screen, fireEvent } from '@testing-library/svelte';
 import SearchBar from '$lib/components/SearchBar.svelte';
 import { token } from '$lib/stores/auth';
 import { clearFilterOptions } from '$lib/stores/filterOptions';
-import type { MediaSearchFilters } from '$lib/utils/search';
+import type { GenreFilter, MediaSearchFilters } from '$lib/utils/search';
 import { jsonResponse } from './fixtures/response';
 
 const OPTIONS = {
@@ -29,6 +29,7 @@ const OPTIONS = {
 };
 
 const BASE: MediaSearchFilters = { query: '', search_type: 'title', view_type: 'anime' };
+const ACTION: GenreFilter = { mode: 'all', groups: [{ mode: 'all', include: ['Action'], exclude_mode: 'any', exclude: [] }] };
 
 async function openSheet() {
 	await fireEvent.click(screen.getByLabelText('Filters'));
@@ -58,12 +59,12 @@ describe('SearchBar', () => {
 
 	it('submits the typed query with the applied filters and mode', async () => {
 		const onSearch = vi.fn();
-		render(SearchBar, { props: { onSearch, applied: { ...BASE, genre_name: ['Action'] } } });
+		render(SearchBar, { props: { onSearch, applied: { ...BASE, genres: ACTION } } });
 		const input = screen.getByPlaceholderText('Search anime...');
 		await fireEvent.input(input, { target: { value: 'Naruto' } });
 		await fireEvent.submit(input.closest('form')!);
 		expect(onSearch).toHaveBeenCalledWith(
-			expect.objectContaining({ query: 'Naruto', search_type: 'title', genre_name: ['Action'] }),
+			expect.objectContaining({ query: 'Naruto', search_type: 'title', genres: ACTION }),
 		);
 	});
 
@@ -82,7 +83,7 @@ describe('SearchBar', () => {
 
 	it('counts the applied filter groups on the filter button', () => {
 		render(SearchBar, {
-			props: { applied: { ...BASE, genre_name: ['Action'], genre_mode: 'all', top_percent: 20, upcoming_main: false } },
+			props: { applied: { ...BASE, genres: ACTION, top_percent: 20, upcoming_main: false } },
 		});
 		expect(screen.getByLabelText('Filters')).toHaveTextContent('2');
 	});
@@ -90,15 +91,50 @@ describe('SearchBar', () => {
 	it("the sheet's Clear all clears the filters and keeps the sort", async () => {
 		const onSearch = vi.fn();
 		render(SearchBar, {
-			props: { onSearch, applied: { ...BASE, genre_name: ['Action'], top_percent: 20, sort: 'aired', sort_dir: 'asc' } },
+			props: { onSearch, applied: { ...BASE, genres: ACTION, top_percent: 20, sort: 'aired', sort_dir: 'asc' } },
 		});
 		await openSheet();
 		await fireEvent.click(screen.getByRole('button', { name: 'Clear all' }));
 		await fireEvent.click(screen.getByRole('button', { name: 'Show results' }));
 		const sent = onSearch.mock.calls[0][0];
 		expect(sent).toMatchObject({ sort: 'aired', sort_dir: 'asc' });
-		expect(sent.genre_name).toBeUndefined();
+		expect(sent.genres).toBeUndefined();
 		expect(sent.top_percent).toBeUndefined();
+	});
+
+	it('a Without pick filters out that genre', async () => {
+		const onSearch = vi.fn();
+		render(SearchBar, { props: { onSearch } });
+		await openSheet();
+		await fireEvent.focus(screen.getByPlaceholderText('Exclude genres...'));
+		await fireEvent.mouseDown(screen.getByRole('button', { name: 'Drama' }));
+		expect(screen.getByText(/^Reads:/)).toHaveTextContent('Reads: without Drama');
+		await fireEvent.click(screen.getByRole('button', { name: 'Show results' }));
+		expect(onSearch.mock.calls[0][0].genres).toEqual({
+			mode: 'any', groups: [{ mode: 'all', include: [], exclude_mode: 'any', exclude: ['Drama'] }],
+		});
+	});
+
+	it('a second group turns the genres into cards, and an empty one is left out', async () => {
+		const onSearch = vi.fn();
+		render(SearchBar, { props: { onSearch, applied: { ...BASE, genres: ACTION } } });
+		await openSheet();
+		await fireEvent.click(screen.getByRole('button', { name: 'Add a group' }));
+		expect(screen.getAllByTestId('genre-group')).toHaveLength(2);
+		expect(screen.getByText('Empty — ignored')).toBeInTheDocument();
+		await fireEvent.click(screen.getByRole('button', { name: 'Show results' }));
+		expect(onSearch.mock.calls[0][0].genres).toEqual(ACTION);
+	});
+
+	it("a group's ✕ hands focus to Add a group as its card leaves", async () => {
+		render(SearchBar, { props: { onSearch: vi.fn(), applied: { ...BASE, genres: ACTION } } });
+		await openSheet();
+		await fireEvent.click(screen.getByRole('button', { name: 'Add a group' }));
+		const remove = screen.getByRole('button', { name: 'Remove group 2' });
+		remove.focus();
+		await fireEvent.click(remove);
+		expect(screen.queryByTestId('genre-group')).not.toBeInTheDocument();
+		expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add a group' }));
 	});
 
 	// Guards where focus lands when Clear all leaves; the why is on SearchBar's clearStaged.

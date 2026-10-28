@@ -130,19 +130,24 @@ priority-collapsed value (Currently → Finished → Not yet aired). Otherwise a
 with one finished side story surfaces under "Finished" while its card reads
 "Currently Airing".
 
-**Genre majority is a separate condition.** A selected genre counts for an anime
-when a majority of its media carry it (`count * 2 > total`, the same threshold that
-populates the dropdown). It stays **one non-correlated pass** — per-(anime, genre)
-counts and per-anime totals computed once, joined, survivors counted against the
-number the mode needs. A correlated majority-subquery per genre is superlinear:
-each one adds a SubPlan *and* widens the set every existing SubPlan re-evaluates
-over, and this fires on every genre chip toggle. The denominator is the anime's
-**full** media count, so a stacked studio filter can't shrink it.
+**Genres are groups.** `genres` holds groups joined by any (the default) or all. A
+group needs any or all of its included genres, and not any of its excluded ones — or,
+under `exclude_mode` all, not every one. Why one level of groups is enough, and why all
+stays, is `GenreFilter`'s docstring; the cap is `MAX_GENRE_GROUPS`. The search takes it
+as one JSON param, the token and a carousel as the same object. A token carrying the flat `genre_name` +
+`genre_mode` pair reads as one group.
 
-**Any or all.** `genre_mode` (default all) and `studio_mode` (default any) choose
-whether a row needs one selected value or every one. An anime's genres are the ones
-reaching their majority; its studios are the union over the media the categorical
-filters match, coupled as above. The media grain tests the media itself.
+**Genre majority is a separate condition.** A genre counts for an anime when a
+majority of its media carry it (`count * 2 > total`, the same threshold that populates
+the dropdown), so excluding one is its exact complement: "without Ecchi" drops an anime
+whose card shows Ecchi. It stays **one non-correlated pass** — `_genre_match`'s
+docstring gives the shape, why a per-genre subquery is ruled out, and the outer join a
+Without-only search needs. The denominator is the anime's **full** media count, so a stacked studio filter can't
+shrink it. The media grain tests the media's own genres.
+
+**Any or all studios.** `studio_mode` (default any) chooses whether a row needs one
+selected studio or every one. An anime's studios are the union over the media the
+categorical filters match, coupled as above.
 
 **Top N% is the badge.** Both badges and the `top_percent` filter read one ranking,
 `top_percent_ranking`, so N keeps exactly the rows whose badge reads N% or better;

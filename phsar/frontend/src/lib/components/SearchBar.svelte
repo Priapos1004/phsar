@@ -15,6 +15,7 @@
 	import { SlidersHorizontal, Search } from 'lucide-svelte';
 	import { ensureFilterOptions } from '$lib/stores/filterOptions';
 	import TagSelect from '$lib/components/TagSelect.svelte';
+	import GenreFilterField from '$lib/components/GenreFilterField.svelte';
 	import DoubleRangeSlider from '$lib/components/DoubleRangeSlider.svelte';
 	import PillToggle from '$lib/components/PillToggle.svelte';
 	import SegmentedControl from '$lib/components/SegmentedControl.svelte';
@@ -25,6 +26,7 @@
 	import * as Sheet from '$lib/components/ui/sheet';
 	import {
 		LIST_FILTERS,
+		MATCH_MODES,
 		RANGE_FILTERS,
 		RATED_STATES,
 		SEARCH_MODE_LABELS,
@@ -150,15 +152,12 @@
 		return [{ value: 0, label: 'Any' }, ...values.map((v) => ({ value: v, label: `${v}%` }))];
 	});
 
-	const MATCH_MODES = [{ value: 'any' as const, label: 'Any' }, { value: 'all' as const, label: 'All' }];
-
 	const RELEASE_LISTS: ListFilterKey[] = ['airing_status', 'anime_season'];
-	const CONTENT_LISTS: ListFilterKey[] = ['genre_name', 'studio_name', 'original_source', 'media_type', 'relation_type', 'age_rating'];
+	const CONTENT_LISTS: ListFilterKey[] = ['studio_name', 'original_source', 'media_type', 'relation_type', 'age_rating'];
 	const LENGTH_RANGES: RangeKey[] = ['episodes', 'duration_per_episode', 'total_watch_time'];
 
 	const sectionCls = 'space-y-4 py-6 first:pt-0';
 	const headingCls = 'text-sm font-semibold uppercase tracking-wide text-primary';
-	const fieldLabelCls = 'text-sm font-medium text-card-foreground';
 </script>
 
 {#snippet listField(key: ListFilterKey, options: FilterOptions)}
@@ -166,7 +165,7 @@
 	{#if !field.mediaOnly || viewType === 'media'}
 		<div class="space-y-1.5">
 			<div class="flex h-6 items-center justify-between">
-				<span class={fieldLabelCls}>{field.label}</span>
+				<span class={cls.fieldLabel}>{field.label}</span>
 				{#if field.mode}
 					{@const modeKey = field.mode}
 					<SegmentedControl
@@ -268,7 +267,7 @@
 						</p>
 					{:else}
 						<div class="space-y-1.5">
-							<span class={fieldLabelCls}>Rated</span>
+							<span class={cls.fieldLabel}>Rated</span>
 							<!-- Columns set so each grain's states fill two even rows. -->
 							<div class="grid gap-1.5 {viewType === 'anime' ? 'grid-cols-3' : 'grid-cols-2'}">
 								{#each RATED_STATES[viewType] as state (state.value)}
@@ -283,7 +282,7 @@
 							</div>
 						</div>
 						<div class="flex items-center justify-between gap-2">
-							<span class={fieldLabelCls}>Watchlist</span>
+							<span class={cls.fieldLabel}>Watchlist</span>
 							<SegmentedControl
 								ariaLabel="Watchlist"
 								size="md"
@@ -315,7 +314,7 @@
 					<h3 class={headingCls}>Score</h3>
 					{@render rangeField('score', options)}
 					<div class="flex items-center justify-between gap-2">
-						<span class={fieldLabelCls}>Top</span>
+						<span class={cls.fieldLabel}>Top</span>
 						<SegmentedControl
 							ariaLabel="Top percent"
 							size="md"
@@ -330,6 +329,11 @@
 
 				<section class={sectionCls}>
 					<h3 class={headingCls}>Content</h3>
+					<GenreFilterField
+						value={staged.genres}
+						options={options.genre_name ?? []}
+						onChange={(genres) => stage({ genres })}
+					/>
 					{#each CONTENT_LISTS as key (key)}{@render listField(key, options)}{/each}
 				</section>
 

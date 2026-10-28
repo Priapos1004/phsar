@@ -3,7 +3,10 @@
 	import GrainToggle from '$lib/components/GrainToggle.svelte';
 	import Notice from '$lib/components/Notice.svelte';
 	import SortControl from '$lib/components/SortControl.svelte';
-	import { X } from 'lucide-svelte';
+	import InfoTip from '$lib/components/InfoTip.svelte';
+	import ExpressionText from '$lib/components/ExpressionText.svelte';
+	import { hugLines } from '$lib/utils/hugLines';
+	import { AlertTriangle, X } from 'lucide-svelte';
 	import { page } from '$app/state';
 	import {
 		GUEST_STRIPPED_NOTICE,
@@ -208,9 +211,13 @@
 		<div class="flex flex-wrap items-center justify-center gap-2 max-w-3xl mx-auto">
 			{#each chips as chip (chip.id)}
 				<span class="inline-flex items-center rounded-2xl border border-primary/40 bg-primary/15 text-sm text-primary">
-					<button type="button" class="pl-3 pr-1.5 py-1 hover:text-white" onclick={() => (filtersOpen = true)}>
-						{#if chip.name}<span class="font-bold text-white/70">{chip.name}</span>{/if} {chip.value}
+					<button type="button" class="pl-3 pr-1.5 py-1 hover:text-white" onclick={() => (filtersOpen = true)} {@attach hugLines}>
+						{#if chip.name}<span class="font-bold text-white/70">{chip.name}</span>{/if}
+						<ExpressionText parts={chip.parts} />
 					</button>
+					{#if chip.warning}
+						<InfoTip label="Why {chip.label} may not filter" text={chip.warning} icon={AlertTriangle} />
+					{/if}
 					<button
 						type="button"
 						class="relative pr-2 pl-0.5 py-1 hover:text-white {cls.hitArea}"
@@ -221,12 +228,16 @@
 					</button>
 				</span>
 			{/each}
+			<!-- On a line of its own: inline, it lands wherever the last chip leaves room, and
+			     pushes that chip off the centre the others keep. -->
 			{#if chips.length > 1}
-				<button
-					type="button"
-					class="px-2 py-1 text-sm text-white/60 hover:text-white"
-					onclick={() => removeFilters(chips.flatMap((c) => c.keys))}
-				>Clear all</button>
+				<div class="flex basis-full justify-center">
+					<button
+						type="button"
+						class="px-2 py-1 text-sm text-white/60 hover:text-white"
+						onclick={() => removeFilters(chips.flatMap((c) => c.keys))}
+					>Clear all</button>
+				</div>
 			{/if}
 		</div>
 	{/if}

@@ -11,9 +11,11 @@
 		text?: string;
 		/** A key under `text`: each term in bold before its meaning. */
 		terms?: { label: string; title: string }[];
+		/** A warning swaps the ⓘ for its own glyph. */
+		icon?: typeof Info;
 	}
 
-	let { label, text, terms }: Props = $props();
+	let { label, text, terms, icon: Icon = Info }: Props = $props();
 </script>
 
 <Tooltip class="relative flex text-muted-foreground {cls.hitArea}">
@@ -29,6 +31,6 @@
 			{/if}
 		</div>
 	{/snippet}
-	<Info class="size-3.5" aria-hidden="true" />
+	<Icon class="size-3.5" aria-hidden="true" />
 	<span class="sr-only">{label}</span>
 </Tooltip>

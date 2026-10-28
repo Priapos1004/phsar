@@ -2,6 +2,8 @@ import logging
 
 import pytest
 
+from tests._helpers import genres_param
+
 logger = logging.getLogger(__name__)
 
 
@@ -30,8 +32,7 @@ async def test_multiple_relation_types(client, user_auth_headers):
 async def test_genre_and_studio(client, user_auth_headers):
     response = await client.get("/search/media", params=[
         ("query", "Academia 2"),
-        ("genre_name", "Action"),
-        ("genre_name", "School"),
+        ("genres", genres_param({"include": ["Action", "School"]})),
         ("studio_name", "Bones")
     ], headers=user_auth_headers)
     assert response.status_code == 200
@@ -47,7 +48,7 @@ async def test_all_filters(client, user_auth_headers):
         ("age_rating", "PG-13 - Teens 13 or older"),
         ("airing_status", "Finished Airing"),
         ("anime_season", "Spring 2022"),
-        ("genre_name", "Action"),
+        ("genres", genres_param({"include": ["Action"], "exclude": ["Drama"]})),
         ("studio_name", "Bones"),
         ("score_min", 7.0),
         ("score_max", 9.5),
@@ -67,8 +68,7 @@ async def test_all_filters(client, user_auth_headers):
 async def test_duplicated_genre(client, user_auth_headers):
     response = await client.get("/search/media", params=[
         ("query", "Academia 2"),
-        ("genre_name", "Action"),
-        ("genre_name", "Action")
+        ("genres", genres_param({"include": ["Action", "Action"]})),
     ], headers=user_auth_headers)
     assert response.status_code == 200
     logger.debug(f"Duplicated genres: {response.json()}")

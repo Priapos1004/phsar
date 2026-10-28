@@ -57,10 +57,7 @@ def _discover(key: str, title: str, params: dict[str, Any], *on: str) -> CoreCar
 
 def _tags(*names: str, sort: str = "top_rated") -> dict[str, Any]:
     """Anime carrying any of the genres or themes named."""
-    params: dict[str, Any] = {"genre_name": list(names), "sort": sort}
-    if len(names) > 1:
-        params["genre_mode"] = "any"
-    return params
+    return {"genres": {"groups": [{"mode": "any", "include": list(names)}]}, "sort": sort}
 
 
 def _about(query: str) -> dict[str, Any]:

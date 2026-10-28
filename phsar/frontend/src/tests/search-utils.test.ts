@@ -1,16 +1,21 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
 	carryAcrossView,
+	describeGenres,
 	effectiveSort,
 	fetchAnimeSearchResults,
 	filterChips,
 	forGuest,
+	checkGenres,
+	matchesGenres,
 	normalizeFilters,
 	omitKeys,
 	sortLine,
 	unusualAnnouncedType,
 	stripForGuest,
 	withQuery,
+	type GenreFilter,
+	type GenreGroup,
 	type MediaSearchFilters,
 } from '$lib/utils/search';
 import type { AnimeSearchResult, MediaSearchResult } from '$lib/types/api';
@@ -18,6 +23,11 @@ import { sliderGrid, thumbValue, toGrid } from '$lib/components/DoubleRangeSlide
 import { api } from '$lib/api';
 
 const BASE: MediaSearchFilters = { query: '', search_type: 'title' };
+
+const group = (
+	include: string[], exclude: string[] = [], mode: GenreGroup['mode'] = 'all', exclude_mode: GenreGroup['mode'] = 'any',
+): GenreGroup => ({ mode, include, exclude_mode, exclude });
+const genres = (mode: GenreFilter['mode'], ...groups: GenreGroup[]): GenreFilter => ({ mode, groups });
 
 describe('sliderGrid', () => {
 	// Death Note's vote count, the "Scored by" slider's max — off the 0.1 log grid, where
@@ -69,7 +79,7 @@ describe('thumbValue', () => {
 describe('filterChips', () => {
 	it('is empty for a verified token whose fields are all unset', () => {
 		const verified = {
-			...BASE, genre_name: null, genre_mode: 'all', studio_mode: 'any', score_min: null,
+			...BASE, genres: null, studio_mode: 'any', score_min: null,
 			top_percent: null, upcoming_main: false, rated: null, watchlisted: null,
 		} as MediaSearchFilters;
 		expect(filterChips(verified, 'anime')).toEqual([]);
@@ -79,14 +89,14 @@ describe('filterChips', () => {
 		const chips = filterChips({
 			...BASE,
 			rated: ['none', 'dropped'], watchlisted: false, top_percent: 20,
-			genre_name: ['Action', 'Comedy'], studio_name: ['MAPPA', 'Bones'], studio_mode: 'all',
+			genres: genres('all', group(['Action', 'Comedy'])), studio_name: ['MAPPA', 'Bones'], studio_mode: 'all',
 			scored_by_max: 2_965_820, score_min: 8, score_max: 10,
 		}, 'anime');
 		expect(chips.map((c) => [c.label, c.keys])).toEqual([
 			['Rated: Unrated or Dropped', ['rated']],
 			['Not in watchlist', ['watchlisted']],
 			['Top 20%', ['top_percent']],
-			['Genres: Action & Comedy', ['genre_name', 'genre_mode']],
+			['Genres: Action & Comedy', ['genres']],
 			['Studios: MAPPA & Bones', ['studio_name', 'studio_mode']],
 			['Score 8.00–10.00', ['score_min', 'score_max']],
 			['Scored by ≤ 2,965,820', ['scored_by_min', 'scored_by_max']],
@@ -94,8 +104,22 @@ describe('filterChips', () => {
 	});
 
 	it('removing a chip clears exactly its keys', () => {
-		const params = { ...BASE, genre_name: ['Action'], genre_mode: 'any' as const, top_percent: 5 };
-		expect(omitKeys(params, ['genre_name', 'genre_mode'])).toEqual({ ...BASE, top_percent: 5 });
+		const params = { ...BASE, studio_name: ['MAPPA'], studio_mode: 'all' as const, top_percent: 5 };
+		expect(omitKeys(params, ['studio_name', 'studio_mode'])).toEqual({ ...BASE, top_percent: 5 });
+	});
+
+	it('marks a genre chip whose groups can never match, or always do', () => {
+		const [never] = filterChips({ ...BASE, genres: genres('all', group(['Drama']), group([], ['Drama'])) }, 'anime');
+		const [idle] = filterChips({ ...BASE, genres: genres('any', group(['Drama'], ['Ecchi']), group(['Drama'])) }, 'anime');
+		expect(idle.warning).toMatch(/^Group 1 changes nothing/);
+		expect(never.label).toBe('Genres: Drama AND without Drama');
+		expect(never.warning).toMatch(/no anime can match/i);
+		const [fine] = filterChips({ ...BASE, genres: genres('all', group(['Drama'], ['Ecchi'])) }, 'anime');
+		expect(fine.warning).toBeUndefined();
+	});
+
+	it('shows no genre chip for a group with nothing in it', () => {
+		expect(filterChips({ ...BASE, genres: genres('all', group([])) }, 'anime')).toEqual([]);
 	});
 });
 
@@ -106,22 +130,28 @@ describe('normalizeFilters', () => {
 		expect(normalizeFilters({ ...BASE, rated: ['none', 'main'] }, 'anime', {}).rated).toEqual(['none', 'main']);
 	});
 
-	const offered = { airing_status: ['Finished Airing', 'Currently Airing'], genre_name: ['Action', 'Drama'] };
+	const offered = { airing_status: ['Finished Airing', 'Currently Airing'], studio_name: ['MAPPA', 'Bones'] };
 
 	it('drops a list holding every offered option when it matches any of them', () => {
 		const every = normalizeFilters({ ...BASE, airing_status: ['Currently Airing', 'Finished Airing'] }, 'anime', offered);
 		expect(every.airing_status).toBeUndefined();
 		const some = normalizeFilters({ ...BASE, airing_status: ['Currently Airing'] }, 'anime', offered);
 		expect(some.airing_status).toEqual(['Currently Airing']);
-		const anyGenre = normalizeFilters({ ...BASE, genre_name: ['Drama', 'Action'], genre_mode: 'any' }, 'anime', offered);
-		expect(anyGenre.genre_name).toBeUndefined();
-		expect(anyGenre.genre_mode).toBe('any');
+		const anyStudio = normalizeFilters({ ...BASE, studio_name: ['Bones', 'MAPPA'] }, 'anime', offered);
+		expect(anyStudio.studio_name).toBeUndefined();
 	});
 
-	// The genre default is "all", so leaving the mode unset must not read as "any".
 	it('keeps a list matched by all of its values', () => {
-		const allGenres = normalizeFilters({ ...BASE, genre_name: ['Action', 'Drama'] }, 'anime', offered);
-		expect(allGenres.genre_name).toEqual(['Action', 'Drama']);
+		const allStudios = normalizeFilters({ ...BASE, studio_name: ['MAPPA', 'Bones'], studio_mode: 'all' }, 'anime', offered);
+		expect(allStudios.studio_name).toEqual(['MAPPA', 'Bones']);
+	});
+
+	it('drops an empty genre group and nothing else, a contradiction included', () => {
+		const built = genres('all', group(['Drama']), group([]), group([], ['Drama']));
+		expect(normalizeFilters({ ...BASE, genres: built }, 'anime', offered).genres).toEqual(
+			genres('all', group(['Drama']), group([], ['Drama'])),
+		);
+		expect(normalizeFilters({ ...BASE, genres: genres('any', group([])) }, 'anime', offered).genres).toBeUndefined();
 	});
 });
 
@@ -130,8 +160,8 @@ describe('carryAcrossView', () => {
 	const FULL: Required<MediaSearchFilters> = {
 		query: 'frieren', search_type: 'description', view_type: 'anime',
 		relation_type: ['side_story'], media_type: ['TV'], age_rating: ['PG-13'], airing_status: ['Finished Airing'],
-		anime_season: ['Fall 2023'], genre_name: ['Fantasy'], studio_name: ['Madhouse'], original_source: ['Manga'],
-		genre_mode: 'any', studio_mode: 'all',
+		anime_season: ['Fall 2023'], studio_name: ['Madhouse'], original_source: ['Manga'],
+		studio_mode: 'all', genres: genres('any', group(['Fantasy'])),
 		score_min: 8, score_max: 10, scored_by_min: 1, scored_by_max: 2, episodes_min: 1, episodes_max: 2,
 		duration_per_episode_min: 1, duration_per_episode_max: 2, total_watch_time_min: 1, total_watch_time_max: 2,
 		top_percent: 10, upcoming_main: true, rated: ['in_progress', 'on_hold', 'dropped'], watchlisted: true,
@@ -142,8 +172,8 @@ describe('carryAcrossView', () => {
 		expect(carryAcrossView(FULL, 'media')).toEqual({
 			query: 'frieren', search_type: 'description', view_type: 'media',
 			media_type: ['TV'], age_rating: ['PG-13'], airing_status: ['Finished Airing'],
-			anime_season: ['Fall 2023'], genre_name: ['Fantasy'], studio_name: ['Madhouse'], original_source: ['Manga'],
-			genre_mode: 'any', studio_mode: 'all', score_min: 8, score_max: 10,
+			anime_season: ['Fall 2023'], studio_name: ['Madhouse'], original_source: ['Manga'],
+			studio_mode: 'all', genres: genres('any', group(['Fantasy'])), score_min: 8, score_max: 10,
 			top_percent: 10, upcoming_main: true, rated: ['on_hold', 'dropped'], watchlisted: true,
 			sort: 'release', sort_dir: 'desc',
 		});
@@ -167,8 +197,8 @@ describe('forGuest', () => {
 
 describe('stripForGuest', () => {
 	it('drops what reads your own ratings and watchlist, watchlisted=false included', () => {
-		expect(stripForGuest({ ...BASE, watchlisted: false, genre_name: ['Action'] })).toEqual({
-			params: { ...BASE, genre_name: ['Action'] }, stripped: true,
+		expect(stripForGuest({ ...BASE, watchlisted: false, genres: genres('all', group(['Action'])) })).toEqual({
+			params: { ...BASE, genres: genres('all', group(['Action'])) }, stripped: true,
 		});
 		expect(stripForGuest({ ...BASE, rated: null, watchlisted: null, sort: 'score' })).toMatchObject({ stripped: false });
 	});
@@ -202,11 +232,11 @@ describe('effectiveSort', () => {
 });
 
 describe('withQuery', () => {
-	const sorted: MediaSearchFilters = { ...BASE, query: 'frieren', sort: 'added', sort_dir: 'asc', genre_name: ['Fantasy'] };
+	const sorted: MediaSearchFilters = { ...BASE, query: 'frieren', sort: 'added', sort_dir: 'asc', studio_name: ['MAPPA'] };
 
 	it('starts a different query from Best match, keeping the filters', () => {
 		expect(withQuery(sorted, 'dungeon meshi', 'title')).toEqual({
-			...BASE, query: 'dungeon meshi', genre_name: ['Fantasy'],
+			...BASE, query: 'dungeon meshi', studio_name: ['MAPPA'],
 		});
 	});
 
@@ -225,6 +255,89 @@ describe('the search request', () => {
 		expect(params.has('score_min')).toBe(false);
 		expect(params.has('query')).toBe(false);
 		get.mockRestore();
+	});
+
+	it('sends the genre groups as one JSON param', async () => {
+		const get = vi.spyOn(api, 'get').mockResolvedValue([]);
+		const sent = genres('any', group(['Fantasy', 'Isekai']), group(['Romance'], ['Drama']));
+		await fetchAnimeSearchResults({ ...BASE, genres: sent });
+		const params = get.mock.calls[0][1]!.params as URLSearchParams;
+		expect(JSON.parse(params.get('genres')!)).toEqual(sent);
+		get.mockRestore();
+	});
+});
+
+describe('genre groups', () => {
+	// The user's example: (Fantasy & Isekai) or (Romance & Comedy, without Drama).
+	const example = genres('any', group(['Fantasy', 'Isekai']), group(['Romance', 'Comedy'], ['Drama']));
+	const carrying = (...names: string[]) => (genre: string) => names.includes(genre);
+
+	it('reads as words', () => {
+		expect(describeGenres(example)).toBe('(Fantasy & Isekai) OR (Romance & Comedy, without Drama)');
+		expect(describeGenres(genres('all', group(['Fantasy', 'Isekai'], ['Drama'], 'any')))).toBe(
+			'Fantasy or Isekai, without Drama',
+		);
+		expect(describeGenres(genres('all', group([], ['Ecchi', 'Harem'])))).toBe('without Ecchi or Harem');
+		expect(describeGenres(genres('all', group(['Romance'], ['Drama', 'Comedy'], 'all', 'all')))).toBe(
+			'Romance, without Drama & Comedy together',
+		);
+		expect(describeGenres(genres('all', group(['Romance'], ['Drama'], 'all', 'all')))).toBe('Romance, without Drama');
+		expect(describeGenres(genres('all', group(['Mecha']), group([]), group(['Space'], [], 'any')))).toBe(
+			'Mecha AND Space',
+		);
+	});
+
+	it('matches as the backend does', () => {
+		expect(matchesGenres(example, carrying('Fantasy', 'Isekai', 'Drama'))).toBe(true);
+		expect(matchesGenres(example, carrying('Romance', 'Comedy'))).toBe(true);
+		expect(matchesGenres(example, carrying('Romance', 'Comedy', 'Drama'))).toBe(false);
+		expect(matchesGenres(genres('all', group([], ['Drama'])), carrying())).toBe(true);
+		expect(matchesGenres(genres('all', group(['A', 'B'], [], 'any'), group([], ['C'])), carrying('B', 'C'))).toBe(false);
+		// Without Drama & Comedy together: either alone stays, both go.
+		const notBoth = genres('all', group(['Romance'], ['Drama', 'Comedy'], 'all', 'all'));
+		expect(matchesGenres(notBoth, carrying('Romance', 'Drama'))).toBe(true);
+		expect(matchesGenres(notBoth, carrying('Romance', 'Drama', 'Comedy'))).toBe(false);
+	});
+
+	it.each([
+		['a contradiction', genres('all', group(['Drama']), group([], ['Drama'])), 'never'],
+		['a tautology', genres('any', group(['Drama']), group([], ['Drama'])), 'always'],
+		['the example', example, null],
+		// No anime may carry all three today, but one could.
+		['a rare combination', genres('all', group(['Mecha', 'Sports', 'Isekai'])), null],
+		['a contradiction spread over the groups', genres('all', group(['Drama', 'Romance'], [], 'any'), group([], ['Drama', 'Romance'])), 'never'],
+		// Only Romance without Drama matches, so Drama, picked and excluded, has to be tried absent.
+		['a match through a genre named both ways', genres('all', group(['Drama', 'Romance'], [], 'any'), group([], ['Drama'])), null],
+		// Only Drama without Romance misses, so Drama has to be tried present.
+		['a miss through a genre named both ways', genres('any', group([], ['Drama']), group(['Drama', 'Romance'])), null],
+		['a tautology over three groups', genres('any', group(['A']), group(['B'], ['A']), group([], ['A', 'B'])), 'always'],
+		['a near tautology', genres('any', group(['A']), group([], ['A', 'B'])), null],
+		['not both, under all', genres('all', group(['Drama']), group([], ['Drama', 'Comedy'], 'all', 'all')), null],
+		['never both, under all', genres('all', group(['Drama', 'Comedy']), group([], ['Drama', 'Comedy'], 'all', 'all')), 'never'],
+	])('says whether %s can match', (_, built, warning) => {
+		const expected = { never: /no anime can match/i, always: /every anime matches/i }[warning ?? ''];
+		const check = checkGenres(built);
+		if (expected) expect(check.warning).toMatch(expected);
+		else expect(check.warning).toBeNull();
+		expect(check.idle).toEqual([]);
+	});
+
+	it.each([
+		// The sheet the user built: Romance alone covers Romance without Drama.
+		['a group another covers, under any', genres('any',
+			group(['Romance'], ['Drama']),
+			group(['Isekai', 'Reincarnation', 'Fantasy', 'Adventure'], ['Urban Fantasy', 'Drama'], 'any'),
+			group(['Romance']),
+		), [0]],
+		['two identical groups, the first of them', genres('any', group(['Romance']), group(['Mecha']), group(['Romance'])), [0]],
+		['a group the others imply, under all', genres('all', group(['Romance']), group(['Romance'], ['Drama'])), [0]],
+		['a group two others cover together', genres('any', group(['A', 'B'], [], 'any'), group(['A']), group(['B'])), [0]],
+		['the empty group skipped in the numbering kept', genres('any', group([]), group(['A'], ['B']), group(['A'])), [1]],
+		['groups that each add something', genres('any', group(['Romance'], ['Drama']), group(['Romance', 'Drama'])), []],
+	])('flags %s as changing nothing', (_, built, idle) => {
+		const check = checkGenres(built);
+		expect(check.idle).toEqual(idle);
+		if (idle.length) expect(check.warning).toMatch(new RegExp(`^Group ${idle[0] + 1} changes nothing`));
 	});
 });
 

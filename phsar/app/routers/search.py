@@ -2,6 +2,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import Json
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_db, require_user_or_admin
@@ -14,6 +15,7 @@ from app.schemas.media_filter_schema import (
     ANIME_RATED_STATES,
     MEDIA_RATED_STATES,
     CatalogueSearchFilters,
+    GenreFilter,
     MatchMode,
     MediaSearchFilters,
     RatedState,
@@ -83,7 +85,6 @@ def get_media_filters(
     age_rating: list[AgeRating] | None = Query(default=None),
     airing_status: list[str] | None = Query(default=None),
     anime_season: list[str] | None = Query(default=None),
-    genre_name: list[str] | None = Query(default=None),
     studio_name: list[str] | None = Query(default=None),
     original_source: list[OriginalSource] | None = Query(default=None),
     score_min: float | None = None,
@@ -100,9 +101,11 @@ def get_media_filters(
         default=None, ge=1, le=100,
         description="Keep the rows whose \"Top N%\" badge reads this percentage or better.",
     ),
-    genre_mode: MatchMode = Query(
-        default=MatchMode.ALL, description="Whether a row needs every selected genre or one of them.",
-    ),
+    genres: Annotated[Json[GenreFilter] | None, Query(
+        description="Genre groups as JSON, `{mode, groups: [{mode, include, exclude_mode, exclude}]}`: "
+        "a group needs any or all of `include`, and not any or not all of `exclude`; `mode` joins the "
+        "groups. An anime carries a genre when most of its media do.",
+    )] = None,
     studio_mode: MatchMode = Query(
         default=MatchMode.ANY, description="Whether a row needs one of the selected studios or every one.",
     ),
@@ -113,7 +116,6 @@ def get_media_filters(
         age_rating=age_rating,
         airing_status=airing_status,
         anime_season=anime_season,
-        genre_name=genre_name,
         studio_name=studio_name,
         original_source=original_source,
         score_min=score_min,
@@ -127,7 +129,7 @@ def get_media_filters(
         total_watch_time_min=total_watch_time_min,
         total_watch_time_max=total_watch_time_max,
         top_percent=top_percent,
-        genre_mode=genre_mode,
+        genres=genres,
         studio_mode=studio_mode,
     )
 

@@ -215,7 +215,9 @@ phsar/
 │   │   │   │   ├── DiscoverWheel.svelte
 │   │   │   │   ├── DoubleRangeSlider.svelte
 │   │   │   │   ├── EChart.svelte
+│   │   │   │   ├── ExpressionText.svelte
 │   │   │   │   ├── GenreBadges.svelte
+│   │   │   │   ├── GenreFilterField.svelte
 │   │   │   │   ├── GrainToggle.svelte
 │   │   │   │   ├── HeroIconButton.svelte
 │   │   │   │   ├── HeroScore.svelte
@@ -349,6 +351,7 @@ phsar/
 │   │   │       ├── filterLifecycle.ts
 │   │   │       ├── formatString.ts
 │   │   │       ├── getSeason.ts
+│   │   │       ├── hugLines.ts
 │   │   │       ├── index.ts
 │   │   │       ├── jobBadges.ts
 │   │   │       ├── jobHealth.ts
