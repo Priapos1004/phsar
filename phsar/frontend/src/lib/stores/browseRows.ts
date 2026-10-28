@@ -3,7 +3,7 @@ import type {
 	AnimeSearchResult, BrowseCarousel, BrowsePageKey, DiscoverToday, DiscoverMoods, MediaSearchResult,
 } from '$lib/types/api';
 import {
-	effectiveSort, fetchAnimeSearchResults, fetchSearchResults, readsOwnData, type MediaSearchFilters, type ViewType,
+	fetchAnimeSearchResults, fetchSearchResults, readsOwnData, sameOrder, type MediaSearchFilters, type ViewType,
 } from '$lib/utils/search';
 import {
 	isSetActive, NO_REFINEMENT, refinedSearch, WIDEN_BELOW, widened, type Refinement, type Step,
@@ -233,9 +233,7 @@ export function settledResults(
 export function refinedFromDefaults(carousel: BrowseCarousel, shown: Refinement): boolean {
 	const defaults = knownStep(carousel, NO_REFINEMENT)?.refinement ?? NO_REFINEMENT;
 	if (carousel.filter_sets.some((s) => isSetActive(s, shown) !== isSetActive(s, defaults))) return true;
-	const sortOf = (r: Refinement) => effectiveSort(refinedSearch(carousel, r, false));
-	const [now, base] = [sortOf(shown), sortOf(NO_REFINEMENT)];
-	return now.sort !== base.sort || now.dir !== base.dir;
+	return !sameOrder(refinedSearch(carousel, shown, false), refinedSearch(carousel, NO_REFINEMENT, false));
 }
 
 /** After a rating or watchlist write: drop the rows that read them. */

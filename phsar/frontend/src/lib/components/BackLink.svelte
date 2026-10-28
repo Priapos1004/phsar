@@ -2,7 +2,7 @@
 	import { ArrowLeft } from 'lucide-svelte';
 	import * as cls from '$lib/styles/classes';
 	import type { Snippet } from 'svelte';
-	import type { DetailHrefOptions } from '$lib/utils/navigation';
+	import { searchHref, type DetailHrefOptions } from '$lib/utils/navigation';
 	import { hrefWithFocus } from '$lib/utils/scrollFocus';
 
 	interface Props {
@@ -35,11 +35,9 @@
 		if (fromParam === 'carousel' && carousel) {
 			return { href: withFocus(`/browse/${encodeURIComponent(carousel)}`), label: 'Back to the list' };
 		}
-		if (fromParam === 'search-all' && searchToken) {
-			return { href: withFocus(`/search/all?q=${encodeURIComponent(searchToken)}`), label: 'Back to all results' };
-		}
+		if (fromParam === 'search-all') return { href: withFocus(searchHref('/search/all', searchToken)), label: 'Back to all results' };
 		if (fromParam === 'library') return { href: '/library/add', label: 'Back to library' };
-		if (searchToken) return { href: withFocus(`/search?q=${encodeURIComponent(searchToken)}`), label: 'Back to search' };
+		if (searchToken || fromParam === 'search') return { href: withFocus(searchHref('/search', searchToken)), label: 'Back to search' };
 		return null;
 	});
 </script>

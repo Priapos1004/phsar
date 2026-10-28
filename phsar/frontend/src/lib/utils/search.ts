@@ -89,6 +89,19 @@ export const TOP_PRESETS = [5, 10, 20, 50, 75];
  * say "50+" rather than a count that would be a guess. */
 export const SEARCH_LIMIT = 50;
 
+/** The search with nothing typed or applied, which `/search` and its see-all run without a
+ * token. Built here alone, so every page running it keys it alike and a see-all finds the
+ * search's rows. */
+export const defaultSearch = (view: ViewType): MediaSearchFilters => ({ query: '', search_type: 'title', view_type: view });
+
+/** Whether `params` asks for nothing past `defaultSearch(view)`, so it runs as the default
+ * search, without a token. Compared by effect: a filter left at its default shows no chip
+ * (`filterChips`), and an order the default search takes anyway is its own (`sameOrder`). */
+export function isDefaultSearch(params: MediaSearchFilters, view: ViewType): boolean {
+	return !params.query?.trim() && (params.search_type ?? 'title') === 'title' && (params.view_type ?? view) === view
+		&& sameOrder(params, defaultSearch(view)) && !filterChips(params, view).length;
+}
+
 /** A see-all's "Show More" step: a whole number of rows at `SeeAllResults`' 3–6 columns. */
 export const SEE_ALL_STEP = 60;
 
@@ -232,6 +245,14 @@ export function effectiveSort(params: MediaSearchFilters): { sort: SortKey; opti
 	if (!option.dir) return { sort, option, dir: null };
 	const dir = requested === 'relevance' ? undefined : params.sort_dir;
 	return { sort, option, dir: dir ?? (ASCENDING_SORTS.includes(sort) ? 'asc' : 'desc') };
+}
+
+/** Whether two searches list in the same order, compared by effect: a sort chosen by hand
+ * that a search takes anyway is no other order. */
+export function sameOrder(a: MediaSearchFilters, b: MediaSearchFilters): boolean {
+	const first = effectiveSort(a);
+	const second = effectiveSort(b);
+	return first.sort === second.sort && first.dir === second.dir;
 }
 
 /** The one season a search is pinned to, which a browse row names in a pill. */

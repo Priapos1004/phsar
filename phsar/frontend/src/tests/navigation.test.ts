@@ -91,8 +91,22 @@ describe('detailOrigin', () => {
 
 describe('navigateToSearch', () => {
 	it('lands on the path it is given', async () => {
-		await navigateToSearch({ query: '', search_type: 'title' }, '/search/all');
+		await navigateToSearch({ query: 'frieren', search_type: 'title' }, '/search/all');
 		expect(goto).toHaveBeenCalledWith('/search/all?q=tok');
+	});
+
+	// The default search runs without a token, so a search asking for nothing
+	// (`isDefaultSearch`) mints none.
+	it('goes bare to a search that asks for nothing', async () => {
+		vi.mocked(api.post).mockClear();
+		await navigateToSearch({ query: ' ', search_type: 'title', view_type: 'anime', studio_mode: 'any', genres: null });
+		expect(goto).toHaveBeenCalledWith('/search');
+		expect(api.post).not.toHaveBeenCalled();
+		await navigateToSearch({ query: '', search_type: 'title', view_type: 'anime', sort: 'top_rated' });
+		expect(api.post).not.toHaveBeenCalled();
+		await navigateToSearch({ query: '', search_type: 'title', view_type: 'anime', sort: 'top_rated', sort_dir: 'asc' });
+		await navigateToSearch({ query: '', search_type: 'title', view_type: 'anime', sort: 'random' });
+		expect(api.post).toHaveBeenCalledTimes(2);
 	});
 });
 
@@ -157,5 +171,16 @@ describe('BackLink', () => {
 	it('returns a search see-all detail there rather than to the search', () => {
 		render(BackLink, { props: { origin: { from: 'search-all', q: 'tok', focus: 'abc-123' } } });
 		expect(backLink('Back to all results')).toHaveAttribute('href', '/search/all?q=tok&focus=abc-123');
+	});
+
+	// The default search has no token, so its see-all and its way back carry none.
+	it('returns a default search see-all detail there without a token', () => {
+		render(BackLink, { props: { origin: { from: 'search-all', focus: 'abc-123' } } });
+		expect(backLink('Back to all results')).toHaveAttribute('href', '/search/all?focus=abc-123');
+	});
+
+	it('returns a see-all without a token to the default search', () => {
+		render(BackLink, { props: { origin: { from: 'search' } } });
+		expect(backLink('Back to search')).toHaveAttribute('href', '/search');
 	});
 });

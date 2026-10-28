@@ -104,7 +104,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 | `/browse?tab=news\|discover` | Browse: rows of anime (`news`, default) + the day's mood of anime (`discover`, 3c) | Yes |
 | `/browse/<key>` | A Browse row's see-all (3b) | Yes |
 | `/search?q=<token>` | Search results (anime or media view) | Yes |
-| `/search/all?q=<token>` | A search's see-all, past the 50 the search shows (3b) | Yes |
+| `/search/all?q=<token>` | A search's see-all, past the 50 the search shows (3b); bare `/search/all` for the default search | Yes |
 | `/anime?uuid=<uuid>` | Anime detail (aggregated metadata + media table) | Yes |
 | `/media?uuid=<uuid>` | Media detail + rating | Yes |
 | `/ratings?tab=ratings\|stats` | Your ratings: anime-level list (`ratings`, default) + ECharts statistics (`stats`) | Yes |
@@ -156,11 +156,11 @@ The see-all pages list past a cap as a grid of the 3a tiles, 60 at a time behind
 - Toggles and sort are kept per row across opening a tile and coming back, and reset on leaving Browse for any other page.
 - A **guest** sees the toggles over ratings or the watchlist dimmed, with a tooltip; a row built from them shows the guest card of 3a instead of a list.
 
-**A search's see-all** (`/search/all?q=<token>`) lists the same search up to 1000:
+**A search's see-all** (`/search/all?q=<token>`, or `/search/all` for the default search) lists the same search up to 1000:
 - "Back to search" returns to `/search`. The title is "All results for “…”", or "All results" without a query.
 - A card names the mode (only with a query) and shows the search's filters as chips that can't be changed here; with neither, it is left out.
 - The sort menu of 4.3; a change stays on this page. Tiles follow the search's view: a media tile hides its cover past your spoiler frontier as 5.1 does.
-- Opened from the search's **See all results**, its first 60 show at once from the results the search already has while the rest loads: the count reads "60+" meanwhile, and a **Show More** clicked before the rest arrives reads "Loading…" and opens when it does. The default search, with nothing typed or applied, loads as a link does.
+- Opened from the search's **See all results**, its first 60 show at once from the results the search already has while the rest loads: the count reads "60+" meanwhile, and a **Show More** clicked before the rest arrives reads "Loading…" and opens when it does.
 
 ## 3c. Discover
 
@@ -205,7 +205,7 @@ The Discover tab shows one **mood** a day: a themed group of rows (Beasts & Lege
 
 **Returning from a card** (7.6) shows the results at once, here and on the see-all (3b): the last search each loaded is kept for the trip, reloaded only if its results could have changed meanwhile. It re-expands the list far enough to render the one you opened before scrolling to it, so a result deep in the list doesn't need its "Show More" clicks repeated. Expanding issues no request — the results are already in hand. An expansion wider than that card needs is left alone.
 
-**No token** (`/search` with no `q`): the page runs an **empty search** (no query, no filters) in the user's default view, so it lands on a browsable, ranked list (the backend orders an empty query by weighted score) instead of a blank page. Typing a query / applying filters then navigates to a normal `?q=<token>` search.
+**No token** (`/search` with no `q`): the page runs an **empty search** (no query, no filters) in the user's default view, so it lands on a browsable, ranked list (the backend orders an empty query by weighted score) instead of a blank page. Typing a query or applying filters then navigates to a normal `?q=<token>` search; a search asking for nothing past this one, Top rated picked by hand included, stays on the bare `/search`.
 9. If no search performed yet: "Start searching!!!"
 
 **No-query ranking:** With no query (browsing, or filters only — e.g. arriving from a studio link), results are ordered by the vote-weighted MAL score each card shows, highest first, with unscored anime last. Filters choose which anime appear and never change a card's score or where it sits relative to the others, so a filtered list reads in the same order as the unfiltered one.
@@ -445,7 +445,7 @@ can rate.
   - `?from=home` → "Back to home" (a home row's tile → `/`, landing as `?from=browse` does)
   - `?from=discover` → "Back to discover" (a Discover row's tile → `/browse?tab=discover`, landing as `?from=browse` does)
   - `?from=carousel&carousel=<key>` → "Back to the list" (a row's see-all tile → `/browse/<key>`, at that tile)
-  - `?from=search-all&q=<token>` → "Back to all results" (a search's see-all tile → `/search/all?q=token`, at that tile)
+  - `?from=search-all[&q=<token>]` → "Back to all results" (a search's see-all tile → `/search/all?q=token`, or `/search/all` without a token, at that tile)
   - neither → no back button (direct-URL arrivals stay clean)
 - These flags propagate across the entire anime↔media jump chain (anime → media tile, media → anime link, related-media carousel) via `buildDetailHref`'s options bag, so a deep dive like curation → anime → media → sibling stays linkable back to the origin
 - The set above is closed. An unrecognised `from` falls through to the search token if one is present, and otherwise renders no back button — never a broken one. `lib/utils/navigation.ts` owns the union and says what adding to it touches

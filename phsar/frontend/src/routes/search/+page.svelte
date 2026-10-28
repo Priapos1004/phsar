@@ -7,13 +7,13 @@
 	import ExpressionText from '$lib/components/ExpressionText.svelte';
 	import { hugLines } from '$lib/utils/hugLines';
 	import { AlertTriangle, X } from 'lucide-svelte';
-	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
 		GUEST_STRIPPED_NOTICE,
 		SEARCH_FETCH,
 		SEARCH_LIMIT,
 		carryAcrossView,
+		defaultSearch,
 		filterChips,
 		omitKeys,
 		stripForGuest,
@@ -25,9 +25,9 @@
 	import { getContext } from 'svelte';
 	import { searchRows, verifiedToken } from '$lib/stores/browseRows';
 	import { ensureRatingCoverage } from '$lib/stores/ratingCoverage';
-	import { navigateToSearch } from '$lib/utils/navigation';
+	import { navigateToSearch, searchHref } from '$lib/utils/navigation';
 	import { formatDuration, formatSeason, formatSeasonRange, resolveTitle } from '$lib/utils/formatString';
-	import { userSettings } from '$lib/stores/userSettings';
+	import { defaultSearchView, userSettings } from '$lib/stores/userSettings';
 	import type { MediaSearchResult, AnimeSearchResult } from '$lib/types/api';
 	import * as cls from '$lib/styles/classes';
 	import MediaInfo from '$lib/components/MediaInfo.svelte';
@@ -47,7 +47,7 @@
 	let strippedForGuest = $state(false);
 	let filtersOpen = $state(false);
 
-	let defaultView = $derived($userSettings?.default_search_view ?? 'anime');
+	let defaultView = $derived($defaultSearchView);
 	let decodedParams = $state<MediaSearchFilters>({ query: '', search_type: 'title' });
 	// The view is the applied search's, so it has one writer: whatever loaded the search.
 	let viewType = $derived<ViewType>(decodedParams.view_type ?? defaultView);
@@ -94,7 +94,7 @@
 		mediaResults = [];
 		animeResults = [];
 		strippedForGuest = false;
-		const params: MediaSearchFilters = { query: '', search_type: 'title', view_type: view };
+		const params = defaultSearch(view);
 		decodedParams = params;
 		try {
 			await loadSearchResults(params, thisRequest);
@@ -319,18 +319,16 @@
 						Show More
 					</button>
 				{/if}
-				<!-- Past the cap: the same search on a page without one, on this token, so the
-				     see-all reuses what this page loaded (`settledSearch`). The default search
-				     has none, so it mints one. -->
+				<!-- Past the cap: the same search on a page without one, on this token or, for
+				     the default search, none, so the see-all reuses what this page loaded
+				     (`settledSearch`). -->
 				{#if hasMore}
-					<button
-						onclick={() => searchToken
-							? goto(`/search/all?q=${encodeURIComponent(searchToken)}`)
-							: navigateToSearch(decodedParams, '/search/all')}
+					<a
+						href={searchHref('/search/all', searchToken)}
 						class="px-4 py-2 rounded-full border border-primary/40 text-primary hover:bg-primary/15 transition"
 					>
 						See all results
-					</button>
+					</a>
 				{/if}
 			</div>
 		{/if}

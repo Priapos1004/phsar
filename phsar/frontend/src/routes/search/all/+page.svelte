@@ -1,21 +1,21 @@
 <script lang="ts">
-	// A search past the search page's `SEARCH_LIMIT`: the same token, up to the endpoint's
-	// own limit, as poster tiles. A sort change mints a new token and stays here.
+	// A search past the search page's `SEARCH_LIMIT`: the same search — its token, or none
+	// for the default one — up to the endpoint's own limit, as poster tiles. A sort change stays here.
 	import { hugLines } from '$lib/utils/hugLines';
 	import { getContext } from 'svelte';
-	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import Notice from '$lib/components/Notice.svelte';
 	import ExpressionText from '$lib/components/ExpressionText.svelte';
 	import SeeAllResults from '$lib/components/SeeAllResults.svelte';
 	import { searchRows, settledSearch, verifiedToken } from '$lib/stores/browseRows';
 	import { ensureRatingCoverage } from '$lib/stores/ratingCoverage';
-	import { userSettings } from '$lib/stores/userSettings';
+	import { defaultSearchView } from '$lib/stores/userSettings';
 	import type { AnimeSearchResult, MediaSearchResult } from '$lib/types/api';
 	import * as cls from '$lib/styles/classes';
 	import { buildDetailHref, navigateToSearch } from '$lib/utils/navigation';
 	import {
 		GUEST_STRIPPED_NOTICE,
+		defaultSearch,
 		SEARCH_FETCH,
 		SEARCH_MODE_LABELS,
 		SEE_ALL_LIMIT,
@@ -32,7 +32,7 @@
 
 	const getUserRole = getContext<() => string | null>('userRole');
 	let isGuest = $derived(getUserRole?.() === 'restricted_user');
-	let defaultView = $derived($userSettings?.default_search_view ?? 'anime');
+	let defaultView = $derived($defaultSearchView);
 
 	// A derived, as on the search page: stripping `?focus=` after a return re-derives the
 	// same token, so the load below doesn't run again and collapse the restored list.
@@ -47,18 +47,18 @@
 	let chips = $derived(params ? filterChips(params, grain) : []);
 
 	let request = 0;
+	// Reading `defaultView` re-runs the default search once settings resolve.
 	$effect(() => {
-		if (token) void load(token);
-		else void goto('/search', { replaceState: true });
+		void load(token ? verifiedToken(token) : defaultSearch(defaultView));
 	});
 
-	async function load(token: string) {
+	async function load(search: Promise<MediaSearchFilters> | MediaSearchFilters) {
 		const id = ++request;
 		rows = null;
 		pending = false;
 		notice = '';
 		try {
-			const parsed = await verifiedToken(token);
+			const parsed = await search;
 			if (id !== request) return;
 			const stripped = isGuest ? stripForGuest(parsed) : { params: parsed, stripped: false };
 			strippedForGuest = stripped.stripped;
@@ -91,7 +91,7 @@
 <svelte:head><title>All results — Phsar</title></svelte:head>
 
 <SeeAllResults
-	back={{ q: token }}
+	back={{ q: token, from: 'search' }}
 	title={query ? `All results for “${query}”` : 'All results'}
 	{grain}
 	{params}
