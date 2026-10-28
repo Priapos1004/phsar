@@ -72,6 +72,13 @@ with the same anime each time. A description row draws at random whatever its si
 query picks a set rather than ranking one, and its Top N% cuts the tiny shows that merely
 say the word.
 
+**A mood's rows don't repeat each other**: no two share more than 5 of the tiles they show
+(`ROW_SIZE`), under the toggles they open with. A row that would leaves out the genres its
+neighbour leads with (`_tags`' `without`), or moves to another mood. A random row's tiles are
+only the day's draw, so for it the anime its pool shares with the neighbour's are what to
+count — and random rows share [one daily order](search.md#sorting), so an anime in both pools
+can lead both.
+
 The wheel decides nothing: the spin returns the drawn mood first and the wheel turns onto
 it. A mood's look is the frontend's (`utils/discoverMoods.ts`), keyed by mood key. A
 fresh spin then cuts to the mood under a full-screen reveal: the tab swaps under its flash,
@@ -123,3 +130,4 @@ and leaves a see-all's toggle over the caller's data inert.
 **Why it is this way**
 - [Browse + News](../../compound-docs/2026-10-10-v0.16.2-browse.md) — the decisions behind the definition tables, the see-all routes and the tiles
 - [Home + Discover](../../compound-docs/2026-10-12-v0.16.3-home-and-discover.md) — the moods, the draw, and the count and overlap studies behind Discover's rows
+- [Responsive pass](../../compound-docs/2026-10-23-v0.16.4-responsive-pass.md) — the genre-exclusion study behind the rows' `without`

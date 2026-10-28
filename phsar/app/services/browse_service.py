@@ -39,11 +39,11 @@ class Mood(NamedTuple):
 MOODS: dict[str, Mood] = {
     "beasts": Mood("Beasts & Legends", ("dragons", "vampires", "demon-lords", "myths", "witches", "paws")),
     "other-worlds": Mood("Other Worlds", ("isekai", "reborn", "in-the-game", "magic-academy", "space")),
-    "cozy": Mood("Cozy Corner", ("healing", "gourmet", "cgdct", "tiny-humans", "paws")),
+    "cozy": Mood("Cozy Corner", ("healing", "gourmet", "cgdct", "everyday", "tiny-humans", "paws")),
     "twists": Mood("Twists & Turns", ("death-games", "detective", "time-travel", "five-steps", "mystery")),
     "steel": Mood("Blood & Steel", ("samurai", "war", "revenge", "assassins", "family-business")),
     "after-dark": Mood("After Dark", ("lights-off", "haunting", "beyond", "city-magic", "vampires")),
-    "future": Mood("Future Shock", ("mecha", "aliens", "after-the-end", "in-the-game")),
+    "future": Mood("Future Shock", ("mecha", "space", "aliens", "after-the-end", "in-the-game")),
     "power-up": Mood("Power Up", ("superhuman", "fists", "tournament", "strongest", "samurai")),
     "spotlight": Mood("Spotlight", ("idols", "on-stage", "game-on", "otaku")),
     "offbeat": Mood("Off the Beat", ("hidden-gems", "one-evening", "originals", "grown-ups", "nine-to-five")),
