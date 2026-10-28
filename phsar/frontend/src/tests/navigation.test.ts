@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/svelte';
 import BackLink from '$lib/components/BackLink.svelte';
+import MediaInfo from '$lib/components/MediaInfo.svelte';
 import { goto } from '$app/navigation';
 import {
 	absoluteDetailUrl,
@@ -177,6 +178,13 @@ describe('BackLink', () => {
 	it('returns a default search see-all detail there without a token', () => {
 		render(BackLink, { props: { origin: { from: 'search-all', focus: 'abc-123' } } });
 		expect(backLink('Back to all results')).toHaveAttribute('href', '/search/all?focus=abc-123');
+	});
+
+	it('returns a default search result there, at its card', () => {
+		render(MediaInfo, { props: { info_type: 'anime', title: 'T', airing_status: 'Finished Airing', media_uuid: 'abc-123' } });
+		const detail = screen.getByRole('link', { name: /T/ }).getAttribute('href')!;
+		render(BackLink, { props: { origin: detailOrigin(new URL(detail, 'http://x')) } });
+		expect(backLink('Back to search')).toHaveAttribute('href', '/search?focus=abc-123');
 	});
 
 	it('returns a see-all without a token to the default search', () => {

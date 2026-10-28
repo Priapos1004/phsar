@@ -83,7 +83,7 @@
 		return () => observer.disconnect();
 	});
 
-	let href = $derived(buildDetailHref(info_type, media_uuid, { q: searchToken }));
+	let href = $derived(buildDetailHref(info_type, media_uuid, { q: searchToken, from: 'search' }));
 
 	let displaySeason = $derived(season_range ?? anime_season);
 	let displayStatus = $derived(formatAiringStatus(airing_status, has_upcoming));

@@ -17,8 +17,8 @@ export function rowClickNavigate(e: MouseEvent, href: string): void {
     goto(href);
 }
 
-/** Closed set of origin markers that detail pages handle. A search travels as its token
- * (`q`) instead; `search` is how a see-all without one returns to `/search`.
+/** Closed set of origin markers that detail pages handle. `search` returns to `/search`,
+ * on the `q` token or bare for the default search.
  * Extend this union (and BackLink.svelte's `target` switch) when a new
  * entry point needs a labeled back button — and, for one carrying an id the
  * way `job` does, `DetailHrefOptions`, `buildDetailHref` and `detailOrigin`. */
@@ -35,10 +35,10 @@ export function carouselOrigin(page?: BrowsePageKey | null): DetailOrigin {
 }
 
 export interface DetailHrefOptions {
-    /** Search token to propagate so the detail page renders "Back to search". */
+    /** The search a `search` or `search-all` origin returns to; the default search has none. */
     q?: string | null;
-    /** Origin marker for non-search entry points. The detail page reads
-     * this to render a labeled back button like "Back to library". */
+    /** Origin marker the detail page reads to render a labeled back button like
+     * "Back to library". */
     from?: DetailOrigin | null;
     /** Job uuid carried alongside `from: 'job'` so the back button can link
      * to that specific `/admin/jobs/[uuid]` row (the admin came from a sweep

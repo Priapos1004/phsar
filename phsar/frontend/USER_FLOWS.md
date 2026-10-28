@@ -253,7 +253,7 @@ Each media search result card shows:
 - A colored bookmark icon when the media is on your watchlist (tinted to its list's color)
 - A **rated band** in the theme colour around the card edge when you have rated this media. A media is rated or it isn't, so it never shows the gold or obsidian of 5.3
 - In My notes mode, your note on it, quoted on one line (full text on hover)
-- Clicking navigates to `/media?uuid=<uuid>` (with `&q=<token>` preserved for back navigation)
+- Clicking navigates to `/media?uuid=<uuid>` (back navigation: 7.6)
 
 ### 5.2 Anime Card (anime view)
 Each anime search result card shows:
@@ -269,7 +269,7 @@ Each anime search result card shows:
 - A colored bookmark icon when any of the anime's media is on your watchlist — solid for one list, a gradient when it spans several
 - A **rated band** around the card edge showing how much of the anime you have rated — see 5.3
 - In My notes mode, the note of yours that matched best, quoted on one line (full text on hover)
-- Clicking navigates to `/anime?uuid=<uuid>` (with `&q=<token>` preserved)
+- Clicking navigates to `/anime?uuid=<uuid>` (back navigation: 7.6)
 
 ### 5.3 Rated-coverage marking
 
@@ -341,8 +341,7 @@ can rate.
 - **Notes**: Collapsible list of user notes per media (first note visible, "Show all N notes" to expand)
 
 ### 6.6 Back Navigation
-- "Back to search" link appears when `q` search token is present in URL
-- Restores the correct anime/media toggle and filters on the search page, and the position you left (7.6)
+- The media page's back button (7.6)
 
 ### 6.7 Share Dialog (anime + media)
 - Reached from the share icon on either hero (6.2, 7.2). Same dialog on both — only the data differs: the anime grain aggregates across the anime's rated media, the media grain shows that one entry
@@ -433,7 +432,7 @@ can rate.
 
 ### 7.6 Back Navigation
 - Shared `<BackLink>` component (in `lib/components/`) decides which back button to render based on URL params:
-  - `?q=<token>` → "Back to search" (search-origin pattern, returns to `/search?q=token`; the token's `view_type` restores the correct anime/media toggle)
+  - `?from=search[&q=<token>]`, or `?q=<token>` alone → "Back to search" (a search result → `/search?q=token`, or `/search` without a token, at that card; the token's `view_type` restores the correct anime/media toggle)
   - `?from=library` → "Back to library" (non-search origin used by the recent-additions panel)
   - `?from=job&job=<uuid>` → "Back to job" (admin job-detail page's failed-refresh / failed-probe / attached links → `/admin/jobs/[uuid]`)
   - `?from=completion` → "Back to completion" (admin Completion tab's anime links → `/admin?tab=completion`)
