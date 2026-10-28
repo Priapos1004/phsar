@@ -10,7 +10,7 @@ import { Bot, Coffee, Compass, Flame, Ghost, Mic, Orbit, Puzzle, Sparkles, Sword
 export type ParticleMotion = 'rise' | 'fall' | 'drift' | 'twinkle' | 'fly';
 
 /** The signature a mood's reveal plays after the spin (`utils/moodReveal.ts`). */
-export type RevealKind = 'bolt' | 'swords' | 'blaze' | 'portal' | 'glitch' | 'spiral' | 'lights-out' | 'spotlight' | 'hearth' | 'ripples';
+export type RevealKind = 'bolt' | 'swords' | 'blaze' | 'portal' | 'spiral' | 'lights-out' | 'spotlight' | 'hearth' | 'ripples' | 'ufo';
 
 export interface MoodLook {
 	icon: typeof Flame;
@@ -27,7 +27,7 @@ export const MOOD_LOOK: Record<string, MoodLook> = {
 	twists: { icon: Puzzle, color: '#2db7ae', particle: { glyph: '?', motion: 'drift' }, reveal: 'spiral' },
 	steel: { icon: Swords, color: '#e2534e', particle: { glyph: '✧', motion: 'rise' }, reveal: 'swords' },
 	'after-dark': { icon: Ghost, color: '#8f98f2', particle: { glyph: '🦇', motion: 'fly' }, reveal: 'lights-out' },
-	future: { icon: Bot, color: '#3dbcf5', particle: { glyph: '▪', motion: 'fall' }, reveal: 'glitch' },
+	future: { icon: Bot, color: '#3dbcf5', particle: { glyph: '▪', motion: 'fall' }, reveal: 'ufo' },
 	'power-up': { icon: Zap, color: '#f4c543', particle: { glyph: '⚡', motion: 'twinkle' }, reveal: 'bolt' },
 	spotlight: { icon: Mic, color: '#ec62a9', particle: { glyph: '★', motion: 'fall' }, reveal: 'spotlight' },
 	offbeat: { icon: Compass, color: '#a8cf4c', particle: { glyph: '•', motion: 'drift' }, reveal: 'ripples' },

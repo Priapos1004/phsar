@@ -14,6 +14,8 @@ export const BEAT = {
 	impact: 860, // the impact frame: black, the signature's shapes in white
 	peak: 900, // the flash peak, under which the page swaps
 	title: 980, // the title card lands, and holds long enough to be read
+	print: 1130, // the ufo's title prints under its scan line from here…
+	printed: 1830, // …to here
 	clear: 2700, // the stage starts to clear
 	end: 3150,
 } as const;
@@ -126,12 +128,12 @@ const SIGNATURES: Record<RevealKind, Signature> = {
 	swords: { scene: swordsScene },
 	blaze: { scene: blazeScene },
 	portal: { scene: portalScene },
-	glitch: { scene: glitchScene },
 	spiral: { scene: spiralScene },
 	spotlight: { scene: spotlightScene },
 	'lights-out': { scene: lightsOutScene, soft: { wash: 50, ring: false } },
 	hearth: { scene: hearthScene, soft: { wash: 28, ring: false } },
 	ripples: { scene: ripplesScene, soft: { wash: 55, ring: true } },
+	ufo: { scene: ufoScene, soft: { wash: 40, ring: false } },
 };
 
 /** A soft signature's stage, or nothing for one that punches. */
@@ -681,93 +683,180 @@ function portalScene({ w, h, centre, span, room, color, glyph, rand, peak }: Sta
 }
 
 /**
- * The glitch signature: the signal breaks up. Scanlines, a refresh beam sweeping the screen,
- * data raining down its columns, and tears and blocks of corrupt colour that grow as the
- * strike nears. Through the title card the rain thins and the signal stutters now and then;
- * the card itself arrives as a broken signal (`MoodReveal.svelte`).
+ * The ufo signature: a saucer swoops in from the top left, out from behind the letterbox,
+ * and settles over the centre. Its tractor beam reaches down with pixels streaming through
+ * it, and beams the title in — bits flicker over it as it prints (`MoodReveal.svelte`).
+ * Then the beam draws back up, and the saucer tips its nose and is gone to the top right
+ * before the title clears.
  *
- * The corruption is redrawn every 50ms rather than every frame — a stutter, not a strobe —
- * and every tear and block is small or part-width, so it never lights a large area at once.
+ * The beam breathes rather than flickers; only small shapes blink — the rim lights and the
+ * bits.
  */
-function glitchScene({ w, h, room, color, glyph, rand, peak }: Stage): Scene {
+function ufoScene({ ctx: canvas, w, h, centre, span, room, color, glyph, rand, peak, clear }: Stage): Scene {
+	const ARRIVE = -350;
+	const BEAM = 220;
+	const TITLE = peak + BEAT.title - BEAT.peak;
+	// A beat after the title has printed.
+	const RETRACT = peak + BEAT.printed - BEAT.peak + 50;
+	const LEAVE_MS = 420;
+	// Gone, wake and all, before the stage clears.
+	const LEAVE = clear - LEAVE_MS - 140;
+	// Half the hull's width: kept clear of the letterbox on a wide screen.
+	const R = Math.min(span * 0.17, h * 0.13);
+	const hover = { x: centre.x, y: centre.y - Math.min(span * 0.42, h * 0.3) };
+	const from = { x: -R * 2, y: -R * 1.5 };
+	const swoop = { x: w * 0.12, y: hover.y + span * 0.12 };
+	const gone = { x: w + R * 3, y: -R * 2 };
+	// The beam's foot: past the title, and wide enough to hold it.
+	const foot = centre.y + Math.min(span * 0.2, h * 0.17);
+	const reach = Math.min(w * 0.46, span * 0.62);
+	const neck = R * 0.32;
 	const bit = glyphSprite(glyph, color, 32);
-	const scanlines = new Path2D();
-	for (let y = 0; y < h; y += 4) {
-		scanlines.moveTo(0, y);
-		scanlines.lineTo(w, y);
-	}
-	const COLUMN = 26;
-	const columns = Array.from({ length: Math.ceil(w / COLUMN) }, () => ({ speed: 260 + rand() * 520, offset: rand() * h, length: 3 + Math.floor(rand() * 5) }));
-	const bursts = [300, 900, 1500].map((at) => peak + at + rand() * 120);
-	let step = -1;
-	let shards: { x: number; y: number; w: number; h: number; ink: string }[] = [];
+	const light = blobSprite(color, 24, 0.12);
+	const haze = blobSprite(color, 64, 0);
 
-	const corrupt = (amount: number) => {
-		shards = Array.from({ length: Math.round((3 + 9 * amount) * Math.min(room, 1.6)) }, () => {
-			const tear = rand() < 0.4;
-			return {
-				x: rand() * w + (rand() - 0.5) * 120 * amount,
-				y: rand() * h,
-				w: tear ? w * (0.15 + rand() * 0.3) : 8 + rand() * 36,
-				h: tear ? 2 + rand() * 10 : 6 + rand() * 24,
-				// The mood's colour, and the cyan and magenta of a split signal.
-				ink: [color, '#0ff', '#f0f'][Math.floor(rand() * 3)],
-			};
-		});
+	// The saucer, about its own centre: a glass dome over a steel hull, a darker belly under it.
+	const dome = new Path2D();
+	dome.ellipse(0, -R * 0.1, R * 0.42, R * 0.42, 0, Math.PI, 0);
+	dome.closePath();
+	const hull = new Path2D();
+	hull.ellipse(0, 0, R, R * 0.24, 0, 0, Math.PI * 2);
+	const belly = new Path2D();
+	belly.ellipse(0, R * 0.12, R * 0.5, R * 0.16, 0, 0, Math.PI);
+	belly.closePath();
+	const glass = canvas.createLinearGradient(0, -R * 0.52, 0, -R * 0.1);
+	glass.addColorStop(0, '#fff');
+	glass.addColorStop(0.45, color);
+	glass.addColorStop(1, '#10243a');
+	const steel = canvas.createLinearGradient(0, -R * 0.24, 0, R * 0.24);
+	steel.addColorStop(0, '#dbe3ec');
+	steel.addColorStop(0.45, '#6f7e90');
+	steel.addColorStop(1, '#262d38');
+	const LIGHTS = 7;
+
+	const pixels = Array.from({ length: Math.round(36 * room) }, () => ({
+		lane: (rand() * 2 - 1) * 0.85,
+		phase: rand(),
+		speed: 0.9 + rand() * 0.7,
+		size: 6 + rand() * 6,
+	}));
+	const landed = Array.from({ length: Math.round(28 * room) }, () => ({
+		x: centre.x + (rand() * 2 - 1) * reach * 0.8,
+		y: centre.y + (rand() * 2 - 1) * Math.min(span * 0.14, h * 0.1),
+		at: TITLE + rand() * 300,
+		size: 6 + rand() * 8,
+	}));
+
+	const arrived = (u: number) => cubicOut(ramp(u, ARRIVE, 600));
+	const away = (u: number) => ramp(u, LEAVE, LEAVE_MS) ** 3;
+	// Where the saucer is at `u`: along a curve in, bobbing while it hovers, then away,
+	// faster and faster.
+	const place = (u: number): Point => {
+		const p = arrived(u);
+		const q = 1 - p;
+		const bob = Math.sin(u / 320) * R * 0.06 * ramp(u, 150, 200);
+		const x = q * q * from.x + 2 * q * p * swoop.x + p * p * hover.x;
+		const y = q * q * from.y + 2 * q * p * swoop.y + p * p * hover.y + bob;
+		const a = away(u);
+		return { x: x + (gone.x - x) * a, y: y + (gone.y - y) * a };
+	};
+
+	const saucer = (ctx: CanvasRenderingContext2D, at: Point, u: number, beam: number) => {
+		// Nose down coming in, a wobble as it stops, nose up going.
+		const tilt =
+			0.35 * (1 - arrived(u)) +
+			0.08 * Math.sin((u - 250) / 70) * pulse(u - 250, 180) -
+			0.4 * cubicOut(ramp(u, LEAVE - 120, 200));
+		const size = 1 - 0.4 * away(u);
+		ctx.save();
+		ctx.translate(at.x, at.y);
+		ctx.rotate(tilt);
+		ctx.scale(size, size);
+		ctx.globalCompositeOperation = 'source-over';
+		ctx.globalAlpha = 1;
+		ctx.fillStyle = glass;
+		ctx.fill(dome);
+		ctx.fillStyle = steel;
+		ctx.fill(hull);
+		ctx.fillStyle = '#1c222c';
+		ctx.fill(belly);
+		ctx.globalCompositeOperation = 'lighter';
+		for (let i = 0; i < LIGHTS; i++) {
+			const chase = 0.35 + 0.65 * Math.max(0, Math.cos(u / 110 - i * 0.9));
+			stamp(ctx, light, { x: ((i / (LIGHTS - 1)) * 2 - 1) * R * 0.78, y: R * 0.04 }, R * 0.12, chase);
+		}
+		stamp(ctx, haze, { x: 0, y: R * 0.26 }, R * 0.5, 0.3 + 0.5 * beam);
+		ctx.restore();
 	};
 
 	return {
 		draw(ctx, u, _, hold) {
-			if (u < 0) return;
 			ctx.globalCompositeOperation = 'lighter';
-			const after = u >= peak;
-			const build = ramp(u, 0, 400);
+			// How far down the beam reaches, and how bright it is: out to the foot, held, drawn
+			// back up into the belly.
+			const out = cubicOut(ramp(u, BEAM, 260)) * (1 - cubicInOut(ramp(u, RETRACT, 250)));
+			const on = ramp(u, BEAM, 120) * fadeFrom(u, RETRACT + 150, 120) * hold;
+			const at = place(u);
+			if (on > 0 && out > 0) {
+				const top = at.y + R * 0.28;
+				const bottom = top + (foot - top) * out;
+				const wide = neck + (reach - neck) * out;
+				const half = (f: number) => neck + (wide - neck) * f;
+				const down = (f: number) => top + (bottom - top) * f;
+				const breathe = 0.85 + 0.15 * Math.sin(u / 260);
+				const cone = new Path2D();
+				cone.moveTo(at.x - neck, top);
+				cone.lineTo(at.x - wide, bottom);
+				cone.lineTo(at.x + wide, bottom);
+				cone.lineTo(at.x + neck, top);
+				cone.closePath();
+				const fill = ctx.createLinearGradient(0, top, 0, bottom);
+				fill.addColorStop(0, '#fff');
+				fill.addColorStop(0.3, color);
+				fill.addColorStop(0.85, color);
+				fill.addColorStop(1, 'transparent');
+				ctx.globalAlpha = 0.26 * on * breathe;
+				ctx.fillStyle = fill;
+				ctx.fill(cone);
+				ctx.globalAlpha = 0.4 * on;
+				ctx.strokeStyle = color;
+				ctx.lineWidth = 1.5;
+				ctx.beginPath();
+				ctx.moveTo(at.x - neck, top);
+				ctx.lineTo(at.x - wide, bottom);
+				ctx.moveTo(at.x + neck, top);
+				ctx.lineTo(at.x + wide, bottom);
+				ctx.stroke();
 
-			ctx.globalAlpha = 0.1 * (after ? hold : 0.4 + 0.6 * build);
-			ctx.strokeStyle = color;
-			ctx.lineWidth = 1;
-			ctx.stroke(scanlines);
-
-			const rain = after ? 0.35 * hold : 0.85 * build;
-			if (rain > 0) {
-				columns.forEach((c, i) => {
-					const head = ((c.offset + (u * c.speed) / 1000) % (h + 200)) - 100;
-					for (let j = 0; j < c.length; j++) {
-						ctx.globalAlpha = rain * (1 - j / c.length);
-						ctx.drawImage(bit, i * COLUMN + 4, head - j * 22, 18, 18);
-					}
-				});
-			}
-
-			if (!after) {
-				// The refresh beam: down the screen, then a faster pass back up.
-				const y = u < 300 ? h * cubicInOut(u / 300) : h * fadeFrom(u, 300, 90);
-				const band = ctx.createLinearGradient(0, y - 30, 0, y + 30);
-				band.addColorStop(0, 'transparent');
-				band.addColorStop(0.5, color);
-				band.addColorStop(1, 'transparent');
-				ctx.globalAlpha = 0.55;
-				ctx.fillStyle = band;
-				ctx.fillRect(0, y - 30, w, 60);
-			}
-
-			const stutter = bursts.some((at) => u >= at && u < at + 180);
-			const amount = after ? (stutter ? 0.6 * hold : 0) : build * build;
-			if (amount > 0) {
-				const now = Math.floor(u / 50);
-				if (now !== step) {
-					step = now;
-					corrupt(amount);
+				// Bands of light travelling down it, thin so they move rather than flash.
+				ctx.strokeStyle = '#fff';
+				ctx.lineWidth = 1;
+				for (let k = 0; k < 3; k++) {
+					const f = (u / 700 + k / 3) % 1;
+					ctx.globalAlpha = 0.35 * on * (1 - f);
+					ctx.beginPath();
+					ctx.moveTo(at.x - half(f), down(f));
+					ctx.lineTo(at.x + half(f), down(f));
+					ctx.stroke();
 				}
-				ctx.globalAlpha = 0.3;
-				for (const s of shards) {
-					ctx.fillStyle = s.ink;
-					ctx.fillRect(s.x, s.y, s.w, s.h);
+
+				for (const px of pixels) {
+					const f = (px.phase + (u * px.speed) / 1000) % 1;
+					stamp(ctx, bit, { x: at.x + px.lane * half(f), y: down(f) }, px.size, 0.8 * on * Math.sin(Math.PI * f));
 				}
+
+				// The pool where it lands, flattened into an ellipse.
+				ctx.globalAlpha = 0.35 * on * out ** 4;
+				ctx.drawImage(haze, at.x - wide, bottom - wide * 0.22, wide * 2, wide * 0.44);
 			}
-		},
-		impact(ctx) {
-			for (const s of shards) ctx.fillRect(s.x, s.y, s.w, s.h);
+
+			for (const b of landed) stamp(ctx, bit, b, b.size, hold * Math.sin(Math.PI * ramp(u, b.at, 380)));
+
+			if (u > LEAVE + LEAVE_MS) return;
+			// Its wake as it leaves: a flare where it set off, and a trail of fading glows.
+			stamp(ctx, haze, hover, R * 1.2, 0.5 * pulse(u - LEAVE, 120));
+			if (u > LEAVE) for (let j = 1; j <= 4; j++) stamp(ctx, haze, place(u - j * 25), R * 0.5, 0.25 * (1 - j / 5));
+			saucer(ctx, at, u, out);
 		},
 	};
 }
