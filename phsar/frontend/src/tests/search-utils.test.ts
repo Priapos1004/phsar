@@ -137,13 +137,11 @@ describe('normalizeFilters', () => {
 		expect(every.airing_status).toBeUndefined();
 		const some = normalizeFilters({ ...BASE, airing_status: ['Currently Airing'] }, 'anime', offered);
 		expect(some.airing_status).toEqual(['Currently Airing']);
-		const anyStudio = normalizeFilters({ ...BASE, studio_name: ['Bones', 'MAPPA'] }, 'anime', offered);
-		expect(anyStudio.studio_name).toBeUndefined();
 	});
 
-	it('keeps a list matched by all of its values', () => {
-		const allStudios = normalizeFilters({ ...BASE, studio_name: ['MAPPA', 'Bones'], studio_mode: 'all' }, 'anime', offered);
-		expect(allStudios.studio_name).toEqual(['MAPPA', 'Bones']);
+	it('keeps every offered option of a list some media leave blank — dropping it would add them', () => {
+		const anyStudio = normalizeFilters({ ...BASE, studio_name: ['Bones', 'MAPPA'] }, 'anime', offered);
+		expect(anyStudio.studio_name).toEqual(['Bones', 'MAPPA']);
 	});
 
 	it('drops an empty genre group and nothing else, a contradiction included', () => {

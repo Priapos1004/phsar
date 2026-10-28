@@ -115,6 +115,9 @@ export interface ListFilter {
 	/** A list with an any/all toggle names its mode param; every other list matches any of its values. */
 	mode?: ModeKey;
 	mediaOnly?: boolean;
+	/** Every media carries one of its values. Unset, a list can be blank, which no option
+	 * offers, so every option chosen still drops the media with none: the safe side for a new list. */
+	alwaysSet?: boolean;
 	/** Display label for a raw value, which stays what the backend receives. */
 	format?: (value: string) => string;
 }
@@ -122,12 +125,12 @@ export interface ListFilter {
 /** Every list filter, once: the sheet and the chips both read it, so a list's name, its
  * match mode and how its values display can't differ between them. */
 export const LIST_FILTERS: Record<ListFilterKey, ListFilter> = {
-	airing_status: { label: 'Airing status' },
+	airing_status: { label: 'Airing status', alwaysSet: true },
 	anime_season: { label: 'Season' },
 	studio_name: { label: 'Studios', mode: 'studio_mode' },
 	original_source: { label: 'Source' },
-	media_type: { label: 'Media type' },
-	relation_type: { label: 'Relation type', mediaOnly: true, format: formatRelationType },
+	media_type: { label: 'Media type', alwaysSet: true },
+	relation_type: { label: 'Relation type', mediaOnly: true, alwaysSet: true, format: formatRelationType },
 	age_rating: { label: 'Age rating' },
 };
 
@@ -301,25 +304,27 @@ export function listMode(params: MediaSearchFilters, key: ListFilterKey): MatchM
 	return (modeKey && params[modeKey]) || 'any';
 }
 
-/** Names as a chip reads them. */
-const joinNames = (names: readonly string[], mode: MatchMode) => names.join(mode === 'all' ? ' & ' : ' or ');
+/** Names as a chip reads them, each `whole` with the "or" or "&" before it, so a line
+ * starts on that joiner as it does on a group's AND / OR. */
+const nameTerms = (names: readonly string[], mode: MatchMode): Term[] => names.flatMap((name, at) =>
+	at ? [{ text: ' ' }, { text: `${mode === 'all' ? '&' : 'or'} ${name}`, whole: true }] : [{ text: name, whole: true }]);
 
 const coversAll = (chosen: readonly string[] | null | undefined, all: readonly string[] = []) =>
 	all.length > 0 && all.every((option) => chosen?.includes(option));
 
 /** A selection of everything filters nothing, so it goes out as no filter: every rated
  * state — which also keeps the anime grain's list under the token's list cap
- * (`MAX_ITEMS`) — or every option a list offers, when the list matches any of them. A
- * list matched by "all" still filters: "has every studio" is a real ask. The mode stays,
- * as the user's choice for the next selection. A genre group with nothing picked goes,
- * and nothing else of the genres (why: `GenreFilterField`). */
+ * (`MAX_ITEMS`) — or every option of a list every media has a value in. A list with an
+ * any/all mode is never that, since a media carries several of its values or none, so a
+ * mode never reaches this. A genre group with nothing picked goes, and nothing else of the
+ * genres (why: `GenreFilterField`). */
 export function normalizeFilters(
 	params: MediaSearchFilters, view: ViewType, offered: Partial<Pick<FilterOptions, ListFilterKey>>,
 ): MediaSearchFilters {
 	const out = { ...params };
 	if (coversAll(out.rated, RATED_STATES[view].map((s) => s.value))) out.rated = undefined;
 	for (const key of LIST_FILTER_KEYS) {
-		if (listMode(out, key) === 'any' && coversAll(out[key], offered[key])) out[key] = undefined;
+		if (LIST_FILTERS[key].alwaysSet && coversAll(out[key], offered[key])) out[key] = undefined;
 	}
 	const groups = out.genres ? filledGroups(out.genres) : [];
 	out.genres = groups.length ? { ...out.genres!, groups } : undefined;
@@ -422,10 +427,11 @@ export function checkGenres(genres: GenreFilter): { warning: string | null; idle
 }
 
 /** A piece of a chip's text (`ExpressionText`); `keyword` marks the words a genre
- * expression is built from. */
+ * expression is built from, and `whole` one value. */
 export interface Term {
 	text: string;
 	keyword?: boolean;
+	whole?: boolean;
 }
 
 /** The groups in words, in the shape of the sheet's cards: "Fantasy or Isekai, without
@@ -442,11 +448,11 @@ export function describeGenreTerms(genres: GenreFilter): Term[][] {
 		if (at) terms.push({ text: genres.mode === 'all' ? 'AND' : 'OR', keyword: true }, { text: ' ' });
 		const parenthesised = groups.length > 1 && g.include.length + g.exclude.length > 1;
 		if (parenthesised) terms.push({ text: '(' });
-		if (g.include.length) terms.push({ text: joinNames(g.include, g.mode) });
+		terms.push(...nameTerms(g.include, g.mode));
 		if (g.exclude.length) {
 			const together = g.exclude_mode === 'all' && g.exclude.length > 1;
 			if (g.include.length) terms.push({ text: ', ' });
-			terms.push({ text: 'without', keyword: true }, { text: ` ${joinNames(g.exclude, g.exclude_mode)}` });
+			terms.push({ text: 'without', keyword: true }, { text: ' ' }, ...nameTerms(g.exclude, g.exclude_mode));
 			if (together) terms.push({ text: ' ' }, { text: 'together', keyword: true });
 		}
 		if (parenthesised) terms.push({ text: ')' });
@@ -517,7 +523,7 @@ export function filterChips(params: MediaSearchFilters, view: ViewType): FilterC
 
 	if (params.rated?.length) {
 		const labels = RATED_STATES[view].filter((s) => params.rated!.includes(s.value)).map((s) => s.label);
-		chips.push(chip('rated', 'Rated:', labels.join(' or '), ['rated']));
+		chips.push(chip('rated', 'Rated:', [nameTerms(labels, 'any')], ['rated']));
 	}
 	if (params.watchlisted != null) {
 		chips.push(chip('watchlisted', undefined, params.watchlisted ? 'In watchlist' : 'Not in watchlist', ['watchlisted']));
@@ -538,7 +544,7 @@ export function filterChips(params: MediaSearchFilters, view: ViewType): FilterC
 		if (!values?.length) continue;
 		const { label, mode: modeKey, format } = LIST_FILTERS[key];
 		const shown = format ? values.map(format) : values;
-		chips.push(chip(key, `${label}:`, joinNames(shown, listMode(params, key)), modeKey ? [key, modeKey] : [key]));
+		chips.push(chip(key, `${label}:`, [nameTerms(shown, listMode(params, key))], modeKey ? [key, modeKey] : [key]));
 	}
 
 	for (const [key, range] of Object.entries(RANGE_FILTERS) as [RangeKey, RangeFilter][]) {
