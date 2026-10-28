@@ -86,7 +86,7 @@
 	]);
 	// A placeholder is text CSS cannot swap, so the width is read here; on a phone the
 	// long one is cut off mid-word.
-	const wide = new MediaQuery('min-width: 640px');
+	const wide = new MediaQuery(cls.smUp);
 	let placeholder = $derived(
 		mode === 'description' ? (wide.current ? 'Describe a story, a character, a theme...' : 'Describe a story...')
 			: mode === 'rating_notes' ? 'Search your notes...'

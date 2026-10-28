@@ -30,8 +30,10 @@ import { catalogueChanged, onBump } from './jobs';
  *
  * The search pages keep their latest search here too, under the same drops, so a detail
  * page and back renders the list at once rather than re-verifying the token and
- * refetching. They are search's section, not Browse's: leaving search drops them, and
- * they outlive Browse's own clear, which runs as a search page arrives from Browse.
+ * refetching. A media search is always personal: each hit carries the caller's own
+ * `is_rated`, which no store follows. They are search's section, not Browse's: leaving
+ * search drops them, and they outlive Browse's own clear, which runs as a search page
+ * arrives from Browse.
  */
 // One entry per slot, holding the request it was last asked: a see-all keeps a slot per
 // carousel, so switching its toggles replaces its list rather than piling one up per
@@ -118,7 +120,7 @@ export function searchRows(
 		`search:${page}:rows`,
 		JSON.stringify([params, grain, limit]),
 		() => (grain === 'anime' ? fetchAnimeSearchResults(params, limit) : fetchSearchResults(params, limit)),
-		{ personal: readsOwnData(params), lasting: true },
+		{ personal: readsOwnData(params) || grain === 'media', lasting: true },
 	);
 }
 

@@ -7,6 +7,7 @@
 	import { optionLabel } from '$lib/utils/ratingAttributes';
 	import { chartTooltipStyle } from '$lib/utils/chartTheme';
 	import { RATING_ATTRIBUTE_OPTIONS, type RatingScoreItem } from '$lib/types/api';
+	import * as cls from '$lib/styles/classes';
 
 	interface Props {
 		items: RatingScoreItem[];
@@ -25,7 +26,7 @@
 	// page: from sm wide enough for "Animation Quality" (~87px at 11px), on a phone for
 	// "Conventional" (~65px), where the quality scales go by their first word ("Animation" —
 	// the heading already says quality) and the bars keep the width.
-	const wide = new MediaQuery('min-width: 640px');
+	const wide = new MediaQuery(cls.smUp);
 	let labelW = $derived(wide.current ? 96 : 72);
 	// left = the label column + the axis label's 8px margin + 4px clear of the axis line.
 	let grid = $derived({ left: labelW + 12, right: 16, bottom: 24, containLabel: false });

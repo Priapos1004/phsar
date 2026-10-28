@@ -400,9 +400,9 @@ export function checkGenres(genres: GenreFilter): { warning: string | null; idle
 	for (const group of groups) {
 		const others = kept.filter((g) => g !== group);
 		if (!others.length) continue;
-		// Under any, a group changes nothing when the others match all it does; under all,
-		// when it matches all the others do.
-		const [narrow, wide] = genres.mode === 'any' ? [[group], others] : [others, [group]];
+		// Under all, a group changes nothing when it matches all the others do; under any,
+		// when the others match all it does.
+		const [narrow, wide] = genres.mode === 'all' ? [others, [group]] : [[group], others];
 		const escapes = satisfiable(
 			(has) => joined('all', narrow, has) && !joined(genres.mode, wide, has),
 			union(included(narrow), excluded(wide)),

@@ -28,7 +28,8 @@ const get = api.get as unknown as ReturnType<typeof vi.fn>;
 const post = api.post as unknown as ReturnType<typeof vi.fn>;
 const FRESH: MediaSearchFilters = { query: '', search_type: 'title', sort: 'aired' };
 const CONTINUATIONS: MediaSearchFilters = { query: '', search_type: 'title', rated: ['in_progress'], sort: 'release' };
-const rowCalls = () => get.mock.calls.filter(([path]) => path === '/search/anime').length;
+const calls = (endpoint: string) => get.mock.calls.filter(([path]) => path === endpoint).length;
+const rowCalls = () => calls('/search/anime');
 
 describe('browse row cache', () => {
 	beforeEach(() => {
@@ -262,5 +263,13 @@ describe('search page cache', () => {
 		await searchRows('search', FRESH, 'anime', 51);
 		await searchRows('search-all', CONTINUATIONS, 'anime', 1000);
 		expect(rowCalls()).toBe(3);
+	});
+
+	// A media hit's rated marker is the caller's `is_rated`, which only a refetch updates.
+	it('refetches a media search after a rating write, whatever its filters', async () => {
+		await searchRows('search', FRESH, 'media', 51);
+		invalidateRatingScores();
+		await searchRows('search', FRESH, 'media', 51);
+		expect(calls('/search/media')).toBe(2);
 	});
 });

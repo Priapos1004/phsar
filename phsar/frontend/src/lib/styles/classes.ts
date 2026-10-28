@@ -17,6 +17,10 @@ export const pageGutter = `${mainGutter} max-xs:px-2`;
 // scrolls natively — a fixed overlay keeps a phone's address bar from collapsing.
 export const authScreen = `min-h-dvh bg-gradient-to-br from-[var(--auth-gradient-from)] via-[var(--auth-gradient-via)] to-[var(--auth-gradient-to)] flex justify-center items-start pt-20 pb-8 ${mainGutter}`;
 export const sectionSpacing = 'space-y-8';
+// Tailwind's breakpoints as media queries, for what a class can't switch (a placeholder, a
+// chart's size). In rem, as Tailwind's own, so a larger default font moves both together.
+export const smUp = 'min-width: 40rem';
+export const twoXlUp = 'min-width: 96rem';
 // A page's navigation links above its content: they can share one line, so they share one look.
 // No margin of its own — `BackLink`'s row owns the gap below them.
 export const pageNavLink = 'inline-flex items-center gap-1.5 text-sm text-white/70 hover:text-white transition';

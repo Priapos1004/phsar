@@ -35,7 +35,7 @@
 
 	// The gauge scales with `cls.statFigure` (the why is there); it is a chart, so its size is
 	// set here.
-	const twoXl = new MediaQuery('min-width: 1536px');
+	const twoXl = new MediaQuery(cls.twoXlUp);
 	let gaugeSize = $derived(twoXl.current ? 120 : 96);
 	let gaugeOption = $derived(scoreGaugeOption(avgScore, gaugeSize));
 	// A figure over its label: a column on a phone, from md three rows of the overview's subgrid.
