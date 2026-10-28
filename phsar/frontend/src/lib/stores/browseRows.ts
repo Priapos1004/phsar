@@ -30,10 +30,11 @@ import { catalogueChanged, onBump } from './jobs';
  *
  * The search pages keep their latest search here too, under the same drops, so a detail
  * page and back renders the list at once rather than re-verifying the token and
- * refetching. A media search is always personal: each hit carries the caller's own
- * `is_rated`, which no store follows. They are search's section, not Browse's: leaving
- * search drops them, and they outlive Browse's own clear, which runs as a search page
- * arrives from Browse.
+ * refetching. A see-all opened on the search page's token reads its verify and its rows
+ * (`settledSearch`), so its first step needs no request. A media search is always
+ * personal: each hit carries the caller's own `is_rated`, which no store follows. They
+ * are search's section, not Browse's: leaving search drops them, and they outlive
+ * Browse's own clear, which runs as a search page arrives from Browse.
  */
 // One entry per slot, holding the request it was last asked: a see-all keeps a slot per
 // carousel, so switching its toggles replaces its list rather than piling one up per
@@ -61,10 +62,16 @@ function put(slot: string, id: string, pending: Promise<unknown>, { personal = f
 	);
 }
 
+// The entry `slot` holds for `id`, while it is today's.
+function held(slot: string, id: string): Entry | undefined {
+	const hit = cache.get(slot);
+	return hit?.id === dayId(id) ? hit : undefined;
+}
+
 // Concurrent callers share one request.
 function cached<T>(slot: string, id: string, load: () => Promise<T>, lifetime: Lifetime = {}): Promise<T> {
-	const hit = cache.get(slot);
-	if (hit?.id === dayId(id)) return hit.pending as Promise<T>;
+	const hit = held(slot, id);
+	if (hit) return hit.pending as Promise<T>;
 	const pending = load();
 	put(slot, id, pending, lifetime);
 	return pending;
@@ -104,24 +111,33 @@ const rowId = (params: MediaSearchFilters, limit: number) => JSON.stringify([par
 const rowSlot = (id: string) => `row:${id}`;
 
 type SearchPage = 'search' | 'search-all';
+type SearchRow = AnimeSearchResult | MediaSearchResult;
 
-/** A search token's filters: a token always decodes to the same ones. */
-export function verifiedToken(page: SearchPage, token: string): Promise<MediaSearchFilters> {
-	return cached(`search:${page}:token`, token, () => api.post<MediaSearchFilters>('/filters/verify-token', { token }), {
+const rowsSlot = (page: SearchPage) => `search:${page}:rows`;
+const searchId = (params: MediaSearchFilters, grain: ViewType, limit: number) => JSON.stringify([params, grain, limit]);
+
+/** A search token's filters: a token always decodes to the same ones, so it is one slot
+ *  whichever page asks. */
+export function verifiedToken(token: string): Promise<MediaSearchFilters> {
+	return cached('search:token', token, () => api.post<MediaSearchFilters>('/filters/verify-token', { token }), {
 		lasting: true,
 	});
 }
 
 /** A search page's results — one slot per page, holding its latest search. */
-export function searchRows(
-	page: SearchPage, params: MediaSearchFilters, grain: ViewType, limit: number,
-): Promise<(AnimeSearchResult | MediaSearchResult)[]> {
-	return cached<(AnimeSearchResult | MediaSearchResult)[]>(
-		`search:${page}:rows`,
-		JSON.stringify([params, grain, limit]),
+export function searchRows(page: SearchPage, params: MediaSearchFilters, grain: ViewType, limit: number): Promise<SearchRow[]> {
+	return cached<SearchRow[]>(
+		rowsSlot(page),
+		searchId(params, grain, limit),
 		() => (grain === 'anime' ? fetchAnimeSearchResults(params, limit) : fetchSearchResults(params, limit)),
 		{ personal: readsOwnData(params) || grain === 'media', lasting: true },
 	);
+}
+
+/** A search page's results if already in hand: what `searchRows` would return, without
+ *  running anything. */
+export function settledSearch(page: SearchPage, params: MediaSearchFilters, grain: ViewType, limit: number): SearchRow[] | undefined {
+	return held(rowsSlot(page), searchId(params, grain, limit))?.value as SearchRow[] | undefined;
 }
 
 /** Discover's wheel and today's mood. `spun` says whether this viewer has seen the wheel
@@ -186,7 +202,7 @@ const widenedSlot = (carousel: BrowseCarousel, refinement: Refinement) =>
 	`widened:${carousel.key}:${[...refinement.on].sort()}|${[...refinement.off].sort()}`;
 
 const isWidened = (carousel: BrowseCarousel, refinement: Refinement) =>
-	cache.get(widenedSlot(carousel, refinement))?.id === dayId('widened');
+	held(widenedSlot(carousel, refinement), 'widened') !== undefined;
 
 /** The step `refinement` lists at, where it is known before running it: as asked when it
  *  can't widen, widened when today's count already said so — or null, still to be counted. */
@@ -203,8 +219,7 @@ export function settledResults(
 ): AnimeSearchResult[] | undefined {
 	const peek = (at: Step, n: number) => {
 		const id = rowId(refinedSearch(at.carousel, at.refinement, isGuest), n);
-		const hit = cache.get(rowSlot(id));
-		return hit?.id === dayId(id) ? (hit.value as AnimeSearchResult[] | undefined) : undefined;
+		return held(rowSlot(id), id)?.value as AnimeSearchResult[] | undefined;
 	};
 	const known = knownStep(carousel, refinement);
 	if (known) return peek(known, limit);

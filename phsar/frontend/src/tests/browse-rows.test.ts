@@ -14,7 +14,7 @@ vi.mock('$lib/api', () => ({
 import { api } from '$lib/api';
 import {
 	browsePage, browseRow, carouselResults, clearBrowseRows, discoverMoods, knownStep, refinedFromDefaults,
-	searchRows, spinMood, verifiedToken,
+	searchRows, settledSearch, spinMood, verifiedToken,
 } from '$lib/stores/browseRows';
 import { NO_REFINEMENT } from '$lib/stores/browseRefinements';
 import type { BrowseCarousel } from '$lib/types/api';
@@ -230,10 +230,19 @@ describe('search page cache', () => {
 
 	it('brings a search back without verifying or fetching it again', async () => {
 		for (let i = 0; i < 2; i++) {
-			await verifiedToken('search-all', 'token');
+			await verifiedToken('token');
 			await searchRows('search-all', FRESH, 'anime', 1000);
 		}
 		expect(post).toHaveBeenCalledOnce();
+		expect(rowCalls()).toBe(1);
+	});
+
+	it("hands a see-all the search page's rows without a request", async () => {
+		const hits = [{ uuid: 'a' }];
+		get.mockResolvedValue(hits);
+		await searchRows('search', FRESH, 'anime', 61);
+		expect(settledSearch('search', FRESH, 'anime', 61)).toEqual(hits);
+		expect(settledSearch('search', FRESH, 'media', 61)).toBeUndefined();
 		expect(rowCalls()).toBe(1);
 	});
 

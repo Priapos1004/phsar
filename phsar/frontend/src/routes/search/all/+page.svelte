@@ -8,7 +8,7 @@
 	import Notice from '$lib/components/Notice.svelte';
 	import ExpressionText from '$lib/components/ExpressionText.svelte';
 	import SeeAllResults from '$lib/components/SeeAllResults.svelte';
-	import { searchRows, verifiedToken } from '$lib/stores/browseRows';
+	import { searchRows, settledSearch, verifiedToken } from '$lib/stores/browseRows';
 	import { ensureRatingCoverage } from '$lib/stores/ratingCoverage';
 	import { userSettings } from '$lib/stores/userSettings';
 	import type { AnimeSearchResult, MediaSearchResult } from '$lib/types/api';
@@ -16,8 +16,10 @@
 	import { buildDetailHref, navigateToSearch } from '$lib/utils/navigation';
 	import {
 		GUEST_STRIPPED_NOTICE,
+		SEARCH_FETCH,
 		SEARCH_MODE_LABELS,
 		SEE_ALL_LIMIT,
+		SEE_ALL_STEP,
 		filterChips,
 		omitKeys,
 		stripForGuest,
@@ -37,6 +39,7 @@
 	let token = $derived(page.url.searchParams.get('q'));
 	let params = $state<MediaSearchFilters | null>(null);
 	let rows = $state<(AnimeSearchResult | MediaSearchResult)[] | null>(null);
+	let pending = $state(false);
 	let notice = $state('');
 	let strippedForGuest = $state(false);
 	let grain = $derived<ViewType>(params?.view_type ?? defaultView);
@@ -52,18 +55,29 @@
 	async function load(token: string) {
 		const id = ++request;
 		rows = null;
+		pending = false;
 		notice = '';
 		try {
-			const parsed = await verifiedToken('search-all', token);
+			const parsed = await verifiedToken(token);
 			if (id !== request) return;
 			const stripped = isGuest ? stripForGuest(parsed) : { params: parsed, stripped: false };
 			strippedForGuest = stripped.stripped;
 			params = stripped.params;
 			if (grain === 'anime' && !isGuest) void ensureRatingCoverage();
+			// The search page's rows: the whole search when they fit in the first step, since it
+			// asked for more.
+			const head = settledSearch('search', params, grain, SEARCH_FETCH);
+			if (head) {
+				rows = head.slice(0, SEE_ALL_STEP);
+				pending = head.length > SEE_ALL_STEP;
+				if (!pending) return;
+			}
 			const results = await searchRows('search-all', params, grain, SEE_ALL_LIMIT);
 			if (id === request) rows = results;
 		} catch (err) {
 			if (id === request) notice = err instanceof Error ? err.message : 'An unexpected error occurred';
+		} finally {
+			if (id === request) pending = false;
 		}
 	}
 
@@ -82,6 +96,7 @@
 	{grain}
 	{params}
 	{rows}
+	{pending}
 	limit={SEE_ALL_LIMIT}
 	{notice}
 	{isGuest}

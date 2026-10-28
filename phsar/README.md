@@ -470,6 +470,7 @@ phsar/
 │   │       ├── search-links.test.ts
 │   │       ├── search-utils.test.ts
 │   │       ├── searchbar.test.ts
+│   │       ├── see-all-results.test.ts
 │   │       ├── segmented-control.test.ts
 │   │       ├── session-timeout.test.ts
 │   │       ├── share-card.test.ts

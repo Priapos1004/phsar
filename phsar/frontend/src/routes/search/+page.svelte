@@ -7,9 +7,11 @@
 	import ExpressionText from '$lib/components/ExpressionText.svelte';
 	import { hugLines } from '$lib/utils/hugLines';
 	import { AlertTriangle, X } from 'lucide-svelte';
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
 		GUEST_STRIPPED_NOTICE,
+		SEARCH_FETCH,
 		SEARCH_LIMIT,
 		carryAcrossView,
 		filterChips,
@@ -109,7 +111,7 @@
 		animeResults = [];
 
 		try {
-			const parsed = await verifiedToken('search', token);
+			const parsed = await verifiedToken(token);
 			if (thisRequest !== loadRequestId) return;
 
 			const { params, stripped } = isGuest
@@ -133,9 +135,9 @@
 		// Unawaited: the tiers decorate cards, so they must not hold results back.
 		if (viewType === 'anime' && !isGuest) void ensureRatingCoverage();
 		try {
-			const results = await searchRows('search', params, viewType, SEARCH_LIMIT + 1);
+			const results = await searchRows('search', params, viewType, SEARCH_FETCH);
 			if (requestId !== loadRequestId) return;
-			// The extra row only says there are more; it never renders.
+			// The rows past the limit only say there are more (`SEARCH_FETCH`).
 			hasMore = results.length > SEARCH_LIMIT;
 			const shown = results.slice(0, SEARCH_LIMIT);
 			if (viewType === 'anime') animeResults = shown as AnimeSearchResult[];
@@ -317,11 +319,14 @@
 						Show More
 					</button>
 				{/if}
-				<!-- Past the cap: the same search on a page without one. A fresh token, since the
-				     default search has none. -->
+				<!-- Past the cap: the same search on a page without one, on this token, so the
+				     see-all reuses what this page loaded (`settledSearch`). The default search
+				     has none, so it mints one. -->
 				{#if hasMore}
 					<button
-						onclick={() => navigateToSearch(decodedParams, '/search/all')}
+						onclick={() => searchToken
+							? goto(`/search/all?q=${encodeURIComponent(searchToken)}`)
+							: navigateToSearch(decodedParams, '/search/all')}
 						class="px-4 py-2 rounded-full border border-primary/40 text-primary hover:bg-primary/15 transition"
 					>
 						See all results

@@ -160,6 +160,7 @@ The see-all pages list past a cap as a grid of the 3a tiles, 60 at a time behind
 - "Back to search" returns to `/search`. The title is "All results for “…”", or "All results" without a query.
 - A card names the mode (only with a query) and shows the search's filters as chips that can't be changed here; with neither, it is left out.
 - The sort menu of 4.3; a change stays on this page. Tiles follow the search's view: a media tile hides its cover past your spoiler frontier as 5.1 does.
+- Opened from the search's **See all results**, its first 60 show at once from the results the search already has while the rest loads: the count reads "60+" meanwhile, and a **Show More** clicked before the rest arrives reads "Loading…" and opens when it does. The default search, with nothing typed or applied, loads as a link does.
 
 ## 3c. Discover
 
@@ -758,7 +759,7 @@ own.
 | `/browse/moods` | GET | The Discover tab: the wheel's moods, and today's mood with its rows once spun — always, for a guest |
 | `/browse/moods/spin` | POST | **Spin the wheel**: today's mood with its rows, the day's first spin counted; never sent for a guest |
 | `/browse/moods/{mood}` | GET | Dev replay only (`?reveal=<key>`, admin): any mood with its rows, counting no spin |
-| `/search/anime` | GET | Anime-view search after token verification (with the token's `sort`/`sort_dir`, and `limit=51` so a full page reads "50+"); each Browse row's search (`limit=25`); a row's see-all (its own limit) and a search's (`limit=1000`); the Completion tab's search-to-mark (12.9) |
+| `/search/anime` | GET | Anime-view search after token verification (with the token's `sort`/`sort_dir`, and `limit=61`); each Browse row's search (`limit=25`); a row's see-all (its own limit) and a search's (`limit=1000`); the Completion tab's search-to-mark (12.9) |
 | `/search/media` | GET | Media-view search after token verification (same params); a media-view search's see-all (`limit=1000`) |
 | `/media/anime/{uuid}` | GET | Anime detail page load |
 | `/media/{uuid}` | GET | Media detail page load |

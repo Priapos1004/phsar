@@ -85,9 +85,16 @@ export interface MediaSearchFilters {
  * `test_the_top_steps_are_the_search_sheets` reads it. */
 export const TOP_PRESETS = [5, 10, 20, 50, 75];
 
-/** How many results a search shows. One more is requested, so a full page can say "50+"
- * rather than a count that would be a guess. */
+/** How many results a search shows. More are requested (`SEARCH_FETCH`), so a full page can
+ * say "50+" rather than a count that would be a guess. */
 export const SEARCH_LIMIT = 50;
+
+/** A see-all's "Show More" step: a whole number of rows at `SeeAllResults`' 3–6 columns. */
+export const SEE_ALL_STEP = 60;
+
+/** What a search asks for: past what it shows, its see-all's first step and one more, so a
+ * see-all opened from it paints that step from the rows in hand and knows if more follow. */
+export const SEARCH_FETCH = Math.max(SEARCH_LIMIT, SEE_ALL_STEP) + 1;
 
 /** The most a search returns, and so what a search's see-all asks for. One line, because
  * `test_a_search_see_all_asks_for_the_whole_search` reads it against `MAX_SEARCH_LIMIT`. */
