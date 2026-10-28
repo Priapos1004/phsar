@@ -83,96 +83,94 @@
 	<title>Register — Phsar</title>
 </svelte:head>
 
-<div class="fixed inset-0 bg-gradient-to-br from-[var(--auth-gradient-from)] via-[var(--auth-gradient-via)] to-[var(--auth-gradient-to)] flex justify-center items-start pt-20">
-    <div in:fly={{ y: 20, duration: 2000 }} class="w-full max-w-md">
-        <Card.Root>
-            <Card.Header>
-                <h2 class="text-2xl font-bold text-center text-card-foreground">Register</h2>
-            </Card.Header>
-            <Card.Content>
-                {#if next}
-                    <p class="mb-4 text-center text-sm text-muted-foreground">
-                        After registering you'll be taken to {describeReturn(next)}.
-                    </p>
-                {/if}
-                <form onsubmit={handleRegister} class="space-y-4">
-                    <div class="space-y-2">
-                        <Label for="registration-token">Registration Token</Label>
-                        <Input
-                            id="registration-token"
-                            type="text"
-                            bind:value={registrationToken}
-                            required
-                            class="h-10"
-                            placeholder="Paste your registration token"
-                        />
-                    </div>
-                    <div class="space-y-2">
-                        <Label for="username">Username</Label>
-                        <Input
-                            id="username"
-                            type="text"
-                            bind:value={username}
-                            required
-                            class="h-10"
-                            aria-invalid={!!usernameError || undefined}
-                            maxlength={USERNAME_MAX}
-                        />
-                        {#if usernameError}
-                            <p class="text-xs text-destructive">{usernameError}</p>
-                        {/if}
-                    </div>
-                    <div class="space-y-2">
-                        <Label for="password">Password</Label>
-                        <Input
-                            id="password"
-                            type="password"
-                            bind:value={password}
-                            required
-                            class="h-10"
-                            aria-invalid={!!passwordError || undefined}
-                            maxlength={PASSWORD_MAX}
-                        />
-                        {#if passwordError}
-                            <p class="text-xs text-destructive">{passwordError}</p>
-                        {/if}
-                    </div>
-                    <div class="space-y-2">
-                        <Label for="confirm-password">Confirm Password</Label>
-                        <Input
-                            id="confirm-password"
-                            type="password"
-                            bind:value={confirmPassword}
-                            required
-                            class="h-10"
-                            aria-invalid={!!passwordMismatch || undefined}
-                            maxlength={PASSWORD_MAX}
-                        />
-                        {#if passwordMismatch}
-                            <p class="text-xs text-destructive">Passwords do not match</p>
-                        {/if}
-                    </div>
-                    <Button
-                        type="submit"
-                        disabled={loading || hasValidationErrors}
-                        class="w-full"
-                        size="lg"
-                    >
-                        {#if loading}
-                            Registering...
-                        {:else}
-                            Register
-                        {/if}
-                    </Button>
-                </form>
-                {#if error}
-                    <div class="mt-4 text-center text-destructive text-sm">{error}</div>
-                {/if}
-                <p class="mt-4 text-center text-sm text-muted-foreground">
-                    Already have an account?
-                    <a href={urlWithNext('/login', next)} class="text-primary hover:underline">Login</a>
+<div in:fly={{ y: 20, duration: 2000 }} class="w-full max-w-md">
+    <Card.Root>
+        <Card.Header>
+            <h2 class="text-2xl font-bold text-center text-card-foreground">Register</h2>
+        </Card.Header>
+        <Card.Content>
+            {#if next}
+                <p class="mb-4 text-center text-sm text-muted-foreground">
+                    After registering you'll be taken to {describeReturn(next)}.
                 </p>
-            </Card.Content>
-        </Card.Root>
-    </div>
+            {/if}
+            <form onsubmit={handleRegister} class="space-y-4">
+                <div class="space-y-2">
+                    <Label for="registration-token">Registration Token</Label>
+                    <Input
+                        id="registration-token"
+                        type="text"
+                        bind:value={registrationToken}
+                        required
+                        class="h-10"
+                        placeholder="Paste your registration token"
+                    />
+                </div>
+                <div class="space-y-2">
+                    <Label for="username">Username</Label>
+                    <Input
+                        id="username"
+                        type="text"
+                        bind:value={username}
+                        required
+                        class="h-10"
+                        aria-invalid={!!usernameError || undefined}
+                        maxlength={USERNAME_MAX}
+                    />
+                    {#if usernameError}
+                        <p class="text-xs text-destructive">{usernameError}</p>
+                    {/if}
+                </div>
+                <div class="space-y-2">
+                    <Label for="password">Password</Label>
+                    <Input
+                        id="password"
+                        type="password"
+                        bind:value={password}
+                        required
+                        class="h-10"
+                        aria-invalid={!!passwordError || undefined}
+                        maxlength={PASSWORD_MAX}
+                    />
+                    {#if passwordError}
+                        <p class="text-xs text-destructive">{passwordError}</p>
+                    {/if}
+                </div>
+                <div class="space-y-2">
+                    <Label for="confirm-password">Confirm Password</Label>
+                    <Input
+                        id="confirm-password"
+                        type="password"
+                        bind:value={confirmPassword}
+                        required
+                        class="h-10"
+                        aria-invalid={!!passwordMismatch || undefined}
+                        maxlength={PASSWORD_MAX}
+                    />
+                    {#if passwordMismatch}
+                        <p class="text-xs text-destructive">Passwords do not match</p>
+                    {/if}
+                </div>
+                <Button
+                    type="submit"
+                    disabled={loading || hasValidationErrors}
+                    class="w-full"
+                    size="lg"
+                >
+                    {#if loading}
+                        Registering...
+                    {:else}
+                        Register
+                    {/if}
+                </Button>
+            </form>
+            {#if error}
+                <div class="mt-4 text-center text-destructive text-sm">{error}</div>
+            {/if}
+            <p class="mt-4 text-center text-sm text-muted-foreground">
+                Already have an account?
+                <a href={urlWithNext('/login', next)} class="text-primary hover:underline">Login</a>
+            </p>
+        </Card.Content>
+    </Card.Root>
 </div>

@@ -13,6 +13,8 @@ import type { WatchlistItem } from '$lib/types/api';
 export type WatchlistView = 'grid' | 'table';
 export type WatchlistGrain = 'anime' | 'media';
 export type WatchlistSortKey = 'title' | 'priority' | 'date' | 'note' | 'time';
+/** Whether the Lists chips keep their entries or everything else. */
+export type TagMode = 'include' | 'exclude';
 export type NameLanguage = 'english' | 'japanese' | 'romaji';
 
 /** Every list-tab control, in one object. It lives here rather than with the store that
@@ -22,7 +24,8 @@ export type NameLanguage = 'english' | 'japanese' | 'romaji';
 export interface WatchlistFilterState {
 	view: WatchlistView;
 	grain: WatchlistGrain; // anime (default, aggregated) vs media (one card per entry)
-	tagUuids: string[]; // multi-select union — [] = all tags
+	tagUuids: string[]; // multi-select — [] = all tags
+	tagMode: TagMode;
 	priorities: number[]; // multi-select union of priority bands — [] = all
 	readiness: ReadyFilterKey[]; // multi-select union of readiness verdicts — [] = all
 	watchtime: WatchtimeKey[]; // multi-select union of size bands — [] = all
@@ -109,12 +112,13 @@ export interface PriorityBand {
 	rows: WatchlistRow[];
 }
 
-/** Keep only entries whose tag is in the selected set. Empty selection = all (the tag
- *  filter is a union — "show me these lists combined"). */
-export function filterByTags(items: WatchlistItem[], tagUuids: string[]): WatchlistItem[] {
+/** Keep only entries whose tag is in the selected set — or, under 'exclude', only those
+ *  whose tag is not. Empty selection = all in both modes. Per entry, not per anime, so
+ *  excluding A is exactly including every other list. */
+export function filterByTags(items: WatchlistItem[], tagUuids: string[], mode: TagMode = 'include'): WatchlistItem[] {
 	if (tagUuids.length === 0) return items;
 	const set = new Set(tagUuids);
-	return items.filter((i) => set.has(i.tag_uuid));
+	return items.filter((i) => set.has(i.tag_uuid) === (mode === 'include'));
 }
 
 /**
@@ -384,7 +388,7 @@ export function buildWatchlistView(
 	lang: NameLanguage,
 	now: Date,
 ): { rows: WatchlistRow[]; tableRows: WatchlistRow[] } {
-	const tagged = filterByTags(items, filter.tagUuids);
+	const tagged = filterByTags(items, filter.tagUuids, filter.tagMode);
 	const statuses = statusByAnime(tagged, now);
 	const filtered = filterByReadiness(tagged, statuses, filter.readiness, filter.grain, now);
 	const allRows =

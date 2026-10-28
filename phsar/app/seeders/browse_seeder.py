@@ -55,12 +55,10 @@ def _discover(key: str, title: str, params: dict[str, Any], *on: str) -> CoreCar
     return _carousel(key, title, params, 1000, on=("not-watched", *on), sortable=True)
 
 
-def _tags(*names: str, sort: str = "top_rated") -> dict[str, Any]:
-    """Anime carrying any of the genres or themes named."""
-    params: dict[str, Any] = {"genre_name": list(names), "sort": sort}
-    if len(names) > 1:
-        params["genre_mode"] = "any"
-    return params
+def _tags(*names: str, without: tuple[str, ...] = (), sort: str = "top_rated") -> dict[str, Any]:
+    """Anime carrying any of the genres or themes named, and none of those `without`."""
+    group = {"mode": "any", "include": list(names), "exclude": list(without)}
+    return {"genres": {"groups": [group]}, "sort": sort}
 
 
 def _about(query: str) -> dict[str, Any]:
@@ -109,16 +107,21 @@ CAROUSELS = [
     _discover("reborn", "Truck-kun strikes again", _tags("Reincarnation", "Villainess")),
     _discover("in-the-game", "Trapped in the game", _tags("Video Game")),
     _discover("magic-academy", "Magic academy", _about("magic academy"), "top-50"),
-    _discover("space", "Among the stars", _tags("Space")),
+    # Without Mecha for Future Shock, whose robot row leads with it; Other Worlds holds it too.
+    _discover("space", "Among the stars", _tags("Space", without=("Mecha",))),
     _discover("healing", "Healing hour", _tags("Iyashikei")),
     _discover("gourmet", "Eat well", _tags("Gourmet")),
     _discover("cgdct", "Cute girls doing cute things", _tags("CGDCT")),
+    _discover("everyday", "Just another day", _tags("Slice of Life", without=("Iyashikei", "CGDCT"))),
     _discover("tiny-humans", "Tiny humans", _tags("Childcare")),
     _discover("death-games", "Death games", _tags("High Stakes Game", "Survival")),
     _discover("detective", "The detective's desk", _tags("Detective")),
     _discover("time-travel", "Loops & paradoxes", _tags("Time Travel")),
     _discover("five-steps", "Five steps ahead", _tags("Strategy Game", "Psychological")),
-    _discover("mystery", "Unsolved", _tags("Mystery", sort="random"), "top-50"),
+    _discover(
+        "mystery", "Unsolved",
+        _tags("Mystery", without=("Detective", "Psychological"), sort="random"), "top-50",
+    ),
     _discover("samurai", "Way of the sword", _tags("Samurai")),
     _discover("war", "Fog of war", _tags("Military")),
     _discover("revenge", "Served cold", _about("revenge"), "top-50"),
@@ -127,7 +130,10 @@ CAROUSELS = [
     _discover("lights-off", "Lights off", _tags("Horror")),
     # A stem on purpose: exorcist, exorcism and exorcise alike.
     _discover("haunting", "Something's haunting", _about("exorcis"), "top-50"),
-    _discover("beyond", "Beyond explanation", _tags("Supernatural", sort="random"), "top-50"),
+    _discover(
+        "beyond", "Beyond explanation",
+        _tags("Supernatural", without=("Horror", "Urban Fantasy", "Vampire"), sort="random"), "top-50",
+    ),
     _discover("city-magic", "Magic in the city", _tags("Urban Fantasy")),
     _discover("mecha", "Get in the robot", _tags("Mecha")),
     _discover("aliens", "First contact", _about("alien"), "top-50"),
@@ -137,7 +143,10 @@ CAROUSELS = [
     _discover("tournament", "Tournament arc", _about("tournament"), "top-50"),
     _discover("strongest", "Overpowered", _about("strongest"), "top-50"),
     _discover("idols", "Idol life", _tags("Idols (Female)", "Idols (Male)")),
-    _discover("on-stage", "On stage", _tags("Performing Arts", "Showbiz", "Music")),
+    _discover(
+        "on-stage", "On stage",
+        _tags("Performing Arts", "Showbiz", "Music", without=("Idols (Female)", "Idols (Male)")),
+    ),
     _discover("game-on", "Game on", _tags("Team Sports", "Sports")),
     _discover("otaku", "Otaku culture", _tags("Otaku Culture")),
     # Plain score: the vote-weighted top-rated order would bury the low-vote anime this

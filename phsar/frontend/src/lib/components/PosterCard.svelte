@@ -11,6 +11,7 @@
 	import { userSettings } from '$lib/stores/userSettings';
 	import { watchlistAnimeColors, watchlistTags } from '$lib/stores/watchlist';
 	import * as cls from '$lib/styles/classes';
+	import { Star } from 'lucide-svelte';
 	import type { AnimeSearchResult, MediaSearchResult } from '$lib/types/api';
 	import { formatMediaType, resolveTitle } from '$lib/utils/formatString';
 	import { isAnimeResult, sortLine, unusualAnnouncedType, type SortKey } from '$lib/utils/search';
@@ -97,7 +98,11 @@
 				{title}
 			</h3>
 			{#if line}
-				<span class="mt-auto text-[11px] text-muted-foreground" style:color={coverage?.foreground}>{line}</span>
+				<span class="mt-auto text-[11px] text-muted-foreground" style:color={coverage?.foreground}>
+					<!-- On a gold or obsidian band the star takes the band's text colour, as the
+					     number does: the theme colour beside dark-on-gold text clashes. -->
+					{#if sort === 'score'}<Star class="{cls.glassIcon} mr-[0.3em]" style={coverage?.foreground ? `color:${coverage.foreground}` : undefined} aria-hidden="true" />{/if}{line}
+				</span>
 			{/if}
 		</div>
 	</div>

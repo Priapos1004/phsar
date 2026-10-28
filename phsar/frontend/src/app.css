@@ -109,6 +109,11 @@
   --auth-gradient-to: #6b21a8;    /* tw purple-800 */
 }
 
+/* `max-xs:` — below 360px, the narrowest phones (320 among them). */
+@theme {
+  --breakpoint-xs: 22.5rem;
+}
+
 /* Lock dark: variants to class-based only (prevent OS dark mode interference) */
 @custom-variant dark (&:is(.dark *));
 
@@ -133,6 +138,9 @@ body {
   @apply text-white;
   font-size: 0.9375rem;
   line-height: 1.6;
+  /* A user's text can be one long word: it breaks instead of overflowing. What this doesn't
+     cover: rules/frontend.md, "A user's string can be one long word". */
+  overflow-wrap: break-word;
 }
 
 /* Theme overrides — set --primary and --ring source variables + gradient */

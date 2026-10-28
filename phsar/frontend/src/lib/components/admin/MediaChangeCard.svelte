@@ -5,6 +5,7 @@
 	import { mediaChangeTitle, TONE_RANK, type ChangeTone as Tone } from '$lib/utils/mediaChangeSort';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import { userSettings } from '$lib/stores/userSettings';
+	import * as cls from '$lib/styles/classes';
 	import type { UpdateSweepMediaChange, UpdateSweepFieldChange, UpdateSweepM2MDrift } from '$lib/types/api';
 
 	interface Props {
@@ -160,7 +161,8 @@
 	</div>
 
 	{#if rows.length > 0}
-		<table class="w-full text-sm table-fixed">
+		<!-- Every cell pads on the left, so on a phone Was and Now line up under the field. -->
+		<table class={cls.diffTable}>
 			<colgroup>
 				<col class="w-40" />
 				<col />
@@ -168,25 +170,23 @@
 			</colgroup>
 			<thead>
 				<tr class="text-left text-[10px] uppercase tracking-wider text-muted-foreground">
-					<th class="py-1.5 pl-3 pr-3 font-medium">Field</th>
-					<th class="py-1.5 pr-3 font-medium">Was</th>
-					<th class="py-1.5 pr-3 font-medium">Now</th>
+					<th class="py-1.5 pl-3 font-medium">Field</th>
+					<th class="py-1.5 pl-3 font-medium">Was</th>
+					<th class="py-1.5 pl-3 font-medium">Now</th>
 				</tr>
 			</thead>
 			<tbody>
 				{#each rows as row (row.tone + ':' + row.field)}
 					<tr class="border-t border-border/30 border-l-2 align-top {TONE_BORDER[row.tone]}">
-						<td class="py-1.5 pl-3 pr-3 font-mono text-xs text-card-foreground break-words">{row.field}</td>
+						<td class="py-1.5 pl-3 font-mono text-xs text-primary">{row.field}</td>
 						{#if row.kind === 'scalar'}
-							<!-- break-words, not truncate: on a URL diff (cover_image) the
-							     tail is the part that changed, so clipping it hides exactly
-							     what the row exists to show. Short values are unaffected —
-							     break-words only breaks a string that can't otherwise fit. -->
-							<td class="py-1.5 pr-3 text-card-foreground/80 break-words">{row.old}</td>
-							<td class="py-1.5 pr-3 text-card-foreground tabular-nums break-words">
-								{row.new}
+							<td class="py-1.5 pl-3 text-card-foreground/80">{row.old}</td>
+							<td class="py-1.5 pl-3 text-card-foreground tabular-nums">
+								<!-- The gap is the value's mr-1, not the delta's ml-1: an inline margin still
+								     applies at a wrapped line's start. -->
+								<span class="mr-1">{row.new}</span>
 								{#if row.delta}
-									<span class="ml-1 text-xs {row.delta.startsWith('+') ? 'text-emerald-400' : 'text-destructive'}">({row.delta})</span>
+									<span class="text-xs {row.delta.startsWith('+') ? 'text-emerald-400' : 'text-destructive'}">({row.delta})</span>
 								{/if}
 								{#if row.unknown}
 									<p class="mt-1 text-xs text-amber-400">Unknown MAL code — not stored until the enum has a member.</p>
@@ -194,7 +194,7 @@
 							</td>
 						{:else}
 							{@const notAppliedReason = NOT_APPLIED_REASON[row.drift_kind]}
-							<td class="py-1.5 pr-3">
+							<td class="py-1.5 pl-3">
 								<div class="flex flex-wrap gap-1">
 									{#each row.old_tags as tag (tag)}
 										<Badge variant={row.removed.has(tag) ? 'destructive' : 'secondary'} class="text-[10px]">{tag}</Badge>
@@ -204,7 +204,7 @@
 									{/if}
 								</div>
 							</td>
-							<td class="py-1.5 pr-3">
+							<td class="py-1.5 pl-3">
 								<div class="flex flex-wrap gap-1">
 									{#each row.new_tags as tag (tag)}
 										<Badge variant="secondary" class="text-[10px] {row.added.has(tag) ? 'bg-emerald-500/15 text-emerald-400' : ''}">{tag}</Badge>

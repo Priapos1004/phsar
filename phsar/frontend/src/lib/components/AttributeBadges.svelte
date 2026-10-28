@@ -1,4 +1,3 @@
-<!-- TODO(v0.15.1): Verify mobile layout — orbital pills may overlap on narrow viewports -->
 <script lang="ts">
 	import type { AnimeMediaItem, RatingOut } from '$lib/types/api';
 	import { BADGE_KEYS, aggregateBadges } from '$lib/utils/ratingAttributes';
@@ -81,8 +80,10 @@
 	</span>
 {/snippet}
 
-<!-- Mobile (and every width when pinned to `wrap`): scattered flex wrap -->
-<div class="flex flex-wrap justify-center gap-x-2 gap-y-5 {showOrbit ? 'md:hidden' : ''}">
+<!-- Below lg (and every width when pinned to `wrap`): scattered flex wrap. lg is where
+     RatingsOverviewAttributes sets the orbit beside the radar; its pills reach past the
+     240px box. -->
+<div class="flex flex-wrap justify-center gap-x-2 gap-y-5 {showOrbit ? 'lg:hidden' : ''}">
 	{#each pills as p, i}
 		{@render pill(p, i, 'inline-block', `transform: rotate(${PILL_STYLES[p.key].wrapRotation}deg);`)}
 	{/each}
@@ -90,7 +91,7 @@
 
 <!-- Desktop: orbital ellipse arrangement -->
 {#if showOrbit}
-<div class="hidden md:block relative" style="width: 240px; height: 200px;">
+<div class="hidden lg:block relative" style="width: 240px; height: 200px;">
 	{#each pills as p, i}
 		{@const angle = PILL_STYLES[p.key].angle}
 		{@const rot = PILL_STYLES[p.key].rotation}

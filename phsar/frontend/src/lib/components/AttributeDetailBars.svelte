@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { RATING_ATTRIBUTE_OPTIONS } from '$lib/types/api';
-	import { getThemedChartColorPalette } from '$lib/utils/chartColors';
+	import { QUALITY_COLORS } from '$lib/utils/chartColors';
 	import { tally } from '$lib/utils/ratingAttributes';
 	import type { RatingOut, RatingScoreItem } from '$lib/types/api';
 
@@ -12,12 +12,10 @@
 
 	let { ratings }: Props = $props();
 
-	let palette = $derived(getThemedChartColorPalette());
-
 	interface AttrDistribution {
 		key: string;
 		label: string;
-		visibleEntries: { value: string; label: string; count: number }[];
+		visibleEntries: { value: string; label: string; count: number; color: string }[];
 		totalSet: number;
 	}
 
@@ -27,8 +25,17 @@
 		for (const [key, config] of Object.entries(RATING_ATTRIBUTE_OPTIONS)) {
 			const { counts, n: totalSet } = tally(ratings, key);
 
+			// A value's colour is its place in the full option list, never its place among the
+			// values present — counted that way, "Rare" would change colour depending on
+			// whether None or Heavy is rated. Keyed to the list, each value keeps one colour,
+			// and the same step (the low end of every scale, say) shares it across attributes.
 			const visibleEntries = config.options
-				.map((opt) => ({ value: opt.value, label: opt.label, count: counts.get(opt.value) ?? 0 }))
+				.map((opt, slot) => ({
+					value: opt.value,
+					label: opt.label,
+					count: counts.get(opt.value) ?? 0,
+					color: QUALITY_COLORS[slot % QUALITY_COLORS.length],
+				}))
 				.filter((e) => e.count > 0);
 
 			result.push({ key, label: config.label, visibleEntries, totalSet });
@@ -47,22 +54,23 @@
 					{dist.totalSet > 0 ? `${dist.totalSet} rated` : 'No data'}
 				</span>
 			</div>
-			<div class="flex h-2.5 rounded-full overflow-hidden bg-muted">
-				{#each dist.visibleEntries as entry, i}
+			<!-- gap-0.5: the 2px between segments, so neighbours stay apart without colour alone. -->
+			<div class="flex gap-0.5 h-2.5 rounded-full overflow-hidden bg-muted">
+				{#each dist.visibleEntries as entry}
 					{@const widthPercent = (entry.count / dist.totalSet) * 100}
 					<div
 						class="h-full"
-						style="width: {widthPercent}%; background: {palette[i % palette.length]}"
+						style="width: {widthPercent}%; background: {entry.color}"
 					></div>
 				{/each}
 			</div>
 			{#if dist.visibleEntries.length > 0}
 				<div class="flex flex-wrap gap-1">
-					{#each dist.visibleEntries as entry, i}
+					{#each dist.visibleEntries as entry}
 						<span class="text-xs text-muted-foreground">
 							<span
 								class="inline-block w-2 h-2 rounded-full mr-0.5"
-								style="background: {palette[i % palette.length]}"
+								style="background: {entry.color}"
 							></span>
 							{entry.label} ({entry.count})
 						</span>

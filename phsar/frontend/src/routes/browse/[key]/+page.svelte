@@ -2,7 +2,8 @@
 	// A carousel's see-all (docs/features/browse.md).
 	import { getContext } from 'svelte';
 	import { page } from '$app/state';
-	import { ChevronRight, RotateCcw } from 'lucide-svelte';
+	import { ArrowRight, RotateCcw } from 'lucide-svelte';
+	import * as cls from '$lib/styles/classes';
 	import { ApiError } from '$lib/api';
 	import PillToggle from '$lib/components/PillToggle.svelte';
 	import SeeAllResults from '$lib/components/SeeAllResults.svelte';
@@ -119,32 +120,32 @@
 	{#snippet actions()}
 		<!-- The row as a search, toggles and sort included: everything editable from there. -->
 		{#if search}
-			<button
-				type="button"
-				class="group inline-flex items-center gap-0.5 px-2 text-sm font-medium text-white/70 hover:text-primary transition"
-				onclick={() => navigateToSearch({ ...search, view_type: 'anime' })}
-			>
-				Open in search
-				<ChevronRight class="size-4 transition group-hover:translate-x-0.5" />
+			<button type="button" class={cls.pageNavLink} onclick={() => navigateToSearch({ ...search, view_type: 'anime' })}>
+				Open in search <ArrowRight class="size-4" />
 			</button>
 		{/if}
 	{/snippet}
 	{#if shown && (groups.length || refined) && !notice}
-		<div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+		<!-- From sm a full line's groups reach both edges, its last group under "Open in search". -->
+		<div class="flex flex-wrap items-center gap-x-5 gap-y-2 sm:justify-between">
 			{#each groups as group (group[0].key)}
 				{@const active = group.find((s) => isSetActive(s, shown!))?.key ?? ''}
 				{@const heading = GROUP_HEADINGS[Object.keys(group[0].params)[0]]}
+				{@const multi = group.length > 1}
 				{@const options = group.map((s) => {
 					const inert = guestInert(s);
 					return { value: s.key, label: s.label, disabled: inert, hint: inert ? GUEST_HINT : undefined };
 				})}
-				<!-- Tapping the lit choice clears it, in a group too. -->
-				<div class="flex items-center gap-2">
-					{#if group.length > 1}
+				<!-- Tapping the lit choice clears it, in a group too. On a phone a group stacks
+				     its label over a full-width toggle: beside the label, Top's percent scale
+				     overflows a 320px screen even shared equally. -->
+				<div class="flex items-center gap-2 {multi ? cls.stackOnPhone : ''}">
+					{#if multi}
 						<span class="text-sm text-white/60">{heading ?? ''}</span>
 					{/if}
 					<PillToggle
-						options={group.length > 1 ? [{ value: '', label: 'Any' }, ...options] : options}
+						stretchOnPhone={multi}
+						options={multi ? [{ value: '', label: 'Any' }, ...options] : options}
 						value={active}
 						onSelect={(v) => refine(selectInGroup(group, shown!, v && v !== active ? v : null))}
 						ariaLabel={heading}

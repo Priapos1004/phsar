@@ -36,6 +36,24 @@ describe('swallowClickThrough', () => {
 		expect(behindClicked).not.toHaveBeenCalled();
 	});
 
+	// A field takes focus on mousedown, so a swallowed click alone still opens the keyboard.
+	it('cancels the mousedown that would focus a field behind the item', () => {
+		const field = document.createElement('textarea');
+		document.body.append(field);
+		pointerUp('touch');
+		const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+		field.dispatchEvent(down);
+		field.remove();
+		expect(down.defaultPrevented).toBe(true);
+	});
+
+	it('lets a mousedown on the item itself through', () => {
+		pointerUp('touch');
+		const down = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+		item.dispatchEvent(down);
+		expect(down.defaultPrevented).toBe(false);
+	});
+
 	it('lets a click on the item itself through (Android selects on that click)', () => {
 		const itemClicked = vi.fn();
 		item.addEventListener('click', itemClicked);

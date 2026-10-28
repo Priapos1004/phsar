@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { getContext } from 'svelte';
 	import { api, ApiError } from '$lib/api';
-	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, formatEpisodeCount, formatAiringStatus, cleanDescription, resolveTitle, resolveSubtitles, formatRelationType, formatMediaType } from '$lib/utils/formatString';
+	import { formatDuration, formatSeason, formatEpisodeCount, formatAiringStatus, cleanDescription, resolveTitle, resolveSubtitles, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref, detailOrigin, searchBySource, searchByStudio } from '$lib/utils/navigation';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -15,9 +15,8 @@
 	import BackLink from '$lib/components/BackLink.svelte';
 	import SearchLinks from '$lib/components/SearchLinks.svelte';
 	import GenreBadges from '$lib/components/GenreBadges.svelte';
-	import ScorePercentile from '$lib/components/ScorePercentile.svelte';
-	import Tooltip from '$lib/components/Tooltip.svelte';
-	import { ArrowRight, Star, Tv, Clock, Calendar, Film } from 'lucide-svelte';
+	import HeroScore from '$lib/components/HeroScore.svelte';
+	import { ArrowRight, Tv, Clock, Calendar, Film } from 'lucide-svelte';
 	import * as cls from '$lib/styles/classes';
 	import { userSettings } from '$lib/stores/userSettings';
 	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
@@ -145,13 +144,9 @@
 	{:else if error}
 		<div class="text-center text-destructive py-20">{error}</div>
 	{:else if media}
-		<!-- mb-0 takes this row out of space-y-8: the links' own mb-2 sets the gap, as the bare back link does on /anime. -->
-		<div class="flex items-center mb-0">
-			<BackLink {origin} />
-			<a href={animeHref} class="ml-auto {cls.pageNavLink}">
-				To anime <ArrowRight class="size-4" />
-			</a>
-		</div>
+		<BackLink {origin}>
+			<a href={animeHref} class={cls.pageNavLink}>To anime <ArrowRight class="size-4" /></a>
+		</BackLink>
 
 		<div class="relative rounded-xl overflow-hidden">
 			{#if media.cover_image && !coverFailed}
@@ -168,7 +163,7 @@
 				<div class="absolute inset-0 bg-card/85"></div>
 			{/if}
 
-			<div class="relative flex flex-col md:flex-row gap-6 p-6">
+			<div class={cls.heroBody}>
 				<div class="shrink-0 flex flex-col items-center md:items-start">
 					<SpoilerGuard visible={isMediaVisible} mode="image">
 						{#if media.cover_image && !coverFailed}
@@ -232,21 +227,13 @@
 					</div>
 
 					{#if media.score !== null}
-						<div class="flex items-center gap-3">
-							<Tooltip text="Community score from MyAnimeList — not from Phsar users.">
-								<span class="flex items-center gap-1.5 bg-primary/10 rounded-full px-3 py-1.5">
-									<Star class="size-4 text-yellow-500" fill="currentColor" />
-									<span class="text-lg font-bold text-card-foreground">
-										{formatDecimalDigits(media.score, 2)}
-									</span>
-									<span class="text-muted-foreground">/ 10</span>
-								</span>
-							</Tooltip>
-							<span class="text-muted-foreground">
-								{formatNumber(media.scored_by)} ratings
-							</span>
-							<ScorePercentile topPercent={media.score_top_percent} />
-						</div>
+						<HeroScore
+							score={media.score}
+							votes={media.scored_by}
+							votesLabel="ratings"
+							hint="Community score from MyAnimeList — not from Phsar users."
+							topPercent={media.score_top_percent}
+						/>
 					{/if}
 
 					<div class="flex flex-wrap gap-2">
@@ -259,7 +246,7 @@
 
 					<GenreBadges genres={media.genres} />
 
-					<div class="grid grid-cols-2 md:grid-cols-4 gap-3 pt-1">
+					<div class={cls.heroStats}>
 						{#if media.episodes !== null}
 							<div class="flex items-center gap-2 text-card-foreground">
 								<Tv class="size-4 text-primary shrink-0" />
@@ -269,7 +256,7 @@
 						{#if media.duration_seconds}
 							<div class="flex items-center gap-2 text-card-foreground">
 								<Clock class="size-4 text-primary shrink-0" />
-								<span>{formatDuration(media.duration_seconds)} per ep</span>
+								<span>{formatDuration(media.duration_seconds)} / ep</span>
 							</div>
 						{/if}
 						{#if mediaSeason}

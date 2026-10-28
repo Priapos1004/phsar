@@ -23,11 +23,13 @@
 <div>
 	<h3 class="text-sm font-medium text-muted-foreground mb-2">Attribute Summary</h3>
 
-	<div class="flex flex-col md:flex-row md:items-start gap-4 md:gap-6">
-		<div class="md:w-1/2 flex justify-center">
+	<!-- Side by side from lg: as halves of a 768 card (~314px) the radar's labels and the
+	     pill orbit both overflow. -->
+	<div class="flex flex-col lg:flex-row lg:items-start gap-4 lg:gap-6">
+		<div class="lg:w-1/2 flex justify-center">
 			<AttributeRadar {ratings} />
 		</div>
-		<div class="md:w-1/2 flex justify-center items-center">
+		<div class="lg:w-1/2 flex justify-center items-center">
 			<AttributeBadges {ratings} {media} />
 		</div>
 	</div>

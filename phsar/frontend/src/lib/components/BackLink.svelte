@@ -1,16 +1,19 @@
 <script lang="ts">
 	import { ArrowLeft } from 'lucide-svelte';
 	import * as cls from '$lib/styles/classes';
-	import type { DetailHrefOptions } from '$lib/utils/navigation';
+	import type { Snippet } from 'svelte';
+	import { searchHref, type DetailHrefOptions } from '$lib/utils/navigation';
 	import { hrefWithFocus } from '$lib/utils/scrollFocus';
 
 	interface Props {
 		/** Where the page was opened from: `detailOrigin(url)` on a detail page, or a
 		 * list's own way back. */
 		origin: DetailHrefOptions;
+		/** A link sharing the row, at its right end ("To anime", "Open in search"). */
+		children?: Snippet;
 	}
 
-	let { origin }: Props = $props();
+	let { origin, children }: Props = $props();
 	let { q: searchToken, from: fromParam, job: jobUuid, carousel, focus } = $derived(origin);
 
 	// Only the targets whose page actually consumes `?focus=` get it — the pages
@@ -32,17 +35,24 @@
 		if (fromParam === 'carousel' && carousel) {
 			return { href: withFocus(`/browse/${encodeURIComponent(carousel)}`), label: 'Back to the list' };
 		}
-		if (fromParam === 'search-all' && searchToken) {
-			return { href: withFocus(`/search/all?q=${encodeURIComponent(searchToken)}`), label: 'Back to all results' };
-		}
+		if (fromParam === 'search-all') return { href: withFocus(searchHref('/search/all', searchToken)), label: 'Back to all results' };
 		if (fromParam === 'library') return { href: '/library/add', label: 'Back to library' };
-		if (searchToken) return { href: withFocus(`/search?q=${encodeURIComponent(searchToken)}`), label: 'Back to search' };
+		if (searchToken || fromParam === 'search') return { href: withFocus(searchHref('/search', searchToken)), label: 'Back to search' };
 		return null;
 	});
 </script>
 
-{#if target}
-	<a href={target.href} class={cls.pageNavLink}>
-		<ArrowLeft class="size-4" /> {target.label}
-	</a>
+<!-- The row owns the gap below a page's navigation links: its own mb-2 beats a parent's
+     space-y (a zero-specificity :where()), so every page gets the same gap. -->
+{#if target || children}
+	<div class="flex items-center mb-2">
+		{#if target}
+			<a href={target.href} class={cls.pageNavLink}>
+				<ArrowLeft class="size-4" /> {target.label}
+			</a>
+		{/if}
+		{#if children}
+			<div class="ml-auto">{@render children()}</div>
+		{/if}
+	</div>
 {/if}

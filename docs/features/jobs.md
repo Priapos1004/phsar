@@ -126,7 +126,9 @@ NULL correct for free — an undated media fails the `WHEN` and lands on 90 days
 
 `LIMIT` bounds MAL calls, since media are the real 1 req/s cost unit. The long tail
 is the terminal bucket — everything drains into it and nothing leaves — so it is the
-only tier whose nightly cost grows without bound.
+only tier whose nightly cost grows without bound. `_media_per_night`
+(`admin_stats_service.py`) divides each media-grain membership count by these cadences
+for the Overview's nightly-load line, so a new tier needs a term there.
 
 **Step 1** refreshes each due media in one MAL call, diffs volatile fields,
 advances that media's freshness counter, and rewrites its relation edges.

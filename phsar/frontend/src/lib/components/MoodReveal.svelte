@@ -87,6 +87,8 @@
 		style:--t-impact="{BEAT.impact}ms"
 		style:--t-peak="{BEAT.peak}ms"
 		style:--t-title="{BEAT.title}ms"
+		style:--t-print="{BEAT.print}ms"
+		style:--t-printed="{BEAT.printed}ms"
 		style:--t-clear="{BEAT.clear}ms"
 		style:--skip-fade="{SKIP_FADE_MS}ms"
 	>
@@ -106,7 +108,7 @@
 			{/if}
 			<div class="card">
 				<p class="kicker">Today's mood</p>
-				<p class="name"><span class="swipe"></span><span class="relative">{title}</span></p>
+				<p class="name" data-title={title}><span class="swipe"></span><span class="letters relative">{title}</span></p>
 			</div>
 		</div>
 		<!-- Cinema black, whatever the theme: the bars are the camera's frame, not the page. -->
@@ -222,12 +224,48 @@
 			0 0 0.35em var(--mood),
 			0 0.06em 0 rgb(0 0 0 / 0.5);
 	}
-	/* A glitch signature's title arrives as a broken signal and stutters once mid-hold. The cyan and
-	   magenta are a split signal's, whatever the theme. */
-	[data-kind='glitch'] .name {
+	/* The ufo prints its title rather than punching it in: the card fades up on a hologram's
+	   wireframe — a copy of the title (`data-title`) outlined in the mood's colour and ruled with
+	   scanlines — and a scan line sweeps down it, leaving the letters solid above it. The swipe
+	   waits until there are letters to underline. */
+	[data-kind='ufo'] {
+		--print-ms: calc(var(--t-printed) - var(--t-print));
+		--print-ease: cubic-bezier(0.45, 0, 0.55, 1);
+	}
+	[data-kind='ufo'] .card {
+		animation-name: card-fade, card-hold, card-out;
+	}
+	[data-kind='ufo'] .letters {
+		display: block;
+		animation: name-print var(--print-ms) var(--print-ease) var(--t-print) both;
+	}
+	[data-kind='ufo'] .name::before {
+		content: attr(data-title);
+		position: absolute;
+		inset: 0;
+		color: transparent;
+		text-shadow: none;
+		-webkit-text-stroke: max(1px, 0.015em) var(--mood);
+		background: repeating-linear-gradient(rgb(255 255 255 / 0.4) 0 1px, transparent 1px max(3px, 0.05em));
+		background-clip: text;
+		filter: drop-shadow(0 0 0.08em var(--mood));
+		/* In by the time the print starts, out once it is printed. */
 		animation:
-			name-glitch 420ms steps(1, end) var(--t-title) both,
-			name-glitch 260ms steps(1, end) calc(var(--t-title) + 900ms);
+			card-fade calc(var(--t-print) - var(--t-title)) linear var(--t-title) both,
+			dim-out 250ms linear var(--t-printed) forwards;
+	}
+	/* The scan line is this box's top border. The box spans the title, so it travels as a
+	   transform — the compositor's work — by a share of its own height. */
+	[data-kind='ufo'] .name::after {
+		content: '';
+		position: absolute;
+		inset: 0 -0.3em;
+		border-top: max(2px, 0.03em) solid #fff;
+		filter: drop-shadow(0 0 0.15em var(--mood)) drop-shadow(0 0 0.3em var(--mood));
+		animation: name-scan var(--print-ms) var(--print-ease) var(--t-print) both;
+	}
+	[data-kind='ufo'] .swipe {
+		animation-delay: var(--t-printed);
 	}
 	.swipe {
 		position: absolute;
@@ -290,15 +328,18 @@
 	@keyframes card-out {
 		to { transform: scale(1.12); opacity: 0; }
 	}
-	@keyframes name-glitch {
-		0% { clip-path: inset(10% 0 60% 0); transform: translateX(-8px); text-shadow: -3px 0 #0ff, 3px 0 #f0f; }
-		15% { clip-path: inset(50% 0 20% 0); transform: translateX(10px); }
-		30% { clip-path: inset(0 0 80% 0); transform: translateX(-4px); }
-		45% { clip-path: inset(70% 0 5% 0); transform: translateX(6px); }
-		60% { clip-path: inset(20% 0 40% 0); transform: translateX(-10px); }
-		75% { clip-path: inset(0); transform: translateX(3px); text-shadow: -2px 0 #0ff, 2px 0 #f0f; }
-		/* Held through the card: the inset crops the swipe and the glow to the title's box. */
-		100% { clip-path: inset(0); }
+	@keyframes card-fade {
+		from { opacity: 0; }
+	}
+	/* The clip's lower edge and the scan line travel together. Printed, the clip reaches 1em past
+	   the box, so the glow isn't cropped. */
+	@keyframes name-print {
+		from { clip-path: inset(0 -1em 100% -1em); }
+		to { clip-path: inset(-1em); }
+	}
+	@keyframes name-scan {
+		85% { opacity: 1; }
+		to { transform: translateY(calc(100% + 1em)); opacity: 0; }
 	}
 	@keyframes swipe {
 		from { transform: skewX(-14deg) scaleX(0); }

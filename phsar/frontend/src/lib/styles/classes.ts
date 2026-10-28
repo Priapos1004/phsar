@@ -1,13 +1,47 @@
 /** Shared Tailwind class strings for reuse across components */
 
 // Layout
-export const container = 'max-w-5xl mx-auto px-4';
+// The content pages' shared width (rules/frontend.md, "Pages share one width").
+// Wider from 2xl, where 1024px would leave half of a 1920 screen empty.
+export const pageWidth = 'mx-auto max-w-5xl 2xl:max-w-7xl';
+// The user-menu pages' width (rules/frontend.md, "Pages share one width").
+export const panelWidth = 'mx-auto max-w-3xl';
+// Below 360px a container drops its own gutter: a detail card's rows need the width, and
+// `main`'s 16px then puts every page the same distance from the edge.
+export const container = `${pageWidth} px-4 max-xs:px-0`;
+// `main`'s side gutter, which never narrows: a card closer than 16px to the edge looks cramped.
+export const mainGutter = 'px-4 sm:px-8';
+// The navbar's: `main`'s, halved below 360px, where the navbar needs the room for its bell.
+export const pageGutter = `${mainGutter} max-xs:px-2`;
+// `main` on an auth page: the gradient and the centred card, in normal flow so the document
+// scrolls natively — a fixed overlay keeps a phone's address bar from collapsing.
+export const authScreen = `min-h-dvh bg-gradient-to-br from-[var(--auth-gradient-from)] via-[var(--auth-gradient-via)] to-[var(--auth-gradient-to)] flex justify-center items-start pt-20 pb-8 ${mainGutter}`;
 export const sectionSpacing = 'space-y-8';
+// Tailwind's breakpoints as media queries, for what a class can't switch (a placeholder, a
+// chart's size). In rem, as Tailwind's own, so a larger default font moves both together.
+export const smUp = 'min-width: 40rem';
+export const twoXlUp = 'min-width: 96rem';
 // A page's navigation links above its content: they can share one line, so they share one look.
-export const pageNavLink = 'inline-flex items-center gap-1.5 text-sm text-white/70 hover:text-white transition mb-2';
+// No margin of its own — `BackLink`'s row owns the gap below them.
+export const pageNavLink = 'inline-flex items-center gap-1.5 text-sm text-white/70 hover:text-white transition';
+// A pill button on the dark page: the ratings Statistics sub-nav and the Grid / Table toggle
+// (ViewToggle) share it, so switching between the tabs never moves the control row.
+export const pagePill = 'px-3.5 py-1.5 rounded-full text-sm border transition-colors';
+export const pagePillOn = 'border-primary bg-primary/15 text-primary font-medium';
+export const pagePillOff = 'border-white/15 text-white/60 hover:text-white hover:border-white/30';
+
+// A headline figure over its label, in the ratings and the watchlist overviews. ×1.25 from 2xl,
+// where the page widens by the same factor.
+export const statFigure = 'text-2xl 2xl:text-3xl font-bold text-card-foreground';
+export const statLabel = 'text-sm 2xl:text-base text-muted-foreground';
+
+// The detail heroes (/anime, /media): the cover beside the details from md, and the stats grid,
+// whose four columns wait for lg — at md the cover takes ~85px from each.
+export const heroBody = 'relative flex flex-col md:flex-row gap-6 p-6 max-xs:p-4';
+export const heroStats = 'grid grid-cols-2 lg:grid-cols-4 gap-3 pt-1';
 
 // MediaInfo
-export const mediaInfoGrid = 'grid grid-cols-1 lg:grid-cols-2 gap-4 auto-rows-fr';
+export const mediaInfoGrid = 'grid grid-cols-1 lg:grid-cols-2 gap-4';
 
 // Badge colors (color only — composable with size variants)
 export const badgeMediaTypeColor = 'bg-green-100 text-green-800';
@@ -19,7 +53,7 @@ export const badgeOnHold = 'bg-amber-100 text-amber-800 border-amber-200';
 // Dropped watch status (solid rose) — same visual weight as on-hold, for the ratings
 // list where the translucent built-in `destructive` variant read too faint.
 export const badgeDropped = 'bg-rose-100 text-rose-800 border-rose-200';
-// Story-complete (emerald) — shared by the anime-page badge + the anime search card badge.
+// Story-complete (emerald).
 export const badgeComplete = 'bg-emerald-100 text-emerald-800 border-emerald-200';
 
 // Airing state, the four-way cascade the anime + media heroes render and the share card
@@ -64,9 +98,17 @@ export const badgeAgeRating = `${badgeAgeRatingColor} ${badgeSize}`;
 // Card glass effect
 export const cardGlass = 'bg-card/80 backdrop-blur';
 
+// An icon inline with text (a score's star, a watch time's clock): the theme colour as a
+// solid outline over a tinted fill, so it follows the theme the way an emoji cannot.
+// Inline because Tailwind's preflight makes an svg a block; sized in em to match the text
+// it sits in; the fill tints `currentColor`, so a caller overriding `color` moves both.
+// `glassTint` is the colouring alone, for an icon sized by its own slot.
+export const glassTint = 'text-primary fill-current/25';
+export const glassIcon = `inline-block size-[1.15em] align-[-0.2em] ${glassTint}`;
+
 // The pill naming the one season a list is pinned to, and the card standing in for a list
 // that can't be shown.
-export const seasonPill = 'rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-medium text-white/70';
+export const seasonPill = 'whitespace-nowrap rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-medium text-white/70';
 export const noticeCard = 'rounded-xl border border-white/10 bg-card/40 px-4 py-6 text-sm text-white/60';
 
 // The watchlist bookmark's backing square, top-right on a cover. Fixed square + flex
@@ -110,6 +152,39 @@ export const chipGroup = 'bg-card/80 backdrop-blur border border-input rounded-x
 
 // A control on the dark page surface, outlined like `PillToggle`'s container.
 export const pageControl = 'rounded-full border border-white/15 bg-transparent text-white/80 hover:text-white';
+
+// A toggle that, below sm, takes the rest of its row and shares it equally between its
+// options — a phone's segmented control. A long scale (Top's percent presets) overflows a
+// 320px screen at its natural width.
+export const stretchOnPhone = 'max-sm:flex-1 max-sm:min-w-0 max-sm:*:flex-1 max-sm:*:px-1';
+// A label beside its control, stacked over it on a phone — the control then spans the width,
+// a fixed-width one included (`*:w-full` beats its own `w-*`).
+export const stackOnPhone = 'max-sm:w-full max-sm:flex-col max-sm:gap-1 max-sm:*:w-full';
+
+// A list inside a card that stops growing and scrolls, so a long one can't push what
+// sits below it off the screen. `pr-1` keeps rows clear of the scrollbar.
+export const scrollList = 'max-h-72 overflow-y-auto pr-1';
+
+// A Field | Was | Now table. `table-fixed` with the caller's colgroup: an auto table sizes to
+// its content, and a long cover_image URL would push it out of the card. Values wrap rather than truncate — a cover_image diff differs mid-URL, so clipping
+// hides what changed. Callers colour the field cell, so it reads as a label above its values.
+// Below sm a row takes two lines — the field across, Was and Now side by side under it — since a
+// 160px field column would leave each value ~45px at 375.
+export const diffTable =
+	'w-full text-sm table-fixed max-sm:block max-sm:[&_thead]:block max-sm:[&_tbody]:block max-sm:[&_tr]:grid max-sm:[&_tr]:grid-cols-2 max-sm:[&_th:first-child]:hidden max-sm:[&_td:first-child]:col-span-2 max-sm:[&_td:first-child]:pb-0';
+
+// A field's label in the filter sheet.
+export const fieldLabel = 'text-sm font-medium text-card-foreground';
+
+// A label that opens a tooltip (the Tooltip's span brings the help cursor). The label's font
+// size sits on its parent, so the line box matches a plain label's beside it.
+export const tooltipHint = 'border-b border-dotted border-muted-foreground/40';
+
+// A 32px touch target centred on a small control, invisible, so a near miss still lands
+// without the control looking any bigger. Hangs off the control, which must be positioned —
+// `relative` at the site, never here, where it would fight an `absolute` one — and an
+// `overflow-hidden` ancestor cuts it back to that ancestor's box.
+export const hitArea = 'after:absolute after:top-1/2 after:left-1/2 after:size-8 after:-translate-1/2';
 
 // The count bubble on an icon button's corner, composed onto a positioned button.
 export const countBadge =

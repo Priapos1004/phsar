@@ -168,6 +168,8 @@ phsar/
 ├── frontend/
 │   ├── .dockerignore
 │   ├── Dockerfile
+│   ├── art/
+│   │   └── profile_pics/    # PNG originals of the theme pics — not served; convert with the cwebp lines in themes.ts
 │   ├── bun.lock
 │   ├── components.json
 │   ├── package.json
@@ -185,6 +187,7 @@ phsar/
 │   │   │   │   ├── AnimeShare.svelte
 │   │   │   │   ├── AttributeBadges.svelte
 │   │   │   │   ├── AttributeDetailBars.svelte
+│   │   │   │   ├── AttributeGrid.svelte
 │   │   │   │   ├── AttributeRadar.svelte
 │   │   │   │   ├── BackLink.svelte
 │   │   │   │   ├── BackupsCard.svelte
@@ -212,10 +215,14 @@ phsar/
 │   │   │   │   ├── DiscoverWheel.svelte
 │   │   │   │   ├── DoubleRangeSlider.svelte
 │   │   │   │   ├── EChart.svelte
+│   │   │   │   ├── ExpressionText.svelte
 │   │   │   │   ├── GenreBadges.svelte
+│   │   │   │   ├── GenreFilterField.svelte
 │   │   │   │   ├── GrainToggle.svelte
 │   │   │   │   ├── HeroIconButton.svelte
+│   │   │   │   ├── HeroScore.svelte
 │   │   │   │   ├── InfoDiashow.svelte
+│   │   │   │   ├── InfoTip.svelte
 │   │   │   │   ├── JobBell.svelte
 │   │   │   │   ├── LoadingScreen.svelte
 │   │   │   │   ├── MaintenanceBanner.svelte
@@ -275,6 +282,7 @@ phsar/
 │   │   │   │   ├── TokenExpiryDialog.svelte
 │   │   │   │   ├── Tooltip.svelte
 │   │   │   │   ├── VersionFooter.svelte
+│   │   │   │   ├── ViewToggle.svelte
 │   │   │   │   ├── WatchlistBookmarkButton.svelte
 │   │   │   │   ├── WatchlistBookmarkIcon.svelte
 │   │   │   │   ├── WatchlistDialog.svelte
@@ -343,6 +351,7 @@ phsar/
 │   │   │       ├── filterLifecycle.ts
 │   │   │       ├── formatString.ts
 │   │   │       ├── getSeason.ts
+│   │   │       ├── hugLines.ts
 │   │   │       ├── index.ts
 │   │   │       ├── jobBadges.ts
 │   │   │       ├── jobHealth.ts
@@ -414,6 +423,8 @@ phsar/
 │   │       ├── admin-jobs-poll.test.ts
 │   │       ├── api-download.test.ts
 │   │       ├── attribute-aggregate.test.ts
+│   │       ├── attribute-detail-bars.test.ts
+│   │       ├── attribute-select.test.ts
 │   │       ├── auth-store.test.ts
 │   │       ├── backup-status.test.ts
 │   │       ├── backups-card.test.ts
@@ -459,6 +470,7 @@ phsar/
 │   │       ├── search-links.test.ts
 │   │       ├── search-utils.test.ts
 │   │       ├── searchbar.test.ts
+│   │       ├── see-all-results.test.ts
 │   │       ├── segmented-control.test.ts
 │   │       ├── session-timeout.test.ts
 │   │       ├── share-card.test.ts
@@ -467,8 +479,10 @@ phsar/
 │   │       ├── split-candidates-card.test.ts
 │   │       ├── spoiler-frontier.test.ts
 │   │       ├── spoiler-guard.test.ts
+│   │       ├── tag-select.test.ts
 │   │       ├── themes.test.ts
 │   │       ├── toast.test.ts
+│   │       ├── tooltip.test.ts
 │   │       ├── watchlist-ready.test.ts
 │   │       ├── watchlist-stats.test.ts
 │   │       └── watchlist-uniform-entries.test.ts
@@ -479,7 +493,7 @@ phsar/
 │   │   ├── favicon-512x512.png
 │   │   ├── favicon.ico
 │   │   ├── phsar_logo_transparent.png
-│   │   ├── profile_pics/    # theme character pics (rainbow.png, red.png, blue.png, green.png)
+│   │   ├── profile_pics/    # theme character pics as WebP, plus thumbs/ for the settings tiles
 │   │   └── robots.txt
 │   ├── svelte.config.js
 │   ├── tsconfig.json

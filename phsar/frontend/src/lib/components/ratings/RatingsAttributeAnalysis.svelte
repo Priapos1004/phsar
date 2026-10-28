@@ -1,10 +1,13 @@
 <script lang="ts">
+	import { MediaQuery } from 'svelte/reactivity';
 	import EChart from '$lib/components/EChart.svelte';
 	import { scoreColor, STATUS_COLORS } from '$lib/utils/chartColors';
 	import { formatDecimalDigits } from '$lib/utils/formatString';
 	import { attributeCorrelations, attributeCategoryEffects } from '$lib/utils/ratingStats';
+	import { optionLabel } from '$lib/utils/ratingAttributes';
 	import { chartTooltipStyle } from '$lib/utils/chartTheme';
 	import { RATING_ATTRIBUTE_OPTIONS, type RatingScoreItem } from '$lib/types/api';
+	import * as cls from '$lib/styles/classes';
 
 	interface Props {
 		items: RatingScoreItem[];
@@ -18,12 +21,20 @@
 	let effects = $derived(attributeCategoryEffects(items));
 
 	const label = (key: string) => RATING_ATTRIBUTE_OPTIONS[key]?.label ?? key;
-	const valueLabel = (key: string, value: string) =>
-		RATING_ATTRIBUTE_OPTIONS[key]?.options.find((o) => o.value === value)?.label ?? value;
+
+	// One label column for every chart on the tab, so their axes start at the same x down the
+	// page: from sm wide enough for "Animation Quality" (~87px at 11px), on a phone for
+	// "Conventional" (~65px), where the quality scales go by their first word ("Animation" —
+	// the heading already says quality) and the bars keep the width.
+	const wide = new MediaQuery(cls.smUp);
+	let labelW = $derived(wide.current ? 96 : 72);
+	// left = the label column + the axis label's 8px margin + 4px clear of the axis line.
+	let grid = $derived({ left: labelW + 12, right: 16, bottom: 24, containLabel: false });
+	let yAxisLabel = $derived({ color: 'rgba(0,0,0,0.75)', fontSize: 11, width: labelW, overflow: 'truncate' as const });
 
 	// |ρ| per quality scale (importance); the sign is conveyed by bar color, not the axis.
 	let corrOption = $derived({
-		grid: { left: 4, right: 16, top: 8, bottom: 24, containLabel: true },
+		grid: { ...grid, top: 8 },
 		tooltip: {
 			...chartTooltipStyle,
 			trigger: 'axis' as const,
@@ -45,8 +56,8 @@
 		},
 		yAxis: {
 			type: 'category' as const,
-			data: revCorr.map((c) => label(c.key)),
-			axisLabel: { color: 'rgba(0,0,0,0.75)', fontSize: 11 },
+			data: revCorr.map((c) => (wide.current ? label(c.key) : label(c.key).split(' ')[0])),
+			axisLabel: yAxisLabel,
 			axisLine: { lineStyle: { color: 'rgba(0,0,0,0.15)' } },
 			axisTick: { show: false },
 		},
@@ -67,7 +78,7 @@
 		const rev = [...categories].reverse();
 		return {
 			// top:24 leaves room for the "your avg" markLine label (was clipped at top:8).
-			grid: { left: 4, right: 16, top: 24, bottom: 24, containLabel: true },
+			grid: { ...grid, top: 24 },
 			tooltip: {
 				...chartTooltipStyle,
 				trigger: 'axis' as const,
@@ -75,7 +86,7 @@
 				formatter: (params: unknown) => {
 					const arr = params as { dataIndex: number }[];
 					const c = rev[arr[0].dataIndex];
-					return c ? `${valueLabel(key, c.value)}<br/>avg ${formatDecimalDigits(c.mean, 2)} · n=${c.count}` : '';
+					return c ? `${optionLabel(key, c.value)}<br/>avg ${formatDecimalDigits(c.mean, 2)} · n=${c.count}` : '';
 				},
 			},
 			xAxis: {
@@ -87,8 +98,8 @@
 			},
 			yAxis: {
 				type: 'category' as const,
-				data: rev.map((c) => valueLabel(key, c.value)),
-				axisLabel: { color: 'rgba(0,0,0,0.75)', fontSize: 11 },
+				data: rev.map((c) => optionLabel(key, c.value)),
+				axisLabel: yAxisLabel,
 				axisLine: { lineStyle: { color: 'rgba(0,0,0,0.15)' } },
 				axisTick: { show: false },
 			},

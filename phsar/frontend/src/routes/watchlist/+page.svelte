@@ -15,6 +15,7 @@
 	import WatchlistStatsTab from '$lib/components/watchlist/WatchlistStatsTab.svelte';
 	import Notice from '$lib/components/Notice.svelte';
 	import { Button } from '$lib/components/ui/button';
+	import * as cls from '$lib/styles/classes';
 
 	const TABS: { key: WatchlistTabKey; label: string }[] = [
 		{ key: 'watchlists', label: 'Watchlists' },
@@ -102,7 +103,7 @@
 
 <svelte:head><title>Watchlist — Phsar</title></svelte:head>
 
-<div class="mx-auto max-w-5xl space-y-6">
+<div class="{cls.pageWidth} space-y-6">
 	<h1 class="text-2xl font-bold text-white">Watchlist</h1>
 
 	<!-- Subtabs stay visible for guests too (like the ratings page) so they see what their

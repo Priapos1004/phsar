@@ -144,7 +144,7 @@
 	/** Why the detector flagged this row, in the admin's terms. */
 	function reasonLine(c: DeleteCandidateListItem): string {
 		if (c.detected_by === 'sweep_404') {
-			return `Gone from MAL — 404 on ${formatShortDate(c.created_at)}`;
+			return `Gone from MAL · ${formatShortDate(c.created_at)}`;
 		}
 		if (c.detected_by === 'low_signal') {
 			const votes = c.scored_by ?? 0;
@@ -245,12 +245,12 @@
 							{#if c.media_uuid}
 								<a
 									href={buildDetailHref('media', c.media_uuid, { from: 'curation' })}
-									class="text-sm font-medium text-card-foreground hover:text-primary transition block break-words"
+									class="text-sm font-medium text-card-foreground hover:text-primary transition block"
 								>
 									{resolveTitle(c.title, c.name_eng, c.name_jap, nameLanguage)}
 								</a>
 							{:else}
-								<p class="text-sm font-medium text-card-foreground break-words">
+								<p class="text-sm font-medium text-card-foreground">
 									{resolveTitle(c.title, c.name_eng, c.name_jap, nameLanguage)}
 								</p>
 							{/if}
@@ -322,7 +322,7 @@
 		>
 			{#snippet row(item: DeleteCandidateListItem)}
 				<div class="min-w-0">
-					<p class="text-sm font-medium text-card-foreground break-words">
+					<p class="text-sm font-medium text-card-foreground">
 						{resolveTitle(item.title, item.name_eng, item.name_jap, nameLanguage)}
 					</p>
 					<p class="text-xs text-muted-foreground">
@@ -341,12 +341,12 @@
 	}}
 >
 	<Dialog.Content class="sm:max-w-md">
-		<Dialog.Header class="min-w-0">
+		<Dialog.Header>
 			<Dialog.Title class="text-destructive">Delete from catalog</Dialog.Title>
 			<Dialog.Description>
 				{#if removeTarget}
 					This permanently deletes
-					<strong class="break-words"
+					<strong
 						>{resolveTitle(
 							removeTarget.title,
 							removeTarget.name_eng,
@@ -383,8 +383,10 @@
 		</div>
 
 		<div class="space-y-1.5 min-w-0">
+			<!-- One span: Label is a flex row, and bare text around the <strong> would be
+			     three flex items, wrapping side by side as columns on a phone. -->
 			<Label for="delete-confirm" class="text-sm">
-				Type your admin username (<strong>{currentUsername}</strong>) to confirm.
+				<span>Type your admin username (<strong>{currentUsername}</strong>) to confirm.</span>
 			</Label>
 			<Input
 				id="delete-confirm"

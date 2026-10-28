@@ -94,6 +94,7 @@
 	// detection to client-server clock alignment. UUIDs are stable.
 	let seenUuids = $state(loadSeen());
 	let dropdownOpen = $state(false);
+	let contentRef = $state<HTMLElement | null>(null);
 	let pollTimer: ReturnType<typeof setTimeout> | null = null;
 	let stopped = false;
 	// Succeeded jobs already announced, so one still in /jobs/mine's window doesn't
@@ -425,6 +426,7 @@
 	{@const Icon = statusIcon(job)}
 	{@const pct = progressPercent(job)}
 	{@const href = rowHref(job)}
+	{@const description = describeJob(job)}
 	<div class="flex items-start gap-2">
 		<Icon
 			class="w-4 h-4 mt-0.5 shrink-0 {statusColor(job)} {job.status === 'running'
@@ -432,7 +434,7 @@
 				: ''}"
 		/>
 		<div class="flex-1 min-w-0">
-			<div class="text-sm font-medium truncate">{describeJob(job)}</div>
+			<div class="text-sm font-medium truncate" title={description}>{description}</div>
 			{#if job.status === 'running' && job.stage}
 				<div class="text-xs text-muted-foreground">
 					{job.stage}{pct !== null ? ` — ${job.items_done}/${job.items_total}` : ''}
@@ -458,9 +460,10 @@
 					</div>
 				{/if}
 			{:else if job.status === 'failed'}
-				<div class="text-xs text-destructive truncate">
-					{describeError(job)}
-				</div>
+				<!-- Wraps (up to three lines) rather than truncating: the reason a job failed is
+				     the one thing the row is for. -->
+				{@const error = describeError(job)}
+				<div class="text-xs text-destructive line-clamp-3" title={error}>{error}</div>
 			{/if}
 		</div>
 		{#if canRetry(job)}
@@ -468,7 +471,7 @@
 				type="button"
 				onclick={(e) => retryJob(job, e)}
 				disabled={retryingUuid !== null}
-				class="shrink-0 p-1 rounded hover:bg-muted transition disabled:opacity-50 disabled:cursor-not-allowed"
+				class="relative shrink-0 p-1 rounded hover:bg-muted transition disabled:opacity-50 disabled:cursor-not-allowed {cls.hitArea}"
 				aria-label="Retry job"
 			>
 				<RefreshCw class="w-3.5 h-3.5 {retryingUuid === job.uuid ? 'animate-spin' : ''}" />
@@ -489,7 +492,20 @@
 			<span class={cls.countBadge}>{badgeCount}</span>
 		{/if}
 	</DropdownMenu.Trigger>
-	<DropdownMenu.Content class="w-80 p-0 overflow-hidden" align="end">
+	<!-- Opening focuses the panel, not bits-ui's default first tabbable: the rows are plain
+	     links rather than menu items, so that default lands on the first finished row and
+	     can draw its focus ring as if the user had tabbed there. `alignOffset` ends it under
+	     the glyph rather than the button's invisible 36px circle, 8px further out. -->
+	<DropdownMenu.Content
+		bind:ref={contentRef}
+		onOpenAutoFocus={(e) => {
+			e.preventDefault();
+			contentRef?.focus({ preventScroll: true });
+		}}
+		class="w-80 p-0 overflow-hidden"
+		align="end"
+		alignOffset={8}
+	>
 		{#if isAdmin && totalPending > 0}
 			<a
 				href="/admin?tab=curation"

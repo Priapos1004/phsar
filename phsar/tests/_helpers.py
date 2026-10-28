@@ -5,6 +5,7 @@ touches a Media row has to populate the same NOT-NULL columns. This is the
 canonical version; new tests should import it instead of redeclaring.
 """
 
+import json
 from typing import NamedTuple
 
 from app.models.media import MediaType, RelationType, SeasonType
@@ -38,6 +39,11 @@ class SentinelSeason(NamedTuple):
     @property
     def columns(self) -> dict:
         return {"anime_season_name": self.name, "anime_season_year": self.year}
+
+
+def genres_param(*groups: dict, mode: str = "all") -> str:
+    """The search's `genres` query param: `groups` joined by `mode`."""
+    return json.dumps({"mode": mode, "groups": list(groups)})
 
 
 def media_kwargs(anime_id: int, mal_id: int, **overrides) -> dict:

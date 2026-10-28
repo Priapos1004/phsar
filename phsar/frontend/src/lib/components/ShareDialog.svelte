@@ -95,6 +95,15 @@
 	// On iOS the download path reaches Files, never Photos — so there is no second button to
 	// offer, only the sheet. Elsewhere the two actions are genuinely different.
 	let sheetOnly = $derived(canShare && isIosLike());
+	// The main button's states on one node, so a focused "Try again" is never removed
+	// (rules/frontend.md, "A control that removes itself hands focus on first").
+	let primary = $derived(
+		captureFailed
+			? { label: 'Try again', icon: RefreshCw, run: () => generate(variant), disabled: false }
+			: sheetOnly
+				? { label: sharing ? 'Sharing…' : 'Save or share', icon: Share2, run: handleShare, disabled: sharing }
+				: { label: 'Save image', icon: Download, run: handleDownload, disabled: !preview },
+	);
 
 	let cardReadyResolve: (() => void) | null = null;
 	// De-races overlapping generations (reopen, retry, a variant switch mid-build): a stale run
@@ -254,16 +263,14 @@
 
 <Dialog.Root bind:open>
 	<Dialog.Content class="sm:max-w-md">
-		<!-- min-w-0 required (see .claude/rules/frontend.md "Dialog children that cannot shrink"). -->
-		<Dialog.Header class="min-w-0">
+		<Dialog.Header>
 			<Dialog.Title>
 				{variant === 'rating' ? 'Share your rating' : `Share this ${noun}`}
 			</Dialog.Title>
 			<Dialog.Description class="truncate text-muted-foreground">{title}</Dialog.Description>
 		</Dialog.Header>
 
-		<!-- min-w-0 again, the floor here being the preview img's aspect ratio (see below). -->
-		<div class="min-w-0 space-y-4 py-2">
+		<div class="space-y-4 py-2">
 			<!-- Offered only when there is a rating to choose between: without one the info card
 			     isn't an alternative, it's the only card. -->
 			{#if rating}
@@ -284,9 +291,10 @@
 			<div class="flex min-h-[280px] items-center justify-center rounded-xl bg-muted/40 p-2">
 				{#if preview}
 					<!-- An img transfers max-height through its aspect ratio into a min-content
-					     width, so on a tall window the 55vh alone outgrows the dialog. max-w-full
-					     can't fix that by itself — a percentage max-width is indefinite during
-					     intrinsic sizing, and only shrinks the img once the track is settled. -->
+					     width, so on a tall window the 55vh alone would outgrow the dialog. max-w-full
+					     holds it only because the dialog's column is minmax(0,1fr) (dialog-content):
+					     a percentage max-width is indefinite during intrinsic sizing, and only
+					     shrinks the img once the track is settled. -->
 					<img
 						src={preview.url}
 						alt="Preview of the shareable card"
@@ -302,25 +310,15 @@
 			{/if}
 
 			<div class="flex gap-2">
-				{#if captureFailed}
-					<Button class="flex-1" onclick={() => generate(variant)}>
-						<RefreshCw class="mr-1.5 size-4" /> Try again
+				<!-- On iOS one button only: both outcomes live behind the same sheet, "Save Image"
+				     reaching Photos and any app entry sending it. -->
+				<Button class="flex-1" onclick={primary.run} disabled={primary.disabled}>
+					<primary.icon class="mr-1.5 size-4" /> {primary.label}
+				</Button>
+				{#if canShare && !sheetOnly && !captureFailed}
+					<Button variant="secondary" onclick={handleShare} disabled={sharing}>
+						<Share2 class="mr-1.5 size-4" /> {sharing ? 'Sharing…' : 'Share'}
 					</Button>
-				{:else if sheetOnly}
-					<!-- One button, because on iOS both outcomes live behind the same sheet:
-					     "Save Image" reaches Photos, any app entry sends it. -->
-					<Button class="flex-1" onclick={handleShare} disabled={sharing}>
-						<Share2 class="mr-1.5 size-4" /> {sharing ? 'Sharing…' : 'Save or share'}
-					</Button>
-				{:else}
-					<Button class="flex-1" onclick={handleDownload} disabled={!preview}>
-						<Download class="mr-1.5 size-4" /> Save image
-					</Button>
-					{#if canShare}
-						<Button variant="secondary" onclick={handleShare} disabled={sharing}>
-							<Share2 class="mr-1.5 size-4" /> {sharing ? 'Sharing…' : 'Share'}
-						</Button>
-					{/if}
 				{/if}
 			</div>
 

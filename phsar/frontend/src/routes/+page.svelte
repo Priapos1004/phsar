@@ -2,13 +2,13 @@
 	import SearchBar from '$lib/components/SearchBar.svelte';
 	import BrowsePageRows from '$lib/components/BrowsePageRows.svelte';
 	import { navigateToSearch } from '$lib/utils/navigation';
-	import { userSettings } from '$lib/stores/userSettings';
+	import { defaultSearchView } from '$lib/stores/userSettings';
 	import type { MediaSearchFilters } from '$lib/utils/search';
 	import * as cls from '$lib/styles/classes';
     import ScrollableCard from '$lib/components/ScrollableCard.svelte';
     import InfoDiashow from '$lib/components/InfoDiashow.svelte';
 
-	let defaultView = $derived($userSettings?.default_search_view ?? 'anime');
+	let defaultView = $derived($defaultSearchView);
 
 	function handleSearch(data: MediaSearchFilters) {
 		navigateToSearch({ ...data, view_type: defaultView });

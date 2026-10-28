@@ -210,7 +210,7 @@ describe('animeShareContent — franchise', () => {
 			franchise([member({ uuid: 'a' }), member({ uuid: 'b' })], { season_end: 'Winter 2026' }),
 			[rating({ media_uuid: 'a' })],
 		);
-		expect(c.metaLines).toEqual(['Fall 2020 - Winter 2026', '64 eps · 1d 2h']);
+		expect(c.metaLines).toEqual(['Fall\u00a02020\u00a0- Winter\u00a02026', '64 eps · 1d 2h']);
 	});
 
 	it('drops empty meta lines rather than rendering a blank one', () => {

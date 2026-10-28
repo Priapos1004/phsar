@@ -63,7 +63,7 @@
 		errorMsg = null;
 		try {
 			await api.post<Job>('/jobs/scrape', { query: trimmed });
-			pushToast(`Added "${trimmed}" to the queue. Track progress in the bell.`);
+			pushToast(`Added "${trimmed}" to the queue.`);
 			query = '';
 			// Tell the bell to refetch immediately so the new job shows up
 			// without waiting for its 30s idle poll. The bell will bump
@@ -86,10 +86,11 @@
 	<title>Add to Library — Phsar</title>
 </svelte:head>
 
-<div class="max-w-3xl mx-auto py-12">
+<div class="{cls.panelWidth} space-y-6">
+	<h1 class="text-2xl font-bold text-white">Add to Library</h1>
+
 	<Card.Root>
 		<Card.Header>
-			<Card.Title>Add to Library</Card.Title>
 			<Card.Description>
 				Enter an anime title — Phsar searches MyAnimeList, walks the franchise's
 				related media, and saves everything connected. Connected entries dedupe
@@ -100,7 +101,7 @@
 			<form onsubmit={submit} class="flex flex-col gap-3">
 				<Input
 					type="text"
-					placeholder="e.g. Naruto, Attack on Titan, Steins;Gate"
+					placeholder="e.g. Naruto, Attack on Titan"
 					bind:value={query}
 					disabled={submitting || isRestricted}
 					minlength={MIN_QUERY_LENGTH}
@@ -135,7 +136,7 @@
 		</Card.Content>
 	</Card.Root>
 
-	<div class="mt-10">
+	<div>
 		<h2 class="text-lg font-semibold mb-4">Recent additions</h2>
 		{#if recentLoading}
 			<p class="text-sm text-muted-foreground">Loading…</p>

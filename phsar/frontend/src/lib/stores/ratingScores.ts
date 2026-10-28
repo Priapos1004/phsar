@@ -61,8 +61,8 @@ export function invalidateRatingScores(): void {
 	loadPromise = null;
 	// The per-anime coverage tiers are derived from the same ratings, and every
 	// write path already routes through here — folding it in beats a second list
-	// of call sites that has to stay in step with this one. Browse's rows over the same
-	// ratings, for the same reason.
+	// of call sites that has to stay in step with this one. `browseRows`' personal
+	// entries, for the same reason.
 	invalidateRatingCoverage();
 	dropPersonalRows();
 }

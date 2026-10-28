@@ -55,7 +55,7 @@
 	</div>
 {/snippet}
 
-<ScrollRow bind:scroller={scrollEl} class="gap-3 pb-2">
+<ScrollRow bind:scroller={scrollEl} class="gap-3">
 	{#each siblings as sibling, i}
 		{#if i === currentPosition}{@render hereMarker()}{/if}
 		<a

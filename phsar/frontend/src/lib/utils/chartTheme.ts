@@ -19,8 +19,10 @@ export const chartTooltipStyle = {
 	textStyle: { color: 'var(--color-popover-foreground)', fontSize: 12 },
 	// border-radius + glow have no dedicated tooltip options, so raw CSS (appended last
 	// in ECharts' style string, so it wins). Shadow mirrors tooltip-content.svelte.
+	// ECharts never wraps a tooltip's text, so a long title outgrows a phone-width chart
+	// and `confine` can't hold it; wrapping within the chart's width can.
 	extraCssText:
-		'border-radius: 6px; box-shadow: 0 6px 24px -6px color-mix(in oklch, var(--primary) 55%, transparent);',
+		'border-radius: 6px; box-shadow: 0 6px 24px -6px color-mix(in oklch, var(--primary) 55%, transparent); white-space: normal; max-width: 100%;',
 } as const;
 
 /** Axis floor for a series whose interesting variation is small next to its absolute
@@ -42,9 +44,10 @@ export function paddedAxisMin({ min, max }: { min: number; max: number }): numbe
 
 /** Shared score gauge (0–10, color-ramped by value). Used by the anime-page
  * RatingsOverviewStats and the /ratings statistics Overview so the two can't
- * drift in shape. */
-export function scoreGaugeOption(value: number): EChartsOption {
+ * drift in shape. `size` is the chart's px size: the ring and the number scale with it. */
+export function scoreGaugeOption(value: number, size = 96): EChartsOption {
 	const color = scoreColor(value);
+	const k = size / 96;
 	return {
 		series: [
 			{
@@ -57,14 +60,14 @@ export function scoreGaugeOption(value: number): EChartsOption {
 				radius: '100%',
 				center: ['50%', '55%'],
 				pointer: { show: false },
-				progress: { show: true, width: 10, roundCap: true, itemStyle: { color } },
-				axisLine: { lineStyle: { width: 10, color: [[1, 'rgba(0,0,0,0.08)']] } },
+				progress: { show: true, width: 10 * k, roundCap: true, itemStyle: { color } },
+				axisLine: { lineStyle: { width: 10 * k, color: [[1, 'rgba(0,0,0,0.08)']] } },
 				axisTick: { show: false },
 				splitLine: { show: false },
 				axisLabel: { show: false },
 				detail: {
 					offsetCenter: [0, '0%'],
-					fontSize: 22,
+					fontSize: Math.round(22 * k),
 					fontWeight: 'bold',
 					color,
 					formatter: (val: number) => formatDecimalDigits(val, 2),

@@ -42,8 +42,8 @@ get along, so we shut typescript up by casting `value` to `never`.
 			/>
 		</span>
 		<!-- Keyed by index: bits-ui rebuilds `thumbItems` as new objects on every value
-		     change, so keying by object remounts the dragged thumb and drops its focus —
-		     inside a dialog the focus trap then jumps to the top and scrolls there. -->
+		     change, so keying by object remounts the dragged thumb while focused
+		     (rules/frontend.md, "A control that removes itself hands focus on first"). -->
 		{#each thumbItems as thumb (thumb.index)}
 			<SliderPrimitive.Thumb
 				data-slot="slider-thumb"

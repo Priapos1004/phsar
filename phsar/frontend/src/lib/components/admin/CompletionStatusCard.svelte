@@ -12,6 +12,7 @@
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import { userSettings } from '$lib/stores/userSettings';
 	import type { AnimeSearchResult, FinishedAnimeItem } from '$lib/types/api';
+	import * as cls from '$lib/styles/classes';
 
 	let finished = $state<FinishedAnimeItem[]>([]);
 	// `loading` flips off after the first fetch and stays off; later fetches only
@@ -163,20 +164,15 @@
 
 <Card.Root>
 	<Card.Header>
+		<!-- The action on the title's line, as on the Curation tab's cards. -->
 		<div class="flex items-center justify-between gap-2">
-			<div>
-				<Card.Title class="flex items-center gap-2">
-					<CheckCircle2 class="size-5 text-emerald-600" />
-					Story Completion
-					<span class="rounded-full bg-emerald-100 text-emerald-800 text-xs font-semibold px-2 py-0.5">
-						{finished.length}
-					</span>
-				</Card.Title>
-				<Card.Description>
-					Mark an anime as story-complete when its narrative has concluded — distinct from "Finished
-					Airing", which only means episodes stopped broadcasting.
-				</Card.Description>
-			</div>
+			<Card.Title class="flex items-center gap-2">
+				<CheckCircle2 class="size-5 text-emerald-600" />
+				Story Completion
+				<span class="rounded-full {cls.badgeComplete} text-xs font-semibold px-2 py-0.5">
+					{finished.length}
+				</span>
+			</Card.Title>
 			<Tooltip text="Refresh">
 				{#snippet trigger(props)}
 					<Button {...props} variant="ghost" size="icon" onclick={fetchFinished} disabled={loading || refreshing} aria-label="Refresh">
@@ -185,6 +181,10 @@
 				{/snippet}
 			</Tooltip>
 		</div>
+		<Card.Description>
+			Mark an anime as story-complete when its narrative has concluded — distinct from "Finished
+			Airing", which only means episodes stopped broadcasting.
+		</Card.Description>
 	</Card.Header>
 	<Card.Content class="space-y-4">
 		<!-- Search to mark a new anime -->
@@ -193,7 +193,7 @@
 				<Search class="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
 				<Input
 					class="pl-8 pr-8"
-					placeholder="Search anime to mark complete…"
+					placeholder="Search anime…"
 					bind:value={query}
 					oninput={onQueryInput}
 				/>
@@ -202,7 +202,7 @@
 						type="button"
 						onclick={clearSearch}
 						aria-label="Clear search"
-						class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-card-foreground"
+						class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-card-foreground {cls.hitArea}"
 					>
 						<X class="size-4" />
 					</button>

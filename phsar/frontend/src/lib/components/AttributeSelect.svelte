@@ -2,6 +2,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Label } from '$lib/components/ui/label';
 	import { X } from 'lucide-svelte';
+	import * as cls from '$lib/styles/classes';
 
 	interface Props {
 		label: string;
@@ -16,6 +17,7 @@
 	}
 
 	let { label, options, value, onChange, disabled = false }: Props = $props();
+	let trigger = $state<HTMLElement | null>(null);
 
 	// `not_applicable` is an auto-set-only sentinel — never user-selectable in any
 	// dropdown (single source of truth so bulk + media can't drift). The trigger still
@@ -35,9 +37,11 @@
 			onValueChange={(val: string) => onChange(val || null)}
 			{disabled}
 		>
-			<Select.Trigger class="w-full {value ? 'bg-primary/5 border-2 border-primary/40' : 'bg-card'}">
+			<!-- Once set, the ✕ takes the chevron's place (the chevron stays, invisible, holding
+			     its space): beside it, the two leave a long value too little room. -->
+			<Select.Trigger bind:ref={trigger} class="w-full {value ? 'bg-primary/5 border-2 border-primary/40' : 'bg-card'} {value && !disabled ? '[&>svg]:invisible' : ''}">
 				{#if value}
-					{selectedLabel}
+					<span class="truncate">{selectedLabel}</span>
 				{:else}
 					<span class="text-muted-foreground">Not set</span>
 				{/if}
@@ -49,15 +53,16 @@
 			</Select.Content>
 		</Select.Root>
 		{#if value && !disabled}
-			<!-- Clear-to-deselect: sits left of the trigger's chevron. stopPropagation so it
-			     clears instead of opening the dropdown. -->
+			<!-- Clear-to-deselect, over the hidden chevron. stopPropagation so it clears instead
+			     of opening the dropdown; focus to the trigger first, since the ✕ leaves with the
+			     value (rules/frontend.md, "A control that removes itself hands focus on first"). -->
 			<button
 				type="button"
-				class="absolute top-1/2 right-8 -translate-y-1/2 z-10 text-muted-foreground hover:text-foreground"
-				onclick={(e) => { e.stopPropagation(); onChange(null); }}
+				class="absolute top-1/2 right-3 -translate-y-1/2 z-10 text-muted-foreground hover:text-foreground {cls.hitArea}"
+				onclick={(e) => { e.stopPropagation(); trigger?.focus(); onChange(null); }}
 				aria-label={`Clear ${label}`}
 			>
-				<X class="size-3.5" />
+				<X class="size-4" />
 			</button>
 		{/if}
 	</div>

@@ -2,6 +2,7 @@
     import { page } from '$app/state';
     import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
     import JobBell from '$lib/components/JobBell.svelte';
+    import * as cls from '$lib/styles/classes';
     import { isWithin } from '$lib/utils/filterLifecycle';
 
     interface Props {
@@ -31,10 +32,11 @@
     const isActive = (href: string) => isWithin(page.url.pathname, href);
 </script>
 
-<nav class="h-16 flex justify-between items-center gap-3 px-4 sm:px-8 py-4 bg-black/10 backdrop-blur">
+<nav class="h-16 flex justify-between items-center gap-3 max-xs:gap-2 {cls.pageGutter} py-4 bg-black/10 backdrop-blur">
     <!-- On a phone the wordmark goes: with it, the sections, the bell and the
-         avatar overflow a ~390px row. -->
-    <div class="flex items-end gap-3 sm:gap-6">
+         avatar overflow a ~390px row. Below 360px the gutter (`cls.pageGutter`) and the gaps
+         tighten, which is what fits the bell at 320. -->
+    <div class="flex items-end gap-3 max-xs:gap-2 sm:gap-6">
         <a href="/" class="shrink-0 flex items-end hover:opacity-80 transition">
             <img src="/phsar_logo_transparent.png" alt="Phsar Logo" class="w-8 h-8" />
             <span class="hidden sm:inline ml-1 text-xl font-bold text-white">PHSAR</span>

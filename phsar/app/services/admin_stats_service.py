@@ -13,7 +13,13 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.daos.anime_dao import AnimeDAO
+from app.core.config import settings
+from app.daos.anime_dao import (
+    SWEEP_ARCHIVAL_DAYS,
+    SWEEP_LONG_TAIL_DAYS,
+    SWEEP_WEEKLY_DAYS,
+    AnimeDAO,
+)
 from app.daos.delete_candidate_dao import DeleteCandidateDAO
 from app.daos.merge_candidate_dao import MergeCandidateDAO
 from app.daos.split_candidate_dao import SplitCandidateDAO
@@ -200,6 +206,23 @@ async def _media_sweep_tier_breakdown(db: AsyncSession) -> SweepTierBreakdown:
     return SweepTierBreakdown(**counts)
 
 
+def _media_per_night(tiers: SweepTierBreakdown) -> int:
+    """The update sweep's settled nightly draw, in media — the unit its cap counts:
+    each media-grain bucket over its refresh cadence. An average because the buckets
+    are membership, not due-ness: a cycle's media come due spread over its window
+    only on average.
+
+    Stabilizing is left out. It is a burst — new media, each leaving after
+    SWEEP_STABILIZE_THRESHOLD sweeps — that drains on its own, so counting it would
+    read a big import as a cap the catalogue has outgrown. The card shows it beside."""
+    return round(
+        tiers.airing_now
+        + tiers.weekly_cycle / SWEEP_WEEKLY_DAYS
+        + tiers.long_cycle / SWEEP_LONG_TAIL_DAYS
+        + tiers.archival_cycle / SWEEP_ARCHIVAL_DAYS
+    )
+
+
 async def _watchlist_stats(db: AsyncSession) -> WatchlistStats:
     total_entries = await watchlist_dao.count_total(db)
     total_anime = await watchlist_dao.count_distinct_anime(db)
@@ -227,13 +250,16 @@ async def get_overview_stats(db: AsyncSession) -> AdminOverviewStats:
     now = datetime.now(timezone.utc)
     cutoff = now - timedelta(days=7)
     # Sequential awaits — AsyncSession can't multiplex.
+    media_sweep_tiers = await _media_sweep_tier_breakdown(db)
     return AdminOverviewStats(
         catalog=await _catalog_stats(db, cutoff),
         jobs=await _jobs_stats(db, now),
         activity_7d=await _activity_stats(db, cutoff),
         watchlist=await _watchlist_stats(db),
         sweep_tiers=await _sweep_tier_breakdown(db),
-        media_sweep_tiers=await _media_sweep_tier_breakdown(db),
+        media_sweep_tiers=media_sweep_tiers,
+        sweep_media_per_night=_media_per_night(media_sweep_tiers),
+        sweep_max_per_run=settings.JOBS_SWEEP_MAX_PER_RUN,
     )
 
 

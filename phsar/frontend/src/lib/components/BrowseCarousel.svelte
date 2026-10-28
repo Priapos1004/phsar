@@ -94,7 +94,7 @@
 <section bind:this={section} data-focus-uuid={carousel.key} class="space-y-2">
 	<!-- A return to the row centres the section and flashes this header alone: a ring
 	     round a whole carousel reads as a frame, not as a landing. -->
-	<header data-flash-target class="-mx-2 flex items-center gap-2 rounded-lg px-2">
+	<header data-flash-target class="-mx-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg px-2">
 		{#if guestBlocked}
 			<h2 class="text-lg font-semibold text-white">{carousel.title}</h2>
 		{:else}
@@ -148,7 +148,7 @@
 						</div>
 					</div>
 				{:else if items}
-					<ScrollRow class="gap-3 pt-1 pb-2">
+					<ScrollRow class="gap-3">
 						{#each items as item (item.uuid)}
 							{@const focusId = carouselFocus(carousel.key, item.uuid)}
 							<div class="snap-start shrink-0 w-32 sm:w-36" data-focus-uuid={focusId}>
@@ -180,7 +180,8 @@
 				{:else}
 					<!-- Outside ScrollRow: a skeleton is nothing to page through. Each slot is a tile's
 					     footprint — PosterCard's border, cover and a footer as tall as its two-line
-					     title and line — so the skeleton stands as tall as the tiles replacing it. -->
+					     title and line — and its `pt-1 pb-2` is ScrollRow's track padding, so the skeleton
+					     stands as tall as the tiles replacing it. -->
 					<div class="flex gap-3 overflow-hidden pt-1 pb-2">
 						{#each { length: 8 } as _}
 							<div class="shrink-0 w-32 sm:w-36 rounded-xl border border-transparent">
@@ -199,8 +200,10 @@
 </section>
 
 <style>
+	/* Vertical only: the height ease needs it, and sideways the row clips itself with room
+	   for a tile's ring (ScrollRow) — clipping here too would cut that ring at the end tiles. */
 	.row-body {
-		overflow: clip;
+		overflow-y: clip;
 	}
 	.row-body.ease {
 		transition: height 350ms ease;

@@ -103,7 +103,7 @@ def _compute_season_range(
 
 def most_frequent_first(counts: Counter[str]) -> list[str]:
     """Names by how many of an anime's media carry them, A→Z on a tie — the order that
-    puts a franchise's own studio or source ahead of the one a spin-off brought in.
+    puts a franchise's own studio, source or genre ahead of one a spin-off brought in.
     `Counter.most_common` would tie on insertion order, which is media load order.
     A→Z ignores case, as every name sort must (rules/backend.md)."""
     return sorted(counts, key=lambda name: (-counts[name], name.casefold()))
@@ -183,7 +183,7 @@ def _compute_anime_aggregates(media_list: list[Media]) -> AnimeAggregates:
 
     media_count = len(media_list)
     majority_threshold = media_count / 2
-    majority_genres = sorted((g for g, c in genre_counts.items() if c > majority_threshold), key=str.casefold)
+    majority_genres = [g for g in most_frequent_first(genre_counts) if genre_counts[g] > majority_threshold]
 
     airing_status, has_upcoming = _compute_airing_status(all_statuses)
     season_start, season_end = _compute_season_range(all_seasons)

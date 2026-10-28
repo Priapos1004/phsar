@@ -4,6 +4,7 @@ from datetime import UTC, date, datetime
 
 from sqlalchemy import (
     Boolean,
+    ColumnElement,
     Float,
     Text,
     and_,
@@ -18,7 +19,7 @@ from sqlalchemy import (
     select,
     tuple_,
 )
-from sqlalchemy.dialects.postgresql import aggregate_order_by
+from sqlalchemy.dialects.postgresql import ARRAY, aggregate_order_by, array
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
@@ -44,6 +45,8 @@ from app.models.studio import Studio
 from app.models.user_settings import NameLanguage
 from app.schemas.media_filter_schema import (
     CatalogueSearchFilters,
+    GenreFilter,
+    GenreGroup,
     MatchMode,
     MediaSearchFilters,
     SortDir,
@@ -222,16 +225,13 @@ def apply_media_filters(stmt, filters: MediaSearchFilters):
     The statement must already have Media accessible (via select or join)."""
 
     # Genre filter: the media's own genres, where the anime grain counts a majority
-    if filters.genre_name:
-        subquery = (
-            select(Media.id)
-            .join(Media.media_genre)
-            .join(MediaGenre.genre)
-            .where(Genre.name.in_(filters.genre_name))
-            .group_by(Media.id)
-            .having(func.count(distinct(Genre.id)) >= _needed(filters.genre_name, filters.genre_mode))
+    if filters.genres:
+        carried = (
+            select(MediaGenre.media_id, Genre.name)
+            .join(Genre, Genre.id == MediaGenre.genre_id)
+            .where(Genre.name.in_(_named_genres(filters.genres)))
         ).subquery()
-        stmt = stmt.where(Media.id.in_(select(subquery.c.id)))
+        stmt = stmt.where(_genre_match(Media.id, carried, filters.genres))
 
     if filters.studio_name:
         stmt = stmt.where(Media.id.in_(_carrying_studios(
@@ -278,7 +278,7 @@ def apply_media_filters(stmt, filters: MediaSearchFilters):
     return stmt
 
 
-def anime_genre_majority_relation(genre_names: list[str] | None = None):
+def anime_genre_majority_relation(genre_names: set[str] | None = None):
     """The `(anime_id, genre_name)` pairs where that genre is carried by a
     MAJORITY of the anime's media (`genre_count * 2 > total`) — a subquery.
 
@@ -286,7 +286,7 @@ def anime_genre_majority_relation(genre_names: list[str] | None = None):
     agreeing with itself: the anime-view genre dropdown offers exactly the genres
     that can pass (`filter_service._get_anime_majority_genres` projects
     `DISTINCT genre_name` from here), and the search filter tests membership
-    (`_anime_genre_majority_condition` below). Written twice, a threshold change
+    (`_genre_match` below). Written twice, a threshold change
     would silently offer genres in the dropdown that the filter then rejects —
     an empty result page with no explanation.
 
@@ -306,7 +306,7 @@ def anime_genre_majority_relation(genre_names: list[str] | None = None):
         Genre, Genre.id == MediaGenre.genre_id
     )
     if genre_names:
-        genre_counts = genre_counts.where(Genre.name.in_(set(genre_names)))
+        genre_counts = genre_counts.where(Genre.name.in_(genre_names))
     genre_counts_sq = genre_counts.group_by(Media.anime_id, Genre.name).subquery()
 
     media_totals = (
@@ -324,22 +324,44 @@ def anime_genre_majority_relation(genre_names: list[str] | None = None):
     ).subquery()
 
 
-def _anime_genre_majority_condition(genre_names: list[str], mode: MatchMode):
-    """Anime clearing the majority bar on every (`all`) or one (`any`) selected genre.
+_GENRE_NAMES = ARRAY(Text)
 
-    One non-correlated pass over `anime_genre_majority_relation`: count each
-    anime's surviving genres and require all N, or one. The alternative shape — one
-    correlated majority-subquery per genre — grows superlinearly, since each
-    added genre both adds a SubPlan and widens the set every existing SubPlan is
-    re-evaluated over, and this fires on ticking genre chips.
+
+def _named_genres(genres: GenreFilter) -> set[str]:
+    return {name for group in genres.groups for name in (*group.include, *group.exclude)}
+
+
+def _genre_match(key, carried, genres: GenreFilter):
+    """`key` among the rows whose genres satisfy `genres`, over `carried`: a subquery of
+    the `(key, genre name)` pairs a row carries among the genres the expression names.
+
+    One non-correlated pass: the pairs fold into one array per row, which every group
+    tests with array operators. The alternative shape — one correlated subquery per
+    genre — grows superlinearly, since each added genre both adds a SubPlan and widens
+    the set every existing SubPlan is re-evaluated over, and this fires on every edit
+    of the genre field. A row absent from `carried` carries none of the named genres:
+    it is outer-joined in as an empty array, which an exclusion keeps.
     """
-    majority = anime_genre_majority_relation(genre_names)
-    qualifying = (
-        select(majority.c.anime_id)
-        .group_by(majority.c.anime_id)
-        .having(func.count() >= _needed(genre_names, mode))
-    )
-    return Anime.id.in_(qualifying)
+    carried_key, carried_name = carried.c
+    held = (
+        select(carried_key.label("key"), cast(func.array_agg(carried_name), _GENRE_NAMES).label("names"))
+        .group_by(carried_key)
+    ).subquery()
+    names = func.coalesce(held.c.names, cast(array([]), _GENRE_NAMES), type_=_GENRE_NAMES)
+
+    def carries(listed: list[str], mode: MatchMode) -> ColumnElement[bool]:
+        return names.contains(listed) if mode == MatchMode.ALL else names.overlap(listed)
+
+    def satisfies(group: GenreGroup) -> ColumnElement[bool]:
+        parts = []
+        if group.include:
+            parts.append(carries(group.include, group.mode))
+        if group.exclude:
+            parts.append(~carries(group.exclude, group.exclude_mode))
+        return and_(*parts)
+
+    joined = (and_ if genres.mode == MatchMode.ALL else or_)(*(satisfies(group) for group in genres.groups))
+    return key.in_(select(key).outerjoin(held, held.c.key == key).where(joined))
 
 
 MAIN_STORY = Media.relation_type.in_(MAIN_STORY_RELATIONS)
@@ -379,7 +401,7 @@ def apply_anime_pre_filters(stmt, filters: CatalogueSearchFilters):
       a single studio.
     - Genre majority, which gets its own subquery precisely because it is NOT a
       same-media-row question — it's an aggregate over the anime's whole media
-      set (see `_anime_genre_majority_condition`).
+      set (see `_genre_match`).
 
     Range, age_rating and airing_status filters are excluded here; they use
     HAVING aggregations that mirror the anime card's derived display values.
@@ -400,8 +422,9 @@ def apply_anime_pre_filters(stmt, filters: CatalogueSearchFilters):
     if filters.studio_name or conditions:
         stmt = stmt.where(Anime.id.in_(matching))
 
-    if filters.genre_name:
-        stmt = stmt.where(_anime_genre_majority_condition(filters.genre_name, filters.genre_mode))
+    if filters.genres:
+        majority = anime_genre_majority_relation(_named_genres(filters.genres))
+        stmt = stmt.where(_genre_match(Anime.id, majority, filters.genres))
 
     if filters.top_percent is not None:
         stmt = stmt.where(Anime.id.in_(_top_percent_ids(filters.top_percent, per_anime=True)))

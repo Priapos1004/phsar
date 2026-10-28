@@ -38,9 +38,10 @@ describe('NavBar', () => {
 		expect(screen.getByText('Getting Started')).toBeInTheDocument();
 		expect(screen.getByText('Logout')).toBeInTheDocument();
 
-		// Click again to close
+		// Click again to close. bits-ui unmounts closed content a frame later (after any exit
+		// animation), so wait for it.
 		await fireEvent.click(screen.getByText('T'));
-		expect(screen.queryByText('User Settings')).not.toBeInTheDocument();
+		await vi.waitFor(() => expect(screen.queryByText('User Settings')).not.toBeInTheDocument());
 	});
 
 	it('shows Add to Library for guest users (the page itself disables the form)', async () => {

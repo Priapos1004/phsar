@@ -28,6 +28,7 @@
     import { pushToast } from '$lib/stores/toast';
     import { formatBytes, formatShortDateTime } from '$lib/utils/formatString';
     import { addOptimisticJob, backupSaved, bumpJobsRefresh, onBump } from '$lib/stores/jobs';
+    import * as cls from '$lib/styles/classes';
     import type { BackupListResponse, BackupMetadata, BackupSource } from '$lib/types/api';
 
     interface Props {
@@ -342,6 +343,7 @@
                  row. It comes from the response envelope (see the `load` comment) —
                  null ONLY when the server could not read it, which no backup can fix. -->
             <Tooltip
+                class={cls.tooltipHint}
                 text={dbRevision
                     ? `The database is at Alembic revision ${dbRevision}. A dump on a different revision would roll the schema back if restored.`
                     : 'The live schema revision couldn’t be read from the database, so no dump can be confirmed against it.'}
@@ -359,8 +361,11 @@
         {:else}
             <div class="space-y-3">
                 {#each sortedBackups as b (b.filename)}
-                    <div class="flex items-center gap-3 rounded-lg border px-4 py-3 {b.is_current ? 'border-blue-500/50 bg-blue-500/5' : 'bg-muted/30'}">
-                        <div class="flex-1 min-w-0 space-y-1">
+                    <!-- From sm the actions end the filename line, so the details below get the
+                         row's full width; below sm they take the last line, as beside a filename
+                         they'd leave it ~170px. The grid places them, so there is one copy. -->
+                    <div class="grid sm:grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 rounded-lg border px-4 py-3 {b.is_current ? 'border-blue-500/50 bg-blue-500/5' : 'bg-muted/30'}">
+                        <div class="min-w-0 space-y-1">
                             {#if editingFilename === b.filename}
                                 <div class="flex items-center gap-1.5">
                                     <Input
@@ -390,7 +395,7 @@
                                 </div>
                             {:else if b.name}
                                 <div class="flex items-center gap-2 flex-wrap">
-                                    <span class="text-sm font-semibold text-card-foreground break-all">{b.name}</span>
+                                    <span class="text-sm font-semibold text-card-foreground">{b.name}</span>
                                     <Badge class="bg-amber-500/15 text-amber-500">
                                         <Pin class="size-3 mr-1" />
                                         Pinned
@@ -398,7 +403,7 @@
                                 </div>
                             {/if}
                             <div class="flex items-center gap-2 flex-wrap">
-                                <code class="text-sm text-card-foreground break-all">{b.filename}</code>
+                                <code class="text-sm text-card-foreground">{b.filename}</code>
                                 {#if b.is_current}
                                     <Badge class="bg-blue-500/15 text-blue-400">
                                         <GitBranch class="size-3 mr-1" />
@@ -426,7 +431,9 @@
                                 {/if}
                                 <Badge class="bg-primary/10 text-primary">{SOURCE_LABELS[b.source]}</Badge>
                             </div>
-                            <div class="text-xs text-muted-foreground flex gap-3 flex-wrap">
+                        </div>
+                        <div class="min-w-0 space-y-1 sm:col-span-2">
+                            <div class="text-xs text-muted-foreground flex gap-x-3 gap-y-0.5 flex-wrap">
                                 <span>Created {formatShortDateTime(b.created_at)}</span>
                                 <span>{formatBytes(b.size_bytes)}</span>
                                 <!-- Sits with the other catalog facts rather than among the
@@ -438,16 +445,16 @@
                             </div>
                             {#if b.is_current && b.previous_state}
                                 <p class="text-xs text-muted-foreground">
-                                    Previous state saved as <code class="break-all">{b.previous_state}</code>
+                                    Previous state saved as <code>{b.previous_state}</code>
                                 </p>
                             {/if}
                             {#if b.source === 'pre_restore' && b.restored_to}
                                 <p class="text-xs text-muted-foreground">
-                                    Snapshot of the state before restoring <code class="break-all">{b.restored_to}</code>
+                                    Snapshot of the state before restoring <code>{b.restored_to}</code>
                                 </p>
                             {/if}
                         </div>
-                        <div class="shrink-0 flex gap-1">
+                        <div class="flex gap-1 justify-self-end sm:col-start-2 sm:row-start-1 sm:self-start sm:-mt-1.5">
                             <Tooltip text={b.name ? 'Rename' : 'Name backup to keep it'}>
                                 {#snippet trigger(props)}
                                     <Button
@@ -530,7 +537,7 @@
             <Dialog.Title class="text-destructive">Restore from backup</Dialog.Title>
             <Dialog.Description>
                 This will replace the current database with the contents of
-                <code class="break-all">{restoreFilename ?? ''}</code>. A pre-restore snapshot will be
+                <code>{restoreFilename ?? ''}</code>. A pre-restore snapshot will be
                 taken automatically. To confirm, type your admin username
                 (<strong>{currentUsername}</strong>) below.
             </Dialog.Description>

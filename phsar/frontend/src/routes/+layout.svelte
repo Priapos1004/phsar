@@ -28,6 +28,7 @@
     import '../app.css';
     import type { Snippet } from 'svelte';
     import type { UserSettings } from '$lib/types/api';
+    import * as cls from '$lib/styles/classes';
 
     let { children }: { children: Snippet } = $props();
 
@@ -35,6 +36,7 @@
     let signingOut = $state(false);
     let isAuthenticated = $state(false);
     let userRole = $state<string | null>(null);
+    let onAuthPage = $derived(isAuthPage(page.url.pathname));
     let username = $state<string | null>(null);
     let showExpiryDialog = $state(false);
 
@@ -85,17 +87,22 @@
             // minutes — only (re)fetch settings + spoiler visibility on a real
             // login / user switch (sub changed) or after a prior failed load,
             // not on every slide, to avoid redundant traffic + a theme flicker.
-            const needsUserLoad = decoded.sub !== username || get(userSettings) === null;
+            const signingIn = decoded.sub !== username;
+            const needsUserLoad = signingIn || get(userSettings) === null;
             // A real user switch (A → B) can happen without a null-token transition
             // (login page sets the new token directly), so clear per-user stores here
             // rather than only on logout — else B could inherit A's bookmarks if a
             // refresh is skipped (restricted B) or fails silently.
-            const isUserSwitch = username !== null && decoded.sub !== username;
+            const isUserSwitch = signingIn && username !== null;
             userRole = decoded.role;
             username = decoded.sub;
 
             if (needsUserLoad) {
               if (isUserSwitch) clearPerUserStores();
+              // A newly signed-in user's page waits for their loads, as a fresh load
+              // already does, so it renders once in their theme and art — not in the
+              // default ones first, downloading both pictures.
+              if (signingIn) loading = true;
               // Fetch settings + spoiler visibility + watchlist/tags in parallel to
               // avoid serial latency. A restricted user gets none of them: they can't
               // watchlist, and they are pinned to spoiler_level `off` and excluded
@@ -155,7 +162,7 @@
       if (!$userSettings) return;
       const themeKey = $userSettings.theme;
       const el = document.documentElement;
-      const toRemove = [...el.classList].filter(cls => cls.startsWith('theme-'));
+      const toRemove = [...el.classList].filter((name) => name.startsWith('theme-'));
       toRemove.forEach(cls => el.classList.remove(cls));
       if (themeKey && isValidTheme(themeKey)) {
         const cssClass = getThemeCssClass(themeKey);
@@ -204,11 +211,11 @@
       <!-- Idle-timeout warning sits above maintenance — a "you're about to be
            signed out" countdown is more urgent than a future-window notice.
            Only runs while authenticated and off the auth pages. -->
-      {#if isAuthenticated && !isAuthPage(page.url.pathname)}
+      {#if isAuthenticated && !onAuthPage}
         <SessionTimeoutBanner onExpire={() => (showExpiryDialog = true)} />
       {/if}
       <MaintenanceBanner />
-      {#if !isAuthPage(page.url.pathname)}
+      {#if !onAuthPage}
         <NavBar
           {isAuthenticated}
           {username}
@@ -218,11 +225,14 @@
       {/if}
     </div>
 
-    <main class="min-h-screen px-8 pt-4 pb-8">
+    <!-- No footer on an auth page: below the full-height gradient it would sit on the bare page. -->
+    <main class={onAuthPage ? cls.authScreen : `min-h-screen ${cls.mainGutter} pt-4 pb-8`}>
       {@render children()}
     </main>
 
-    <VersionFooter />
+    {#if !onAuthPage}
+      <VersionFooter />
+    {/if}
 
     <!-- Single global toast slot — the navbar JobBell fires completion toasts
          through it (pushToast), and /library/add routes its enqueue toast here

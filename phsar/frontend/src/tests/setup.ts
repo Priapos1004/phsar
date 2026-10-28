@@ -16,6 +16,14 @@ afterEach(async () => {
 	}
 });
 
+// jsdom has no matchMedia, and Svelte's `MediaQuery` calls it on construction. Nothing
+// matches, so a component that reads the width renders its phone form under test.
+if (typeof window.matchMedia === 'undefined') {
+	window.matchMedia = ((media: string) => ({
+		matches: false, media, addEventListener: () => {}, removeEventListener: () => {},
+	})) as unknown as typeof window.matchMedia;
+}
+
 // Polyfill Web Animations API for jsdom
 if (typeof Element.prototype.animate === 'undefined') {
 	Element.prototype.animate = () => ({ cancel: () => {}, finished: Promise.resolve() }) as any;

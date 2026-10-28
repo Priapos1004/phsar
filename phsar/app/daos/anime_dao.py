@@ -44,6 +44,8 @@ logger = logging.getLogger(__name__)
 # main media aired within this window. Older main-only franchises fall
 # back to the long-tail safety nets (tier 4, or tier 5 once aged out).
 SWEEP_RECENT_MAIN_YEARS = 5
+# ...and refreshes them on this cadence.
+SWEEP_WEEKLY_DAYS = 7
 
 # Long-tail border (v0.14.8). Media not airing / stabilizing / recent-main are
 # refreshed only on this safety net. Shared by the media-level selection atoms
@@ -124,7 +126,7 @@ def _media_sweep_atoms(mf_alias) -> _MediaSweepAtoms:
     last_checked = func.coalesce(mf_alias.last_checked_at, Media.created_at)
     stable = func.coalesce(mf_alias.stable_check_count, 0)
     now = func.now()
-    week_ago = now - text("interval '7 days'")
+    week_ago = now - text(f"interval '{SWEEP_WEEKLY_DAYS} days'")
     archival_cutoff = now - text(f"interval '{SWEEP_ARCHIVAL_AGE_YEARS} years'")
     archival = Media.aired_from < archival_cutoff
 
@@ -266,7 +268,7 @@ class AnimeDAO(MalIdDAO[Anime]):
         direct predicate on the media row + its MediaFreshness sidecar:
           1. This media is "Currently Airing" — always due.
           2. stable_check_count < 3 — burn the initial stability sampling.
-          3. Last checked > 7 days ago AND this media is a recent main
+          3. Last checked > SWEEP_WEEKLY_DAYS (7) ago AND this media is a recent main
              (relation_type=main, aired_from within SWEEP_RECENT_MAIN_YEARS).
           4. Last checked longer ago than this media's own long-tail window —
              SWEEP_LONG_TAIL_DAYS (90), or SWEEP_ARCHIVAL_DAYS (180) once it

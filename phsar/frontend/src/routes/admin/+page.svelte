@@ -2,6 +2,7 @@
 	import { onMount, getContext } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import * as cls from '$lib/styles/classes';
 	import BackupsCard from '$lib/components/BackupsCard.svelte';
 	import MergeCandidatesCard from '$lib/components/MergeCandidatesCard.svelte';
 	import SplitCandidatesCard from '$lib/components/SplitCandidatesCard.svelte';
@@ -38,7 +39,7 @@
 	<title>Admin — Phsar</title>
 </svelte:head>
 
-<div class="mx-auto max-w-3xl space-y-6">
+<div class="{cls.panelWidth} space-y-6">
 	<h1 class="text-2xl font-bold text-white">Admin</h1>
 
 	<TabNav tabs={TABS} {active} basePath="/admin" ariaLabel="Admin sections" />

@@ -3,6 +3,7 @@
 	import TabNav, { activeTab } from '$lib/components/TabNav.svelte';
 	import BrowsePageRows from '$lib/components/BrowsePageRows.svelte';
 	import DiscoverTab from '$lib/components/DiscoverTab.svelte';
+	import * as cls from '$lib/styles/classes';
 
 	const TABS = [
 		{ key: 'news', label: 'News' },
@@ -20,7 +21,7 @@
 
 <svelte:head><title>Browse — Phsar</title></svelte:head>
 
-<div class="mx-auto max-w-5xl space-y-6">
+<div class="{cls.pageWidth} space-y-6">
 	<h1 class="text-2xl font-bold text-white">Browse</h1>
 
 	<TabNav tabs={TABS} {active} basePath="/browse" ariaLabel="Browse sections" />

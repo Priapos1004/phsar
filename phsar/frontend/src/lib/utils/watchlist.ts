@@ -91,9 +91,9 @@ export const READY_BADGE: Record<ReadyStatus, ReadyBadge | undefined> = {
 };
 
 // The Status filter chips, selected-state styling included. Two of them describe the same
-// verdict a badge does, so they read their wording AND their tint off it rather than
-// restating either — a chip and the cards it admits must not explain or colour that
-// verdict differently.
+// verdict a badge does, so they read their label AND their tint off it rather than
+// restating either — a chip and the cards it admits must not name or colour that verdict
+// differently.
 //
 // A selected chip's fill is one of those fixed hues rather than `bg-primary`: a theme
 // token is whatever the active theme makes it, so under the Ocean theme a primary-filled
@@ -112,21 +112,29 @@ export const READY_FILTERS: (ReadyBadge & { key: ReadyFilterKey })[] = [
 	{ key: 'waiting', ...READY_BADGE.waiting! },
 ];
 
+// The Status ⓘ's key: the Ready chip, then every badge — Standalone included, which has no chip
+// and whose card badge sits in a link (rules/frontend.md, "Tooltips").
+export const READY_KEY: ReadyBadge[] = [
+	READY_FILTERS.find((f) => f.key === 'ready')!,
+	...Object.values(READY_BADGE).filter((b): b is ReadyBadge => b !== undefined),
+];
+
 // One teal ramped by weight, so a long anime is spottable without reading the number. Teal
 // because it collides with no `.theme-*` primary; not `scoreColor`'s ramp, which means
-// "how good" and tops out on the theme primary; not the priority accents `PRIORITY_ACCENT`
+// "how good"; not the priority accents `PRIORITY_ACCENT`
 // owns one chip group over.
 //
 // `fill` and `text` are the SAME shade per band — the card badge needs a background to sit
 // on artwork, the table column has none to fight. One line each because they must not
 // drift, and `tests/watchlist-stats` walks the pair.
 //
-// Labels are the bounds themselves rather than Short/Medium/Long: the chip is the only
-// place a threshold is stated to the user, and "Medium" would need a legend.
+// Labels are the bounds themselves rather than Short/Medium/Long, so a chip reads without
+// opening the filter bar's ⓘ. That ⓘ prints each `title` after its label, so a title
+// glosses the bound rather than restating it.
 export const WATCHTIME_FILTERS: { key: WatchtimeKey; label: string; fill: string; text: string; title: string }[] = [
-	{ key: 'short', label: '< 5h', fill: 'bg-teal-400 text-white', text: 'text-teal-400', title: 'Under 5 hours — about a 12-episode season or less' },
-	{ key: 'medium', label: '5–10h', fill: 'bg-teal-600 text-white', text: 'text-teal-600', title: 'Five to ten hours — one or two seasons' },
-	{ key: 'long', label: '> 10h', fill: 'bg-teal-800 text-white', text: 'text-teal-800', title: 'Over 10 hours — a long haul' },
+	{ key: 'short', label: '< 5h', fill: 'bg-teal-400 text-white', text: 'text-teal-400', title: 'About a 12-episode season or less' },
+	{ key: 'medium', label: '5–10h', fill: 'bg-teal-600 text-white', text: 'text-teal-600', title: 'One or two seasons' },
+	{ key: 'long', label: '> 10h', fill: 'bg-teal-800 text-white', text: 'text-teal-800', title: 'A long haul' },
 ];
 
 /** A band's two renderings, or the neutral pair when the runtime is unknown — N/A is

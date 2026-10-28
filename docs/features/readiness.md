@@ -68,9 +68,9 @@ and there is nothing to wait for.
 
 ## The verdict
 
-Let **W** be the user's watchlisted media for one anime **on the selected lists**, **F**
-the anime's whole main story — including media they never listed. W narrows with the Lists
-chips and F never does, which is what the scoping rule below turns on.
+Let **W** be the user's watchlisted media for one anime **on the lists shown** (USER_FLOWS
+§9.2), **F** the anime's whole main story — including media they never listed. W narrows
+with the Lists chips and F never does, which is what the scoping rule below turns on.
 
 **A — is there something to watch?**
 
@@ -136,9 +136,8 @@ rewatch stays visible, an announced season does not. A **hot** or **waiting** an
 keeps all of its entries, because there the question is *why*, and the airing or
 unaired entry is the answer.
 
-**The filter chips are a union, like the list and priority ones.** `standalone` rides
-under Ready rather than taking a chip of its own; `CHIP_OF` in `watchlistReady` is where
-that mapping lives.
+**`standalone` rides under the Ready chip** rather than taking a chip of its own; `CHIP_OF`
+in `watchlistReady` is where that mapping lives.
 
 **The Lists chips scope a verdict; the priority and watchtime chips cannot.** The verdict
 answers "can I start this, from what is on the lists I'm looking at?", on the same premise

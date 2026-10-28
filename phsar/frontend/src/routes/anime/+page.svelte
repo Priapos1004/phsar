@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { getContext } from 'svelte';
 	import { api, ApiError } from '$lib/api';
-	import { formatNumber, formatDuration, formatDecimalDigits, formatSeason, cleanDescription, airingStatusParts, formatEpisodeCount, isSeasonRange, resolveTitle, resolveSubtitles, decimalPlaces, roundScore, formatRelationType, formatMediaType } from '$lib/utils/formatString';
+	import { formatDuration, formatDecimalDigits, formatSeason, cleanDescription, airingStatusParts, formatEpisodeCount, isSeasonRange, resolveTitle, resolveSubtitles, decimalPlaces, roundScore, formatRelationType, formatMediaType } from '$lib/utils/formatString';
 	import { buildDetailHref, detailOrigin, searchBySource, searchByStudio } from '$lib/utils/navigation';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -19,7 +19,7 @@
 	import BackLink from '$lib/components/BackLink.svelte';
 	import SearchLinks from '$lib/components/SearchLinks.svelte';
 	import GenreBadges from '$lib/components/GenreBadges.svelte';
-	import ScorePercentile from '$lib/components/ScorePercentile.svelte';
+	import HeroScore from '$lib/components/HeroScore.svelte';
 	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
 	import Tooltip from '$lib/components/Tooltip.svelte';
 	import { refreshSpoilerVisibility } from '$lib/stores/spoilerVisibility';
@@ -373,7 +373,7 @@
 				<div class="absolute inset-0 bg-card/85"></div>
 			{/if}
 
-			<div class="relative flex flex-col md:flex-row gap-6 p-6">
+			<div class={cls.heroBody}>
 				<div class="shrink-0 flex flex-col items-center md:items-start">
 					{#if anime.cover_image && !coverFailed}
 						<img
@@ -458,23 +458,13 @@
 					</div>
 
 					{#if anime.avg_score !== null}
-						<div class="flex items-center gap-3">
-							<Tooltip
-								text="Average MyAnimeList community score across this anime's main entries — side stories and recaps are excluded — not from Phsar users."
-							>
-								<span class="flex items-center gap-1.5 bg-primary/10 rounded-full px-3 py-1.5">
-									<Star class="size-4 text-yellow-500" fill="currentColor" />
-									<span class="text-lg font-bold text-card-foreground">
-										{formatDecimalDigits(anime.avg_score, 2)}
-									</span>
-									<span class="text-muted-foreground">/ 10</span>
-								</span>
-							</Tooltip>
-							<span class="text-muted-foreground">
-								{formatNumber(anime.avg_scored_by)} ratings/media
-							</span>
-							<ScorePercentile topPercent={anime.score_top_percent} />
-						</div>
+						<HeroScore
+							score={anime.avg_score}
+							votes={anime.avg_scored_by}
+							votesLabel="ratings/media"
+							hint="Average MyAnimeList community score across this anime's main entries — side stories and recaps are excluded — not from Phsar users."
+							topPercent={anime.score_top_percent}
+						/>
 					{/if}
 
 					<div class="flex flex-wrap gap-2">
@@ -491,7 +481,7 @@
 
 					<GenreBadges genres={anime.genres} />
 
-					<div class="grid grid-cols-2 md:grid-cols-4 gap-3 pt-1">
+					<div class={cls.heroStats}>
 						{#if anime.total_episodes !== null}
 							<div class="flex items-center gap-2 text-card-foreground">
 								<Tv class="size-4 text-primary shrink-0" />
@@ -583,7 +573,7 @@
 
 				<!-- Floating action bar — slides in when items are selected -->
 				{#if selectMode}
-					<div class="flex items-center gap-3 mb-4 px-3 py-2.5 rounded-lg bg-primary/10 border border-primary/20">
+					<div class="flex flex-wrap items-center gap-x-3 gap-y-2 mb-4 px-3 py-2.5 rounded-lg bg-primary/10 border border-primary/20">
 						<button
 							class="flex items-center gap-1.5 text-sm font-medium text-card-foreground hover:text-primary transition"
 							onclick={toggleAll}
@@ -598,45 +588,48 @@
 							{selectedUuids.size} selected
 						</span>
 
-						<div class="flex-1"></div>
-
 						{#if someSelected}
-							<Button
-								size="sm"
-								disabled={isRestricted}
-								onclick={openBulkRateDialog}
-							>
-								<Star class="size-3.5 mr-1.5" />
-								Rate
-							</Button>
-							<Button
-								size="sm"
-								variant="secondary"
-								onclick={() => { showWatchlistDialog = true; }}
-							>
-								<BookmarkPlus class="size-3.5 mr-1.5" />
-								Watchlist
-							</Button>
-							{#if selectedWatchlistedCount > 0}
+							<!-- After the count, left-aligned: wrapped, they start at the left edge (CSS
+							     can't right-align only while they fit). On a phone they take a line of
+							     their own; scrolling one line sideways would hide them behind a swipe. -->
+							<div class="flex flex-wrap gap-2 max-sm:basis-full">
 								<Button
 									size="sm"
-									variant="destructive"
-									onclick={() => { watchlistRemoveError = ''; showWatchlistRemoveDialog = true; }}
+									disabled={isRestricted}
+									onclick={openBulkRateDialog}
 								>
-									<BookmarkX class="size-3.5 mr-1.5" />
-									Remove from Watchlist
+									<Star class="size-3.5 mr-1.5" />
+									Rate
 								</Button>
-							{/if}
-							{#if alreadyRatedCount > 0}
 								<Button
 									size="sm"
-									variant="destructive"
-									onclick={() => { bulkDeleteError = ''; bulkDeleteHistory = false; showDeleteDialog = true; }}
+									variant="secondary"
+									onclick={() => { showWatchlistDialog = true; }}
 								>
-									<Trash2 class="size-3.5 mr-1.5" />
-									Delete Ratings
+									<BookmarkPlus class="size-3.5 mr-1.5" />
+									Watchlist
 								</Button>
-							{/if}
+								{#if selectedWatchlistedCount > 0}
+									<Button
+										size="sm"
+										variant="destructive"
+										onclick={() => { watchlistRemoveError = ''; showWatchlistRemoveDialog = true; }}
+									>
+										<BookmarkX class="size-3.5 mr-1.5" />
+										Remove from Watchlist
+									</Button>
+								{/if}
+								{#if alreadyRatedCount > 0}
+									<Button
+										size="sm"
+										variant="destructive"
+										onclick={() => { bulkDeleteError = ''; bulkDeleteHistory = false; showDeleteDialog = true; }}
+									>
+										<Trash2 class="size-3.5 mr-1.5" />
+										Delete Ratings
+									</Button>
+								{/if}
+							</div>
 						{/if}
 					</div>
 				{/if}
@@ -694,7 +687,7 @@
 
 							<!-- Title + badges -->
 							<div class="flex-1 min-w-0">
-								<p class="font-medium text-card-foreground truncate">
+								<p class="font-medium text-card-foreground line-clamp-2">
 									{resolveTitle(item.title, item.name_eng, item.name_jap, nameLanguage)}
 								</p>
 								<div class="flex items-center gap-1.5 mt-0.5 flex-wrap">

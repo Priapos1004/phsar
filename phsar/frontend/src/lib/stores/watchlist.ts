@@ -34,7 +34,7 @@ export const watchlistAnimeColors = derived(watchlistTags, ($map) => {
 
 /** Re-fetch the watchlisted-media→tag set. Call after any watchlist add/remove. */
 export async function refreshWatchlist(): Promise<void> {
-	// Browse's rows over the watchlist, and every write already routes here.
+	// `browseRows`' personal entries, and every write already routes here.
 	dropPersonalRows();
 	try {
 		const res = await api.get<WatchlistMediaTags>('/watchlist/media-tags');

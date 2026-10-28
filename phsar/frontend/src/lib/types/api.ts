@@ -971,6 +971,8 @@ export interface AdminOverviewStats {
 	// The Overview SweepTiersCard toggles between them.
 	sweep_tiers: AdminSweepTierBreakdown;
 	media_sweep_tiers: AdminSweepTierBreakdown;
+	sweep_media_per_night: number;
+	sweep_max_per_run: number;
 }
 
 // Admin Jobs Log — paginated all-jobs view with flattened requested_by.

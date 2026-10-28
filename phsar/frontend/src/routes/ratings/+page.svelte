@@ -14,6 +14,7 @@
 	import Notice from '$lib/components/Notice.svelte';
 	import { loginUrlReturningTo } from '$lib/utils/returnTo';
 	import { Button } from '$lib/components/ui/button';
+	import * as cls from '$lib/styles/classes';
 
 	const TABS: { key: RatingsTabKey; label: string }[] = [
 		{ key: 'ratings', label: 'Ratings' },
@@ -66,7 +67,7 @@
 
 <svelte:head><title>Ratings — Phsar</title></svelte:head>
 
-<div class="mx-auto max-w-5xl space-y-6">
+<div class="{cls.pageWidth} space-y-6">
 	<h1 class="text-2xl font-bold text-white">Ratings</h1>
 
 	<TabNav tabs={TABS} {active} basePath="/ratings" ariaLabel="Ratings sections" />

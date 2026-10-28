@@ -3,14 +3,17 @@
 	import GrainToggle from '$lib/components/GrainToggle.svelte';
 	import Notice from '$lib/components/Notice.svelte';
 	import SortControl from '$lib/components/SortControl.svelte';
-	import { X } from 'lucide-svelte';
+	import InfoTip from '$lib/components/InfoTip.svelte';
+	import ExpressionText from '$lib/components/ExpressionText.svelte';
+	import { hugLines } from '$lib/utils/hugLines';
+	import { AlertTriangle, X } from 'lucide-svelte';
 	import { page } from '$app/state';
 	import {
 		GUEST_STRIPPED_NOTICE,
+		SEARCH_FETCH,
 		SEARCH_LIMIT,
 		carryAcrossView,
-		fetchAnimeSearchResults,
-		fetchSearchResults,
+		defaultSearch,
 		filterChips,
 		omitKeys,
 		stripForGuest,
@@ -20,11 +23,11 @@
 		type ViewType,
 	} from '$lib/utils/search';
 	import { getContext } from 'svelte';
+	import { searchRows, verifiedToken } from '$lib/stores/browseRows';
 	import { ensureRatingCoverage } from '$lib/stores/ratingCoverage';
-	import { navigateToSearch } from '$lib/utils/navigation';
+	import { navigateToSearch, searchHref } from '$lib/utils/navigation';
 	import { formatDuration, formatSeason, formatSeasonRange, resolveTitle } from '$lib/utils/formatString';
-	import { api } from '$lib/api';
-	import { userSettings } from '$lib/stores/userSettings';
+	import { defaultSearchView, userSettings } from '$lib/stores/userSettings';
 	import type { MediaSearchResult, AnimeSearchResult } from '$lib/types/api';
 	import * as cls from '$lib/styles/classes';
 	import MediaInfo from '$lib/components/MediaInfo.svelte';
@@ -44,7 +47,7 @@
 	let strippedForGuest = $state(false);
 	let filtersOpen = $state(false);
 
-	let defaultView = $derived($userSettings?.default_search_view ?? 'anime');
+	let defaultView = $derived($defaultSearchView);
 	let decodedParams = $state<MediaSearchFilters>({ query: '', search_type: 'title' });
 	// The view is the applied search's, so it has one writer: whatever loaded the search.
 	let viewType = $derived<ViewType>(decodedParams.view_type ?? defaultView);
@@ -57,10 +60,10 @@
 	let visibleCount = $state(PAGE_STEP);
 	let loadRequestId = 0;
 
-	let fetched = $derived(viewType === 'anime' ? animeResults : mediaResults);
-	let currentResults = $derived(fetched.slice(0, SEARCH_LIMIT));
+	let hasMore = $state(false);
+	let currentResults = $derived(viewType === 'anime' ? animeResults : mediaResults);
 	let countLabel = $derived(
-		`${fetched.length > SEARCH_LIMIT ? `${SEARCH_LIMIT}+` : currentResults.length} ${viewType === 'anime' ? 'anime' : 'media'}`,
+		`${hasMore ? `${SEARCH_LIMIT}+` : currentResults.length} ${viewType === 'anime' ? 'anime' : 'media'}`,
 	);
 
 	function showMore() {
@@ -91,7 +94,7 @@
 		mediaResults = [];
 		animeResults = [];
 		strippedForGuest = false;
-		const params: MediaSearchFilters = { query: '', search_type: 'title', view_type: view };
+		const params = defaultSearch(view);
 		decodedParams = params;
 		try {
 			await loadSearchResults(params, thisRequest);
@@ -108,7 +111,7 @@
 		animeResults = [];
 
 		try {
-			const parsed = await api.post<MediaSearchFilters>('/filters/verify-token', { token });
+			const parsed = await verifiedToken(token);
 			if (thisRequest !== loadRequestId) return;
 
 			const { params, stripped } = isGuest
@@ -125,25 +128,23 @@
 		}
 	}
 
-	async function loadSearchResults(params: MediaSearchFilters, requestId?: number) {
+	async function loadSearchResults(params: MediaSearchFilters, requestId: number) {
 		// Anime view only, and never for the one role that 403s on it — the media
 		// view reads `is_rated` off each hit and never touches the store, and the
 		// layout's rule is that a request known to fail shouldn't be sent.
 		// Unawaited: the tiers decorate cards, so they must not hold results back.
 		if (viewType === 'anime' && !isGuest) void ensureRatingCoverage();
 		try {
-			if (viewType === 'anime') {
-				const results = await fetchAnimeSearchResults(params, SEARCH_LIMIT + 1);
-				if (requestId !== undefined && requestId !== loadRequestId) return;
-				animeResults = results;
-			} else {
-				const results = await fetchSearchResults(params, SEARCH_LIMIT + 1);
-				if (requestId !== undefined && requestId !== loadRequestId) return;
-				mediaResults = results;
-			}
+			const results = await searchRows('search', params, viewType, SEARCH_FETCH);
+			if (requestId !== loadRequestId) return;
+			// The rows past the limit only say there are more (`SEARCH_FETCH`).
+			hasMore = results.length > SEARCH_LIMIT;
+			const shown = results.slice(0, SEARCH_LIMIT);
+			if (viewType === 'anime') animeResults = shown as AnimeSearchResult[];
+			else mediaResults = shown as MediaSearchResult[];
 			visibleCount = PAGE_STEP;
 		} catch (err) {
-			if (requestId !== undefined && requestId !== loadRequestId) return;
+			if (requestId !== loadRequestId) return;
 			error = err instanceof Error ? err.message : 'An unexpected error occurred';
 		}
 	}
@@ -211,13 +212,17 @@
 	{#if chips.length}
 		<div class="flex flex-wrap items-center justify-center gap-2 max-w-3xl mx-auto">
 			{#each chips as chip (chip.id)}
-				<span class="inline-flex items-center rounded-full border border-primary/40 bg-primary/15 text-sm text-primary">
-					<button type="button" class="pl-3 pr-1.5 py-1 hover:text-white" onclick={() => (filtersOpen = true)}>
-						{chip.label}
+				<span class="inline-flex items-center rounded-2xl border border-primary/40 bg-primary/15 text-sm text-primary">
+					<button type="button" class="pl-3 pr-1.5 py-1 hover:text-white" onclick={() => (filtersOpen = true)} {@attach hugLines}>
+						{#if chip.name}<span class="font-bold text-white/70">{chip.name}</span>{/if}
+						<ExpressionText parts={chip.parts} />
 					</button>
+					{#if chip.warning}
+						<InfoTip label="Why {chip.label} may not filter" text={chip.warning} icon={AlertTriangle} />
+					{/if}
 					<button
 						type="button"
-						class="pr-2 pl-0.5 py-1 hover:text-white"
+						class="relative pr-2 pl-0.5 py-1 hover:text-white {cls.hitArea}"
 						aria-label="Remove {chip.label}"
 						onclick={() => removeFilters(chip.keys)}
 					>
@@ -225,12 +230,16 @@
 					</button>
 				</span>
 			{/each}
+			<!-- On a line of its own: inline, it lands wherever the last chip leaves room, and
+			     pushes that chip off the centre the others keep. -->
 			{#if chips.length > 1}
-				<button
-					type="button"
-					class="px-2 py-1 text-sm text-white/60 hover:text-white"
-					onclick={() => removeFilters(chips.flatMap((c) => c.keys))}
-				>Clear all</button>
+				<div class="flex basis-full justify-center">
+					<button
+						type="button"
+						class="px-2 py-1 text-sm text-white/60 hover:text-white"
+						onclick={() => removeFilters(chips.flatMap((c) => c.keys))}
+					>Clear all</button>
+				</div>
 			{/if}
 		</div>
 	{/if}
@@ -300,7 +309,7 @@
 			{/if}
 		</div>
 
-		{#if currentResults.length > visibleCount || fetched.length > SEARCH_LIMIT}
+		{#if currentResults.length > visibleCount || hasMore}
 			<div class="mt-4 flex flex-wrap justify-center gap-3">
 				{#if currentResults.length > visibleCount}
 					<button
@@ -310,15 +319,16 @@
 						Show More
 					</button>
 				{/if}
-				<!-- Past the cap: the same search on a page without one. A fresh token, since the
-				     default search has none. -->
-				{#if fetched.length > SEARCH_LIMIT}
-					<button
-						onclick={() => navigateToSearch(decodedParams, '/search/all')}
+				<!-- Past the cap: the same search on a page without one, on this token or, for
+				     the default search, none, so the see-all reuses what this page loaded
+				     (`settledSearch`). -->
+				{#if hasMore}
+					<a
+						href={searchHref('/search/all', searchToken)}
 						class="px-4 py-2 rounded-full border border-primary/40 text-primary hover:bg-primary/15 transition"
 					>
 						See all results
-					</button>
+					</a>
 				{/if}
 			</div>
 		{/if}

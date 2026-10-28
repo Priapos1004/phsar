@@ -34,13 +34,13 @@ that carry an area's reasoning; it is not an inventory of the tree.
 |---|---|
 | Charts | `EChart.svelte` — the wrapper, and where the measurement and animation constraints are written down. Then `echarts.ts`, `$lib/utils/chartTheme.ts`, and `ratings/` for the charts themselves |
 | Share card | `ShareDialog.svelte` (the capture), `ShareCard.svelte` (the layout budget, and which CSS the rasterizer reproduces), `$lib/utils/shareContent.ts` (what a card may and may not say), `$lib/utils/shareImage.ts` |
-| Rating form | `RatingCard.svelte` (the watch-state guards), `ScoreDial`, `AttributeSelect`, `RatingNeighbors`, `BulkRateDialog` |
-| Attribute viz | `AttributeRadar` and `AttributeBadges` — the share card renders both unchanged, so each carries a prop existing only for that. `AttributeBadges` takes `media` on top. All three read `$lib/utils/ratingAttributes`, which owns the aggregation rules and the shared counting. `AttributeDetailBars` is page-only |
+| Rating form | `RatingCard.svelte` (the watch-state guards), `ScoreDial`, `AttributeSelect` in `AttributeGrid` (the layout the form and the bulk dialog share), `RatingNeighbors`, `BulkRateDialog` |
+| Attribute viz | `AttributeRadar` and `AttributeBadges` — the share card renders both unchanged, so each carries a prop existing only for that. `AttributeBadges` takes `media` on top. All three read `$lib/utils/ratingAttributes`, which owns the aggregation rules and the shared counting. `AttributeDetailBars` is page-only, coloured by `QUALITY_COLORS` in `$lib/utils/chartColors.ts` |
 | Watchlist | `WatchlistBookmarkIcon` (the mask gradient), `WatchlistDialog`, `BulkWatchlistDialog`, and `watchlist/` for the page's own tabs |
 | Admin | `admin/`, plus `BackupsCard`, `MergeCandidatesCard`, `SplitCandidatesCard`, `DeleteCandidatesCard`. The job-detail page argues its own case in `src/routes/admin/jobs/[uuid]/+page.svelte` |
 | Session + status | `SessionTimeoutBanner` with `$lib/utils/sessionTimeout.ts`, `MaintenanceBanner`, `JobBell`, `Toast`/`ToastHost` |
 | Browse | `BrowsePageRows.svelte` (a page's rows, Browse's and Home's), `BrowseCarousel.svelte` (one row: lazy load, the guest card, the return to a tile), `ScrollRow.svelte` (the paging arrows, shared by every sideways row), `PosterCard.svelte` (the tile, its coverage marking, and its line and badge from the list's sort), `SeeAllResults.svelte` (a see-all's grid and its return to a tile), `stores/browseRefinements.ts` (a see-all's toggles, the groups they form, and the widening rule), `DiscoverTab.svelte` (the wheel → mood flow and the mood's accent) with `DiscoverWheel.svelte` (the landing spin), `MoodReveal.svelte` (the cut from wheel to mood: its beats, and the swap under the flash) with `$lib/utils/moodReveal.ts` (the canvas signatures and `BEAT`), `MoodParticles.svelte` and `$lib/utils/discoverMoods.ts` (each mood's look, After Dark's `BAT` that the reveal and the banner both fly, the landing maths), and `sortLine` / `unusualAnnouncedType` in `$lib/utils/search.ts` |
-| Search | `SearchBar.svelte` (the staged filter sheet), `SortControl.svelte` (the sort menu the search and the see-alls share), `DoubleRangeSlider.svelte` (the step grid, and why it writes only on commit), and `$lib/utils/search.ts` for the filter tables, the sort options, the chips and the anime↔media carry |
+| Search | `SearchBar.svelte` (the staged filter sheet), `GenreFilterField.svelte` (the genre groups, and why it warns rather than simplifies), `SortControl.svelte` (the sort menu the search and the see-alls share), `DoubleRangeSlider.svelte` (the step grid, and why it writes only on commit), `ExpressionText.svelte` with `$lib/utils/hugLines.ts` (how a chip's text breaks, and why a wrapped chip needs measuring to fit its longest line), and `$lib/utils/search.ts` for the filter tables, the genre checks, the sort options, the chips and the anime↔media carry |
 
 Several of these render a verdict the backend owns — restorability, cycle membership,
 merge, split and delete candidates, sibling order — and must not recompute it; the relevant
@@ -72,12 +72,14 @@ deliberate absence of a global 401 handler, both argued at the throw site.
 
 - `lib/components/ui/` — shadcn-svelte primitives. Mostly untouched, but not
   off-limits: `ui/tooltip/tooltip-content.svelte` carries the app's themed surface, and
-  other primitives carry local edits too (e.g. theming, row styling, a slider key the
-  comment there explains, the select item's click-through guard). Diff against upstream
-  before re-syncing one from shadcn.
+  other primitives carry local edits too (e.g. the dialog's `grid-cols-1` column, theming,
+  row styling, a slider key the comment there explains, the select item's click-through
+  guard). Diff against upstream before re-syncing one from shadcn.
 - `app.css` — the theme system: `@property` registration, `@theme inline` `var()`
   indirection, the `.theme-*` override classes and the gradients. The file itself
   explains why the `:root` defaults cannot be left to `@property` alone.
+- `art/` (beside `src/`) — the theme pics' PNG originals, neither served nor in the image;
+  `themes.ts` carries the commands that convert them into `static/profile_pics/`.
 - `tests/` — Vitest with `@testing-library/svelte`. `setup.ts` mocks the SvelteKit
   modules and carries the one non-obvious hook, a flush for bits-ui's deferred
   body-scroll-lock restore.

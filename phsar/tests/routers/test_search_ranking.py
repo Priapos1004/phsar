@@ -61,13 +61,20 @@ from app.models.rating_search import RatingSearch
 from app.models.ratings import Ratings
 from app.models.studio import Studio
 from app.routers.search import MAX_SEARCH_LIMIT
+from app.schemas.media_filter_schema import MAX_GENRE_GROUPS
 from app.services import anime_search_service, media_search_service
 from app.services.media_search_service import media_title_texts
 from app.services.vector_embedding_service import (
     create_media_embedding,
     generate_query_embedding,
 )
-from tests._helpers import SentinelSeason, list_media, media_kwargs, rate_media
+from tests._helpers import (
+    SentinelSeason,
+    genres_param,
+    list_media,
+    media_kwargs,
+    rate_media,
+)
 
 ANIME_SEARCH_URL = "/search/anime"
 MEDIA_SEARCH_URL = "/search/media"
@@ -661,7 +668,10 @@ async def test_limit_cuts_the_sorted_list(client, user_auth_headers, score_set, 
 @_BOTH_VIEWS
 @pytest.mark.parametrize(("param", "value"), [
     ("limit", 0), ("limit", 1001), ("top_percent", 0), ("top_percent", 101), ("query", "x" * 201),
-])
+    ("genres", "Action"), ("genres", genres_param()), ("genres", genres_param(*[{"include": ["Action"]}] * 4)),
+    ("genres", genres_param({})), ("genres", genres_param({"include": [f"G{n}" for n in range(6)]})),
+    ("genres", genres_param({"include": ["Action"], "not": ["Drama"]})),
+], ids=lambda value: str(value)[:40])
 async def test_out_of_range_is_rejected(client, user_auth_headers, url, param, value):
     resp = await client.get(url, params={param: value}, headers=user_auth_headers)
     assert resp.status_code == 422
@@ -945,6 +955,16 @@ def test_a_search_see_all_asks_for_the_whole_search():
     assert int(match.group(1)) == MAX_SEARCH_LIMIT
 
 
+_CLIENT_GENRE_GROUPS = re.compile(r"^export const MAX_GENRE_GROUPS = (\d+);$", re.M)
+
+
+def test_the_sheet_offers_the_genre_groups_the_search_takes():
+    """A group the sheet lets the user add past the cap would fail the whole search."""
+    match = _CLIENT_GENRE_GROUPS.search(CLIENT_SEARCH.read_text())
+    assert match, f"no MAX_GENRE_GROUPS line in {CLIENT_SEARCH}"
+    assert int(match.group(1)) == MAX_GENRE_GROUPS
+
+
 # ---------------------------------------------------------------------------
 # What a row is sorted by, carried for the card
 # ---------------------------------------------------------------------------
@@ -1222,34 +1242,55 @@ async def test_top_percent_keeps_exactly_the_badges_it_names(client, user_auth_h
         )
 
 
-_GENRE_A, _GENRE_B = "Gmode Genre A", "Gmode Genre B"
-_GENRE_FIXTURE = {"Gmode Both": [_GENRE_A, _GENRE_B], "Gmode Only A": [_GENRE_A], "Gmode Only B": [_GENRE_B], "Gmode Neither": []}
+_GENRE_A, _GENRE_B, _GENRE_C = "Gmode Genre A", "Gmode Genre B", "Gmode Genre C"
+_GENRE_FIXTURE = {
+    "Gmode Both": [_GENRE_A, _GENRE_B],
+    "Gmode Only A": [_GENRE_A],
+    "Gmode Only B": [_GENRE_B],
+    "Gmode A and C": [_GENRE_A, _GENRE_C],
+    "Gmode Neither": [],
+}
 
 
 @_BOTH_VIEWS
-@pytest.mark.parametrize(("params", "expected"), [
-    ({"genre_mode": "any"}, {"Gmode Both", "Gmode Only A", "Gmode Only B"}),
-    ({"genre_mode": "all"}, {"Gmode Both"}),
-    ({}, {"Gmode Both"}),
-], ids=["any", "all", "default_all"])
-async def test_genre_mode_needs_one_or_every_selected_genre(
-    client, user_auth_headers, db_session, url, params, expected,
+@pytest.mark.parametrize(("genres", "expected"), [
+    (genres_param({"mode": "any", "include": [_GENRE_A, _GENRE_B]}),
+     {"Gmode Both", "Gmode Only A", "Gmode Only B", "Gmode A and C"}),
+    (genres_param({"mode": "all", "include": [_GENRE_A, _GENRE_B]}), {"Gmode Both"}),
+    (genres_param({"include": [_GENRE_A, _GENRE_B]}), {"Gmode Both"}),
+    # Neither carries no genre at all, so only the outer join keeps it.
+    (genres_param({"exclude": [_GENRE_C]}), {"Gmode Both", "Gmode Only A", "Gmode Only B", "Gmode Neither"}),
+    (genres_param({"include": [_GENRE_A], "exclude": [_GENRE_C]}), {"Gmode Both", "Gmode Only A"}),
+    (genres_param({"include": [_GENRE_A], "exclude": [_GENRE_B, _GENRE_C]}), {"Gmode Only A"}),
+    # Not both: only a row carrying B and C together goes, and none here does.
+    (genres_param({"include": [_GENRE_A], "exclude_mode": "all", "exclude": [_GENRE_B, _GENRE_C]}),
+     {"Gmode Both", "Gmode Only A", "Gmode A and C"}),
+    (genres_param({"include": [_GENRE_A, _GENRE_B]}, {"include": [_GENRE_C]}, mode="any"),
+     {"Gmode Both", "Gmode A and C"}),
+    # A and C reaches through the first group: the second's exclusion stays in its group.
+    (genres_param({"include": [_GENRE_C]}, {"include": [_GENRE_A], "exclude": [_GENRE_C]}, mode="any"),
+     {"Gmode A and C", "Gmode Both", "Gmode Only A"}),
+    (genres_param({"mode": "any", "include": [_GENRE_A, _GENRE_B]}, {"exclude": [_GENRE_C]}),
+     {"Gmode Both", "Gmode Only A", "Gmode Only B"}),
+], ids=["any", "all", "default_all", "without_only", "with_and_without", "without_any", "without_all", "groups_any",
+        "without_stays_in_its_group", "groups_all"])
+async def test_genre_groups_match_the_expression(
+    client, user_auth_headers, db_session, url, genres, expected,
 ):
     """One media per anime, so each genre it carries is its anime's majority."""
-    genres = {name: Genre(name=name, genre_type=GenreType.Genres, description="mode test") for name in (_GENRE_A, _GENRE_B)}
-    db_session.add_all(genres.values())
+    rows = {name: Genre(name=name, genre_type=GenreType.Genres, description="mode test")
+            for name in (_GENRE_A, _GENRE_B, _GENRE_C)}
+    db_session.add_all(rows.values())
     await db_session.flush()
     for offset, title in enumerate(_GENRE_FIXTURE):
         await _make_anime(db_session, mal_id=87721 + offset, title=title)
     media_ids = await _ids(db_session, Media, _GENRE_FIXTURE)
     db_session.add_all(
-        MediaGenre(media_id=media_ids[title], genre_id=genres[name].id)
+        MediaGenre(media_id=media_ids[title], genre_id=rows[name].id)
         for title, names in _GENRE_FIXTURE.items() for name in names
     )
     await db_session.flush()
-    await _ordered_fixture_titles(
-        client, user_auth_headers, url=url, expect=expected, genre_name=[_GENRE_A, _GENRE_B], **params,
-    )
+    await _ordered_fixture_titles(client, user_auth_headers, url=url, expect=expected, genres=genres)
 
 
 _STUDIO_X, _STUDIO_Y = "Smode Studio X", "Smode Studio Y"

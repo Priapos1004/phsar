@@ -9,14 +9,14 @@ logger = logging.getLogger(__name__)
 
 VALID_FILTER_PAYLOAD = {
     "query": "spy",
-    "genre_name": ["Action", "Comedy"],
+    "genres": {"groups": [{"include": ["Action", "Comedy"]}]},
     "anime_season": ["Winter 2022"],
     "media_type": ["TV"]
 }
 
 # Optional, so a token minted without them verifies to their defaults.
 OPTIONAL_FILTERS = {
-    "top_percent": 20, "genre_mode": "any", "studio_mode": "all", "upcoming_main": True,
+    "top_percent": 20, "studio_mode": "all", "upcoming_main": True,
     "rated": ["in_progress", "main"], "watchlisted": False, "sort": "your_rating", "sort_dir": "asc",
 }
 
@@ -25,12 +25,12 @@ TOO_LONG_FILTER_PAYLOAD = {
         "In this anime, a group of genetically enhanced teenagers engage in a philosophical battle against "
         "a corrupt government while navigating themes of identity, memory and free will."
     ),
-    "genre_name": [
+    "genres": {"groups": [{"include": [
         "Magical Sex Shift",
         "High Stakes Game",
         "Love Status Quo",
         "Performing Arts",
-        "Adult Cast"],
+        "Adult Cast"]}]},
     "anime_season": [
         "Winter 2022",
         "Spring 2022",
@@ -67,7 +67,7 @@ TOO_LONG_FILTER_PAYLOAD = {
 
 TOO_MANY_ELEMENTS_FILTER_PAYLOAD = {
     "query": "spy",
-    "genre_name": ["Action", "Comedy", "Drama", "Fantasy", "Horror", "Mystery", "Romance", "Sci-Fi"],
+    "studio_name": ["Bones", "MAPPA", "Madhouse", "Sunrise", "Trigger", "Wit", "Shaft", "Kyoto"],
     "anime_season": ["Winter 2022"],
     "media_type": ["TV"]
 }
@@ -148,7 +148,7 @@ async def test_create_and_verify_token_as_admin(client, admin_auth_headers):
     assert verify_resp.status_code == 200, f"Admin verify: Expected 200, got {verify_resp.status_code}"
     data = verify_resp.json()
     assert data["query"] == "spy"
-    assert "Action" in data["genre_name"]
+    assert "Action" in data["genres"]["groups"][0]["include"]
 
 
 async def _round_trip(client, headers, payload: dict) -> dict:
@@ -170,9 +170,34 @@ async def test_token_without_the_optional_filters_reads_their_defaults(client, u
     """An earlier link still opens, and searches as it did."""
     data = await _round_trip(client, user_auth_headers, VALID_FILTER_PAYLOAD)
     assert {key: data[key] for key in OPTIONAL_FILTERS} == {
-        "top_percent": None, "genre_mode": "all", "studio_mode": "any", "upcoming_main": False,
+        "top_percent": None, "studio_mode": "any", "upcoming_main": False,
         "rated": None, "watchlisted": None, "sort": None, "sort_dir": None,
     }
+
+
+@pytest.mark.parametrize(("legacy", "genres"), [
+    ({"genre_name": ["Action", "Comedy"], "genre_mode": "any"},
+     {"mode": "any", "groups": [{"mode": "any", "include": ["Action", "Comedy"], "exclude_mode": "any", "exclude": []}]}),
+    ({"genre_name": ["Action"]},
+     {"mode": "any", "groups": [{"mode": "all", "include": ["Action"], "exclude_mode": "any", "exclude": []}]}),
+    ({"genre_mode": "any"}, None),
+], ids=["names_and_mode", "names_alone", "mode_alone"])
+async def test_a_flat_genre_token_reads_as_one_group(client, user_auth_headers, legacy, genres):
+    """A link carrying the flat genre pair still filters by its genres, not by none."""
+    token = create_url_token({"query": "spy", **legacy})
+    resp = await client.post("/filters/verify-token", json={"token": token}, headers=user_auth_headers)
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["genres"] == genres
+    assert "genre_name" not in data and "genre_mode" not in data
+
+
+async def test_token_rejects_a_genre_list_over_the_cap(client, user_auth_headers):
+    genres = {"groups": [{"include": ["Action", "Comedy", "Drama", "Fantasy", "Horror", "Mystery"]}]}
+    resp = await client.post(
+        "/filters/create-token", json={**VALID_FILTER_PAYLOAD, "genres": genres}, headers=user_auth_headers,
+    )
+    assert resp.status_code == 422
 
 
 @pytest.mark.parametrize("top_percent", [0, 101])

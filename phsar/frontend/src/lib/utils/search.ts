@@ -1,5 +1,5 @@
 import { api } from '$lib/api';
-import { WATCH_STATUS_OPTIONS, type AnimeSearchResult, type MediaSearchResult } from '$lib/types/api';
+import { WATCH_STATUS_OPTIONS, type AnimeSearchResult, type FilterOptions, type MediaSearchResult } from '$lib/types/api';
 import {
 	formatDecimalDigits,
 	formatDurationCompact,
@@ -13,11 +13,32 @@ import {
 export type ViewType = 'anime' | 'media';
 export type SearchType = 'title' | 'description' | 'rating_notes';
 export type MatchMode = 'any' | 'all';
+/** An Any/All toggle's options: the sheet's lists and genre groups. */
+export const MATCH_MODES = [{ value: 'any' as const, label: 'Any' }, { value: 'all' as const, label: 'All' }];
 export type RatedState = 'none' | 'in_progress' | 'on_hold' | 'dropped' | 'main' | 'all' | 'completed';
 export type SortKey =
 	| 'relevance' | 'top_rated' | 'score' | 'popularity' | 'added' | 'release' | 'aired' | 'title' | 'random'
 	| 'your_rating' | 'announced';
 export type SortDir = 'asc' | 'desc';
+
+/** `GenreGroup` in media_filter_schema.py. */
+export interface GenreGroup {
+	mode: MatchMode;
+	include: string[];
+	exclude_mode: MatchMode;
+	exclude: string[];
+}
+
+/** Genre groups joined by `mode` (`GenreFilter` in media_filter_schema.py, which says why
+ * one level of groups is enough). */
+export interface GenreFilter {
+	mode: MatchMode;
+	groups: GenreGroup[];
+}
+
+/** The backend's cap on groups. One line, because
+ * `test_the_sheet_offers_the_genre_groups_the_search_takes` reads it. */
+export const MAX_GENRE_GROUPS = 3;
 
 /** The search's parameters, as the token carries them. A token verifies to every field,
  * unset ones as null or their default, so an optional field may be null as well as absent. */
@@ -32,11 +53,10 @@ export interface MediaSearchFilters {
 	age_rating?: string[] | null;
 	airing_status?: string[] | null;
 	anime_season?: string[] | null;
-	genre_name?: string[] | null;
 	studio_name?: string[] | null;
 	original_source?: string[] | null;
-	genre_mode?: MatchMode;
 	studio_mode?: MatchMode;
+	genres?: GenreFilter | null;
 
 	// Range filters
 	score_min?: number | null;
@@ -65,9 +85,29 @@ export interface MediaSearchFilters {
  * `test_the_top_steps_are_the_search_sheets` reads it. */
 export const TOP_PRESETS = [5, 10, 20, 50, 75];
 
-/** How many results a search shows. One more is requested, so a full page can say "50+"
- * rather than a count that would be a guess. */
+/** How many results a search shows. More are requested (`SEARCH_FETCH`), so a full page can
+ * say "50+" rather than a count that would be a guess. */
 export const SEARCH_LIMIT = 50;
+
+/** The search with nothing typed or applied, which `/search` and its see-all run without a
+ * token. Built here alone, so every page running it keys it alike and a see-all finds the
+ * search's rows. */
+export const defaultSearch = (view: ViewType): MediaSearchFilters => ({ query: '', search_type: 'title', view_type: view });
+
+/** Whether `params` asks for nothing past `defaultSearch(view)`, so it runs as the default
+ * search, without a token. Compared by effect: a filter left at its default shows no chip
+ * (`filterChips`), and an order the default search takes anyway is its own (`sameOrder`). */
+export function isDefaultSearch(params: MediaSearchFilters, view: ViewType): boolean {
+	return !params.query?.trim() && (params.search_type ?? 'title') === 'title' && (params.view_type ?? view) === view
+		&& sameOrder(params, defaultSearch(view)) && !filterChips(params, view).length;
+}
+
+/** A see-all's "Show More" step: a whole number of rows at `SeeAllResults`' 3–6 columns. */
+export const SEE_ALL_STEP = 60;
+
+/** What a search asks for: past what it shows, its see-all's first step and one more, so a
+ * see-all opened from it paints that step from the rows in hand and knows if more follow. */
+export const SEARCH_FETCH = Math.max(SEARCH_LIMIT, SEE_ALL_STEP) + 1;
 
 /** The most a search returns, and so what a search's see-all asks for. One line, because
  * `test_a_search_see_all_asks_for_the_whole_search` reads it against `MAX_SEARCH_LIMIT`. */
@@ -84,17 +124,20 @@ export function isAnimeResult(row: AnimeSearchResult | MediaSearchResult): row i
 }
 
 const LIST_FILTER_KEYS = [
-	'airing_status', 'anime_season', 'genre_name', 'studio_name', 'original_source',
+	'airing_status', 'anime_season', 'studio_name', 'original_source',
 	'media_type', 'relation_type', 'age_rating',
 ] as const;
 export type ListFilterKey = (typeof LIST_FILTER_KEYS)[number];
-type ModeKey = 'genre_mode' | 'studio_mode';
+type ModeKey = 'studio_mode';
 
 export interface ListFilter {
 	label: string;
 	/** A list with an any/all toggle names its mode param; every other list matches any of its values. */
 	mode?: ModeKey;
 	mediaOnly?: boolean;
+	/** Every media carries one of its values. Unset, a list can be blank, which no option
+	 * offers, so every option chosen still drops the media with none: the safe side for a new list. */
+	alwaysSet?: boolean;
 	/** Display label for a raw value, which stays what the backend receives. */
 	format?: (value: string) => string;
 }
@@ -102,27 +145,25 @@ export interface ListFilter {
 /** Every list filter, once: the sheet and the chips both read it, so a list's name, its
  * match mode and how its values display can't differ between them. */
 export const LIST_FILTERS: Record<ListFilterKey, ListFilter> = {
-	airing_status: { label: 'Airing status' },
+	airing_status: { label: 'Airing status', alwaysSet: true },
 	anime_season: { label: 'Season' },
-	genre_name: { label: 'Genres', mode: 'genre_mode' },
 	studio_name: { label: 'Studios', mode: 'studio_mode' },
 	original_source: { label: 'Source' },
-	media_type: { label: 'Media type' },
-	relation_type: { label: 'Relation type', mediaOnly: true, format: formatRelationType },
+	media_type: { label: 'Media type', alwaysSet: true },
+	relation_type: { label: 'Relation type', mediaOnly: true, alwaysSet: true, format: formatRelationType },
 	age_rating: { label: 'Age rating' },
 };
 
-/** The backend's default match mode per list. */
-export const DEFAULT_MODE = { genre_mode: 'all', studio_mode: 'any' } as const satisfies Record<ModeKey, MatchMode>;
-
-// Every non-empty value goes out as a query param, a list as repeated keys. Null and
-// absent stay out, so a verified token's unset fields fall back to the endpoint's
-// defaults; `watchlisted=false` is a value and goes.
+// Every non-empty value goes out as a query param, a list as repeated keys and an object
+// (the genre groups) as JSON. Null and absent stay out, so a verified token's unset fields
+// fall back to the endpoint's defaults; `watchlisted=false` is a value and goes.
 function buildSearchParams(params: MediaSearchFilters, limit?: number): URLSearchParams {
 	const searchParams = new URLSearchParams();
 	for (const [key, value] of Object.entries(params)) {
 		if (value === null || value === undefined || value === '') continue;
-		for (const v of Array.isArray(value) ? value : [value]) searchParams.append(key, String(v));
+		for (const v of Array.isArray(value) ? value : [value]) {
+			searchParams.append(key, typeof v === 'object' ? JSON.stringify(v) : String(v));
+		}
 	}
 	if (limit !== undefined) searchParams.set('limit', String(limit));
 	return searchParams;
@@ -206,6 +247,14 @@ export function effectiveSort(params: MediaSearchFilters): { sort: SortKey; opti
 	return { sort, option, dir: dir ?? (ASCENDING_SORTS.includes(sort) ? 'asc' : 'desc') };
 }
 
+/** Whether two searches list in the same order, compared by effect: a sort chosen by hand
+ * that a search takes anyway is no other order. */
+export function sameOrder(a: MediaSearchFilters, b: MediaSearchFilters): boolean {
+	const first = effectiveSort(a);
+	const second = effectiveSort(b);
+	return first.sort === second.sort && first.dir === second.dir;
+}
+
 /** The one season a search is pinned to, which a browse row names in a pill. */
 export function pinnedSeason(params: MediaSearchFilters): string | null {
 	return params.anime_season?.length === 1 ? params.anime_season[0] : null;
@@ -221,7 +270,8 @@ export function sortLine(
 		case 'top_rated':
 			return row.score_top_percent != null ? `Top ${row.score_top_percent}%` : null;
 		case 'score':
-			return score != null ? `⭐ ${score}` : null;
+			// The number only: the tile draws its own star in front.
+			return score != null ? `${score}` : null;
 		case 'popularity':
 			return `${formatNumber(votes)} votes`;
 		case 'added':
@@ -275,14 +325,172 @@ export const RATED_STATES: Record<ViewType, { value: RatedState; label: string }
 	media: [{ value: 'none', label: 'Unrated' }, ...WATCH_STATUS_OPTIONS],
 };
 
-/** Every state chosen filters nothing, so it goes out as no filter — which also keeps the
- * anime grain's list under the token's list cap (`MAX_ITEMS`). */
-export function normalizeRated(params: MediaSearchFilters, view: ViewType): MediaSearchFilters {
-	const rated = params.rated ?? [];
-	return rated.length && RATED_STATES[view].every((s) => rated.includes(s.value))
-		? { ...params, rated: undefined }
-		: params;
+/** How a list matches: its any/all param, else any — the backend's default, and how
+ * lists without a toggle match. */
+export function listMode(params: MediaSearchFilters, key: ListFilterKey): MatchMode {
+	const modeKey = LIST_FILTERS[key].mode;
+	return (modeKey && params[modeKey]) || 'any';
 }
+
+/** Names as a chip reads them, each `whole` with the "or" or "&" before it, so a line
+ * starts on that joiner as it does on a group's AND / OR. */
+const nameTerms = (names: readonly string[], mode: MatchMode): Term[] => names.flatMap((name, at) =>
+	at ? [{ text: ' ' }, { text: `${mode === 'all' ? '&' : 'or'} ${name}`, whole: true }] : [{ text: name, whole: true }]);
+
+const coversAll = (chosen: readonly string[] | null | undefined, all: readonly string[] = []) =>
+	all.length > 0 && all.every((option) => chosen?.includes(option));
+
+/** A selection of everything filters nothing, so it goes out as no filter: every rated
+ * state — which also keeps the anime grain's list under the token's list cap
+ * (`MAX_ITEMS`) — or every option of a list every media has a value in. A list with an
+ * any/all mode is never that, since a media carries several of its values or none, so a
+ * mode never reaches this. A genre group with nothing picked goes, and nothing else of the
+ * genres (why: `GenreFilterField`). */
+export function normalizeFilters(
+	params: MediaSearchFilters, view: ViewType, offered: Partial<Pick<FilterOptions, ListFilterKey>>,
+): MediaSearchFilters {
+	const out = { ...params };
+	if (coversAll(out.rated, RATED_STATES[view].map((s) => s.value))) out.rated = undefined;
+	for (const key of LIST_FILTER_KEYS) {
+		if (LIST_FILTERS[key].alwaysSet && coversAll(out[key], offered[key])) out[key] = undefined;
+	}
+	const groups = out.genres ? filledGroups(out.genres) : [];
+	out.genres = groups.length ? { ...out.genres!, groups } : undefined;
+	return out;
+}
+
+// ---------------------------------------------------------------------------
+// Genre groups
+// ---------------------------------------------------------------------------
+
+export const isEmptyGroup = (group: GenreGroup) => !group.include.length && !group.exclude.length;
+const filledGroups = (genres: GenreFilter) => genres.groups.filter((g) => !isEmptyGroup(g));
+
+type Has = (genre: string) => boolean;
+
+/** Whether a row carries any or all of `names` — none carries any of an empty list. */
+const carries = (names: string[], mode: MatchMode, has: Has) =>
+	names.length > 0 && (mode === 'all' ? names.every(has) : names.some(has));
+
+const groupPasses = (g: GenreGroup, has: Has) =>
+	(!g.include.length || carries(g.include, g.mode, has)) && !carries(g.exclude, g.exclude_mode, has);
+
+const joined = (mode: MatchMode, groups: GenreGroup[], has: Has) =>
+	mode === 'all' ? groups.every((g) => groupPasses(g, has)) : groups.some((g) => groupPasses(g, has));
+
+/** Whether a row carrying the genres `has` passes — the backend's `_genre_match`, row by row. */
+export const matchesGenres = (genres: GenreFilter, has: Has) => joined(genres.mode, genres.groups, has);
+
+// Past this many genres named both ways a check would try over 65k settings, so it is
+// skipped. No check reaches it at the group and list caps; it guards a raised cap, where
+// a warning would then be missing but never wrong.
+const MAX_TRIED = 16;
+
+/** Whether some set of genres makes `holds` true. It is exact because `holds` is built
+ * from groups, which only ever gain from a genre they include and lose from one they
+ * exclude: the genres in `rising` alone are best carried, those in `falling` alone best
+ * not, and only the genres in both need each setting tried. */
+function satisfiable(holds: (has: Has) => boolean, rising: Set<string>, falling: Set<string>): boolean {
+	const mixed = [...rising].filter((genre) => falling.has(genre));
+	if (mixed.length > MAX_TRIED) return true;
+	const bit = new Map(mixed.map((genre, at) => [genre, 1 << at]));
+	for (let bits = 0; bits < 2 ** mixed.length; bits++) {
+		const has = (genre: string) => {
+			const flag = bit.get(genre);
+			return flag === undefined ? rising.has(genre) : (bits & flag) !== 0;
+		};
+		if (holds(has)) return true;
+	}
+	return false;
+}
+
+const included = (groups: GenreGroup[]) => new Set(groups.flatMap((g) => g.include));
+const excluded = (groups: GenreGroup[]) => new Set(groups.flatMap((g) => g.exclude));
+const union = (a: Set<string>, b: Set<string>) => new Set([...a, ...b]);
+
+/** What the user built but may not mean, as opposed to a combination no anime happens to
+ * carry yet, which may come:
+ * - the whole can never match (a contradiction: "Drama" and "without Drama"), or always
+ *   does (a tautology: "Drama" or "without Drama");
+ * - else the groups that change nothing (`idle`, indexes into `genres.groups`): the search
+ *   matches the same anime without them. Taken in order, each against the groups not
+ *   already idle, so of two identical groups only the first is, and all of them can go
+ *   together. */
+export function checkGenres(genres: GenreFilter): { warning: string | null; idle: number[] } {
+	const groups = filledGroups(genres);
+	if (!groups.length) return { warning: null, idle: [] };
+	const up = included(groups);
+	const down = excluded(groups);
+	if (!satisfiable((has) => joined(genres.mode, groups, has), up, down)) {
+		return { warning: 'No anime can match this: a genre is both required and excluded.', idle: [] };
+	}
+	if (!satisfiable((has) => !joined(genres.mode, groups, has), down, up)) {
+		return { warning: 'Every anime matches this, so it filters nothing.', idle: [] };
+	}
+
+	let kept = groups;
+	const idle: number[] = [];
+	for (const group of groups) {
+		const others = kept.filter((g) => g !== group);
+		if (!others.length) continue;
+		// Under all, a group changes nothing when it matches all the others do; under any,
+		// when the others match all it does.
+		const [narrow, wide] = genres.mode === 'all' ? [others, [group]] : [[group], others];
+		const escapes = satisfiable(
+			(has) => joined('all', narrow, has) && !joined(genres.mode, wide, has),
+			union(included(narrow), excluded(wide)),
+			union(excluded(narrow), included(wide)),
+		);
+		if (!escapes) {
+			kept = others;
+			idle.push(genres.groups.indexOf(group));
+		}
+	}
+	if (!idle.length) return { warning: null, idle };
+	const names = idle.map((at) => at + 1).join(' and ');
+	const warning = idle.length === 1
+		? `Group ${names} changes nothing: the search matches the same anime without it.`
+		: `Groups ${names} change nothing: the search matches the same anime without them.`;
+	return { warning, idle };
+}
+
+/** A piece of a chip's text (`ExpressionText`); `keyword` marks the words a genre
+ * expression is built from, and `whole` one value. */
+export interface Term {
+	text: string;
+	keyword?: boolean;
+	whole?: boolean;
+}
+
+/** The groups in words, in the shape of the sheet's cards: "Fantasy or Isekai, without
+ * Drama"; several groups each in parentheses, joined by "AND" or "OR" in capitals as the
+ * divider between the cards is, so the join between groups stands apart from the "or" and
+ * "&" inside one. Never rewritten into alternatives: that would no longer match the cards,
+ * and it multiplies — three groups of five, joined by AND, are 125 alternatives. Empty
+ * groups say nothing. One part per group, every one after the first led by its joiner, for
+ * `ExpressionText`, which the chips and the Reads line render through. */
+export function describeGenreTerms(genres: GenreFilter): Term[][] {
+	const groups = filledGroups(genres);
+	return groups.map((g, at) => {
+		const terms: Term[] = [];
+		if (at) terms.push({ text: genres.mode === 'all' ? 'AND' : 'OR', keyword: true }, { text: ' ' });
+		const parenthesised = groups.length > 1 && g.include.length + g.exclude.length > 1;
+		if (parenthesised) terms.push({ text: '(' });
+		terms.push(...nameTerms(g.include, g.mode));
+		if (g.exclude.length) {
+			const together = g.exclude_mode === 'all' && g.exclude.length > 1;
+			if (g.include.length) terms.push({ text: ', ' });
+			terms.push({ text: 'without', keyword: true }, { text: ' ' }, ...nameTerms(g.exclude, g.exclude_mode));
+			if (together) terms.push({ text: ' ' }, { text: 'together', keyword: true });
+		}
+		if (parenthesised) terms.push({ text: ')' });
+		return terms;
+	});
+}
+
+const textOf = (parts: Term[][]) => parts.map((part) => part.map((term) => term.text).join('')).join(' ');
+
+export const describeGenres = (genres: GenreFilter) => textOf(describeGenreTerms(genres));
 
 // ---------------------------------------------------------------------------
 // Range filters
@@ -316,10 +524,25 @@ export const rangeParams = (key: RangeKey): [RangeParam, RangeParam] => [`${key}
 
 export interface FilterChip {
 	id: string;
+	/** The group, shown bold; absent where the value names itself ("Top 20%"). */
+	name?: string;
+	/** The value in groups and terms, as `ExpressionText` renders it — one run but for genres. */
+	parts: Term[][];
+	/** Both as one line: the remove button's accessible name, and what tests compare. */
 	label: string;
 	/** What removing the chip clears. */
 	keys: (keyof MediaSearchFilters)[];
+	/** Why the filter may not do what it reads as (`checkGenres`). */
+	warning?: string;
 }
+
+const chip = (
+	id: string, name: string | undefined, value: string | Term[][], keys: FilterChip['keys'],
+): FilterChip => {
+	const parts = typeof value === 'string' ? [[{ text: value }]] : value;
+	const text = textOf(parts);
+	return { id, name, parts, label: name ? `${name} ${text}` : text, keys };
+};
 
 /** One chip per applied filter group. A group set to its default (a mode alone,
  * `upcoming_main=false`) is no chip. */
@@ -328,29 +551,28 @@ export function filterChips(params: MediaSearchFilters, view: ViewType): FilterC
 
 	if (params.rated?.length) {
 		const labels = RATED_STATES[view].filter((s) => params.rated!.includes(s.value)).map((s) => s.label);
-		chips.push({ id: 'rated', label: labels.join(' or '), keys: ['rated'] });
+		chips.push(chip('rated', 'Rated:', [nameTerms(labels, 'any')], ['rated']));
 	}
 	if (params.watchlisted != null) {
-		chips.push({
-			id: 'watchlisted', label: params.watchlisted ? 'In watchlist' : 'Not in watchlist', keys: ['watchlisted'],
-		});
+		chips.push(chip('watchlisted', undefined, params.watchlisted ? 'In watchlist' : 'Not in watchlist', ['watchlisted']));
 	}
-	if (params.upcoming_main) chips.push({ id: 'upcoming_main', label: 'Upcoming main story', keys: ['upcoming_main'] });
+	if (params.upcoming_main) chips.push(chip('upcoming_main', undefined, 'Upcoming main story', ['upcoming_main']));
 	if (params.top_percent != null) {
-		chips.push({ id: 'top_percent', label: `Top ${params.top_percent}%`, keys: ['top_percent'] });
+		chips.push(chip('top_percent', undefined, `Top ${params.top_percent}%`, ['top_percent']));
+	}
+
+	const genreParts = params.genres ? describeGenreTerms(params.genres) : [];
+	if (genreParts.length) {
+		const { warning } = checkGenres(params.genres!);
+		chips.push({ ...chip('genres', 'Genres:', genreParts, ['genres']), ...(warning && { warning }) });
 	}
 
 	for (const key of LIST_FILTER_KEYS) {
 		const values = params[key];
 		if (!values?.length) continue;
 		const { label, mode: modeKey, format } = LIST_FILTERS[key];
-		const mode = modeKey ? (params[modeKey] ?? DEFAULT_MODE[modeKey]) : 'any';
 		const shown = format ? values.map(format) : values;
-		chips.push({
-			id: key,
-			label: `${label}: ${shown.join(mode === 'all' ? ' & ' : ' or ')}`,
-			keys: modeKey ? [key, modeKey] : [key],
-		});
+		chips.push(chip(key, `${label}:`, [nameTerms(shown, listMode(params, key))], modeKey ? [key, modeKey] : [key]));
 	}
 
 	for (const [key, range] of Object.entries(RANGE_FILTERS) as [RangeKey, RangeFilter][]) {
@@ -361,7 +583,7 @@ export function filterChips(params: MediaSearchFilters, view: ViewType): FilterC
 		const text = min != null && max != null
 			? `${range.format(min)}–${range.format(max)}`
 			: min != null ? `≥ ${range.format(min)}` : `≤ ${range.format(max!)}`;
-		chips.push({ id: key, label: `${range.label} ${text}`, keys: [minKey, maxKey] });
+		chips.push(chip(key, range.label, text, [minKey, maxKey]));
 	}
 
 	return chips;
@@ -385,8 +607,8 @@ export function omitKeys(params: MediaSearchFilters, keys: (keyof MediaSearchFil
 const ACROSS_VIEWS = {
 	query: 'carry', search_type: 'carry', view_type: 'drop',
 	relation_type: 'drop', media_type: 'carry', age_rating: 'carry', airing_status: 'carry',
-	anime_season: 'carry', genre_name: 'carry', studio_name: 'carry', original_source: 'carry',
-	genre_mode: 'carry', studio_mode: 'carry',
+	anime_season: 'carry', studio_name: 'carry', original_source: 'carry',
+	studio_mode: 'carry', genres: 'carry',
 	score_min: 'carry', score_max: 'carry',
 	scored_by_min: 'drop', scored_by_max: 'drop', episodes_min: 'drop', episodes_max: 'drop',
 	duration_per_episode_min: 'drop', duration_per_episode_max: 'drop',

@@ -178,7 +178,9 @@
 <div class="space-y-6">
 	<!-- (f) Rating trend -->
 	<div>
-		<div class="flex items-center justify-between mb-1">
+		<!-- flex-wrap: the toggle drops under its heading when the two don't fit (a phone),
+		     rather than squeezing the heading onto two lines. -->
+		<div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mb-1">
 			<p class="text-sm font-medium text-card-foreground">Score trend (in rating order)</p>
 			{#if windowOptions.length > 1}
 				<SegmentedControl
@@ -201,7 +203,7 @@
 
 	<!-- (g) Cumulative watch time -->
 	<div>
-		<div class="flex items-center justify-between mb-1">
+		<div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 mb-1">
 			<p class="text-sm font-medium text-card-foreground">Cumulative watch time</p>
 			<SegmentedControl
 				ariaLabel="Time range"

@@ -67,7 +67,7 @@ export const JOB_KIND_LABELS: Record<JobKind, string> = {
  * they enqueue parented system children (so the row gets an expander chevron) AND
  * they emit one common `result_summary` shape (so one branch formats both). Naming it
  * for only the first would leave the second reading as a coincidence, and a future
- * kind that parents children WITHOUT season counters would render "0 season entries".
+ * kind that parents children WITHOUT season counters would render zeroed season counters.
  * Backend allows `?parent_uuid=` for any kind — this is purely a frontend guard. */
 export const SEASON_SWEEP_KINDS: ReadonlySet<JobKind> = new Set<JobKind>([
 	'seasonal_sweep',
@@ -99,6 +99,13 @@ export function formatNumber(value: number | string): string {
 	const [intPart, decimalPart] = value.toString().split('.');
 	const formattedInt = Number(intPart).toLocaleString('en-US');
 	return decimalPart ? `${formattedInt}.${decimalPart}` : formattedInt;
+}
+
+const compactNumber = new Intl.NumberFormat('en-US', { notation: 'compact' });
+
+/** A count at a glance: 1159220 -> "1.2M", 763827 -> "764K". */
+export function formatCompactNumber(value: number): string {
+	return compactNumber.format(value);
 }
 
 /**
@@ -193,11 +200,14 @@ export function formatSeason(name: string | null, year: number | null): string |
 /**
  * Format a season range string from start and end seasons.
  * Returns the single season if they are the same or end is null.
+ * Non-breaking inside each season and before the dash, so a range that wraps breaks
+ * after the dash ("Fall 2020 -" / "Winter 2026"), never inside a season.
  */
 export function formatSeasonRange(start: string | null, end: string | null): string | null {
 	if (!start) return null;
 	if (!end || end === start) return start;
-	return `${start} - ${end}`;
+	const glued = (season: string) => season.replaceAll(' ', '\u00a0');
+	return `${glued(start)}\u00a0- ${glued(end)}`;
 }
 
 /** True when start/end describe a genuine multi-season run, not one season repeated —

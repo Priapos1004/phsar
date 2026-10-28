@@ -43,12 +43,10 @@ describe('Library Add page', () => {
 		});
 	}
 
-	it('renders the form title + button', () => {
+	it('renders the page heading + button', () => {
 		mockRecent([]);
 		render(LibraryAddPage);
-		// Card.Title from shadcn-svelte renders a <div>, not a <heading>; match
-		// by text instead so the test isn't coupled to the Card component's tag.
-		expect(screen.getByText('Add to Library')).toBeInTheDocument();
+		expect(screen.getByRole('heading', { level: 1, name: 'Add to Library' })).toBeInTheDocument();
 		expect(screen.getByRole('button', { name: /Add to library/i })).toBeInTheDocument();
 	});
 

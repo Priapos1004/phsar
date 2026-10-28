@@ -1,5 +1,5 @@
 ---
-description: Frontend conventions — runes, theme tokens, shared components, page width, tooltip and chart mechanics, confirm tiers for destructive actions, dialog sizing, route titles, restricted accounts, and UI copy.
+description: Frontend conventions and the invariants behind them — for any file under phsar/frontend.
 paths: "phsar/frontend/**"
 ---
 
@@ -74,13 +74,17 @@ the answer already. Don't add it to them.
 ## Pages share one width
 
 A page showing anime — the section pages, search, the detail pages — puts its content
-in `max-w-5xl`, so moving between them never shifts the edges. Wider buys nothing: a
-grid gains a column, a sideways row one more tile. Narrower is for pages that are a
-form or a settings panel.
+in `cls.pageWidth`, which widens at `2xl`, so moving between them never shifts the
+edges. The job detail page takes it too: its tables need the width. Always the shared
+class, never a literal: the width changes at a breakpoint, and a page with its own copy
+would drift from the rest at that one. Search stays two columns at the wider width: its
+cards are ranked and text-dense, and a third column would make each narrower than at
+1024. The user-menu pages (NavBar's `menuItems`) take the narrower `cls.panelWidth`,
+under the same rule.
 
-`cls.container` adds `px-4` inside the 5xl and the section pages' own wrappers don't,
-so the two sets of edges sit 16px apart a side — too small to see, so don't unify
-them. A new page copies the wrapper of the sibling it sits beside.
+`cls.container` adds `px-4` inside that width and the section pages' own wrappers don't,
+so from 360px up the two sets of edges sit 16px apart a side — too small to see, so don't
+unify them. A new page copies the wrapper of the sibling it sits beside.
 
 ## Tooltips — pick by what the cursor is over
 
@@ -96,6 +100,13 @@ The third is not laziness. A per-row app `Tooltip` makes every cell a keyboard t
 stop and mounts a Provider per row, which is why the tables and cover cards use the
 native attribute instead.
 
+**Only a children-mode trigger opens on a tap.** A `trigger` snippet stays hover and focus
+only, because its tap is the control's action and a bubble left over it would hide what the
+action did; a trigger inside a link or a clickable row navigates instead. So an explanation
+that must reach a phone goes on text outside both, never on a control. A control that needs
+one (a chip, a select) gets an `InfoTip` ⓘ beside its label, and a text label that opens a
+tooltip carries `cls.tooltipHint`, the dotted underline that tells a phone it can be tapped.
+
 ## Charts
 
 Every chart sets `emphasis: { disabled: true }`, and every chart **that has a hover**
@@ -108,6 +119,9 @@ don't "fix" them by adding one.
 escaping never reaches inside it.** Catalog text spliced into one — titles, genre and
 studio names — must go through `escapeHtml` (`utils/formatString.ts`). Enum labels,
 numbers and ECharts' own `marker` spans are already safe.
+
+**A colour scale is one scale for marks and text** — a score or band number takes its
+marks' colour, never a darker text shade, yellow included.
 
 ## Titles render in the user's name language
 
@@ -132,10 +146,36 @@ than by asserting what it rendered.
 
 The exception to "prefer changing the component" above. `SegmentedControl` is the
 on-card toggle — muted track, solid thumb — and belongs on the white card surface. A
-toggle on the dark page surface is a border-fill pill instead (`PillToggle`, with
-`GrainToggle` its anime/media form; the ratings view pills). Same job, different
+toggle on the dark page surface is a border-fill pill instead — `PillToggle` and what wraps
+it (`GrainToggle`), or `cls.pagePill` where each option is a pill of its own (`ViewToggle`,
+the Statistics sub-nav). Same job, different
 surface, deliberately two components: unifying them makes one of the two illegible
 against its own background.
+
+## A label's shade follows its surface
+
+A secondary label takes its own surface's secondary shade — `text-white/70` on the dark
+page, `text-card-foreground/70` on a light card — never one class for both, which is
+legible on only one of them. White here is not the hardcoded colour "Style with theme
+tokens" forbids: the dark page surface is the same under every theme.
+
+## A phone narrows the layout before it shrinks the text
+
+Below `sm`, a crowded row **stacks** (a label over its control — `cls.stackOnPhone` — a
+badge onto the next line) before its text gets smaller, and a card keeps what a list is
+scanned by, leaving secondary detail to the detail page rather than squeezing it in. A
+long toggle takes `cls.stretchOnPhone`. A tweak for the narrowest phones takes the `xs`
+breakpoint (`max-xs:`, below 360px), and a width read in script (`MediaQuery`) its query
+from `styles/classes.ts`; never a literal width, so a breakpoint's switches move together.
+A layout change that only makes sense at one width stays at that width; every other fix
+applies at all of them.
+
+A sortable table keeps every column on a phone and scrolls sideways in its card, so no sort
+goes out of reach. A chart never scrolls sideways — that hides the bar ends a comparison
+lives in — so a bar chart narrows its label column instead.
+
+A small icon control (a chip's ✕, a close, a retry) carries `cls.hitArea`, so a near miss
+on a phone still lands.
 
 ## A destructive action's confirm is tiered by what it costs to undo
 
@@ -161,13 +201,42 @@ so a plain swap reflows the row. Give it a `min-w-*` sized to the wider label.
 the user's behalf is not a control, and it reads to the next person as though one
 exists — so an ungated action's endpoint takes no confirmation argument at all.
 
+## A control that removes itself hands focus on first
+
+Every bits-ui `Dialog` — the filter sheet included — traps focus, and when the focused
+element leaves the DOM the trap moves focus to its first element, without scrolling: a
+keyboard user is sent back to the top of the dialog, a screen reader to its close button.
+A click focuses the button it lands on, so a control whose own click
+removes it triggers this: a chip's ✕, a "Clear all" shown only while something is set, a
+"Try again" swapped for "Loading…".
+
+Before the click removes the control, **move focus to an element that stays** (the field
+it belonged to, the dialog's main action), or keep the node and change its label or
+`disabled` rather than swapping it with `{#if}`. `preventDefault` on `mousedown` covers
+the mouse only; a keyboard user still lands on the removed node. A test focuses the
+control, clicks it and asserts `document.activeElement` is the survivor. Reproduce in
+Chrome or Firefox: Safari never focuses a button on click, so it hides the bug.
+
 ## Dialog children that cannot shrink
 
-`Dialog.Content` is a CSS grid whose column is floored by its widest item's min-content
-width, and every item then inherits the widened track — so a single unshrinkable child
-(a `nowrap` title, an image carrying an aspect ratio) pushes the whole dialog past its
-`max-w-*`. Give the header and body `min-w-0`. `truncate` alone does not zero that
-floor, because its `overflow:hidden` only does so on a grid or flex item.
+`Dialog.Content` is a CSS grid, and an implicit `auto` column is floored by its widest
+item's min-content width — a single unshrinkable child (a `nowrap` title, a long unbroken
+name, an image carrying an aspect ratio) would push the whole dialog past its `max-w-*`.
+The primitive carries `grid-cols-1` (a `minmax(0,1fr)` column) so none can. The column then
+holds, but a child still
+has to fit it: a long word as the next section says, and in a flex row the item that
+*holds* truncating text takes `min-w-0` — `truncate` zeroes only its own element's
+minimum width, never its parent's.
+
+## A user's string can be one long word
+
+A list name runs to 50 characters with no space; a note can hold a URL, a query anything.
+`body` carries `overflow-wrap: break-word` (`app.css`), so such a word breaks at its box's
+edge instead of overflowing. Break-word never lowers a box's min-content width, though, so
+text that is itself a flex item — a label beside its checkbox, a heading in a wrapping row,
+a tooltip's inline-flex content — still pushes its row wide: give that text
+`wrap-anywhere`. A control naming a user's string (a chip, a select) truncates instead, the
+full string as its `title`.
 
 ## Every route titles its own tab
 
@@ -230,4 +299,5 @@ names (`AnimeUmbrellaCard`, `umbrella_diff`); this rule governs new user-facing 
 
 After a UI-touching change, hand off with a concise **"what to check"** list and wait for
 their verdict rather than driving the dev-browser to self-verify — they have the app open.
-Offer to look yourself only when genuinely stuck on a bug.
+Offer to look yourself only when genuinely stuck on a bug. A page-by-page pass at fixed
+widths runs as `/ui-pass`.

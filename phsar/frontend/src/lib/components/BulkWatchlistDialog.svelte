@@ -245,8 +245,7 @@
 
 <Dialog.Root bind:open>
 	<Dialog.Content class="sm:max-w-md">
-		<!-- min-w-0 required (see .claude/rules/frontend.md "Dialog children that cannot shrink"). -->
-		<Dialog.Header class="min-w-0">
+		<Dialog.Header>
 			<Dialog.Title>{isUpdate ? 'Update watchlist entry' : title}</Dialog.Title>
 			<Dialog.Description class="text-muted-foreground">
 				{#if mixed}
@@ -259,7 +258,7 @@
 			</Dialog.Description>
 		</Dialog.Header>
 
-		<div class="space-y-4 py-2 min-w-0">
+		<div class="space-y-4 py-2">
 			{#if !isUpdate && alreadyOnCount > 0}
 				<div class="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 text-sm text-yellow-800">
 					This will overwrite {alreadyOnCount} existing watchlist {alreadyOnCount > 1 ? 'entries' : 'entry'}.

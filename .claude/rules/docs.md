@@ -18,11 +18,16 @@ Ask: **what breaks if this is missing?**
 | Would re-litigate a settled trade-off | `compound-docs/` | on demand |
 | Describes one module's current shape (a migration describes a transition instead — `database.md`) | docstring, or nearest nested `CLAUDE.md` | with the code |
 | A feature decision not yet built, or the version table | `docs/ROADMAP.md` | on demand |
+| Would have to rediscover how to run a recurring procedure | `.claude/skills/<name>/` | when invoked |
 
 The two rows that overlap in practice are the feature doc and USER_FLOWS, because
 one feature reaches both: the feature doc owns the **mechanism across modules**,
 USER_FLOWS owns **what the user sees**. Written from opposite ends, the same
 feature belongs in both — the same sentence belongs in neither.
+
+A skill holds the **steps** of a procedure, never the invariants it leans on: those stay
+in their rule, which loads with the files it governs, and the skill links to them. A
+rule copied into a skill reaches only the sessions that invoke it.
 
 **No fact appears in two rows.** Cross-references are links, never restatements.
 A doc that explains something *and then* says "see X for details" is both a copy

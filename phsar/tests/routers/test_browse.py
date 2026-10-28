@@ -4,6 +4,7 @@ The core rows are seeded into the rolled-back session first, so the suite runs t
 same whether or not the database has booted the app since the seeder last changed.
 """
 
+import json
 from datetime import date
 
 import pytest
@@ -103,9 +104,11 @@ async def test_unknown_carousel_is_404(client, user_auth_headers):
     assert resp.status_code == 404
 
 
-def test_a_misspelt_param_fails_resolution():
+# The flat genre pair too: a token reads it as a group, a seeded row must not.
+@pytest.mark.parametrize("param", ["genre_names", "genre_name"])
+def test_a_misspelt_param_fails_resolution(param):
     carousel = BrowseCarousel(
-        key="typo", title="Typo", params={"genre_names": ["Action"]}, see_all_limit=10, filter_sets=[],
+        key="typo", title="Typo", params={param: ["Action"]}, see_all_limit=10, sortable=False, filter_sets=[],
     )
     with pytest.raises(ValidationError):
         resolve(carousel)
@@ -118,9 +121,10 @@ async def test_every_seeded_carousel_runs_as_a_search(client, user_auth_headers,
     every_set = [key for key, _ in core.filter_sets]
     for switched in ({}, {"on": every_set}):
         carousel = await _carousel(client, user_auth_headers, core.key, **switched)
-        resp = await client.get(
-            "/search/anime", params={**carousel["params"], "limit": 25}, headers=user_auth_headers,
-        )
+        # As the frontend's `buildSearchParams` sends them: the genre groups as JSON.
+        params = {key: json.dumps(value) if isinstance(value, dict) else value
+                  for key, value in carousel["params"].items()}
+        resp = await client.get("/search/anime", params={**params, "limit": 25}, headers=user_auth_headers)
         assert resp.status_code == 200, f"{core.key} {switched}: {resp.text}"
 
 

@@ -75,10 +75,12 @@
 			void loadNeighbors();
 		}
 	}
+	let toggle = $state<HTMLButtonElement | null>(null);
 </script>
 
 <div>
 	<button
+		bind:this={toggle}
 		type="button"
 		class="flex items-center gap-2 text-primary group"
 		onclick={toggleNeighbors}
@@ -97,7 +99,9 @@
 		{:else if neighborsError}
 			<p class="text-sm text-muted-foreground mt-2">
 				Couldn't load your ratings.
-				<button type="button" class="text-primary hover:underline" onclick={loadNeighbors}>
+				<!-- Retrying swaps this button for "Loading…", so focus moves to the toggle first
+				     (rules/frontend.md, "A control that removes itself hands focus on first"). -->
+				<button type="button" class="text-primary hover:underline" onclick={() => { toggle?.focus(); loadNeighbors(); }}>
 					Try again
 				</button>
 			</p>

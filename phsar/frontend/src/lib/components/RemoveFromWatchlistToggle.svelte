@@ -15,7 +15,8 @@
 </script>
 
 <div class="rounded-lg border border-yellow-200 bg-yellow-50 px-3 py-2 space-y-1">
-	<label class="flex items-center gap-2 text-sm font-medium text-yellow-800 cursor-pointer">
+	<!-- wrap-anywhere: a list name in a flex item (rules/frontend.md, "A user's string can be one long word"). -->
+	<label class="flex items-center gap-2 text-sm font-medium text-yellow-800 cursor-pointer wrap-anywhere">
 		<Checkbox bind:checked />
 		{label}
 	</label>

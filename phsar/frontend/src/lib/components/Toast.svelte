@@ -30,8 +30,10 @@
 </script>
 
 {#if show}
+    <!-- w-max: centred by left-1/2 alone, the box would size to the half-screen right of its
+         left edge (~150px on a phone). Capped at the screen. -->
     <div
-        class="fixed top-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-lg shadow-lg text-sm font-medium {VARIANT_CLASS[variant]}"
+        class="fixed top-20 left-1/2 -translate-x-1/2 z-50 w-max max-w-[calc(100vw-2rem)] px-4 py-2 rounded-lg shadow-lg text-sm font-medium text-center {VARIANT_CLASS[variant]}"
         in:fly={{ y: -20, duration: 200 }}
         out:fly={{ y: -20, duration: 150 }}
     >

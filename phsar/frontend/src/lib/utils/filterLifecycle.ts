@@ -2,7 +2,7 @@ import { DETAIL_TYPES } from '$lib/utils/navigation';
 import { clearRatingsFilter } from '$lib/stores/ratingsFilter';
 import { clearWatchlistFilter } from '$lib/stores/watchlistFilter';
 import { clearJobsFilter } from '$lib/stores/adminJobsFilter';
-import { clearSectionRows } from '$lib/stores/browseRows';
+import { clearSearchRows, clearSectionRows } from '$lib/stores/browseRows';
 import { clearBrowseRefinements } from '$lib/stores/browseRefinements';
 
 /**
@@ -45,6 +45,7 @@ export const SECTION_RESETS: readonly SectionReset[] = [
 			clearBrowseRefinements();
 		},
 	},
+	{ prefix: '/search', clear: clearSearchRows },
 ];
 
 /** Exact match or a `/`-delimited child, so `/ratings` never matches `/ratings-archive`. */

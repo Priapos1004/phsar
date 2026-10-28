@@ -57,65 +57,63 @@
 	<title>Sign in — Phsar</title>
 </svelte:head>
 
-<div class="fixed inset-0 bg-gradient-to-br from-[var(--auth-gradient-from)] via-[var(--auth-gradient-via)] to-[var(--auth-gradient-to)] flex justify-center items-start pt-20">
-    <div in:fly={{ y: 20, duration: 2000 }} class="w-full max-w-md">
-        <Card.Root>
-            <Card.Header>
-                <h2 class="text-2xl font-bold text-center text-card-foreground">Login</h2>
-            </Card.Header>
-            <Card.Content>
-                <!-- Named, not generic: a `next` can outlive the user's memory of
-                     the link that set it, and a recipient of a shared link has no
-                     idea why a login form is what they got. -->
-                {#if next}
-                    <p class="mb-4 text-center text-sm text-muted-foreground">
-                        After signing in you'll be taken to {describeReturn(next)}.
-                    </p>
-                {/if}
-                <form onsubmit={handleLogin} class="space-y-4">
-                    <div class="space-y-2">
-                        <Label for="username">Username</Label>
-                        <Input
-                            id="username"
-                            type="text"
-                            bind:value={username}
-                            required
-                            class="h-10"
-                        />
-                    </div>
-                    <div class="space-y-2">
-                        <Label for="password">Password</Label>
-                        <Input
-                            id="password"
-                            type="password"
-                            bind:value={password}
-                            required
-                            class="h-10"
-                        />
-                    </div>
-                    <Button
-                        type="submit"
-                        disabled={loading}
-                        class="w-full"
-                        size="lg"
-                    >
-                        {#if loading}
-                            Logging in...
-                        {:else}
-                            Login
-                        {/if}
-                    </Button>
-                </form>
-                {#if error}
-                    <div class="mt-4 text-center text-destructive text-sm">{error}</div>
-                {/if}
-                <!-- `next` rides across, so someone who follows a shared link and
-                     registers on the spot still lands on what they were sent. -->
-                <p class="mt-4 text-center text-sm text-muted-foreground">
-                    Have a registration token?
-                    <a href={urlWithNext('/register', next)} class="text-primary hover:underline">Register</a>
+<div in:fly={{ y: 20, duration: 2000 }} class="w-full max-w-md">
+    <Card.Root>
+        <Card.Header>
+            <h2 class="text-2xl font-bold text-center text-card-foreground">Login</h2>
+        </Card.Header>
+        <Card.Content>
+            <!-- Named, not generic: a `next` can outlive the user's memory of
+                 the link that set it, and a recipient of a shared link has no
+                 idea why a login form is what they got. -->
+            {#if next}
+                <p class="mb-4 text-center text-sm text-muted-foreground">
+                    After signing in you'll be taken to {describeReturn(next)}.
                 </p>
-            </Card.Content>
-        </Card.Root>
-    </div>
+            {/if}
+            <form onsubmit={handleLogin} class="space-y-4">
+                <div class="space-y-2">
+                    <Label for="username">Username</Label>
+                    <Input
+                        id="username"
+                        type="text"
+                        bind:value={username}
+                        required
+                        class="h-10"
+                    />
+                </div>
+                <div class="space-y-2">
+                    <Label for="password">Password</Label>
+                    <Input
+                        id="password"
+                        type="password"
+                        bind:value={password}
+                        required
+                        class="h-10"
+                    />
+                </div>
+                <Button
+                    type="submit"
+                    disabled={loading}
+                    class="w-full"
+                    size="lg"
+                >
+                    {#if loading}
+                        Logging in...
+                    {:else}
+                        Login
+                    {/if}
+                </Button>
+            </form>
+            {#if error}
+                <div class="mt-4 text-center text-destructive text-sm">{error}</div>
+            {/if}
+            <!-- `next` rides across, so someone who follows a shared link and
+                 registers on the spot still lands on what they were sent. -->
+            <p class="mt-4 text-center text-sm text-muted-foreground">
+                Have a registration token?
+                <a href={urlWithNext('/register', next)} class="text-primary hover:underline">Register</a>
+            </p>
+        </Card.Content>
+    </Card.Root>
 </div>

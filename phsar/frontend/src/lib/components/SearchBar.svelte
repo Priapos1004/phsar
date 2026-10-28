@@ -11,9 +11,11 @@
 	// `applied`. One source and one direction is what keeps a reload, a view switch and an
 	// open sheet from racing each other.
 	import { getContext } from 'svelte';
+	import { MediaQuery } from 'svelte/reactivity';
 	import { SlidersHorizontal, Search } from 'lucide-svelte';
 	import { ensureFilterOptions } from '$lib/stores/filterOptions';
 	import TagSelect from '$lib/components/TagSelect.svelte';
+	import GenreFilterField from '$lib/components/GenreFilterField.svelte';
 	import DoubleRangeSlider from '$lib/components/DoubleRangeSlider.svelte';
 	import PillToggle from '$lib/components/PillToggle.svelte';
 	import SegmentedControl from '$lib/components/SegmentedControl.svelte';
@@ -23,14 +25,15 @@
 	import { Label } from '$lib/components/ui/label';
 	import * as Sheet from '$lib/components/ui/sheet';
 	import {
-		DEFAULT_MODE,
 		LIST_FILTERS,
+		MATCH_MODES,
 		RANGE_FILTERS,
 		RATED_STATES,
 		SEARCH_MODE_LABELS,
 		TOP_PRESETS,
 		filterChips,
-		normalizeRated,
+		listMode,
+		normalizeFilters,
 		omitKeys,
 		rangeParams,
 		withQuery,
@@ -81,8 +84,11 @@
 			disabled: isGuest, hint: isGuest ? 'Guest accounts have no notes to search' : undefined,
 		},
 	]);
+	// A placeholder is text CSS cannot swap, so the width is read here; on a phone the
+	// long one is cut off mid-word.
+	const wide = new MediaQuery(cls.smUp);
 	let placeholder = $derived(
-		mode === 'description' ? 'Describe a story, a character, a theme...'
+		mode === 'description' ? (wide.current ? 'Describe a story, a character, a theme...' : 'Describe a story...')
 			: mode === 'rating_notes' ? 'Search your notes...'
 			: viewType === 'anime' ? 'Search anime...' : 'Search media...',
 	);
@@ -103,13 +109,21 @@
 		if (query.trim()) submit();
 	}
 
-	function showResults() {
-		onSearch(normalizeRated(withQuery(staged, query, mode), viewType));
+	// The options are what "every option" is measured against; the sheet has already
+	// loaded them, so the await resolves from the cache. Without them only the lists go
+	// un-normalised — the search still runs.
+	async function showResults() {
+		const offered = await ensureFilterOptions(viewType).catch(() => ({}));
+		onSearch(normalizeFilters(withQuery(staged, query, mode), viewType, offered));
 		filtersOpen = false;
 	}
 
 	// Like the chips' Clear all: every filter goes, the sort stays (it isn't in the sheet).
+	// The button goes with them, so focus moves to Show results first
+	// (rules/frontend.md, "A control that removes itself hands focus on first").
+	let showResultsButton = $state<HTMLElement | null>(null);
 	function clearStaged() {
+		showResultsButton?.focus();
 		staged = omitKeys(staged, stagedChips.flatMap((c) => c.keys));
 	}
 
@@ -138,15 +152,12 @@
 		return [{ value: 0, label: 'Any' }, ...values.map((v) => ({ value: v, label: `${v}%` }))];
 	});
 
-	const MATCH_MODES = [{ value: 'any' as const, label: 'Any' }, { value: 'all' as const, label: 'All' }];
-
 	const RELEASE_LISTS: ListFilterKey[] = ['airing_status', 'anime_season'];
-	const CONTENT_LISTS: ListFilterKey[] = ['genre_name', 'studio_name', 'original_source', 'media_type', 'relation_type', 'age_rating'];
+	const CONTENT_LISTS: ListFilterKey[] = ['studio_name', 'original_source', 'media_type', 'relation_type', 'age_rating'];
 	const LENGTH_RANGES: RangeKey[] = ['episodes', 'duration_per_episode', 'total_watch_time'];
 
 	const sectionCls = 'space-y-4 py-6 first:pt-0';
 	const headingCls = 'text-sm font-semibold uppercase tracking-wide text-primary';
-	const fieldLabelCls = 'text-sm font-medium text-card-foreground';
 </script>
 
 {#snippet listField(key: ListFilterKey, options: FilterOptions)}
@@ -154,13 +165,13 @@
 	{#if !field.mediaOnly || viewType === 'media'}
 		<div class="space-y-1.5">
 			<div class="flex h-6 items-center justify-between">
-				<span class={fieldLabelCls}>{field.label}</span>
+				<span class={cls.fieldLabel}>{field.label}</span>
 				{#if field.mode}
 					{@const modeKey = field.mode}
 					<SegmentedControl
 						ariaLabel="{field.label} match mode"
 						options={MATCH_MODES}
-						value={staged[modeKey] ?? DEFAULT_MODE[modeKey]}
+						value={listMode(staged, key)}
 						onSelect={(v) => stage({ [modeKey]: v })}
 					/>
 				{/if}
@@ -256,7 +267,7 @@
 						</p>
 					{:else}
 						<div class="space-y-1.5">
-							<span class={fieldLabelCls}>Rated</span>
+							<span class={cls.fieldLabel}>Rated</span>
 							<!-- Columns set so each grain's states fill two even rows. -->
 							<div class="grid gap-1.5 {viewType === 'anime' ? 'grid-cols-3' : 'grid-cols-2'}">
 								{#each RATED_STATES[viewType] as state (state.value)}
@@ -271,10 +282,11 @@
 							</div>
 						</div>
 						<div class="flex items-center justify-between gap-2">
-							<span class={fieldLabelCls}>Watchlist</span>
+							<span class={cls.fieldLabel}>Watchlist</span>
 							<SegmentedControl
 								ariaLabel="Watchlist"
 								size="md"
+								stretchOnPhone
 								options={[...WATCHLIST]}
 								value={watchlistChoice}
 								onSelect={(v) => stage({ watchlisted: v === 'any' ? undefined : v === 'in' })}
@@ -302,10 +314,11 @@
 					<h3 class={headingCls}>Score</h3>
 					{@render rangeField('score', options)}
 					<div class="flex items-center justify-between gap-2">
-						<span class={fieldLabelCls}>Top</span>
+						<span class={cls.fieldLabel}>Top</span>
 						<SegmentedControl
 							ariaLabel="Top percent"
 							size="md"
+							stretchOnPhone
 							options={topOptions}
 							value={staged.top_percent ?? 0}
 							onSelect={(v) => stage({ top_percent: v || undefined })}
@@ -316,6 +329,11 @@
 
 				<section class={sectionCls}>
 					<h3 class={headingCls}>Content</h3>
+					<GenreFilterField
+						value={staged.genres}
+						options={options.genre_name ?? []}
+						onChange={(genres) => stage({ genres })}
+					/>
 					{#each CONTENT_LISTS as key (key)}{@render listField(key, options)}{/each}
 				</section>
 
@@ -334,7 +352,7 @@
 					Clear all
 				</Button>
 			{/if}
-			<Button class="ml-auto" onclick={showResults}>Show results</Button>
+			<Button bind:ref={showResultsButton} class="ml-auto" onclick={showResults}>Show results</Button>
 		</Sheet.Footer>
 	</Sheet.Content>
 </Sheet.Root>

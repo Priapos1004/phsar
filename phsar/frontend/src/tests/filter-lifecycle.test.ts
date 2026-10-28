@@ -10,7 +10,7 @@ import { ratingsFilter, DEFAULT_RATINGS_FILTER } from '$lib/stores/ratingsFilter
 import { watchlistFilter, DEFAULT_WATCHLIST_FILTER } from '$lib/stores/watchlistFilter';
 import { jobsFilter } from '$lib/stores/adminJobsFilter';
 
-const ALL = ['/ratings', '/watchlist', '/admin', '/browse'];
+const ALL = ['/ratings', '/watchlist', '/admin', '/browse', '/search'];
 const clearedFor = (to: string) => sectionsToClearFor(to).map((s) => s.prefix);
 
 describe('isDetailRoute', () => {
@@ -41,8 +41,8 @@ describe('sectionsToClearFor', () => {
 	});
 
 	it('keeps the destination section and clears the others', () => {
-		expect(clearedFor('/ratings')).toEqual(['/watchlist', '/admin', '/browse']);
-		expect(clearedFor('/watchlist')).toEqual(['/ratings', '/admin', '/browse']);
+		expect(clearedFor('/ratings')).toEqual(['/watchlist', '/admin', '/browse', '/search']);
+		expect(clearedFor('/watchlist')).toEqual(['/ratings', '/admin', '/browse', '/search']);
 	});
 
 	it('keeps a section across an in-section child route', () => {
@@ -50,7 +50,7 @@ describe('sectionsToClearFor', () => {
 	});
 
 	it('clears every section for an unrelated destination', () => {
-		expect(clearedFor('/search')).toEqual(ALL);
+		expect(clearedFor('/library')).toEqual(ALL);
 		expect(clearedFor('/settings')).toEqual(ALL);
 		expect(clearedFor('/')).toEqual(ALL);
 	});
