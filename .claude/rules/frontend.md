@@ -165,9 +165,14 @@ Below `sm`, a crowded row **stacks** (a label over its control — `cls.stackOnP
 badge onto the next line) before its text gets smaller, and a card keeps what a list is
 scanned by, leaving secondary detail to the detail page rather than squeezing it in. A
 long toggle takes `cls.stretchOnPhone`. A tweak for the narrowest phones takes the `xs`
-breakpoint (`max-xs:`, below 360px), never a literal width, so those tweaks move together.
+breakpoint (`max-xs:`, below 360px), and a width read in script (`MediaQuery`) its query
+from `styles/classes.ts`; never a literal width, so a breakpoint's switches move together.
 A layout change that only makes sense at one width stays at that width; every other fix
 applies at all of them.
+
+A sortable table keeps every column on a phone and scrolls sideways in its card, so no sort
+goes out of reach. A chart never scrolls sideways — that hides the bar ends a comparison
+lives in — so a bar chart narrows its label column instead.
 
 A small icon control (a chip's ✕, a close, a retry) carries `cls.hitArea`, so a near miss
 on a phone still lands.

@@ -20,8 +20,6 @@
 	let { rows, nameLanguage, scoreDecimals, sort, sortDir, onSort }: Props = $props();
 
 	// Every column is sortable; the table replaces the standalone sort + status controls.
-	// Every width shows them all — on a phone the table scrolls sideways in its card rather
-	// than dropping a column, whose sort would then be out of reach.
 	const COLS: { key: SortKey; label: string; align: 'left' | 'right' | 'center' }[] = [
 		{ key: 'title', label: 'Title', align: 'left' },
 		{ key: 'score', label: 'Your', align: 'right' },
