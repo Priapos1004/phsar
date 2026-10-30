@@ -187,8 +187,8 @@ non-retryable; `TransientUpstreamError` sits outside it and stays retryable.
 **`seeders/`** — run from the lifespan: genres, the browse carousels, admin + optional guest user, then
 idempotent backfills (settings, default tags, spoiler visibility and its
 restricted-user purge, title suffixes, embeddings) before the yield; the backup
-self-heal and the catalogue-wide passes (relations, merge candidates, split
-candidates) after it. They re-run every boot and repair derived data. Merge-candidate backfill is the one that lives in
+self-heal and the catalogue-wide passes (a re-embed when the stored vectors are
+stale, relations, merge candidates, split candidates) after it. They re-run every boot and repair derived data. Merge-candidate backfill is the one that lives in
 `services/merge_detection_service.py` instead, because detection is shared with
 the save and sweep paths — you cannot find it from `seeders/`.
 

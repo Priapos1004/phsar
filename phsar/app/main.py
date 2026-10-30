@@ -19,7 +19,11 @@ from app.exceptions import PhsarBaseError
 from app.models.job import JobKind
 from app.seeders.anime_title_backfiller import backfill_anime_title_suffixes
 from app.seeders.browse_seeder import seed_browse
-from app.seeders.embedding_backfiller import backfill_embeddings, reembed_all_embeddings
+from app.seeders.embedding_backfiller import (
+    backfill_embeddings,
+    embeddings_are_stale,
+    reembed_all_embeddings,
+)
 from app.seeders.genre_seeder import seed_genres
 from app.seeders.relation_backfiller import backfill_relations
 from app.seeders.split_candidate_backfiller import backfill_split_candidates
@@ -73,9 +77,9 @@ async def _post_yield_backfills() -> None:
     Anime + Media + sidecar, and reusing one session for all of them would
     pin ~Nx the working set in memory through the whole ~14-min cold start.
 
-    A one-shot full re-embed (`reembed_all_embeddings`) runs first when
-    `EMBEDDING_REEMBED_ON_STARTUP` is set — the case-folding re-normalization
-    path, gated OFF by default.
+    A full re-embed (`reembed_all_embeddings`) runs ahead of the catalogue passes
+    when `embeddings_are_stale` says so, so merge detection compares vectors from
+    one model.
     """
     # The self-heal runs FIRST: every pass below is an idempotent derived-data repair
     # that re-runs each boot, so a dump taken before them loses nothing recoverable,
@@ -90,15 +94,16 @@ async def _post_yield_backfills() -> None:
     except Exception:
         logger.exception("Backup self-heal failed — catalog backfills continue")
 
+    # Its OWN try/except: a failure is the model or the database, so it hits every
+    # row — the backfills below must still run, and the next boot retries.
     try:
-        # One-shot catalog re-encode (case-folding fix). Its own session so
-        # the ~1k-row scan's identity map is dropped before the relation
-        # backfill loads the whole catalog again. Gated OFF by default; see
-        # EMBEDDING_REEMBED_ON_STARTUP. Runs first so the re-normalized
-        # vectors are in place before anything else this cold start.
-        if settings.EMBEDDING_REEMBED_ON_STARTUP:
-            async with async_session_maker() as session:
+        async with async_session_maker() as session:
+            if await embeddings_are_stale(session):
                 await reembed_all_embeddings(session)
+    except Exception:
+        logger.exception("Re-embed failed — catalog backfills continue")
+
+    try:
         if settings.RELATION_BACKFILL_ON_STARTUP:
             async with async_session_maker() as session:
                 await backfill_relations(session)
@@ -145,8 +150,8 @@ async def lifespan(app: FastAPI):
         # Title-suffix stripper runs BEFORE the embedding backfiller so a
         # row whose suffix is stripped here gets its regenerated embedding
         # immediately. The embedding backfiller below covers the
-        # missing-embedding case (model swap / new rows without a
-        # search row); these two passes are independent.
+        # missing-embedding case (new rows without a search row); these
+        # two passes are independent.
         await backfill_anime_title_suffixes(session)
         await backfill_embeddings(session)
         # Mark anything left in `running` as failed — the previous process

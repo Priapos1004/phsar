@@ -14,17 +14,18 @@ from app.models.media_unwanted import MediaUnwanted
 from app.models.merge_candidate import MergeCandidate, MergeCandidateStatus
 from app.models.studio import Studio
 from app.services.merge_detection_service import (
+    DESC_THRESHOLD,
     DETECTOR_RELATION_LINK,
     DETECTOR_TITLE_DESC,
     DETECTOR_TITLE_STUDIO,
     TITLE_ALONE_THRESHOLD,
-    _cosine_similarity,
     _title_score,
     backfill_merge_candidates,
     detect_merge_candidates,
     find_cross_anime_relation_pairs,
     normalize_title,
 )
+from app.services.vector_embedding_service import cosine_similarity, encode_description
 from tests._helpers import media_kwargs
 
 logger = logging.getLogger(__name__)
@@ -120,20 +121,44 @@ def test_title_score_dr_stone_still_passes():
 
 def test_cosine_similarity_unit_vectors():
     # Identical vectors: 1.0
-    assert _cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
+    assert cosine_similarity([1.0, 0.0], [1.0, 0.0]) == pytest.approx(1.0)
     # Orthogonal: 0.0
-    assert _cosine_similarity([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
+    assert cosine_similarity([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
     # Opposite direction: -1.0 (we don't clamp; caller decides)
-    assert _cosine_similarity([1.0, 0.0], [-1.0, 0.0]) == pytest.approx(-1.0)
+    assert cosine_similarity([1.0, 0.0], [-1.0, 0.0]) == pytest.approx(-1.0)
 
 
 def test_cosine_similarity_handles_none_and_zero_norm():
-    assert _cosine_similarity(None, [1.0, 0.0]) == 0.0
-    assert _cosine_similarity([1.0, 0.0], None) == 0.0
-    assert _cosine_similarity([0.0, 0.0], [1.0, 0.0]) == 0.0
-    assert _cosine_similarity([], []) == 0.0
+    assert cosine_similarity(None, [1.0, 0.0]) == 0.0
+    assert cosine_similarity([1.0, 0.0], None) == 0.0
+    assert cosine_similarity([0.0, 0.0], [1.0, 0.0]) == 0.0
+    assert cosine_similarity([], []) == 0.0
     # Mismatched lengths: 0.0 instead of crashing
-    assert _cosine_similarity([1.0], [1.0, 0.0]) == 0.0
+    assert cosine_similarity([1.0], [1.0, 0.0]) == 0.0
+
+
+async def test_desc_threshold_separates_a_duplicate_from_a_franchise_sibling():
+    """`DESC_THRESHOLD` is calibrated on the real model's similarities: the same story
+    saved twice clears it, two series of one franchise — a shared title stem and studio
+    put them in the rule's band — stay below. A model change moves both, so this fails
+    until the threshold is re-measured."""
+    duplicate = [await encode_description([title], synopsis) for title, synopsis in (
+        ("Dr. Stone", "Senku Ishigami, a genius teenager, wakes up thousands of years after a "
+         "mysterious light turned all of humanity to stone, and sets out to rebuild "
+         "civilization from zero with the power of science."),
+        ("Dr. Stone: Stone Wars", "Senku Ishigami, a genius teenager who woke thousands of "
+         "years after humanity was turned to stone, wages a war of science against the "
+         "Tsukasa Empire to rebuild civilization."),
+    )]
+    siblings = [await encode_description([title], synopsis) for title, synopsis in (
+        ("Futari wa Precure", "Two middle school girls, Nagisa and Honoka, are chosen by "
+         "fairies from the Garden of Light to become the legendary warriors Pretty Cure and "
+         "fight the Dark Zone."),
+        ("Mahoutsukai Precure!", "Mirai Asahina meets Riko, a young witch from the magic "
+         "world, and together they transform into the magical Pretty Cure to protect the "
+         "Linkle Stones from evil."),
+    )]
+    assert cosine_similarity(*duplicate) >= DESC_THRESHOLD > cosine_similarity(*siblings)
 
 
 @pytest.mark.asyncio

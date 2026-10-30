@@ -24,10 +24,11 @@ RUN pip install -r requirements.txt
 
 # Bake the sentence-transformers model into the image so production
 # cold starts don't stall on a ~500 MB download. The model rarely
-# changes; when it does, a deliberate image rebuild picks up the new one.
+# changes; when it does, a deliberate image rebuild picks up the new one. The name
+# must match MODEL_NAME in vector_embedding_service.py — a test reads this line.
 ENV SENTENCE_TRANSFORMERS_HOME=/opt/st-cache
 RUN python -c "from sentence_transformers import SentenceTransformer; \
-    SentenceTransformer('paraphrase-multilingual-MiniLM-L12-v2')"
+    SentenceTransformer('intfloat/multilingual-e5-small')"
 
 # ---------- Runtime ----------
 FROM python:3.12-slim AS runtime

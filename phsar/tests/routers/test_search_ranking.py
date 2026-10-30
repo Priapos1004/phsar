@@ -481,7 +481,7 @@ async def test_description_literal_hit_on_a_side_story_reaches_its_anime(
 # ---------------------------------------------------------------------------
 
 _NOTE_LITERAL = "Izumi's speech at the end got me."
-_NOTE_NEAR = "Izumo and Izuna."
+_NOTE_NEAR = "Izume."
 _NOTE_QUOTED = "Izumi was the best part, her speech at the end got me."
 
 # Anime → its media (title, the caller's note); the admin notes "Nt Theirs" instead.
@@ -538,7 +538,7 @@ async def _note_distances_and_cutoff(db_session, query: str) -> tuple[dict[str, 
 async def test_notes_search_ranks_literal_hits_first(
     client, user_auth_headers, db_session, noted_set, url, literal, semantic,
 ):
-    """For "izumi" the vector prefers "Izumo and Izuna.", yet the notes naming Izumi
+    """For "izumi" the vector prefers `_NOTE_NEAR`, yet the notes naming Izumi
     lead; the near notes follow under the cutoff and the far ones go. The admin's note
     names Izumi too, but it is not the caller's."""
     dist, cutoff = await _note_distances_and_cutoff(db_session, "izumi")

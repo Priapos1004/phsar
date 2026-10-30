@@ -563,11 +563,12 @@ def title_match_passes(stmt, title_match, *, having: bool = False) -> list:
 
 # How far below the searched population's mean distance to the query a semantic hit
 # must sit (`description_cutoff`, `note_cutoff`); why relative is in
-# docs/features/search.md. Specific to the embedding model: the calibration studies are
-# in compound-docs/2026-10-07-v0.16.0-search-rework.md and
-# compound-docs/2026-10-09-v0.16.1-search-ui.md — re-measure every population on a model
+# docs/features/search.md. Specific to the embedding model: the procedures are in
+# compound-docs/2026-10-07-v0.16.0-search-rework.md and
+# compound-docs/2026-10-09-v0.16.1-search-ui.md, the current model's run in
+# compound-docs/2026-10-30-v0.16.5-galaxy.md — re-measure every population on a model
 # change.
-SEMANTIC_MARGIN = 0.30
+SEMANTIC_MARGIN = 0.06
 
 
 def _description_distance(query_embedding):

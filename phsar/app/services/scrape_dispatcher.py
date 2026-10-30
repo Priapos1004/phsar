@@ -1172,7 +1172,7 @@ def _weighted_score(score: float | None, scored_by: int | None) -> float | None:
 
 
 # Fields whose change regenerates the MediaSearch embedding.
-# `_description_embedding` encodes the titles with the description, so a
+# `encode_description` encodes the titles with the description, so a
 # title-side change invalidates it too — same reason the anime-side
 # reclassifier collapses these into a single regen trigger.
 _EMBEDDING_TEXT_FIELDS = ("title", "name_eng", "name_jap", "other_names", "description")

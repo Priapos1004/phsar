@@ -10,8 +10,8 @@
 #
 # The backend reads that .env through `env_file`, so every optional tunable in it
 # reaches the container. Without it only the explicitly-listed vars arrive, and
-# rehearsing a flag here — EMBEDDING_REEMBED_ON_STARTUP, RELATION_BACKFILL_ON_STARTUP,
-# a retuned JOBS_SWEEP_MAX_PER_RUN — silently does nothing, which is the one thing
+# rehearsing a flag here — RELATION_BACKFILL_ON_STARTUP, a retuned
+# JOBS_SWEEP_MAX_PER_RUN — silently does nothing, which is the one thing
 # compose-parity exists to catch. The `environment:` block still wins over it, so
 # the container-specific overrides below (DB_HOST above all) stay authoritative.
 

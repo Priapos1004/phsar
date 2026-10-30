@@ -1,6 +1,7 @@
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -87,14 +88,18 @@ async def test_cache_hits_do_not_alias_the_returned_list():
 
 
 @pytest.mark.asyncio
-async def test_query_and_document_paths_produce_the_same_vector():
-    """Queries are memoized and documents are not, but they MUST still land in one
-    case space — that shared fold is the whole precondition for retrieval working.
-    Splitting the two paths is exactly the change that could drift them apart, so
-    pin that the same text embeds identically either way, in either casing."""
-    text = "Kurokos Basketball"
-    assert await generate_query_embedding(text) == await generate_embedding(text)
-    assert await generate_query_embedding(text.upper()) == await generate_embedding(text.lower())
+async def test_queries_and_documents_carry_their_own_prefix():
+    """Each path's prefix, over the one shared fold (docs/features/search.md)."""
+    assert await generate_query_embedding("Kurokos Basketball") == list(_encode("query: kurokos basketball"))
+    assert await generate_embedding("KUROKOS BASKETBALL") == list(_encode("passage: kurokos basketball"))
+
+
+def test_the_image_bakes_the_model_the_service_loads():
+    """The Dockerfile bakes the model under its own literal. If the two disagree nothing
+    fails: the service's cache-miss fallback downloads the model on every container
+    start instead."""
+    dockerfile = (Path(__file__).resolve().parents[2] / "Dockerfile").read_text()
+    assert f"SentenceTransformer('{vector_embedding_service.MODEL_NAME}')" in dockerfile
 
 
 def test_encodes_never_overlap(monkeypatch):

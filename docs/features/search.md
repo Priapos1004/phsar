@@ -10,12 +10,14 @@ Title, description and note search over the catalogue, filtered, at two grains:
 
 ## Embeddings
 
-Model is `paraphrase-multilingual-MiniLM-L12-v2`, stored in pgvector. Searches read
+Model is `intfloat/multilingual-e5-small`, stored in pgvector. Searches read
 the `description` and `rating_notes` embeddings. A description embedding encodes the
 row's titles together with its description, so a title change regenerates it. Titles
 have no embedding of their own: title search matches literally (below). Changing the
-model re-tunes every constant calibrated on it, each marked "re-measure on a model
-change".
+model, or capping its input below the 512 tokens the constants are calibrated at,
+re-tunes every constant calibrated on it, each marked "re-measure on a model change".
+The stored vectors follow by themselves: each boot re-encodes one stored row, and a
+mismatch re-embeds the catalogue (`embeddings_are_stale`).
 
 **Everything is case-folded before encoding.** The model is *cased*, so the same
 text in different capitalisation produces materially different vectors — enough
@@ -24,6 +26,12 @@ that capitalising a query reorders the results and can bury the intended show.
 stored documents alike — `generate_query_embedding` and `generate_embedding` are
 siblings over `_run_encode`, not one calling the other — so folding there keeps
 both in one case space.
+
+**A query and the text it should find carry different prefixes.** The model is trained
+asymmetrically: `generate_query_embedding` encodes `query: …`, `generate_embedding`
+`passage: …` — descriptions and notes alike, so merge detection compares two passages.
+A dropped or swapped prefix still returns vectors, only worse-ranked ones, so nothing
+downstream would notice it.
 
 **Queries are memoized; document text is not.** `generate_query_embedding` wraps a
 256-entry LRU over the folded text (~30 ms per encode, ~0.1 ms on a hit, ~4 MB at
@@ -39,8 +47,8 @@ cold exactly when the query cache was measured to matter.
 value is shared by every caller of a key and callers assign it straight onto ORM
 attributes, so returning the cached object would hand out a shared mutable with no
 owner. Pinned by `test_cache_hits_do_not_alias_the_returned_list`; the shared fold
-that keeps queries and documents in one case space is pinned by
-`test_query_and_document_paths_produce_the_same_vector`.
+and each path's prefix are pinned by
+`test_queries_and_documents_carry_their_own_prefix`.
 
 ## Title search
 
@@ -270,3 +278,4 @@ The client-side frontier walk is the one sanctioned divergence — see
 - [Efficiency improvements](../../compound-docs/2026-08-06-v0.15.4-efficiency-improvements.md) — the aggregate-in-ORDER-BY change and query memoization
 - [Search rework](../../compound-docs/2026-10-07-v0.16.0-search-rework.md) — the studies and problem cases behind the v0.16.0 search changes
 - [Search UI](../../compound-docs/2026-10-09-v0.16.1-search-ui.md) — the notes cutoff study and why the anime grain takes the nearest note
+- [Galaxy](../../compound-docs/2026-10-30-v0.16.5-galaxy.md) — why the model is multilingual-e5-small, and the margin re-measured on it

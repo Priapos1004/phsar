@@ -117,7 +117,8 @@ Three signals feed `merge_candidates`:
   overlap. Containment additionally needs a word boundary on both sides in the
   longer string, plus a 4-char size floor (or a full match where the shorter title
   is itself ≥ 3 chars).
-- **`title_desc`** — a weaker title match plus description-embedding cosine ≥ 0.85.
+- **`title_desc`** — a weaker title match plus description-embedding cosine ≥
+  `DESC_THRESHOLD`.
 - **`relation_link`** — the sidecar links one anime's media to media under a
   *different* anime through a strong-link relation.
 
@@ -185,3 +186,4 @@ shifts. Deleting a media has no such safety — see [curation](curation.md).
 - [Split candidates](../../compound-docs/2026-05-18-v0.14.2-split-candidates.md) — the third pass and TERMINAL edge capture
 - [Scraper quirks](../../compound-docs/2026-05-11-jikan-scraper-quirks.md) — relation-label normalization
 - [MAL API v2 migration](../../compound-docs/2026-07-18-v0.14.14-mal-api-migration.md) — substance-gate waivers
+- [Galaxy](../../compound-docs/2026-10-30-v0.16.5-galaxy.md) — how the `title_desc` cosine threshold is calibrated

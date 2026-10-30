@@ -250,7 +250,7 @@ S5 (main)             → BLUR/HIDE
 
 **Three detectors feed the `merge_candidates` table:**
 1. **`title_studio`** — `max(SequenceMatcher.ratio, longest_match_size / min(len)) ≥ 0.85`, gated by studio overlap. The containment branch catches `"X" ⊂ "X: Subtitle"` cases that pure ratio under-counts.
-2. **`title_desc`** — title score ≥ 0.5 AND description-embedding cosine ≥ 0.85, also gated by studio overlap. Catches Dr. Stone / Dr. Stone: New World where the subtitle pushes title alone below the rule-1 threshold but the synopses lock onto the same characters/world.
+2. **`title_desc`** — title score ≥ 0.5 AND description-embedding cosine ≥ `DESC_THRESHOLD`, also gated by studio overlap. Catches Dr. Stone / Dr. Stone: New World where the subtitle pushes title alone below the rule-1 threshold but the synopses lock onto the same characters/world.
 3. **`relation_link`** — `media_relation_edges` sidecar links a media to media owned by a different anime via a strong-link MAL relation (`sequel`, `prequel`, `alternative_version` — the same `ALT_CHAIN_EDGES` set the relation classifier uses to build a chain). Strongest signal (MAL itself asserting the connection); no title or studio gate. The sidecar is the **single source of truth** — save, update_sweep, and backfill all converge through `find_cross_anime_relation_pairs` / `MergeCandidateDAO.get_cross_anime_relation_pairs` so the signal fires identically regardless of which job created the anime rows or when (the Evangelion-shape: NGE TV and Rebuild Movies as separate scrapes were missed by the original BFS-derived path).
 
 **MAL-ID match remains:** `MalIdAlreadyExistsError` raised at save-time if a media's mal_id already exists; this is the hard pre-detector guarantee.
@@ -631,7 +631,7 @@ length target.
 | **v0.16.2** | ✓ Browse + News | Carousel definitions in the DB with a resolver and seeded core rows; the Browse page and its News tab; a see-all page, also reached from search. JWT signing and verification move from python-jose to PyJWT. |
 | **v0.16.3** | ✓ Home + Discover | Home rows Lucky find and New to the catalogue replace two placeholders; seasonal hero art (Halloween); a Discover tab whose wheel draws each user one themed mood a day, cut to with a full-screen reveal; a To-anime link on the media page; paging arrows on every sideways row. |
 | **v0.16.4** | ✓ Responsive pass | Every page on a phone and at the widest layout; an In / Not in toggle on the watchlist's Lists filter; tooltips that open on a tap, and ⓘ explanations on the watchlist filters and settings; search results kept across a detail detour; the sweep card's nightly load against its cap; Future Shock's reveal is a UFO that beams its title down; genre filter groups (Any/All, Without, OR or AND between groups), which keep a Discover mood's rows from repeating each other. |
-| **v0.16.5** | Galaxy | Browse's parked Galaxy tab (Feature 5b): a 2D map of the catalogue. |
+| **v0.16.5** | Galaxy | Browse's parked Galaxy tab (Feature 5b): a 2D map of the catalogue. Search moves to multilingual-e5-small, which finds Japanese and translated queries far better. |
 | **v0.16.6** | Recommended | Home's Recommended row, from the user's own algorithm. |
 | **v0.16.7** | Guest accounts | A rework of the guest account logic. |
 | **v0.16.8** | Get-started page | The onboarding page (Feature 10). |

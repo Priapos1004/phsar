@@ -2,6 +2,7 @@ import logging
 import threading
 from functools import lru_cache
 
+import numpy as np
 from anyio import to_thread
 from sentence_transformers import SentenceTransformer
 from sqlalchemy import delete
@@ -13,7 +14,7 @@ from app.models.rating_search import RatingSearch
 
 logger = logging.getLogger(__name__)
 
-MODEL_NAME = 'paraphrase-multilingual-MiniLM-L12-v2'
+MODEL_NAME = 'intfloat/multilingual-e5-small'
 # Cache first: the model is pinned, so asking the Hub whether it changed only costs a
 # request and a warning every boot. A fresh machine's first run falls back to the download.
 try:
@@ -55,18 +56,9 @@ def _encode_query_cached(text: str) -> tuple[float, ...]:
 
 
 def _fold(text: str) -> str:
-    """The single case-fold every embedding passes through.
-
-    `paraphrase-multilingual-MiniLM-L12-v2` is a *cased* model, so "Kurokos" and
-    "kurokos" produce materially different vectors — and the query-case difference
-    alone reorders the results enough to bury the intended show. Folding here, on
-    both queries AND stored description/note text, keeps them in one case space
-    (the textbook precondition for embedding retrieval); folding at the query
-    call-sites alone would paper over the symptom and risk a fresh
-    query↔document mismatch. It is also what makes capitalisation variants of one
-    query a single cache entry. Existing catalog vectors predate this and are
-    re-normalized by `embedding_backfiller.reembed_all_embeddings`.
-    """
+    """The single case-fold every embedding passes through, queries and stored text
+    alike — why here and not at the call sites is in docs/features/search.md. It also
+    makes capitalisation variants of one query a single cache entry."""
     return text.lower()
 
 
@@ -95,17 +87,36 @@ async def generate_query_embedding(text: str) -> list[float]:
     hit again. Sharing a 256-slot LRU therefore left the query cache fully evicted
     after every sweep, i.e. cold precisely after the nightly maintenance window.
     """
-    return await _run_encode(_encode_query_cached, text)
+    # e5 is asymmetric: docs/features/search.md.
+    return await _run_encode(_encode_query_cached, "query: " + text)
 
 
 async def generate_embedding(text: str) -> list[float]:
     """Embed DOCUMENT text (descriptions with their titles, rating notes) — uncached, since
     a given document string is encoded once. Search queries go through
     `generate_query_embedding`."""
-    return await _run_encode(_encode, text)
+    return await _run_encode(_encode, "passage: " + text)
 
 
-async def _description_embedding(title_texts: list[str | None], description_text: str | None) -> list[float]:
+def cosine_similarity(a, b) -> float:
+    """Cosine similarity of two embedding vectors. Returns 0.0 if either
+    vector is empty/None or has zero norm. Uses numpy so merge detection's
+    O(catalog²) backfill doesn't spend its time in a Python float-loop on
+    384-dim arrays."""
+    if a is None or b is None:
+        return 0.0
+    a_arr = np.asarray(a, dtype=np.float32)
+    b_arr = np.asarray(b, dtype=np.float32)
+    if a_arr.size == 0 or a_arr.shape != b_arr.shape:
+        return 0.0
+    norm_a = float(np.linalg.norm(a_arr))
+    norm_b = float(np.linalg.norm(b_arr))
+    if norm_a == 0.0 or norm_b == 0.0:
+        return 0.0
+    return float(np.dot(a_arr, b_arr) / (norm_a * norm_b))
+
+
+async def encode_description(title_texts: list[str | None], description_text: str | None) -> list[float]:
     """The titles and the description encoded together, so any title change
     invalidates it too."""
     combined_text = " ".join([t for t in title_texts if t])
@@ -114,7 +125,7 @@ async def _description_embedding(title_texts: list[str | None], description_text
 
 async def _create_search_embedding(db: AsyncSession, model_class, fk_kwargs: dict, title_texts: list[str | None], description_text: str | None):
     """Shared helper for creating a description embedding and persisting it."""
-    description_embedding = await _description_embedding(title_texts, description_text)
+    description_embedding = await encode_description(title_texts, description_text)
     obj = model_class(**fk_kwargs, description_embedding=description_embedding)
     db.add(obj)
     await db.flush()
@@ -146,7 +157,7 @@ async def _regenerate_search_embedding(
     try/except in relation_backfiller etc.) would commit the deletion
     with no replacement.
     """
-    description_embedding = await _description_embedding(title_texts, description_text)
+    description_embedding = await encode_description(title_texts, description_text)
 
     await db.execute(delete(model_class).where(fk_column == fk_value))
     db.add(model_class(**{fk_column.key: fk_value}, description_embedding=description_embedding))

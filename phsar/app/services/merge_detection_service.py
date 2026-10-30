@@ -6,7 +6,7 @@ Three detectors feed the merge_candidates table:
   studio overlap. Catches "Naruto" / "Naruto Shippuuden" — strong enough on
   its own.
 - title_desc: weaker title match (>= 0.5) plus description-embedding cosine
-  >= 0.85, also gated by studio overlap. Catches "Dr. Stone" / "Dr. Stone:
+  >= DESC_THRESHOLD, also gated by studio overlap. Catches "Dr. Stone" / "Dr. Stone:
   New World" where the subtitle pushes the title score below the alone-rule.
 - relation_link: a `media_relation_edges` sidecar entry points to media
   under a different anime via a strong-link relation (sequel, prequel,
@@ -29,7 +29,6 @@ import re
 from difflib import SequenceMatcher
 from typing import NamedTuple
 
-import numpy as np
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.merge_candidate_dao import MergeCandidateDAO
@@ -42,6 +41,7 @@ from app.daos.merge_candidate_dao import MergeCandidateDAO
 # "related but distinct" — adding them produces false positives (validated
 # against the prod catalog).
 from app.services.relation_classifier import ALT_CHAIN_EDGES
+from app.services.vector_embedding_service import cosine_similarity
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +65,9 @@ TITLE_ALONE_THRESHOLD = 0.85
 # synopses shouldn't flag.
 TITLE_FLOOR_FOR_DESC = 0.5
 # Description-cosine threshold for the title+desc combined rule. Set on the
-# embedding model's similarities — re-measure on a model change.
-DESC_THRESHOLD = 0.85
+# embedding model's similarities — re-measure on a model change; the procedure is in
+# compound-docs/2026-10-30-v0.16.5-galaxy.md.
+DESC_THRESHOLD = 0.93
 # Containment match must be at least this many chars to count, OR a full
 # match of the shorter title with the shorter at least MIN_FULL_MATCH_CHARS
 # long. Blocks one/two-letter substrings ('k' ⊂ 'knights') from scoring 1.0.
@@ -139,22 +140,6 @@ def _title_score(a: str, b: str) -> float:
     return max(ratio, containment)
 
 
-def _cosine_similarity(a, b) -> float:
-    """Cosine similarity of two embedding vectors. Returns 0.0 if either
-    vector is empty/None or has zero norm. Uses numpy so the O(catalog²)
-    backfill doesn't spend its time in a Python float-loop on 384-dim arrays."""
-    if a is None or b is None:
-        return 0.0
-    a_arr = np.asarray(a, dtype=np.float32)
-    b_arr = np.asarray(b, dtype=np.float32)
-    if a_arr.size == 0 or a_arr.shape != b_arr.shape:
-        return 0.0
-    norm_a = float(np.linalg.norm(a_arr))
-    norm_b = float(np.linalg.norm(b_arr))
-    if norm_a == 0.0 or norm_b == 0.0:
-        return 0.0
-    return float(np.dot(a_arr, b_arr) / (norm_a * norm_b))
-
 
 async def _flag_if_similar(
     db: AsyncSession,
@@ -195,7 +180,7 @@ async def _flag_if_similar(
         return True
 
     if title >= TITLE_FLOOR_FOR_DESC:
-        desc = _cosine_similarity(a.description_embedding, b.description_embedding)
+        desc = cosine_similarity(a.description_embedding, b.description_embedding)
         if desc >= DESC_THRESHOLD:
             # Combined score: weighted average so the stored similarity
             # roughly reflects the strength that triggered the flag, not
