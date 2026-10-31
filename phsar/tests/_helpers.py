@@ -119,3 +119,19 @@ def split_cluster(
         "suggested_anchor_mal_id": anchor_mal_id,
         "bridge_edges": bridge_edges if bridge_edges is not None else [],
     }
+
+
+class NoopProgressReporter:
+    """Stands in for `ProgressReporter` in a dispatcher test: the real one opens its own
+    short-lived sessions, which would write outside the test's transaction."""
+
+    def __init__(self, *_args, **_kwargs):
+        pass
+
+    async def update(self, *_args, **_kwargs):
+        return None
+
+
+def fake_job(payload: dict | None = None, job_id: int = 12345):
+    """A stand-in `Job` for a dispatcher called directly: its id and payload are all one reads."""
+    return type("FakeJob", (), {"id": job_id, "payload": payload or {}})()

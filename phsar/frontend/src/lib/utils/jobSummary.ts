@@ -9,6 +9,7 @@ import { formatBytes } from '$lib/utils/formatString';
 import type {
 	AdminJobResponse,
 	BackupResultSummary,
+	GalaxyRebuildSummary,
 	RestoreResultSummary,
 } from '$lib/types/api';
 
@@ -42,6 +43,19 @@ const SUMMARY: Record<AdminJobResponse['kind'], (row: AdminJobResponse) => strin
 	restore: (row) => {
 		const s = row.result_summary as RestoreResultSummary | null;
 		return typeof s?.restored_from === 'string' ? s.restored_from : '';
+	},
+	galaxy_rebuild: (row) => {
+		const s = row.result_summary as GalaxyRebuildSummary | null;
+		if (row.status !== 'succeeded' || !s) return '';
+		const parts = [
+			`${num(s.sectors)} sectors · ${num(s.regions)} regions`,
+			`${num(s.trained)} fitted + ${num(s.predicted)} placed`,
+			`${num(s.names_carried)} names kept`,
+		];
+		if (typeof s.median_movement === 'number') {
+			parts.push(`moved ${Math.round(s.median_movement * 100)}%`);
+		}
+		return parts.join(' · ');
 	},
 	update_sweep: (row) => updateSweepSummary(row),
 	seasonal_sweep: (row) => seasonSweepSummary(row),

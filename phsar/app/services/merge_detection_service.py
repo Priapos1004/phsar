@@ -64,9 +64,9 @@ TITLE_ALONE_THRESHOLD = 0.85
 # description match isn't trusted — random shows with vaguely similar
 # synopses shouldn't flag.
 TITLE_FLOOR_FOR_DESC = 0.5
-# Description-cosine threshold for the title+desc combined rule. Set on the
-# embedding model's similarities — re-measure on a model change; the procedure is in
-# compound-docs/2026-10-30-v0.16.5-galaxy.md.
+# Description-cosine threshold for the title+desc combined rule. Specific to the
+# embedding model — re-measure on a model change (`.claude/skills/remeasure-embeddings`);
+# the current model's run is in compound-docs/2026-10-30-v0.16.5-galaxy.md.
 DESC_THRESHOLD = 0.93
 # Containment match must be at least this many chars to count, OR a full
 # match of the shorter title with the shorter at least MIN_FULL_MATCH_CHARS

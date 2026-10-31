@@ -20,4 +20,14 @@ sentence-transformers==5.6.0
 transformers==5.18.0
 tokenizers==0.23.2
 PyJWT==2.15.1
+# The galaxy map's fit (`galaxy_compute`). A fitted map is stored pickled and loads only
+# under the versions that wrote it, so every library the pickle references is pinned too,
+# transitive or not; a bump refits the map at the next boot (`galaxy_service.built_from`).
+umap-learn==0.5.12
+pynndescent==0.7.0
+hdbscan==0.8.44
+scikit-learn==1.9.1
+scipy==1.17.1
+numba==0.68.1
+joblib==1.6.0
 python-multipart==0.0.32

@@ -563,11 +563,9 @@ def title_match_passes(stmt, title_match, *, having: bool = False) -> list:
 
 # How far below the searched population's mean distance to the query a semantic hit
 # must sit (`description_cutoff`, `note_cutoff`); why relative is in
-# docs/features/search.md. Specific to the embedding model: the procedures are in
-# compound-docs/2026-10-07-v0.16.0-search-rework.md and
-# compound-docs/2026-10-09-v0.16.1-search-ui.md, the current model's run in
-# compound-docs/2026-10-30-v0.16.5-galaxy.md — re-measure every population on a model
-# change.
+# docs/features/search.md. Specific to the embedding model — re-measure on a model change
+# (`.claude/skills/remeasure-embeddings`); the current model's run is in
+# compound-docs/2026-10-30-v0.16.5-galaxy.md.
 SEMANTIC_MARGIN = 0.06
 
 
@@ -623,15 +621,18 @@ def match_passes(stmt, literals: list, distance, cutoff, *, having: bool, aggreg
     ]
 
 
+def description_text():
+    """The text a media's description embedding encodes: its titles and description."""
+    return func.concat_ws(" ", *_title_variants(Media), Media.description)
+
+
 def description_passes(stmt, query: str, query_embedding, *, having: bool = False) -> list:
-    """Description search through `match_passes`, over the text the description
-    embedding encodes: the media's titles and description. Outer join, so a media
-    without an embedding can still be a literal hit. The anime grain averages its
-    media's distances; why is in docs/features/search.md."""
-    text = func.concat_ws(" ", *_title_variants(Media), Media.description)
+    """Description search through `match_passes`, over `description_text()`. Outer
+    join, so a media without an embedding can still be a literal hit. The anime grain
+    averages its media's distances; why is in docs/features/search.md."""
     return match_passes(
         stmt.outerjoin(MediaSearch, MediaSearch.media_id == Media.id),
-        literal_matches(query, text),
+        literal_matches(query, description_text()),
         _description_distance(query_embedding),
         description_cutoff(query_embedding),
         having=having, aggregate=func.avg,

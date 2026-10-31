@@ -501,6 +501,15 @@ class DuplicateScrapeQueryError(PhsarBaseError):
         super().__init__(message)
 
 
+class GalaxyGroupNotFoundError(PhsarBaseError):
+    """Raised when a galaxy sector or region UUID doesn't resolve — including one from a
+    map a refit has since replaced."""
+    status_code = 404
+
+    def __init__(self, uuid: str):
+        super().__init__(f"Galaxy group not found: '{uuid}'.")
+
+
 class MergeCandidateNotFoundError(PhsarBaseError):
     """Raised when a merge candidate UUID doesn't resolve."""
     status_code = 404

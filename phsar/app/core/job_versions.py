@@ -52,6 +52,9 @@ JOB_KIND_VERSIONS: dict[JobKind, int] = {
     JobKind.upcoming_sweep: 1,
     JobKind.backup: 1,
     JobKind.restore: 1,
+    # {trained, predicted, sectors, regions, between_share, names_carried, median_movement}
+    # — median_movement only on a refit, as a share of the map's span.
+    JobKind.galaxy_rebuild: 1,
 }
 
 # result_summary keys the Jobs Log *list* never reads — only the

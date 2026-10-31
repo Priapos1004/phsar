@@ -106,6 +106,10 @@ every read of its rows raise `LookupError`. A comparator in `alembic/env.py` mak
 the migrations built, which the test DB is not. It raises rather than writing the op
 because Alembic cannot reverse an `ExecuteSQLOp` into a downgrade.
 
+A downgrade that recreates the type to drop a label must drop and rebuild every partial
+index whose predicate compares the column to a label (`jobs.kind` has them): the re-cast
+fails on them otherwise.
+
 A migration that relabels an enum maps the labels back in its downgrade. A cast to text
 keeps the new labels, and the next upgrade's `CASE`, knowing only the old ones, NULLs
 them. Prove it with upgrade → downgrade → upgrade on a restored dump, comparing counts.

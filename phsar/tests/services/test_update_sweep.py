@@ -48,7 +48,7 @@ from app.services.scrape_dispatcher import (
     _refresh_one_anime,
     update_sweep_dispatcher,
 )
-from tests._helpers import media_kwargs
+from tests._helpers import NoopProgressReporter, fake_job, media_kwargs
 
 
 class _FakeScraper:
@@ -1639,14 +1639,6 @@ async def test_stabilizing_breakdown_anime_uses_least_settled_member(db_session)
 # ---------------------------------------------------------------------------
 
 
-class _NoopProgressReporter:
-    def __init__(self, *_args, **_kwargs):
-        pass
-
-    async def update(self, *_args, **_kwargs):
-        return None
-
-
 class _RecordingProgressReporter:
     """Captures the latest items_total / items_done so a test can assert the
     progress contract (media-grained in v0.14.8)."""
@@ -1810,7 +1802,7 @@ async def _run_dispatcher_harness(
         "app.services.scrape_dispatcher.MalScraper", lambda: fake_scraper,
     )
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+        "app.services.scrape_dispatcher.ProgressReporter", NoopProgressReporter,
     )
     _patch_select_due(monkeypatch, anime_ids)
     attach_calls = recompute_calls = None
@@ -1818,7 +1810,7 @@ async def _run_dispatcher_harness(
         attach_calls, recompute_calls = _patch_probe_pipeline(monkeypatch)
 
     async with async_session_maker() as session:
-        job = type("FakeJob", (), {"id": job_id})()
+        job = fake_job(job_id=job_id)
         summary = await update_sweep_dispatcher(session, job)
 
     return summary, attach_calls, recompute_calls
@@ -2788,14 +2780,14 @@ async def test_probe_persists_unwanted_media_returned_by_search_title(
         "app.services.scrape_dispatcher.MalScraper", lambda: fake_scraper,
     )
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+        "app.services.scrape_dispatcher.ProgressReporter", NoopProgressReporter,
     )
     _patch_select_due(monkeypatch, [a_id])
     _patch_probe_pipeline(monkeypatch)
 
     try:
         async with async_session_maker() as session:
-            job = type("FakeJob", (), {"id": 7421})()
+            job = fake_job(job_id=7421)
             await update_sweep_dispatcher(session, job)
 
         async with async_session_maker() as s:
@@ -2834,13 +2826,13 @@ async def test_relations_probe_failure_preserves_field_diff_but_not_anime_freshn
         "app.services.scrape_dispatcher.MalScraper", lambda: fake_scraper,
     )
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+        "app.services.scrape_dispatcher.ProgressReporter", NoopProgressReporter,
     )
     _patch_select_due(monkeypatch, [a_id])
     _attach, recompute_calls = _patch_probe_pipeline(monkeypatch)
 
     async with async_session_maker() as session:
-        job = type("FakeJob", (), {"id": 7801})()
+        job = fake_job(job_id=7801)
         summary = await update_sweep_dispatcher(session, job)
 
     assert summary["counters"]["probe_failed"] == 1

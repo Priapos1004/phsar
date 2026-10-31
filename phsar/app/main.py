@@ -2,6 +2,7 @@ import asyncio
 import contextlib
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,8 +36,9 @@ from app.seeders.user_seeder import (
     seed_admin_user,
     seed_guest_user,
 )
-from app.services import backup_service
+from app.services import backup_service, galaxy_service
 from app.services.backup_dispatcher import backup_dispatcher
+from app.services.galaxy_dispatcher import galaxy_rebuild_dispatcher
 from app.services.job_worker import job_worker
 from app.services.merge_detection_service import backfill_merge_candidates
 from app.services.scrape_dispatcher import (
@@ -94,14 +96,17 @@ async def _post_yield_backfills() -> None:
     except Exception:
         logger.exception("Backup self-heal failed — catalog backfills continue")
 
-    # Its OWN try/except: a failure is the model or the database, so it hits every
-    # row — the backfills below must still run, and the next boot retries.
+    # Its OWN try/except: a re-embed failure is the model or the database, so it hits
+    # every row — the backfills below must still run, and the next boot retries. The
+    # galaxy check sits behind the re-embed and is skipped with it, so a fit never reads
+    # half-re-encoded vectors.
     try:
         async with async_session_maker() as session:
             if await embeddings_are_stale(session):
                 await reembed_all_embeddings(session)
+            await galaxy_service.ensure_map(session, now=datetime.now(timezone.utc))
     except Exception:
-        logger.exception("Re-embed failed — catalog backfills continue")
+        logger.exception("Re-embed or galaxy map check failed — catalog backfills continue")
 
     try:
         if settings.RELATION_BACKFILL_ON_STARTUP:
@@ -167,6 +172,7 @@ async def lifespan(app: FastAPI):
     # Same dispatcher — it targets the current vs next season off job.kind.
     job_worker.register_dispatcher(JobKind.upcoming_sweep, seasonal_sweep_dispatcher)
     job_worker.register_dispatcher(JobKind.backup, backup_dispatcher)
+    job_worker.register_dispatcher(JobKind.galaxy_rebuild, galaxy_rebuild_dispatcher)
     await job_worker.start()
 
     backfill_task = asyncio.create_task(_post_yield_backfills())

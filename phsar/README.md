@@ -32,6 +32,7 @@ phsar/
 │   │   ├── browse_dao.py
 │   │   ├── delete_candidate_dao.py
 │   │   ├── discover_progress_dao.py
+│   │   ├── galaxy_dao.py
 │   │   ├── genre_dao.py
 │   │   ├── job_dao.py
 │   │   ├── media_dao.py
@@ -59,6 +60,7 @@ phsar/
 │   │   ├── browse.py
 │   │   ├── delete_candidate.py
 │   │   ├── discover_progress.py
+│   │   ├── galaxy.py
 │   │   ├── genre.py
 │   │   ├── job.py
 │   │   ├── media.py
@@ -84,6 +86,7 @@ phsar/
 │   │   ├── admin.py
 │   │   ├── admin_completion.py
 │   │   ├── admin_delete.py
+│   │   ├── admin_galaxy.py
 │   │   ├── admin_jobs.py
 │   │   ├── admin_merge.py
 │   │   ├── admin_split.py
@@ -107,6 +110,7 @@ phsar/
 │   │   ├── backup_schema.py
 │   │   ├── browse_schema.py
 │   │   ├── common_schema.py
+│   │   ├── galaxy_schema.py
 │   │   ├── genre_schema.py
 │   │   ├── job_schema.py
 │   │   ├── maintenance_schema.py
@@ -142,6 +146,9 @@ phsar/
 │       ├── delete_candidate_service.py
 │       ├── export_service.py
 │       ├── filter_service.py
+│       ├── galaxy_compute.py
+│       ├── galaxy_dispatcher.py
+│       ├── galaxy_service.py
 │       ├── job_submission_service.py
 │       ├── job_worker.py
 │       ├── mal_scraper.py
@@ -525,6 +532,7 @@ phsar/
     │   ├── test_admin.py
     │   ├── test_admin_completion.py
     │   ├── test_admin_delete.py
+    │   ├── test_admin_galaxy.py
     │   ├── test_admin_nightly.py
     │   ├── test_admin_seasonal.py
     │   ├── test_admin_split.py
@@ -569,6 +577,8 @@ phsar/
         ├── test_curation_row_locks.py
         ├── test_delete_candidate_service.py
         ├── test_discover_draw.py
+        ├── test_galaxy_compute.py
+        ├── test_galaxy_jobs.py
         ├── test_job_dao.py
         ├── test_job_worker.py
         ├── test_jobs_scrape_index.py

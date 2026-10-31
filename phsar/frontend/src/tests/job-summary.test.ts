@@ -103,6 +103,26 @@ describe('payloadSummary — backup / restore', () => {
 	});
 });
 
+describe('payloadSummary — galaxy_rebuild', () => {
+	const summary = { trained: 1595, predicted: 369, sectors: 15, regions: 54, names_carried: 60 };
+
+	it('reports the map and how far a refit moved it', () => {
+		expect(
+			payloadSummary(row({ kind: 'galaxy_rebuild', result_summary: { ...summary, median_movement: 0.073 } })),
+		).toBe('15 sectors · 54 regions · 1595 fitted + 369 placed · 60 names kept · moved 7%');
+	});
+
+	it('leaves movement out of a first fit', () => {
+		expect(payloadSummary(row({ kind: 'galaxy_rebuild', result_summary: summary }))).toBe(
+			'15 sectors · 54 regions · 1595 fitted + 369 placed · 60 names kept',
+		);
+	});
+
+	it('is empty while running', () => {
+		expect(payloadSummary(row({ kind: 'galaxy_rebuild', status: 'running', result_summary: summary }))).toBe('');
+	});
+});
+
 describe('payloadSummary — user_scrape', () => {
 	it('shows the counts with the query', () => {
 		expect(

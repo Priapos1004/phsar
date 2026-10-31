@@ -34,6 +34,7 @@ from app.schemas.backup_schema import (
 )
 from app.services import _pg_subprocess, backup_dispatcher, backup_service
 from app.services.job_worker import JobWorker
+from tests._helpers import NoopProgressReporter, fake_job
 
 dao = JobDAO()
 
@@ -61,21 +62,9 @@ class _FakeProcess:
         return self._returncode
 
 
-class _NoopProgressReporter:
-    """Match the pattern in test_seasonal_sweep — ProgressReporter opens
-    its own short-lived sessions which would pollute the test DB; the
-    dispatcher's behavior doesn't depend on whether updates land."""
-
-    def __init__(self, *_args, **_kwargs):
-        pass
-
-    async def update(self, *_args, **_kwargs):
-        return None
-
-
 def _patch_progress(monkeypatch) -> None:
     monkeypatch.setattr(
-        "app.services.backup_dispatcher.ProgressReporter", _NoopProgressReporter,
+        "app.services.backup_dispatcher.ProgressReporter", NoopProgressReporter,
     )
 
 
@@ -93,10 +82,6 @@ async def _get_job(job_id: int) -> Job | None:
         return await dao.get_by_id(s, job_id)
 
 
-def _fake_job(payload: dict, job_id: int = 12345):
-    return type("FakeJob", (), {"id": job_id, "payload": payload})()
-
-
 # ---------------------------------------------------------------------------
 # Dispatcher unit tests — call backup_dispatcher directly
 # ---------------------------------------------------------------------------
@@ -112,7 +97,7 @@ async def test_backup_dispatcher_rejects_payload_missing_source(backup_dir, monk
 
     async with async_session_maker() as session:
         with pytest.raises(ValidationError):
-            await backup_dispatcher.backup_dispatcher(session, _fake_job({}))
+            await backup_dispatcher.backup_dispatcher(session, fake_job({}))
 
 
 @pytest.mark.asyncio
@@ -125,7 +110,7 @@ async def test_backup_dispatcher_rejects_payload_with_unknown_field(backup_dir, 
     async with async_session_maker() as session:
         with pytest.raises(ValidationError):
             await backup_dispatcher.backup_dispatcher(
-                session, _fake_job({"source": "manual", "tag": "oops"}),
+                session, fake_job({"source": "manual", "tag": "oops"}),
             )
 
 
@@ -137,7 +122,7 @@ async def test_backup_dispatcher_creates_dump(backup_dir, monkeypatch):
 
     async with async_session_maker() as session:
         summary = await backup_dispatcher.backup_dispatcher(
-            session, _fake_job({"source": "manual"}),
+            session, fake_job({"source": "manual"}),
         )
 
     assert summary["filename"].startswith("phsar-")
@@ -162,10 +147,10 @@ async def test_backup_dispatcher_surfaces_dedupe_as_success(backup_dir, monkeypa
 
     async with async_session_maker() as session:
         first = await backup_dispatcher.backup_dispatcher(
-            session, _fake_job({"source": "manual"}, job_id=1001),
+            session, fake_job({"source": "manual"}, job_id=1001),
         )
         second = await backup_dispatcher.backup_dispatcher(
-            session, _fake_job({"source": "manual"}, job_id=1002),
+            session, fake_job({"source": "manual"}, job_id=1002),
         )
 
     assert first["deduped_against"] is None
@@ -192,7 +177,7 @@ async def test_backup_dispatcher_cron_applies_retention(backup_dir, monkeypatch)
 
     async with async_session_maker() as session:
         await backup_dispatcher.backup_dispatcher(
-            session, _fake_job({"source": "cron"}, job_id=2001),
+            session, fake_job({"source": "cron"}, job_id=2001),
         )
     assert retention_calls == [1]
 
@@ -217,7 +202,7 @@ async def test_backup_dispatcher_manual_applies_retention(backup_dir, monkeypatc
 
     async with async_session_maker() as session:
         await backup_dispatcher.backup_dispatcher(
-            session, _fake_job({"source": "manual"}, job_id=2002),
+            session, fake_job({"source": "manual"}, job_id=2002),
         )
     assert retention_calls == [1]
 
@@ -238,7 +223,7 @@ async def test_backup_dispatcher_propagates_disk_full(backup_dir, monkeypatch):
     async with async_session_maker() as session:
         with pytest.raises(BackupDiskSpaceError):
             await backup_dispatcher.backup_dispatcher(
-                session, _fake_job({"source": "manual"}, job_id=3001),
+                session, fake_job({"source": "manual"}, job_id=3001),
             )
 
 

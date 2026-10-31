@@ -613,7 +613,14 @@ export interface RegistrationTokenListItem {
 }
 
 // Jobs (content pipeline)
-export type JobKind = 'user_scrape' | 'update_sweep' | 'seasonal_sweep' | 'upcoming_sweep' | 'backup' | 'restore';
+export type JobKind =
+	| 'user_scrape'
+	| 'update_sweep'
+	| 'seasonal_sweep'
+	| 'upcoming_sweep'
+	| 'backup'
+	| 'restore'
+	| 'galaxy_rebuild';
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 
 // Mirrors backend `job_worker.ERROR_CATEGORY_*`. Keep both sides in sync —
@@ -643,6 +650,17 @@ export interface BackupResultSummary extends JobResultSummary {
 export interface RestoreResultSummary extends JobResultSummary {
 	restored_from?: string;
 	pre_restore_snapshot?: string | null;
+}
+
+export interface GalaxyRebuildSummary extends JobResultSummary {
+	trained?: number;
+	predicted?: number;
+	sectors?: number;
+	regions?: number;
+	between_share?: number;
+	names_carried?: number;
+	// Only on a refit: how far the median star moved, as a share of the map's span.
+	median_movement?: number | null;
 }
 
 // One field's before/after on the update_sweep detail page. `old`/`new`
