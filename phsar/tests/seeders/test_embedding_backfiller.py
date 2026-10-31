@@ -110,7 +110,8 @@ async def test_reembed_regenerates_existing_vectors_in_place(db_session):
 
 async def _probe_row(db_session) -> AnimeSearch:
     """The row `embeddings_are_stale` reads — the lowest-id anime's. Two fixture anime
-    make sure one exists and that the anime pass has a second row to cut on."""
+    make sure one exists and give the anime pass a second row to cut on. One fixture media
+    gives the media pass a row to cut on, even on an empty database."""
     for mal_id in (99011, 99012):
         anime = Anime(mal_id=mal_id, title=f"Probe {mal_id}", description="A probe description.")
         db_session.add(anime)
@@ -119,6 +120,8 @@ async def _probe_row(db_session) -> AnimeSearch:
             db_session, anime_id=anime.id,
             title_texts=anime_title_texts(anime), description_text=anime.description or "",
         )
+    db_session.add(Media(**media_kwargs(anime.id, 990120, title="Probe Media")))
+    await db_session.flush()
     return (await db_session.execute(
         select(AnimeSearch).order_by(AnimeSearch.anime_id).limit(1))).scalar_one()
 

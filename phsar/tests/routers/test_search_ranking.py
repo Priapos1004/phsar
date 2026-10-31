@@ -289,11 +289,14 @@ async def test_synonym_reaches_its_anime(client, user_auth_headers, db_session):
 
 _LITERAL = "Fixture Garden"
 _LITERAL_UNEMBEDDED = "Fixture Letters"
-_CLOSE = "Izumo"
+_CLOSE = "Izume"
 _HUB = "Izumo Shrine"
 _INFIX = "Fixture Tankery"
 _LEAP = "Fixture Summer"
-_FAR = ("Fixture Kitchen", "Fixture Ledger")
+# Enough far rows that on CI's empty database, where the fixtures are the whole population
+# `description_cutoff` averages, the mean sits high enough for every premise below; a prod
+# restore holds them too.
+_FAR = ("Fixture Kitchen", "Fixture Ledger", "Fixture Circuit")
 _TITLE_HIT = "Fixture Court"
 
 # title → (its media's column overrides, whether it gets an embedding); one
@@ -305,7 +308,7 @@ _DESCRIBED = {
         "score": 6.0,
     }, True),
     _LITERAL_UNEMBEDDED: ({"description": "Izumi writes letters to a pen pal she has never met.", "score": 7.0}, False),
-    _CLOSE: ({"description": "Izumo and Izuna.", "score": 8.0}, True),
+    _CLOSE: ({"description": "Izume.", "score": 8.0}, True),
     _HUB: ({"description": "", "score": 9.5}, True),
     _INFIX: ({"description": "Miho Nishizumi commands a tank crew at a girls' academy.", "score": 9.5}, True),
     _LEAP: ({
@@ -318,6 +321,10 @@ _DESCRIBED = {
     }, True),
     _FAR[1]: ({
         "description": "An accountant audits quarterly tax filings for a mid-sized logistics company.",
+        "score": 9.5,
+    }, True),
+    _FAR[2]: ({
+        "description": "Engineers race solar-powered cars across the desert for a university prize.",
         "score": 9.5,
     }, True),
     _TITLE_HIT: ({
@@ -359,13 +366,13 @@ async def _distances_and_cutoff(db_session, query: str) -> tuple[dict[str, float
 async def test_description_name_query_ranks_literal_hits_first(
     client, user_auth_headers, db_session, url,
 ):
-    """For "izumi" the vector prefers "Izumo", which was also created first, yet the
+    """For "izumi" the vector prefers "Izume", which was also created first, yet the
     two descriptions naming Izumi lead: the embedded one, then the one without an
-    embedding, which only an outer join keeps. "Izumo" follows as a semantic hit under
+    embedding, which only an outer join keeps. "Izume" follows as a semantic hit under
     the cutoff.
 
     Two rows stay out that a looser rule would let in. "Izumo Shrine" has an empty
-    description, and its title-only vector sits nearer than "Izumo"'s. "Fixture
+    description, though its title-only vector sits under the cutoff too. "Fixture
     Tankery" names Nishizumi, which contains the query, but no word of it starts with
     it."""
     await _describe(
