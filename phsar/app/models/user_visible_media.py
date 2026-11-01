@@ -4,8 +4,8 @@ Stores which media are visible (not spoiler-protected) for each user.
 Recomputed per-anime when a user rates or deletes a rating.
 Seeded for new users with the first main media of each anime.
 
-This is a cache table — no uuid/timestamps needed. Uses a simple
-composite primary key for fast bulk delete + insert.
+This is a cache table — no uuid/timestamps needed. One row per
+(user_id, media_id), held unique; the primary key is a plain surrogate id.
 """
 
 from sqlalchemy import ForeignKey, Index, Integer, UniqueConstraint

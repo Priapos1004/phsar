@@ -88,6 +88,7 @@ owns the command and its ignore list — and diff the result against `phsar/READ
 
 ```
 (cd phsar && ruff check .)
+(cd phsar && python -m tests.test_readme_schema)   # rewrites README's database diagram from the models
 (cd phsar/frontend && bun run check)   # only when frontend files changed
 ```
 

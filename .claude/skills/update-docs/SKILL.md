@@ -56,6 +56,7 @@ Review what changed in the current work session and update all affected document
 - **The folder structure tree must reflect the working state of the repo** — include files that exist when actively developing (`.env`, `claude related files`, `alembic/versions/*.py`, as a collapsed entry, etc.), not just what git tracks. This shows users what the repo looks like when everything is set up correctly.
 - **Always re-list the directory before assuming nothing changed.** Run `tree -L 4 -I 'node_modules|__pycache__|.svelte-kit|venv|.git|build|.pytest_cache|backups|st-cache'` (or `find phsar -type f -not -path '*/\.*' -not -path '*/node_modules/*' -not -path '*/__pycache__/*' -not -path '*/.svelte-kit/*' | sort` if `tree` isn't installed) and diff the output against the tree in `phsar/README.md`. New `.svelte`, `.ts`, `.py` files, or new directories under `lib/components/`, `lib/utils/`, `routes/`, `app/services/`, `app/daos/`, `app/models/`, `app/routers/`, `app/seeders/` are the usual additions. **Never assume "no folder structure changes" without re-listing.**
 - To regenerate the tree: inspect the actual directory structure, then manually compose the tree maintaining the existing style (collapse `ui/` subdirectories, collapse `alembic/versions/`, show key config files).
+- **The database diagram is generated, never composed** — `/ship`'s lint step rewrites it.
 - Update env var documentation when new vars are added to `config.py`.
 - Keep the alembic instructions current with any migration workflow changes.
 
