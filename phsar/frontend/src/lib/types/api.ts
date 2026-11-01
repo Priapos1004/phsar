@@ -1,6 +1,6 @@
 /** TypeScript types mirroring backend Pydantic schemas */
 import type { ThemeKey } from '$lib/themes';
-import type { MediaSearchFilters } from '$lib/utils/search';
+import type { MediaSearchFilters, RatedState } from '$lib/utils/search';
 
 // Auth
 export interface TokenResponse {
@@ -67,13 +67,11 @@ export interface SortValues {
 	your_rating?: number | null;
 }
 
-// How completely the caller has rated one anime (GET /ratings/coverage). Tiers and
-// what earns each are in docs/features/ratings.md.
-export type CoverageTier = 'some' | 'main' | 'all';
-
+// How far the caller has got with one anime (GET /ratings/coverage); the states are in
+// docs/features/ratings.md. An anime the caller has not rated is absent.
 export interface AnimeRatingCoverage {
 	anime_uuid: string;
-	tier: CoverageTier;
+	state: Exclude<RatedState, 'none' | 'completed'>;
 }
 
 // Genre name + description (GET /filters/genres) — powers genre-badge tooltips

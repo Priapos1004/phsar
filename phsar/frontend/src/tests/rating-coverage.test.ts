@@ -1,10 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render } from '@testing-library/svelte';
-import { COVERAGE_STYLE } from '$lib/utils/ratingCoverage';
+import { COVERAGE_STYLE, coverageTier, type CoverageTier } from '$lib/utils/ratingCoverage';
 import { ratingCoverage, clearRatingCoverage } from '$lib/stores/ratingCoverage';
 import RatedAnimeCard from '$lib/components/ratings/RatedAnimeCard.svelte';
 import MediaInfo from '$lib/components/MediaInfo.svelte';
-import type { CoverageTier } from '$lib/types/api';
 import type { AnimeRatingRow } from '$lib/utils/ratingStats';
 
 const TIERS: CoverageTier[] = ['some', 'main', 'all'];
@@ -12,6 +11,14 @@ const METALS = ['main', 'all'] as const;
 
 // The store outlives every component that reads it.
 afterEach(() => clearRatingCoverage());
+
+describe('coverageTier', () => {
+	it('gives the two completions their own look and every incomplete state the base one', () => {
+		expect(coverageTier('all')).toBe('all');
+		expect(coverageTier('main')).toBe('main');
+		for (const state of ['in_progress', 'on_hold', 'dropped'] as const) expect(coverageTier(state)).toBe('some');
+	});
+});
 
 describe('COVERAGE_STYLE', () => {
 	it('gives the metal tiers a second tone and the base tier the theme token', () => {

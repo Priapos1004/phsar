@@ -1,6 +1,7 @@
 import { writable } from 'svelte/store';
 import { api } from '$lib/api';
-import type { AnimeRatingCoverage, CoverageTier } from '$lib/types/api';
+import type { AnimeRatingCoverage } from '$lib/types/api';
+import { coverageTier, type CoverageTier } from '$lib/utils/ratingCoverage';
 
 /**
  * anime UUID → how completely the caller has rated it. Drives the coverage
@@ -44,7 +45,7 @@ export function ensureRatingCoverage(): Promise<void> {
 			// Superseded by an invalidate or a user switch while in flight: drop it,
 			// and leave the cache empty so the next reader refetches.
 			if (loadPromise !== pending) return;
-			ratingCoverage.set(new Map(entries.map((e) => [e.anime_uuid, e.tier])));
+			ratingCoverage.set(new Map(entries.map((e) => [e.anime_uuid, coverageTier(e.state)])));
 		})
 		.catch(() => {
 			// Not authenticated / restricted user / transient error — clear the cache

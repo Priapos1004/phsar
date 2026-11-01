@@ -256,7 +256,7 @@ onto the caller's ratings, and notes search matches over the same join
 
 Media-view results also carry `is_rated` (`MediaSearchResult`), filled after the query
 from one indexed lookup over the page of hits. The anime grain's counterpart is the
-coverage tier from `/ratings/coverage`, which the client indexes by anime uuid.
+rated state from `/ratings/coverage`, which the client indexes by anime uuid.
 
 ## Ordering media within an anime
 

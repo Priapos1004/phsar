@@ -42,13 +42,13 @@ async def _search(client, headers) -> dict[str, bool]:
     return {r["uuid"]: r["is_rated"] for r in res.json()}
 
 
-async def test_coverage_reports_the_tier_for_a_rated_anime(client, user_auth_headers, db_session):
+async def test_coverage_reports_the_state_of_a_rated_anime(client, user_auth_headers, db_session):
     anime, media = await _anime_with_media(db_session, -93000, 2)
     await rate_media(client, user_auth_headers, media[0].uuid)
 
     res = await client.get("/ratings/coverage", headers=user_auth_headers)
     assert res.status_code == 200
-    assert {e["anime_uuid"]: e["tier"] for e in res.json()}[str(anime.uuid)] == "some"
+    assert {e["anime_uuid"]: e["state"] for e in res.json()}[str(anime.uuid)] == "in_progress"
 
 
 async def test_coverage_is_closed_to_restricted_users(client, restricted_user_auth_headers):

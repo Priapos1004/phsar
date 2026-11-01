@@ -182,8 +182,8 @@ class RatingDAO(BaseDAO[Ratings]):
         return best
 
     async def get_anime_coverage(self, db: AsyncSession, user_id: int) -> list[Row]:
-        """Per-anime counts behind the rated state and the coverage tier, for every
-        anime the user has rated at least one media of. The counts, not the state —
+        """Per-anime counts behind the rated state, for every anime the user has
+        rated at least one media of. The counts, not the state —
         `rating_service` turns them into one.
 
         Scoped to the anime the user has actually rated — bounded by their library,

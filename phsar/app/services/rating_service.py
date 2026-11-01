@@ -16,7 +16,6 @@ from app.models.ratings import Ratings, WatchStatus
 from app.schemas.media_filter_schema import RatedState
 from app.schemas.rating_schema import (
     AnimeRatingCoverage,
-    CoverageTier,
     RatingAttributes,
     RatingBulkCreate,
     RatingCreate,
@@ -272,14 +271,6 @@ def _rated_state(row: Row) -> RatedState:
     return RatedState.IN_PROGRESS
 
 
-_TIER_OF_STATE = {RatedState.ALL: CoverageTier.all, RatedState.MAIN: CoverageTier.main}
-
-
-def _coverage_tier(row: Row) -> CoverageTier:
-    """The `CoverageTier` view of `_rated_state`."""
-    return _TIER_OF_STATE.get(_rated_state(row), CoverageTier.some)
-
-
 async def rated_states_by_anime_id(db: AsyncSession, user_id: int) -> dict[int, RatedState]:
     """Every anime the user has rated, by its `_rated_state` — the anime grain's
     `rated` search filter. An anime absent here is unrated."""
@@ -287,14 +278,14 @@ async def rated_states_by_anime_id(db: AsyncSession, user_id: int) -> dict[int, 
 
 
 async def get_rating_coverage(db: AsyncSession, user_id: int) -> list[AnimeRatingCoverage]:
-    """How completely the user has rated each anime they have touched.
+    """How far the user has got with each anime they have rated.
 
     Computed live on every call rather than stored: merge and split re-parent
-    media while the ratings on them survive, so a persisted per-anime tier would
+    media while the ratings on them survive, so a persisted per-anime state would
     need invalidating on both curation paths to stay true.
     """
     rows = await rating_dao.get_anime_coverage(db, user_id)
-    return [AnimeRatingCoverage(anime_uuid=r.anime_uuid, tier=_coverage_tier(r)) for r in rows]
+    return [AnimeRatingCoverage(anime_uuid=r.anime_uuid, state=_rated_state(r)) for r in rows]
 
 
 async def delete_rating(

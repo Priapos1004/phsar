@@ -763,7 +763,7 @@ own.
 | `/media/anime/{uuid}` | GET | Anime detail page load |
 | `/media/{uuid}` | GET | Media detail page load |
 | `/ratings/scores` | GET | The `/ratings` page, the watchlist Statistics subtab, and the rating-consistency panel — one shared session-cached fetch (`ratingScores` store), invalidated by any rating write |
-| `/ratings/coverage` | GET | `/search` (anime view), `/ratings` and `/browse` on mount, when stale — per-anime rated-coverage tiers (`ratingCoverage` store) for the card marking in 5.3 |
+| `/ratings/coverage` | GET | `/search` (anime view), `/ratings` and `/browse` on mount, when stale — per-anime rated state, which the `ratingCoverage` store turns into the card marking's tier in 5.3 |
 | `/ratings/media/{uuid}` | GET | Media detail page load (fetch user's rating) |
 | `/ratings/anime/{uuid}` | GET | Anime detail page load (fetch user's ratings for all media) |
 | `/ratings/media/{uuid}` | PUT | Create or update a rating |
