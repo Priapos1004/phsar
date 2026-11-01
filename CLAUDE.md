@@ -147,7 +147,7 @@ several `admin_*` modules). The live contract is FastAPI's own
 | Prefix | Purpose |
 |---|---|
 | `/auth` | login, register, validate, refresh (sliding session) |
-| `/browse` | page carousels, one carousel with its filter sets switched, Discover's moods, the day's spin and an admin's preview of any mood |
+| `/browse` | page carousels, one carousel with its filter sets switched, Discover's moods, the day's spin and an admin's preview of any mood, the galaxy map and a star's neighbours |
 | `/search` | `/media` per-entry, `/anime` aggregated, `/mal` |
 | `/media` | media + anime detail |
 | `/ratings` | rating CRUD, rewatch, scores projection, rated coverage, spoiler visibility |
@@ -189,7 +189,7 @@ non-retryable; `TransientUpstreamError` sits outside it and stays retryable.
 idempotent backfills (settings, default tags, spoiler visibility and its
 restricted-user purge, title suffixes, embeddings) before the yield; the backup
 self-heal and the catalogue-wide passes (a re-embed when the stored vectors are
-stale, the galaxy map check, relations, merge candidates, split candidates) after it. They re-run every boot and repair derived data. A pass that shares its logic with
+stale, the galaxy map's upkeep, relations, merge candidates, split candidates) after it. They re-run every boot and repair derived data. A pass that shares its logic with
 a runtime path lives in that path's service instead — merge candidates in
 `services/merge_detection_service.py`, shared with the save and sweep paths, for one — so
 `main.py`'s lifespan is the full list, not `seeders/`.

@@ -1,12 +1,19 @@
 from collections import defaultdict
 from typing import Any
 
-from sqlalchemy import delete, func, insert, select
+from sqlalchemy import Float, Numeric, Row, cast, delete, distinct, func, insert, select
+from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import defer
+from sqlalchemy.orm import aliased, defer
 
 from app.daos.base_dao import BaseDAO
-from app.daos.search_filters import weighted_mean_score_expr, weighted_mean_votes_expr
+from app.daos.search_filters import (
+    MAIN_STORY,
+    anime_genre_majority_relation,
+    weighted_mean_score_expr,
+    weighted_mean_votes_expr,
+)
+from app.models.anime import Anime
 from app.models.anime_search import AnimeSearch
 from app.models.galaxy import GalaxyFit, GalaxyGroup, GalaxyStar
 from app.models.genre import Genre
@@ -17,6 +24,44 @@ from app.models.studio import Studio
 from app.services.galaxy_compute import AnimeRow, MediaRow
 
 
+def _anime_figures(scope):
+    """Per anime in `scope`: the relation-weighted MAL score rounded to two places, as the
+    card rounds it, and its main story's first season year and most common source."""
+    return (
+        select(
+            Media.anime_id.label("anime_id"),
+            cast(func.round(cast(weighted_mean_score_expr(), Numeric), 2), Float).label("score"),
+            func.min(Media.anime_season_year).filter(MAIN_STORY).label("year"),
+            func.mode().within_group(Media.original_source).filter(MAIN_STORY).label("source"),
+        )
+        .where(Media.anime_id.in_(scope))
+        .group_by(Media.anime_id)
+        .subquery()
+    )
+
+
+def _anime_genres(scope):
+    """Per anime in `scope`, the genres the majority rule gives it, A→Z."""
+    majority = anime_genre_majority_relation()
+    return (
+        select(
+            majority.c.anime_id,
+            func.array_agg(aggregate_order_by(majority.c.genre_name, majority.c.genre_name)).label("genres"),
+        )
+        .where(majority.c.anime_id.in_(scope))
+        .group_by(majority.c.anime_id)
+        .subquery()
+    )
+
+
+def _card_columns(figures, genres) -> tuple:
+    """What a map star and a neighbour both show of their anime."""
+    return (
+        Anime.uuid.label("anime_uuid"), Anime.title, Anime.name_eng, Anime.name_jap, Anime.cover_image,
+        figures.c.score, figures.c.year, genres.c.genres,
+    )
+
+
 class GalaxyDAO(BaseDAO[GalaxyGroup]):
     def __init__(self):
         super().__init__(GalaxyGroup)
@@ -25,24 +70,27 @@ class GalaxyDAO(BaseDAO[GalaxyGroup]):
         """How many anime a fit would read: those with a description embedding."""
         return (await db.execute(select(func.count()).select_from(AnimeSearch))).scalar_one()
 
-    async def load_catalogue(self, db: AsyncSession) -> tuple[list[AnimeRow], list[MediaRow]]:
+    async def load_catalogue(
+        self, db: AsyncSession, anime_ids: list[int] | None = None,
+    ) -> tuple[list[AnimeRow], list[MediaRow]]:
         """What `galaxy_compute` reads, as plain rows it can take into another process:
-        every anime with a description embedding, and its media, with the app's own
-        definitions resolved here — the compute side imports nothing from the app.
-        Flat queries rather than eager-loaded ORM graphs: the fit reads a dozen scalars
-        per media and nothing else."""
-        in_catalogue = Media.anime_id.in_(select(AnimeSearch.anime_id))
+        every anime with a description embedding (or the given ones), and its media, with
+        the app's own definitions resolved here — the compute side imports nothing from
+        the app. Flat queries rather than eager-loaded ORM graphs: the fit reads a dozen
+        scalars per media and nothing else."""
+        in_catalogue = Media.anime_id.in_(select(AnimeSearch.anime_id) if anime_ids is None else anime_ids)
         scores = {
             aid: (score, votes) for aid, score, votes in (await db.execute(
                 select(Media.anime_id, weighted_mean_score_expr(), weighted_mean_votes_expr())
                 .where(in_catalogue).group_by(Media.anime_id)
             )).all()
         }
+        anime_stmt = select(AnimeSearch.anime_id, AnimeSearch.description_embedding).order_by(AnimeSearch.anime_id)
+        if anime_ids is not None:
+            anime_stmt = anime_stmt.where(AnimeSearch.anime_id.in_(anime_ids))
         anime = [
             AnimeRow(aid, [float(v) for v in vec], *scores.get(aid, (None, None)))
-            for aid, vec in (await db.execute(
-                select(AnimeSearch.anime_id, AnimeSearch.description_embedding).order_by(AnimeSearch.anime_id)
-            )).all()
+            for aid, vec in (await db.execute(anime_stmt)).all()
         ]
 
         media = (await db.execute(
@@ -111,6 +159,104 @@ class GalaxyDAO(BaseDAO[GalaxyGroup]):
             select(GalaxyFit).options(defer(GalaxyFit.models, raiseload=True))
         )).scalar_one_or_none()
 
+    async def live_models(self, db: AsyncSession) -> Row | None:
+        """The live fit's id, params and pickled models, for placing anime onto it."""
+        return (await db.execute(select(GalaxyFit.id, GalaxyFit.params, GalaxyFit.models))).one_or_none()
+
+    async def unplaced_anime_ids(self, db: AsyncSession) -> list[int]:
+        """Anime a fit would read that have no star yet."""
+        return list((await db.execute(
+            select(AnimeSearch.anime_id)
+            .outerjoin(GalaxyStar, GalaxyStar.anime_id == AnimeSearch.anime_id)
+            .where(GalaxyStar.id.is_(None))
+        )).scalars())
+
+    async def add_stars(self, db: AsyncSession, fit_id: int, stars: list[dict[str, Any]]) -> None:
+        """Place stars onto the fit they were predicted from."""
+        ids = {
+            ("sector" if parent_id is None else "region", number): gid
+            for gid, number, parent_id in (await db.execute(
+                select(GalaxyGroup.id, GalaxyGroup.number, GalaxyGroup.parent_id).where(GalaxyGroup.fit_id == fit_id)
+            )).all()
+        }
+        await self._insert_stars(db, ids, stars)
+
+    async def map_groups(self, db: AsyncSession) -> list[Row]:
+        """The live map's sectors and regions, each named by its hand name or else its auto name;
+        a region carries its sector's number."""
+        parent = aliased(GalaxyGroup)
+        return list((await db.execute(
+            select(
+                GalaxyGroup.uuid, GalaxyGroup.number, GalaxyGroup.x, GalaxyGroup.y,
+                func.coalesce(GalaxyGroup.name, GalaxyGroup.auto_name).label("name"),
+                parent.number.label("sector"),
+            )
+            .outerjoin(parent, parent.id == GalaxyGroup.parent_id)
+            .order_by(GalaxyGroup.number)
+        )).all())
+
+    async def map_stars(self, db: AsyncSession) -> list[Row]:
+        """Every star with what the map shows of its anime. One flat query: the payload is
+        the whole catalogue."""
+        placed = select(GalaxyStar.anime_id)
+        figures, genres = _anime_figures(placed), _anime_genres(placed)
+        sector, region = aliased(GalaxyGroup), aliased(GalaxyGroup)
+        return list((await db.execute(
+            select(
+                *_card_columns(figures, genres),
+                GalaxyStar.x, GalaxyStar.y, GalaxyStar.between, GalaxyStar.trained,
+                sector.number.label("sector"), region.number.label("region"),
+            )
+            .join(GalaxyStar, GalaxyStar.anime_id == Anime.id)
+            .join(sector, sector.id == GalaxyStar.sector_id)
+            .join(region, region.id == GalaxyStar.region_id)
+            .outerjoin(figures, figures.c.anime_id == Anime.id)
+            .outerjoin(genres, genres.c.anime_id == Anime.id)
+            .order_by(GalaxyStar.id)
+        )).all())
+
+    async def star_features(self, db: AsyncSession, anime_uuid) -> Row | None:
+        """An anime's id and feature vector, when it has a star."""
+        return (await db.execute(
+            select(GalaxyStar.anime_id, GalaxyStar.features)
+            .join(Anime, Anime.id == GalaxyStar.anime_id)
+            .where(Anime.uuid == anime_uuid)
+        )).one_or_none()
+
+    async def nearest(self, db: AsyncSession, anime_id: int, features, limit: int) -> list[int]:
+        """The anime whose stars sit nearest in feature space, nearest first. No index: a
+        catalogue-sized scan is cheap, and an approximate index would reorder close ties."""
+        return list((await db.execute(
+            select(GalaxyStar.anime_id)
+            .where(GalaxyStar.anime_id != anime_id)
+            .order_by(GalaxyStar.features.l2_distance(features), GalaxyStar.anime_id)
+            .limit(limit)
+        )).scalars())
+
+    async def anime_facts(self, db: AsyncSession, anime_ids: list[int]) -> dict[int, Row]:
+        """What the neighbour reasons compare, per anime."""
+        figures, genres = _anime_figures(anime_ids), _anime_genres(anime_ids)
+        studios = (
+            select(Media.anime_id, func.array_agg(distinct(Studio.name)).label("studios"))
+            .join(MediaStudio, MediaStudio.media_id == Media.id)
+            .join(Studio, Studio.id == MediaStudio.studio_id)
+            .where(Media.anime_id.in_(anime_ids), MAIN_STORY)
+            .group_by(Media.anime_id)
+            .subquery()
+        )
+        rows = (await db.execute(
+            select(
+                Anime.id, *_card_columns(figures, genres),
+                figures.c.source, studios.c.studios, AnimeSearch.description_embedding,
+            )
+            .join(AnimeSearch, AnimeSearch.anime_id == Anime.id)
+            .outerjoin(figures, figures.c.anime_id == Anime.id)
+            .outerjoin(genres, genres.c.anime_id == Anime.id)
+            .outerjoin(studios, studios.c.anime_id == Anime.id)
+            .where(Anime.id.in_(anime_ids))
+        )).all()
+        return {row.id: row for row in rows}
+
     async def replace_fit(
         self, db: AsyncSession, *, blob: bytes, params: dict[str, Any],
         groups: list[dict[str, Any]], names: dict[int, str], stars: list[dict[str, Any]],
@@ -133,6 +279,12 @@ class GalaxyDAO(BaseDAO[GalaxyGroup]):
             db.add(row)
             await db.flush()
             ids[(g["level"], g["number"])] = row.id
+        await self._insert_stars(db, ids, stars)
+
+    @staticmethod
+    async def _insert_stars(db: AsyncSession, ids: dict[tuple[str, int], int], stars: list[dict[str, Any]]) -> None:
+        """Stars as `galaxy_compute` answers them, their sector and region numbers resolved
+        to the fit's group ids."""
         if not stars:
             # An empty executemany falls back to a single insert of defaults.
             return

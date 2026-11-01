@@ -5,8 +5,9 @@ split into **regions**. There is one live fit at a time, and a refit replaces it
 
 **Code**: `services/galaxy_compute.py` (the numerics, run in a child process) →
 `services/galaxy_dispatcher.py` (the `galaxy_rebuild` job) → `services/galaxy_service.py`
-(enqueueing, `ensure_map`, hand names) → `daos/galaxy_dao.py` → `models/galaxy.py`.
-The admin endpoints are in `routers/admin_galaxy.py`.
+(serving, placing, enqueueing, `ensure_map`, hand names) → `daos/galaxy_dao.py` →
+`models/galaxy.py`. The map's endpoints are in `routers/browse.py`, the admin ones in
+`routers/admin_galaxy.py`.
 
 ## What a star is made of
 
@@ -88,6 +89,29 @@ when the map is due:
 It enqueues nothing while a rebuild is already queued or running, or while the catalogue
 is too small to cluster (`MIN_CATALOGUE`). Because the cron asks every night, a missed
 night catches up on the next.
+
+## Placing new anime
+
+Between fits, an anime with no star (scraped since the fit, or split off another) is placed
+onto the live map through its fitted models, leaving every other star where it is.
+`galaxy_service.place_unplaced` places them all in one child, at the end of each update
+sweep and at boot. A seasonal sweep's anime arrive through the scrapes it enqueues
+([jobs](jobs.md#season-sweeps)), so they land at the next night's update sweep. A map on
+its way out — one a queued or running rebuild will replace, or one whose `built_from` no
+longer matches — takes no new stars (`place_unplaced` says why). A failed placement
+delays the night's new stars to the next sweep or boot, and never fails the sweep.
+
+## Serving the map
+
+`GET /browse/galaxy` serves the live map whole (`GalaxyMapOut`): every sector and region,
+and every star with what a hover card shows of its anime. It is the same for every viewer,
+guests included, and empty until the first fit lands.
+
+`GET /browse/galaxy/{anime_uuid}/neighbours` answers the `NEIGHBOURS` stars nearest in
+feature space, nearest first, each with what it shares with the one asked about
+(`GalaxyNeighbourOut`); the synopsis share is ranked against the random-pair percentiles
+each fit records (`pair_cosine_percentiles`). It is asked on demand rather than inlined in
+the map, so a star placed since the map loaded has neighbours too.
 
 ## Names
 

@@ -36,6 +36,7 @@ from app.models.media_relation_edges import MediaRelationEdges
 from app.models.media_studio import MediaStudio
 from app.models.media_unwanted import MediaUnwanted
 from app.models.studio import Studio
+from app.services import galaxy_service
 from app.services.scrape_dispatcher import (
     HentaiRemoval,
     _advance_anime_freshness,
@@ -1657,6 +1658,24 @@ class _RecordingProgressReporter:
 
 
 @pytest.fixture(autouse=True)
+def _placements(monkeypatch) -> list:
+    """Galaxy placement at sweep end, stubbed for every test and recording its calls.
+
+    Like the low-signal pass below it is catalogue-wide — every anime with no star,
+    which on a developer's database with a map includes each test's seeded anime — and it
+    would spawn a placing child per sweep test. `test_sweep_end_places_new_anime` pins
+    the call itself."""
+    calls: list = []
+
+    async def place(session):
+        calls.append(session)
+        return 0
+
+    monkeypatch.setattr(galaxy_service, "place_unplaced", place)
+    return calls
+
+
+@pytest.fixture(autouse=True)
 async def _clean_delete_candidates():
     """Remove every delete_candidates row a test created.
 
@@ -1839,6 +1858,25 @@ async def test_dispatcher_returns_summary(tracked_anime, monkeypatch):
     assert summary["counters"]["anime_touched"] == 2
     assert summary["counters"]["media_with_dynamic_changes"] == 1
     assert sorted(fake.refresh_calls) == sorted([-8001 * 100, -8002 * 100])
+
+
+@pytest.mark.parametrize("fails", [False, True])
+async def test_sweep_end_places_new_anime(tracked_anime, monkeypatch, _placements, fails):
+    """Once per sweep, after the catalogue work; a failure delays the new stars, never
+    fails the sweep."""
+    a_id = await _real_seed(mal_id=-8021, last_checked_at=datetime.now(timezone.utc) - timedelta(days=10))
+    tracked_anime.append(a_id)
+    if fails:
+        async def place(_session):
+            _placements.append(_session)
+            raise RuntimeError("placement died")
+
+        monkeypatch.setattr(galaxy_service, "place_unplaced", place)
+
+    summary, _, _ = await _run_dispatcher_harness(monkeypatch, _FakeScraper({-8021 * 100: _payload()}), [a_id])
+
+    assert len(_placements) == 1
+    assert summary["counters"]["media_refreshed"] == 1
 
 
 @pytest.mark.asyncio

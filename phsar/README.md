@@ -541,6 +541,7 @@ phsar/
     │   ├── test_anime_detail.py
     │   ├── test_auth.py
     │   ├── test_browse.py
+    │   ├── test_browse_galaxy.py
     │   ├── test_compression.py
     │   ├── test_filters_genres.py
     │   ├── test_filters_options.py

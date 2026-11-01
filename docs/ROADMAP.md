@@ -456,6 +456,10 @@ Eye-catching landing page — light version of browse, serves new and returning 
 - Browse page (Feature 5b) covers this — sections + search bar with filters gives full browsing capability
 - No separate "all anime" page: an empty search lists the whole catalogue, and each carousel has its see-all page
 
+### To study
+- **Franchise mentions in description searches.** Through [the anime grain's literal test](features/search.md#description-search) a long franchise surfaces on the strength of one movie or side story, in several of Discover's description rows at once. Counting only main-story mentions would cut them; measure what it removes, and which sequel-only hits it would cost, before deciding.
+- **Discover's no-repeat rule on today's catalogue.** Counted as [browse](features/browse.md#discover-draws-one-mood-a-day) counts it, several moods' rows now share far more than the bar allows (isekai and reborn share most of their pools). Re-tune those rows, or restate how the bar is counted for random rows; `discover_rows.py` in the remeasure-embeddings skill lists the pairs.
+
 ---
 
 ## Feature 7: User Data Export
@@ -523,6 +527,9 @@ Eye-catching landing page — light version of browse, serves new and returning 
 - **Single cron token + combined nightly endpoint (v0.14.0 late).** Originally three cron-authed endpoints with two bearer tokens (`BACKUP_CRON_TOKEN` for `/backups/auto`, `JOBS_CRON_TOKEN` for the two sweep schedulers). Consolidated to a single `JOBS_CRON_TOKEN` and added `POST /admin/jobs/schedule-nightly` that enqueues backup (immediate) + `update_sweep` (delayed) + Sunday-UTC-only `seasonal_sweep` (same delay). The weekday check lives in the endpoint so one Coolify scheduled task covers everything; the three single-purpose endpoints stay for ad-hoc triggers. Sunday-UTC is intentional — the existing seasonal cron already ran weekly Sunday, so piggybacking that day on the daily maintenance window keeps the user-visible banner pattern unchanged. Ordering between `update_sweep` and `seasonal_sweep` is FIFO-with-tie-on-not_before_at (worker picks one, runs it, then the other); the maintenance flag bounces sub-second between them which is acceptable for an admin-only system flow.
 - **Maintenance mode during restore.** Process-wide in-memory flag; HTTP middleware 503s everything except `/` and `/health`, frontend bounces users to `/login?maintenance=1`. Single-worker assumption documented. Backup creation does NOT flip maintenance — `pg_dump` is read-only via MVCC, so user writes are safe during a dump window.
 - **Password handling.** `PGPASSWORD` env var on the subprocess, never on the CLI.
+
+### Planned
+- **A dump before a re-embed, and the embedding model each dump's vectors came from.** When the boot probe finds a model change, take a labelled dump first, then re-embed: restoring it is the fast way back if the new model disappoints, beside redeploying the old image and letting the probe re-embed (slower, keeps every write since). The database records which model wrote its vectors — one row the re-embed updates — so every dump carries it, and the backup reads it from the dump the way it reads the Alembic revision, uploads included. A dump from another model reads `outdated`, so the self-heal dumps fresh after a model change as it does after a migration. Restoring one starts a re-embed in the background, so search never runs on two models' vectors until the next restart.
 
 ---
 

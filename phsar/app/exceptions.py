@@ -501,6 +501,15 @@ class DuplicateScrapeQueryError(PhsarBaseError):
         super().__init__(message)
 
 
+class GalaxyStarNotFoundError(PhsarBaseError):
+    """Raised when an anime has no star on the galaxy map — an unknown UUID, or an anime
+    not placed yet."""
+    status_code = 404
+
+    def __init__(self, uuid: str):
+        super().__init__(f"No galaxy star for anime '{uuid}'.")
+
+
 class GalaxyGroupNotFoundError(PhsarBaseError):
     """Raised when a galaxy sector or region UUID doesn't resolve — including one from a
     map a refit has since replaced."""

@@ -1,6 +1,6 @@
 ---
 name: remeasure-embeddings
-description: Re-measure every constant calibrated on the search embedding model after a change to what a stored vector is built from — the model, its query/passage prefixes, the case fold, the encode length, or the text `encode_description` joins. Covers the description and notes margins, merge detection's DESC_THRESHOLD, the ranking-test fixtures and the encode cost.
+description: Re-measure every constant calibrated on the search embedding model after a change to what a stored vector is built from — the model, its query/passage prefixes, the case fold, the encode length, or the text `encode_description` joins. Covers the description and notes margins, merge detection's DESC_THRESHOLD, the ranking-test fixtures, Discover's description rows and the encode cost.
 ---
 
 # Re-measure after an embedding change
@@ -50,11 +50,18 @@ from `phsar/` with `PYTHONPATH=. ../.venv/bin/python <script>`.
    as well before trusting a local pass. The
    threshold test needs a duplicate pair above and a franchise-sibling pair below the new
    value, with some margin either side.
-7. **Encode cost** — time a mean description, the longest one and a short query at the
+7. **Discover's description rows** — `discover_rows.py`, with the backend running on the
+   new code. Read each row's semantic-only hits: they are all a model change moves, and
+   should be on topic — a Japanese title meaning the word, not a franchise whose name
+   sounds like it. Then the overlap bar, counted as `docs/features/browse.md` counts it: a
+   pair over it whose shared anime are all literal hits is not the model's doing. A row
+   whose tail went off topic gets a query alternative measured against its current pool,
+   never a blind swap.
+8. **Encode cost** — time a mean description, the longest one and a short query at the
    VM's thread count (root `CLAUDE.md`, Deployment), against the old model. Update every
    stated per-encode cost (grep the current figure across `docs/` and `phsar/app`) and the
-   re-embed duration where they moved; cap the encode length only with a re-run of steps 3–6,
+   re-embed duration where they moved; cap the encode length only with a re-run of steps 3–7,
    since the constants hold for the length they were measured at.
-8. **Record** the tables in the release's compound doc and point the constants' comments
+9. **Record** the tables in the release's compound doc and point the constants' comments
    at it. Deploy in the daytime: the first boot re-embeds for minutes of poor semantic
    results.

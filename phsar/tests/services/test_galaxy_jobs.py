@@ -50,15 +50,21 @@ def stub_fit(monkeypatch):
     monkeypatch.setattr(galaxy_service, "run_in_child", in_process)
 
 
-@pytest.fixture
-async def catalogue(db_session):
-    """An anime with an embedding, so the fit has something to load on an empty database."""
-    anime = Anime(mal_id=99101, title="Galaxy Fixture", description="A fixture for the map.")
+async def _embedded_anime(db_session, mal_id: int, title: str, description: str) -> Anime:
+    """An anime with its description embedding: what a fit or a placement reads."""
+    anime = Anime(mal_id=mal_id, title=title, description=description)
     db_session.add(anime)
     await db_session.flush()
     await create_anime_embedding(
-        db_session, anime_id=anime.id, title_texts=anime_title_texts(anime), description_text=anime.description,
+        db_session, anime_id=anime.id, title_texts=anime_title_texts(anime), description_text=description,
     )
+    return anime
+
+
+@pytest.fixture
+async def catalogue(db_session):
+    """An anime with an embedding, so the fit has something to load on an empty database."""
+    await _embedded_anime(db_session, 99101, "Galaxy Fixture", "A fixture for the map.")
 
 
 async def test_a_rebuild_swaps_the_map_and_carries_hand_names(db_session, catalogue, stub_fit):
@@ -89,6 +95,53 @@ async def test_a_failed_fit_keeps_the_live_map(db_session, catalogue, stub_fit, 
     with pytest.raises(RuntimeError, match="fit died"):
         await galaxy_rebuild_dispatcher(db_session, fake_job())
     assert (await db_session.execute(select(GalaxyFit.id))).scalar_one() == live
+
+
+async def test_new_anime_are_placed_onto_the_live_map(db_session, catalogue, stub_fit, monkeypatch):
+    """Only the anime without a star go through `place`; the second pass finds none."""
+    await db_session.execute(delete(Job).where(Job.kind == JobKind.galaxy_rebuild))
+    await galaxy_rebuild_dispatcher(db_session, fake_job())
+    newcomer = await _embedded_anime(db_session, 99102, "Galaxy Newcomer", "Scraped after the fit.")
+    placed: list[int] = []
+
+    async def in_process(fn, _blob, anime, _media):
+        assert fn is galaxy_compute.place
+        placed.extend(a.anime_id for a in anime)
+        return [
+            {"anime_id": a.anime_id, "x": 0.0, "y": 0.0, "z10": [0.0] * 10, "sector": 0, "region": 0,
+             "between": False, "trained": False, "features": [1.0, 0.0]}
+            for a in anime
+        ]
+
+    monkeypatch.setattr(galaxy_service, "run_in_child", in_process)
+    assert await galaxy_service.place_unplaced(db_session) == 1
+    assert placed == [newcomer.id]
+    star = (await db_session.execute(select(GalaxyStar).where(GalaxyStar.anime_id == newcomer.id))).scalar_one()
+    assert not star.trained
+    assert await galaxy_service.place_unplaced(db_session) == 0
+
+
+@pytest.mark.parametrize("why", ["no map", "another model", "rebuild waiting"])
+async def test_nothing_is_placed_onto_a_map_on_its_way_out(db_session, catalogue, stub_fit, monkeypatch, why):
+    """No map, one fitted on another model's vectors, or one a queued rebuild will replace:
+    the rebuild places everyone, so placing would only spend a child."""
+    await db_session.execute(delete(Job).where(Job.kind == JobKind.galaxy_rebuild))
+    await galaxy_rebuild_dispatcher(db_session, fake_job())
+    await _embedded_anime(db_session, 99103, "Galaxy Latecomer", "Scraped after the fit.")
+    if why == "no map":
+        await db_session.execute(delete(GalaxyFit))
+    elif why == "another model":
+        fit = (await db_session.execute(select(GalaxyFit))).scalar_one()
+        fit.params = {**fit.params, "built_from": {**fit.params["built_from"], "model": "another-model"}}
+    else:
+        await galaxy_service.enqueue_rebuild(db_session)
+    await db_session.flush()
+
+    async def never(*_args):
+        raise AssertionError("no child for a map on its way out")
+
+    monkeypatch.setattr(galaxy_service, "run_in_child", never)
+    assert await galaxy_service.place_unplaced(db_session) == 0
 
 
 # This quarter's refit date is 2026-04-15.

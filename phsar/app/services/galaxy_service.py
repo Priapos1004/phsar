@@ -1,11 +1,12 @@
-"""The galaxy map in the web process: enqueueing a rebuild, the rule that says when one is
-due, and hand names. The fit itself is `galaxy_dispatcher`; the numerics are
-`galaxy_compute`, run in a child process by `run_in_child`."""
+"""The galaxy map in the web process: serving it, placing new anime onto it, enqueueing a
+rebuild and the rule that says when one is due, and hand names. The fit itself is `galaxy_dispatcher`; the
+numerics are `galaxy_compute`, run in a child process by `run_in_child`."""
 
 import asyncio
 import importlib.metadata
 import logging
 import multiprocessing
+from bisect import bisect_right
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
@@ -17,17 +18,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.job_versions import make_job
 from app.daos.galaxy_dao import GalaxyDAO
 from app.daos.job_dao import JobDAO
-from app.exceptions import GalaxyGroupNotFoundError
+from app.exceptions import GalaxyGroupNotFoundError, GalaxyStarNotFoundError
 from app.models.galaxy import GalaxyGroup
 from app.models.job import JobKind, JobStatus
 from app.schemas.admin_schema import JobEnqueuedResponse
+from app.schemas.galaxy_schema import (
+    GalaxyMapOut,
+    GalaxyNeighbourOut,
+    GalaxyRegionOut,
+    GalaxySectorOut,
+    GalaxyStarOut,
+)
 from app.services import galaxy_compute
 from app.services.job_worker import job_worker
-from app.services.vector_embedding_service import MODEL_NAME
+from app.services.vector_embedding_service import MODEL_NAME, cosine_similarity
 
 logger = logging.getLogger(__name__)
 
 galaxy_dao = GalaxyDAO()
+
+# How many nearest stars a pinned anime shows.
+NEIGHBOURS = 8
 
 # Every library a fit's pickle references, pinned in requirements.txt.
 _PICKLED = ("umap-learn", "pynndescent", "hdbscan", "scikit-learn", "scipy", "numba", "joblib", "numpy")
@@ -108,3 +119,67 @@ async def rename_group(db: AsyncSession, group_uuid: UUID, name: str | None) -> 
     group.name = name or None
     await db.commit()
     return group
+
+
+async def get_map(db: AsyncSession) -> GalaxyMapOut:
+    fit = await galaxy_dao.live_fit(db)
+    if fit is None:
+        return GalaxyMapOut(fitted_at=None, sectors=[], regions=[], stars=[])
+    groups = await galaxy_dao.map_groups(db)
+    return GalaxyMapOut(
+        fitted_at=fit.created_at,
+        sectors=[GalaxySectorOut(**g._mapping) for g in groups if g.sector is None],
+        regions=[GalaxyRegionOut(**g._mapping) for g in groups if g.sector is not None],
+        stars=[GalaxyStarOut(**{**s._mapping, "genres": s.genres or []}) for s in await galaxy_dao.map_stars(db)],
+    )
+
+
+async def neighbours(db: AsyncSession, anime_uuid: UUID) -> list[GalaxyNeighbourOut]:
+    """The anime nearest in the fit's feature space, nearest first, each with what it shares
+    with this one."""
+    star = await galaxy_dao.star_features(db, anime_uuid)
+    if star is None:
+        raise GalaxyStarNotFoundError(str(anime_uuid))
+    near = await galaxy_dao.nearest(db, star.anime_id, star.features, NEIGHBOURS)
+    facts = await galaxy_dao.anime_facts(db, [star.anime_id, *near])
+    fit = await galaxy_dao.live_fit(db)
+    assert fit is not None  # a star belongs to the live fit
+    percentiles = fit.params["pair_cosine_percentiles"]
+    me = facts[star.anime_id]
+    out = []
+    for anime_id in near:
+        other = facts[anime_id]
+        similarity = cosine_similarity(me.description_embedding, other.description_embedding)
+        out.append(GalaxyNeighbourOut(
+            **other._mapping,
+            shared_genres=sorted(set(me.genres or []) & set(other.genres or []), key=str.casefold),
+            shared_studios=sorted(set(me.studios or []) & set(other.studios or []), key=str.casefold),
+            shared_source=me.source.value if me.source is not None and me.source == other.source else None,
+            synopsis_percentile=max(0, bisect_right(percentiles, similarity) - 1),
+        ))
+    return out
+
+
+async def place_unplaced(db: AsyncSession) -> int:
+    """Put anime the live map has no star for onto it, leaving every other star where it
+    is."""
+    anime_ids = await galaxy_dao.unplaced_anime_ids(db)
+    if not anime_ids:
+        return 0
+    fit = await galaxy_dao.live_models(db)
+    # A map a queued or running rebuild will replace, or one whose `built_from` no longer
+    # matches, takes no new stars: the rebuild places everyone.
+    if (
+        fit is None
+        or fit.params.get("built_from") != built_from()
+        or await JobDAO().count_active_by_kind(db, JobKind.galaxy_rebuild)
+    ):
+        return 0
+    anime, media = await galaxy_dao.load_catalogue(db, anime_ids)
+    # Don't hold the read transaction open across the child.
+    await db.commit()
+    stars = await run_in_child(galaxy_compute.place, fit.models, anime, media)
+    await galaxy_dao.add_stars(db, fit.id, stars)
+    await db.commit()
+    logger.info("Placed %d anime onto the galaxy map", len(stars))
+    return len(stars)

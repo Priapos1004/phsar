@@ -105,6 +105,7 @@ async def _post_yield_backfills() -> None:
             if await embeddings_are_stale(session):
                 await reembed_all_embeddings(session)
             await galaxy_service.ensure_map(session, now=datetime.now(timezone.utc))
+            await galaxy_service.place_unplaced(session)
     except Exception:
         logger.exception("Re-embed or galaxy map check failed — catalog backfills continue")
 
