@@ -101,7 +101,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 | `/` | Home: hero banner, search bar, rows of anime (see 3) | Yes |
 | `/login?next=<path>` | Login form; optional validated post-login destination (1.1) | No |
 | `/register?next=<path>` | Registration form (requires token); `next` carried over from the login link | No |
-| `/browse?tab=news\|discover` | Browse: rows of anime (`news`, default) + the day's mood of anime (`discover`, 3c) | Yes |
+| `/browse?tab=news\|discover\|galaxy` | Browse: rows of anime (`news`, default) + the day's mood of anime (`discover`, 3c) + the map of every anime (`galaxy`, 3d) | Yes |
 | `/browse/<key>` | A Browse row's see-all (3b) | Yes |
 | `/search?q=<token>` | Search results (anime or media view) | Yes |
 | `/search/all?q=<token>` | A search's see-all, past the 50 the search shows (3b); bare `/search/all` for the default search | Yes |
@@ -130,7 +130,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 
 ## 3a. Browse Page
 
-`/browse` has a **News** tab (default) and a **Discover** tab (3c).
+`/browse` has a **News** tab (default), a **Discover** tab (3c) and a **Galaxy** tab (3d).
 
 **News** is a column of rows in the order the backend lays them out, each a saved search of up to 25 anime:
 - A row loads when you scroll near it, showing a skeleton until then, and eases to its new height rather than jumping the page below. An empty one shows a "Nothing here right now" note; where the row narrows by default, the note names **See all** as the place to switch a filter off.
@@ -171,6 +171,20 @@ The Discover tab shows one **mood** a day: a themed group of rows (Beasts & Lege
 - The mood: a banner in its colour with its icon, drifting particles (After Dark's bats fly across, wings beating), and "Today's mood. Spin the wheel again tomorrow.", then its rows (3a) — starting on what you haven't watched. Inside the tab everything drawn in your theme's accent takes the mood's colour instead; the navbar and the tab bar keep your theme.
 - A **guest** can't spin: the wheel and the reveal play once per visit to Browse and land on the day's mood.
 - With reduced motion the wheel doesn't turn, no reveal plays and no particles show.
+
+## 3d. Galaxy
+
+The Galaxy tab is a map of every anime: each a star, near the ones it is most like, grouped into named **sectors** that split into **regions**.
+- Sector names show zoomed out; past about half zoom, region names take over. A name near the edge stays inside the map, a long one on two lines.
+- The wheel, a pinch, or the **+ / − / whole map** buttons zoom; the map keeps its shape at every zoom and against every edge. With a star picked, + and − zoom around it. Zoomed in, an overview in the bottom corner shows where the view is, and a click on it moves there. Deep in, stars turn into covers, growing with the zoom and never overlapping.
+- **Colour by:** *Sectors* (neighbouring sectors never share a colour; faded stars sit between regions, hollow ones joined after the map was fitted), *MAL score* (by the "Top N%" rank, Top 100% to Top 1%; unscored ones grey) or *My ratings* (grey not rated, your theme colour in progress / on hold / dropped, gold main story done, obsidian all done, each with its count; names of areas you have rated nothing in are dimmed). **Light up a genre** dims everything without it.
+- Hovering a star shows its title, sector › region, score · Top N% · year, genres and your rated state.
+- **Find an anime** searches titles as Search's title mode does and suggests up to 8 anime on the map, each with its cover and year; arrow keys move through them, Enter picks, Esc closes.
+- **Picking a star** (a click, Find, or a neighbour) glides the map to it, close enough for covers, and opens the panel beside the map (below it on a phone): the cover and title (both open the anime page, 7.6 for the way back), score · Top N% · year, genres, sector and region, and its 8 **nearest neighbours** linked to it on the map. Each neighbour shows its cover and up to five things the two share, rarest first: a synopsis similarity rank ("Top 1% synopsis similarity"), genres, "Source: …", "Studio: …". Hovering one brightens its link and fades the others.
+- Clicking a neighbour picks it; the back arrow, naming the anime you came from, walks the picks back. **✕** closes the panel, forgets the picks and glides back out to the whole map.
+- A **guest** sees My ratings dimmed, with a tooltip; the rest is the same.
+- An **admin** gets a card under the map: when the map was fitted, and **Rebuild map**, which queues the rebuild (the bell tracks it); the new map shows on the next visit.
+- Until the first map is fitted, the tab says so instead.
 
 ---
 
@@ -443,6 +457,7 @@ can rate.
   - `?from=browse` → "Back to browse" (a Browse tile → `/browse`, scrolled to that row and the row to that tile)
   - `?from=home` → "Back to home" (a home row's tile → `/`, landing as `?from=browse` does)
   - `?from=discover` → "Back to discover" (a Discover row's tile → `/browse?tab=discover`, landing as `?from=browse` does)
+  - `?from=galaxy` → "Back to the galaxy" (the Galaxy panel's title or cover → `/browse?tab=galaxy`, that anime picked and the map on it)
   - `?from=carousel&carousel=<key>` → "Back to the list" (a row's see-all tile → `/browse/<key>`, at that tile)
   - `?from=search-all[&q=<token>]` → "Back to all results" (a search's see-all tile → `/search/all?q=token`, or `/search/all` without a token, at that tile)
   - neither → no back button (direct-URL arrivals stay clean)
@@ -758,12 +773,14 @@ own.
 | `/browse/moods` | GET | The Discover tab: the wheel's moods, and today's mood with its rows once spun — always, for a guest |
 | `/browse/moods/spin` | POST | **Spin the wheel**: today's mood with its rows, the day's first spin counted; never sent for a guest |
 | `/browse/moods/{mood}` | GET | Dev replay only (`?reveal=<key>`, admin): any mood with its rows, counting no spin |
-| `/search/anime` | GET | Anime-view search after token verification (with the token's `sort`/`sort_dir`, and `limit=61`); each Browse row's search (`limit=25`); a row's see-all (its own limit) and a search's (`limit=1000`); the Completion tab's search-to-mark (12.9) |
+| `/browse/galaxy` | GET | The Galaxy tab's first visit: the live map whole — sectors, regions, every star with its hover card's fields and Top N% — the same for a guest |
+| `/browse/galaxy/{anime_uuid}/neighbours` | GET | Picking a star (3d): its 8 nearest neighbours, each with what it shares, rarest first |
+| `/search/anime` | GET | Anime-view search after token verification (with the token's `sort`/`sort_dir`, and `limit=61`); each Browse row's search (`limit=25`); a row's see-all (its own limit) and a search's (`limit=1000`); the Completion tab's search-to-mark (12.9); the Galaxy's Find an anime (title search, `limit=10`) |
 | `/search/media` | GET | Media-view search after token verification (same params); a media-view search's see-all (`limit=1000`) |
 | `/media/anime/{uuid}` | GET | Anime detail page load |
 | `/media/{uuid}` | GET | Media detail page load |
 | `/ratings/scores` | GET | The `/ratings` page, the watchlist Statistics subtab, and the rating-consistency panel — one shared session-cached fetch (`ratingScores` store), invalidated by any rating write |
-| `/ratings/coverage` | GET | `/search` (anime view), `/ratings` and `/browse` on mount, when stale — per-anime rated state, which the `ratingCoverage` store turns into the card marking's tier in 5.3 |
+| `/ratings/coverage` | GET | `/search` (anime view), `/ratings` and `/browse` on mount, when stale — per-anime rated state: the Galaxy's hover card (3d) names it; My ratings and the card marking (5.3) read its tier |
 | `/ratings/media/{uuid}` | GET | Media detail page load (fetch user's rating) |
 | `/ratings/anime/{uuid}` | GET | Anime detail page load (fetch user's ratings for all media) |
 | `/ratings/media/{uuid}` | PUT | Create or update a rating |
@@ -798,6 +815,7 @@ own.
 | `/admin/registration-tokens/{uuid}` | DELETE | Admin page (delete unused token) |
 | `/admin/backups` | GET | Admin page Backups card (list dumps) |
 | `/admin/backups` | POST | Admin page Backups card "Create backup" — enqueues a `backup` job and returns 202; bell tracks progress, dump list auto-refreshes on succeeded |
+| `/admin/galaxy/rebuild` | POST | The Galaxy tab's admin card "Rebuild map" — enqueues a `galaxy_rebuild` job and returns 202; the bell tracks it |
 | `/admin/backups/{filename}` | GET | Admin page Backups card (download dump) |
 | `/admin/backups/{filename}` | DELETE | Admin page Backups card (delete dump) |
 | `/admin/backups/{filename}` | PATCH | Admin page Backups card (rename / pin a dump; blank name unpins) |

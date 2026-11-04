@@ -223,6 +223,8 @@ phsar/
 │   │   │   │   ├── DoubleRangeSlider.svelte
 │   │   │   │   ├── EChart.svelte
 │   │   │   │   ├── ExpressionText.svelte
+│   │   │   │   ├── GalaxyMap.svelte
+│   │   │   │   ├── GalaxyTab.svelte
 │   │   │   │   ├── GenreBadges.svelte
 │   │   │   │   ├── GenreFilterField.svelte
 │   │   │   │   ├── GrainToggle.svelte
@@ -357,6 +359,7 @@ phsar/
 │   │   │       ├── download.ts
 │   │   │       ├── filterLifecycle.ts
 │   │   │       ├── formatString.ts
+│   │   │       ├── galaxy.ts
 │   │   │       ├── getSeason.ts
 │   │   │       ├── hugLines.ts
 │   │   │       ├── index.ts
@@ -447,6 +450,7 @@ phsar/
 │   │       ├── dismissed-decisions-section.test.ts
 │   │       ├── filter-lifecycle.test.ts
 │   │       ├── format-string.test.ts
+│   │       ├── galaxy.test.ts
 │   │       ├── genre-badges.test.ts
 │   │       ├── job-bell.test.ts
 │   │       ├── job-detail-counters.test.ts

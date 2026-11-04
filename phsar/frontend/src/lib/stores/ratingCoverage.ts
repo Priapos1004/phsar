@@ -1,13 +1,13 @@
-import { writable } from 'svelte/store';
+import { derived, writable } from 'svelte/store';
 import { api } from '$lib/api';
 import type { AnimeRatingCoverage } from '$lib/types/api';
 import { coverageTier, type CoverageTier } from '$lib/utils/ratingCoverage';
 
 /**
- * anime UUID → how completely the caller has rated it. Drives the coverage
- * marking on cards. Anime the user has never rated are ABSENT, not present with
- * a falsy tier, which is what keeps this bounded by their library rather than
- * the catalogue.
+ * anime UUID → the caller's rated state for it, which the galaxy's hover card names;
+ * `ratingCoverage` below is its tier view. Anime the user has never rated are ABSENT,
+ * not present with a falsy state, which is what keeps this bounded by their library
+ * rather than the catalogue.
  *
  * LAZY, unlike `watchlistTags`, and for a reason that is about where it is read:
  * the bookmark set is read on the same pages watchlist writes happen, so an
@@ -20,7 +20,13 @@ import { coverageTier, type CoverageTier } from '$lib/utils/ratingCoverage';
  * Deliberately NOT derived from `ratingScores` — that response carries only rated
  * media, so it has the numerator and never the denominator.
  */
-export const ratingCoverage = writable<Map<string, CoverageTier>>(new Map());
+export const ratedStates = writable<Map<string, AnimeRatingCoverage['state']>>(new Map());
+
+/** The same map as coverage tiers, for the coverage marking on cards. */
+export const ratingCoverage = derived(
+	ratedStates,
+	(states) => new Map<string, CoverageTier>([...states].map(([uuid, state]) => [uuid, coverageTier(state)]))
+);
 
 // One variable, not a `loaded` flag beside an in-flight handle: the promise's own
 // identity is what tells a settling request whether it is still the current one.
@@ -45,7 +51,7 @@ export function ensureRatingCoverage(): Promise<void> {
 			// Superseded by an invalidate or a user switch while in flight: drop it,
 			// and leave the cache empty so the next reader refetches.
 			if (loadPromise !== pending) return;
-			ratingCoverage.set(new Map(entries.map((e) => [e.anime_uuid, coverageTier(e.state)])));
+			ratedStates.set(new Map(entries.map((e) => [e.anime_uuid, e.state])));
 		})
 		.catch(() => {
 			// Not authenticated / restricted user / transient error — clear the cache
@@ -67,8 +73,8 @@ export function invalidateRatingCoverage(): void {
 }
 
 /** Clear on logout / user switch — the map itself, so the next user cannot see
- *  the previous one's tiers in the gap before their own fetch lands. */
+ *  the previous one's states in the gap before their own fetch lands. */
 export function clearRatingCoverage(): void {
 	loadPromise = null;
-	ratingCoverage.set(new Map());
+	ratedStates.set(new Map());
 }

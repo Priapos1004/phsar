@@ -30,6 +30,18 @@ _ANIME = {
     ),
     "Gx Far": ("Accountants audit tax filings.", ("Comedy",), "Gx Studio B", OriginalSource.Novel, None, None, 1, (9.0, 9.0)),
 }
+# Far-off stars sharing nothing with the target, so that on this map of eight, a trait two
+# anime carry is rare enough to be a neighbour's reason and one three carry is not.
+_FILLERS = {
+    f"Gx Filler {i}": (synopsis, (), "Gx Studio B", OriginalSource.Original, None, None, 1, (20.0 + i, 20.0))
+    for i, synopsis in enumerate([
+        "A lighthouse keeper logs passing ships.",
+        "Retirees restore a vintage tram.",
+        "A florist learns sign language.",
+        "Two chess clubs share one room.",
+    ])
+}
+_ANIME |= _FILLERS
 # Synopsis similarities of random pairs, spread evenly over the range e5 gives.
 _PERCENTILES = [0.7 + 0.003 * i for i in range(101)]
 
@@ -98,20 +110,28 @@ async def test_the_map_serves_its_groups_and_stars(client, restricted_user_auth_
     assert (target["sector"], target["region"], target["between"], target["trained"]) == (0, 0, False, True)
     far = stars["Gx Far"]
     assert (far["score"], far["year"], far["region"], far["between"], far["trained"]) == (None, None, 1, True, False)
+    # The search's "Top N%", ranked over the whole catalogue, so only the order is the fixture's.
+    assert target["top_percent"] < stars["Gx Twin"]["top_percent"] < stars["Gx Middle"]["top_percent"]
+    assert far["top_percent"] is None
 
 
 async def test_neighbours_come_nearest_first_with_what_they_share(client, user_auth_headers, galaxy):
     res = await client.get(f"/browse/galaxy/{galaxy['Gx Target'].uuid}/neighbours", headers=user_auth_headers)
     assert res.status_code == 200, res.text
     near = res.json()
-    assert [n["title"] for n in near] == ["Gx Twin", "Gx Middle", "Gx Far"]
-    twin, middle, _ = near
-    assert (twin["shared_genres"], twin["shared_studios"], twin["shared_source"]) == (
-        ["Action", "Fantasy"], ["Gx Studio A"], "Manga",
-    )
-    assert (middle["shared_genres"], middle["shared_studios"], middle["shared_source"]) == (["Action"], [], None)
-    # The same synopsis under another title sits near the top of random pairs; a bakery does not.
-    assert twin["synopsis_percentile"] > 90 > middle["synopsis_percentile"]
+    assert [n["title"] for n in near] == ["Gx Twin", "Gx Middle", "Gx Far", *_FILLERS]
+    twin, middle = near[:2]
+
+    def shared(n):
+        return [(s["kind"], s["name"]) for s in n["shared"]]
+
+    # Rarest first: the same synopsis under another title is closer than nine random pairs in
+    # ten, ahead of the traits two of the eight carry, tied and ordered by kind. Action, which
+    # three carry, is too common to count.
+    assert shared(twin) == [("synopsis", None), ("genre", "Fantasy"), ("source", "Manga"), ("studio", "Gx Studio A")]
+    assert twin["shared"][0]["chance"] < 0.1
+    assert [s["chance"] for s in twin["shared"][1:]] == [0.25, 0.25, 0.25]
+    assert ("genre", "Action") not in shared(middle)
 
 
 async def test_an_anime_without_a_star_has_no_neighbours(client, user_auth_headers, galaxy):

@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, StringConstraints
@@ -49,6 +49,7 @@ class GalaxyStarOut(GalaxyAnimeOut):
     between: bool
     trained: bool
     genres: list[str]  # the genres a majority of its media carry
+    top_percent: int | None  # its "Top N%" badge
 
 
 class GalaxyMapOut(BaseModel):
@@ -59,11 +60,13 @@ class GalaxyMapOut(BaseModel):
     stars: list[GalaxyStarOut]
 
 
+class GalaxySharedOut(BaseModel):
+    """One thing a neighbour shares with the anime asked about."""
+    kind: Literal["synopsis", "genre", "studio", "source"]
+    name: str | None  # the genre, studio or source; none for the synopsis
+    chance: float  # how often two anime on the map share it by chance, 0–1
+
+
 class GalaxyNeighbourOut(GalaxyAnimeOut):
-    """A nearby star, with what it shares with the one asked about."""
-    shared_genres: list[str]
-    shared_studios: list[str]
-    shared_source: str | None  # the main story's usual source, when both have the same one
-    # How alike the two synopses are, as a percentile of random pairs on the map: 90 means
-    # closer than nine in ten.
-    synopsis_percentile: int
+    """A nearby star, with what it shares with the one asked about, rarest first."""
+    shared: list[GalaxySharedOut]

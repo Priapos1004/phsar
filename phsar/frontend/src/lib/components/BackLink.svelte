@@ -32,6 +32,7 @@
 		if (fromParam === 'home') return { href: withFocus('/'), label: 'Back to home' };
 		if (fromParam === 'browse') return { href: withFocus('/browse'), label: 'Back to browse' };
 		if (fromParam === 'discover') return { href: withFocus('/browse?tab=discover'), label: 'Back to discover' };
+		if (fromParam === 'galaxy') return { href: withFocus('/browse?tab=galaxy'), label: 'Back to the galaxy' };
 		if (fromParam === 'carousel' && carousel) {
 			return { href: withFocus(`/browse/${encodeURIComponent(carousel)}`), label: 'Back to the list' };
 		}

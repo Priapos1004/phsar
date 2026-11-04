@@ -7,7 +7,8 @@ split into **regions**. There is one live fit at a time, and a refit replaces it
 `services/galaxy_dispatcher.py` (the `galaxy_rebuild` job) → `services/galaxy_service.py`
 (serving, placing, enqueueing, `ensure_map`, hand names) → `daos/galaxy_dao.py` →
 `models/galaxy.py`. The map's endpoints are in `routers/browse.py`, the admin ones in
-`routers/admin_galaxy.py`.
+`routers/admin_galaxy.py`. The tab is `GalaxyTab.svelte` over `GalaxyMap.svelte`, with
+`utils/galaxy.ts`.
 
 ## What a star is made of
 
@@ -104,14 +105,25 @@ delays the night's new stars to the next sweep or boot, and never fails the swee
 ## Serving the map
 
 `GET /browse/galaxy` serves the live map whole (`GalaxyMapOut`): every sector and region,
-and every star with what a hover card shows of its anime. It is the same for every viewer,
-guests included, and empty until the first fit lands.
+and every star with what a hover card shows of its anime, its "Top N%" among them — the
+search's `top_percent_ranking`, so the map and the Top rated sort rank alike. It is the
+same for every viewer, guests included, and empty until the first fit lands.
 
 `GET /browse/galaxy/{anime_uuid}/neighbours` answers the `NEIGHBOURS` stars nearest in
 feature space, nearest first, each with what it shares with the one asked about
-(`GalaxyNeighbourOut`); the synopsis share is ranked against the random-pair percentiles
-each fit records (`pair_cosine_percentiles`). It is asked on demand rather than inlined in
-the map, so a star placed since the map loaded has neighbours too.
+(`GalaxyNeighbourOut`). Every shared trait is weighed on one scale, the chance two anime
+on the map share it anyway, so a rare genre outranks a merely close synopsis: for a genre,
+studio or source the share of stars carrying it (`GalaxyDAO.trait_counts`), for the
+synopsis the share of random pairs this alike (the `pair_cosine_percentiles` each fit
+records). A neighbour lists the rarest `SHARED_SHOWN`, none above `SHARED_CHANCE_MAX` (the
+constants say why). It is asked on demand rather than inlined in the map, so a star placed
+since the map loaded has neighbours too.
+
+## The tab
+
+The map is drawn in the browser from that one payload, its sector colours included
+(`sectorHues`); the MAL score colouring ranks by Top N%. Find an anime is the search's own
+title match (`/search/anime`), kept to anime with a star.
 
 ## Names
 

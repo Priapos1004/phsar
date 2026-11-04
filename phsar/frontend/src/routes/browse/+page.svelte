@@ -3,19 +3,23 @@
 	import TabNav, { activeTab } from '$lib/components/TabNav.svelte';
 	import BrowsePageRows from '$lib/components/BrowsePageRows.svelte';
 	import DiscoverTab from '$lib/components/DiscoverTab.svelte';
+	import GalaxyTab from '$lib/components/GalaxyTab.svelte';
 	import * as cls from '$lib/styles/classes';
 
 	const TABS = [
 		{ key: 'news', label: 'News' },
 		{ key: 'discover', label: 'Discover' },
+		{ key: 'galaxy', label: 'Galaxy' },
 	];
 	const DEFAULT_TAB = 'news';
 
 	let active = $derived(activeTab(page.url, TABS, DEFAULT_TAB));
-	// Discover mounts on its first visit, so opening Browse never loads the wheel unseen.
+	// Every tab but News mounts on its first visit, so opening Browse never loads one unseen.
 	let discoverOpened = $state(false);
+	let galaxyOpened = $state(false);
 	$effect(() => {
 		if (active === 'discover') discoverOpened = true;
+		if (active === 'galaxy') galaxyOpened = true;
 	});
 </script>
 
@@ -34,6 +38,11 @@
 	{#if discoverOpened}
 		<div hidden={active !== 'discover'}>
 			<DiscoverTab />
+		</div>
+	{/if}
+	{#if galaxyOpened}
+		<div hidden={active !== 'galaxy'}>
+			<GalaxyTab />
 		</div>
 	{/if}
 </div>

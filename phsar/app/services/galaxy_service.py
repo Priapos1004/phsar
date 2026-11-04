@@ -10,9 +10,10 @@ from bisect import bisect_right
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
+from sqlalchemy import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.job_versions import make_job
@@ -27,6 +28,7 @@ from app.schemas.galaxy_schema import (
     GalaxyNeighbourOut,
     GalaxyRegionOut,
     GalaxySectorOut,
+    GalaxySharedOut,
     GalaxyStarOut,
 )
 from app.services import galaxy_compute
@@ -39,6 +41,10 @@ galaxy_dao = GalaxyDAO()
 
 # How many nearest stars a pinned anime shows.
 NEIGHBOURS = 8
+# What a neighbour shares, ranked by how rarely two anime share it by chance: the rarest
+# few, and nothing one random pair in four already shares, which says little.
+SHARED_SHOWN = 5
+SHARED_CHANCE_MAX = 0.25
 
 # Every library a fit's pickle references, pinned in requirements.txt.
 _PICKLED = ("umap-learn", "pynndescent", "hdbscan", "scikit-learn", "scipy", "numba", "joblib", "numpy")
@@ -145,17 +151,32 @@ async def neighbours(db: AsyncSession, anime_uuid: UUID) -> list[GalaxyNeighbour
     fit = await galaxy_dao.live_fit(db)
     assert fit is not None  # a star belongs to the live fit
     percentiles = fit.params["pair_cosine_percentiles"]
+    total, counts = await galaxy_dao.trait_counts(db)
     me = facts[star.anime_id]
+
+    def traits(kind: Literal["genre", "studio", "source"], mine: list[str], theirs: list[str]) -> list[GalaxySharedOut]:
+        return [GalaxySharedOut(kind=kind, name=n, chance=counts.get((kind, n), 0) / total) for n in set(mine) & set(theirs)]
+
+    def source(row: Row) -> list[str]:
+        return [row.source.value] if row.source is not None else []
+
     out = []
     for anime_id in near:
         other = facts[anime_id]
         similarity = cosine_similarity(me.description_embedding, other.description_embedding)
+        percentile = max(0, bisect_right(percentiles, similarity) - 1)
+        shared = [
+            GalaxySharedOut(kind="synopsis", name=None, chance=(100 - percentile) / 100),
+            *traits("genre", me.genres or [], other.genres or []),
+            *traits("studio", me.studios or [], other.studios or []),
+            *traits("source", source(me), source(other)),
+        ]
         out.append(GalaxyNeighbourOut(
             **other._mapping,
-            shared_genres=sorted(set(me.genres or []) & set(other.genres or []), key=str.casefold),
-            shared_studios=sorted(set(me.studios or []) & set(other.studios or []), key=str.casefold),
-            shared_source=me.source.value if me.source is not None and me.source == other.source else None,
-            synopsis_percentile=max(0, bisect_right(percentiles, similarity) - 1),
+            shared=sorted(
+                (s for s in shared if s.chance <= SHARED_CHANCE_MAX),
+                key=lambda s: (s.chance, s.kind, (s.name or "").casefold()),
+            )[:SHARED_SHOWN],
         ))
     return out
 

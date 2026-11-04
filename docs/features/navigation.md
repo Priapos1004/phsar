@@ -70,6 +70,9 @@ in slices acts first: `/search` and the see-all pages slice their one response b
 "Show More" and expand far enough, and the Browse row a focus names loads at once. `scrollFocus.ts` argues the timing, which is the
 part that is not obvious.
 
+The Galaxy tab is no list: it reads a focus as the star to pick, and opens its panel and
+the map on it instead of scrolling.
+
 ## The controls
 
 Two mechanisms, for two different departures.

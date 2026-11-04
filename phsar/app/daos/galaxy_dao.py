@@ -10,6 +10,7 @@ from app.daos.base_dao import BaseDAO
 from app.daos.search_filters import (
     MAIN_STORY,
     anime_genre_majority_relation,
+    top_percent_ranking,
     weighted_mean_score_expr,
     weighted_mean_votes_expr,
 )
@@ -50,6 +51,18 @@ def _anime_genres(scope):
         )
         .where(majority.c.anime_id.in_(scope))
         .group_by(majority.c.anime_id)
+        .subquery()
+    )
+
+
+def _anime_studios(scope):
+    """Per anime in `scope`, the studios behind its main story."""
+    return (
+        select(Media.anime_id.label("anime_id"), func.array_agg(distinct(Studio.name)).label("studios"))
+        .join(MediaStudio, MediaStudio.media_id == Media.id)
+        .join(Studio, Studio.id == MediaStudio.studio_id)
+        .where(Media.anime_id.in_(scope), MAIN_STORY)
+        .group_by(Media.anime_id)
         .subquery()
     )
 
@@ -200,10 +213,11 @@ class GalaxyDAO(BaseDAO[GalaxyGroup]):
         the whole catalogue."""
         placed = select(GalaxyStar.anime_id)
         figures, genres = _anime_figures(placed), _anime_genres(placed)
+        top = top_percent_ranking(per_anime=True)
         sector, region = aliased(GalaxyGroup), aliased(GalaxyGroup)
         return list((await db.execute(
             select(
-                *_card_columns(figures, genres),
+                *_card_columns(figures, genres), top.c.top_percent,
                 GalaxyStar.x, GalaxyStar.y, GalaxyStar.between, GalaxyStar.trained,
                 sector.number.label("sector"), region.number.label("region"),
             )
@@ -212,6 +226,7 @@ class GalaxyDAO(BaseDAO[GalaxyGroup]):
             .join(region, region.id == GalaxyStar.region_id)
             .outerjoin(figures, figures.c.anime_id == Anime.id)
             .outerjoin(genres, genres.c.anime_id == Anime.id)
+            .outerjoin(top, top.c.id == Anime.id)
             .order_by(GalaxyStar.id)
         )).all())
 
@@ -233,17 +248,25 @@ class GalaxyDAO(BaseDAO[GalaxyGroup]):
             .limit(limit)
         )).scalars())
 
+    async def trait_counts(self, db: AsyncSession) -> tuple[int, dict[tuple[str, str], int]]:
+        """How many anime the map holds, and how many of them carry each genre, main-story
+        studio and main source, keyed `(kind, name)` — the same definitions `anime_facts`
+        compares, so a shared trait's count is that trait's."""
+        placed = select(GalaxyStar.anime_id)
+        majority, figures = anime_genre_majority_relation(), _anime_figures(placed)
+        total = (await db.execute(select(func.count()).select_from(GalaxyStar))).scalar_one()
+        genres = select(majority.c.genre_name, func.count()).where(majority.c.anime_id.in_(placed)).group_by(majority.c.genre_name)
+        named = select(func.unnest(_anime_studios(placed).c.studios).label("name")).subquery()
+        studios = select(named.c.name, func.count()).group_by(named.c.name)
+        sources = select(figures.c.source, func.count()).where(figures.c.source.is_not(None)).group_by(figures.c.source)
+        counts = {("genre", name): n for name, n in (await db.execute(genres)).tuples()}
+        counts |= {("studio", name): n for name, n in (await db.execute(studios)).tuples()}
+        counts |= {("source", source.value): n for source, n in (await db.execute(sources)).tuples()}
+        return total, counts
+
     async def anime_facts(self, db: AsyncSession, anime_ids: list[int]) -> dict[int, Row]:
         """What the neighbour reasons compare, per anime."""
-        figures, genres = _anime_figures(anime_ids), _anime_genres(anime_ids)
-        studios = (
-            select(Media.anime_id, func.array_agg(distinct(Studio.name)).label("studios"))
-            .join(MediaStudio, MediaStudio.media_id == Media.id)
-            .join(Studio, Studio.id == MediaStudio.studio_id)
-            .where(Media.anime_id.in_(anime_ids), MAIN_STORY)
-            .group_by(Media.anime_id)
-            .subquery()
-        )
+        figures, genres, studios = _anime_figures(anime_ids), _anime_genres(anime_ids), _anime_studios(anime_ids)
         rows = (await db.execute(
             select(
                 Anime.id, *_card_columns(figures, genres),

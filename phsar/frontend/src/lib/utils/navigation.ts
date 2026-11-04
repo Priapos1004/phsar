@@ -24,7 +24,7 @@ export function rowClickNavigate(e: MouseEvent, href: string): void {
  * way `job` does, `DetailHrefOptions`, `buildDetailHref` and `detailOrigin`. */
 export type DetailOrigin =
     | 'library' | 'job' | 'completion' | 'curation' | 'ratings' | 'ratings-stats' | 'watchlist' | 'browse'
-    | 'carousel' | 'search' | 'search-all' | 'home' | 'discover';
+    | 'carousel' | 'search' | 'search-all' | 'home' | 'discover' | 'galaxy';
 
 // Every page mapped, so a new browse page fails to compile until its way back is chosen.
 const PAGE_ORIGIN = { home: 'home', news: 'browse', discover: 'discover' } as const satisfies Record<BrowsePageKey, DetailOrigin>;

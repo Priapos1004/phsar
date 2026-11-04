@@ -357,6 +357,62 @@ export interface AnimeDetail extends AnimeAggregatedBase {
 	media: AnimeMediaItem[];
 }
 
+// Galaxy map (GET /browse/galaxy) and a star's neighbours — docs/features/galaxy.md
+export interface GalaxySector {
+	uuid: string;
+	number: number;
+	name: string;
+	x: number;
+	y: number;
+}
+
+export interface GalaxyRegion extends GalaxySector {
+	sector: number;
+}
+
+export interface GalaxyAnime {
+	anime_uuid: string;
+	title: string;
+	name_eng: string | null;
+	name_jap: string | null;
+	cover_image: string | null;
+	score: number | null;
+	year: number | null;
+}
+
+export interface GalaxyStar extends GalaxyAnime {
+	x: number;
+	y: number;
+	sector: number;
+	region: number;
+	between: boolean;
+	trained: boolean;
+	genres: string[];
+	/** The "Top N%" badge. */
+	top_percent: number | null;
+}
+
+export interface GalaxyMap {
+	fitted_at: string | null;
+	sectors: GalaxySector[];
+	regions: GalaxyRegion[];
+	stars: GalaxyStar[];
+}
+
+/** One thing a neighbour shares with the anime asked about. */
+export interface GalaxyShared {
+	kind: 'synopsis' | 'genre' | 'studio' | 'source';
+	/** The genre, studio or source; null for the synopsis. */
+	name: string | null;
+	/** How often two anime on the map share it by chance, 0–1. */
+	chance: number;
+}
+
+export interface GalaxyNeighbour extends GalaxyAnime {
+	/** Rarest first, already cut to the few worth showing. */
+	shared: GalaxyShared[];
+}
+
 // Search token (POST /filters/create-token)
 export interface SearchTokenResponse {
 	token: string;
