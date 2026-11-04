@@ -237,6 +237,24 @@ def anime_title_texts(anime) -> list[str | None]:
     return [anime.title, anime.name_eng, anime.name_jap, *(anime.other_names or [])]
 
 
+async def _personal_anime_scope(
+    db: AsyncSession, filters: CatalogueSearchFilters, user_id: int,
+) -> tuple[set[int] | None, set[int]]:
+    """The caller's rated and watchlist filters as anime ids to keep and to drop."""
+    return personal_scope(
+        filters,
+        await rated_states_by_anime_id(db, user_id) if filters.rated else {},
+        await watchlist_dao.get_listed_ids(db, user_id, per_anime=True) if filters.watchlisted is not None else set(),
+    )
+
+
+async def matching_anime_uuids(db: AsyncSession, filters: CatalogueSearchFilters, user_id: int) -> list[UUID]:
+    include, exclude = await _personal_anime_scope(db, filters, user_id)
+    if include is not None and not include:
+        return []
+    return await anime_dao.matching_anime_uuids(db, filters, include_ids=include, exclude_ids=exclude)
+
+
 async def search_anime_by_query(
     db: AsyncSession,
     query: str,
@@ -249,11 +267,7 @@ async def search_anime_by_query(
     limit: int,
     user_id: int,
 ) -> list[AnimeSearchResult]:
-    include, exclude = personal_scope(
-        filters,
-        await rated_states_by_anime_id(db, user_id) if filters.rated else {},
-        await watchlist_dao.get_listed_ids(db, user_id, per_anime=True) if filters.watchlisted is not None else set(),
-    )
+    include, exclude = await _personal_anime_scope(db, filters, user_id)
     if include is not None and not include:
         return []
     anime_list = await anime_dao.search_anime_aggregated(

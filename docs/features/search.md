@@ -167,6 +167,10 @@ the card's `has_upcoming`, which counts any announced media, so that "upcoming +
 release ascending" lists the next seasons — an anime announcing only an OVA would
 sort at its last aired season.
 
+**Every match, by uuid.** `GET /search/anime/uuids` runs the anime search's own filter phase
+(`anime_dao._filtered_anime`, scoped by `_personal_anime_scope`), so its set is the one
+`/search/anime` would list; the [galaxy map](galaxy.md#the-tab) lights it.
+
 ## Anime score is main-story only
 
 `avg_score` / `avg_scored_by` are relation-weighted means over

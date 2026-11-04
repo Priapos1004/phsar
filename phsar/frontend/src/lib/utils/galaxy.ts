@@ -23,14 +23,25 @@ const SECTOR_HUES = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#2f
 export const SCORE_RAMP = ['#3a5a92', '#4f94ee', '#e3efff'];
 /** Where a "Top N%" sits on `SCORE_RAMP`: 0 for the bottom of the catalogue, 1 for the top. */
 export const rankShare = (topPercent: number) => (100 - topPercent) / 99;
-/** A star with no value in the active colouring. */
+/** The grey that recedes: a star the filters leave out, or an unscored one with no filters
+ *  on (`blankColour`). */
 export const NO_VALUE = '#4a4e66';
-const UNRATED = '#3b3f57';
+export const LIT_NO_VALUE = '#589194';
+/**
+ * A star with no value in the colouring — unscored, or not rated — in a grey that recedes.
+ * With filters on, a lit one takes a muted teal instead, so a filter matching only unrated
+ * anime does not read as one cloud with the greyed-out rest: muted, so it never outshines
+ * a star that has a value; teal, because it stays clear of the tiers' gold, every
+ * theme's primary and the score blues. The stars and the legend both read it.
+ */
+export function blankColour(colour: GalaxyColour, lit: boolean): string {
+	if (lit) return LIT_NO_VALUE;
+	return colour === 'mine' ? '#3b3f57' : NO_VALUE;
+}
 
-/** My ratings' colour for a coverage tier, or for none: the tiers' metals, the theme's
- *  colour for everything still in progress. The stars and the legend both read it. */
-export function mineColour(tier: CoverageTier | undefined): string {
-	if (!tier) return UNRATED;
+/** My ratings' colour for a coverage tier: the tiers' metals, the theme's colour for
+ *  everything still in progress. The stars and the legend both read it. */
+export function mineColour(tier: CoverageTier): string {
 	return tier === 'some' ? getThemedChartColorPalette()[0] : COVERAGE_STYLE[tier].edge;
 }
 
@@ -174,6 +185,8 @@ export interface NebulaSource {
 	y: number;
 	weight: number;
 	tint: [number, number, number];
+	/** Shapes the veil only, adding no haze and no core: a star the filters leave out. */
+	veilOnly?: boolean;
 }
 
 /**
@@ -192,19 +205,21 @@ export function nebulaPixels(
 	const [dx, dy] = [win.x[1] - win.x[0], win.y[1] - win.y[0]];
 	const height = Math.max(1, Math.round((width * dy) / dx));
 	const n = width * height;
-	const [R, G, B, W] = [0, 0, 0, 0].map(() => new Float32Array(n));
+	const [R, G, B, W, V] = [0, 0, 0, 0, 0].map(() => new Float32Array(n));
 	for (const s of sources) {
 		const col = Math.round(((s.x - win.x[0]) / dx) * (width - 1));
 		const row = Math.round((1 - (s.y - win.y[0]) / dy) * (height - 1));
 		if (col < 0 || col >= width || row < 0 || row >= height) continue;
 		const k = row * width + col;
+		V[k] += s.weight;
+		if (s.veilOnly) continue;
 		R[k] += s.tint[0] * s.weight;
 		G[k] += s.tint[1] * s.weight;
 		B[k] += s.tint[2] * s.weight;
 		W[k] += s.weight;
 	}
 	const core = boxBlur(W.slice(), width, height, 2);
-	const veil = boxBlur(W.slice(), width, height, 34);
+	const veil = boxBlur(V, width, height, 34);
 	for (const a of [R, G, B, W]) boxBlur(a, width, height, 11);
 	const [kH, kC, kV] = [quantile(W, 0.9), quantile(core, 0.995), quantile(veil, 0.9)];
 	const RGB = [R, G, B];

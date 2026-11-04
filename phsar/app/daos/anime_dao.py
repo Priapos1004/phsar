@@ -209,6 +209,34 @@ def _sweep_atoms(cte) -> _SweepAtoms:
     )
 
 
+def _anime_aggregate_columns() -> dict[str, Any]:
+    """The per-anime aggregates the HAVING filters and the score sorts read."""
+    return {
+        "avg_score": weighted_mean_score_expr().label("avg_score"),
+        "avg_scored_by": weighted_mean_votes_expr().label("avg_scored_by"),
+        "total_episodes": func.sum(Media.episodes).label("total_episodes"),
+        "total_watch_time": func.sum(Media.total_watch_time).label("total_watch_time"),
+        "media_count": func.count(Media.id).label("media_count"),
+    }
+
+
+def _filtered_anime(stmt, filters: CatalogueSearchFilters, include_ids: set[int] | None, exclude_ids: set[int],
+                    agg_columns: dict[str, Any]):
+    """`stmt` over the anime the filters keep, grouped per anime: the WHERE filters (any
+    media matching), the personal scope by anime id, then the HAVING filters (majority and
+    range semantics) — never narrowing the media an anime's aggregates are taken over.
+
+    GROUP BY the PK alone: Anime's own columns in the title match and the sort keys ride
+    functional dependency on it, and the literal-first matches (`match_passes`), their
+    distances and the other sort keys aggregate over the anime's media."""
+    stmt = apply_anime_pre_filters(stmt.join(Media, Media.anime_id == Anime.id), filters)
+    if include_ids is not None:
+        stmt = stmt.where(Anime.id.in_(include_ids))
+    if exclude_ids:
+        stmt = stmt.where(Anime.id.not_in(exclude_ids))
+    return apply_anime_having_filters(stmt.group_by(Anime.id), filters, agg_columns)
+
+
 class AnimeDAO(MalIdDAO[Anime]):
     def __init__(self):
         super().__init__(Anime)
@@ -497,48 +525,14 @@ class AnimeDAO(MalIdDAO[Anime]):
         `sort`."""
 
         # --- Phase A: Aggregation query (for filtering + ordering only) ---
-        # Score/votes are the relation-weighted means over Main+Alt media
-        # (RELATION_SCORE_WEIGHTS) — this scopes every ordering by score AND the
-        # score/scored_by HAVING filters (via agg_columns) so they match the
-        # displayed avg (anime_search_service._compute_anime_aggregates). Episode
-        # /watch-time/genre-majority aggregates stay over ALL media.
-        avg_score = weighted_mean_score_expr().label("avg_score")
-        avg_scored_by = weighted_mean_votes_expr().label("avg_scored_by")
-        total_episodes = func.sum(Media.episodes).label("total_episodes")
-        total_watch_time = func.sum(Media.total_watch_time).label("total_watch_time")
-        media_count = func.count(Media.id).label("media_count")
-
-        agg_columns = {
-            "avg_score": avg_score,
-            "avg_scored_by": avg_scored_by,
-            "total_episodes": total_episodes,
-            "total_watch_time": total_watch_time,
-            "media_count": media_count,
-        }
-
-        stmt = select(Anime.id)
-        stmt = stmt.join(Media, Media.anime_id == Anime.id)
-
-        # Pre-aggregation WHERE filters (any-match semantics)
-        stmt = apply_anime_pre_filters(stmt, filters)
-        # By anime id, like the pre-filters: selecting anime, never their media rows.
-        if include_ids is not None:
-            stmt = stmt.where(Anime.id.in_(include_ids))
-        if exclude_ids:
-            stmt = stmt.where(Anime.id.not_in(exclude_ids))
+        agg_columns = _anime_aggregate_columns()
+        avg_score, avg_scored_by = agg_columns["avg_score"], agg_columns["avg_scored_by"]
+        stmt = _filtered_anime(select(Anime.id), filters, include_ids, exclude_ids, agg_columns)
         notes = bool(query) and search_type == SearchType.RATING_NOTES
         if sort == SortKey.YOUR_RATING or notes:
             stmt = stmt.outerjoin(Ratings, rating_of(user_id))
         your_rating = your_rating_key(per_anime=True) if sort == SortKey.YOUR_RATING else None
-
-        # GROUP BY the PK alone: Anime's own columns in the title match and the sort
-        # keys below ride functional dependency on it, and the literal-first matches
-        # (`match_passes`), their distances and the other sort keys aggregate over the
-        # anime's media.
-        stmt = stmt.group_by(Anime.id)
-
-        # Post-aggregation HAVING filters (majority/range semantics)
-        stmt = apply_anime_having_filters(stmt, filters, agg_columns).limit(limit)
+        stmt = stmt.limit(limit)
 
         if query and search_type == SearchType.TITLE:
             # A title query selects in HAVING, not WHERE: narrowing the joined
@@ -578,3 +572,15 @@ class AnimeDAO(MalIdDAO[Anime]):
 
         # Preserve aggregation query ordering
         return [anime_map[aid] for aid in anime_ids if aid in anime_map]
+
+    async def matching_anime_uuids(
+        self,
+        db: AsyncSession,
+        filters: CatalogueSearchFilters,
+        *,
+        include_ids: set[int] | None,
+        exclude_ids: set[int],
+    ) -> list[UUID]:
+        """Every anime the filters keep, in no order: the search's own filter phase."""
+        stmt = _filtered_anime(select(Anime.uuid), filters, include_ids, exclude_ids, _anime_aggregate_columns())
+        return list((await db.execute(stmt)).scalars())

@@ -1,5 +1,6 @@
 
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import Json
@@ -26,7 +27,10 @@ from app.schemas.media_filter_schema import (
 )
 from app.schemas.media_schema import MediaSearchResult
 from app.schemas.search_schema import SearchResultDB
-from app.services.anime_search_service import search_anime_by_query
+from app.services.anime_search_service import (
+    matching_anime_uuids,
+    search_anime_by_query,
+)
 from app.services.media_search_service import search_media_by_query
 from app.services.search_service import handle_search_mal_api_results
 from app.services.spoiler_service import get_visible_media_ids
@@ -184,6 +188,19 @@ async def search_anime(
         limit=limit,
         user_id=current_user.id,
     )
+
+
+@router.get("/anime/uuids", response_model=list[UUID])
+async def search_anime_uuids(
+    filters: CatalogueSearchFilters = Depends(get_catalogue_filters),
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Every anime the filters keep, unordered and uncapped: the galaxy map lights them.
+    No query: a description match is a ranked list cut at a margin, which a set of lit
+    stars cannot show."""
+    _check_rated_grain(filters, ANIME_RATED_STATES)
+    return await matching_anime_uuids(db, filters, current_user.id)
 
 
 @router.get("/mal", response_model=list[SearchResultDB])

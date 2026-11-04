@@ -223,6 +223,7 @@ phsar/
 │   │   │   │   ├── DoubleRangeSlider.svelte
 │   │   │   │   ├── EChart.svelte
 │   │   │   │   ├── ExpressionText.svelte
+│   │   │   │   ├── FilterSheet.svelte
 │   │   │   │   ├── GalaxyMap.svelte
 │   │   │   │   ├── GalaxyTab.svelte
 │   │   │   │   ├── GenreBadges.svelte
@@ -331,6 +332,7 @@ phsar/
 │   │   │   │   ├── browseRefinements.ts
 │   │   │   │   ├── browseRows.ts
 │   │   │   │   ├── filterOptions.ts
+│   │   │   │   ├── galaxyView.ts
 │   │   │   │   ├── genres.ts
 │   │   │   │   ├── jobs.ts
 │   │   │   │   ├── maintenance.ts
@@ -450,6 +452,7 @@ phsar/
 │   │       ├── dismissed-decisions-section.test.ts
 │   │       ├── filter-lifecycle.test.ts
 │   │       ├── format-string.test.ts
+│   │       ├── galaxy-view.test.ts
 │   │       ├── galaxy.test.ts
 │   │       ├── genre-badges.test.ts
 │   │       ├── job-bell.test.ts
@@ -562,6 +565,7 @@ phsar/
     │   ├── test_save.py
     │   ├── test_search_anime.py
     │   ├── test_search_anime_filters.py
+    │   ├── test_search_anime_uuids.py
     │   ├── test_search_mal.py
     │   ├── test_search_media.py
     │   ├── test_search_ranking.py

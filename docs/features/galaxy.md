@@ -8,7 +8,7 @@ split into **regions**. There is one live fit at a time, and a refit replaces it
 (serving, placing, enqueueing, `ensure_map`, hand names) → `daos/galaxy_dao.py` →
 `models/galaxy.py`. The map's endpoints are in `routers/browse.py`, the admin ones in
 `routers/admin_galaxy.py`. The tab is `GalaxyTab.svelte` over `GalaxyMap.svelte`, with
-`utils/galaxy.ts`.
+`utils/galaxy.ts` and `stores/galaxyView.ts`.
 
 ## What a star is made of
 
@@ -123,7 +123,8 @@ since the map loaded has neighbours too.
 
 The map is drawn in the browser from that one payload, its sector colours included
 (`sectorHues`); the MAL score colouring ranks by Top N%. Find an anime is the search's own
-title match (`/search/anime`), kept to anime with a star.
+title match (`/search/anime`), kept to anime with a star. The filters ask
+`/search/anime/uuids` which anime they keep, and the tab lights those.
 
 ## Names
 

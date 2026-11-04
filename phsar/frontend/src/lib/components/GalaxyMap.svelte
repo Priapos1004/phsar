@@ -21,8 +21,8 @@
 	import { RATED_STATES } from '$lib/utils/search';
 	import { escapeHtml, resolveTitle } from '$lib/utils/formatString';
 	import {
-		COVER_ASPECT, COVER_SPAN, FOCUS_SPAN, MIN_SPAN, NO_VALUE, REGION_LABELS_BELOW, SCORE_RAMP,
-		coverCrop, coverSize, evenWindows, fitWindow, labelCentre, mineColour, nebulaPixels, packCovers, percentWindow,
+		COVER_ASPECT, COVER_SPAN, FOCUS_SPAN, LIT_NO_VALUE, MIN_SPAN, NO_VALUE, REGION_LABELS_BELOW, SCORE_RAMP,
+		blankColour, coverCrop, coverSize, evenWindows, fitWindow, labelCentre, mineColour, nebulaPixels, packCovers, percentWindow,
 		rankShare, sectorHues, starFigures,
 		type GalaxyColour,
 		type MapWindow, type NebulaSource
@@ -35,8 +35,8 @@
 	interface Props {
 		map: GalaxyMap;
 		colour: GalaxyColour;
-		/** A genre to light up, or '' for none. */
-		tag: string;
+		/** The anime the filters keep, lit while the rest dim; null with no filters. */
+		lit: Set<string> | null;
 		states: Map<string, State>;
 		selected: string | null;
 		neighbours: string[];
@@ -46,7 +46,7 @@
 		onSelect: (uuid: string) => void;
 	}
 
-	let { map, colour, tag, states, selected, neighbours, hovered, nameLanguage, onSelect }: Props = $props();
+	let { map, colour, lit, states, selected, neighbours, hovered, nameLanguage, onSelect }: Props = $props();
 
 	let container: HTMLDivElement;
 	let overview: HTMLCanvasElement;
@@ -68,7 +68,8 @@
 	const GOLD = '#f2c46d';
 
 	const name = (s: GalaxyStar) => resolveTitle(s.title, s.name_eng, s.name_jap, nameLanguage);
-	const lit = (s: GalaxyStar) => !tag || s.genres.includes(tag);
+	/** Left out by the filters: greyed, and out of the hover's way. */
+	const dimmed = (s: GalaxyStar) => lit != null && !lit.has(s.anime_uuid);
 	const starOf = (uuid: string | null) => (uuid == null ? undefined : index.get(uuid));
 	const at = (i: number): [number, number] => [map.stars[i].x, map.stars[i].y];
 	const tierOf = (s: GalaxyStar) => {
@@ -77,19 +78,21 @@
 	};
 
 	function fill(s: GalaxyStar): string {
-		if (colour === 'score') return s.top_percent == null ? NO_VALUE : colours.lerp(rankShare(s.top_percent), SCORE_RAMP);
-		if (colour === 'mine') return mineColour(tierOf(s));
-		return hues.get(s.sector)!;
+		if (colour === 'sector') return hues.get(s.sector)!;
+		if (colour === 'score' && s.top_percent != null) return colours.lerp(rankShare(s.top_percent), SCORE_RAMP);
+		const tier = colour === 'mine' ? tierOf(s) : undefined;
+		return tier ? mineColour(tier) : blankColour(colour, lit != null);
 	}
 
 	function starItem(s: GalaxyStar, i: number) {
 		const tier = colour === 'mine' ? tierOf(s) : undefined;
-		const opacity = tag ? (lit(s) ? 1 : 0.1) : colour === 'mine' ? (tier ? 1 : 0.55) : s.between ? 0.45 : 0.9;
+		const opacity = lit ? 1 : colour === 'mine' ? (tier ? 1 : 0.55) : s.between ? 0.45 : 0.9;
 		const color = fill(s);
 		const ring = tier === 'all' ? SHEEN : undefined;
 		return {
 			value: [s.x, s.y, i],
-			symbolSize: 5 + (tier || (tag && lit(s)) ? 2 : 0),
+			// Lit stars grow, so they are easier to point at among the greyed ones.
+			symbolSize: lit ? 8 : 5 + (tier ? 2 : 0),
 			// A star placed onto the map rather than shaping it draws hollow.
 			itemStyle: s.trained
 				? { color, borderColor: ring ?? 'transparent', borderWidth: ring ? 1.2 : 0, opacity }
@@ -133,38 +136,44 @@
 	// so a resize moves it rather than redrawing it.
 	const nebulaCache = new Map<string, { image: HTMLCanvasElement; over: MapWindow }>();
 	let nebulaStates: Map<string, State> | null = null;
+	let nebulaLit: Set<string> | null = null;
 
 	function nebulaSource(s: GalaxyStar): NebulaSource {
 		const glow = (weight: number, tint: number[]) => ({ x: s.x, y: s.y, weight, tint: tint.slice(0, 3) as [number, number, number] });
-		if (tag) return lit(s) ? glow(1, [255, 110, 200]) : glow(0.12, [60, 52, 96]);
-		if (colour === 'mine') {
-			const tier = tierOf(s);
-			return tier ? glow({ all: 1, main: 0.85, some: 0.55 }[tier], [240, 188, 78]) : glow(0.16, [58, 52, 80]);
-		}
-		if (colour === 'score') return s.top_percent == null ? glow(0.12, [60, 60, 90]) : glow(0.12 + 0.88 * rankShare(s.top_percent), [90, 150, 255]);
-		return glow(1, colours.parse(hues.get(s.sector)!));
+		// A greyed-out star keeps the galaxy's outline in the veil and lights nothing.
+		if (dimmed(s)) return { ...glow(1, [0, 0, 0]), veilOnly: true };
+		if (colour === 'sector') return glow(1, colours.parse(hues.get(s.sector)!));
+		if (colour === 'score' && s.top_percent != null) return glow(0.12 + 0.88 * rankShare(s.top_percent), [90, 150, 255]);
+		const tier = colour === 'mine' ? tierOf(s) : undefined;
+		if (tier) return glow({ all: 1, main: 0.85, some: 0.55 }[tier], [240, 188, 78]);
+		// No value in the colouring: a faint glow, in the lit teal under filters.
+		if (lit) return glow(0.3, colours.parse(LIT_NO_VALUE));
+		return colour === 'mine' ? glow(0.16, [58, 52, 80]) : glow(0.12, [60, 60, 90]);
 	}
 
 	/** Only called while drawing, which needs `win`. */
 	function nebula(): { image: HTMLCanvasElement; over: MapWindow } {
-		// A lit genre looks the same under every colouring; only My ratings' image goes stale
-		// with the viewer's ratings.
-		const key = tag ? `tag|${tag}` : colour;
+		// With filters on, only the lit stars glow, in the colouring's own light. Every image
+		// goes stale with the filters, My ratings' with the viewer's ratings.
+		if (lit !== nebulaLit) {
+			nebulaLit = lit;
+			nebulaCache.clear();
+		}
 		if (states !== nebulaStates) {
 			nebulaStates = states;
 			nebulaCache.delete('mine');
 		}
-		const cached = nebulaCache.get(key);
+		const cached = nebulaCache.get(colour);
 		if (cached) return cached;
 		// Black and gold on My ratings: the viewer's own stars are the only light.
-		const veil: [number, number, number] = key === 'mine' ? [70, 62, 72] : [86, 64, 170];
+		const veil: [number, number, number] = colour === 'mine' ? [70, 62, 72] : [86, 64, 170];
 		const { pixels, width, height } = nebulaPixels(map.stars.map(nebulaSource), win!, 360, veil);
 		const image = document.createElement('canvas');
 		image.width = width;
 		image.height = height;
 		image.getContext('2d')!.putImageData(new ImageData(pixels, width, height), 0, 0);
 		const made = { image, over: win! };
-		nebulaCache.set(key, made);
+		nebulaCache.set(colour, made);
 		return made;
 	}
 
@@ -212,7 +221,10 @@
 			.map((_, i) => i)
 			.filter((i) => {
 				const s = map.stars[i];
-				return s.cover_image && s.x >= x0 && s.x <= x1 && s.y >= y0 && s.y <= y1;
+				// With filters on, only what they keep — plus the pick and its neighbours,
+				// which the panel and the links point at whatever the filters say.
+				const shown = !dimmed(s) || rank.has(i);
+				return shown && s.cover_image && s.x >= x0 && s.x <= x1 && s.y >= y0 && s.y <= y1;
 			})
 			.sort((a, b) => (rank.get(a) ?? Infinity) - (rank.get(b) ?? Infinity) || (map.stars[b].score ?? 0) - (map.stars[a].score ?? 0));
 		packed = packCovers(visible.map((i) => chart.convertToPixel({ gridIndex: 0 }, at(i))), coverSize(span)).map((k) => visible[k]);
@@ -404,7 +416,8 @@
 						return { type: 'image', style: { image, x: ax, y: ay, width: bx - ax, height: by - ay } };
 					}
 				},
-				{ id: 'stars', type: 'scatter', z: 2, emphasis: { disabled: true }, data: map.stars.map(starItem) },
+				{ id: 'dimmed', type: 'scatter', z: 1, silent: true, emphasis: { disabled: true }, data: map.stars.flatMap((s, i) => (dimmed(s) ? [{ value: [s.x, s.y, i], symbolSize: 4, itemStyle: { color: NO_VALUE, opacity: 0.35 } }] : [])) },
+				{ id: 'stars', type: 'scatter', z: 2, emphasis: { disabled: true }, data: map.stars.flatMap((s, i) => (dimmed(s) ? [] : [starItem(s, i)])) },
 				{ ...links, type: 'lines', coordinateSystem: 'cartesian2d', silent: true, z: 3, lineStyle: { color: GOLD, type: 'dashed' } },
 				{
 					id: 'covers', type: 'custom', z: 4, clip: true, emphasis: { disabled: true }, data: coverData(),
@@ -506,7 +519,7 @@
 	let rendered = false;
 	$effect(() => {
 		if (!chart) return;
-		void [map, colour, tag, states];
+		void [map, colour, lit, states];
 		untrack(() => {
 			fit();
 			render(!rendered);

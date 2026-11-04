@@ -128,7 +128,7 @@ const LIST_FILTER_KEYS = [
 	'media_type', 'relation_type', 'age_rating',
 ] as const;
 export type ListFilterKey = (typeof LIST_FILTER_KEYS)[number];
-type ModeKey = 'studio_mode';
+export type ModeKey = 'studio_mode';
 
 export interface ListFilter {
 	label: string;
@@ -175,6 +175,10 @@ export async function fetchSearchResults(params: MediaSearchFilters, limit?: num
 
 export async function fetchAnimeSearchResults(params: MediaSearchFilters, limit?: number): Promise<AnimeSearchResult[]> {
 	return api.get<AnimeSearchResult[]>('/search/anime', { params: buildSearchParams(params, limit) });
+}
+
+export async function fetchMatchingAnimeUuids(filters: MediaSearchFilters): Promise<string[]> {
+	return api.get<string[]>('/search/anime/uuids', { params: buildSearchParams(filters) });
 }
 
 // ---------------------------------------------------------------------------
@@ -497,7 +501,7 @@ export const describeGenres = (genres: GenreFilter) => textOf(describeGenreTerms
 // ---------------------------------------------------------------------------
 
 export type RangeKey = 'score' | 'scored_by' | 'episodes' | 'duration_per_episode' | 'total_watch_time';
-type RangeParam = `${RangeKey}_${'min' | 'max'}`;
+export type RangeParam = `${RangeKey}_${'min' | 'max'}`;
 
 export interface RangeFilter {
 	label: string;

@@ -7,6 +7,7 @@ import {
 	evenWindows,
 	fitWindow,
 	labelCentre,
+	nebulaPixels,
 	packCovers,
 	sectorHues
 } from '$lib/utils/galaxy';
@@ -118,5 +119,27 @@ describe('coverCrop', () => {
 		expect(coverCrop(200, 400, 2 / 3)).toEqual([0, 50, 200, 300]);
 		// Already the shape: all of it.
 		expect(coverCrop(200, 300, 2 / 3)).toEqual([0, 0, 200, 300]);
+	});
+});
+
+describe('nebulaPixels', () => {
+	it('lets a veil-only star shape the veil without lighting the haze', () => {
+		const win = { x: [0, 100] as [number, number], y: [0, 100] as [number, number] };
+		const { pixels, width } = nebulaPixels(
+			[
+				{ x: 10, y: 50, weight: 1, tint: [255, 0, 0] },
+				{ x: 90, y: 50, weight: 1, tint: [0, 255, 0], veilOnly: true }
+			],
+			win,
+			100,
+			[0, 0, 255]
+		);
+		const at = (col: number) => pixels.slice((50 * width + col) * 4, (50 * width + col) * 4 + 4);
+		const [r, g, b, a] = at(89);
+		// Veil there, in the veil's tint and no stronger than it ever draws…
+		expect([r, g, b > 0]).toEqual([0, 0, true]);
+		expect(a).toBeLessThanOrEqual(0.2 * 255);
+		// …while the lit star glows in its own.
+		expect(at(10)[0]).toBeGreaterThan(at(10)[2]);
 	});
 });

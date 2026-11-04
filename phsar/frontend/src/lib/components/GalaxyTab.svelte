@@ -1,21 +1,23 @@
 <script lang="ts">
 	/**
 	 * Browse's Galaxy tab: the map of every anime (docs/features/galaxy.md), its colourings,
-	 * a genre to light up, finding a title, and a picked star's nearest neighbours with
-	 * what they share. The map is the same for every viewer; My ratings is personal, so a
-	 * guest sees it inert.
+	 * the search's filters lighting up what they keep, finding a title, and a picked star's
+	 * nearest neighbours with what they share. The map is the same for every viewer; My
+	 * ratings is personal, so a guest sees it inert.
 	 *
 	 * The panel keeps a trail of the stars picked since it opened, so a hop to a neighbour
 	 * can be walked back; closing it clears the trail. A return from an anime's page lands
-	 * on its star again through the back link's `?focus=`.
+	 * on its star again through the back link's `?focus=`; the colouring and the filters
+	 * live in `galaxyView`, so they come back too.
 	 */
 	import { getContext, onMount } from 'svelte';
 	import { page } from '$app/state';
-	import { ArrowLeft, X } from 'lucide-svelte';
+	import { ArrowLeft, SlidersHorizontal, X } from 'lucide-svelte';
 	import { api, ApiError } from '$lib/api';
+	import FilterSheet from '$lib/components/FilterSheet.svelte';
 	import GalaxyMap from '$lib/components/GalaxyMap.svelte';
 	import { Input } from '$lib/components/ui/input';
-	import * as Select from '$lib/components/ui/select';
+	import { galaxyView } from '$lib/stores/galaxyView';
 	import { ensureRatingCoverage, ratedStates, ratingCoverage } from '$lib/stores/ratingCoverage';
 	import { addOptimisticJob, bumpJobsRefresh } from '$lib/stores/jobs';
 	import { pushToast } from '$lib/stores/toast';
@@ -23,11 +25,11 @@
 	import * as cls from '$lib/styles/classes';
 	import type { GalaxyMap as GalaxyMapData, GalaxyNeighbour, GalaxyShared, GalaxyStar } from '$lib/types/api';
 	import { formatShortDate, resolveTitle } from '$lib/utils/formatString';
-	import { NO_VALUE, SCORE_RAMP, mineColour, starFigures, type GalaxyColour } from '$lib/utils/galaxy';
+	import { NO_VALUE, SCORE_RAMP, blankColour, mineColour, starFigures, type GalaxyColour } from '$lib/utils/galaxy';
 	import { COVERAGE_STYLE } from '$lib/utils/ratingCoverage';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import { consumeFocus } from '$lib/utils/scrollFocus';
-	import { fetchAnimeSearchResults } from '$lib/utils/search';
+	import { fetchAnimeSearchResults, fetchMatchingAnimeUuids, filterChips } from '$lib/utils/search';
 
 	const getUserRole = getContext<() => string | null>('userRole');
 	let isGuest = $derived(getUserRole?.() === 'restricted_user');
@@ -36,8 +38,13 @@
 
 	let map = $state<GalaxyMapData | null>(null);
 	let error = $state('');
-	let colour = $state<GalaxyColour>('sector');
-	let tag = $state('');
+	let colour = $derived($galaxyView.colour);
+	let filters = $derived($galaxyView.filters);
+	let filterCount = $derived(filterChips(filters, 'anime').length);
+	let sheetOpen = $state(false);
+	/** What the filters keep; null with no filters, or when asking for it failed. */
+	let lit = $state<Set<string> | null>(null);
+	let litFailed = $state(false);
 	let selected = $state<string | null>(null);
 	let neighbours = $state<GalaxyNeighbour[]>([]);
 	let hovered = $state<string | null>(null);
@@ -56,13 +63,28 @@
 	let previous = $derived(trail.length ? starByUuid.get(trail[trail.length - 1]) : undefined);
 	let sectorName = $derived(new Map(map?.sectors.map((g) => [g.number, g.name])));
 	let regionName = $derived(new Map(map?.regions.map((g) => [g.number, g.name])));
-	let genres = $derived.by(() => {
-		const count = new Map<string, number>();
-		for (const s of map?.stars ?? []) for (const g of s.genres) count.set(g, (count.get(g) ?? 0) + 1);
-		return [...count].sort(([a], [b]) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
-	});
 	const title = (s: { title: string; name_eng: string | null; name_jap: string | null }) =>
 		resolveTitle(s.title, s.name_eng, s.name_jap, nameLanguage);
+
+	// Asked again whenever the filters change; a late answer for older ones is dropped.
+	$effect(() => {
+		const asked = filters;
+		litFailed = false;
+		if (!filterCount) {
+			lit = null;
+			return;
+		}
+		fetchMatchingAnimeUuids(asked).then(
+			(uuids) => {
+				if (filters === asked) lit = new Set(uuids);
+			},
+			() => {
+				if (filters !== asked) return;
+				lit = null;
+				litFailed = true;
+			}
+		);
+	});
 
 	onMount(async () => {
 		const returnedTo = consumeFocus(page.url);
@@ -196,7 +218,7 @@
 
 	let mineCounts = $derived.by(() => {
 		const c = { none: 0, some: 0, main: 0, all: 0 };
-		for (const s of map?.stars ?? []) c[$ratingCoverage.get(s.anime_uuid) ?? 'none']++;
+		for (const s of map?.stars ?? []) if (!lit || lit.has(s.anime_uuid)) c[$ratingCoverage.get(s.anime_uuid) ?? 'none']++;
 		return c;
 	});
 </script>
@@ -230,22 +252,19 @@
 					disabled={inert}
 					title={inert ? 'Your ratings colour the map once you have an account' : undefined}
 					class="{cls.pagePill} {colour === c.value ? cls.pagePillOn : cls.pagePillOff} disabled:opacity-40"
-					onclick={() => (colour = c.value)}
+					onclick={() => galaxyView.update((v) => ({ ...v, colour: c.value }))}
 				>
 					{c.label}
 				</button>
 			{/each}
-			<Select.Root type="single" value={tag} onValueChange={(v) => (tag = v ?? '')}>
-				<Select.Trigger size="sm" class={cls.pageControl} aria-label="Light up a genre">
-					{tag || 'Light up a genre'}
-				</Select.Trigger>
-				<Select.Content>
-					<Select.Item value="">None</Select.Item>
-					{#each genres as [g, n] (g)}
-						<Select.Item value={g}>{g} ({n})</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
+			<button
+				type="button"
+				class="relative inline-flex items-center gap-1.5 {cls.pagePill} {filterCount ? cls.pagePillOn : cls.pagePillOff}"
+				onclick={() => (sheetOpen = true)}
+			>
+				<SlidersHorizontal class="size-4" /> Filters
+				{#if filterCount}<span class={cls.countBadge}>{filterCount}</span>{/if}
+			</button>
 			<div class="relative max-sm:w-full sm:ml-auto sm:w-64">
 				<Input
 					type="text"
@@ -288,16 +307,22 @@
 			</div>
 		</div>
 
+		{#if litFailed}
+			<p class="text-xs text-white/70">The filters could not be applied to the map.</p>
+		{:else if lit}
+			<p class="inline-flex items-center gap-1.5 text-xs text-white/70">
+				{lit.size} anime match the filters; the rest are greyed out {@render dot(NO_VALUE)}
+			</p>
+		{/if}
+
 		<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-white/70">
-			{#if tag}
-				<span>{genres.find(([g]) => g === tag)?.[1] ?? 0} anime are {tag} by majority; the rest are dimmed.</span>
-			{:else if colour === 'score'}
+			{#if colour === 'score'}
 				<span class="tabular-nums">Top 100%</span>
 				<span class="h-2 w-28 rounded-full" style="background:linear-gradient(90deg,{SCORE_RAMP.join(',')})"></span>
 				<span class="tabular-nums">Top 1%</span>
-				<span class="inline-flex items-center gap-1.5">{@render dot(NO_VALUE)} unscored</span>
+				<span class="inline-flex items-center gap-1.5">{@render dot(blankColour('score', lit != null))} unscored</span>
 			{:else if colour === 'mine'}
-				<span class="inline-flex items-center gap-1.5">{@render dot(mineColour(undefined))} Not rated {mineCounts.none}</span>
+				<span class="inline-flex items-center gap-1.5">{@render dot(blankColour('mine', lit != null))} Not rated {mineCounts.none}</span>
 				<span class="inline-flex items-center gap-1.5">
 					{@render dot(mineColour('some'))} In progress, on hold, dropped {mineCounts.some}
 				</span>
@@ -315,7 +340,7 @@
 			<GalaxyMap
 				{map}
 				{colour}
-				{tag}
+				{lit}
 				states={$ratedStates}
 				{selected}
 				neighbours={neighbours.map((n) => n.anime_uuid)}
@@ -409,3 +434,11 @@
 		{/if}
 	</div>
 {/if}
+
+<!-- The sheet hands back a fresh object every time; an unchanged set would re-ask and redraw. -->
+<FilterSheet
+	viewType="anime"
+	applied={filters}
+	bind:open={sheetOpen}
+	onApply={(f) => JSON.stringify(f) !== JSON.stringify(filters) && galaxyView.update((v) => ({ ...v, filters: f }))}
+/>
