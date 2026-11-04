@@ -755,6 +755,7 @@ erDiagram
         float y
         vector(10) z10
         vector features
+        float uncertainty
         boolean between
         boolean trained
     }

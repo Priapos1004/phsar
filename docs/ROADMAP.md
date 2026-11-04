@@ -407,7 +407,6 @@ Separate page/route — the "deep dive" version of home page sections.
 ### Parked tabs (right of Discover)
 - **Galaxy** — ✓ built (v0.16.5, [galaxy](features/galaxy.md)): a 2D map of the catalogue over combined embeddings (description, genres …), zoom, hop between neighbours, light what the search's filters keep. Next:
   - **"Show on the map" from a see-all page** — later: some rows search descriptions (Discover's moods), and a description match is a ranked list cut at a margin, which lit stars cannot show; the link waits for a way to draw that on the map.
-  - **Untagged is not a match** — an anime with no themes or no demographic currently sits at distance 0 from every other one in that block. Fill the block so the match goes, and prove it does before shipping: a plain mean gives every untagged anime the same vector and keeps the match.
   - "Six degrees" from one anime to another.
 - **Games** — tonight's tournament (a bracket ending in one pick), higher or lower on MAL score, a swipe deck onto the watchlist; new row formats (ranked top-10, spotlight, blind box, versus) may live here too
 

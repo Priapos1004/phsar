@@ -12,21 +12,29 @@ compound-docs/2026-10-30-v0.16.5-galaxy.md.
 """
 
 import pickle
+import warnings
 from collections import Counter, defaultdict
 from typing import Any, NamedTuple
 
 import numpy as np
 
-# Block weights. Each block is scaled so its mean squared pairwise distance over the
-# training set is 1, then multiplied by sqrt(weight): the squared distance between two
-# feature vectors is then the weighted sum of the blocks' squared distances.
+# Block weights. Each block is scaled so two training anime sit 1 apart on average (squared,
+# `distances` and its uncertainty included), then multiplied by sqrt(weight): the squared
+# distance between two stars is then the weighted sum of the blocks' squared distances.
 WEIGHTS = {
-    "desc": 4.0, "genres": 2.0, "themes": 2.0, "demographics": 0.7, "source": 0.5,
+    "desc": 4.0, "tags": 4.0, "demographics": 0.7, "source": 0.5,
     "format": 0.5, "age": 0.3, "era": 0.3, "studios": 0.3, "quality": 0.5,
 }
-TAG_GROUPS = {
-    "genres": ("genres", "explicit_genres"), "themes": ("themes",), "demographics": ("demographics",),
-}
+# Genres and themes are one list, demographics a block of their own: docs/features/galaxy.md,
+# "What a star is made of", says why.
+TAG_GROUPS = {"tags": ("genres", "explicit_genres", "themes"), "demographics": ("demographics",)}
+# The tags every anime is taken to carry unseen, each of average weight: what keeps a short
+# list from matching as surely as a long one (`_evidence`).
+TAG_PSEUDO = 2
+# What a feature vector means. Bumped with any change to how one is built, so `built_from`
+# refits the map and the old one stops taking new stars, whose vectors would no longer
+# compare. The tunables a vector is built from travel in the fit's stats instead.
+FEATURES = 2
 TOP_STUDIOS = 25
 ERA = (1970, 2027)
 SEED = 42
@@ -110,11 +118,23 @@ def _fit_stats(profiles: list[dict[str, Any]], train: np.ndarray) -> dict[str, A
     studios = sorted({s for p in profiles for s in p["studios"]})
     output = np.array([made.get(s, 0) for s in studios] or [0])
     cut50, cut90 = (float(q) for q in np.quantile(output, [0.5, 0.9]))
+    tags = {
+        group: sorted({name for p in profiles for name, kind in p["tags"] if kind in kinds})
+        for group, kinds in TAG_GROUPS.items()
+    }
+    # A tag weighs what sharing it says: -ln of the share of training anime it is a majority
+    # tag of — the badges' measure (`GalaxyDAO.trait_counts`).
+    majority = Counter(t for p in trained for t in p["majority_tags"])
+    tag_weights = np.array([-np.log(max(majority[c], 1) / len(trained)) for c in tags["tags"]])
+    held = _held(trained, tags["tags"], TAG_GROUPS["tags"])
+    known = [q for p in trained if (q := _quality(p)) is not None] or [(0.0, 0.0)]
     return {
-        "tags": {
-            group: sorted({name for p in profiles for name, kind in p["tags"] if kind in kinds})
-            for group, kinds in TAG_GROUPS.items()
-        },
+        "weights": dict(WEIGHTS),
+        "era": ERA,
+        "tags": tags,
+        "tag_weights": tag_weights.tolist(),
+        "tag_pseudo": TAG_PSEUDO * float((held * tag_weights).sum() / (held.sum() or 1)),
+        "quality": {"fill": np.mean(known, 0).tolist(), "spread": float(np.var(known, 0).sum())},
         "sources": sorted({s for p in profiles for s in p["source"]}),
         "formats": sorted({f for p in profiles for f in p["format"]}),
         "top_studios": [s for s, _ in sorted(made.items(), key=lambda kv: (-kv[1], kv[0]))[:TOP_STUDIOS]],
@@ -122,7 +142,7 @@ def _fit_stats(profiles: list[dict[str, Any]], train: np.ndarray) -> dict[str, A
         "studio_cuts": (cut50, cut90),
         "medians": {
             key: float(np.median([p[key] for p in trained if p[key] is not None] or [0]))
-            for key in ("age", "year", "score")
+            for key in ("age", "year")
         },
     }
 
@@ -133,21 +153,44 @@ def _studio_size(stats: dict[str, Any], studio: str) -> int:
     return 2 if made >= cut90 else 1 if made >= cut50 else 0
 
 
-def _raw_blocks(profiles: list[dict[str, Any]], desc: np.ndarray, stats: dict[str, Any]) -> dict[str, np.ndarray]:
+def _columns(profiles: list[dict[str, Any]], columns: list[str], lookup) -> np.ndarray:
+    M = np.zeros((len(profiles), len(columns)), np.float32)
+    for i, p in enumerate(profiles):
+        for j, c in enumerate(columns):
+            M[i, j] = lookup(p, c)
+    return M
+
+
+def _held(profiles: list[dict[str, Any]], columns: list[str], kinds: tuple[str, ...]) -> np.ndarray:
+    """Each tag's share of an anime's media, the majority rule's measure."""
+    return _columns(profiles, columns, lambda p, c: sum(p["tags"].get((c, k), 0.0) for k in kinds))
+
+
+def _quality(p: dict[str, Any]) -> tuple[float, float] | None:
+    """MAL score and log votes, as the app shows them."""
+    return None if p["score"] is None else (p["score"], float(np.log1p(p["votes"] or 0)))
+
+
+def _evidence(W: np.ndarray, pseudo: float) -> tuple[np.ndarray, np.ndarray]:
+    """Tag lists weighed by how much they say. Two anime's tag similarity is the weight they
+    share over sqrt((weight1 + pseudo)(weight2 + pseudo)), so four tags shared out of five
+    count for more than two of two, and two rare ones for more than two common ones. As
+    vectors: each row shrunk by sqrt(weight + pseudo), with what that leaves of a unit length
+    returned as its uncertainty, which `distances` adds back."""
+    norm2 = (W * W).sum(1)
+    return W / np.sqrt(norm2 + pseudo)[:, None], pseudo / (norm2 + pseudo)
+
+
+def _raw_blocks(
+    profiles: list[dict[str, Any]], desc: np.ndarray, stats: dict[str, Any],
+) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
+    """The blocks before balancing, and each anime's uncertainty in the blocks that have one
+    (`distances`), in the same units."""
     n = len(profiles)
     med = stats["medians"]
-
-    def shares(columns: list[str], lookup) -> np.ndarray:
-        M = np.zeros((n, len(columns)), np.float32)
-        for i, p in enumerate(profiles):
-            for j, c in enumerate(columns):
-                M[i, j] = lookup(p, c)
-        return M
-
-    blocks = {
-        group: shares(cols, lambda p, c, kinds=TAG_GROUPS[group]: sum(p["tags"].get((c, k), 0.0) for k in kinds))
-        for group, cols in stats["tags"].items()
-    }
+    held = {group: _held(profiles, cols, TAG_GROUPS[group]) for group, cols in stats["tags"].items()}
+    tags, tag_spare = _evidence(held["tags"] * np.sqrt(np.asarray(stats["tag_weights"], np.float32)), stats["tag_pseudo"])
+    quality = [_quality(p) for p in profiles]
     top = stats["top_studios"]
     studios = np.zeros((n, len(top) + 3), np.float32)
     for i, p in enumerate(profiles):
@@ -157,29 +200,53 @@ def _raw_blocks(profiles: list[dict[str, Any]], desc: np.ndarray, stats: dict[st
             else:
                 studios[i, len(top) + _studio_size(stats, s)] = 1
     col = lambda v: np.asarray(v, np.float32).reshape(-1, 1)  # noqa: E731
-    year = np.clip([p["year"] or med["year"] for p in profiles], *ERA)
-    return {
+    era = stats["era"]
+    year = np.clip([p["year"] or med["year"] for p in profiles], *era)
+    blocks = {
         "desc": desc,
-        **blocks,
-        "source": shares(stats["sources"], lambda p, c: p["source"].get(c, 0.0)),
+        "tags": tags,
+        "demographics": held["demographics"],
+        "source": _columns(profiles, stats["sources"], lambda p, c: p["source"].get(c, 0.0)),
         "format": np.hstack([
-            shares(stats["formats"], lambda p, c: p["format"].get(c, 0.0)),
+            _columns(profiles, stats["formats"], lambda p, c: p["format"].get(c, 0.0)),
             col(np.log1p([p["watch_hours"] for p in profiles])),
         ]),
         "age": col([(p["age"] if p["age"] is not None else med["age"]) / 18 for p in profiles]),
-        "era": col((year - ERA[0]) / (ERA[1] - ERA[0])),
+        "era": col((year - era[0]) / (era[1] - era[0])),
         "studios": studios,
-        "quality": np.hstack([
-            col([p["score"] if p["score"] is not None else med["score"] for p in profiles]),
-            col(np.log1p([p["votes"] or 0 for p in profiles])),
-        ]),
+        "quality": np.array([q or stats["quality"]["fill"] for q in quality], np.float32).reshape(n, 2),
     }
+    unscored = np.array([q is None for q in quality])
+    return blocks, {"tags": tag_spare, "quality": unscored * stats["quality"]["spread"]}
 
 
-def _features(raw: dict[str, np.ndarray], stats: dict[str, Any]) -> np.ndarray:
-    return np.hstack([
-        np.sqrt(w) * raw[k] / stats["scales"][k] for k, w in WEIGHTS.items()
-    ]).astype(np.float32)
+def _scale(block: np.ndarray, spare: np.ndarray | float = 0.0) -> float:
+    """The typical distance between two training anime in a block: the root of their mean
+    squared distance, the block's uncertainty included. A block every training anime holds
+    alike tells them apart by nothing, and stays unscaled rather than blown up by its float
+    noise."""
+    scale = float(np.sqrt(2 * (block.var(0).sum() + np.mean(spare))))
+    return scale if scale > 1e-6 else 1.0
+
+
+def _features(
+    raw: dict[str, np.ndarray], spare: dict[str, np.ndarray], stats: dict[str, Any],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Each star's vector and uncertainty, both balanced and weighted like the blocks."""
+    scales, weights = stats["scales"], stats["weights"]
+    X = np.hstack([np.sqrt(w) * raw[k] / scales[k] for k, w in weights.items()]).astype(np.float32)
+    uncertainty = sum(weights[k] * s / scales[k] ** 2 for k, s in spare.items())
+    return X, np.asarray(uncertainty, np.float32)
+
+
+def distances(A: np.ndarray, a: np.ndarray, B: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Squared distances between two sets of stars: between their vectors, plus each one's
+    uncertainty (docs/features/galaxy.md, "Distance"). The diagonal is not zero — a star
+    against itself still carries its uncertainty twice — so a caller that needs it zero sets
+    it."""
+    from scipy.spatial.distance import cdist
+
+    return cdist(A, B, "sqeuclidean") + a[:, None] + b[None, :]
 
 
 def _z(values: list[float | None]) -> tuple[float, float]:
@@ -199,14 +266,16 @@ def _quality_era(profiles: list[dict[str, Any]], m: dict[str, Any]) -> np.ndarra
 
 
 def _predict(
-    m: dict[str, Any], X: np.ndarray, extra: np.ndarray,
+    m: dict[str, Any], X: np.ndarray, U: np.ndarray, extra: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Where anime the fit did not train on land: through both layouts, into the sector
     HDBSCAN predicts (its likeliest when it answers noise, which draws them between
     regions) and the nearest region centroid there."""
     import hdbscan
 
-    Z = m["u10"].transform(X)
+    # UMAP warns that it takes the matrix for distances to its training anime, which it is.
+    with warnings.catch_warnings(action="ignore", category=UserWarning):
+        Z = m["u10"].transform(np.sqrt(distances(X, U, m["train_X"], m["train_uncertainty"])))
     Y = m["u2"].transform(Z)
     labels, _ = hdbscan.approximate_predict(m["sectors"], Z)
     member = hdbscan.prediction.membership_vector(m["sectors"], Z).reshape(len(X), -1)
@@ -220,12 +289,12 @@ def _predict(
     return Z, Y, sector, region, labels < 0
 
 
-def _stars(anime: list[AnimeRow], X, Z, Y, sector, region, between, trained) -> list[dict[str, Any]]:
+def _stars(anime: list[AnimeRow], X, U, Z, Y, sector, region, between, trained) -> list[dict[str, Any]]:
     return [
         {
             "anime_id": a.anime_id, "x": float(Y[i, 0]), "y": float(Y[i, 1]), "z10": Z[i].tolist(),
             "sector": int(sector[i]), "region": int(region[i]), "between": bool(between[i]),
-            "trained": bool(trained[i]), "features": X[i].tolist(),
+            "trained": bool(trained[i]), "features": X[i].tolist(), "uncertainty": float(U[i]),
         }
         for i, a in enumerate(anime)
     ]
@@ -238,17 +307,14 @@ def fit(anime: list[AnimeRow], media: list[MediaRow],
     import hdbscan
     import umap
     from sklearn.cluster import AgglomerativeClustering
-    from sklearn.neighbors import NearestNeighbors
 
     profiles = _profiles(anime, media)
     train = np.array([p["trained"] for p in profiles])
     stats = _fit_stats(profiles, train)
     desc = _unit(np.asarray([a.desc for a in anime], np.float32))
-    raw = _raw_blocks(profiles, desc, stats)
-    stats["scales"] = {
-        k: float(np.sqrt(2 * v.var(0).sum())) or 1.0 for k, v in ((k, raw[k][train]) for k in WEIGHTS)
-    }
-    X = _features(raw, stats)
+    raw, spare = _raw_blocks(profiles, desc, stats)
+    stats["scales"] = {k: _scale(raw[k][train], spare[k][train] if k in spare else 0.0) for k in WEIGHTS}
+    X, U = _features(raw, spare, stats)
     n = int(train.sum())
 
     known = np.array([a.anime_id in previous for a in anime])
@@ -261,13 +327,18 @@ def fit(anime: list[AnimeRow], media: list[MediaRow],
     if known.any():
         fresh = train & ~known
         if fresh.any():
-            _, nn = NearestNeighbors(n_neighbors=min(5, int(known.sum()))).fit(X[known]).kneighbors(X[fresh])
+            nn = np.argsort(distances(X[fresh], U[fresh], X[known], U[known]), 1)[:, :min(5, int(known.sum()))]
             Y0[fresh] = Y0[known][nn].mean(1)
             Z0[fresh] = Z0[known][nn].mean(1)
         init10, init2 = Z0[train], Y0[train]
 
     # A seed makes UMAP single-threaded; saying so (n_jobs=1) is what keeps it from warning.
-    u10 = umap.UMAP(n_components=10, n_neighbors=15, min_dist=0.0, random_state=SEED, n_jobs=1, init=init10).fit(X[train])
+    D = np.sqrt(distances(X[train], U[train], X[train], U[train]))
+    np.fill_diagonal(D, 0)
+    with warnings.catch_warnings(action="ignore", category=UserWarning):  # no inverse_transform when precomputed
+        u10 = umap.UMAP(
+            n_components=10, n_neighbors=15, min_dist=0.0, random_state=SEED, n_jobs=1, init=init10, metric="precomputed",
+        ).fit(D)
     Zt = u10.embedding_
     sectors = hdbscan.HDBSCAN(
         min_cluster_size=MIN_SECTOR, min_samples=MIN_SAMPLES, prediction_data=True,
@@ -300,7 +371,13 @@ def fit(anime: list[AnimeRow], media: list[MediaRow],
         offset += parts
 
     u2 = umap.UMAP(n_components=2, n_neighbors=15, min_dist=0.3, random_state=SEED, n_jobs=1, init=init2).fit(Zt)
-    m.update(u10=u10, u2=u2, sectors=sectors, stats=stats)
+    # Placement measures newcomers against the training anime, so the pickle keeps them. A
+    # precomputed fit also keeps its whole training distance matrix, of which `transform`
+    # reads only the row count (umap-learn as pinned — a bump refits through `built_from`):
+    # cut to that, the pickle stays the size of the training vectors. The placement below
+    # runs on the cut model, so every fit checks it.
+    u10._raw_data = np.empty((n, 0), np.float32)
+    m.update(u10=u10, u2=u2, sectors=sectors, stats=stats, train_X=X[train], train_uncertainty=U[train])
 
     Z = np.empty((len(anime), 10), np.float32)
     Y = np.empty((len(anime), 2), np.float32)
@@ -311,7 +388,7 @@ def fit(anime: list[AnimeRow], media: list[MediaRow],
         Zt, u2.embedding_, sector_t, region_t, sectors.labels_ < 0,
     )
     if not train.all():
-        Z[~train], Y[~train], sector[~train], region[~train], between[~train] = _predict(m, X[~train], extra[~train])
+        Z[~train], Y[~train], sector[~train], region[~train], between[~train] = _predict(m, X[~train], U[~train], extra[~train])
 
     groups = []
     everyone = np.arange(len(anime))
@@ -338,7 +415,7 @@ def fit(anime: list[AnimeRow], media: list[MediaRow],
         summary["median_movement"] = round(float(np.median(np.linalg.norm(boxed(Y[known]) - boxed(Y0[known]), axis=1))), 3)
 
     return {
-        "stars": _stars(anime, X, Z, Y, sector, region, between, train),
+        "stars": _stars(anime, X, U, Z, Y, sector, region, between, train),
         "groups": groups,
         "blob": pickle.dumps(m, protocol=5),
         # Synopsis similarity of random pairs, as percentiles.
@@ -362,8 +439,8 @@ def place(blob: bytes, anime: list[AnimeRow], media: list[MediaRow]) -> list[dic
     m = pickle.loads(blob)
     profiles = _profiles(anime, media)
     desc = _unit(np.asarray([a.desc for a in anime], np.float32))
-    X = _features(_raw_blocks(profiles, desc, m["stats"]), m["stats"])
-    return _stars(anime, X, *_predict(m, X, _quality_era(profiles, m)), np.zeros(len(anime), bool))
+    X, U = _features(*_raw_blocks(profiles, desc, m["stats"]), m["stats"])
+    return _stars(anime, X, U, *_predict(m, X, U, _quality_era(profiles, m)), np.zeros(len(anime), bool))
 
 
 def carry_names(previous: list[tuple[str, frozenset[int], str]],

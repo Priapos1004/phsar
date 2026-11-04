@@ -24,7 +24,7 @@ def _fake_fit(anime, _media, _previous):
     return {
         "stars": [
             {"anime_id": aid, "x": 0.0, "y": 0.0, "z10": [0.0] * 10, "sector": 0, "region": 0,
-             "between": False, "trained": True, "features": [1.0, 0.0]}
+             "between": False, "trained": True, "features": [1.0, 0.0], "uncertainty": 0.0}
             for aid in ids
         ],
         "groups": [
@@ -109,7 +109,7 @@ async def test_new_anime_are_placed_onto_the_live_map(db_session, catalogue, stu
         placed.extend(a.anime_id for a in anime)
         return [
             {"anime_id": a.anime_id, "x": 0.0, "y": 0.0, "z10": [0.0] * 10, "sector": 0, "region": 0,
-             "between": False, "trained": False, "features": [1.0, 0.0]}
+             "between": False, "trained": False, "features": [1.0, 0.0], "uncertainty": 0.0}
             for a in anime
         ]
 

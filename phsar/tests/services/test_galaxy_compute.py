@@ -2,14 +2,21 @@
 direction, tags and studio, and some still airing so the fit has anime to place. Several
 small clusters rather than a few big ones, because the fit caps a sector's size
 (`MAX_SECTOR_FRACTION`).
-The real catalogue's shape is a study, not a test — these pin the structure: every star
-gets a sector and a region inside it, placement answers in the fit's labels, a refit
-starts from the old layout, and hand names follow their members."""
+The real catalogue's shape is a study, not a test — these pin the structure the fit
+promises."""
 
 import numpy as np
 import pytest
 
-from app.services.galaxy_compute import AnimeRow, MediaRow, carry_names, fit, place
+from app.services.galaxy_compute import (
+    AnimeRow,
+    MediaRow,
+    _evidence,
+    carry_names,
+    distances,
+    fit,
+    place,
+)
 
 _CLUSTERS = [
     (genre, demo, f"Studio {i}", source)
@@ -78,6 +85,33 @@ def test_a_refit_from_the_live_layout_reports_its_movement(fitted):
     anime, media, result = fitted
     previous = {s["anime_id"]: ([s["x"], s["y"]], s["z10"]) for s in result["stars"][10:]}
     assert fit(anime, media, previous)["summary"]["median_movement"] is not None
+
+
+def test_tags_shared_count_by_how_many_and_how_rare():
+    """Four tags shared out of five say more than two of two, and two rare tags shared more
+    than two common ones: a short list never matches as surely as a long one."""
+    weights = np.array([1, 1, 1, 1, 1, 4, 4], float)  # five common tags, two rare
+    lists = np.array([
+        [1, 1, 0, 0, 0, 0, 0], [1, 1, 0, 0, 0, 0, 0],  # two common, both shared
+        [1, 1, 1, 1, 0, 0, 0], [1, 1, 1, 1, 1, 0, 0],  # four shared out of five
+        [0, 0, 0, 0, 0, 1, 1], [0, 0, 0, 0, 0, 1, 1],  # two rare, both shared
+    ], float)
+    u, uncertainty = _evidence(lists * np.sqrt(weights), pseudo=2)
+    d = distances(u, uncertainty, u, uncertainty)
+    assert d[2, 3] < d[0, 1]
+    assert d[4, 5] < d[0, 1]
+
+
+def test_an_unscored_anime_is_not_alike_to_the_other_unscored(fitted):
+    """Two pairs alike in all but their score: the unscored pair sits farther apart than the
+    scored one, rather than matching on the average score both are given."""
+    anime, media, result = fitted
+    rows = [AnimeRow(9001 + k, anime[1].desc, *(None, None) if k < 2 else (7.5, 5000.0)) for k in range(4)]
+    stars = place(result["blob"], rows, [media[1]._replace(anime_id=r.anime_id) for r in rows])
+    X = np.array([s["features"] for s in stars])
+    U = np.array([s["uncertainty"] for s in stars])
+    d = distances(X, U, X, U)
+    assert d[0, 1] > d[2, 3]
 
 
 def test_hand_names_follow_their_members_one_to_one():

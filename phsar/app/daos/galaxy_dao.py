@@ -239,12 +239,14 @@ class GalaxyDAO(BaseDAO[GalaxyGroup]):
         )).one_or_none()
 
     async def nearest(self, db: AsyncSession, anime_id: int, features, limit: int) -> list[int]:
-        """The anime whose stars sit nearest in feature space, nearest first. No index: a
-        catalogue-sized scan is cheap, and an approximate index would reorder close ties."""
+        """The anime whose stars sit nearest, nearest first, by `galaxy_compute.distances`
+        less the asking star's own uncertainty, the same for every row. No index: a
+        catalogue-sized scan is cheap, an approximate index would reorder close ties, and
+        none indexes the sum."""
         return list((await db.execute(
             select(GalaxyStar.anime_id)
             .where(GalaxyStar.anime_id != anime_id)
-            .order_by(GalaxyStar.features.l2_distance(features), GalaxyStar.anime_id)
+            .order_by(func.power(GalaxyStar.features.l2_distance(features), 2) + GalaxyStar.uncertainty, GalaxyStar.anime_id)
             .limit(limit)
         )).scalars())
 
@@ -314,7 +316,7 @@ class GalaxyDAO(BaseDAO[GalaxyGroup]):
         await db.execute(insert(GalaxyStar), [
             {
                 "anime_id": s["anime_id"], "x": s["x"], "y": s["y"], "z10": s["z10"],
-                "features": s["features"], "between": s["between"], "trained": s["trained"],
+                "features": s["features"], "uncertainty": s["uncertainty"], "between": s["between"], "trained": s["trained"],
                 "sector_id": ids[("sector", s["sector"])], "region_id": ids[("region", s["region"])],
             }
             for s in stars

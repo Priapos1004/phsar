@@ -64,6 +64,8 @@ class GalaxyStar(BaseModel):
     # The weighted feature vector the fit clustered. No fixed dimension: the blocks are
     # as wide as the fit's tag and studio catalogue.
     features: Mapped[Any] = mapped_column(Vector(), nullable=False)
+    # Added to its squared distance to every other star (`galaxy_compute.distances`).
+    uncertainty: Mapped[float] = mapped_column(Float, nullable=False)
     # HDBSCAN called it noise: it keeps its likeliest sector but draws between regions.
     between: Mapped[bool] = mapped_column(Boolean, nullable=False)
     # Fitted from (a settled anime) rather than placed onto the map.

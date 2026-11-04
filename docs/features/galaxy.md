@@ -15,8 +15,13 @@ split into **regions**. There is one live fit at a time, and a refit replaces it
 A star's feature vector joins blocks read off the anime and its media:
 
 - **synopsis**: the stored `anime_search` description embedding ([search](search.md#embeddings));
-- **genres, themes and demographics**: for each tag, the share of the anime's media
-  carrying it, the same measure the majority rule uses;
+- **tags**: genres and themes as one list, as the app shows them, each tag held by the share
+  of the anime's media carrying it (the majority rule's measure) and counted by its rarity,
+  the measure the neighbour badges rank by. The list counts by how much it says
+  (`_evidence`, `TAG_PSEUDO`), so a theme left untagged only shortens the list;
+- **demographics**: the share of the anime's media carrying each. A block of its own,
+  because lacking one says something: a demographic follows the source magazine, which a
+  light novel or an original has none of;
 - **source and format**: shares over the main story, with log watch hours added to format;
 - **age and era**: the highest age tier and the first main-story year;
 - **studios**: the most productive studios one-hot, and every other studio as a big, mid
@@ -24,7 +29,10 @@ A star's feature vector joins blocks read off the anime and its media:
 - **quality**: the anime's MAL score and log vote count, as the app shows them.
 
 Each block is balanced against the others over the training set and then weighted
-(`WEIGHTS`). A missing value takes the training median. The vector is stored on the star (`features`).
+(`WEIGHTS`). A missing age or year takes the training median. A missing score does not:
+an unscored anime's score and votes are unknown, so they take the training mean and their
+spread becomes uncertainty. The vector is stored on the star (`features`), beside its
+`uncertainty`.
 
 **Only settled anime shape the map.** An anime trains the fit when its main story has a
 finished media with a MAL score. Every other anime (airing, announced, or finished but
@@ -32,9 +40,20 @@ unscored) is placed onto the fitted map instead, with `trained` false. Letting t
 behind a has-score flag builds a mixed "unrated island" and destabilises the sectors
 around it.
 
+### Distance
+
+Stars compare by `galaxy_compute.distances`: the squared distance between their vectors
+plus each star's uncertainty. Uncertainty is what a vector cannot carry — what `_evidence`
+leaves of a tag list, and an unscored anime's quality spread — so an anime the catalogue
+says less about sits farther from every other, rather than alike to the others like it. No
+vector space holds it, so UMAP reads the distances precomputed. Everything that compares two
+stars uses this sum; `GalaxyDAO.nearest` repeats it in SQL, where the function cannot run.
+A plain distance between `features` alone would make two anime alike on what neither
+carries.
+
 ## The fit
 
-1. UMAP reduces the trained vectors to 10-D.
+1. UMAP reduces the trained stars to 10-D, from their [distances](#distance).
 2. **Sectors** come from HDBSCAN on the 10-D, size-capped (`MAX_SECTOR_FRACTION` says
    why). A star that HDBSCAN calls noise keeps its likeliest sector and is marked
    `between`.
@@ -45,7 +64,8 @@ around it.
 
 Untrained anime go through the fitted models:
 
-- both UMAP `transform`s;
+- both UMAP `transform`s, the 10-D one from a newcomer's distances to the training anime,
+  which the pickle keeps;
 - HDBSCAN's `approximate_predict`, falling back to the membership argmax when it answers
   noise;
 - the nearest region centroid in the sector's region space.
@@ -80,9 +100,9 @@ re-embed (`main.py` says why), and by every `schedule-nightly`. It enqueues a re
 when the map is due:
 
 - **there is no map**: a first deploy or a fresh database;
-- **the map was built from something that has changed**: each fit records the embedding
-  model it read and the versions of the libraries in its pickle (`built_from`), so a
-  model swap or a library bump refits by itself;
+- **the map was built from something that has changed**: each fit records what it depends
+  on besides the catalogue (`built_from`), so a change to any of it — a model swap, a
+  feature change (`FEATURES`), a library bump — refits by itself;
 - **the map predates this quarter's refit date**: the 15th of Jan/Apr/Jul/Oct, two weeks
   after a season ends, so that season's finished shows have settled scores and join the
   training set.
@@ -109,8 +129,8 @@ and every star with what a hover card shows of its anime, its "Top N%" among the
 search's `top_percent_ranking`, so the map and the Top rated sort rank alike. It is the
 same for every viewer, guests included, and empty until the first fit lands.
 
-`GET /browse/galaxy/{anime_uuid}/neighbours` answers the `NEIGHBOURS` stars nearest in
-feature space, nearest first, each with what it shares with the one asked about
+`GET /browse/galaxy/{anime_uuid}/neighbours` answers the `NEIGHBOURS` stars nearest by
+[distance](#distance), nearest first, each with what it shares with the one asked about
 (`GalaxyNeighbourOut`). Every shared trait is weighed on one scale, the chance two anime
 on the map share it anyway, so a rare genre outranks a merely close synopsis: for a genre,
 studio or source the share of stars carrying it (`GalaxyDAO.trait_counts`), for the

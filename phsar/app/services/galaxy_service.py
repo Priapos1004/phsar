@@ -64,9 +64,11 @@ async def run_in_child(fn: Callable[..., Any], *args: Any) -> Any:
 
 
 def built_from() -> dict[str, str]:
-    """What a fit depends on besides the catalogue, recorded with it: the embedding model
-    its synopsis block read, and the versions of the libraries in its pickle."""
-    return {"model": MODEL_NAME, **{lib: importlib.metadata.version(lib) for lib in _PICKLED}}
+    """What a fit depends on besides the catalogue, recorded with it."""
+    return {
+        "model": MODEL_NAME, "features": str(galaxy_compute.FEATURES),
+        **{lib: importlib.metadata.version(lib) for lib in _PICKLED},
+    }
 
 
 def refit_date(now: datetime) -> datetime:
@@ -103,7 +105,7 @@ async def ensure_map(
     if fit is None:
         reason = "missing"
     elif fit.params.get("built_from") != built_from():
-        reason = "built from another embedding model or library versions"
+        reason = "built from something that has changed"
     elif fit.created_at < refit_date(now):
         reason = "due its quarterly refit"
     else:
@@ -141,8 +143,8 @@ async def get_map(db: AsyncSession) -> GalaxyMapOut:
 
 
 async def neighbours(db: AsyncSession, anime_uuid: UUID) -> list[GalaxyNeighbourOut]:
-    """The anime nearest in the fit's feature space, nearest first, each with what it shares
-    with this one."""
+    """The `NEIGHBOURS` nearest stars (`GalaxyDAO.nearest`), nearest first, each with what it
+    shares with this one."""
     star = await galaxy_dao.star_features(db, anime_uuid)
     if star is None:
         raise GalaxyStarNotFoundError(str(anime_uuid))

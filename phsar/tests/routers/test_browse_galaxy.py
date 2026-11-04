@@ -6,10 +6,11 @@ whatever map the database holds."""
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 
 from app.daos.galaxy_dao import GalaxyDAO
 from app.models.anime import Anime
+from app.models.galaxy import GalaxyStar
 from app.models.genre import Genre
 from app.models.media import Media, OriginalSource, SeasonType
 from app.models.media_genre import MediaGenre
@@ -83,7 +84,7 @@ async def galaxy(db_session) -> dict[str, Anime]:
         stars=[
             {
                 "anime_id": anime[title].id, "x": pos[0], "y": pos[1], "z10": [0.0] * 10, "features": list(pos),
-                "sector": 0, "region": region, "between": title == "Gx Far", "trained": score is not None,
+                "uncertainty": 0.0, "sector": 0, "region": region, "between": title == "Gx Far", "trained": score is not None,
             }
             for title, (_, _, _, _, score, _, region, pos) in _ANIME.items()
         ],
@@ -132,6 +133,16 @@ async def test_neighbours_come_nearest_first_with_what_they_share(client, user_a
     assert twin["shared"][0]["chance"] < 0.1
     assert [s["chance"] for s in twin["shared"][1:]] == [0.25, 0.25, 0.25]
     assert ("genre", "Action") not in shared(middle)
+
+
+async def test_a_star_the_catalogue_says_less_about_sits_farther(client, user_auth_headers, galaxy, db_session):
+    """Uncertainty adds to the vectors' squared distance: the twin, one unit away but
+    uncertain by ten, falls behind the star three away (1 + 10 against 9, squared)."""
+    await db_session.execute(update(GalaxyStar).where(GalaxyStar.anime_id == galaxy["Gx Twin"].id).values(uncertainty=10.0))
+    await db_session.flush()
+    res = await client.get(f"/browse/galaxy/{galaxy['Gx Target'].uuid}/neighbours", headers=user_auth_headers)
+    assert res.status_code == 200, res.text
+    assert [n["title"] for n in res.json()][:3] == ["Gx Middle", "Gx Twin", "Gx Far"]
 
 
 async def test_an_anime_without_a_star_has_no_neighbours(client, user_auth_headers, galaxy):
