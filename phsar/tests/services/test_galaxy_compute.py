@@ -41,11 +41,12 @@ def _catalogue() -> tuple[list[AnimeRow], list[MediaRow]]:
             score = float(rng.uniform(6, 9)) if finished else None
             anime.append(AnimeRow(
                 anime_id, (centres[c] + rng.normal(scale=0.6, size=384)).tolist(),
-                score, float(rng.integers(1000, 100000)) if finished else None,
+                score, float(rng.integers(1000, 100000)) if finished else None, synopsis=800,
             ))
             media.append(MediaRow(
                 anime_id=anime_id, main=True, settled=finished, media_type="TV",
-                age=13, source=source, watch_seconds=12 * 1440, season_year=int(rng.integers(1995, 2026)),
+                age=int(rng.choice([7, 13, 17])), source=source, watch_seconds=int(rng.choice([1, 12, 24])) * 1440,
+                season_year=int(rng.integers(1995, 2026)),
                 tags=((genre, "genres"), (demo, "demographics")), studios=(studio,),
             ))
     return anime, media
@@ -102,16 +103,38 @@ def test_tags_shared_count_by_how_many_and_how_rare():
     assert d[4, 5] < d[0, 1]
 
 
-def test_an_unscored_anime_is_not_alike_to_the_other_unscored(fitted):
-    """Two pairs alike in all but their score: the unscored pair sits farther apart than the
-    scored one, rather than matching on the average score both are given."""
+# What each kind of missing value takes away from an anime, and from its media.
+_MISSING = {
+    "score": ({"score": None, "votes": None}, {}),
+    "synopsis": ({"synopsis": 0}, {}),
+    "studio": ({}, {"studios": ()}),
+    "source": ({}, {"source": None}),
+    "watch time": ({}, {"watch_seconds": None}),
+    "age": ({}, {"age": None}),
+    "year": ({}, {"season_year": None}),
+}
+
+
+@pytest.mark.parametrize("missing", _MISSING)
+def test_anime_missing_a_value_are_not_alike_for_it(fitted, missing):
+    """Two pairs alike in everything, one of them lacking a value: that pair sits farther
+    apart, rather than matching on the average both are given."""
     anime, media, result = fitted
-    rows = [AnimeRow(9001 + k, anime[1].desc, *(None, None) if k < 2 else (7.5, 5000.0)) for k in range(4)]
-    stars = place(result["blob"], rows, [media[1]._replace(anime_id=r.anime_id) for r in rows])
+    drop_anime, drop_media = _MISSING[missing]
+    rows = [anime[1]._replace(anime_id=9001 + k, **(drop_anime if k < 2 else {})) for k in range(4)]
+    medias = [media[1]._replace(anime_id=9001 + k, **(drop_media if k < 2 else {})) for k in range(4)]
+    stars = place(result["blob"], rows, medias)
     X = np.array([s["features"] for s in stars])
     U = np.array([s["uncertainty"] for s in stars])
     d = distances(X, U, X, U)
     assert d[0, 1] > d[2, 3]
+
+
+def test_an_anime_lands_where_it_would_in_any_batch(fitted):
+    anime, media, result = fitted
+    alone = place(result["blob"], anime[:1], media)[0]
+    batch = place(result["blob"], anime[:12], media)[0]
+    assert (alone["x"], alone["y"], alone["z10"]) == (batch["x"], batch["y"], batch["z10"])
 
 
 def test_hand_names_follow_their_members_one_to_one():

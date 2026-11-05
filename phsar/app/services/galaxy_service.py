@@ -159,16 +159,23 @@ async def neighbours(db: AsyncSession, anime_uuid: UUID) -> list[GalaxyNeighbour
     def traits(kind: Literal["genre", "studio", "source"], mine: list[str], theirs: list[str]) -> list[GalaxySharedOut]:
         return [GalaxySharedOut(kind=kind, name=n, chance=counts.get((kind, n), 0) / total) for n in set(mine) & set(theirs)]
 
+    def synopsis(me: Row, other: Row) -> list[GalaxySharedOut]:
+        """How alike two synopses read, against random pairs; none when either has none, its
+        embedding then reading the titles alone."""
+        if not (me.has_synopsis and other.has_synopsis):
+            return []
+        similarity = cosine_similarity(me.description_embedding, other.description_embedding)
+        percentile = max(0, bisect_right(percentiles, similarity) - 1)
+        return [GalaxySharedOut(kind="synopsis", name=None, chance=(100 - percentile) / 100)]
+
     def source(row: Row) -> list[str]:
         return [row.source.value] if row.source is not None else []
 
     out = []
     for anime_id in near:
         other = facts[anime_id]
-        similarity = cosine_similarity(me.description_embedding, other.description_embedding)
-        percentile = max(0, bisect_right(percentiles, similarity) - 1)
         shared = [
-            GalaxySharedOut(kind="synopsis", name=None, chance=(100 - percentile) / 100),
+            *synopsis(me, other),
             *traits("genre", me.genres or [], other.genres or []),
             *traits("studio", me.studios or [], other.studios or []),
             *traits("source", source(me), source(other)),

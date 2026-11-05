@@ -29,10 +29,12 @@ A star's feature vector joins blocks read off the anime and its media:
 - **quality**: the anime's MAL score and log vote count, as the app shows them.
 
 Each block is balanced against the others over the training set and then weighted
-(`WEIGHTS`). A missing age or year takes the training median. A missing score does not:
-an unscored anime's score and votes are unknown, so they take the training mean and their
-spread becomes uncertainty. The vector is stored on the star (`features`), beside its
-`uncertainty`.
+(`WEIGHTS`). A value known only partly counts toward the training anime's mean, and the
+rest of its spread becomes uncertainty (`_blocks`), so two anime lacking the same thing are
+no likelier alike than any two: a synopsis by its length (`SYNOPSIS_HALF`; the embedding
+[reads the titles too](search.md#embeddings)), every other value when it is missing. The tag
+list weighs its own evidence, and demographics take none (above). The vector is stored on
+the star (`features`), beside its `uncertainty`.
 
 **Only settled anime shape the map.** An anime trains the fit when its main story has a
 finished media with a MAL score. Every other anime (airing, announced, or finished but
@@ -44,7 +46,7 @@ around it.
 
 Stars compare by `galaxy_compute.distances`: the squared distance between their vectors
 plus each star's uncertainty. Uncertainty is what a vector cannot carry — what `_evidence`
-leaves of a tag list, and an unscored anime's quality spread — so an anime the catalogue
+leaves of a tag list, and the spread of every value known only partly — so an anime the catalogue
 says less about sits farther from every other, rather than alike to the others like it. No
 vector space holds it, so UMAP reads the distances precomputed. Everything that compares two
 stars uses this sum; `GalaxyDAO.nearest` repeats it in SQL, where the function cannot run.
@@ -62,7 +64,8 @@ carries.
    by quality and age as well as by content.
 4. A second UMAP, fitted on the 10-D, gives the 2-D layout the map draws.
 
-Untrained anime go through the fitted models:
+Untrained anime go through the fitted models, one at a time — UMAP's transform otherwise
+places a batch's anime by what else is in it:
 
 - both UMAP `transform`s, the 10-D one from a newcomer's distances to the training anime,
   which the pickle keeps;
@@ -135,7 +138,7 @@ same for every viewer, guests included, and empty until the first fit lands.
 on the map share it anyway, so a rare genre outranks a merely close synopsis: for a genre,
 studio or source the share of stars carrying it (`GalaxyDAO.trait_counts`), for the
 synopsis the share of random pairs this alike (the `pair_cosine_percentiles` each fit
-records). A neighbour lists the rarest `SHARED_SHOWN`, none above `SHARED_CHANCE_MAX` (the
+records, over anime that have one — an anime without a synopsis shares none). A neighbour lists the rarest `SHARED_SHOWN`, none above `SHARED_CHANCE_MAX` (the
 constants say why). It is asked on demand rather than inlined in the map, so a star placed
 since the map loaded has neighbours too.
 

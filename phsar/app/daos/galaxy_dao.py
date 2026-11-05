@@ -98,12 +98,16 @@ class GalaxyDAO(BaseDAO[GalaxyGroup]):
                 .where(in_catalogue).group_by(Media.anime_id)
             )).all()
         }
-        anime_stmt = select(AnimeSearch.anime_id, AnimeSearch.description_embedding).order_by(AnimeSearch.anime_id)
+        anime_stmt = (
+            select(AnimeSearch.anime_id, AnimeSearch.description_embedding, func.length(func.coalesce(Anime.description, "")))
+            .join(Anime, Anime.id == AnimeSearch.anime_id)
+            .order_by(AnimeSearch.anime_id)
+        )
         if anime_ids is not None:
             anime_stmt = anime_stmt.where(AnimeSearch.anime_id.in_(anime_ids))
         anime = [
-            AnimeRow(aid, [float(v) for v in vec], *scores.get(aid, (None, None)))
-            for aid, vec in (await db.execute(anime_stmt)).all()
+            AnimeRow(aid, [float(v) for v in vec], *scores.get(aid, (None, None)), synopsis=chars)
+            for aid, vec, chars in (await db.execute(anime_stmt)).all()
         ]
 
         media = (await db.execute(
@@ -273,6 +277,7 @@ class GalaxyDAO(BaseDAO[GalaxyGroup]):
             select(
                 Anime.id, *_card_columns(figures, genres),
                 figures.c.source, studios.c.studios, AnimeSearch.description_embedding,
+                (func.coalesce(Anime.description, "") != "").label("has_synopsis"),
             )
             .join(AnimeSearch, AnimeSearch.anime_id == Anime.id)
             .outerjoin(figures, figures.c.anime_id == Anime.id)

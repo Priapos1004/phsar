@@ -34,7 +34,9 @@ TAG_PSEUDO = 2
 # What a feature vector means. Bumped with any change to how one is built, so `built_from`
 # refits the map and the old one stops taking new stars, whose vectors would no longer
 # compare. The tunables a vector is built from travel in the fit's stats instead.
-FEATURES = 2
+FEATURES = 3
+# A synopsis this many characters long counts as half known (`_raw_blocks`).
+SYNOPSIS_HALF = 50
 TOP_STUDIOS = 25
 ERA = (1970, 2027)
 SEED = 42
@@ -67,6 +69,7 @@ class AnimeRow(NamedTuple):
     desc: list[float]  # the stored description embedding
     score: float | None  # the anime's MAL score and votes, as the app shows them
     votes: float | None
+    synopsis: int  # characters of synopsis that embedding read
 
 
 def _unit(X: np.ndarray) -> np.ndarray:
@@ -98,6 +101,7 @@ def _profiles(anime: list[AnimeRow], media: list[MediaRow]) -> list[dict[str, An
             "format": _shares([m.media_type for m in main]),
             "studios": {s for m in main for s in m.studios},
             "watch_hours": sum(m.watch_seconds or 0 for m in ms) / 3600,
+            "synopsis": a.synopsis,
             "age": max(ages, default=None),
             "year": min(years) if years else None,
             "score": a.score,
@@ -112,7 +116,8 @@ def _profiles(anime: list[AnimeRow], media: list[MediaRow]) -> list[dict[str, An
 
 
 def _fit_stats(profiles: list[dict[str, Any]], train: np.ndarray) -> dict[str, Any]:
-    """Column sets and fill values, read off the training anime and kept for placement."""
+    """What building a vector needs from the training anime, kept for placement (`_blocks` and
+    `fit` add the rest)."""
     trained = [p for p, t in zip(profiles, train, strict=True) if t]
     made = Counter(s for p in trained for s in p["studios"])
     studios = sorted({s for p in profiles for s in p["studios"]})
@@ -127,23 +132,17 @@ def _fit_stats(profiles: list[dict[str, Any]], train: np.ndarray) -> dict[str, A
     majority = Counter(t for p in trained for t in p["majority_tags"])
     tag_weights = np.array([-np.log(max(majority[c], 1) / len(trained)) for c in tags["tags"]])
     held = _held(trained, tags["tags"], TAG_GROUPS["tags"])
-    known = [q for p in trained if (q := _quality(p)) is not None] or [(0.0, 0.0)]
     return {
         "weights": dict(WEIGHTS),
         "era": ERA,
         "tags": tags,
         "tag_weights": tag_weights.tolist(),
         "tag_pseudo": TAG_PSEUDO * float((held * tag_weights).sum() / (held.sum() or 1)),
-        "quality": {"fill": np.mean(known, 0).tolist(), "spread": float(np.var(known, 0).sum())},
         "sources": sorted({s for p in profiles for s in p["source"]}),
         "formats": sorted({f for p in profiles for f in p["format"]}),
         "top_studios": [s for s, _ in sorted(made.items(), key=lambda kv: (-kv[1], kv[0]))[:TOP_STUDIOS]],
         "studio_output": dict(made),
         "studio_cuts": (cut50, cut90),
-        "medians": {
-            key: float(np.median([p[key] for p in trained if p[key] is not None] or [0]))
-            for key in ("age", "year")
-        },
     }
 
 
@@ -166,31 +165,48 @@ def _held(profiles: list[dict[str, Any]], columns: list[str], kinds: tuple[str, 
     return _columns(profiles, columns, lambda p, c: sum(p["tags"].get((c, k), 0.0) for k in kinds))
 
 
-def _quality(p: dict[str, Any]) -> tuple[float, float] | None:
-    """MAL score and log votes, as the app shows them."""
-    return None if p["score"] is None else (p["score"], float(np.log1p(p["votes"] or 0)))
-
-
 def _evidence(W: np.ndarray, pseudo: float) -> tuple[np.ndarray, np.ndarray]:
     """Tag lists weighed by how much they say. Two anime's tag similarity is the weight they
     share over sqrt((weight1 + pseudo)(weight2 + pseudo)), so four tags shared out of five
     count for more than two of two, and two rare ones for more than two common ones. As
     vectors: each row shrunk by sqrt(weight + pseudo), with what that leaves of a unit length
-    returned as its uncertainty, which `distances` adds back."""
+    returned as its uncertainty, which `distances` adds back. It shrinks toward no tags, where
+    a typical pair of lists already sits, rather than toward the mean like `_blocks`."""
     norm2 = (W * W).sum(1)
     return W / np.sqrt(norm2 + pseudo)[:, None], pseudo / (norm2 + pseudo)
 
 
-def _raw_blocks(
-    profiles: list[dict[str, Any]], desc: np.ndarray, stats: dict[str, Any],
+def _blocks(
+    profiles: list[dict[str, Any]], desc: np.ndarray, stats: dict[str, Any], train: np.ndarray | None = None,
 ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
     """The blocks before balancing, and each anime's uncertainty in the blocks that have one
-    (`distances`), in the same units."""
+    (`distances`), in the same units, a partly known value counted as docs/features/galaxy.md,
+    "What a star is made of", says. A fit (`train` given) reads the training anime's means and
+    spreads into `stats`; placement reuses them."""
+    raw, spare, known = _raw_blocks(profiles, desc, stats)
+    for block, (cols, c) in known.items():
+        if train is not None:
+            rows = raw[block][:, cols][train & (c > 0)]
+            stats.setdefault("known", {})[block] = (rows.mean(0), float(rows.var(0).sum())) if len(rows) else (0.0, 0.0)
+        mean, spread = stats["known"][block]
+        raw[block][:, cols] = mean + np.sqrt(c)[:, None] * (raw[block][:, cols] - mean)
+        spare[block] = (1 - c) * spread
+    return raw, spare
+
+
+def _raw_blocks(
+    profiles: list[dict[str, Any]], desc: np.ndarray, stats: dict[str, Any],
+) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray], dict[str, tuple[slice, np.ndarray]]]:
+    """The blocks as read, the tag list's uncertainty, and how well each other block's columns
+    are known per anime — 1 as read, 0 not at all, a missing value held as 0 until `_blocks`
+    replaces it."""
     n = len(profiles)
-    med = stats["medians"]
+
+    def has(key: str, known=bool) -> np.ndarray:
+        return np.array([known(p[key]) for p in profiles], float)
+
     held = {group: _held(profiles, cols, TAG_GROUPS[group]) for group, cols in stats["tags"].items()}
     tags, tag_spare = _evidence(held["tags"] * np.sqrt(np.asarray(stats["tag_weights"], np.float32)), stats["tag_pseudo"])
-    quality = [_quality(p) for p in profiles]
     top = stats["top_studios"]
     studios = np.zeros((n, len(top) + 3), np.float32)
     for i, p in enumerate(profiles):
@@ -201,9 +217,9 @@ def _raw_blocks(
                 studios[i, len(top) + _studio_size(stats, s)] = 1
     col = lambda v: np.asarray(v, np.float32).reshape(-1, 1)  # noqa: E731
     era = stats["era"]
-    year = np.clip([p["year"] or med["year"] for p in profiles], *era)
+    year = np.clip([p["year"] or era[0] for p in profiles], *era)
     blocks = {
-        "desc": desc,
+        "desc": desc.copy(),  # `_blocks` shrinks it in place; the fit reads the caller's as given
         "tags": tags,
         "demographics": held["demographics"],
         "source": _columns(profiles, stats["sources"], lambda p, c: p["source"].get(c, 0.0)),
@@ -211,13 +227,22 @@ def _raw_blocks(
             _columns(profiles, stats["formats"], lambda p, c: p["format"].get(c, 0.0)),
             col(np.log1p([p["watch_hours"] for p in profiles])),
         ]),
-        "age": col([(p["age"] if p["age"] is not None else med["age"]) / 18 for p in profiles]),
+        "age": col([(p["age"] or 0) / 18 for p in profiles]),
         "era": col((year - era[0]) / (era[1] - era[0])),
         "studios": studios,
-        "quality": np.array([q or stats["quality"]["fill"] for q in quality], np.float32).reshape(n, 2),
+        "quality": np.array([(p["score"] or 0, np.log1p(p["votes"] or 0)) for p in profiles], np.float32).reshape(n, 2),
     }
-    unscored = np.array([q is None for q in quality])
-    return blocks, {"tags": tag_spare, "quality": unscored * stats["quality"]["spread"]}
+    length = has("synopsis", float)
+    known = {
+        "desc": (slice(None), length / (length + SYNOPSIS_HALF)),
+        "source": (slice(None), has("source")),
+        "format": (slice(len(stats["formats"]), None), has("watch_hours")),  # the watch hours alone
+        "age": (slice(None), has("age", lambda age: age is not None)),  # a G rating is 0
+        "era": (slice(None), has("year")),
+        "studios": (slice(None), has("studios")),
+        "quality": (slice(None), has("score")),
+    }
+    return blocks, {"tags": tag_spare}, known
 
 
 def _scale(block: np.ndarray, spare: np.ndarray | float = 0.0) -> float:
@@ -265,6 +290,12 @@ def _quality_era(profiles: list[dict[str, Any]], m: dict[str, Any]) -> np.ndarra
     ]).reshape(-1, 2)
 
 
+def _one_by_one(model: Any, rows: np.ndarray) -> np.ndarray:
+    """So a newcomer's spot does not depend on the batch it arrives in (docs/features/galaxy.md,
+    "The fit")."""
+    return np.vstack([model.transform(row[None]) for row in rows])
+
+
 def _predict(
     m: dict[str, Any], X: np.ndarray, U: np.ndarray, extra: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -273,10 +304,11 @@ def _predict(
     regions) and the nearest region centroid there."""
     import hdbscan
 
+    D = np.sqrt(distances(X, U, m["train_X"], m["train_uncertainty"]))
     # UMAP warns that it takes the matrix for distances to its training anime, which it is.
     with warnings.catch_warnings(action="ignore", category=UserWarning):
-        Z = m["u10"].transform(np.sqrt(distances(X, U, m["train_X"], m["train_uncertainty"])))
-    Y = m["u2"].transform(Z)
+        Z = _one_by_one(m["u10"], D)
+    Y = _one_by_one(m["u2"], Z)
     labels, _ = hdbscan.approximate_predict(m["sectors"], Z)
     member = hdbscan.prediction.membership_vector(m["sectors"], Z).reshape(len(X), -1)
     sector = np.where(labels >= 0, labels, member.argmax(1))
@@ -312,7 +344,7 @@ def fit(anime: list[AnimeRow], media: list[MediaRow],
     train = np.array([p["trained"] for p in profiles])
     stats = _fit_stats(profiles, train)
     desc = _unit(np.asarray([a.desc for a in anime], np.float32))
-    raw, spare = _raw_blocks(profiles, desc, stats)
+    raw, spare = _blocks(profiles, desc, stats, train)
     stats["scales"] = {k: _scale(raw[k][train], spare[k][train] if k in spare else 0.0) for k in WEIGHTS}
     X, U = _features(raw, spare, stats)
     n = int(train.sum())
@@ -399,7 +431,9 @@ def fit(anime: list[AnimeRow], media: list[MediaRow],
         members = np.where(region == r)[0]
         groups.append(_group("region", r, parent, members, np.where(sector == parent)[0], anime, profiles, train, Y))
 
-    first, second = np.random.default_rng(SEED).integers(0, len(anime), (2, 20000))
+    # Between anime that have a synopsis: a titles-only embedding is no synopsis to compare.
+    told = np.flatnonzero([a.synopsis > 0 for a in anime])
+    first, second = told[np.random.default_rng(SEED).integers(0, len(told), (2, 20000))]
     pair_cosines = (desc[first] * desc[second]).sum(1)[first != second]
 
     summary: dict[str, Any] = {
@@ -439,7 +473,7 @@ def place(blob: bytes, anime: list[AnimeRow], media: list[MediaRow]) -> list[dic
     m = pickle.loads(blob)
     profiles = _profiles(anime, media)
     desc = _unit(np.asarray([a.desc for a in anime], np.float32))
-    X, U = _features(*_raw_blocks(profiles, desc, m["stats"]), m["stats"])
+    X, U = _features(*_blocks(profiles, desc, m["stats"]), m["stats"])
     return _stars(anime, X, U, *_predict(m, X, U, _quality_era(profiles, m)), np.zeros(len(anime), bool))
 
 

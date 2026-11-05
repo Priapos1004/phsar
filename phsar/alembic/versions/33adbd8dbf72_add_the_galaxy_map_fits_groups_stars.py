@@ -68,6 +68,7 @@ def upgrade() -> None:
     sa.Column('y', sa.Float(), nullable=False),
     sa.Column('z10', pgvector.sqlalchemy.vector.VECTOR(dim=10), nullable=False),
     sa.Column('features', pgvector.sqlalchemy.vector.VECTOR(), nullable=False),
+    sa.Column('uncertainty', sa.Float(), nullable=False),
     sa.Column('between', sa.Boolean(), nullable=False),
     sa.Column('trained', sa.Boolean(), nullable=False),
     sa.Column('id', sa.Integer(), nullable=False),

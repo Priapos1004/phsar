@@ -145,6 +145,15 @@ async def test_a_star_the_catalogue_says_less_about_sits_farther(client, user_au
     assert [n["title"] for n in res.json()][:3] == ["Gx Middle", "Gx Twin", "Gx Far"]
 
 
+async def test_an_anime_without_a_synopsis_shares_none(client, user_auth_headers, galaxy, db_session):
+    galaxy["Gx Twin"].description = ""
+    await db_session.flush()
+    res = await client.get(f"/browse/galaxy/{galaxy['Gx Target'].uuid}/neighbours", headers=user_auth_headers)
+    assert res.status_code == 200, res.text
+    twin = next(n for n in res.json() if n["title"] == "Gx Twin")
+    assert [s["kind"] for s in twin["shared"]] == ["genre", "source", "studio"]
+
+
 async def test_an_anime_without_a_star_has_no_neighbours(client, user_auth_headers, galaxy):
     res = await client.get(f"/browse/galaxy/{uuid4()}/neighbours", headers=user_auth_headers)
     assert res.status_code == 404
