@@ -11,6 +11,7 @@ Every constant below was chosen on the prod catalogue:
 compound-docs/2026-10-30-v0.16.5-galaxy.md.
 """
 
+import hashlib
 import pickle
 import warnings
 from collections import Counter, defaultdict
@@ -31,10 +32,13 @@ TAG_GROUPS = {"tags": ("genres", "explicit_genres", "themes"), "demographics": (
 # The tags every anime is taken to carry unseen, each of average weight: what keeps a short
 # list from matching as surely as a long one (`_evidence`).
 TAG_PSEUDO = 2
-# What a feature vector means. Bumped with any change to how one is built, so `built_from`
-# refits the map and the old one stops taking new stars, whose vectors would no longer
-# compare. The tunables a vector is built from travel in the fit's stats instead.
+# How a feature vector is built. Bumped with any change to that code; with the tunables it
+# reads, it makes `vectors_key`.
 FEATURES = 3
+# How the map is fitted from the vectors and what placement reads from the pickle. Bumped
+# with any change to either, so `built_from` refits the map and the old one stops taking new
+# stars, which it could no longer place.
+FITTING = 2
 # A synopsis this many characters long counts as half known (`_raw_blocks`).
 SYNOPSIS_HALF = 50
 TOP_STUDIOS = 25
@@ -43,12 +47,27 @@ SEED = 42
 # Sectors: HDBSCAN on the 10-D layout (on the raw vectors it calls most stars noise).
 # The size cap stops excess-of-mass from collapsing into one giant sector.
 MIN_SECTOR, MIN_SAMPLES, MAX_SECTOR_FRACTION = 25, 5, 6
+# The share of the training anime drawn between regions, at most: those HDBSCAN's outlier
+# score (GLOSH) finds least at home in their sector — fewer where scores tie. Its noise label
+# would say the same thing but flips with small changes of the layout.
+BETWEEN_SHARE = 0.1
+# A star HDBSCAN leaves without a sector takes the one most of this many of its nearest
+# labelled training anime are in (10-D), rather than its likeliest by membership, which
+# often names a far sector: the map would draw it among another sector's colour.
+NOISE_VOTERS = 10
 # Below this many anime the cap leaves no room for a sector, so no fit is tried.
 MIN_CATALOGUE = MIN_SECTOR * MAX_SECTOR_FRACTION
 REGION_SIZE = 30
 # A hand name follows the new group sharing at least this much (Jaccard) of its old
 # trained members; below it the group shows its auto name.
 NAME_FLOOR = 0.4
+
+
+def vectors_key() -> str:
+    """What a feature vector is built from: the code's version and every tunable it reads,
+    recorded in `built_from`."""
+    tunables = (WEIGHTS, TAG_GROUPS, TAG_PSEUDO, SYNOPSIS_HALF, TOP_STUDIOS, ERA)
+    return f"{FEATURES}-{hashlib.sha256(repr(tunables).encode()).hexdigest()[:12]}"
 
 
 class MediaRow(NamedTuple):
@@ -296,12 +315,25 @@ def _one_by_one(model: Any, rows: np.ndarray) -> np.ndarray:
     return np.vstack([model.transform(row[None]) for row in rows])
 
 
+def _vote(Z: np.ndarray, labels: np.ndarray, at: np.ndarray) -> np.ndarray:
+    """The sector most of each point's `NOISE_VOTERS` nearest labelled training anime are in,
+    the nearest breaking a tie; `Z` and `labels` cover every training anime, noise included."""
+    from sklearn.neighbors import NearestNeighbors
+
+    if not len(at):
+        return np.empty(0, int)
+    keep = labels >= 0
+    _, near = NearestNeighbors(n_neighbors=NOISE_VOTERS).fit(Z[keep]).kneighbors(at)
+    # most_common keeps first-seen order among equal counts, and the rows run nearest first.
+    return np.array([Counter(labels[keep][row]).most_common(1)[0][0] for row in near], int)
+
+
 def _predict(
     m: dict[str, Any], X: np.ndarray, U: np.ndarray, extra: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Where anime the fit did not train on land: through both layouts, into the sector
-    HDBSCAN predicts (its likeliest when it answers noise, which draws them between
-    regions) and the nearest region centroid there."""
+    HDBSCAN predicts (its neighbours' when it answers noise, `NOISE_VOTERS`) and the nearest
+    region centroid there; between regions past the fit's outlier score (`BETWEEN_SHARE`)."""
     import hdbscan
 
     D = np.sqrt(distances(X, U, m["train_X"], m["train_uncertainty"]))
@@ -310,15 +342,17 @@ def _predict(
         Z = _one_by_one(m["u10"], D)
     Y = _one_by_one(m["u2"], Z)
     labels, _ = hdbscan.approximate_predict(m["sectors"], Z)
-    member = hdbscan.prediction.membership_vector(m["sectors"], Z).reshape(len(X), -1)
-    sector = np.where(labels >= 0, labels, member.argmax(1))
+    sector = labels.copy()
+    noise = labels < 0
+    sector[noise] = _vote(m["u10"].embedding_, m["sectors"].labels_, Z[noise])
     region = np.empty(len(X), int)
     for s in np.unique(sector):
         idx = np.flatnonzero(sector == s)
         divisor, centroids, offset = m["regions"][int(s)]
         F = np.hstack([Z[idx] / divisor, extra[idx]])
         region[idx] = ((F[:, None, :] - centroids[None]) ** 2).sum(-1).argmin(1) + offset
-    return Z, Y, sector, region, labels < 0
+    between = hdbscan.prediction.approximate_predict_scores(m["sectors"], Z) > m["between_at"]
+    return Z, Y, sector, region, between
 
 
 def _stars(anime: list[AnimeRow], X, U, Z, Y, sector, region, between, trained) -> list[dict[str, Any]]:
@@ -379,13 +413,15 @@ def fit(anime: list[AnimeRow], media: list[MediaRow],
     k = int(sectors.labels_.max()) + 1
     if k == 0:
         raise ValueError("HDBSCAN found no sectors — the live map is kept")
-    soft = hdbscan.all_points_membership_vectors(sectors).reshape(n, -1)
-    sector_t = np.where(sectors.labels_ >= 0, sectors.labels_, soft.argmax(1))
+    noise = sectors.labels_ < 0
+    sector_t = sectors.labels_.copy()
+    sector_t[noise] = _vote(Zt, sectors.labels_, Zt[noise])
 
     m: dict[str, Any] = {
         "score_z": _z([p["score"] for p in profiles]),
         "era_z": _z([p["year"] for p in profiles]),
         "regions": {},
+        "between_at": float(np.quantile(sectors.outlier_scores_, 1 - BETWEEN_SHARE)),
     }
     extra = _quality_era(profiles, m)
     region_t = np.empty(n, int)
@@ -417,7 +453,7 @@ def fit(anime: list[AnimeRow], media: list[MediaRow],
     region = np.empty(len(anime), int)
     between = np.empty(len(anime), bool)
     Z[train], Y[train], sector[train], region[train], between[train] = (
-        Zt, u2.embedding_, sector_t, region_t, sectors.labels_ < 0,
+        Zt, u2.embedding_, sector_t, region_t, sectors.outlier_scores_ > m["between_at"],
     )
     if not train.all():
         Z[~train], Y[~train], sector[~train], region[~train], between[~train] = _predict(m, X[~train], U[~train], extra[~train])
@@ -460,11 +496,14 @@ def fit(anime: list[AnimeRow], media: list[MediaRow],
 
 def _group(level: str, number: int, parent: int | None, members: np.ndarray, reference: np.ndarray,
            anime: list[AnimeRow], profiles: list[dict[str, Any]], train: np.ndarray, Y: np.ndarray) -> dict[str, Any]:
+    """A sector or region, named and labelled by its training members (docs/features/galaxy.md,
+    "Names")."""
+    own = members[train[members]]
     return {
         "level": level, "number": number, "parent": parent,
-        "auto_name": auto_name(profiles, members, reference),
-        "x": float(Y[members, 0].mean()), "y": float(Y[members, 1].mean()),
-        "trained_members": sorted(anime[i].anime_id for i in members if train[i]),
+        "auto_name": auto_name(profiles, own, reference[train[reference]]),
+        "x": float(Y[own, 0].mean()), "y": float(Y[own, 1].mean()),
+        "trained_members": sorted(anime[i].anime_id for i in own),
     }
 
 
@@ -514,7 +553,7 @@ def auto_name(profiles: list[dict[str, Any]], members: np.ndarray, reference: np
     ts, tr = shares(members, "majority_tags"), shares(reference, "majority_tags")
     picks = sorted(
         ((s * np.log(s / max(tr.get(t, 0), 1e-3)), t) for t, s in ts.items()
-         if s >= 0.45 and s / max(tr.get(t, 0), 1e-3) >= 1.6),
+         if s >= 0.4 and s / max(tr.get(t, 0), 1e-3) >= 1.6),
         reverse=True,
     )
     parts += [t for _, t in picks[:3]]

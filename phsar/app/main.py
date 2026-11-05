@@ -104,6 +104,7 @@ async def _post_yield_backfills() -> None:
         async with async_session_maker() as session:
             if await embeddings_are_stale(session):
                 await reembed_all_embeddings(session)
+                await galaxy_service.vectors_reembedded(session)
             await galaxy_service.ensure_map(session, now=datetime.now(timezone.utc))
             await galaxy_service.place_unplaced(session)
     except Exception:

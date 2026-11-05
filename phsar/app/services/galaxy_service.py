@@ -66,9 +66,21 @@ async def run_in_child(fn: Callable[..., Any], *args: Any) -> Any:
 def built_from() -> dict[str, str]:
     """What a fit depends on besides the catalogue, recorded with it."""
     return {
-        "model": MODEL_NAME, "features": str(galaxy_compute.FEATURES),
+        "model": MODEL_NAME, "vectors": galaxy_compute.vectors_key(), "fitting": str(galaxy_compute.FITTING),
         **{lib: importlib.metadata.version(lib) for lib in _PICKLED},
     }
+
+
+def is_current(fit: Any) -> bool:
+    """Built from what the code builds from now, so its pickle still places new stars."""
+    return fit.params.get("built_from") == built_from()
+
+
+def same_vectors(fit: Any) -> bool:
+    """Its stars' vectors are the ones a refit would build (same model and `vectors_key`), so a
+    refit can start from its layout."""
+    then, now = (fit.params.get("built_from") or {}) if fit is not None else {}, built_from()
+    return fit is not None and all(then.get(k) == now[k] for k in ("model", "vectors"))
 
 
 def refit_date(now: datetime) -> datetime:
@@ -78,6 +90,16 @@ def refit_date(now: datetime) -> datetime:
     if date > now:
         date = date.replace(year=date.year - (month == 1), month=(month - 4) % 12 + 1)
     return date
+
+
+async def vectors_reembedded(db: AsyncSession) -> None:
+    """The stored synopsis vectors were re-encoded under the live map, which `built_from`
+    cannot see when the model name stayed: mark its vectors stale, so the map is refit, from
+    no layout, and takes no new stars meanwhile."""
+    fit = await galaxy_dao.live_fit(db)
+    if fit is not None:
+        fit.params = {**fit.params, "built_from": {**fit.params.get("built_from", {}), "vectors": "re-embedded"}}
+        await db.commit()
 
 
 async def enqueue_rebuild(
@@ -104,7 +126,7 @@ async def ensure_map(
     fit = await galaxy_dao.live_fit(db)
     if fit is None:
         reason = "missing"
-    elif fit.params.get("built_from") != built_from():
+    elif not is_current(fit):
         reason = "built from something that has changed"
     elif fit.created_at < refit_date(now):
         reason = "due its quarterly refit"
@@ -201,7 +223,7 @@ async def place_unplaced(db: AsyncSession) -> int:
     # matches, takes no new stars: the rebuild places everyone.
     if (
         fit is None
-        or fit.params.get("built_from") != built_from()
+        or not is_current(fit)
         or await JobDAO().count_active_by_kind(db, JobKind.galaxy_rebuild)
     ):
         return 0

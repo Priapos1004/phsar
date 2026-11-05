@@ -57,8 +57,9 @@ carries.
 
 1. UMAP reduces the trained stars to 10-D, from their [distances](#distance).
 2. **Sectors** come from HDBSCAN on the 10-D, size-capped (`MAX_SECTOR_FRACTION` says
-   why). A star that HDBSCAN calls noise keeps its likeliest sector and is marked
-   `between`.
+   why). A star HDBSCAN calls noise takes the sector most of its nearest labelled stars
+   are in (`NOISE_VOTERS` says why). A star is `between` when HDBSCAN's outlier score
+   finds it among the least at home in its sector (`BETWEEN_SHARE` says why).
 3. **Regions** come from Ward clustering inside each sector, about one region per
    `REGION_SIZE` stars. Ward runs on the 10-D plus MAL score and era, so a sector splits
    by quality and age as well as by content.
@@ -69,8 +70,8 @@ places a batch's anime by what else is in it:
 
 - both UMAP `transform`s, the 10-D one from a newcomer's distances to the training anime,
   which the pickle keeps;
-- HDBSCAN's `approximate_predict`, falling back to the membership argmax when it answers
-  noise;
+- HDBSCAN's `approximate_predict`, its neighbours' sector when it answers noise, and
+  `between` past the fit's outlier-score line;
 - the nearest region centroid in the sector's region space.
 
 `galaxy_compute.place` does the same from the pickled models alone, for anime the map has
@@ -78,7 +79,11 @@ not seen yet.
 
 **A refit starts from the live map.** Both UMAPs start from the stars' stored coordinates,
 a newcomer beside its nearest known stars. As a result the median star moves a few percent
-of the map instead of the whole map reshuffling.
+of the map instead of the whole map reshuffling. Not after the vectors change — a model
+swap, a new `vectors_key`, or the boot re-embedding the stored synopsis vectors
+(`galaxy_service.same_vectors`, `vectors_reembedded`): that layout means nothing to the new
+vectors, so the refit starts cold. A library bump or a change to the fitting alone keeps the
+warm start.
 
 Sectors still churn between fits, which is why names follow members rather than numbers.
 The job reports the movement as `median_movement`.
@@ -87,7 +92,8 @@ The job reports the movement as `median_movement`.
 
 `galaxy_rebuild`:
 
-1. loads the catalogue, the live map's coordinates and its hand names;
+1. loads the catalogue, the live map's coordinates (when its vectors still match) and its
+   hand names;
 2. commits, so no transaction stays open across the fit;
 3. runs the fit in a spawned child (`galaxy_service.run_in_child` says why);
 4. swaps the old fit for the new one in a single transaction (`replace_fit`).
@@ -105,7 +111,8 @@ when the map is due:
 - **there is no map**: a first deploy or a fresh database;
 - **the map was built from something that has changed**: each fit records what it depends
   on besides the catalogue (`built_from`), so a change to any of it — a model swap, a
-  feature change (`FEATURES`), a library bump — refits by itself;
+  change to the vectors (`vectors_key`) or to the fitting (`FITTING`), a library bump —
+  refits by itself;
 - **the map predates this quarter's refit date**: the 15th of Jan/Apr/Jul/Oct, two weeks
   after a season ends, so that season's finished shows have settled scores and join the
   training set.
@@ -153,7 +160,9 @@ title match (`/search/anime`), kept to anime with a star. The filters ask
 
 Every group gets an **auto name** on every fit, so a fresh database needs nothing seeded.
 The name lists the group's distinguishing values against a reference population: the
-catalogue for a sector, the parent sector for a region. Those values are:
+catalogue for a sector, the parent sector for a region. Both are measured over the training
+anime alone, so the anime placed onto a group — the least known — neither name it nor move
+its label. Those values are:
 
 - the tags frequent in the group and rare in the reference;
 - a dominant source or studio;

@@ -5,13 +5,19 @@ small clusters rather than a few big ones, because the fit caps a sector's size
 The real catalogue's shape is a study, not a test — these pin the structure the fit
 promises."""
 
+import pickle
+
 import numpy as np
 import pytest
 
 from app.services.galaxy_compute import (
+    BETWEEN_SHARE,
+    NOISE_VOTERS,
     AnimeRow,
     MediaRow,
     _evidence,
+    _group,
+    _vote,
     carry_names,
     distances,
     fit,
@@ -67,6 +73,52 @@ def test_every_star_sits_in_a_region_of_its_sector(fitted):
     assert all(parent[s["region"]] == s["sector"] for s in result["stars"])
     # Airing anime are placed, not fitted from.
     assert sum(not s["trained"] for s in result["stars"]) == result["summary"]["predicted"] > 0
+
+
+def test_the_training_anime_least_at_home_draw_between_regions(fitted):
+    """Between is the outlier score's tail, at most a share of the training anime, rather
+    than whatever HDBSCAN's noise label happens to call."""
+    _, _, result = fitted
+    scores = pickle.loads(result["blob"])["sectors"].outlier_scores_
+    between = np.array([s["between"] for s in result["stars"] if s["trained"]])
+    assert 0 < between.mean() <= BETWEEN_SHARE
+    assert scores[between].min() > scores[~between].max()
+
+
+def test_a_star_without_a_sector_takes_its_neighbours():
+    """By majority of its nearest labelled anime, the nearest breaking a tie. That the fit
+    routes HDBSCAN's noise through it cannot be shown here — on this catalogue HDBSCAN leaves
+    no star without a sector, strays included; the real catalogue's run is in the v0.16.5
+    compound doc."""
+    near_a = [[0.0, i] for i in range(12)]
+    near_b = [[40.0, i] for i in range(12)]
+    Z = np.array(near_a + near_b, float)
+    sector = np.array([0] * 12 + [1] * 12)
+    assert _vote(Z, sector, np.array([[1.0, 5.0], [39.0, 5.0]])).tolist() == [0, 1]
+    # Noise beside the point does not vote.
+    crowd = np.array([[1.0, 5.0 + i / 100] for i in range(12)])
+    noisy = np.vstack([Z, crowd]), np.concatenate([sector, [-1] * 12])
+    assert _vote(*noisy, np.array([[1.0, 5.0]])).tolist() == [0]
+    # Half the voters each: the nearest of them, a 1, decides.
+    half = NOISE_VOTERS // 2
+    tie = np.array([[0.0, 1.0 + i] for i in range(half)] + [[0.0, -1.5 - i] for i in range(half)])
+    assert _vote(tie, np.array([1] * half + [0] * half), np.zeros((1, 2))).tolist() == [1]
+
+
+def test_a_group_is_named_and_labelled_by_its_training_anime():
+    def profile(tags, year, score):
+        return {"majority_tags": tags, "top_source": None, "studios": set(), "score": score, "year": year}
+
+    profiles = (
+        [profile(["Mecha"], 2000, 7.0)] * 10 + [profile(["Mecha", "Kids"], 2025, None)] * 10
+        + [profile(["Romance"], 2000, 7.0)] * 40
+    )
+    train = np.array([True] * 10 + [False] * 10 + [True] * 40)
+    anime = [AnimeRow(i, [], 7.0, 1.0, synopsis=1) for i in range(60)]
+    Y = np.array([[0.0, 0.0]] * 10 + [[9.0, 9.0]] * 10 + [[5.0, 5.0]] * 40)
+    group = _group("sector", 0, None, np.arange(20), np.arange(60), anime, profiles, train, Y)
+    assert group["auto_name"] == "Mecha"
+    assert (group["x"], group["y"]) == (0.0, 0.0)
 
 
 def test_placement_answers_in_the_fits_labels(fitted):

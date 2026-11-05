@@ -18,7 +18,10 @@ async def galaxy_rebuild_dispatcher(session: AsyncSession, job: Job) -> dict[str
     progress = ProgressReporter(job.id)
     await progress.update(stage="Loading the catalogue", force=True)
     anime, media = await galaxy_dao.load_catalogue(session)
-    previous = await galaxy_dao.previous_layout(session)
+    # Cold after the vectors change (docs/features/galaxy.md, "A refit starts from the live
+    # map"); names carry either way, by members.
+    fit = await galaxy_dao.live_fit(session)
+    previous = await galaxy_dao.previous_layout(session) if galaxy_service.same_vectors(fit) else {}
     named = await galaxy_dao.named_groups(session)
     # End the read transaction before the fit rather than holding it open across it.
     await session.commit()

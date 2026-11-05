@@ -66,7 +66,7 @@ class GalaxyStar(BaseModel):
     features: Mapped[Any] = mapped_column(Vector(), nullable=False)
     # Added to its squared distance to every other star (`galaxy_compute.distances`).
     uncertainty: Mapped[float] = mapped_column(Float, nullable=False)
-    # HDBSCAN called it noise: it keeps its likeliest sector but draws between regions.
+    # Among the least at home in its sector by HDBSCAN's outlier score: drawn between regions.
     between: Mapped[bool] = mapped_column(Boolean, nullable=False)
     # Fitted from (a settled anime) rather than placed onto the map.
     trained: Mapped[bool] = mapped_column(Boolean, nullable=False)

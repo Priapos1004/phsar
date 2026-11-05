@@ -84,6 +84,35 @@ async def test_a_rebuild_swaps_the_map_and_carries_hand_names(db_session, catalo
     )).scalar_one()
 
 
+async def test_a_rebuild_starts_cold_only_after_the_vectors_changed(db_session, catalogue, stub_fit, monkeypatch):
+    starts = []
+
+    async def in_process(fn, anime, media, previous):
+        starts.append(bool(previous))
+        return _fake_fit(anime, media, previous)
+
+    async def rebuild_after(change: dict[str, str]):
+        fit = (await db_session.execute(select(GalaxyFit))).scalar_one()
+        fit.params = {**fit.params, "built_from": {**galaxy_service.built_from(), **change}}
+        await db_session.flush()
+        await galaxy_rebuild_dispatcher(db_session, fake_job())
+
+    await galaxy_rebuild_dispatcher(db_session, fake_job())
+    monkeypatch.setattr(galaxy_service, "run_in_child", in_process)
+    await rebuild_after({"numpy": "0"})
+    await rebuild_after({"vectors": "0"})
+    assert starts == [True, False]
+
+
+async def test_a_reembed_leaves_the_map_due_a_cold_refit(db_session, catalogue, stub_fit):
+    """Under the same model name a re-embed is invisible to `built_from`, so the boot says so."""
+    await galaxy_rebuild_dispatcher(db_session, fake_job())
+    await galaxy_service.vectors_reembedded(db_session)
+    fit = (await db_session.execute(select(GalaxyFit))).scalar_one()
+    assert not galaxy_service.is_current(fit)
+    assert not galaxy_service.same_vectors(fit)
+
+
 async def test_a_failed_fit_keeps_the_live_map(db_session, catalogue, stub_fit, monkeypatch):
     await galaxy_rebuild_dispatcher(db_session, fake_job())
     live = (await db_session.execute(select(GalaxyFit.id))).scalar_one()
