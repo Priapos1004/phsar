@@ -19,11 +19,11 @@
 	import { chartTooltipStyle } from '$lib/utils/chartTheme';
 	import { COVERAGE_STYLE, coverageTier } from '$lib/utils/ratingCoverage';
 	import { RATED_STATES } from '$lib/utils/search';
-	import { escapeHtml, resolveTitle } from '$lib/utils/formatString';
+	import { escapeHtml, formatScoreWithStep, resolveTitle } from '$lib/utils/formatString';
 	import {
 		COVER_ASPECT, COVER_SPAN, FOCUS_SPAN, LIT_NO_VALUE, MIN_SPAN, NO_VALUE, REGION_LABELS_BELOW, SCORE_RAMP,
-		blankColour, coverCrop, coverSize, evenWindows, fitWindow, labelCentre, mineColour, nebulaPixels, packCovers, percentWindow,
-		rankShare, sectorHues, starFigures,
+		blankColour, coverCrop, coverSize, evenWindows, fitWindow, labelCentre, mineColour, nebulaPixels, ownTopPercents, packCovers,
+		percentWindow, personal, rankShare, sectorHues, starFigures,
 		type GalaxyColour,
 		type MapWindow, type NebulaSource
 	} from '$lib/utils/galaxy';
@@ -38,6 +38,10 @@
 		/** The anime the filters keep, lit while the rest dim; null with no filters. */
 		lit: Set<string> | null;
 		states: Map<string, State>;
+		/** The viewer's score per rated anime, keyed like `states`. */
+		scores: Map<string, number>;
+		/** The viewer's rating step, which their scores show at. */
+		ratingStep: number;
 		selected: string | null;
 		neighbours: string[];
 		/** The neighbour the panel's pointer is on, whose link stands out. */
@@ -46,7 +50,7 @@
 		onSelect: (uuid: string) => void;
 	}
 
-	let { map, colour, lit, states, selected, neighbours, hovered, nameLanguage, onSelect }: Props = $props();
+	let { map, colour, lit, states, scores, ratingStep, selected, neighbours, hovered, nameLanguage, onSelect }: Props = $props();
 
 	let container: HTMLDivElement;
 	let overview: HTMLCanvasElement;
@@ -63,6 +67,7 @@
 	let hues = $derived(sectorHues(map.sectors));
 	let sectorName = $derived(new Map(map.sectors.map((g) => [g.number, g.name])));
 	let regionName = $derived(new Map(map.regions.map((g) => [g.number, g.name])));
+	let ownTop = $derived(ownTopPercents(scores));
 	const STATE_LABEL = new Map(RATED_STATES.anime.map((s) => [s.value, s.label]));
 	const SHEEN = COVERAGE_STYLE.all.hairline!;
 	const GOLD = '#f2c46d';
@@ -77,22 +82,29 @@
 		return state && coverageTier(state);
 	};
 
+	/** Its "Top N%" on the ramp colourings: MAL's, or the viewer's own. */
+	const rankOf = (s: GalaxyStar) =>
+		colour === 'score' ? s.top_percent : colour === 'own' ? ownTop.get(s.anime_uuid) : undefined;
+
 	function fill(s: GalaxyStar): string {
 		if (colour === 'sector') return hues.get(s.sector)!;
-		if (colour === 'score' && s.top_percent != null) return colours.lerp(rankShare(s.top_percent), SCORE_RAMP);
+		const rank = rankOf(s);
+		if (rank != null) return colours.lerp(rankShare(rank), SCORE_RAMP);
 		const tier = colour === 'mine' ? tierOf(s) : undefined;
 		return tier ? mineColour(tier) : blankColour(colour, lit != null);
 	}
 
 	function starItem(s: GalaxyStar, i: number) {
 		const tier = colour === 'mine' ? tierOf(s) : undefined;
-		const opacity = lit ? 1 : colour === 'mine' ? (tier ? 1 : 0.55) : s.between ? 0.45 : 0.9;
+		// Under a personal colouring the viewer's own stars stand out from the rest.
+		const yours = personal(colour) && states.has(s.anime_uuid);
+		const opacity = lit || yours ? 1 : personal(colour) ? 0.55 : s.between ? 0.45 : 0.9;
 		const color = fill(s);
 		const ring = tier === 'all' ? SHEEN : undefined;
 		return {
 			value: [s.x, s.y, i],
 			// Lit stars grow, so they are easier to point at among the greyed ones.
-			symbolSize: lit ? 8 : 5 + (tier ? 2 : 0),
+			symbolSize: lit ? 8 : 5 + (yours ? 2 : 0),
 			// A star placed onto the map rather than shaping it draws hollow.
 			itemStyle: s.trained
 				? { color, borderColor: ring ?? 'transparent', borderWidth: ring ? 1.2 : 0, opacity }
@@ -109,7 +121,7 @@
 
 	function labels(level: 'sector' | 'region') {
 		const groups = level === 'sector' ? map.sectors : map.regions;
-		const explored = colour === 'mine' ? ratedPer(level) : null;
+		const explored = personal(colour) ? ratedPer(level) : null;
 		return groups.map((g) => ({
 			value: [g.x, g.y],
 			name: g.name,
@@ -134,7 +146,7 @@
 	// ---- the nebula: one image per look, stretched with the zoom ---------------------------
 	// Each image keeps the window it was drawn over and is placed at that window's corners,
 	// so a resize moves it rather than redrawing it.
-	const nebulaCache = new Map<string, { image: HTMLCanvasElement; over: MapWindow }>();
+	const nebulaCache = new Map<GalaxyColour, { image: HTMLCanvasElement; over: MapWindow }>();
 	let nebulaStates: Map<string, State> | null = null;
 	let nebulaLit: Set<string> | null = null;
 
@@ -143,30 +155,32 @@
 		// A greyed-out star keeps the galaxy's outline in the veil and lights nothing.
 		if (dimmed(s)) return { ...glow(1, [0, 0, 0]), veilOnly: true };
 		if (colour === 'sector') return glow(1, colours.parse(hues.get(s.sector)!));
-		if (colour === 'score' && s.top_percent != null) return glow(0.12 + 0.88 * rankShare(s.top_percent), [90, 150, 255]);
+		const rank = rankOf(s);
+		if (rank != null) return glow(0.12 + 0.88 * rankShare(rank), [90, 150, 255]);
 		const tier = colour === 'mine' ? tierOf(s) : undefined;
 		if (tier) return glow({ all: 1, main: 0.85, some: 0.55 }[tier], [240, 188, 78]);
 		// No value in the colouring: a faint glow, in the lit teal under filters.
 		if (lit) return glow(0.3, colours.parse(LIT_NO_VALUE));
-		return colour === 'mine' ? glow(0.16, [58, 52, 80]) : glow(0.12, [60, 60, 90]);
+		return personal(colour) ? glow(0.16, [58, 52, 80]) : glow(0.12, [60, 60, 90]);
 	}
 
 	/** Only called while drawing, which needs `win`. */
 	function nebula(): { image: HTMLCanvasElement; over: MapWindow } {
 		// With filters on, only the lit stars glow, in the colouring's own light. Every image
-		// goes stale with the filters, My ratings' with the viewer's ratings.
+		// goes stale with the filters, the personal ones with the viewer's ratings (`scores`
+		// arrives in the same response as `states`).
 		if (lit !== nebulaLit) {
 			nebulaLit = lit;
 			nebulaCache.clear();
 		}
 		if (states !== nebulaStates) {
 			nebulaStates = states;
-			nebulaCache.delete('mine');
+			for (const key of nebulaCache.keys()) if (personal(key)) nebulaCache.delete(key);
 		}
 		const cached = nebulaCache.get(colour);
 		if (cached) return cached;
-		// Black and gold on My ratings: the viewer's own stars are the only light.
-		const veil: [number, number, number] = colour === 'mine' ? [70, 62, 72] : [86, 64, 170];
+		// A dark veil on the personal colourings: the viewer's own stars are the only light.
+		const veil: [number, number, number] = personal(colour) ? [70, 62, 72] : [86, 64, 170];
 		const { pixels, width, height } = nebulaPixels(map.stars.map(nebulaSource), win!, 360, veil);
 		const image = document.createElement('canvas');
 		image.width = width;
@@ -367,6 +381,8 @@
 	function card(i: number): string {
 		const s = map.stars[i];
 		const state = states.get(s.anime_uuid);
+		// The score as a search card shows it, between the state and the rank My scores colours by.
+		const you = state && `${STATE_LABEL.get(state)} · ${formatScoreWithStep(scores.get(s.anime_uuid)!, ratingStep)} · Top ${ownTop.get(s.anime_uuid)}%`;
 		const dim = (t: string) => `<br><span style="opacity:.7">${t}</span>`;
 		const title = name(s);
 		return (
@@ -375,7 +391,7 @@
 			`<br>${escapeHtml(sectorName.get(s.sector) ?? '')} › ${escapeHtml(regionName.get(s.region) ?? '')}` +
 			`<br>${starFigures(s)}` +
 			(s.genres.length ? dim(escapeHtml(s.genres.slice(0, 6).join(', '))) : '') +
-			(state ? `<br>You: ${STATE_LABEL.get(state)}` : '') +
+			(you ? `<br>You: ${you}` : '') +
 			(s.trained ? '' : dim('Placed onto the map, not part of its fit yet'))
 		);
 	}
@@ -519,7 +535,7 @@
 	let rendered = false;
 	$effect(() => {
 		if (!chart) return;
-		void [map, colour, lit, states];
+		void [map, colour, lit, states, ownTop];
 		untrack(() => {
 			fit();
 			render(!rendered);

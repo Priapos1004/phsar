@@ -25,7 +25,7 @@ interface GalaxyView {
 export const NO_FILTERS = defaultSearch('anime');
 const DEFAULT_GALAXY_VIEW: GalaxyView = { colour: 'sector', filters: NO_FILTERS };
 
-const COLOURS: Record<GalaxyColour, true> = { sector: true, score: true, mine: true };
+const COLOURS: Record<GalaxyColour, true> = { sector: true, score: true, mine: true, own: true };
 const STATES = Object.fromEntries(RATED_STATES.anime.map((s) => [s.value, true])) as Record<RatedState, true>;
 
 const number = (raw: unknown) => (typeof raw === 'number' && Number.isFinite(raw) ? raw : undefined);

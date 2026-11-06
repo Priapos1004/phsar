@@ -72,6 +72,7 @@ export interface SortValues {
 export interface AnimeRatingCoverage {
 	anime_uuid: string;
 	state: Exclude<RatedState, 'none' | 'completed'>;
+	score: number;
 }
 
 // Genre name + description (GET /filters/genres) — powers genre-badge tooltips

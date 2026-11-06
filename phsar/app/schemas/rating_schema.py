@@ -172,6 +172,8 @@ class SpoilerVisibility(BaseModel):
 
 
 class AnimeRatingCoverage(BaseModel):
-    """How far one user has got with one anime (docs/features/ratings.md)."""
+    """How far one user has got with one anime, and their score for it (`your_rating_key`):
+    docs/features/ratings.md."""
     anime_uuid: UUID
     state: RatedState
+    score: float

@@ -2,8 +2,8 @@
 	/**
 	 * Browse's Galaxy tab: the map of every anime (docs/features/galaxy.md), its colourings,
 	 * the search's filters lighting up what they keep, finding a title, and a picked star's
-	 * nearest neighbours with what they share. The map is the same for every viewer; My
-	 * ratings is personal, so a guest sees it inert.
+	 * nearest neighbours with what they share. The map is the same for every viewer; the
+	 * colourings read from the viewer's ratings (`personal`) are inert for a guest.
 	 *
 	 * The panel keeps a trail of the stars picked since it opened, so a hop to a neighbour
 	 * can be walked back; closing it clears the trail. A return from an anime's page lands
@@ -21,14 +21,14 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { galaxyView } from '$lib/stores/galaxyView';
-	import { ensureRatingCoverage, ratedStates, ratingCoverage } from '$lib/stores/ratingCoverage';
+	import { ensureRatingCoverage, ratedScores, ratedStates, ratingCoverage } from '$lib/stores/ratingCoverage';
 	import { addOptimisticJob, bumpJobsRefresh } from '$lib/stores/jobs';
 	import { pushToast } from '$lib/stores/toast';
 	import { userSettings } from '$lib/stores/userSettings';
 	import * as cls from '$lib/styles/classes';
 	import type { GalaxyMap as GalaxyMapData, GalaxyNeighbour, GalaxyShared, GalaxyStar } from '$lib/types/api';
 	import { formatShortDate, resolveTitle } from '$lib/utils/formatString';
-	import { NO_VALUE, SCORE_RAMP, blankColour, mineColour, starFigures, type GalaxyColour } from '$lib/utils/galaxy';
+	import { NO_VALUE, SCORE_RAMP, blankColour, mineColour, personal, starFigures, type GalaxyColour } from '$lib/utils/galaxy';
 	import { COVERAGE_STYLE } from '$lib/utils/ratingCoverage';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import { consumeFocus } from '$lib/utils/scrollFocus';
@@ -58,8 +58,10 @@
 	const COLOURS: { value: GalaxyColour; label: string }[] = [
 		{ value: 'sector', label: 'Sectors' },
 		{ value: 'score', label: 'MAL score' },
-		{ value: 'mine', label: 'My ratings' }
+		{ value: 'mine', label: 'My progress' },
+		{ value: 'own', label: 'My scores' }
 	];
+	let ratingStep = $derived(Number($userSettings?.rating_step ?? '0.5'));
 
 	let starByUuid = $derived(new Map(map?.stars.map((s) => [s.anime_uuid, s])));
 	let star = $derived(selected ? starByUuid.get(selected) : undefined);
@@ -261,7 +263,7 @@
 	<div class="space-y-3">
 		<div class="flex flex-wrap items-center gap-2">
 			{#each COLOURS as c (c.value)}
-				{@const inert = c.value === 'mine' && isGuest}
+				{@const inert = personal(c.value) && isGuest}
 				<button
 					type="button"
 					aria-pressed={colour === c.value}
@@ -332,23 +334,29 @@
 		{/if}
 
 		<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-white/70">
-			{#if colour === 'score'}
-				<span class="tabular-nums">Top 100%</span>
-				<span class="h-2 w-28 rounded-full" style="background:linear-gradient(90deg,{SCORE_RAMP.join(',')})"></span>
-				<span class="tabular-nums">Top 1%</span>
-				<span class="inline-flex items-center gap-1.5">{@render dot(blankColour('score', lit != null))} unscored</span>
-			{:else if colour === 'mine'}
-				<span class="inline-flex items-center gap-1.5">{@render dot(blankColour('mine', lit != null))} Not rated {mineCounts.none}</span>
-				<span class="inline-flex items-center gap-1.5">
-					{@render dot(mineColour('some'))} In progress, on hold, dropped {mineCounts.some}
-				</span>
-				<span class="inline-flex items-center gap-1.5">{@render dot(mineColour('main'))} Main done {mineCounts.main}</span>
-				<span class="inline-flex items-center gap-1.5">
-					{@render dot(mineColour('all'), COVERAGE_STYLE.all.hairline)} All done {mineCounts.all}
-				</span>
-				<span>Dim names: nothing rated there yet.</span>
-			{:else}
+			{#if colour === 'sector'}
 				<span>Colour only tells neighbouring sectors apart. Faded stars sit between regions; hollow ones joined after the map was fitted.</span>
+			{:else}
+				{#if colour !== 'mine'}
+					<span class="tabular-nums">Top 100%</span>
+					<span class="h-2 w-28 rounded-full" style="background:linear-gradient(90deg,{SCORE_RAMP.join(',')})"></span>
+					<span class="tabular-nums">Top 1%</span>
+				{/if}
+				{#if colour === 'score'}
+					<span class="inline-flex items-center gap-1.5">{@render dot(blankColour('score', lit != null))} unscored</span>
+				{:else}
+					<span class="inline-flex items-center gap-1.5">{@render dot(blankColour(colour, lit != null))} Not rated {mineCounts.none}</span>
+					{#if colour === 'mine'}
+						<span class="inline-flex items-center gap-1.5">
+							{@render dot(mineColour('some'))} In progress, on hold, dropped {mineCounts.some}
+						</span>
+						<span class="inline-flex items-center gap-1.5">{@render dot(mineColour('main'))} Main done {mineCounts.main}</span>
+						<span class="inline-flex items-center gap-1.5">
+							{@render dot(mineColour('all'), COVERAGE_STYLE.all.hairline)} All done {mineCounts.all}
+						</span>
+					{/if}
+					<span>Dim names: nothing rated there yet.</span>
+				{/if}
 			{/if}
 		</div>
 
@@ -358,6 +366,8 @@
 				{colour}
 				{lit}
 				states={$ratedStates}
+				scores={$ratedScores}
+				{ratingStep}
 				{selected}
 				neighbours={neighbours.map((n) => n.anime_uuid)}
 				{hovered}

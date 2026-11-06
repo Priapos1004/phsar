@@ -285,7 +285,7 @@ async def get_rating_coverage(db: AsyncSession, user_id: int) -> list[AnimeRatin
     need invalidating on both curation paths to stay true.
     """
     rows = await rating_dao.get_anime_coverage(db, user_id)
-    return [AnimeRatingCoverage(anime_uuid=r.anime_uuid, state=_rated_state(r)) for r in rows]
+    return [AnimeRatingCoverage(anime_uuid=r.anime_uuid, state=_rated_state(r), score=r.score) for r in rows]
 
 
 async def delete_rating(

@@ -8,12 +8,26 @@ import {
 	fitWindow,
 	labelCentre,
 	nebulaPixels,
+	ownTopPercents,
 	packCovers,
 	sectorHues
 } from '$lib/utils/galaxy';
 import type { GalaxySector } from '$lib/types/api';
 
 const sector = (number: number, x: number, y: number): GalaxySector => ({ uuid: `s${number}`, number, name: '', x, y });
+
+describe('ownTopPercents', () => {
+	it('ranks the viewer\'s scores as the search rounds its badge, ties sharing their best rank', () => {
+		const top = ownTopPercents(new Map([['a', 9], ['b', 7.5], ['c', 7.5], ['d', 6]]));
+		// Ranks 1, 2, 2, 4 of 4: rounded up to a percentage, the lowest reads 100.
+		expect(Object.fromEntries(top)).toEqual({ a: 25, b: 50, c: 50, d: 100 });
+	});
+
+	it('gives a lone rating Top 100%, and nothing for no ratings', () => {
+		expect(ownTopPercents(new Map([['a', 8]])).get('a')).toBe(100);
+		expect(ownTopPercents(new Map()).size).toBe(0);
+	});
+});
 
 describe('sectorHues', () => {
 	it('never gives a sector the hue of one of its nearest neighbours', () => {

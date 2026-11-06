@@ -182,9 +182,9 @@ class RatingDAO(BaseDAO[Ratings]):
         return best
 
     async def get_anime_coverage(self, db: AsyncSession, user_id: int) -> list[Row]:
-        """Per-anime counts behind the rated state, for every anime the user has
-        rated at least one media of. The counts, not the state —
-        `rating_service` turns them into one.
+        """Per-anime counts behind the rated state, and the user's score for it, for
+        every anime the user has rated at least one media of. The counts, not the
+        state — `rating_service` turns them into one.
 
         Scoped to the anime the user has actually rated — bounded by their library,
         not the catalogue — for the reason spelled out in
@@ -208,6 +208,7 @@ class RatingDAO(BaseDAO[Ratings]):
                 func.count().filter(main & completed).label("done_main"),
                 func.count().filter(main & (status == WatchStatus.dropped)).label("dropped_main"),
                 func.count().filter(main & (status == WatchStatus.on_hold)).label("on_hold_main"),
+                your_rating_key(per_anime=True).label("score"),
             )
             .select_from(Media)
             .join(Anime, Anime.id == Media.anime_id)

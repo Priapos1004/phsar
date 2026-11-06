@@ -22,6 +22,9 @@ import { coverageTier, type CoverageTier } from '$lib/utils/ratingCoverage';
  */
 export const ratedStates = writable<Map<string, AnimeRatingCoverage['state']>>(new Map());
 
+/** anime UUID → the caller's score for it, from the same response, with the same keys. */
+export const ratedScores = writable<Map<string, number>>(new Map());
+
 /** The same map as coverage tiers, for the coverage marking on cards. */
 export const ratingCoverage = derived(
 	ratedStates,
@@ -52,6 +55,7 @@ export function ensureRatingCoverage(): Promise<void> {
 			// and leave the cache empty so the next reader refetches.
 			if (loadPromise !== pending) return;
 			ratedStates.set(new Map(entries.map((e) => [e.anime_uuid, e.state])));
+			ratedScores.set(new Map(entries.map((e) => [e.anime_uuid, e.score])));
 		})
 		.catch(() => {
 			// Not authenticated / restricted user / transient error — clear the cache
@@ -77,4 +81,5 @@ export function invalidateRatingCoverage(): void {
 export function clearRatingCoverage(): void {
 	loadPromise = null;
 	ratedStates.set(new Map());
+	ratedScores.set(new Map());
 }

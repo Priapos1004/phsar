@@ -91,8 +91,9 @@ row that matches:
 | `none` | nothing rated |
 
 Search filters by it ([search.md](search.md#personal-filters-and-sort)), and
-`get_rating_coverage` (`GET /ratings/coverage`) serves it per anime. The card's
-coverage indicator shows a coarser view of it, derived in the frontend
+`get_rating_coverage` (`GET /ratings/coverage`) serves it per anime, with the user's score
+for it (`your_rating_key`, [search.md](search.md#sorting)). The card's coverage indicator
+shows a coarser view of it, derived in the frontend
 (`utils/ratingCoverage.ts`): `all`, `main`, and `some` for every incomplete state.
 
 `dropped` and `on_hold` are opinions rather than completions, so they hold an anime

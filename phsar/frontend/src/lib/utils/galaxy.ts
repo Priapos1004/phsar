@@ -9,8 +9,23 @@ import type { GalaxySector, GalaxyStar } from '$lib/types/api';
 import { getThemedChartColorPalette } from '$lib/utils/chartColors';
 import { COVERAGE_STYLE, type CoverageTier } from '$lib/utils/ratingCoverage';
 
-/** What colours the stars. */
-export type GalaxyColour = 'sector' | 'score' | 'mine';
+/** What colours the stars: `mine` is My progress, `own` My scores. */
+export type GalaxyColour = 'sector' | 'score' | 'mine' | 'own';
+
+/** The colourings read from the viewer's own ratings: a guest's are inert, and the rest of
+ *  the map recedes under them. */
+export const personal = (colour: GalaxyColour) => colour === 'mine' || colour === 'own';
+
+/**
+ * The viewer's own "Top N%" for each anime they rated, among what they rated, rounded as
+ * the search rounds its badge (`top_percent_ranking`).
+ */
+export function ownTopPercents(scores: Map<string, number>): Map<string, number> {
+	const sorted = [...scores.values()].sort((a, b) => b - a);
+	const rank = new Map<number, number>();
+	sorted.forEach((score, i) => rank.has(score) || rank.set(score, i + 1));
+	return new Map([...scores].map(([uuid, score]) => [uuid, Math.ceil((rank.get(score)! * 100) / sorted.length)]));
+}
 
 /** Neighbouring sectors never share one; the names carry identity, the hue only separates. */
 const SECTOR_HUES = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#2f9e44', '#9085e9', '#e66767'];
@@ -36,10 +51,10 @@ export const LIT_NO_VALUE = '#589194';
  */
 export function blankColour(colour: GalaxyColour, lit: boolean): string {
 	if (lit) return LIT_NO_VALUE;
-	return colour === 'mine' ? '#3b3f57' : NO_VALUE;
+	return personal(colour) ? '#3b3f57' : NO_VALUE;
 }
 
-/** My ratings' colour for a coverage tier: the tiers' metals, the theme's colour for
+/** My progress' colour for a coverage tier: the tiers' metals, the theme's colour for
  *  everything still in progress. The stars and the legend both read it. */
 export function mineColour(tier: CoverageTier): string {
 	return tier === 'some' ? getThemedChartColorPalette()[0] : COVERAGE_STYLE[tier].edge;
