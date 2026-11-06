@@ -32,6 +32,13 @@ export const watchlistAnimeColors = derived(watchlistTags, ($map) => {
 	return byAnime;
 });
 
+// anime UUID → the best priority among its entries (1 is high): the galaxy's Find picks.
+export const watchlistAnimePriority = derived(watchlistTags, ($map) => {
+	const best = new Map<string, number>();
+	for (const e of $map.values()) best.set(e.anime_uuid, Math.min(best.get(e.anime_uuid) ?? e.priority, e.priority));
+	return best;
+});
+
 /** Re-fetch the watchlisted-media→tag set. Call after any watchlist add/remove. */
 export async function refreshWatchlist(): Promise<void> {
 	// `browseRows`' personal entries, and every write already routes here.

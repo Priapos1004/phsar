@@ -54,6 +54,58 @@ export function blankColour(colour: GalaxyColour, lit: boolean): string {
 	return personal(colour) ? '#3b3f57' : NO_VALUE;
 }
 
+/** Why an empty Find box suggests an anime. */
+export type PickReason = 'favourite' | 'watchlist' | 'top';
+
+/** An empty Find box's suggestions, and how many may be the viewer's own favourites or
+ *  watchlist entries each: a couple to anchor them on the map, the rest to discover. */
+const PICKS = 6;
+const PERSONAL_PICKS = 2;
+
+/** FNV-1a: a stable, well-spread order, the same for a day and different the next. */
+function hash(text: string): number {
+	let h = 0x811c9dc5;
+	for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+	return h >>> 0;
+}
+
+/**
+ * The suggestions an empty Find box shows on `day`: `PERSONAL_PICKS` of the viewer's
+ * favourites (their own Top 10%, as `ownTopPercents` ranks it, never fewer than their best
+ * `PERSONAL_PICKS`), as many from their watchlist (highest priority first), and the
+ * catalogue's top 5% of anime they have neither rated nor listed for the rest. Within a pool
+ * the day picks, so they hold all day and change the next.
+ */
+export function dailyPicks(
+	stars: GalaxyStar[],
+	scores: Map<string, number>,
+	watchPriority: Map<string, number>,
+	day: string
+): { star: GalaxyStar; why: PickReason }[] {
+	const byDay = (a: GalaxyStar, b: GalaxyStar) => hash(day + a.anime_uuid) - hash(day + b.anime_uuid);
+	const score = (s: GalaxyStar) => scores.get(s.anime_uuid)!;
+	const priority = (s: GalaxyStar) => watchPriority.get(s.anime_uuid)!;
+	const ownTop = ownTopPercents(scores);
+	const rated = stars.filter((s) => scores.has(s.anime_uuid)).sort((a, b) => score(b) - score(a));
+	const favourites = rated
+		.filter((s, k) => k < PERSONAL_PICKS || ownTop.get(s.anime_uuid)! <= 10)
+		.sort(byDay)
+		.slice(0, PERSONAL_PICKS);
+	const listed = stars
+		.filter((s) => watchPriority.has(s.anime_uuid) && !favourites.includes(s))
+		.sort((a, b) => priority(a) - priority(b) || byDay(a, b))
+		.slice(0, PERSONAL_PICKS);
+	const top = stars
+		.filter((s) => s.top_percent != null && s.top_percent <= 5 && !scores.has(s.anime_uuid) && !watchPriority.has(s.anime_uuid))
+		.sort(byDay)
+		.slice(0, PICKS - favourites.length - listed.length);
+	return [
+		...favourites.map((star) => ({ star, why: 'favourite' as const })),
+		...listed.map((star) => ({ star, why: 'watchlist' as const })),
+		...top.map((star) => ({ star, why: 'top' as const }))
+	];
+}
+
 /** My progress' colour for a coverage tier: the tiers' metals, the theme's colour for
  *  everything still in progress. The stars and the legend both read it. */
 export function mineColour(tier: CoverageTier): string {

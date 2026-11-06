@@ -4,6 +4,7 @@ import {
 	COVER_SPAN,
 	coverCrop,
 	coverSize,
+	dailyPicks,
 	evenWindows,
 	fitWindow,
 	labelCentre,
@@ -12,9 +13,48 @@ import {
 	packCovers,
 	sectorHues
 } from '$lib/utils/galaxy';
-import type { GalaxySector } from '$lib/types/api';
+import type { GalaxySector, GalaxyStar } from '$lib/types/api';
 
 const sector = (number: number, x: number, y: number): GalaxySector => ({ uuid: `s${number}`, number, name: '', x, y });
+
+describe('dailyPicks', () => {
+	// 100 stars, two to each Top N%: Top 5% holds the first ten.
+	const stars = Array.from({ length: 100 }, (_, i) => ({ anime_uuid: `a${i}`, top_percent: Math.ceil((i + 1) / 2) }) as GalaxyStar);
+	const uuids = (picks: ReturnType<typeof dailyPicks>) => picks.map((p) => p.star.anime_uuid);
+	// Rated: twenty anime, a50 the best and a51 next; a3, in the top 5%, the worst.
+	const scores = new Map([...Array.from({ length: 19 }, (_, k) => [`a${50 + k}`, 9 - k * 0.1] as const), ['a3', 2] as const]);
+	// Listed: two at priority 1, the rest lower; a2 is in the top 5% too.
+	const listed = new Map([['a80', 3], ['a81', 1], ['a82', 2], ['a2', 1]]);
+
+	it('takes two favourites and two of the highest-priority watchlist entries', () => {
+		const picks = dailyPicks(stars, scores, listed, '2026-11-06');
+		expect(picks.map((p) => p.why)).toEqual(['favourite', 'favourite', 'watchlist', 'watchlist', 'top', 'top']);
+		// Twenty ratings make a top 10% of two: the best two.
+		expect(new Set(uuids(picks).slice(0, 2))).toEqual(new Set(['a50', 'a51']));
+		expect(new Set(uuids(picks).slice(2, 4))).toEqual(new Set(['a81', 'a2']));
+	});
+
+	it('fills only from the top 5% the viewer has neither rated nor listed, whatever the day', () => {
+		for (let d = 1; d <= 30; d++) {
+			for (const p of dailyPicks(stars, scores, listed, `2026-11-${d}`).filter((p) => p.why === 'top')) {
+				expect(p.star.top_percent).toBeLessThanOrEqual(5);
+				expect(['a2', 'a3']).not.toContain(p.star.anime_uuid);
+			}
+		}
+	});
+
+	it('holds all day and changes the next', () => {
+		const empty = new Map<string, number>();
+		expect(uuids(dailyPicks(stars, empty, empty, '2026-11-06'))).toEqual(uuids(dailyPicks(stars, empty, empty, '2026-11-06')));
+		expect(uuids(dailyPicks(stars, empty, empty, '2026-11-06'))).not.toEqual(uuids(dailyPicks(stars, empty, empty, '2026-11-07')));
+	});
+
+	it('gives a guest six from the top 5%', () => {
+		const picks = dailyPicks(stars, new Map(), new Map(), '2026-11-06');
+		expect(picks).toHaveLength(6);
+		expect(picks.every((p) => p.why === 'top' && p.star.top_percent! <= 5)).toBe(true);
+	});
+});
 
 describe('ownTopPercents', () => {
 	it('ranks the viewer\'s scores as the search rounds its badge, ties sharing their best rank', () => {

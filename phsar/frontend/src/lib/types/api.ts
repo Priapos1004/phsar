@@ -526,6 +526,7 @@ export interface WatchlistMediaTag {
 	tag_uuid: string;
 	tag_name: string;
 	tag_color: string;
+	priority: number;
 }
 
 export interface WatchlistMediaTags {

@@ -177,8 +177,10 @@ export const diffTable =
 export const fieldLabel = 'text-sm font-medium text-card-foreground';
 
 // A label that opens a tooltip (the Tooltip's span brings the help cursor). The label's font
-// size sits on its parent, so the line box matches a plain label's beside it.
-export const tooltipHint = 'border-b border-dotted border-muted-foreground/40';
+// size sits on its parent, so the line box matches a plain label's beside it. An underline,
+// not a bottom border, so a wrapped label is underlined under each line's text; in the
+// label's own colour, so it reads on every surface.
+export const tooltipHint = 'underline decoration-dotted decoration-current/40 underline-offset-2';
 
 // A 32px touch target centred on a small control, invisible, so a near miss still lands
 // without the control looking any bigger. Hangs off the control, which must be positioned —

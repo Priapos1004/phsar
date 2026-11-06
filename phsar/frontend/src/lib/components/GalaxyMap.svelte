@@ -73,8 +73,11 @@
 	const GOLD = '#f2c46d';
 
 	const name = (s: GalaxyStar) => resolveTitle(s.title, s.name_eng, s.name_jap, nameLanguage);
-	/** Left out by the filters: greyed, and out of the hover's way. */
-	const dimmed = (s: GalaxyStar) => lit != null && !lit.has(s.anime_uuid);
+	/** The group whose name the pointer is on: everything outside it greys out. */
+	let spot = $state<{ level: 'sector' | 'region'; number: number } | null>(null);
+	let spotTimer: ReturnType<typeof setTimeout> | undefined;
+	/** Left out by the filters or the spotlight: greyed, and out of the hover's way. */
+	const dimmed = (s: GalaxyStar) => (lit != null && !lit.has(s.anime_uuid)) || (spot != null && s[spot.level] !== spot.number);
 	const starOf = (uuid: string | null) => (uuid == null ? undefined : index.get(uuid));
 	const at = (i: number): [number, number] => [map.stars[i].x, map.stars[i].y];
 	const tierOf = (s: GalaxyStar) => {
@@ -123,7 +126,7 @@
 		const groups = level === 'sector' ? map.sectors : map.regions;
 		const explored = personal(colour) ? ratedPer(level) : null;
 		return groups.map((g) => ({
-			value: [g.x, g.y],
+			value: [g.x, g.y, g.number],
 			name: g.name,
 			label: explored && !explored.has(g.number) ? { color: 'rgba(230,232,255,0.45)', fontStyle: 'italic' } : undefined
 		}));
@@ -147,6 +150,8 @@
 	// Each image keeps the window it was drawn over and is placed at that window's corners,
 	// so a resize moves it rather than redrawing it.
 	const nebulaCache = new Map<GalaxyColour, { image: HTMLCanvasElement; over: MapWindow }>();
+	/** A spotlight's image: the last group's alone, since one per group would pile up. */
+	let spotImage: { key: string; image: HTMLCanvasElement; over: MapWindow } | null = null;
 	let nebulaStates: Map<string, State> | null = null;
 	let nebulaLit: Set<string> | null = null;
 
@@ -172,12 +177,15 @@
 		if (lit !== nebulaLit) {
 			nebulaLit = lit;
 			nebulaCache.clear();
+			spotImage = null;
 		}
 		if (states !== nebulaStates) {
 			nebulaStates = states;
 			for (const key of nebulaCache.keys()) if (personal(key)) nebulaCache.delete(key);
+			spotImage = null;
 		}
-		const cached = nebulaCache.get(colour);
+		const key = spot && `${colour} ${spot.level} ${spot.number}`;
+		const cached = key ? (spotImage?.key === key ? spotImage : undefined) : nebulaCache.get(colour);
 		if (cached) return cached;
 		// A dark veil on the personal colourings: the viewer's own stars are the only light.
 		const veil: [number, number, number] = personal(colour) ? [70, 62, 72] : [86, 64, 170];
@@ -187,7 +195,8 @@
 		image.height = height;
 		image.getContext('2d')!.putImageData(new ImageData(pixels, width, height), 0, 0);
 		const made = { image, over: win! };
-		nebulaCache.set(colour, made);
+		if (key) spotImage = { key, ...made };
+		else nebulaCache.set(colour, made);
 		return made;
 	}
 
@@ -397,6 +406,10 @@
 	}
 
 	const STAR_SERIES = ['stars', 'covers', 'focus'];
+	/** The name series, and the group level each spotlights. */
+	const NAME_LEVEL: Record<string, 'sector' | 'region' | undefined> = { sectors: 'sector', regions: 'region' };
+	/** A name hovers for the spotlight alone: no card, no highlight, no pointer hand. */
+	const nameHover = { cursor: 'default', tooltip: { show: false }, emphasis: { disabled: true } };
 
 	let regionsShown = $derived(span < REGION_LABELS_BELOW);
 
@@ -449,13 +462,14 @@
 					}
 				},
 				{ ...rings, type: 'scatter', z: 5, emphasis: { disabled: true }, itemStyle: { color: 'transparent', borderColor: GOLD, borderWidth: 2 } },
+				// Names take the pointer for the spotlight; a star under one is reached by zooming.
 				{
-					id: 'sectors', type: 'scatter', symbolSize: 0, silent: true, z: 7, data: labels('sector'),
+					id: 'sectors', type: 'scatter', symbolSize: 0, z: 7, data: labels('sector'), ...nameHover,
 					label: { ...labelStyle, width: 200, fontSize: 13, fontWeight: 600, opacity: regionsShown ? 0.28 : 1 },
 					labelLayout: labelInside
 				},
 				{
-					id: 'regions', type: 'scatter', symbolSize: 0, silent: true, z: 7, data: labels('region'),
+					id: 'regions', type: 'scatter', symbolSize: 0, z: 7, data: labels('region'), ...nameHover,
 					label: { ...labelStyle, width: 160, show: regionsShown, fontSize: 11, fontWeight: 500 },
 					labelLayout: labelInside
 				}
@@ -485,6 +499,19 @@
 			const instance = echarts.init(container);
 			instance.on('click', (q: { seriesId: string; value: number[] }) => {
 				if (STAR_SERIES.includes(q.seriesId)) onSelect(map.stars[q.value[2]].anime_uuid);
+			});
+			// A spotlight redraws the whole map, so a pointer passing over names on its way
+			// lights none of them: only one that stays a moment does.
+			instance.on('mouseover', (q: { seriesId: string; value: number[] }) => {
+				const level = NAME_LEVEL[q.seriesId];
+				if (!level) return;
+				clearTimeout(spotTimer);
+				spotTimer = setTimeout(() => (spot = { level, number: q.value[2] }), 120);
+			});
+			instance.on('mouseout', (q: { seriesId: string }) => {
+				if (!NAME_LEVEL[q.seriesId]) return;
+				clearTimeout(spotTimer);
+				if (spot) spot = null;
 			});
 			instance.on('datazoom', () => {
 				// A wheel or pinch takes the camera back from a glide.
@@ -521,6 +548,7 @@
 			disposed = true;
 			clearTimeout(settleTimer);
 			clearTimeout(posterTimer);
+			clearTimeout(spotTimer);
 			cancelAnimationFrame(glideFrame);
 			observer?.disconnect();
 			chart?.dispose();
@@ -535,7 +563,7 @@
 	let rendered = false;
 	$effect(() => {
 		if (!chart) return;
-		void [map, colour, lit, states, ownTop];
+		void [map, colour, lit, states, ownTop, spot];
 		untrack(() => {
 			fit();
 			render(!rendered);

@@ -20,15 +20,21 @@
 	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import Tooltip from '$lib/components/Tooltip.svelte';
+	import { ensureGenresLoaded, genreDescriptions } from '$lib/stores/genres';
 	import { galaxyView } from '$lib/stores/galaxyView';
 	import { ensureRatingCoverage, ratedScores, ratedStates, ratingCoverage } from '$lib/stores/ratingCoverage';
 	import { addOptimisticJob, bumpJobsRefresh } from '$lib/stores/jobs';
 	import { pushToast } from '$lib/stores/toast';
 	import { userSettings } from '$lib/stores/userSettings';
+	import { watchlistAnimePriority } from '$lib/stores/watchlist';
 	import * as cls from '$lib/styles/classes';
 	import type { GalaxyMap as GalaxyMapData, GalaxyNeighbour, GalaxyShared, GalaxyStar } from '$lib/types/api';
 	import { formatShortDate, resolveTitle } from '$lib/utils/formatString';
-	import { NO_VALUE, SCORE_RAMP, blankColour, mineColour, personal, starFigures, type GalaxyColour } from '$lib/utils/galaxy';
+	import {
+		NO_VALUE, SCORE_RAMP, blankColour, dailyPicks, mineColour, personal, starFigures,
+		type GalaxyColour, type PickReason
+	} from '$lib/utils/galaxy';
 	import { COVERAGE_STYLE } from '$lib/utils/ratingCoverage';
 	import { buildDetailHref } from '$lib/utils/navigation';
 	import { consumeFocus } from '$lib/utils/scrollFocus';
@@ -39,7 +45,8 @@
 	let isAdmin = $derived(getUserRole?.() === 'admin');
 	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
 
-	let map = $state<GalaxyMapData | null>(null);
+	// Raw: the payload is only ever replaced, and a proxy per star would tax every redraw.
+	let map = $state.raw<GalaxyMapData | null>(null);
 	let error = $state('');
 	let colour = $derived($galaxyView.colour);
 	let filters = $derived($galaxyView.filters);
@@ -94,6 +101,7 @@
 	onMount(async () => {
 		const returnedTo = consumeFocus(page.url);
 		if (!isGuest) void ensureRatingCoverage();
+		void ensureGenresLoaded();
 		try {
 			map = await api.get<GalaxyMapData>('/browse/galaxy');
 		} catch (e) {
@@ -150,11 +158,32 @@
 	let findActive = $state(0);
 	let findTimer: ReturnType<typeof setTimeout> | undefined;
 
+	// The UTC day, so the picks turn over with Discover's mood.
+	const day = new Date().toISOString().slice(0, 10);
+	let picks = $derived(map ? dailyPicks(map.stars, $ratedScores, $watchlistAnimePriority, day) : []);
+	let options = $derived<{ star: GalaxyStar; why?: PickReason }[]>(findText.trim() ? found.map((star) => ({ star })) : picks);
+	/** The options in runs of one reason, each run a captioned group. */
+	let optionGroups = $derived.by(() => {
+		const groups: { why?: PickReason; items: { star: GalaxyStar; i: number }[] }[] = [];
+		options.forEach(({ star, why }, i) => {
+			if (!groups.length || groups[groups.length - 1].why !== why) groups.push({ why, items: [] });
+			groups[groups.length - 1].items.push({ star, i });
+		});
+		return groups;
+	});
+	const PICK_CAPTION: Record<PickReason, string> = {
+		favourite: 'Your favourites',
+		watchlist: 'On your watchlist',
+		top: 'From the top 5%'
+	};
+
 	function suggest() {
 		clearTimeout(findTimer);
 		const query = findText.trim();
 		if (!query) {
 			found = [];
+			findActive = 0;
+			findOpen = true;
 			return;
 		}
 		findTimer = setTimeout(async () => {
@@ -178,16 +207,18 @@
 		pick(s.anime_uuid);
 		findText = '';
 		found = [];
+		// The emptied box would show the picks again under the star just chosen.
+		findOpen = false;
 	}
 
 	function findKey(e: KeyboardEvent) {
-		if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && found.length) {
+		if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && options.length) {
 			e.preventDefault();
 			findOpen = true;
-			findActive = (findActive + (e.key === 'ArrowDown' ? 1 : found.length - 1)) % found.length;
-		} else if (e.key === 'Enter' && found[findActive]) {
+			findActive = (findActive + (e.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length;
+		} else if (e.key === 'Enter' && findOpen && options[findActive]) {
 			e.preventDefault();
-			choose(found[findActive]);
+			choose(options[findActive].star);
 		} else if (e.key === 'Escape') {
 			findOpen = false;
 		}
@@ -288,9 +319,9 @@
 					type="text"
 					role="combobox"
 					aria-label="Find an anime on the map"
-					aria-expanded={findOpen && found.length > 0}
+					aria-expanded={findOpen && options.length > 0}
 					aria-controls="galaxy-find"
-					aria-activedescendant={findOpen && found[findActive] ? `galaxy-find-${findActive}` : undefined}
+					aria-activedescendant={findOpen && options[findActive] ? `galaxy-find-${findActive}` : undefined}
 					aria-autocomplete="list"
 					autocomplete="off"
 					placeholder="Find an anime"
@@ -301,23 +332,32 @@
 					onfocus={() => (findOpen = true)}
 					onblur={() => (findOpen = false)}
 				/>
-				{#if findOpen && found.length}
+				{#if findOpen && options.length}
 					<!-- preventDefault keeps focus in the input, so picking an option never leaves
 					     focus on a node the list is about to drop. -->
 					<ul id="galaxy-find" role="listbox" class="absolute right-0 left-0 z-50 mt-1 max-h-96 overflow-y-auto rounded-xl border border-border bg-popover py-1 shadow-md">
-						{#each found as s, i (s.anime_uuid)}
-							<li id="galaxy-find-{i}" role="option" aria-selected={i === findActive}>
-								<button
-									type="button"
-									tabindex="-1"
-									class="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground {i === findActive ? 'bg-accent text-accent-foreground' : ''}"
-									onmousedown={(e) => (e.preventDefault(), choose(s))}
-									onmouseenter={() => (findActive = i)}
-								>
-									{@render cover(s, 'h-9 w-6')}
-									<span class="min-w-0 flex-1 truncate" title={title(s)}>{title(s)}</span>
-									{#if s.year}<span class="shrink-0 text-xs text-muted-foreground tabular-nums">{s.year}</span>{/if}
-								</button>
+						{#each optionGroups as group (group.why ?? 'found')}
+							<li role="group" aria-labelledby={group.why && `galaxy-find-${group.why}`}>
+								{#if group.why}
+									<div id="galaxy-find-{group.why}" class="px-3 pt-1.5 pb-0.5 text-xs font-medium text-muted-foreground">{PICK_CAPTION[group.why]}</div>
+								{/if}
+								<ul role="none">
+									{#each group.items as { star: s, i } (s.anime_uuid)}
+										<li id="galaxy-find-{i}" role="option" aria-selected={i === findActive}>
+											<button
+												type="button"
+												tabindex="-1"
+												class="flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground {i === findActive ? 'bg-accent text-accent-foreground' : ''}"
+												onmousedown={(e) => (e.preventDefault(), choose(s))}
+												onmouseenter={() => (findActive = i)}
+											>
+												{@render cover(s, 'h-9 w-6')}
+												<span class="min-w-0 flex-1 truncate" title={title(s)}>{title(s)}</span>
+												{#if s.year}<span class="shrink-0 text-xs text-muted-foreground tabular-nums">{s.year}</span>{/if}
+											</button>
+										</li>
+									{/each}
+								</ul>
 							</li>
 						{/each}
 					</ul>
@@ -406,7 +446,13 @@
 							<a {href} class="text-base leading-snug font-semibold hover:underline">{title(star)}</a>
 							<p class="mt-1 text-white/70 tabular-nums">{starFigures(star)}</p>
 							{#if star.genres.length}
-								<p class="mt-1 text-xs text-white/60">{star.genres.join(' · ')}</p>
+								<!-- Plain text, not a control, so a tap opens a genre's tooltip too. -->
+								<p class="mt-1 text-xs text-white/60">
+									{#each star.genres as genre, i (genre)}
+										{@const description = $genreDescriptions.get(genre.toLowerCase())}
+										{#if i}{' · '}{/if}{#if description}<Tooltip text={description} class={cls.tooltipHint}>{genre}</Tooltip>{:else}{genre}{/if}
+									{/each}
+								</p>
 							{/if}
 						</div>
 					</div>

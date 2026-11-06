@@ -247,13 +247,12 @@ class WatchlistDAO(BaseDAO[Watchlist]):
         ).scalar_one()
 
     async def get_watchlisted_media_tags(self, db: AsyncSession, user_id: int) -> list:
-        """(media_uuid, anime_uuid, tag_uuid, tag_name, tag_color) for every entry on the
-        user's watchlist — the icon-state set (mirrors spoiler-visibility), carrying the tag
-        so the bookmark renders in the tag's color, and the anime_uuid so the frontend can
-        aggregate an anime's distinct tag colors (solid, or a gradient when it spans tags).
-        Projection, no ORM rows."""
+        """(media_uuid, anime_uuid, tag_uuid, tag_name, tag_color, priority) per watchlist
+        entry: the bookmark's state and colour, an anime's tag colours (solid, or a gradient
+        when it spans tags), and the priority the galaxy's suggestions prefer. Projection,
+        no ORM rows."""
         stmt = (
-            select(Media.uuid, Anime.uuid, Tag.uuid, Tag.name, Tag.color)
+            select(Media.uuid, Anime.uuid, Tag.uuid, Tag.name, Tag.color, Watchlist.priority)
             .join(Watchlist, Watchlist.media_id == Media.id)
             .join(Tag, Tag.id == Watchlist.tag_id)
             .join(Anime, Anime.id == Media.anime_id)

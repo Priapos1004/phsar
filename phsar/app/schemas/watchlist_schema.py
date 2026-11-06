@@ -130,6 +130,7 @@ class WatchlistMediaTag(BaseModel):
     tag_uuid: UUID
     tag_name: str
     tag_color: str
+    priority: int
 
 
 class WatchlistMediaTags(BaseModel):

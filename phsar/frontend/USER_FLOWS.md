@@ -175,13 +175,13 @@ The Discover tab shows one **mood** a day: a themed group of rows (Beasts & Lege
 ## 3d. Galaxy
 
 The Galaxy tab is a map of every anime: each a star, near the ones it is most like, grouped into named **sectors** that split into **regions**.
-- Sector names show zoomed out; past about half zoom, region names take over. A name near the edge stays inside the map, a long one on two lines.
+- Sector names show zoomed out; past about half zoom, region names take over. A name near the edge stays inside the map, a long one on two lines. Hovering a name greys out everything outside its sector or region.
 - The wheel, a pinch, or the **+ / − / whole map** buttons zoom; the map keeps its shape at every zoom and against every edge. With a star picked, + and − zoom around it. Zoomed in, an overview in the bottom corner shows where the view is, and a click on it moves there. Deep in, stars turn into covers, growing with the zoom and never overlapping.
 - **Colour by:** *Sectors* (neighbouring sectors never share a colour; faded stars sit between regions, hollow ones joined after the map was fitted), *MAL score* (by the "Top N%" rank, Top 100% to Top 1%; unscored ones grey), *My progress* (grey not rated, your theme colour in progress / on hold / dropped, gold main story done, obsidian all done, each with its count; names of areas you have rated nothing in are dimmed) or *My scores* (what you rated, by its Top N% among your own scores on MAL score's ramp; the rest grey; names dimmed as in My progress).
 - **Filters** opens Search's filter sheet (4.4) in its anime view, and the button shows how many are on. Show results lights the anime they keep. The rest turn small and grey and take no hover. The lit ones grow, keep the colouring (teal where they have no value in it: unscored, or not rated), and are the only ones that glow and turn into covers, beside the picked star and its neighbours. A line above the legend gives the count, and My progress and My scores count only those anime. If the filters can't be applied, it says so and the map stays unlit. The colouring and the filters survive a reload and an anime page, and reset on leaving Browse.
 - Hovering a star shows its title, sector › region, score · Top N% · year, genres, and your rated state, score and Top N% among your ratings.
-- **Find an anime** searches titles as Search's title mode does and suggests up to 8 anime on the map, each with its cover and year; arrow keys move through them, Enter picks, Esc closes.
-- **Picking a star** (a click, Find, or a neighbour) glides the map to it, close enough for covers, and opens the panel beside the map (below it on a phone): the cover and title (both open the anime page, 7.6 for the way back), score · Top N% · year, genres, sector and region, and its 8 **nearest neighbours** linked to it on the map. Each neighbour shows its cover and up to five things the two share, rarest first: a synopsis similarity rank ("Top 1% synopsis similarity"), genres, "Source: …", "Studio: …", "Mostly movies" (or whichever format the two share). Hovering one brightens its link and fades the others.
+- **Find an anime** searches titles as Search's title mode does and suggests up to 8 anime on the map, each with its cover and year; arrow keys move through them, Enter picks, Esc closes. With nothing typed, it suggests six anime for the day under captions: *Your favourites* (two from your top 10% by your own score), *On your watchlist* (two, highest priority first) and *From the top 5%* (anime you have neither rated nor listed). A guest gets six from the top 5%.
+- **Picking a star** (a click, Find, or a neighbour) glides the map to it, close enough for covers, and opens the panel beside the map (below it on a phone): the cover and title (both open the anime page, 7.6 for the way back), score · Top N% · year, genres (each opens its description, by hover or tap), sector and region, and its 8 **nearest neighbours** linked to it on the map. Each neighbour shows its cover and up to five things the two share, rarest first: a synopsis similarity rank ("Top 1% synopsis similarity"), genres, "Source: …", "Studio: …", "Mostly movies" (or whichever format the two share). Hovering one brightens its link and fades the others.
 - Clicking a neighbour picks it; the back arrow, naming the anime you came from, walks the picks back. **✕** closes the panel, forgets the picks and glides back out to the whole map.
 - A **guest** sees My progress and My scores dimmed, with a tooltip; the rest is the same.
 - An **admin** gets a card under the map: when the map was fitted, and **Rebuild map**, which asks for the admin's username (as a backup restore does), then queues the rebuild (the bell tracks it); the new map shows on the next visit.
@@ -766,7 +766,7 @@ own.
 |----------|--------|------|
 | `/auth/login` | POST | Login form submission |
 | `/filters/options?view_type=anime\|media` | GET | The filter sheet's first opening per view (cached for the session by the `filterOptions` store; cleared when the catalogue changes, as Home's rows are (3)) |
-| `/filters/genres` | GET | Genre-badge tooltips (cached once per session by the `genres` store) |
+| `/filters/genres` | GET | Genre tooltips (cached once per session by the `genres` store) |
 | `/filters/create-token` | POST | Search submission |
 | `/filters/verify-token` | POST | Search page load |
 | `/browse/{page}` | GET | `news` for Browse's News tab, `home` for the home page's rows: each with the search it runs and the page it sits on |
@@ -791,7 +791,7 @@ own.
 | `/ratings/bulk-delete` | POST | Bulk delete ratings from anime detail |
 | `/ratings/{uuid}` | DELETE | Delete a rating |
 | `/ratings/spoiler-visibility` | GET | Layout auth (fetch visible media UUIDs for spoiler protection) |
-| `/watchlist/media-tags` | GET | Layout auth + after any watchlist mutation (bookmark icon-state + per-media list color) |
+| `/watchlist/media-tags` | GET | Layout auth + after any watchlist mutation (bookmark icon-state + per-media list color); the Galaxy's Find picks read its priority |
 | `/watchlist/tags` | GET | Login (layout) + the watchlist **Lists** tab on mount + dialogs. Not on every `/watchlist` visit: only that tab reads the per-list entry counts, and it mounts on demand |
 | `/watchlist/tags` | POST | Watchlist Lists tab (create a list) |
 | `/watchlist/tags/{uuid}` | PATCH | Watchlist Lists tab (rename / recolor a list) |
