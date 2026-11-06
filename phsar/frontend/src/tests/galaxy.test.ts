@@ -7,15 +7,73 @@ import {
 	dailyPicks,
 	evenWindows,
 	fitWindow,
+	groupStats,
+	groupView,
+	labelAnchors,
 	labelCentre,
 	nebulaPixels,
 	ownTopPercents,
 	packCovers,
-	sectorHues
+	sectorHues,
+	type MapWindow
 } from '$lib/utils/galaxy';
 import type { GalaxySector, GalaxyStar } from '$lib/types/api';
 
 const sector = (number: number, x: number, y: number): GalaxySector => ({ uuid: `s${number}`, number, name: '', x, y });
+
+const at = (anime_uuid: string, x: number, y: number, sector: number, more: Partial<GalaxyStar> = {}) =>
+	({ anime_uuid, x, y, sector, region: sector, genres: [], score: null, top_percent: null, ...more }) as GalaxyStar;
+
+describe('labelAnchors', () => {
+	it('puts a split group\'s name on its denser part, not between its parts', () => {
+		// Sector 0: eight stars around (0, 0) and three around (100, 0); its mean is near 27.
+		const stars = [
+			...Array.from({ length: 8 }, (_, i) => at(`a${i}`, (i % 3) * 0.5, Math.floor(i / 3) * 0.5, 0)),
+			...Array.from({ length: 3 }, (_, i) => at(`b${i}`, 100 + i * 0.5, 0, 0)),
+			at('c', 50, 80, 1)
+		];
+		const [x, y] = labelAnchors(stars, 'sector').get(0)!;
+		expect(x).toBeLessThan(2);
+		expect(y).toBeLessThan(2);
+	});
+});
+
+describe('groupView', () => {
+	const stars = [at('a', 10, 10, 0), at('b', 30, 20, 0), at('c', 90, 90, 1)];
+	const win = { x: [0, 100], y: [0, 100] } as MapWindow;
+
+	it('frames all of a group\'s stars, with a margin', () => {
+		const v = groupView(stars, { level: 'sector', number: 0 }, win, 1000, { left: 0, right: 0 });
+		expect([v.x, v.y]).toEqual([20, 15]);
+		// 20 of 100 wide, the wider side, plus 15%.
+		expect(v.width).toBeCloseTo(23);
+	});
+
+	it('frames it in the strip the controls leave clear', () => {
+		// 200px of 1000 taken on the left: the group spans 800px' worth (20 × 1000/800, plus
+		// 15%), and the view shifts left by half of 200px, at 0.02875 units a pixel, so the
+		// group lands right of the box's centre.
+		const v = groupView(stars, { level: 'sector', number: 0 }, win, 1000, { left: 200, right: 0 });
+		expect(v.width).toBeCloseTo(28.75);
+		expect(v.x).toBeCloseTo(17.125);
+	});
+});
+
+describe('groupStats', () => {
+	it('counts, averages and ranks the group\'s own anime only', () => {
+		const stars = [
+			at('a', 0, 0, 0, { score: 8, top_percent: 3, genres: ['Action', 'Drama'] }),
+			at('b', 0, 0, 0, { score: 6, top_percent: 40, genres: ['Action'] }),
+			at('c', 0, 0, 0, { genres: ['Comedy'] }),
+			at('d', 0, 0, 1, { score: 9, top_percent: 1, genres: ['Action'] })
+		];
+		const stats = groupStats(stars, { level: 'sector', number: 0 }, new Map([['b', 7], ['d', 10]]));
+		expect([stats.count, stats.rated, stats.malMean, stats.ownMean]).toEqual([3, 1, 7, 7]);
+		expect(stats.genres[0]).toEqual({ name: 'Action', share: 2 / 3 });
+		// Unscored anime have no rank to list by.
+		expect(stats.top.map((s) => s.anime_uuid)).toEqual(['a', 'b']);
+	});
+});
 
 describe('dailyPicks', () => {
 	// 100 stars, two to each Top N%: Top 5% holds the first ten.

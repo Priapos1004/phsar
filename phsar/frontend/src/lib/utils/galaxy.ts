@@ -114,8 +114,18 @@ export function mineColour(tier: CoverageTier): string {
 
 /** The figures a star's hover card and the panel both show: score · Top N% · year. */
 export function starFigures(s: GalaxyStar): string {
-	const score = s.score == null ? 'Unscored' : `★ ${s.score.toFixed(2)}`;
-	return [score, s.top_percent == null ? null : `Top ${s.top_percent}%`, s.year].filter(Boolean).join(' · ');
+	return [malScore(s.score), s.top_percent == null ? null : `Top ${s.top_percent}%`, s.year].filter(Boolean).join(' · ');
+}
+
+/** A MAL score as the map shows one, an anime's or a group's average. */
+export const malScore = (score: number | null) => (score == null ? 'Unscored' : `★ ${score.toFixed(2)}`);
+
+const mean = (vs: number[]) => (vs.length ? vs.reduce((a, b) => a + b, 0) / vs.length : null);
+
+/** The extent of `points`: `[x0, x1, y0, y1]`. */
+function bounds(points: { x: number; y: number }[]): [number, number, number, number] {
+	const [xs, ys] = [points.map((p) => p.x), points.map((p) => p.y)];
+	return [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
 }
 
 /** Below this share of the map's width (percent), region names replace sector names. */
@@ -162,9 +172,7 @@ export interface MapWindow {
  * keeps its shape in any box. Zooming scales both axes by the same factor, which keeps it.
  */
 export function fitWindow(points: { x: number; y: number }[], width: number, height: number): MapWindow {
-	const xs = points.map((p) => p.x);
-	const ys = points.map((p) => p.y);
-	const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+	const [x0, x1, y0, y1] = bounds(points);
 	const perPx = (Math.max((x1 - x0) / width, (y1 - y0) / height) || 1) * 1.06;
 	const [cx, cy] = [(x0 + x1) / 2, (y0 + y1) / 2];
 	return {
@@ -188,6 +196,92 @@ export function percentWindow(centre: number, width: number): [number, number] {
 export function evenWindows(x: [number, number], y: [number, number]): [[number, number], [number, number]] {
 	const width = Math.max(x[1] - x[0], y[1] - y[0]);
 	return [percentWindow((x[0] + x[1]) / 2, width), percentWindow((y[0] + y[1]) / 2, width)];
+}
+
+/** A sector or a region, by its number at its level. */
+export interface GroupRef {
+	level: 'sector' | 'region';
+	number: number;
+}
+
+export const inGroup = (s: GalaxyStar, g: GroupRef) => s[g.level] === g.number;
+export const sameGroup = (a: GroupRef, b: GroupRef) => a.level === b.level && a.number === b.number;
+
+/** What the galaxy's panel shows: an anime by its uuid, or a sector or region. */
+export type Pick = string | GroupRef;
+
+/**
+ * The view that shows all of a group's stars, with a margin: its centre, and its width in
+ * percent of `win`. The map's own controls sit at its sides (`insets`, in pixels of a box
+ * `boxWidth` wide), so the group is framed in the strip between them, not under them. A
+ * group the layout split shows wide, across its parts.
+ */
+export function groupView(
+	stars: GalaxyStar[],
+	group: GroupRef,
+	win: MapWindow,
+	boxWidth: number,
+	insets: { left: number; right: number }
+): { x: number; y: number; width: number } {
+	const [x0, x1, y0, y1] = bounds(stars.filter((s) => inGroup(s, group)));
+	const winWidth = win.x[1] - win.x[0];
+	const clear = boxWidth - insets.left - insets.right;
+	const share = Math.max(((x1 - x0) / winWidth) * (boxWidth / clear), (y1 - y0) / (win.y[1] - win.y[0]));
+	const span = Math.min(100, Math.max(MIN_SPAN, share * 100 * 1.15));
+	// The strip's centre sits off the box's by half the difference of the insets.
+	const perPixel = (winWidth * span) / 100 / boxWidth;
+	return { x: (x0 + x1) / 2 - ((insets.left - insets.right) / 2) * perPixel, y: (y0 + y1) / 2, width: span };
+}
+
+/** How far around a star its group counts as its cluster, as a share of the map's extent. */
+const ANCHOR_RADIUS = 0.04;
+
+/**
+ * Where each group's name sits: on its densest cluster. The group's mean position, which the
+ * map carries, lands between the parts of a group the layout split, or over a neighbour. The
+ * densest spot is the star with the most of its group within `ANCHOR_RADIUS`; the name sits
+ * at that neighbourhood's mean.
+ */
+export function labelAnchors(stars: GalaxyStar[], level: GroupRef['level']): Map<number, [number, number]> {
+	const [x0, x1, y0, y1] = bounds(stars);
+	const r2 = (ANCHOR_RADIUS * Math.max(x1 - x0, y1 - y0)) ** 2;
+	return new Map(
+		[...Map.groupBy(stars, (s) => s[level])].map(([number, members]) => {
+			let best: GalaxyStar[] = [];
+			for (const s of members) {
+				const near = members.filter((t) => (t.x - s.x) ** 2 + (t.y - s.y) ** 2 <= r2);
+				if (near.length > best.length) best = near;
+			}
+			// Never empty: every star is within the radius of itself.
+			return [number, [mean(best.map((s) => s.x))!, mean(best.map((s) => s.y))!]];
+		})
+	);
+}
+
+/** How many genres and anime a group's panel lists. */
+const GROUP_GENRES = 5;
+const GROUP_TOP = 5;
+
+/** What a sector's or region's panel shows, from the map and the viewer's own scores. */
+export function groupStats(stars: GalaxyStar[], group: GroupRef, scores: Map<string, number>) {
+	const members = stars.filter((s) => inGroup(s, group));
+	const rated = members.filter((s) => scores.has(s.anime_uuid));
+	const genreCounts = new Map<string, number>();
+	for (const s of members) for (const g of s.genres) genreCounts.set(g, (genreCounts.get(g) ?? 0) + 1);
+	return {
+		count: members.length,
+		rated: rated.length,
+		malMean: mean(members.flatMap((s) => (s.score == null ? [] : [s.score]))),
+		ownMean: mean(rated.map((s) => scores.get(s.anime_uuid)!)),
+		genres: [...genreCounts]
+			.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+			.slice(0, GROUP_GENRES)
+			.map(([name, n]) => ({ name, share: n / members.length })),
+		top: members
+			.filter((s) => s.top_percent != null)
+			.sort((a, b) => a.top_percent! - b.top_percent! || (b.score ?? 0) - (a.score ?? 0))
+			.slice(0, GROUP_TOP)
+	};
 }
 
 /**

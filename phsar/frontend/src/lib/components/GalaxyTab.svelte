@@ -30,10 +30,10 @@
 	import { watchlistAnimePriority } from '$lib/stores/watchlist';
 	import * as cls from '$lib/styles/classes';
 	import type { GalaxyMap as GalaxyMapData, GalaxyNeighbour, GalaxyShared, GalaxyStar } from '$lib/types/api';
-	import { formatShortDate, resolveTitle } from '$lib/utils/formatString';
+	import { formatScoreWithStep, formatShortDate, resolveTitle } from '$lib/utils/formatString';
 	import {
-		NO_VALUE, SCORE_RAMP, blankColour, dailyPicks, mineColour, personal, starFigures,
-		type GalaxyColour, type PickReason
+		NO_VALUE, SCORE_RAMP, blankColour, dailyPicks, groupStats, mineColour, personal, starFigures,
+		malScore, sameGroup, type GalaxyColour, type GroupRef, type Pick, type PickReason
 	} from '$lib/utils/galaxy';
 	import { COVERAGE_STYLE } from '$lib/utils/ratingCoverage';
 	import { buildDetailHref } from '$lib/utils/navigation';
@@ -55,11 +55,13 @@
 	/** What the filters keep; null with no filters, or when asking for it failed. */
 	let lit = $state<Set<string> | null>(null);
 	let litFailed = $state(false);
-	let selected = $state<string | null>(null);
+	let current = $state.raw<Pick | null>(null);
+	let selected = $derived(typeof current === 'string' ? current : null);
+	let group = $derived(current != null && typeof current !== 'string' ? current : null);
 	let neighbours = $state<GalaxyNeighbour[]>([]);
 	let hovered = $state<string | null>(null);
-	/** The stars picked before this one, oldest first. */
-	let trail = $state<string[]>([]);
+	/** What was picked before this, oldest first: anime and groups in one trail. */
+	let trail = $state.raw<Pick[]>([]);
 	let panel = $state<HTMLElement | null>(null);
 
 	const COLOURS: { value: GalaxyColour; label: string }[] = [
@@ -72,11 +74,26 @@
 
 	let starByUuid = $derived(new Map(map?.stars.map((s) => [s.anime_uuid, s])));
 	let star = $derived(selected ? starByUuid.get(selected) : undefined);
-	let previous = $derived(trail.length ? starByUuid.get(trail[trail.length - 1]) : undefined);
 	let sectorName = $derived(new Map(map?.sectors.map((g) => [g.number, g.name])));
 	let regionName = $derived(new Map(map?.regions.map((g) => [g.number, g.name])));
 	const title = (s: { title: string; name_eng: string | null; name_jap: string | null }) =>
 		resolveTitle(s.title, s.name_eng, s.name_jap, nameLanguage);
+	const groupName = (g: GroupRef) => (g.level === 'sector' ? sectorName : regionName).get(g.number) ?? '';
+	const pickName = (p: Pick) => (typeof p === 'string' ? title(starByUuid.get(p)!) : groupName(p));
+	const samePick = (a: Pick, b: Pick) => (typeof a === 'string' || typeof b === 'string' ? a === b : sameGroup(a, b));
+	let stats = $derived(map && group ? groupStats(map.stars, group, $ratedScores) : null);
+	/** How many anime each region holds. */
+	let regionSize = $derived.by(() => {
+		const sizes = new Map<number, number>();
+		for (const s of map?.stars ?? []) sizes.set(s.region, (sizes.get(s.region) ?? 0) + 1);
+		return sizes;
+	});
+	let sectorRegions = $derived(group?.level === 'sector' ? (map?.regions ?? []).filter((r) => r.sector === group.number) : []);
+	/** A panel list's row, and its section heading. */
+	const ROW = 'flex w-full gap-2.5 rounded-lg p-1.5 text-left hover:bg-white/5 focus-visible:bg-white/5';
+	const HEADING = 'text-xs font-semibold tracking-wide text-white/50 uppercase';
+	/** A region's sector. */
+	let parentSector = $derived(group?.level === 'region' ? map?.regions.find((r) => r.number === group.number)?.sector : undefined);
 
 	// Asked again whenever the filters change; a late answer for older ones is dropped.
 	$effect(() => {
@@ -117,24 +134,25 @@
 		if (panel?.contains(document.activeElement)) panel.focus({ preventScroll: true });
 	}
 
-	async function load(uuid: string) {
+	async function load(p: Pick) {
 		keepFocus();
-		selected = uuid;
+		current = p;
 		neighbours = [];
 		hovered = null;
+		if (typeof p !== 'string') return;
 		try {
-			const found = await api.get<GalaxyNeighbour[]>(`/browse/galaxy/${uuid}/neighbours`);
+			const found = await api.get<GalaxyNeighbour[]>(`/browse/galaxy/${p}/neighbours`);
 			// A later pick may have landed first.
-			if (selected === uuid) neighbours = found;
+			if (current === p) neighbours = found;
 		} catch {
 			// The panel still shows the star; its neighbours stay empty.
 		}
 	}
 
-	function pick(uuid: string) {
-		if (uuid === selected) return;
-		if (selected) trail = [...trail, selected];
-		void load(uuid);
+	function pick(p: Pick) {
+		if (current != null && samePick(current, p)) return;
+		if (current != null) trail = [...trail, current];
+		void load(p);
 	}
 
 	function back() {
@@ -146,7 +164,7 @@
 	function close() {
 		keepFocus();
 		trail = [];
-		selected = null;
+		current = null;
 		neighbours = [];
 		hovered = null;
 	}
@@ -274,6 +292,16 @@
 
 {#snippet dot(color: string, ring?: string)}
 	<span class="inline-block size-2.5 shrink-0 rounded-full" style="background:{color};{ring ? `box-shadow:0 0 0 1.5px ${ring}` : ''}"></span>
+{/snippet}
+
+{#snippet genreHint(genre: string)}
+	{@const description = $genreDescriptions.get(genre.toLowerCase())}
+	<!-- Plain text, not a control, so a tap opens the tooltip too. -->
+	{#if description}<Tooltip text={description} class={cls.tooltipHint}>{genre}</Tooltip>{:else}{genre}{/if}
+{/snippet}
+
+{#snippet groupLink(g: GroupRef)}
+	<button type="button" class="text-left text-white/85 hover:text-white hover:underline" onclick={() => pick(g)}>{groupName(g)}</button>
 {/snippet}
 
 {#snippet cover(s: GalaxyStar | GalaxyNeighbour, size: string)}
@@ -409,24 +437,26 @@
 				scores={$ratedScores}
 				{ratingStep}
 				{selected}
+				{group}
 				neighbours={neighbours.map((n) => n.anime_uuid)}
 				{hovered}
 				{nameLanguage}
-				onSelect={pick}
+				onPick={pick}
 			/>
 
 			<aside
 				bind:this={panel}
 				tabindex="-1"
-				aria-label="The picked anime"
+				aria-label="What is picked on the map"
 				class="mt-4 rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-white outline-none lg:mt-0 lg:max-h-[70vh] lg:overflow-y-auto"
 			>
-				{#if star}
+				{#if current != null}
 					<div class="-mt-1 mb-3 flex min-h-8 items-center gap-2">
-						{#if previous}
+						{#if trail.length}
+							{@const previous = pickName(trail[trail.length - 1])}
 							<button type="button" class="{cls.pageNavLink} min-w-0" onclick={back}>
 								<ArrowLeft class="size-4 shrink-0" />
-								<span class="truncate" title={title(previous)}>{title(previous)}</span>
+								<span class="truncate" title={previous}>{previous}</span>
 							</button>
 						{/if}
 						<button
@@ -439,6 +469,8 @@
 							<X class="size-4" />
 						</button>
 					</div>
+				{/if}
+				{#if star}
 					{@const href = buildDetailHref('anime', star.anime_uuid, { from: 'galaxy' })}
 					<div class="flex gap-3">
 						<a {href} class="shrink-0" tabindex="-1" aria-hidden="true">{@render cover(star, 'aspect-[2/3] w-20')}</a>
@@ -446,33 +478,29 @@
 							<a {href} class="text-base leading-snug font-semibold hover:underline">{title(star)}</a>
 							<p class="mt-1 text-white/70 tabular-nums">{starFigures(star)}</p>
 							{#if star.genres.length}
-								<!-- Plain text, not a control, so a tap opens a genre's tooltip too. -->
 								<p class="mt-1 text-xs text-white/60">
-									{#each star.genres as genre, i (genre)}
-										{@const description = $genreDescriptions.get(genre.toLowerCase())}
-										{#if i}{' · '}{/if}{#if description}<Tooltip text={description} class={cls.tooltipHint}>{genre}</Tooltip>{:else}{genre}{/if}
-									{/each}
+									{#each star.genres as genre, i (genre)}{#if i}{' · '}{/if}{@render genreHint(genre)}{/each}
 								</p>
 							{/if}
 						</div>
 					</div>
 					<dl class="mt-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-xs">
 						<dt class="text-white/50">Sector</dt>
-						<dd class="text-white/85">{sectorName.get(star.sector)}</dd>
+						<dd>{@render groupLink({ level: 'sector', number: star.sector })}</dd>
 						<dt class="text-white/50">Region</dt>
-						<dd class="text-white/85">{regionName.get(star.region)}</dd>
+						<dd>{@render groupLink({ level: 'region', number: star.region })}</dd>
 					</dl>
 					{#if star.between}
 						<p class="mt-1.5 text-xs text-white/50">It sits between regions: none of them claims it clearly.</p>
 					{/if}
-					<h3 class="mt-5 text-xs font-semibold tracking-wide text-white/50 uppercase">Nearest neighbours</h3>
+					<h3 class="mt-5 {HEADING}">Nearest neighbours</h3>
 					<p class="mb-1.5 text-xs text-white/50">Each with what it shares with this one.</p>
 					<ol class="-mx-1.5 space-y-0.5">
 						{#each neighbours as n (n.anime_uuid)}
 							<li>
 								<button
 									type="button"
-									class="flex w-full gap-2.5 rounded-lg p-1.5 text-left hover:bg-white/5 focus-visible:bg-white/5"
+									class={ROW}
 									onclick={() => pick(n.anime_uuid)}
 									onmouseenter={() => (hovered = n.anime_uuid)}
 									onmouseleave={() => (hovered = null)}
@@ -492,8 +520,55 @@
 							</li>
 						{/each}
 					</ol>
+				{:else if group && stats}
+					<p class={HEADING}>{group.level === 'sector' ? 'Sector' : 'Region'}</p>
+					<h2 class="text-base leading-snug font-semibold">{groupName(group)}</h2>
+					{#if parentSector != null}
+						<p class="mt-0.5 text-xs text-white/60">In {@render groupLink({ level: 'sector', number: parentSector })}</p>
+					{/if}
+					<dl class="mt-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-xs">
+						<dt class="text-white/50">Anime</dt>
+						<dd class="text-white/85 tabular-nums">{[stats.count, !isGuest && `${stats.rated} rated`].filter(Boolean).join(' · ')}</dd>
+						<dt class="text-white/50">Average score</dt>
+						<dd class="text-white/85 tabular-nums">
+							{[malScore(stats.malMean), stats.ownMean != null && `You ${formatScoreWithStep(stats.ownMean, ratingStep)}`]
+								.filter(Boolean)
+								.join(' · ')}
+						</dd>
+						<dt class="text-white/50">Genres</dt>
+						<dd class="text-white/85">
+							{#each stats.genres as g, i (g.name)}{#if i}{' · '}{/if}{@render genreHint(g.name)} <span class="text-white/50 tabular-nums">{Math.round(g.share * 100)}%</span>{/each}
+						</dd>
+					</dl>
+					{#if sectorRegions.length}
+						<h3 class="mt-5 mb-1.5 {HEADING}">Regions</h3>
+						<ul class="-mx-1.5 space-y-0.5">
+							{#each sectorRegions as r (r.number)}
+								<li>
+									<button type="button" class="{ROW} justify-between" onclick={() => pick({ level: 'region', number: r.number })}>
+										<span class="min-w-0">{r.name}</span>
+										<span class="shrink-0 text-xs text-white/50 tabular-nums">{regionSize.get(r.number) ?? 0}</span>
+									</button>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+					<h3 class="mt-5 mb-1.5 {HEADING}">Top anime</h3>
+					<ol class="-mx-1.5 space-y-0.5">
+						{#each stats.top as s (s.anime_uuid)}
+							<li>
+								<button type="button" class="{ROW} items-center" onclick={() => pick(s.anime_uuid)}>
+									{@render cover(s, 'h-12 w-8')}
+									<span class="min-w-0">
+										<span class="block leading-snug font-medium">{title(s)}</span>
+										<span class="text-xs text-white/60 tabular-nums">{starFigures(s)}</span>
+									</span>
+								</button>
+							</li>
+						{/each}
+					</ol>
 				{:else}
-					<p class="text-white/70">Pick a star to see where it sits and its nearest neighbours.</p>
+					<p class="text-white/70">Pick a star, or a sector's or region's name, to see it here.</p>
 				{/if}
 			</aside>
 		</div>

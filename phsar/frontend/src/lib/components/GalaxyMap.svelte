@@ -9,8 +9,8 @@
 	 * its shape. Covers and the overview wait for a zoom to settle, so nothing jumps
 	 * mid-gesture.
 	 *
-	 * The camera follows `selected`: picking a star glides to it, close enough for the
-	 * covers, and letting go of it glides back out to the whole map.
+	 * The camera follows the pick: a star glides close enough for the covers, a sector or
+	 * region to fit all its stars, and letting go glides back out to the whole map.
 	 */
 	import { onMount, untrack } from 'svelte';
 	import { cubicInOut } from 'svelte/easing';
@@ -22,9 +22,9 @@
 	import { escapeHtml, formatScoreWithStep, resolveTitle } from '$lib/utils/formatString';
 	import {
 		COVER_ASPECT, COVER_SPAN, FOCUS_SPAN, LIT_NO_VALUE, MIN_SPAN, NO_VALUE, REGION_LABELS_BELOW, SCORE_RAMP,
-		blankColour, coverCrop, coverSize, evenWindows, fitWindow, labelCentre, mineColour, nebulaPixels, ownTopPercents, packCovers,
-		percentWindow, personal, rankShare, sectorHues, starFigures,
-		type GalaxyColour,
+		blankColour, coverCrop, coverSize, evenWindows, fitWindow, groupView, inGroup, labelAnchors, labelCentre, mineColour,
+		nebulaPixels, ownTopPercents, packCovers, percentWindow, personal, rankShare, sectorHues, starFigures,
+		sameGroup, type GalaxyColour, type GroupRef, type Pick,
 		type MapWindow, type NebulaSource
 	} from '$lib/utils/galaxy';
 	import type { AnimeRatingCoverage, GalaxyMap, GalaxyStar } from '$lib/types/api';
@@ -42,18 +42,22 @@
 		scores: Map<string, number>;
 		/** The viewer's rating step, which their scores show at. */
 		ratingStep: number;
+		/** The picked anime, or the picked sector or region; at most one is set. */
 		selected: string | null;
+		group: GroupRef | null;
 		neighbours: string[];
 		/** The neighbour the panel's pointer is on, whose link stands out. */
 		hovered: string | null;
 		nameLanguage: 'english' | 'japanese' | 'romaji';
-		onSelect: (uuid: string) => void;
+		/** A star or a name clicked. */
+		onPick: (pick: Pick) => void;
 	}
 
-	let { map, colour, lit, states, scores, ratingStep, selected, neighbours, hovered, nameLanguage, onSelect }: Props = $props();
+	let { map, colour, lit, states, scores, ratingStep, selected, group, neighbours, hovered, nameLanguage, onPick }: Props = $props();
 
 	let container: HTMLDivElement;
 	let overview: HTMLCanvasElement;
+	let controls: HTMLDivElement;
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let chart = $state<any>(null);
 	/** ECharts' own colour helpers, from the bundle the chart loads. */
@@ -73,11 +77,18 @@
 	const GOLD = '#f2c46d';
 
 	const name = (s: GalaxyStar) => resolveTitle(s.title, s.name_eng, s.name_jap, nameLanguage);
-	/** The group whose name the pointer is on: everything outside it greys out. */
-	let spot = $state<{ level: 'sector' | 'region'; number: number } | null>(null);
+	/** The group whose name the pointer is on. */
+	let hoverSpot = $state<GroupRef | null>(null);
 	let spotTimer: ReturnType<typeof setTimeout> | undefined;
-	/** Left out by the filters or the spotlight: greyed, and out of the hover's way. */
-	const dimmed = (s: GalaxyStar) => (lit != null && !lit.has(s.anime_uuid)) || (spot != null && s[spot.level] !== spot.number);
+	/** The group in the spotlight, everything outside it greyed: the one hovered, else the
+	 *  one picked. */
+	let spot = $derived(hoverSpot ?? group);
+	/** The spotlight by value: a hover handing back to the same picked group changes nothing. */
+	let spotKey = $derived(spot && `${spot.level} ${spot.number}`);
+	/** Greyed: left out by the filters (and out of the hover's way), or outside the spotlight. */
+	const filteredOut = (s: GalaxyStar) => lit != null && !lit.has(s.anime_uuid);
+	const outsideSpot = (s: GalaxyStar) => spot != null && !inGroup(s, spot);
+	const dimmed = (s: GalaxyStar) => filteredOut(s) || outsideSpot(s);
 	const starOf = (uuid: string | null) => (uuid == null ? undefined : index.get(uuid));
 	const at = (i: number): [number, number] => [map.stars[i].x, map.stars[i].y];
 	const tierOf = (s: GalaxyStar) => {
@@ -122,13 +133,25 @@
 		return out;
 	}
 
+	// From the trained stars alone, as the names are: an anime placed onto a group, the least
+	// known, never moves its name.
+	let anchors = $derived.by(() => {
+		const trained = map.stars.filter((s) => s.trained);
+		return { sector: labelAnchors(trained, 'sector'), region: labelAnchors(trained, 'region') };
+	});
+
 	function labels(level: 'sector' | 'region') {
 		const groups = level === 'sector' ? map.sectors : map.regions;
 		const explored = personal(colour) ? ratedPer(level) : null;
 		return groups.map((g) => ({
-			value: [g.x, g.y, g.number],
+			// A group with no stars keeps the place the map gave it.
+			value: [...(anchors[level].get(g.number) ?? [g.x, g.y]), g.number],
 			name: g.name,
-			label: explored && !explored.has(g.number) ? { color: 'rgba(230,232,255,0.45)', fontStyle: 'italic' } : undefined
+			label: {
+				...(explored && !explored.has(g.number) ? { color: 'rgba(230,232,255,0.45)', fontStyle: 'italic' } : {}),
+				// The spotlit name glows, so it is clear which one the map is showing.
+				...(spot && sameGroup(spot, { level, number: g.number }) ? { textShadowColor: 'rgba(255,236,190,0.9)', textShadowBlur: 10 } : {})
+			}
 		}));
 	}
 
@@ -136,22 +159,24 @@
 
 	/** A name anchored near the edge slides inward instead of running off the map:
 	 *  `labelCentre` places it from its anchor (`rect`, the zero-size symbol) and
-	 *  `labelRect`'s size. */
+	 *  `labelRect`'s size. Names that collide shift apart rather than hide, so every group
+	 *  keeps its name. */
 	function labelInside(p: { rect: Box; labelRect: Box }) {
 		const [x, y] = labelCentre(
 			[p.rect.x + p.rect.width / 2, p.rect.y + p.rect.height / 2],
 			[p.labelRect.width, p.labelRect.height],
 			[chart.getWidth(), chart.getHeight()]
 		);
-		return { hideOverlap: true, x, y, align: 'center', verticalAlign: 'middle' };
+		return { moveOverlap: 'shiftY', x, y, align: 'center', verticalAlign: 'middle' };
 	}
 
 	// ---- the nebula: one image per look, stretched with the zoom ---------------------------
 	// Each image keeps the window it was drawn over and is placed at that window's corners,
 	// so a resize moves it rather than redrawing it.
 	const nebulaCache = new Map<GalaxyColour, { image: HTMLCanvasElement; over: MapWindow }>();
-	/** A spotlight's image: the last group's alone, since one per group would pile up. */
-	let spotImage: { key: string; image: HTMLCanvasElement; over: MapWindow } | null = null;
+	/** The spotlights' images, the last two only, since one per group would pile up: the
+	 *  picked group's survives a hover over another name. */
+	const spotImages = new Map<string, { image: HTMLCanvasElement; over: MapWindow }>();
 	let nebulaStates: Map<string, State> | null = null;
 	let nebulaLit: Set<string> | null = null;
 
@@ -177,15 +202,15 @@
 		if (lit !== nebulaLit) {
 			nebulaLit = lit;
 			nebulaCache.clear();
-			spotImage = null;
+			spotImages.clear();
 		}
 		if (states !== nebulaStates) {
 			nebulaStates = states;
 			for (const key of nebulaCache.keys()) if (personal(key)) nebulaCache.delete(key);
-			spotImage = null;
+			spotImages.clear();
 		}
-		const key = spot && `${colour} ${spot.level} ${spot.number}`;
-		const cached = key ? (spotImage?.key === key ? spotImage : undefined) : nebulaCache.get(colour);
+		const key = spotKey && `${colour} ${spotKey}`;
+		const cached = key ? spotImages.get(key) : nebulaCache.get(colour);
 		if (cached) return cached;
 		// A dark veil on the personal colourings: the viewer's own stars are the only light.
 		const veil: [number, number, number] = personal(colour) ? [70, 62, 72] : [86, 64, 170];
@@ -195,8 +220,10 @@
 		image.height = height;
 		image.getContext('2d')!.putImageData(new ImageData(pixels, width, height), 0, 0);
 		const made = { image, over: win! };
-		if (key) spotImage = { key, ...made };
-		else nebulaCache.set(colour, made);
+		if (key) {
+			spotImages.set(key, made);
+			if (spotImages.size > 2) spotImages.delete(spotImages.keys().next().value!);
+		} else nebulaCache.set(colour, made);
 		return made;
 	}
 
@@ -362,20 +389,36 @@
 		const g = overview.getContext('2d')!;
 		g.scale(dpr, dpr);
 		const px = (x: number, y: number) => [((x - win!.x[0]) / (win!.x[1] - win!.x[0])) * w, (1 - (y - win!.y[0]) / (win!.y[1] - win!.y[0])) * h];
-		g.fillStyle = 'rgba(230,232,255,0.55)';
-		for (const s of map.stars) {
-			const [x, y] = px(s.x, s.y);
-			g.fillRect(x, y, 1.2, 1.2);
-		}
+		// The view's tint goes under the stars, so it never washes them out.
 		const [vx0, vx1] = axisRange(0);
 		const [vy0, vy1] = axisRange(1);
 		const [ax, ay] = px(vx0, vy1);
 		const [bx, by] = px(vx1, vy0);
 		g.fillStyle = colours.modifyAlpha(GOLD, 0.12);
+		g.fillRect(ax, ay, bx - ax, by - ay);
+		// The spotlit group bright and larger over the rest dimmed, in a hue clear of the
+		// view's gold, so all of a split group's parts show even while the view holds one.
+		const dot = (s: GalaxyStar, size: number) => {
+			const [x, y] = px(s.x, s.y);
+			g.fillRect(x - size / 2, y - size / 2, size, size);
+		};
+		g.fillStyle = spot ? 'rgba(230,232,255,0.18)' : 'rgba(230,232,255,0.55)';
+		for (const s of map.stars) dot(s, 1.2);
+		g.fillStyle = '#8fd3ff';
+		if (spot) for (const s of map.stars) if (inGroup(s, spot)) dot(s, 2.2);
 		g.strokeStyle = GOLD;
 		g.lineWidth = 1;
-		g.fillRect(ax, ay, bx - ax, by - ay);
 		g.strokeRect(ax, ay, bx - ax, by - ay);
+	}
+
+	/** The room the overview (bottom left) and the zoom buttons (top right) take, which a
+	 *  framed group keeps clear. The overview keeps its box while hidden, so it measures. */
+	function clearOfControls() {
+		const gap = 8;
+		return {
+			left: overview.offsetLeft + overview.offsetWidth + gap,
+			right: container.clientWidth - controls.offsetLeft + gap
+		};
 	}
 
 	function overviewClick(e: MouseEvent) {
@@ -405,11 +448,13 @@
 		);
 	}
 
-	const STAR_SERIES = ['stars', 'covers', 'focus'];
-	/** The name series, and the group level each spotlights. */
+	const STAR_SERIES = ['stars', 'covers', 'focus', 'outside'];
+	const greyItem = (s: GalaxyStar, i: number) => ({ value: [s.x, s.y, i], symbolSize: 4, itemStyle: { color: NO_VALUE, opacity: 0.35 } });
+	/** The name series, and the group level each names. */
 	const NAME_LEVEL: Record<string, 'sector' | 'region' | undefined> = { sectors: 'sector', regions: 'region' };
-	/** A name hovers for the spotlight alone: no card, no highlight, no pointer hand. */
-	const nameHover = { cursor: 'default', tooltip: { show: false }, emphasis: { disabled: true } };
+	/** A name spotlights its group on a hover and picks it on a click: the glow is its only
+	 *  highlight, and it has no card. */
+	const nameHover = { cursor: 'pointer', tooltip: { show: false }, emphasis: { disabled: true } };
 
 	let regionsShown = $derived(span < REGION_LABELS_BELOW);
 
@@ -445,7 +490,11 @@
 						return { type: 'image', style: { image, x: ax, y: ay, width: bx - ax, height: by - ay } };
 					}
 				},
-				{ id: 'dimmed', type: 'scatter', z: 1, silent: true, emphasis: { disabled: true }, data: map.stars.flatMap((s, i) => (dimmed(s) ? [{ value: [s.x, s.y, i], symbolSize: 4, itemStyle: { color: NO_VALUE, opacity: 0.35 } }] : [])) },
+				// Greyed by the filters, a star takes no hover; greyed by the spotlight alone it
+				// can still be picked, which is how a click leaves a picked group. Two series,
+				// since ECharts silences a series whole.
+				{ id: 'dimmed', type: 'scatter', z: 1, silent: true, emphasis: { disabled: true }, data: map.stars.flatMap((s, i) => (filteredOut(s) ? [greyItem(s, i)] : [])) },
+				{ id: 'outside', type: 'scatter', z: 1, emphasis: { disabled: true }, data: map.stars.flatMap((s, i) => (!filteredOut(s) && outsideSpot(s) ? [greyItem(s, i)] : [])) },
 				{ id: 'stars', type: 'scatter', z: 2, emphasis: { disabled: true }, data: map.stars.flatMap((s, i) => (dimmed(s) ? [] : [starItem(s, i)])) },
 				{ ...links, type: 'lines', coordinateSystem: 'cartesian2d', silent: true, z: 3, lineStyle: { color: GOLD, type: 'dashed' } },
 				{
@@ -498,7 +547,9 @@
 			colours = echarts.color;
 			const instance = echarts.init(container);
 			instance.on('click', (q: { seriesId: string; value: number[] }) => {
-				if (STAR_SERIES.includes(q.seriesId)) onSelect(map.stars[q.value[2]].anime_uuid);
+				const level = NAME_LEVEL[q.seriesId];
+				if (level) onPick({ level, number: q.value[2] });
+				else if (STAR_SERIES.includes(q.seriesId)) onPick(map.stars[q.value[2]].anime_uuid);
 			});
 			// A spotlight redraws the whole map, so a pointer passing over names on its way
 			// lights none of them: only one that stays a moment does.
@@ -506,12 +557,12 @@
 				const level = NAME_LEVEL[q.seriesId];
 				if (!level) return;
 				clearTimeout(spotTimer);
-				spotTimer = setTimeout(() => (spot = { level, number: q.value[2] }), 120);
+				spotTimer = setTimeout(() => (hoverSpot = { level, number: q.value[2] }), 50);
 			});
 			instance.on('mouseout', (q: { seriesId: string }) => {
 				if (!NAME_LEVEL[q.seriesId]) return;
 				clearTimeout(spotTimer);
-				if (spot) spot = null;
+				if (hoverSpot) hoverSpot = null;
 			});
 			instance.on('datazoom', () => {
 				// A wheel or pinch takes the camera back from a glide.
@@ -563,29 +614,35 @@
 	let rendered = false;
 	$effect(() => {
 		if (!chart) return;
-		void [map, colour, lit, states, ownTop, spot];
+		void [map, colour, lit, states, ownTop, spotKey];
 		untrack(() => {
 			fit();
 			render(!rendered);
 			rendered = true;
+			drawOverview();
 		});
 	});
 
 	// The pick restyles only its marks and the covers, then moves the camera. On the first
 	// draw a star already picked (a return from its page) opens there at once rather than
 	// gliding in.
-	let shown: string | null = null;
+	let shown: Pick | null = null;
 	let placed = false;
 	$effect(() => {
 		if (!chart) return;
-		void [selected, neighbours];
+		void [selected, group, neighbours];
 		untrack(() => {
 			packView();
 			chart.setOption({ series: [...marks(), { id: 'covers', data: coverData() }] });
-			if (selected !== shown) {
-				shown = selected;
+			// A pick is kept as it was made, so the same one is the same object.
+			const key = selected ?? group;
+			if (key !== shown) {
+				shown = key;
 				const s = starOf(selected);
-				const to = s == null ? whole() : { x: map.stars[s].x, y: map.stars[s].y, width: Math.min(span, FOCUS_SPAN) };
+				const to =
+					s != null ? { x: map.stars[s].x, y: map.stars[s].y, width: Math.min(span, FOCUS_SPAN) }
+					: group ? groupView(map.stars, group, win!, container.clientWidth, clearOfControls())
+					: whole();
 				if (placed) glide(to);
 				else view(to);
 			}
@@ -614,7 +671,7 @@
 
 <div class="galaxy-sky relative h-[70vh] min-h-[420px] overflow-hidden rounded-xl border border-white/10">
 	<div bind:this={container} class="absolute inset-0"></div>
-	<div class="absolute top-3 right-3 flex flex-col gap-1.5">
+	<div bind:this={controls} class="absolute top-3 right-3 flex flex-col gap-1.5">
 		<button type="button" class="map-button" aria-label="Zoom in" title="Zoom in" onclick={() => zoomBy(0.5)} disabled={span <= MIN_SPAN}>
 			<Plus class="size-4" />
 		</button>
@@ -627,8 +684,7 @@
 	</div>
 	<canvas
 		bind:this={overview}
-		class="absolute bottom-3 left-3 w-28 cursor-pointer rounded-md border border-white/15 bg-black/50 sm:w-40"
-		hidden={span > 92}
+		class="absolute bottom-3 left-3 w-28 cursor-pointer rounded-md border border-white/15 bg-black/50 sm:w-40 {span > 92 ? 'invisible' : ''}"
 		aria-label="Overview: click to move there"
 		onclick={overviewClick}
 	></canvas>

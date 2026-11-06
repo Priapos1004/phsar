@@ -158,7 +158,9 @@ The map is drawn in the browser from that one payload, its sector colours includ
 the search's own title match (`/search/anime`), kept to anime with a star. With nothing typed,
 Find suggests the day's picks (`dailyPicks`), reading watchlist priority from
 `/watchlist/media-tags`. The filters ask `/search/anime/uuids` which anime they keep, and the
-tab lights those.
+tab lights those. The tab places each group's name itself (`labelAnchors` says where and why)
+rather than at the position the payload gives the group. A picked sector or region shows
+figures worked out from the payload and the viewer's scores (`groupStats`).
 
 ## Names
 
