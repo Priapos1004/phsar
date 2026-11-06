@@ -181,10 +181,10 @@ The Galaxy tab is a map of every anime: each a star, near the ones it is most li
 - **Filters** opens Search's filter sheet (4.4) in its anime view, and the button shows how many are on. Show results lights the anime they keep. The rest turn small and grey and take no hover. The lit ones grow, keep the colouring (teal where they have no value in it: unscored, or not rated), and are the only ones that glow and turn into covers, beside the picked star and its neighbours. A line above the legend gives the count, and My ratings counts only those anime. If the filters can't be applied, it says so and the map stays unlit. The colouring and the filters survive a reload and an anime page, and reset on leaving Browse.
 - Hovering a star shows its title, sector › region, score · Top N% · year, genres and your rated state.
 - **Find an anime** searches titles as Search's title mode does and suggests up to 8 anime on the map, each with its cover and year; arrow keys move through them, Enter picks, Esc closes.
-- **Picking a star** (a click, Find, or a neighbour) glides the map to it, close enough for covers, and opens the panel beside the map (below it on a phone): the cover and title (both open the anime page, 7.6 for the way back), score · Top N% · year, genres, sector and region, and its 8 **nearest neighbours** linked to it on the map. Each neighbour shows its cover and up to five things the two share, rarest first: a synopsis similarity rank ("Top 1% synopsis similarity"), genres, "Source: …", "Studio: …". Hovering one brightens its link and fades the others.
+- **Picking a star** (a click, Find, or a neighbour) glides the map to it, close enough for covers, and opens the panel beside the map (below it on a phone): the cover and title (both open the anime page, 7.6 for the way back), score · Top N% · year, genres, sector and region, and its 8 **nearest neighbours** linked to it on the map. Each neighbour shows its cover and up to five things the two share, rarest first: a synopsis similarity rank ("Top 1% synopsis similarity"), genres, "Source: …", "Studio: …", "Mostly movies" (or whichever format the two share). Hovering one brightens its link and fades the others.
 - Clicking a neighbour picks it; the back arrow, naming the anime you came from, walks the picks back. **✕** closes the panel, forgets the picks and glides back out to the whole map.
 - A **guest** sees My ratings dimmed, with a tooltip; the rest is the same.
-- An **admin** gets a card under the map: when the map was fitted, and **Rebuild map**, which queues the rebuild (the bell tracks it); the new map shows on the next visit.
+- An **admin** gets a card under the map: when the map was fitted, and **Rebuild map**, which asks for the admin's username (as a backup restore does), then queues the rebuild (the bell tracks it); the new map shows on the next visit.
 - Until the first map is fitted, the tab says so instead.
 
 ---
@@ -817,7 +817,7 @@ own.
 | `/admin/registration-tokens/{uuid}` | DELETE | Admin page (delete unused token) |
 | `/admin/backups` | GET | Admin page Backups card (list dumps) |
 | `/admin/backups` | POST | Admin page Backups card "Create backup" — enqueues a `backup` job and returns 202; bell tracks progress, dump list auto-refreshes on succeeded |
-| `/admin/galaxy/rebuild` | POST | The Galaxy tab's admin card "Rebuild map" — enqueues a `galaxy_rebuild` job and returns 202; the bell tracks it |
+| `/admin/galaxy/rebuild` | POST | The Galaxy tab's admin card "Rebuild map" (username confirmation) — enqueues a `galaxy_rebuild` job and returns 202; the bell tracks it |
 | `/admin/backups/{filename}` | GET | Admin page Backups card (download dump) |
 | `/admin/backups/{filename}` | DELETE | Admin page Backups card (delete dump) |
 | `/admin/backups/{filename}` | PATCH | Admin page Backups card (rename / pin a dump; blank name unpins) |

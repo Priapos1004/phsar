@@ -103,8 +103,9 @@ bracket, because it writes only its own tables.
 
 ### When the map is rebuilt
 
-An admin can rebuild on demand with `POST /admin/galaxy/rebuild`; the job shows in their
-bell. Otherwise `galaxy_service.ensure_map` decides. It is asked at every boot, behind the
+An admin can rebuild on demand with `POST /admin/galaxy/rebuild`, confirmed by typing their
+username, because the new fit replaces the live map whole; the job shows in their bell.
+Otherwise `galaxy_service.ensure_map` decides. It is asked at every boot, behind the
 re-embed (`main.py` says why), and by every `schedule-nightly`. It enqueues a rebuild
 when the map is due:
 
@@ -142,11 +143,11 @@ same for every viewer, guests included, and empty until the first fit lands.
 `GET /browse/galaxy/{anime_uuid}/neighbours` answers the `NEIGHBOURS` stars nearest by
 [distance](#distance), nearest first, each with what it shares with the one asked about
 (`GalaxyNeighbourOut`). Every shared trait is weighed on one scale, the chance two anime
-on the map share it anyway, so a rare genre outranks a merely close synopsis: for a genre,
-studio or source the share of stars carrying it (`GalaxyDAO.trait_counts`), for the
-synopsis the share of random pairs this alike (the `pair_cosine_percentiles` each fit
-records, over anime that have one — an anime without a synopsis shares none). A neighbour lists the rarest `SHARED_SHOWN`, none above `SHARED_CHANCE_MAX` (the
-constants say why). It is asked on demand rather than inlined in the map, so a star placed
+on the map share it anyway, so a rare genre outranks a merely close synopsis: for every trait
+but the synopsis the share of stars carrying it (`GalaxyDAO.trait_counts`), for the synopsis
+the share of random pairs this alike (the `pair_cosine_percentiles` each fit records, over
+anime that have one — an anime without a synopsis shares none). A neighbour lists the rarest
+`SHARED_SHOWN`, none above `SHARED_CHANCE_MAX` (the constants say why). It is asked on demand rather than inlined in the map, so a star placed
 since the map loaded has neighbours too.
 
 ## The tab

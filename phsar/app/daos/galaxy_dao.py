@@ -27,13 +27,15 @@ from app.services.galaxy_compute import AnimeRow, MediaRow
 
 def _anime_figures(scope):
     """Per anime in `scope`: the relation-weighted MAL score rounded to two places, as the
-    card rounds it, and its main story's first season year and most common source."""
+    card rounds it, and its main story's first season year, most common source and most
+    common format."""
     return (
         select(
             Media.anime_id.label("anime_id"),
             cast(func.round(cast(weighted_mean_score_expr(), Numeric), 2), Float).label("score"),
             func.min(Media.anime_season_year).filter(MAIN_STORY).label("year"),
             func.mode().within_group(Media.original_source).filter(MAIN_STORY).label("source"),
+            func.mode().within_group(Media.media_type).filter(MAIN_STORY).label("format"),
         )
         .where(Media.anime_id.in_(scope))
         .group_by(Media.anime_id)
@@ -255,20 +257,25 @@ class GalaxyDAO(BaseDAO[GalaxyGroup]):
         )).scalars())
 
     async def trait_counts(self, db: AsyncSession) -> tuple[int, dict[tuple[str, str], int]]:
-        """How many anime the map holds, and how many of them carry each genre, main-story
-        studio and main source, keyed `(kind, name)` — the same definitions `anime_facts`
-        compares, so a shared trait's count is that trait's."""
+        """How many anime the map holds, and how many of them carry each trait `anime_facts`
+        compares, keyed `(kind, name)` by the same definitions, so a shared trait's count is
+        that trait's."""
         placed = select(GalaxyStar.anime_id)
         majority, figures = anime_genre_majority_relation(), _anime_figures(placed)
         total = (await db.execute(select(func.count()).select_from(GalaxyStar))).scalar_one()
         genres = select(majority.c.genre_name, func.count()).where(majority.c.anime_id.in_(placed)).group_by(majority.c.genre_name)
         named = select(func.unnest(_anime_studios(placed).c.studios).label("name")).subquery()
         studios = select(named.c.name, func.count()).group_by(named.c.name)
-        sources = select(figures.c.source, func.count()).where(figures.c.source.is_not(None)).group_by(figures.c.source)
-        counts = {("genre", name): n for name, n in (await db.execute(genres)).tuples()}
+        # Source and format in one query, so `_anime_figures` runs once.
+        both = select(figures.c.source, figures.c.format, func.count()).group_by(figures.c.source, figures.c.format)
+        counts: dict[tuple[str, str], int] = defaultdict(int)
+        counts |= {("genre", name): n for name, n in (await db.execute(genres)).tuples()}
         counts |= {("studio", name): n for name, n in (await db.execute(studios)).tuples()}
-        counts |= {("source", source.value): n for source, n in (await db.execute(sources)).tuples()}
-        return total, counts
+        for source, fmt, n in (await db.execute(both)).tuples():
+            for kind, value in (("source", source), ("format", fmt)):
+                if value is not None:
+                    counts[(kind, value.value)] += n
+        return total, dict(counts)
 
     async def anime_facts(self, db: AsyncSession, anime_ids: list[int]) -> dict[int, Row]:
         """What the neighbour reasons compare, per anime."""
@@ -276,7 +283,7 @@ class GalaxyDAO(BaseDAO[GalaxyGroup]):
         rows = (await db.execute(
             select(
                 Anime.id, *_card_columns(figures, genres),
-                figures.c.source, studios.c.studios, AnimeSearch.description_embedding,
+                figures.c.source, figures.c.format, studios.c.studios, AnimeSearch.description_embedding,
                 (func.coalesce(Anime.description, "") != "").label("has_synopsis"),
             )
             .join(AnimeSearch, AnimeSearch.anime_id == Anime.id)

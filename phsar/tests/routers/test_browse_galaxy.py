@@ -12,7 +12,7 @@ from app.daos.galaxy_dao import GalaxyDAO
 from app.models.anime import Anime
 from app.models.galaxy import GalaxyStar
 from app.models.genre import Genre
-from app.models.media import Media, OriginalSource, SeasonType
+from app.models.media import Media, MediaType, OriginalSource, SeasonType
 from app.models.media_genre import MediaGenre
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
@@ -43,6 +43,8 @@ _FILLERS = {
     ])
 }
 _ANIME |= _FILLERS
+# Every other anime is TV, which most of the map is and so never a reason.
+_MOVIES = {"Gx Target", "Gx Twin"}
 # Synopsis similarities of random pairs, spread evenly over the range e5 gives.
 _PERCENTILES = [0.7 + 0.003 * i for i in range(101)]
 
@@ -63,6 +65,7 @@ async def galaxy(db_session) -> dict[str, Anime]:
         media = Media(**media_kwargs(
             a.id, -95100 - i, title=title, description=synopsis, original_source=source,
             score=score, scored_by=1000 if score else 0, **season,
+            media_type=MediaType.Movie if title in _MOVIES else MediaType.TV,
         ))
         db_session.add(media)
         await db_session.flush()
@@ -128,11 +131,14 @@ async def test_neighbours_come_nearest_first_with_what_they_share(client, user_a
 
     # Rarest first: the same synopsis under another title is closer than nine random pairs in
     # ten, ahead of the traits two of the eight carry, tied and ordered by kind. Action, which
-    # three carry, is too common to count.
-    assert shared(twin) == [("synopsis", None), ("genre", "Fantasy"), ("source", "Manga"), ("studio", "Gx Studio A")]
+    # three carry, is too common to count, and so is TV.
+    assert shared(twin) == [
+        ("synopsis", None), ("format", "Movie"), ("genre", "Fantasy"), ("source", "Manga"), ("studio", "Gx Studio A"),
+    ]
     assert twin["shared"][0]["chance"] < 0.1
-    assert [s["chance"] for s in twin["shared"][1:]] == [0.25, 0.25, 0.25]
+    assert [s["chance"] for s in twin["shared"][1:]] == [0.25, 0.25, 0.25, 0.25]
     assert ("genre", "Action") not in shared(middle)
+    assert not any(kind == "format" for kind, _ in shared(middle))
 
 
 async def test_a_star_the_catalogue_says_less_about_sits_farther(client, user_auth_headers, galaxy, db_session):
@@ -151,7 +157,7 @@ async def test_an_anime_without_a_synopsis_shares_none(client, user_auth_headers
     res = await client.get(f"/browse/galaxy/{galaxy['Gx Target'].uuid}/neighbours", headers=user_auth_headers)
     assert res.status_code == 200, res.text
     twin = next(n for n in res.json() if n["title"] == "Gx Twin")
-    assert [s["kind"] for s in twin["shared"]] == ["genre", "source", "studio"]
+    assert [s["kind"] for s in twin["shared"]] == ["format", "genre", "source", "studio"]
 
 
 async def test_an_anime_without_a_star_has_no_neighbours(client, user_auth_headers, galaxy):

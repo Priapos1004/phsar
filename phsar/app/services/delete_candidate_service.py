@@ -13,7 +13,7 @@ from sqlalchemy.orm import selectinload
 
 from app.daos.delete_candidate_dao import DeleteCandidateDAO
 from app.exceptions import (
-    CurationConfirmationMismatchError,
+    ConfirmationMismatchError,
     DeleteCandidateAlreadyResolvedError,
     DeleteCandidateNotFoundError,
 )
@@ -170,7 +170,7 @@ async def remove(
     pass rather than duplicated here.
     """
     if confirm != username:
-        raise CurationConfirmationMismatchError()
+        raise ConfirmationMismatchError()
     candidate = await _ensure_pending(db, uuid)
 
     # `media_id` is already None when the media was removed by some other path

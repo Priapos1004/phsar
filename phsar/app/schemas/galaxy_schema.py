@@ -10,6 +10,11 @@ class GalaxyGroupRename(BaseModel):
     name: Annotated[str, StringConstraints(strip_whitespace=True, max_length=60)] | None
 
 
+class GalaxyRebuildRequest(BaseModel):
+    """Body for an admin's rebuild; `confirm` must equal the caller's username."""
+    confirm: str
+
+
 class GalaxyGroupOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -62,8 +67,8 @@ class GalaxyMapOut(BaseModel):
 
 class GalaxySharedOut(BaseModel):
     """One thing a neighbour shares with the anime asked about."""
-    kind: Literal["synopsis", "genre", "studio", "source"]
-    name: str | None  # the genre, studio or source; none for the synopsis
+    kind: Literal["synopsis", "genre", "studio", "source", "format"]
+    name: str | None  # the genre, studio, source or format; none for the synopsis
     chance: float  # how often two anime on the map share it by chance, 0–1
 
 

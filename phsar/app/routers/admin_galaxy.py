@@ -22,11 +22,14 @@ router = APIRouter(prefix="/galaxy", dependencies=[Depends(require_admin)])
     status_code=status.HTTP_202_ACCEPTED,
 )
 async def rebuild_galaxy(
+    data: galaxy_schema.GalaxyRebuildRequest,
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_admin),
 ):
     """Refit the map now; the bell tracks the job."""
-    return await galaxy_service.enqueue_rebuild(db, requested_by_user_id=current_user.id)
+    return await galaxy_service.rebuild_for_admin(
+        db, confirm=data.confirm, username=current_user.username, user_id=current_user.id,
+    )
 
 
 @router.patch("/groups/{group_uuid}", response_model=galaxy_schema.GalaxyGroupOut)

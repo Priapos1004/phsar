@@ -16,7 +16,10 @@
 	import { api, ApiError } from '$lib/api';
 	import FilterSheet from '$lib/components/FilterSheet.svelte';
 	import GalaxyMap from '$lib/components/GalaxyMap.svelte';
+	import { Button } from '$lib/components/ui/button';
+	import * as Dialog from '$lib/components/ui/dialog';
 	import { Input } from '$lib/components/ui/input';
+	import { Label } from '$lib/components/ui/label';
 	import { galaxyView } from '$lib/stores/galaxyView';
 	import { ensureRatingCoverage, ratedStates, ratingCoverage } from '$lib/stores/ratingCoverage';
 	import { addOptimisticJob, bumpJobsRefresh } from '$lib/stores/jobs';
@@ -188,19 +191,31 @@
 		}
 	}
 
+	/** A format as "Mostly …" words it. */
+	const FORMAT_PLURAL: Record<string, string> = {
+		TVSpecial: 'TV specials', Movie: 'movies', OVA: 'OVAs', ONA: 'ONAs', Special: 'specials'
+	};
+
 	/** The backend ranks and cuts what a neighbour shares; this only words it. */
 	const SHARED_LABEL: Record<GalaxyShared['kind'], (s: GalaxyShared) => string> = {
 		synopsis: (s) => `Top ${Math.max(1, Math.round(s.chance * 100))}% synopsis similarity`,
 		genre: (s) => s.name!,
 		studio: (s) => `Studio: ${s.name}`,
-		source: (s) => `Source: ${s.name}`
+		source: (s) => `Source: ${s.name}`,
+		format: (s) => `Mostly ${FORMAT_PLURAL[s.name!] ?? s.name}`
 	};
 
+	// Type-to-confirm (rules/frontend.md).
+	const getUsername = getContext<() => string | null>('username');
+	let username = $derived(getUsername?.() ?? '');
+	let rebuildOpen = $state(false);
+	let rebuildConfirm = $state('');
 	let rebuilding = $state(false);
 	async function rebuild() {
+		if (rebuildConfirm !== username) return;
 		rebuilding = true;
 		try {
-			const { job_uuid } = await api.post<{ job_uuid: string }>('/admin/galaxy/rebuild', {});
+			const { job_uuid } = await api.post<{ job_uuid: string }>('/admin/galaxy/rebuild', { confirm: rebuildConfirm });
 			// Seeds the bell until its next /jobs/mine fetch brings the real row.
 			addOptimisticJob({
 				uuid: job_uuid, kind: 'galaxy_rebuild', version: 1, status: 'queued', payload: {}, stage: null,
@@ -208,6 +223,7 @@
 				created_at: new Date().toISOString(), started_at: null, finished_at: null
 			});
 			bumpJobsRefresh();
+			rebuildOpen = false;
 			pushToast('Map rebuild queued. The new map shows on your next visit.');
 		} catch (e) {
 			pushToast(e instanceof ApiError ? e.detail : 'Failed to queue the rebuild.');
@@ -429,8 +445,48 @@
 		{#if isAdmin}
 			<div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/70">
 				<span>Map fitted {map.fitted_at ? formatShortDate(map.fitted_at) : '—'}. A rebuild refits it from today's catalogue.</span>
-				<button type="button" class="{cls.pagePill} {cls.pagePillOff}" disabled={rebuilding} onclick={rebuild}>Rebuild map</button>
+				<button
+					type="button"
+					class="{cls.pagePill} {cls.pagePillOff}"
+					onclick={() => {
+						rebuildConfirm = '';
+						rebuildOpen = true;
+					}}
+				>
+					Rebuild map
+				</button>
 			</div>
+			<Dialog.Root bind:open={rebuildOpen}>
+				<Dialog.Content class="sm:max-w-md">
+					<Dialog.Header>
+						<Dialog.Title class="text-destructive">Rebuild the map</Dialog.Title>
+						<Dialog.Description>
+							The new fit replaces the live map whole: stars move, and sectors and regions may split,
+							merge or change names. Hand names carry over to the groups that keep most of their
+							stars. The current layout cannot be brought back.
+						</Dialog.Description>
+					</Dialog.Header>
+					<div class="min-w-0 space-y-1.5">
+						<!-- One span: Label is a flex row (DeleteCandidatesCard says why). -->
+						<Label for="galaxy-rebuild-confirm" class="text-sm">
+							<span>Type your admin username (<strong>{username}</strong>) to confirm.</span>
+						</Label>
+						<Input
+							id="galaxy-rebuild-confirm"
+							bind:value={rebuildConfirm}
+							placeholder={username}
+							disabled={!username || rebuilding}
+							onkeydown={(e) => e.key === 'Enter' && rebuild()}
+						/>
+					</div>
+					<Dialog.Footer>
+						<Button variant="secondary" onclick={() => (rebuildOpen = false)} disabled={rebuilding}>Cancel</Button>
+						<Button variant="destructive" onclick={rebuild} disabled={rebuilding || !username || rebuildConfirm !== username}>
+							{rebuilding ? 'Queueing…' : 'Rebuild'}
+						</Button>
+					</Dialog.Footer>
+				</Dialog.Content>
+			</Dialog.Root>
 		{/if}
 	</div>
 {/if}

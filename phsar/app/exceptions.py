@@ -411,13 +411,13 @@ class BackupRestoreError(PhsarBaseError):
         super().__init__(message)
 
 
-class BackupConfirmationMismatchError(PhsarBaseError):
-    """Raised when the restore confirmation string does not match the caller's username."""
+class ConfirmationMismatchError(PhsarBaseError):
+    """Raised when the username typed into a type-to-confirm dialog (`.claude/rules/frontend.md`)
+    is not the caller's."""
     status_code = 400
 
     def __init__(self):
-        message = "Restore confirmation did not match your username."
-        super().__init__(message)
+        super().__init__("Confirmation did not match your username.")
 
 
 class InvalidCronTokenError(PhsarBaseError):
@@ -617,16 +617,6 @@ class DeleteCandidateAlreadyResolvedError(PhsarBaseError):
     def __init__(self, status: str):
         message = f"Delete candidate is already {status} — cannot resolve again."
         super().__init__(message)
-
-
-class CurationConfirmationMismatchError(PhsarBaseError):
-    """Raised when a curation confirmation string does not match the caller's
-    username. Guards applying a delete candidate, which destroys catalogue rows
-    and the user data cascading off them."""
-    status_code = 400
-
-    def __init__(self):
-        super().__init__("Confirmation did not match your username.")
 
 
 class BackupUploadTooLargeError(PhsarBaseError):

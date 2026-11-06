@@ -401,8 +401,8 @@ export interface GalaxyMap {
 
 /** One thing a neighbour shares with the anime asked about. */
 export interface GalaxyShared {
-	kind: 'synopsis' | 'genre' | 'studio' | 'source';
-	/** The genre, studio or source; null for the synopsis. */
+	kind: 'synopsis' | 'genre' | 'studio' | 'source' | 'format';
+	/** The genre, studio, source or format; null for the synopsis. */
 	name: string | null;
 	/** How often two anime on the map share it by chance, 0–1. */
 	chance: number;

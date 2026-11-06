@@ -19,7 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.job_versions import make_job
 from app.daos.galaxy_dao import GalaxyDAO
 from app.daos.job_dao import JobDAO
-from app.exceptions import GalaxyGroupNotFoundError, GalaxyStarNotFoundError
+from app.exceptions import (
+    ConfirmationMismatchError,
+    GalaxyGroupNotFoundError,
+    GalaxyStarNotFoundError,
+)
 from app.models.galaxy import GalaxyGroup
 from app.models.job import JobKind, JobStatus
 from app.schemas.admin_schema import JobEnqueuedResponse
@@ -117,6 +121,13 @@ async def enqueue_rebuild(
     return JobEnqueuedResponse(job_uuid=job.uuid)
 
 
+async def rebuild_for_admin(db: AsyncSession, *, confirm: str, username: str, user_id: int) -> JobEnqueuedResponse:
+    """An admin's rebuild, gated on their username; `ensure_map` enqueues past this check."""
+    if confirm != username:
+        raise ConfirmationMismatchError()
+    return await enqueue_rebuild(db, requested_by_user_id=user_id)
+
+
 async def ensure_map(
     db: AsyncSession, *, now: datetime, not_before_at: datetime | None = None,
 ) -> JobEnqueuedResponse | None:
@@ -178,7 +189,7 @@ async def neighbours(db: AsyncSession, anime_uuid: UUID) -> list[GalaxyNeighbour
     total, counts = await galaxy_dao.trait_counts(db)
     me = facts[star.anime_id]
 
-    def traits(kind: Literal["genre", "studio", "source"], mine: list[str], theirs: list[str]) -> list[GalaxySharedOut]:
+    def traits(kind: Literal["genre", "studio", "source", "format"], mine: list[str], theirs: list[str]) -> list[GalaxySharedOut]:
         return [GalaxySharedOut(kind=kind, name=n, chance=counts.get((kind, n), 0) / total) for n in set(mine) & set(theirs)]
 
     def synopsis(me: Row, other: Row) -> list[GalaxySharedOut]:
@@ -190,8 +201,9 @@ async def neighbours(db: AsyncSession, anime_uuid: UUID) -> list[GalaxyNeighbour
         percentile = max(0, bisect_right(percentiles, similarity) - 1)
         return [GalaxySharedOut(kind="synopsis", name=None, chance=(100 - percentile) / 100)]
 
-    def source(row: Row) -> list[str]:
-        return [row.source.value] if row.source is not None else []
+    def one(value: Any) -> list[str]:
+        """A single-valued trait as the none-or-one list `traits` intersects, like the list-valued ones."""
+        return [value.value] if value is not None else []
 
     out = []
     for anime_id in near:
@@ -200,7 +212,8 @@ async def neighbours(db: AsyncSession, anime_uuid: UUID) -> list[GalaxyNeighbour
             *synopsis(me, other),
             *traits("genre", me.genres or [], other.genres or []),
             *traits("studio", me.studios or [], other.studios or []),
-            *traits("source", source(me), source(other)),
+            *traits("source", one(me.source), one(other.source)),
+            *traits("format", one(me.format), one(other.format)),
         ]
         out.append(GalaxyNeighbourOut(
             **other._mapping,

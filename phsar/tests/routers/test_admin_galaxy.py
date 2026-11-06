@@ -6,7 +6,9 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import select
 
+from app.core.config import settings
 from app.daos.galaxy_dao import GalaxyDAO
+from app.daos.job_dao import JobDAO
 from app.models.galaxy import GalaxyGroup
 from app.models.job import Job, JobKind
 
@@ -24,12 +26,19 @@ async def sector(db_session) -> GalaxyGroup:
 
 
 async def test_rebuild_enqueues_a_job_for_the_admin(client, db_session, admin_auth_headers):
-    resp = await client.post(REBUILD, headers=admin_auth_headers)
+    resp = await client.post(REBUILD, json={"confirm": settings.ADMIN_USERNAME}, headers=admin_auth_headers)
     assert resp.status_code == 202, resp.text
     job = (await db_session.execute(select(Job).where(Job.uuid == resp.json()["job_uuid"]))).scalar_one()
     assert job.kind is JobKind.galaxy_rebuild
     # The admin's own job, so it shows in their bell.
     assert job.requested_by_user_id is not None
+
+
+async def test_rebuild_wants_the_admin_username_typed(client, db_session, admin_auth_headers):
+    before = await JobDAO().count_active_by_kind(db_session, JobKind.galaxy_rebuild)
+    resp = await client.post(REBUILD, json={"confirm": "not-the-admin"}, headers=admin_auth_headers)
+    assert resp.status_code == 400, resp.text
+    assert await JobDAO().count_active_by_kind(db_session, JobKind.galaxy_rebuild) == before
 
 
 async def test_only_an_admin_rebuilds_or_renames(client, user_auth_headers, sector):

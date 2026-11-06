@@ -19,12 +19,12 @@ from app.core.job_versions import make_job
 from app.core.maintenance import set_maintenance
 from app.daos.job_dao import JobDAO
 from app.exceptions import (
-    BackupConfirmationMismatchError,
     BackupDiskSpaceError,
     BackupIntegrityError,
     BackupNotFoundError,
     BackupRestoreError,
     BackupUploadTooLargeError,
+    ConfirmationMismatchError,
     DuplicateBackupError,
 )
 from app.models.job import JobKind, JobStatus
@@ -796,7 +796,7 @@ async def restore_backup(
     caller_user_id: int,
 ) -> BackupMetadata:
     if confirm != caller_username:
-        raise BackupConfirmationMismatchError()
+        raise ConfirmationMismatchError()
 
     target_path = get_backup_path(filename)
 

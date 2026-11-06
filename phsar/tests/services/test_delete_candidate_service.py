@@ -17,7 +17,7 @@ from sqlalchemy import select
 
 from app.daos.delete_candidate_dao import DeleteCandidateDAO
 from app.exceptions import (
-    CurationConfirmationMismatchError,
+    ConfirmationMismatchError,
     DeleteCandidateAlreadyResolvedError,
     DeleteCandidateNotFoundError,
 )
@@ -185,7 +185,7 @@ async def test_remove_rejects_a_confirm_that_is_not_the_username(db_session):
     media = (await _media_for(db_session, anime.id))[0]
     candidate = await _candidate_for(db_session, media)
 
-    with pytest.raises(CurationConfirmationMismatchError):
+    with pytest.raises(ConfirmationMismatchError):
         await remove(
             db_session, candidate.uuid,
             confirm="not-the-admin", username=ADMIN, blacklist=False,
