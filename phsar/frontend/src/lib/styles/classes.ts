@@ -17,6 +17,11 @@ export const pageGutter = `${mainGutter} max-xs:px-2`;
 // scrolls natively — a fixed overlay keeps a phone's address bar from collapsing.
 export const authScreen = `min-h-dvh bg-gradient-to-br from-[var(--auth-gradient-from)] via-[var(--auth-gradient-via)] to-[var(--auth-gradient-to)] flex justify-center items-start pt-20 pb-8 ${mainGutter}`;
 export const sectionSpacing = 'space-y-8';
+// The galaxy map's box, and its loading skeleton's. Never taller than a landscape phone shows
+// under the navbar's 4rem, so the map fits whole and leaves page to scroll by: a drag on the
+// map pans it. `galaxyMapFloor` is the 420px, for the map's script.
+export const galaxyMapHeight = 'h-[70vh] min-h-[min(420px,100svh_-_6rem)]';
+export const galaxyMapFloor = 420;
 // Tailwind's breakpoints as media queries, for what a class can't switch (a placeholder, a
 // chart's size). In rem, as Tailwind's own, so a larger default font moves both together.
 export const smUp = 'min-width: 40rem';

@@ -14,16 +14,18 @@
 	 */
 	import { onMount, untrack } from 'svelte';
 	import { cubicInOut } from 'svelte/easing';
+	import { MediaQuery } from 'svelte/reactivity';
 	import { Maximize2, Minus, Plus } from 'lucide-svelte';
 	import { getEcharts } from '$lib/echarts';
+	import * as cls from '$lib/styles/classes';
 	import { chartTooltipStyle } from '$lib/utils/chartTheme';
 	import { COVERAGE_STYLE, coverageTier } from '$lib/utils/ratingCoverage';
 	import { RATED_STATES } from '$lib/utils/search';
 	import { escapeHtml, formatScoreWithStep, resolveTitle } from '$lib/utils/formatString';
 	import {
 		COVER_ASPECT, COVER_SPAN, FOCUS_SPAN, LIT_NO_VALUE, MIN_SPAN, NO_VALUE, REGION_LABELS_BELOW, SCORE_RAMP,
-		blankColour, coverCrop, coverSize, evenWindows, fitWindow, groupView, inGroup, labelAnchors, labelCentre, mineColour,
-		nebulaPixels, ownTopPercents, packCovers, percentWindow, personal, rankShare, sectorHues, starFigures,
+		blankColour, coverCrop, coverSize, evenWindows, fitWindow, groupSizes, groupView, inGroup, labelAnchors, labelCentre, mineColour,
+		nebulaPixels, onMap, ownTopPercents, packCovers, percentWindow, personal, rankShare, sectorHues, spreadLabels, starFigures,
 		sameGroup, type GalaxyColour, type GroupRef, type Pick,
 		type MapWindow, type NebulaSource
 	} from '$lib/utils/galaxy';
@@ -60,8 +62,10 @@
 	let controls: HTMLDivElement;
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	let chart = $state<any>(null);
-	/** ECharts' own colour helpers, from the bundle the chart loads. */
+	/** ECharts' own colour helpers and text element, from the bundle the chart loads. */
 	let colours: { lerp(t: number, stops: string[]): string; parse(c: string): number[]; modifyAlpha(c: string, a: number): string };
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	let Text: any;
 	let win: MapWindow | null = null;
 	/** The visible share of the map's width, in percent. */
 	let span = $state(100);
@@ -71,7 +75,9 @@
 	let hues = $derived(sectorHues(map.sectors));
 	let sectorName = $derived(new Map(map.sectors.map((g) => [g.number, g.name])));
 	let regionName = $derived(new Map(map.regions.map((g) => [g.number, g.name])));
+	let sizes = $derived({ sector: groupSizes(map.stars, 'sector'), region: groupSizes(map.stars, 'region') });
 	let ownTop = $derived(ownTopPercents(scores));
+	const wide = new MediaQuery(cls.smUp);
 	const STATE_LABEL = new Map(RATED_STATES.anime.map((s) => [s.value, s.label]));
 	const SHEEN = COVERAGE_STYLE.all.hairline!;
 	const GOLD = '#f2c46d';
@@ -140,34 +146,102 @@
 		return { sector: labelAnchors(trained, 'sector'), region: labelAnchors(trained, 'region') };
 	});
 
+	/** Where colliding names hide (`labelInside`), ECharts keeps the one whose symbol has the
+	 *  larger area, so a name's invisible symbol is sized by its group, and the spotlit one's
+	 *  above every group's: the map always names what it is showing. Under a pixel, so it
+	 *  never catches the pointer. */
+	const rankSize = (n: number) => n / (map.stars.length + 2);
+
+	const groupsOf = (level: 'sector' | 'region') => (level === 'sector' ? map.sectors : map.regions);
+	// A group with no stars keeps the place the map gave it.
+	const anchorOf = (level: 'sector' | 'region', g: { number: number; x: number; y: number }) => anchors[level].get(g.number) ?? [g.x, g.y];
+
 	function labels(level: 'sector' | 'region') {
-		const groups = level === 'sector' ? map.sectors : map.regions;
 		const explored = personal(colour) ? ratedPer(level) : null;
-		return groups.map((g) => ({
-			// A group with no stars keeps the place the map gave it.
-			value: [...(anchors[level].get(g.number) ?? [g.x, g.y]), g.number],
-			name: g.name,
-			label: {
-				...(explored && !explored.has(g.number) ? { color: 'rgba(230,232,255,0.45)', fontStyle: 'italic' } : {}),
-				// The spotlit name glows, so it is clear which one the map is showing.
-				...(spot && sameGroup(spot, { level, number: g.number }) ? { textShadowColor: 'rgba(255,236,190,0.9)', textShadowBlur: 10 } : {})
-			}
-		}));
+		return groupsOf(level).map((g) => {
+			const spotlit = spot != null && sameGroup(spot, { level, number: g.number });
+			return {
+				value: [...anchorOf(level, g), g.number],
+				name: g.name,
+				symbolSize: rankSize(spotlit ? map.stars.length + 1 : (sizes[level].get(g.number) ?? 0)),
+				label: {
+					...(explored && !explored.has(g.number) ? { color: 'rgba(230,232,255,0.45)', fontStyle: 'italic' } : {}),
+					// The spotlit name glows, so it is clear which one the map is showing.
+					...(spotlit ? { textShadowColor: 'rgba(255,236,190,0.9)', textShadowBlur: 10 } : {})
+				}
+			};
+		});
 	}
 
 	type Box = { x: number; y: number; width: number; height: number };
 
-	/** A name anchored near the edge slides inward instead of running off the map:
-	 *  `labelCentre` places it from its anchor (`rect`, the zero-size symbol) and
-	 *  `labelRect`'s size. Names that collide shift apart rather than hide, so every group
-	 *  keeps its name. */
-	function labelInside(p: { rect: Box; labelRect: Box }) {
+	const LEVELS = ['sector', 'region'] as const;
+	/** Region names replace sector names past the region zoom. */
+	const nameShown = (level: 'sector' | 'region') => (level === 'region') === regionsShown;
+
+	/** A name's style per level, as drawn and as measured: a phone's are smaller and wrap sooner. */
+	const nameStyle = (level: 'sector' | 'region') => ({
+		overflow: 'break',
+		...(level === 'sector'
+			? { width: wide.current ? 200 : 130, fontSize: wide.current ? 13 : 12, fontWeight: 600 }
+			: { width: wide.current ? 160 : 110, fontSize: wide.current ? 11 : 10.5, fontWeight: 500 })
+	});
+	const NAME_OUTLINE = { color: '#070814', width: 3 };
+
+	/** A name's size as the map draws it, measured before ECharts lays it out. */
+	const nameSizes = new Map<string, [number, number]>();
+	function nameSize(level: 'sector' | 'region', text: string): [number, number] {
+		const key = `${level} ${wide.current} ${text}`;
+		let size = nameSizes.get(key);
+		if (!size) {
+			const style = { text, ...nameStyle(level), stroke: NAME_OUTLINE.color, lineWidth: NAME_OUTLINE.width };
+			const box = new Text({ style }).getBoundingRect();
+			size = [box.width, box.height];
+			nameSizes.set(key, size);
+		}
+		return size;
+	}
+
+	/** The shown names' heights for this view, by their index in the series: worked out once
+	 *  per layout pass, since every name in it shares the view. `render` clears it, as the
+	 *  names may change. */
+	let spreadView = '';
+	let spreadAt = new Map<number, number>();
+	function spreadNames(level: 'sector' | 'region'): Map<number, number> {
+		const box: [number, number] = [chart.getWidth(), chart.getHeight()];
+		const view = [level, ...axisRange(0), ...axisRange(1), ...box].join();
+		if (view === spreadView) return spreadAt;
+		spreadView = view;
+		const placed = groupsOf(level).flatMap((g, i) => {
+			const anchor = chart.convertToPixel({ gridIndex: 0 }, anchorOf(level, g));
+			// Anchored off the map, a name stays off it (`labelCentre`) and makes no room.
+			if (!onMap(anchor, box)) return [];
+			const [width, height] = nameSize(level, g.name);
+			const [x, y] = labelCentre(anchor, [width, height], box);
+			return [{ i, box: { x, y, width, height } }];
+		});
+		const ys = spreadLabels(placed.map((p) => p.box), box[1]);
+		spreadAt = new Map(placed.map((p, k) => [p.i, ys[k]]));
+		return spreadAt;
+	}
+
+	/** A name sits inside the map (`labelCentre`, from its anchor `rect`, the near-zero symbol,
+	 *  and `labelRect`'s size), and names that collide move apart as little as they can
+	 *  (`spreadNames`), so every group keeps its name. On a phone, narrow or turned sideways,
+	 *  that stacks names far from their clusters or runs out of height, so there a collision
+	 *  hides the smaller group's name instead (`rankSize`), as a map does; a zoom brings it back. */
+	function labelInside(level: 'sector' | 'region', p: { dataIndex: number; rect: Box; labelRect: Box }) {
 		const [x, y] = labelCentre(
 			[p.rect.x + p.rect.width / 2, p.rect.y + p.rect.height / 2],
 			[p.labelRect.width, p.labelRect.height],
 			[chart.getWidth(), chart.getHeight()]
 		);
-		return { moveOverlap: 'shiftY', x, y, align: 'center', verticalAlign: 'middle' };
+		const place = { x, y, align: 'center', verticalAlign: 'middle' };
+		// Under the map's floor only on a short screen (`cls.galaxyMapHeight`).
+		if (!wide.current || chart.getHeight() < cls.galaxyMapFloor) return { ...place, hideOverlap: true };
+		// The hidden level's names need no room.
+		if (!nameShown(level)) return place;
+		return { ...place, y: spreadNames(level).get(p.dataIndex) ?? y };
 	}
 
 	// ---- the nebula: one image per look, stretched with the zoom ---------------------------
@@ -398,6 +472,7 @@
 		g.fillRect(ax, ay, bx - ax, by - ay);
 		// The spotlit group bright and larger over the rest dimmed, in a hue clear of the
 		// view's gold, so all of a split group's parts show even while the view holds one.
+		// The picked anime takes the same hue, larger again, since it is a single dot.
 		const dot = (s: GalaxyStar, size: number) => {
 			const [x, y] = px(s.x, s.y);
 			g.fillRect(x - size / 2, y - size / 2, size, size);
@@ -406,6 +481,8 @@
 		for (const s of map.stars) dot(s, 1.2);
 		g.fillStyle = '#8fd3ff';
 		if (spot) for (const s of map.stars) if (inGroup(s, spot)) dot(s, 2.2);
+		const sel = starOf(selected);
+		if (sel != null) dot(map.stars[sel], 4);
 		g.strokeStyle = GOLD;
 		g.lineWidth = 1;
 		g.strokeRect(ax, ay, bx - ax, by - ay);
@@ -454,7 +531,7 @@
 	const NAME_LEVEL: Record<string, 'sector' | 'region' | undefined> = { sectors: 'sector', regions: 'region' };
 	/** A name spotlights its group on a hover and picks it on a click: the glow is its only
 	 *  highlight, and it has no card. */
-	const nameHover = { cursor: 'pointer', tooltip: { show: false }, emphasis: { disabled: true } };
+	const nameHover = { cursor: 'pointer', tooltip: { show: false }, emphasis: { disabled: true }, itemStyle: { color: 'transparent' } };
 
 	let regionsShown = $derived(span < REGION_LABELS_BELOW);
 
@@ -463,7 +540,8 @@
 		if (!chart || !win) return;
 		packView();
 		const [links, rings] = marks();
-		const labelStyle = { show: true, formatter: '{b}', color: 'rgba(246,247,255,0.95)', textBorderColor: '#070814', textBorderWidth: 3, overflow: 'break' };
+		const labelStyle = { formatter: '{b}', color: 'rgba(246,247,255,0.95)', textBorderColor: NAME_OUTLINE.color, textBorderWidth: NAME_OUTLINE.width };
+		spreadView = '';
 		chart.setOption({
 			animation: false,
 			grid: { left: 0, right: 0, top: 0, bottom: 0 },
@@ -512,16 +590,11 @@
 				},
 				{ ...rings, type: 'scatter', z: 5, emphasis: { disabled: true }, itemStyle: { color: 'transparent', borderColor: GOLD, borderWidth: 2 } },
 				// Names take the pointer for the spotlight; a star under one is reached by zooming.
-				{
-					id: 'sectors', type: 'scatter', symbolSize: 0, z: 7, data: labels('sector'), ...nameHover,
-					label: { ...labelStyle, width: 200, fontSize: 13, fontWeight: 600, opacity: regionsShown ? 0.28 : 1 },
-					labelLayout: labelInside
-				},
-				{
-					id: 'regions', type: 'scatter', symbolSize: 0, z: 7, data: labels('region'), ...nameHover,
-					label: { ...labelStyle, width: 160, show: regionsShown, fontSize: 11, fontWeight: 500 },
-					labelLayout: labelInside
-				}
+				...LEVELS.map((level) => ({
+					id: `${level}s`, type: 'scatter', z: 7, data: labels(level), ...nameHover,
+					label: { ...labelStyle, ...nameStyle(level), show: nameShown(level) },
+					labelLayout: (p: Parameters<typeof labelInside>[1]) => labelInside(level, p)
+				}))
 			]
 		});
 	}
@@ -545,6 +618,7 @@
 		getEcharts().then((echarts) => {
 			if (disposed) return;
 			colours = echarts.color;
+			Text = echarts.graphic.Text;
 			const instance = echarts.init(container);
 			instance.on('click', (q: { seriesId: string; value: number[] }) => {
 				const level = NAME_LEVEL[q.seriesId];
@@ -614,7 +688,7 @@
 	let rendered = false;
 	$effect(() => {
 		if (!chart) return;
-		void [map, colour, lit, states, ownTop, spotKey];
+		void [map, colour, lit, states, ownTop, spotKey, wide.current];
 		untrack(() => {
 			fit();
 			render(!rendered);
@@ -623,9 +697,9 @@
 		});
 	});
 
-	// The pick restyles only its marks and the covers, then moves the camera. On the first
-	// draw a star already picked (a return from its page) opens there at once rather than
-	// gliding in.
+	// The pick restyles only its marks and the covers; a new one moves the camera and redraws
+	// the overview, which marks it. On the first draw a star already picked (a return from
+	// its page) opens there at once rather than gliding in.
 	let shown: Pick | null = null;
 	let placed = false;
 	$effect(() => {
@@ -645,6 +719,7 @@
 					: whole();
 				if (placed) glide(to);
 				else view(to);
+				drawOverview();
 			}
 			placed = true;
 		});
@@ -659,17 +734,12 @@
 	// The label level swaps the moment a zoom crosses it, not when the zoom settles.
 	$effect(() => {
 		if (!chart) return;
-		chart.setOption({
-			series: [
-				{ id: 'sectors', label: { opacity: regionsShown ? 0.28 : 1 } },
-				{ id: 'regions', label: { show: regionsShown } }
-			]
-		});
+		chart.setOption({ series: LEVELS.map((level) => ({ id: `${level}s`, label: { show: nameShown(level) } })) });
 	});
 </script>
 
 
-<div class="galaxy-sky relative h-[70vh] min-h-[420px] overflow-hidden rounded-xl border border-white/10">
+<div class="galaxy-sky relative {cls.galaxyMapHeight} overflow-hidden rounded-xl border border-white/10">
 	<div bind:this={container} class="absolute inset-0"></div>
 	<div bind:this={controls} class="absolute top-3 right-3 flex flex-col gap-1.5">
 		<button type="button" class="map-button" aria-label="Zoom in" title="Zoom in" onclick={() => zoomBy(0.5)} disabled={span <= MIN_SPAN}>

@@ -339,16 +339,17 @@
                 </Select.Content>
             </Select.Root>
             <!-- The live schema revision, as the reference every row's own revision is
-                 compared against. `ml-auto` so it sits at the far right of the controls
-                 row. It comes from the response envelope (see the `load` comment) —
-                 null ONLY when the server could not read it, which no backup can fix. -->
+                 compared against. `ml-auto` on the Tooltip, whose span is the row's flex
+                 item, so it sits at the far right of the controls row. It comes from the
+                 response envelope (see the `load` comment) — null ONLY when the server could
+                 not read it, which no backup can fix. -->
             <Tooltip
-                class={cls.tooltipHint}
+                class="ml-auto text-xs text-muted-foreground {cls.tooltipHint}"
                 text={dbRevision
                     ? `The database is at Alembic revision ${dbRevision}. A dump on a different revision would roll the schema back if restored.`
                     : 'The live schema revision couldn’t be read from the database, so no dump can be confirmed against it.'}
             >
-                <span class="ml-auto text-xs text-muted-foreground" data-testid="live-db-revision">
+                <span data-testid="live-db-revision">
                     DB schema <code class="text-card-foreground">{dbRevision?.slice(0, 8) ?? 'unknown'}</code>
                 </span>
             </Tooltip>

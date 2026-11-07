@@ -32,7 +32,7 @@
 	import type { GalaxyMap as GalaxyMapData, GalaxyNeighbour, GalaxyShared, GalaxyStar } from '$lib/types/api';
 	import { formatScoreWithStep, formatShortDate, resolveTitle } from '$lib/utils/formatString';
 	import {
-		NO_VALUE, SCORE_RAMP, blankColour, dailyPicks, groupStats, mineColour, personal, starFigures,
+		NO_VALUE, SCORE_RAMP, blankColour, dailyPicks, groupSizes, groupStats, mineColour, personal, starFigures,
 		malScore, sameGroup, type GalaxyColour, type GroupRef, type Pick, type PickReason
 	} from '$lib/utils/galaxy';
 	import { COVERAGE_STYLE } from '$lib/utils/ratingCoverage';
@@ -82,12 +82,11 @@
 	const pickName = (p: Pick) => (typeof p === 'string' ? title(starByUuid.get(p)!) : groupName(p));
 	const samePick = (a: Pick, b: Pick) => (typeof a === 'string' || typeof b === 'string' ? a === b : sameGroup(a, b));
 	let stats = $derived(map && group ? groupStats(map.stars, group, $ratedScores) : null);
-	/** How many anime each region holds. */
-	let regionSize = $derived.by(() => {
-		const sizes = new Map<number, number>();
-		for (const s of map?.stars ?? []) sizes.set(s.region, (sizes.get(s.region) ?? 0) + 1);
-		return sizes;
-	});
+	let sectorSize = $derived(groupSizes(map?.stars ?? [], 'sector'));
+	let regionSize = $derived(groupSizes(map?.stars ?? [], 'region'));
+	/** With nothing picked the panel lists the sectors, biggest first: a phone has no hover
+	 *  to explore the map with, and its names hide where they collide. */
+	let sectorsBySize = $derived((map?.sectors ?? []).toSorted((a, b) => (sectorSize.get(b.number) ?? 0) - (sectorSize.get(a.number) ?? 0)));
 	let sectorRegions = $derived(group?.level === 'sector' ? (map?.regions ?? []).filter((r) => r.sector === group.number) : []);
 	/** A panel list's row, and its section heading. */
 	const ROW = 'flex w-full gap-2.5 rounded-lg p-1.5 text-left hover:bg-white/5 focus-visible:bg-white/5';
@@ -304,6 +303,20 @@
 	<button type="button" class="text-left text-white/85 hover:text-white hover:underline" onclick={() => pick(g)}>{groupName(g)}</button>
 {/snippet}
 
+{#snippet groupList(level: GroupRef['level'], groups: { number: number; name: string }[])}
+	{@const size = level === 'sector' ? sectorSize : regionSize}
+	<ul class="-mx-1.5 space-y-0.5">
+		{#each groups as g (g.number)}
+			<li>
+				<button type="button" class="{ROW} justify-between" onclick={() => pick({ level, number: g.number })}>
+					<span class="min-w-0">{g.name}</span>
+					<span class="shrink-0 text-xs text-white/50 tabular-nums">{size.get(g.number) ?? 0}</span>
+				</button>
+			</li>
+		{/each}
+	</ul>
+{/snippet}
+
 {#snippet cover(s: GalaxyStar | GalaxyNeighbour, size: string)}
 	{#if s.cover_image}
 		<img src={s.cover_image} alt="" loading="lazy" class="{size} shrink-0 rounded-md object-cover" />
@@ -315,7 +328,7 @@
 {#if error}
 	<p class={cls.noticeCard}>{error}</p>
 {:else if !map}
-	<div class="h-[70vh] min-h-[420px] animate-pulse rounded-xl border border-white/10 bg-white/5"></div>
+	<div class="{cls.galaxyMapHeight} animate-pulse rounded-xl border border-white/10 bg-white/5"></div>
 {:else if map.stars.length === 0}
 	<p class={cls.noticeCard}>The map has not been drawn yet. It appears after the first rebuild.</p>
 {:else}
@@ -542,16 +555,7 @@
 					</dl>
 					{#if sectorRegions.length}
 						<h3 class="mt-5 mb-1.5 {HEADING}">Regions</h3>
-						<ul class="-mx-1.5 space-y-0.5">
-							{#each sectorRegions as r (r.number)}
-								<li>
-									<button type="button" class="{ROW} justify-between" onclick={() => pick({ level: 'region', number: r.number })}>
-										<span class="min-w-0">{r.name}</span>
-										<span class="shrink-0 text-xs text-white/50 tabular-nums">{regionSize.get(r.number) ?? 0}</span>
-									</button>
-								</li>
-							{/each}
-						</ul>
+						{@render groupList('region', sectorRegions)}
 					{/if}
 					<h3 class="mt-5 mb-1.5 {HEADING}">Top anime</h3>
 					<ol class="-mx-1.5 space-y-0.5">
@@ -568,7 +572,9 @@
 						{/each}
 					</ol>
 				{:else}
-					<p class="text-white/70">Pick a star, or a sector's or region's name, to see it here.</p>
+					<p class="text-white/70">Pick a star or a name on the map, or a sector below.</p>
+					<h3 class="mt-4 mb-1.5 {HEADING}">Sectors</h3>
+					{@render groupList('sector', sectorsBySize)}
 				{/if}
 			</aside>
 		</div>

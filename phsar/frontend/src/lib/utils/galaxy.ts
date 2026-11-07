@@ -207,6 +207,10 @@ export interface GroupRef {
 export const inGroup = (s: GalaxyStar, g: GroupRef) => s[g.level] === g.number;
 export const sameGroup = (a: GroupRef, b: GroupRef) => a.level === b.level && a.number === b.number;
 
+/** How many anime each sector or region holds. */
+export const groupSizes = (stars: GalaxyStar[], level: GroupRef['level']) =>
+	new Map([...Map.groupBy(stars, (s) => s[level])].map(([number, members]) => [number, members.length]));
+
 /** What the galaxy's panel shows: an anime by its uuid, or a sector or region. */
 export type Pick = string | GroupRef;
 
@@ -284,6 +288,9 @@ export function groupStats(stars: GalaxyStar[], group: GroupRef, scores: Map<str
 	};
 }
 
+/** Whether a point (pixels) lies on a map of this size. */
+export const onMap = ([x, y]: [number, number], [width, height]: [number, number]) => x >= 0 && x <= width && y >= 0 && y <= height;
+
 /**
  * Where to centre a label (pixels) so it sits wholly inside the map, `pad` from the edge,
  * from its anchor and its size alone. Nothing it returned before feeds back in: ECharts
@@ -297,9 +304,63 @@ export function labelCentre(
 	[width, height]: [number, number],
 	pad = 8
 ): [number, number] {
-	if (ax < 0 || ax > width || ay < 0 || ay > height) return [ax, ay];
+	if (!onMap([ax, ay], [width, height])) return [ax, ay];
 	const keep = (v: number, size: number, box: number) => Math.max(pad + size / 2, Math.min(box - pad - size / 2, v));
 	return [keep(ax, w, width), keep(ay, h, height)];
+}
+
+/** A name's box, by its centre, in pixels. */
+interface LabelBox {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
+/**
+ * Each name's centre height, moved so no two whose boxes share any of their width overlap,
+ * kept `pad` inside a map `height` tall, and moved as little as possible: the least sum of
+ * squared shifts. Not ECharts' own `shiftY`, which treats every name as one column and only
+ * pushes down, so names side by side push each other off their clusters. Two names keep
+ * their order top to bottom, which keeps the problem convex; Hildreth's dual coordinate
+ * ascent solves it, exactly in the limit, and names taller together than the map stop at a cap.
+ */
+export function spreadLabels(boxes: LabelBox[], height: number, pad = 8, gap = 2): number[] {
+	const ys = boxes.map((b) => b.y);
+	const pairs: { above: number; below: number; apart: number; dual: number }[] = [];
+	boxes.forEach((a, i) =>
+		boxes.forEach((b, j) => {
+			if (j <= i || Math.abs(a.x - b.x) >= (a.width + b.width) / 2) return;
+			const [above, below] = a.y <= b.y ? [i, j] : [j, i];
+			pairs.push({ above, below, apart: (a.height + b.height) / 2 + gap, dual: 0 });
+		})
+	);
+	const edges = boxes.map((b) => ({ top: pad + b.height / 2, bottom: height - pad - b.height / 2, down: 0, up: 0 }));
+	let moved = 0;
+	const shift = (dual: number, short: number) => {
+		const step = Math.max(-dual, short);
+		moved = Math.max(moved, Math.abs(step));
+		return step;
+	};
+	for (let sweep = 0; sweep < 500; sweep++) {
+		moved = 0;
+		for (const p of pairs) {
+			const step = shift(p.dual, (p.apart - (ys[p.below] - ys[p.above])) / 2);
+			p.dual += step;
+			ys[p.below] += step;
+			ys[p.above] -= step;
+		}
+		edges.forEach((e, i) => {
+			const down = shift(e.down, e.top - ys[i]);
+			e.down += down;
+			ys[i] += down;
+			const up = shift(e.up, ys[i] - e.bottom);
+			e.up += up;
+			ys[i] -= up;
+		});
+		if (moved < 0.01) break;
+	}
+	return ys;
 }
 
 /** A cover's width over its height: the carousel tiles' `aspect-[2/3]`, so a cover looks the same on both. */

@@ -11,6 +11,7 @@ import {
 	groupView,
 	labelAnchors,
 	labelCentre,
+	spreadLabels,
 	nebulaPixels,
 	ownTopPercents,
 	packCovers,
@@ -197,6 +198,27 @@ describe('labelCentre', () => {
 	it('leaves a label anchored off the map where it is', () => {
 		expect(labelCentre([-40, 100], [100, 20], box)).toEqual([-40, 100]);
 		expect(labelCentre([200, 320], [100, 20], box)).toEqual([200, 320]);
+	});
+});
+
+describe('spreadLabels', () => {
+	const box = (x: number, y: number) => ({ x, y, width: 100, height: 10 });
+	// To a tenth of a pixel: the solver stops once a sweep moves nothing by a hundredth.
+	const spread = (...boxes: ReturnType<typeof box>[]) => spreadLabels(boxes, 300).map((y) => Math.round(y * 10) / 10);
+
+	it('leaves names side by side where they are', () => {
+		expect(spread(box(100, 150), box(200, 150))).toEqual([150, 150]);
+	});
+
+	it('moves names that share their width apart evenly, keeping their order', () => {
+		// 12 apart (heights 10, gap 2): the least squared shift splits it about their mean.
+		expect(spread(box(100, 150), box(150, 152))).toEqual([145, 157]);
+		expect(spread(box(100, 150), box(120, 150), box(140, 150))).toEqual([138, 150, 162]);
+	});
+
+	it('keeps a name inside the map, the one below taking the push', () => {
+		// The top name stops at pad 8 + half its height.
+		expect(spread(box(100, 5), box(100, 10))).toEqual([13, 25]);
 	});
 });
 
