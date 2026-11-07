@@ -190,7 +190,8 @@ destructive the verb sounds:
 
 The arm-in-place mechanism lives in `CompletionStatusCard` and
 `DismissedDecisionsSection`; copy whichever is closer rather than re-deriving the
-timer.
+timer. An admin's type-to-confirm is `UsernameConfirmDialog`, never a new copy: hand-written
+ones drift in their copy and in when Enter may confirm.
 
 **Arming a text button needs a width floor.** The icon-button case gets
 no-reflow for free — a fixed square swapping one glyph for another — but a

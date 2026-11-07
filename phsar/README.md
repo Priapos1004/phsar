@@ -291,6 +291,7 @@ phsar/
 │   │   │   │   ├── ToastHost.svelte
 │   │   │   │   ├── TokenExpiryDialog.svelte
 │   │   │   │   ├── Tooltip.svelte
+│   │   │   │   ├── UsernameConfirmDialog.svelte
 │   │   │   │   ├── VersionFooter.svelte
 │   │   │   │   ├── ViewToggle.svelte
 │   │   │   │   ├── WatchlistBookmarkButton.svelte
@@ -497,6 +498,7 @@ phsar/
 │   │       ├── themes.test.ts
 │   │       ├── toast.test.ts
 │   │       ├── tooltip.test.ts
+│   │       ├── username-confirm-dialog.test.ts
 │   │       ├── watchlist-ready.test.ts
 │   │       ├── watchlist-stats.test.ts
 │   │       └── watchlist-uniform-entries.test.ts

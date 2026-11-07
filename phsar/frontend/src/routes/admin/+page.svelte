@@ -15,7 +15,6 @@
 	import type { AdminTabKey } from '$lib/components/admin/types';
 
 	const getUserRole = getContext<() => string | null>('userRole');
-	const getUsername = getContext<() => string | null>('username');
 
 	const TABS: { key: AdminTabKey; label: string }[] = [
 		{ key: 'overview', label: 'Overview' },
@@ -69,12 +68,12 @@
 	<div class:hidden={active !== 'curation'} class="space-y-6">
 		<MergeCandidatesCard />
 		<SplitCandidatesCard />
-		<DeleteCandidatesCard currentUsername={getUsername() ?? ''} />
+		<DeleteCandidatesCard />
 	</div>
 	<div class:hidden={active !== 'completion'}>
 		<CompletionStatusCard />
 	</div>
 	<div class:hidden={active !== 'backups'}>
-		<BackupsCard currentUsername={getUsername() ?? ''} />
+		<BackupsCard />
 	</div>
 </div>

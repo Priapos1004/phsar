@@ -63,7 +63,7 @@ describe('BackupsCard', () => {
 		const { optimisticJobs } = await import('../lib/stores/jobs');
 		const { activeToast } = await import('../lib/stores/toast');
 
-		render(BackupsCard, { props: { currentUsername: 'admin' } });
+		render(BackupsCard);
 		await vi.waitFor(() => expect(screen.getByText('Create backup')).toBeInTheDocument());
 
 		await fireEvent.click(screen.getByText('Create backup'));
@@ -103,7 +103,7 @@ describe('BackupsCard', () => {
 		});
 		globalThis.fetch = fetchMock as typeof fetch;
 
-		render(BackupsCard, { props: { currentUsername: 'admin' } });
+		render(BackupsCard);
 		// Initial GET fires from onMount — let the microtask queue drain so the
 		// component reaches its idle state before the first click.
 		await vi.runOnlyPendingTimersAsync();
@@ -146,7 +146,7 @@ describe('BackupsCard', () => {
 		const { jobsRefresh } = await import('../lib/stores/jobs');
 		const baseline = get(jobsRefresh);
 
-		render(BackupsCard, { props: { currentUsername: 'admin' } });
+		render(BackupsCard);
 		const button = await vi.waitFor(() => screen.getByText('Create backup'));
 		await fireEvent.click(button);
 
@@ -183,7 +183,7 @@ describe('BackupsCard', () => {
 			jsonResponse(backupList([newest, middle, older])),
 		) as typeof fetch;
 
-		render(BackupsCard, { props: { currentUsername: 'admin' } });
+		render(BackupsCard);
 
 		// Wait for the list to render. The order of `<code>` elements in the
 		// DOM mirrors the visual top-to-bottom order of dump rows.
@@ -216,7 +216,7 @@ describe('BackupsCard', () => {
 			jsonResponse(backupList([newest, older])),
 		) as typeof fetch;
 
-		render(BackupsCard, { props: { currentUsername: 'admin' } });
+		render(BackupsCard);
 		await vi.waitFor(() => {
 			expect(screen.getByText(older.filename)).toBeInTheDocument();
 		});
@@ -235,7 +235,7 @@ describe('BackupsCard', () => {
 				? jsonResponse(backupList(rows, dbRevision))
 				: jsonResponse({}),
 		) as unknown as typeof fetch;
-		render(BackupsCard, { props: { currentUsername: 'admin' } });
+		render(BackupsCard);
 		await vi.waitFor(() => expect(screen.getByText(rows[0].filename)).toBeInTheDocument());
 	}
 
@@ -296,7 +296,7 @@ describe('BackupsCard', () => {
 		});
 		globalThis.fetch = fetchMock as typeof fetch;
 
-		render(BackupsCard, { props: { currentUsername: 'admin' } });
+		render(BackupsCard);
 		// Initial onMount fetch.
 		await vi.waitFor(() => expect(getCount).toBe(1));
 

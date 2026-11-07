@@ -3,12 +3,11 @@
 	import { api, ApiError } from '$lib/api';
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
-	import * as Dialog from '$lib/components/ui/dialog';
 	import { Badge } from '$lib/components/ui/badge';
-	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import Tooltip from '$lib/components/Tooltip.svelte';
+	import UsernameConfirmDialog from '$lib/components/UsernameConfirmDialog.svelte';
 	import DismissedDecisionsSection from '$lib/components/admin/DismissedDecisionsSection.svelte';
 	import { Trash2, X, RefreshCw, Search, AlertTriangle } from 'lucide-svelte';
 	import { bumpCatalogueChanged, bumpCurationRefresh } from '$lib/stores/jobs';
@@ -16,8 +15,6 @@
 	import { formatMediaType, formatShortDate, resolveTitle } from '$lib/utils/formatString';
 	import { userSettings } from '$lib/stores/userSettings';
 	import type { DeleteBackfillResult, DeleteCandidateListItem } from '$lib/types/api';
-
-	let { currentUsername = '' }: { currentUsername?: string } = $props();
 
 	let nameLanguage = $derived($userSettings?.name_language ?? 'english');
 
@@ -41,7 +38,6 @@
 	// restore itself, so the same gate.
 	let removeUuid = $state<string | null>(null);
 	let removeBlacklist = $state(false);
-	let confirmInput = $state('');
 	let removing = $state(false);
 	let removeError = $state('');
 
@@ -114,18 +110,17 @@
 		// shouldn't have means the entry can never return, and there is no UI to
 		// undo a blacklist.
 		removeBlacklist = false;
-		confirmInput = '';
 		removeError = '';
 	}
 
-	async function handleRemove() {
-		if (!removeUuid || confirmInput !== currentUsername) return;
+	async function handleRemove(confirm: string) {
+		if (!removeUuid) return;
 		const uuid = removeUuid;
 		removing = true;
 		removeError = '';
 		try {
 			await api.post(`/admin/delete-candidates/${uuid}/remove`, {
-				confirm: confirmInput,
+				confirm,
 				blacklist: removeBlacklist,
 			});
 			removeUuid = null;
@@ -334,86 +329,46 @@
 	</Card.Content>
 </Card.Root>
 
-<Dialog.Root
+<UsernameConfirmDialog
 	open={removeUuid !== null}
 	onOpenChange={(open) => {
 		if (!open) removeUuid = null;
 	}}
+	title="Delete from catalog"
+	action={removeBlacklist ? 'Delete + block' : 'Delete'}
+	busyAction="Deleting…"
+	busy={removing}
+	error={removeError}
+	onConfirm={handleRemove}
 >
-	<Dialog.Content class="sm:max-w-md">
-		<Dialog.Header>
-			<Dialog.Title class="text-destructive">Delete from catalog</Dialog.Title>
-			<Dialog.Description>
-				{#if removeTarget}
-					This permanently deletes
-					<strong
-						>{resolveTitle(
-							removeTarget.title,
-							removeTarget.name_eng,
-							removeTarget.name_jap,
-							nameLanguage,
-						)}</strong
-					>
-					{#if removeTarget.anime_media_count <= 1}
-						and its anime row{/if}. There is no undo short of restoring a backup.
-				{/if}
-			</Dialog.Description>
-		</Dialog.Header>
-
+	{#snippet description()}
 		{#if removeTarget}
-			{@const userData = userDataLine(removeTarget)}
-			{#if userData}
-				<p class="text-sm font-medium text-destructive flex items-start gap-1.5">
-					<AlertTriangle class="size-4 shrink-0 mt-0.5" />
-					<span>This also deletes {userData}, including watch history.</span>
-				</p>
-			{/if}
+			This permanently deletes
+			<strong>{resolveTitle(removeTarget.title, removeTarget.name_eng, removeTarget.name_jap, nameLanguage)}</strong>
+			{#if removeTarget.anime_media_count <= 1}
+				and its anime row{/if}. There is no undo short of restoring a backup.
 		{/if}
+	{/snippet}
 
-		<div class="flex items-start gap-2">
-			<Checkbox id="delete-blacklist" bind:checked={removeBlacklist} disabled={removing} />
-			<div class="min-w-0">
-				<Label for="delete-blacklist" class="text-sm">Block it from being re-added</Label>
-				<p class="text-xs text-muted-foreground">
-					Records the MAL id so no sweep, probe or scrape brings it back. Off by default —
-					there is no undo for a block, whereas a re-added entry just comes back here.
-					Tick it for something that should never return.
-				</p>
-			</div>
-		</div>
-
-		<div class="space-y-1.5 min-w-0">
-			<!-- One span: Label is a flex row, and bare text around the <strong> would be
-			     three flex items, wrapping side by side as columns on a phone. -->
-			<Label for="delete-confirm" class="text-sm">
-				<span>Type your admin username (<strong>{currentUsername}</strong>) to confirm.</span>
-			</Label>
-			<Input
-				id="delete-confirm"
-				bind:value={confirmInput}
-				placeholder={currentUsername}
-				disabled={!currentUsername || removing}
-				onkeydown={(e) => {
-					if (e.key === 'Enter' && confirmInput === currentUsername) handleRemove();
-				}}
-			/>
-		</div>
-
-		{#if removeError}
-			<p class="text-destructive text-sm">{removeError}</p>
+	{#if removeTarget}
+		{@const userData = userDataLine(removeTarget)}
+		{#if userData}
+			<p class="text-sm font-medium text-destructive flex items-start gap-1.5">
+				<AlertTriangle class="size-4 shrink-0 mt-0.5" />
+				<span>This also deletes {userData}, including watch history.</span>
+			</p>
 		{/if}
+	{/if}
 
-		<Dialog.Footer>
-			<Button variant="secondary" onclick={() => (removeUuid = null)} disabled={removing}>
-				Cancel
-			</Button>
-			<Button
-				variant="destructive"
-				onclick={handleRemove}
-				disabled={removing || !currentUsername || confirmInput !== currentUsername}
-			>
-				{removing ? 'Deleting…' : removeBlacklist ? 'Delete + block' : 'Delete'}
-			</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+	<div class="flex items-start gap-2">
+		<Checkbox id="delete-blacklist" bind:checked={removeBlacklist} disabled={removing} />
+		<div class="min-w-0">
+			<Label for="delete-blacklist" class="text-sm">Block it from being re-added</Label>
+			<p class="text-xs text-muted-foreground">
+				Records the MAL id so no sweep, probe or scrape brings it back. Off by default —
+				there is no undo for a block, whereas a re-added entry just comes back here.
+				Tick it for something that should never return.
+			</p>
+		</div>
+	</div>
+</UsernameConfirmDialog>
