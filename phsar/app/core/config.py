@@ -79,10 +79,10 @@ class Settings(BaseSettings):
     # runaway scripts. Counts all statuses — failed jobs still cost MAL
     # API quota and admin attention.
     JOBS_DAILY_LIMIT: int = 50
-    # Bounds the nightly update_sweep batch. v0.14.8 made this a MEDIA count
-    # (was anime): ~500 media ≈ a 6–7 min maintenance window at MAL's rate.
-    # Only binds during the post-migration herd + stabilizing bursts; steady
-    # state finishes in seconds.
+    # Bounds the nightly update_sweep batch, in media: ~500 ≈ a 6–7 min
+    # maintenance window at MAL's rate. What it cuts spills into the following
+    # nights, the longest-unchecked first; the Overview's sweep card shows the
+    # nightly load against it.
     JOBS_SWEEP_MAX_PER_RUN: int = 500
     # Circuit breaker for a total MAL outage during update_sweep. Each anime
     # burns the full tenacity retry budget (~30s on fast 504s, up to ~11 min

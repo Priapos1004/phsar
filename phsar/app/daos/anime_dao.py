@@ -43,13 +43,16 @@ logger = logging.getLogger(__name__)
 # Tier 3 of the nightly sweep: only weekly-probe franchises whose latest
 # main media aired within this window. Older main-only franchises fall
 # back to the long-tail safety nets (tier 4, or tier 5 once aged out).
-SWEEP_RECENT_MAIN_YEARS = 5
+# Longer than a year: MAL's data settles within the first, but this
+# window also paces the relations probe (docs/features/jobs.md, "Step 2"),
+# and sequels still get announced for franchises two to three years old.
+SWEEP_RECENT_MAIN_YEARS = 3
 # ...and refreshes them on this cadence.
 SWEEP_WEEKLY_DAYS = 7
 
-# Long-tail border (v0.14.8). Media not airing / stabilizing / recent-main are
+# Long-tail border. Media not airing / stabilizing / recent-main are
 # refreshed only on this safety net. Shared by the media-level selection atoms
-# AND the (now count-only) anime atoms so there is exactly one source of truth.
+# AND the count-only anime atoms so there is exactly one source of truth.
 SWEEP_LONG_TAIL_DAYS = 90
 
 # Tier 5: media whose premiere is this far in the past have effectively frozen MAL

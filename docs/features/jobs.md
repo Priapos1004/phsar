@@ -108,7 +108,7 @@ test on the media row plus its freshness sidecar:
 |---|---|
 | airing now | `airing_status = 'Currently Airing'`, minus media awaiting a delete decision |
 | stabilizing | `stable_check_count < SWEEP_STABILIZE_THRESHOLD` (3) |
-| recent main | a main entry with a recent premiere, weekly |
+| recent main | a main entry premiered within `SWEEP_RECENT_MAIN_YEARS` (3), weekly |
 | long tail | everything else, on a per-row window |
 
 The airing tier carries an exclusion the others do not need: it has no staleness term
@@ -141,7 +141,9 @@ refreshed.
 **Step 2** probes relations for anime that are settled (not airing, stable count
 past `SWEEP_STABILIZE_THRESHOLD`, last probe ≥ 7 days ago) and attaches whatever
 is discovered. The 7-day floor keeps probing roughly weekly even though
-media-level selection can re-touch an anime on consecutive nights.
+media-level selection can re-touch an anime on consecutive nights. Only anime with a
+media due that night reach step 2, so the recent-main window also sets how soon a
+sequel to a settled franchise is found.
 
 Each anime commits twice, inside its own try/except: step 1 always commits (so a
 crash mid-sweep keeps the diff work, and one bad MAL response fails only that

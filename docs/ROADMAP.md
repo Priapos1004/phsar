@@ -288,7 +288,7 @@ Foundation for any destructive/long-running periodic job. Consumed by both the d
 - `update_sweep` dispatcher tier-selects due anime via a 4-tier OR query (LEFT JOIN against `anime_freshness`):
   - Tier 1: any media currently airing → always due
   - Tier 2: `stable_check_count < 3` → still stabilizing
-  - Tier 3: last-checked > 7 days AND has a main media whose `aired_from` is within `SWEEP_RECENT_MAIN_YEARS = 5` years (refined from "any main media exists" so dormant main-only franchises don't ride weekly cycles)
+  - Tier 3: last-checked > 7 days AND has a main media whose `aired_from` is within `SWEEP_RECENT_MAIN_YEARS` (refined from "any main media exists" so dormant main-only franchises don't ride weekly cycles)
   - Tier 4: last-checked > 180 days → long-tail safety net
 - For each due anime: refreshes child media via `/anime/{id}/full`, diffs `score`/`scored_by`/`episodes`/`airing_status`/`aired_to`. **Per-anime commit + per-anime try/except** — a worker crash mid-sweep preserves earlier successes; a single bad MAL response fails *that* anime only.
 - Score and scored_by are bundled through `_weighted_score(score, scored_by) = score * log10(scored_by + 1)` and only count as stability-resetting when `abs(new − old) >= 0.05`. Without this, every popular anime (One Piece, BNHA, Naruto:Shippuuden) would never stabilize because daily vote drift moved `scored_by`. New values are written through to the DB regardless; the threshold gates only the stability *signal*.
@@ -640,7 +640,7 @@ length target.
 | **v0.16.2** | ✓ Browse + News | Carousel definitions in the DB with a resolver and seeded core rows; the Browse page and its News tab; a see-all page, also reached from search. JWT signing and verification move from python-jose to PyJWT. |
 | **v0.16.3** | ✓ Home + Discover | Home rows Lucky find and New to the catalogue replace two placeholders; seasonal hero art (Halloween); a Discover tab whose wheel draws each user one themed mood a day, cut to with a full-screen reveal; a To-anime link on the media page; paging arrows on every sideways row. |
 | **v0.16.4** | ✓ Responsive pass | Every page on a phone and at the widest layout; an In / Not in toggle on the watchlist's Lists filter; tooltips that open on a tap, and ⓘ explanations on the watchlist filters and settings; search results kept across a detail detour; the sweep card's nightly load against its cap; Future Shock's reveal is a UFO that beams its title down; genre filter groups (Any/All, Without, OR or AND between groups), which keep a Discover mood's rows from repeating each other. |
-| **v0.16.5** | Galaxy | Browse's parked Galaxy tab (Feature 5b): a 2D map of the catalogue. Search moves to multilingual-e5-small, which finds Japanese and translated queries far better. Search and the map filter by your own score and your top N%. |
+| **v0.16.5** | Galaxy | Browse's parked Galaxy tab (Feature 5b): a 2D map of the catalogue. Search moves to multilingual-e5-small, which finds Japanese and translated queries far better. Search and the map filter by your own score and your top N%. The weekly sweep cycle narrows to three years. |
 | **v0.16.6** | Recommended | Home's Recommended row, from the user's own algorithm. |
 | **v0.16.7** | Guest accounts | A rework of the guest account logic. |
 | **v0.16.8** | Get-started page | The onboarding page (Feature 10). |
