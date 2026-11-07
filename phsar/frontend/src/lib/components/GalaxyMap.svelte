@@ -15,8 +15,9 @@
 	import { onMount, untrack } from 'svelte';
 	import { cubicInOut } from 'svelte/easing';
 	import { MediaQuery } from 'svelte/reactivity';
-	import { Maximize2, Minus, Plus } from 'lucide-svelte';
+	import { Captions, CaptionsOff, Maximize2, Minus, Plus } from 'lucide-svelte';
 	import { getEcharts } from '$lib/echarts';
+	import Tooltip from '$lib/components/Tooltip.svelte';
 	import * as cls from '$lib/styles/classes';
 	import { chartTooltipStyle } from '$lib/utils/chartTheme';
 	import { COVERAGE_STYLE, coverageTier } from '$lib/utils/ratingCoverage';
@@ -25,7 +26,7 @@
 	import {
 		COVER_ASPECT, COVER_SPAN, FOCUS_SPAN, LIT_NO_VALUE, MIN_SPAN, NO_VALUE, REGION_LABELS_BELOW, SCORE_RAMP,
 		blankColour, coverCrop, coverSize, evenWindows, fitWindow, groupSizes, groupView, inGroup, labelAnchors, labelCentre, mineColour,
-		nebulaPixels, onMap, ownTopPercents, packCovers, percentWindow, personal, rankShare, sectorHues, spreadLabels, starFigures,
+		nebulaPixels, onMap, packCovers, percentWindow, personal, rankShare, sectorHues, spreadLabels, starFigures,
 		sameGroup, type GalaxyColour, type GroupRef, type Pick,
 		type MapWindow, type NebulaSource
 	} from '$lib/utils/galaxy';
@@ -40,8 +41,9 @@
 		/** The anime the filters keep, lit while the rest dim; null with no filters. */
 		lit: Set<string> | null;
 		states: Map<string, State>;
-		/** The viewer's score per rated anime, keyed like `states`. */
+		/** The viewer's score per rated anime, and its "Top N%" among theirs, keyed like `states`. */
 		scores: Map<string, number>;
+		ownTop: Map<string, number>;
 		/** The viewer's rating step, which their scores show at. */
 		ratingStep: number;
 		/** The picked anime, or the picked sector or region; at most one is set. */
@@ -51,11 +53,14 @@
 		/** The neighbour the panel's pointer is on, whose link stands out. */
 		hovered: string | null;
 		nameLanguage: 'english' | 'japanese' | 'romaji';
+		/** Whether the groups' names show; hidden, they leave every star to the pointer. */
+		names: boolean;
+		onNames: (show: boolean) => void;
 		/** A star or a name clicked. */
 		onPick: (pick: Pick) => void;
 	}
 
-	let { map, colour, lit, states, scores, ratingStep, selected, group, neighbours, hovered, nameLanguage, onPick }: Props = $props();
+	let { map, colour, lit, states, scores, ownTop, ratingStep, selected, group, neighbours, hovered, nameLanguage, names, onNames, onPick }: Props = $props();
 
 	let container: HTMLDivElement;
 	let overview: HTMLCanvasElement;
@@ -76,7 +81,6 @@
 	let sectorName = $derived(new Map(map.sectors.map((g) => [g.number, g.name])));
 	let regionName = $derived(new Map(map.regions.map((g) => [g.number, g.name])));
 	let sizes = $derived({ sector: groupSizes(map.stars, 'sector'), region: groupSizes(map.stars, 'region') });
-	let ownTop = $derived(ownTopPercents(scores));
 	const wide = new MediaQuery(cls.smUp);
 	const STATE_LABEL = new Map(RATED_STATES.anime.map((s) => [s.value, s.label]));
 	const SHEEN = COVERAGE_STYLE.all.hairline!;
@@ -177,7 +181,7 @@
 
 	const LEVELS = ['sector', 'region'] as const;
 	/** Region names replace sector names past the region zoom. */
-	const nameShown = (level: 'sector' | 'region') => (level === 'region') === regionsShown;
+	const nameShown = (level: 'sector' | 'region') => names && (level === 'region') === regionsShown;
 
 	/** A name's style per level, as drawn and as measured: a phone's are smaller and wrap sooner. */
 	const nameStyle = (level: 'sector' | 'region') => ({
@@ -271,7 +275,7 @@
 	/** Only called while drawing, which needs `win`. */
 	function nebula(): { image: HTMLCanvasElement; over: MapWindow } {
 		// With filters on, only the lit stars glow, in the colouring's own light. Every image
-		// goes stale with the filters, the personal ones with the viewer's ratings (`scores`
+		// goes stale with the filters, the personal ones with the viewer's ratings (`ownTop`
 		// arrives in the same response as `states`).
 		if (lit !== nebulaLit) {
 			nebulaLit = lit;
@@ -591,7 +595,7 @@
 				{ ...rings, type: 'scatter', z: 5, emphasis: { disabled: true }, itemStyle: { color: 'transparent', borderColor: GOLD, borderWidth: 2 } },
 				// Names take the pointer for the spotlight; a star under one is reached by zooming.
 				...LEVELS.map((level) => ({
-					id: `${level}s`, type: 'scatter', z: 7, data: labels(level), ...nameHover,
+					id: `${level}s`, type: 'scatter', z: 7, silent: !names, data: labels(level), ...nameHover,
 					label: { ...labelStyle, ...nameStyle(level), show: nameShown(level) },
 					labelLayout: (p: Parameters<typeof labelInside>[1]) => labelInside(level, p)
 				}))
@@ -731,26 +735,33 @@
 		if (chart) untrack(() => chart.setOption({ series: marks() }));
 	});
 
-	// The label level swaps the moment a zoom crosses it, not when the zoom settles.
+	// The label level swaps the moment a zoom crosses it, not when the zoom settles; the names
+	// button only restyles the names too.
 	$effect(() => {
 		if (!chart) return;
-		chart.setOption({ series: LEVELS.map((level) => ({ id: `${level}s`, label: { show: nameShown(level) } })) });
+		chart.setOption({ series: LEVELS.map((level) => ({ id: `${level}s`, silent: !names, label: { show: nameShown(level) } })) });
 	});
 </script>
 
 
+<!-- Its tip opens to the left: the buttons sit at the map's right edge. -->
+{#snippet mapButton(tip: string, label: string, onclick: () => void, disabled: boolean, Icon: typeof Plus, pressed?: boolean)}
+	<Tooltip text={tip} side="left">
+		{#snippet trigger(props)}
+			<button {...props} type="button" class="map-button" aria-label={label} aria-pressed={pressed} {onclick} {disabled}>
+				<Icon class="size-4" />
+			</button>
+		{/snippet}
+	</Tooltip>
+{/snippet}
+
 <div class="galaxy-sky relative {cls.galaxyMapHeight} overflow-hidden rounded-xl border border-white/10">
 	<div bind:this={container} class="absolute inset-0"></div>
 	<div bind:this={controls} class="absolute top-3 right-3 flex flex-col gap-1.5">
-		<button type="button" class="map-button" aria-label="Zoom in" title="Zoom in" onclick={() => zoomBy(0.5)} disabled={span <= MIN_SPAN}>
-			<Plus class="size-4" />
-		</button>
-		<button type="button" class="map-button" aria-label="Zoom out" title="Zoom out" onclick={() => zoomBy(2)} disabled={span >= 100}>
-			<Minus class="size-4" />
-		</button>
-		<button type="button" class="map-button" aria-label="Show the whole map" title="Whole map" onclick={() => glide(whole())} disabled={span >= 100}>
-			<Maximize2 class="size-4" />
-		</button>
+		{@render mapButton('Zoom in', 'Zoom in', () => zoomBy(0.5), span <= MIN_SPAN, Plus)}
+		{@render mapButton('Zoom out', 'Zoom out', () => zoomBy(2), span >= 100, Minus)}
+		{@render mapButton('Whole map', 'Show the whole map', () => glide(whole()), span >= 100, Maximize2)}
+		{@render mapButton(names ? 'Hide names' : 'Show names', 'Sector and region names', () => onNames(!names), false, names ? Captions : CaptionsOff, names)}
 	</div>
 	<canvas
 		bind:this={overview}

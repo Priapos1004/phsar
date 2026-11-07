@@ -16,17 +16,6 @@ export type GalaxyColour = 'sector' | 'score' | 'mine' | 'own';
  *  the map recedes under them. */
 export const personal = (colour: GalaxyColour) => colour === 'mine' || colour === 'own';
 
-/**
- * The viewer's own "Top N%" for each anime they rated, among what they rated, rounded as
- * the search rounds its badge (`top_percent_ranking`).
- */
-export function ownTopPercents(scores: Map<string, number>): Map<string, number> {
-	const sorted = [...scores.values()].sort((a, b) => b - a);
-	const rank = new Map<number, number>();
-	sorted.forEach((score, i) => rank.has(score) || rank.set(score, i + 1));
-	return new Map([...scores].map(([uuid, score]) => [uuid, Math.ceil((rank.get(score)! * 100) / sorted.length)]));
-}
-
 /** Neighbouring sectors never share one; the names carry identity, the hue only separates. */
 const SECTOR_HUES = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#2f9e44', '#9085e9', '#e66767'];
 /**
@@ -71,38 +60,37 @@ function hash(text: string): number {
 
 /**
  * The suggestions an empty Find box shows on `day`: `PERSONAL_PICKS` of the viewer's
- * favourites (their own Top 10%, as `ownTopPercents` ranks it, never fewer than their best
- * `PERSONAL_PICKS`), as many from their watchlist (highest priority first), and the
+ * favourites (their own Top 10%, `ownTop` as `/ratings/coverage` ranks it, never fewer than
+ * their best `PERSONAL_PICKS`), as many from their watchlist (highest priority first), and the
  * catalogue's top 5% of anime they have neither rated nor listed for the rest. Within a pool
  * the day picks, so they hold all day and change the next.
  */
 export function dailyPicks(
 	stars: GalaxyStar[],
-	scores: Map<string, number>,
+	ownTop: Map<string, number>,
 	watchPriority: Map<string, number>,
 	day: string
 ): { star: GalaxyStar; why: PickReason }[] {
 	const byDay = (a: GalaxyStar, b: GalaxyStar) => hash(day + a.anime_uuid) - hash(day + b.anime_uuid);
-	const score = (s: GalaxyStar) => scores.get(s.anime_uuid)!;
+	const top = (s: GalaxyStar) => ownTop.get(s.anime_uuid)!;
 	const priority = (s: GalaxyStar) => watchPriority.get(s.anime_uuid)!;
-	const ownTop = ownTopPercents(scores);
-	const rated = stars.filter((s) => scores.has(s.anime_uuid)).sort((a, b) => score(b) - score(a));
+	const rated = stars.filter((s) => ownTop.has(s.anime_uuid)).sort((a, b) => top(a) - top(b));
 	const favourites = rated
-		.filter((s, k) => k < PERSONAL_PICKS || ownTop.get(s.anime_uuid)! <= 10)
+		.filter((s, k) => k < PERSONAL_PICKS || top(s) <= 10)
 		.sort(byDay)
 		.slice(0, PERSONAL_PICKS);
 	const listed = stars
 		.filter((s) => watchPriority.has(s.anime_uuid) && !favourites.includes(s))
 		.sort((a, b) => priority(a) - priority(b) || byDay(a, b))
 		.slice(0, PERSONAL_PICKS);
-	const top = stars
-		.filter((s) => s.top_percent != null && s.top_percent <= 5 && !scores.has(s.anime_uuid) && !watchPriority.has(s.anime_uuid))
+	const malTop = stars
+		.filter((s) => s.top_percent != null && s.top_percent <= 5 && !ownTop.has(s.anime_uuid) && !watchPriority.has(s.anime_uuid))
 		.sort(byDay)
 		.slice(0, PICKS - favourites.length - listed.length);
 	return [
 		...favourites.map((star) => ({ star, why: 'favourite' as const })),
 		...listed.map((star) => ({ star, why: 'watchlist' as const })),
-		...top.map((star) => ({ star, why: 'top' as const }))
+		...malTop.map((star) => ({ star, why: 'top' as const }))
 	];
 }
 

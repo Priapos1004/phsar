@@ -13,7 +13,6 @@ import {
 	labelCentre,
 	spreadLabels,
 	nebulaPixels,
-	ownTopPercents,
 	packCovers,
 	sectorHues,
 	type MapWindow
@@ -80,8 +79,9 @@ describe('dailyPicks', () => {
 	// 100 stars, two to each Top N%: Top 5% holds the first ten.
 	const stars = Array.from({ length: 100 }, (_, i) => ({ anime_uuid: `a${i}`, top_percent: Math.ceil((i + 1) / 2) }) as GalaxyStar);
 	const uuids = (picks: ReturnType<typeof dailyPicks>) => picks.map((p) => p.star.anime_uuid);
-	// Rated: twenty anime, a50 the best and a51 next; a3, in the top 5%, the worst.
-	const scores = new Map([...Array.from({ length: 19 }, (_, k) => [`a${50 + k}`, 9 - k * 0.1] as const), ['a3', 2] as const]);
+	// Rated: twenty anime by your own Top N%, a50 the best and a51 next; a3, in MAL's top 5%,
+	// your worst.
+	const scores = new Map([...Array.from({ length: 19 }, (_, k) => [`a${50 + k}`, (k + 1) * 5] as const), ['a3', 100] as const]);
 	// Listed: two at priority 1, the rest lower; a2 is in the top 5% too.
 	const listed = new Map([['a80', 3], ['a81', 1], ['a82', 2], ['a2', 1]]);
 
@@ -112,19 +112,6 @@ describe('dailyPicks', () => {
 		const picks = dailyPicks(stars, new Map(), new Map(), '2026-11-06');
 		expect(picks).toHaveLength(6);
 		expect(picks.every((p) => p.why === 'top' && p.star.top_percent! <= 5)).toBe(true);
-	});
-});
-
-describe('ownTopPercents', () => {
-	it('ranks the viewer\'s scores as the search rounds its badge, ties sharing their best rank', () => {
-		const top = ownTopPercents(new Map([['a', 9], ['b', 7.5], ['c', 7.5], ['d', 6]]));
-		// Ranks 1, 2, 2, 4 of 4: rounded up to a percentage, the lowest reads 100.
-		expect(Object.fromEntries(top)).toEqual({ a: 25, b: 50, c: 50, d: 100 });
-	});
-
-	it('gives a lone rating Top 100%, and nothing for no ratings', () => {
-		expect(ownTopPercents(new Map([['a', 8]])).get('a')).toBe(100);
-		expect(ownTopPercents(new Map()).size).toBe(0);
 	});
 });
 

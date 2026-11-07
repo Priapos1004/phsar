@@ -19,6 +19,7 @@ from app.schemas.media_filter_schema import (
 from app.schemas.media_schema import MediaDetail, MediaSearchResult, MediaSibling
 from app.services.filter_service import (
     chronological_media_key,
+    own_scored_ids,
     personal_scope,
     sort_values,
 )
@@ -101,6 +102,7 @@ async def search_media_by_query(
         filters, states,
         await watchlist_dao.get_listed_ids(db, user_id, per_anime=False) if filters.watchlisted is not None else set(),
         include=visible_media_ids,
+        scored=await own_scored_ids(db, filters, user_id, per_anime=False),
     )
     if include is not None and not include:
         return []

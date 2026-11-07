@@ -5,6 +5,8 @@
 	// box; the galaxy map opens it alone, with no query to carry.
 	import { getContext } from 'svelte';
 	import { ensureFilterOptions } from '$lib/stores/filterOptions';
+	import { userSettings } from '$lib/stores/userSettings';
+	import { formatScoreWithStep } from '$lib/utils/formatString';
 	import TagSelect from '$lib/components/TagSelect.svelte';
 	import GenreFilterField from '$lib/components/GenreFilterField.svelte';
 	import DoubleRangeSlider from '$lib/components/DoubleRangeSlider.svelte';
@@ -45,6 +47,8 @@
 
 	const getUserRole = getContext<(() => string | null) | undefined>('userRole');
 	let isGuest = $derived(getUserRole?.() === 'restricted_user');
+	// Your score steps as you rate, so every stop is a score you could have given.
+	let ratingStep = $derived(Number($userSettings?.rating_step ?? '0.5'));
 
 	let staged = $derived.by(() => {
 		void open;
@@ -91,13 +95,12 @@
 
 	// `TOP_PRESETS`, 75 among them for "everything but the weak ones". A shared link may
 	// carry another value, which joins the list rather than reading as "Any".
-	let topOptions = $derived.by(() => {
-		const current = staged.top_percent;
+	function topOptions(current: number | null | undefined) {
 		const values = current != null && !TOP_PRESETS.includes(current)
 			? [...TOP_PRESETS, current].sort((a, b) => a - b)
 			: TOP_PRESETS;
 		return [{ value: 0, label: 'Any' }, ...values.map((v) => ({ value: v, label: `${v}%` }))];
-	});
+	}
 
 	const RELEASE_LISTS: ListFilterKey[] = ['airing_status', 'anime_season'];
 	const CONTENT_LISTS: ListFilterKey[] = ['studio_name', 'original_source', 'media_type', 'relation_type', 'age_rating'];
@@ -133,6 +136,20 @@
 			/>
 		</div>
 	{/if}
+{/snippet}
+
+{#snippet topField(key: 'top_percent' | 'your_top_percent', label: string)}
+	<div class="flex items-center justify-between gap-2">
+		<span class={cls.fieldLabel}>{label}</span>
+		<SegmentedControl
+			ariaLabel="{label} percent"
+			size="md"
+			stretchOnPhone
+			options={topOptions(staged[key])}
+			value={staged[key] ?? 0}
+			onSelect={(v) => stage({ [key]: v || undefined })}
+		/>
+	</div>
 {/snippet}
 
 {#snippet rangeField(key: RangeKey, options: FilterOptions)}
@@ -185,6 +202,15 @@
 								{/each}
 							</div>
 						</div>
+						<DoubleRangeSlider
+							label="Your score"
+							bounds={[0, 10]}
+							value={[staged.your_score_min ?? undefined, staged.your_score_max ?? undefined]}
+							step={ratingStep}
+							format={(v) => formatScoreWithStep(v, ratingStep)}
+							onCommit={([from, to]) => stage({ your_score_min: from, your_score_max: to })}
+						/>
+						{@render topField('your_top_percent', 'Your top')}
 						<div class="flex items-center justify-between gap-2">
 							<span class={cls.fieldLabel}>Watchlist</span>
 							<SegmentedControl
@@ -217,17 +243,7 @@
 				<section class={sectionCls}>
 					<h3 class={headingCls}>Score</h3>
 					{@render rangeField('score', options)}
-					<div class="flex items-center justify-between gap-2">
-						<span class={cls.fieldLabel}>Top</span>
-						<SegmentedControl
-							ariaLabel="Top percent"
-							size="md"
-							stretchOnPhone
-							options={topOptions}
-							value={staged.top_percent ?? 0}
-							onSelect={(v) => stage({ top_percent: v || undefined })}
-						/>
-					</div>
+					{@render topField('top_percent', 'Top')}
 					{@render rangeField('scored_by', options)}
 				</section>
 

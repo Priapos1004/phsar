@@ -73,6 +73,8 @@ export interface AnimeRatingCoverage {
 	anime_uuid: string;
 	state: Exclude<RatedState, 'none' | 'completed'>;
 	score: number;
+	/** That score's "Top N%" among the caller's rated anime, by the search badge's rule. */
+	top_percent: number;
 }
 
 // Genre name + description (GET /filters/genres) — powers genre-badge tooltips

@@ -1497,7 +1497,10 @@ async def test_rated_state_of_the_other_grain_is_rejected(client, user_auth_head
     ({"sort": "your_rating"}, 403),
     ({"search_type": "rating_notes", "query": "izumi"}, 403),
     ({"search_type": "rating_notes"}, 403),
-], ids=["plain", "rated", "watchlisted", "not_watchlisted", "your_rating", "notes", "notes_no_query"])
+    ({"your_score_min": 5}, 403),
+    ({"your_top_percent": 10}, 403),
+], ids=["plain", "rated", "watchlisted", "not_watchlisted", "your_rating", "notes", "notes_no_query", "your_score",
+        "your_top"])
 async def test_personal_filters_and_sort_are_closed_to_guests(
     client, restricted_user_auth_headers, url, params, status,
 ):
@@ -1585,10 +1588,36 @@ async def test_your_rating_sorts_by_the_callers_mean(
     assert ordered == expected
 
 
+@pytest.mark.parametrize(("url", "params", "expect"), [
+    # Your mean: Six 6, Mixed 7 (9 and 5), Eight 8, so your top is 34% / 67% / 100%.
+    (ANIME_SEARCH_URL, {"your_score_min": 7}, {"Yr Mixed", "Yr Eight"}),
+    (ANIME_SEARCH_URL, {"your_score_max": 7}, {"Yr Six", "Yr Mixed"}),
+    (ANIME_SEARCH_URL, {"your_top_percent": 34}, {"Yr Eight"}),
+    (ANIME_SEARCH_URL, {"your_top_percent": 67}, {"Yr Mixed", "Yr Eight"}),
+    (ANIME_SEARCH_URL, {"your_score_min": 6.5, "your_top_percent": 50}, {"Yr Eight"}),
+    # Your own ratings: Mixed 9, Eight 8, Six 6, Mixed 2 5, so 25% / 50% / 75% / 100%.
+    (MEDIA_SEARCH_URL, {"your_score_min": 8}, {"Yr Mixed", "Yr Eight"}),
+    (MEDIA_SEARCH_URL, {"your_score_max": 6}, {"Yr Six", "Yr Mixed 2"}),
+    (MEDIA_SEARCH_URL, {"your_top_percent": 50}, {"Yr Mixed", "Yr Eight"}),
+], ids=[
+    "anime_min", "anime_max", "anime_top34", "anime_top67", "anime_min_and_top",
+    "media_min", "media_max", "media_top50",
+])
+async def test_your_score_filters_read_what_your_rating_shows(
+    client, user_auth_headers, admin_auth_headers, db_session, url, params, expect,
+):
+    """The anime grain filters by the mean the Your rating sort shows, the media grain by
+    the media's own rating; the top N% ranks among the caller's rated rows as the "Top N%"
+    badge ranks. Unrated rows never pass, Yr Unrated although the admin rated it 10, and
+    Mixed's 9 alone would put it in the anime grain's top 34%."""
+    await _rate_yours(client, user_auth_headers, admin_auth_headers, db_session)
+    await _ordered_fixture_titles(client, user_auth_headers, url=url, expect=expect, **params)
+
+
 @pytest.mark.parametrize("params", [
     {"rated": ["in_progress"]}, {"watchlisted": True}, {"sort": "your_rating"},
-    {"query": "greenhouse", "search_type": "rating_notes"},
-], ids=["rated", "watchlisted", "your_rating", "notes"])
+    {"query": "greenhouse", "search_type": "rating_notes"}, {"your_score_min": 0}, {"your_top_percent": 100},
+], ids=["rated", "watchlisted", "your_rating", "notes", "your_score", "your_top"])
 async def test_personal_filters_and_sort_do_not_rescope_the_aggregates(
     client, user_auth_headers, db_session, params,
 ):

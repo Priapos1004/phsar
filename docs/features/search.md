@@ -159,7 +159,7 @@ categorical filters match, coupled as above.
 
 **Top N% is the badge.** Both badges and the `top_percent` filter read one ranking,
 `top_percent_ranking`, so N keeps exactly the rows whose badge reads N% or better;
-its docstring gives the population and the rounding.
+its docstring gives the population, `top_percent_of`'s the rounding.
 
 **`upcoming_main` reads the main story** (`upcoming_main_media`), as the [release
 sort](#sorting) does. It departs from
@@ -253,6 +253,10 @@ onto the caller's ratings, and notes search matches over the same join
   the media grain its own rating's watch status, or `none`. A state of the other grain is
   a 400.
 - **An anime is watchlisted when any of its media is**, as its bookmark shows.
+- **Your score is [Your rating](#sorting)** (`your_rating_key`), and `your_top_percent` ranks
+  it among the caller's rated rows by the badge's rule (`rating_dao.own_score_ranking`). The
+  rows they pass are an include (`personal_scope`'s `scored`), so an unrated row never
+  passes, even with `rated` taking `none`.
 - **They narrow the spoiler scope, never replace it**: in hide mode the media grain
   starts from the visible set.
 - **A guest gets 403** for any of them, `watchlisted=false` and the notes mode without a

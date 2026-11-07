@@ -89,11 +89,14 @@ describe('filterChips', () => {
 		const chips = filterChips({
 			...BASE,
 			rated: ['none', 'dropped'], watchlisted: false, top_percent: 20,
+			your_score_min: 7.5, your_top_percent: 10,
 			genres: genres('all', group(['Action', 'Comedy'])), studio_name: ['MAPPA', 'Bones'], studio_mode: 'all',
 			scored_by_max: 2_965_820, score_min: 8, score_max: 10,
 		}, 'anime');
 		expect(chips.map((c) => [c.label, c.keys])).toEqual([
 			['Rated: Unrated or Dropped', ['rated']],
+			['Your score ≥ 7.5', ['your_score_min', 'your_score_max']],
+			['Your top 10%', ['your_top_percent']],
 			['Not in watchlist', ['watchlisted']],
 			['Top 20%', ['top_percent']],
 			['Genres: Action & Comedy', ['genres']],
@@ -163,6 +166,7 @@ describe('carryAcrossView', () => {
 		score_min: 8, score_max: 10, scored_by_min: 1, scored_by_max: 2, episodes_min: 1, episodes_max: 2,
 		duration_per_episode_min: 1, duration_per_episode_max: 2, total_watch_time_min: 1, total_watch_time_max: 2,
 		top_percent: 10, upcoming_main: true, rated: ['in_progress', 'on_hold', 'dropped'], watchlisted: true,
+		your_score_min: 7, your_score_max: 9.5, your_top_percent: 20,
 		sort: 'release', sort_dir: 'desc',
 	};
 
@@ -173,6 +177,7 @@ describe('carryAcrossView', () => {
 			anime_season: ['Fall 2023'], studio_name: ['Madhouse'], original_source: ['Manga'],
 			studio_mode: 'all', genres: genres('any', group(['Fantasy'])), score_min: 8, score_max: 10,
 			top_percent: 10, upcoming_main: true, rated: ['on_hold', 'dropped'], watchlisted: true,
+			your_score_min: 7, your_score_max: 9.5, your_top_percent: 20,
 			sort: 'release', sort_dir: 'desc',
 		});
 	});
@@ -199,6 +204,12 @@ describe('stripForGuest', () => {
 			params: { ...BASE, genres: genres('all', group(['Action'])) }, stripped: true,
 		});
 		expect(stripForGuest({ ...BASE, rated: null, watchlisted: null, sort: 'score' })).toMatchObject({ stripped: false });
+	});
+
+	it('drops your own score filters', () => {
+		expect(stripForGuest({ ...BASE, your_score_min: 8, your_top_percent: 10, top_percent: 5 })).toEqual({
+			params: { ...BASE, top_percent: 5 }, stripped: true,
+		});
 	});
 
 	it('drops a sort by your rating and turns a notes search into a title search', () => {

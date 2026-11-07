@@ -153,8 +153,8 @@ since the map loaded has neighbours too.
 ## The tab
 
 The map is drawn in the browser from that one payload, its sector colours included
-(`sectorHues`); the MAL score colouring ranks by Top N%, and My scores ranks the viewer's
-`/ratings/coverage` scores the same way, among their own (`ownTopPercents`). Find an anime is
+(`sectorHues`); the MAL score colouring ranks by Top N%, and My scores reads the viewer's
+own rank from `/ratings/coverage`, the one the search's "your top" filter keeps by. Find an anime is
 the search's own title match (`/search/anime`), kept to anime with a star. With nothing typed,
 Find suggests the day's picks (`dailyPicks`), reading watchlist priority from
 `/watchlist/media-tags`. The filters ask `/search/anime/uuids` which anime they keep, and the

@@ -21,7 +21,7 @@
 	import UsernameConfirmDialog from '$lib/components/UsernameConfirmDialog.svelte';
 	import { ensureGenresLoaded, genreDescriptions } from '$lib/stores/genres';
 	import { galaxyView } from '$lib/stores/galaxyView';
-	import { ensureRatingCoverage, ratedScores, ratedStates, ratingCoverage } from '$lib/stores/ratingCoverage';
+	import { ensureRatingCoverage, ratedScores, ratedStates, ratedTopPercents, ratingCoverage } from '$lib/stores/ratingCoverage';
 	import { addOptimisticJob, bumpJobsRefresh } from '$lib/stores/jobs';
 	import { pushToast } from '$lib/stores/toast';
 	import { userSettings } from '$lib/stores/userSettings';
@@ -175,7 +175,7 @@
 
 	// The UTC day, so the picks turn over with Discover's mood.
 	const day = new Date().toISOString().slice(0, 10);
-	let picks = $derived(map ? dailyPicks(map.stars, $ratedScores, $watchlistAnimePriority, day) : []);
+	let picks = $derived(map ? dailyPicks(map.stars, $ratedTopPercents, $watchlistAnimePriority, day) : []);
 	let options = $derived<{ star: GalaxyStar; why?: PickReason }[]>(findText.trim() ? found.map((star) => ({ star })) : picks);
 	/** The options in runs of one reason, each run a captioned group. */
 	let optionGroups = $derived.by(() => {
@@ -284,6 +284,21 @@
 	});
 </script>
 
+<!-- Inert, not disabled, so a guest's tip still opens on hover and focus (as PillToggle's
+     guest options do). -->
+{#snippet colourPill(c: { value: GalaxyColour; label: string }, inert: boolean, props: Record<string, unknown>)}
+	<button
+		{...props}
+		type="button"
+		aria-pressed={colour === c.value}
+		aria-disabled={inert}
+		class="{cls.pagePill} {colour === c.value ? cls.pagePillOn : cls.pagePillOff} aria-disabled:cursor-not-allowed aria-disabled:opacity-40"
+		onclick={() => !inert && galaxyView.update((v) => ({ ...v, colour: c.value }))}
+	>
+		{c.label}
+	</button>
+{/snippet}
+
 {#snippet dot(color: string, ring?: string)}
 	<span class="inline-block size-2.5 shrink-0 rounded-full" style="background:{color};{ring ? `box-shadow:0 0 0 1.5px ${ring}` : ''}"></span>
 {/snippet}
@@ -331,16 +346,13 @@
 		<div class="flex flex-wrap items-center gap-2">
 			{#each COLOURS as c (c.value)}
 				{@const inert = personal(c.value) && isGuest}
-				<button
-					type="button"
-					aria-pressed={colour === c.value}
-					disabled={inert}
-					title={inert ? 'Your ratings colour the map once you have an account' : undefined}
-					class="{cls.pagePill} {colour === c.value ? cls.pagePillOn : cls.pagePillOff} disabled:opacity-40"
-					onclick={() => galaxyView.update((v) => ({ ...v, colour: c.value }))}
-				>
-					{c.label}
-				</button>
+				{#if inert}
+					<Tooltip text="Your ratings colour the map once you have an account">
+						{#snippet trigger(props)}{@render colourPill(c, inert, props)}{/snippet}
+					</Tooltip>
+				{:else}
+					{@render colourPill(c, inert, {})}
+				{/if}
 			{/each}
 			<button
 				type="button"
@@ -443,12 +455,15 @@
 				{lit}
 				states={$ratedStates}
 				scores={$ratedScores}
+				ownTop={$ratedTopPercents}
 				{ratingStep}
 				{selected}
 				{group}
 				neighbours={neighbours.map((n) => n.anime_uuid)}
 				{hovered}
 				{nameLanguage}
+				names={$galaxyView.names}
+				onNames={(names) => galaxyView.update((v) => ({ ...v, names }))}
 				onPick={pick}
 			/>
 
@@ -470,7 +485,6 @@
 						<button
 							type="button"
 							aria-label="Close"
-							title="Close"
 							class="relative ml-auto rounded-full p-1 text-white/60 hover:bg-white/10 hover:text-white {cls.hitArea}"
 							onclick={close}
 						>

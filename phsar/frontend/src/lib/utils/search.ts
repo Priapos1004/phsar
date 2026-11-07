@@ -6,6 +6,7 @@ import {
 	formatNumber,
 	formatRelationType,
 	formatMonthDay,
+	formatScore,
 	formatScoreWithStep,
 	watchStatusLabel,
 } from '$lib/utils/formatString';
@@ -72,9 +73,13 @@ export interface MediaSearchFilters {
 
 	top_percent?: number | null;
 	upcoming_main?: boolean;
-	// The caller's own: a union of states, and listed or not.
+	// The caller's own: a union of states, listed or not, and their own score for the row with
+	// its rank among theirs — the twins of the score range and `top_percent`.
 	rated?: RatedState[] | null;
 	watchlisted?: boolean | null;
+	your_score_min?: number | null;
+	your_score_max?: number | null;
+	your_top_percent?: number | null;
 
 	// Unset = the endpoint's own: relevance, and each key's default direction.
 	sort?: SortKey | null;
@@ -540,6 +545,10 @@ export interface FilterChip {
 	warning?: string;
 }
 
+/** A range as a chip reads it. */
+const rangeText = (min: number | null | undefined, max: number | null | undefined, format: (v: number) => string) =>
+	min != null && max != null ? `${format(min)}–${format(max)}` : min != null ? `≥ ${format(min)}` : `≤ ${format(max!)}`;
+
 const chip = (
 	id: string, name: string | undefined, value: string | Term[][], keys: FilterChip['keys'],
 ): FilterChip => {
@@ -556,6 +565,13 @@ export function filterChips(params: MediaSearchFilters, view: ViewType): FilterC
 	if (params.rated?.length) {
 		const labels = RATED_STATES[view].filter((s) => params.rated!.includes(s.value)).map((s) => s.label);
 		chips.push(chip('rated', 'Rated:', [nameTerms(labels, 'any')], ['rated']));
+	}
+	if (params.your_score_min != null || params.your_score_max != null) {
+		const text = rangeText(params.your_score_min, params.your_score_max, formatScore);
+		chips.push(chip('your_score', 'Your score', text, ['your_score_min', 'your_score_max']));
+	}
+	if (params.your_top_percent != null) {
+		chips.push(chip('your_top_percent', undefined, `Your top ${params.your_top_percent}%`, ['your_top_percent']));
 	}
 	if (params.watchlisted != null) {
 		chips.push(chip('watchlisted', undefined, params.watchlisted ? 'In watchlist' : 'Not in watchlist', ['watchlisted']));
@@ -584,10 +600,7 @@ export function filterChips(params: MediaSearchFilters, view: ViewType): FilterC
 		const min = params[minKey];
 		const max = params[maxKey];
 		if (min == null && max == null) continue;
-		const text = min != null && max != null
-			? `${range.format(min)}–${range.format(max)}`
-			: min != null ? `≥ ${range.format(min)}` : `≤ ${range.format(max!)}`;
-		chips.push(chip(key, range.label, text, [minKey, maxKey]));
+		chips.push(chip(key, range.label, rangeText(min, max, range.format), [minKey, maxKey]));
 	}
 
 	return chips;
@@ -605,7 +618,7 @@ export function omitKeys(params: MediaSearchFilters, keys: (keyof MediaSearchFil
 
 /** What survives a switch between the grains. `carry` means the same thing at both;
  * `drop` doesn't translate — relation type exists only per media, and the ranges other
- * than the 0–10 score sit on scales that differ between one media and an aggregate;
+ * than the 0–10 scores sit on scales that differ between one media and an aggregate;
  * `common` keeps the rated states both grains have. Every field is classified, so a new
  * one fails to compile until someone decides. */
 const ACROSS_VIEWS = {
@@ -618,6 +631,7 @@ const ACROSS_VIEWS = {
 	duration_per_episode_min: 'drop', duration_per_episode_max: 'drop',
 	total_watch_time_min: 'drop', total_watch_time_max: 'drop',
 	top_percent: 'carry', upcoming_main: 'carry', rated: 'common', watchlisted: 'carry',
+	your_score_min: 'carry', your_score_max: 'carry', your_top_percent: 'carry',
 	sort: 'carry', sort_dir: 'carry',
 } as const satisfies Record<keyof Required<MediaSearchFilters>, 'carry' | 'drop' | 'common'>;
 
@@ -647,10 +661,14 @@ export function carryAcrossView(params: MediaSearchFilters, view: ViewType): Med
 export const GUEST_STRIPPED_NOTICE =
 	"This link used ratings, notes or the watchlist, which guest accounts don't have, so it opened without them — a notes search runs on titles instead.";
 
+/** The filters over the caller's own ratings and watchlist. */
+const OWN_FILTERS = ['rated', 'watchlisted', 'your_score_min', 'your_score_max', 'your_top_percent'] as const;
+
 /** Whether a search, or a filter set's part of one, reads the caller's own ratings, notes
  * or watchlist — what a guest is refused (docs/features/search.md, Personal filters and sort). */
 export function readsOwnData(params: Partial<MediaSearchFilters>): boolean {
-	return !!params.rated?.length || params.watchlisted != null || params.sort === 'your_rating'
+	const set = (value: unknown) => (Array.isArray(value) ? value.length > 0 : value != null);
+	return OWN_FILTERS.some((key) => set(params[key])) || params.sort === 'your_rating'
 		|| params.search_type === 'rating_notes';
 }
 
@@ -671,6 +689,6 @@ export function stripForGuest(params: MediaSearchFilters): { params: MediaSearch
 	const notes = params.search_type === 'rating_notes';
 	const stripped = readsOwnData(params);
 	if (!stripped) return { params, stripped };
-	const kept = omitKeys(params, byRating ? ['rated', 'watchlisted', 'sort', 'sort_dir'] : ['rated', 'watchlisted']);
+	const kept = omitKeys(params, byRating ? [...OWN_FILTERS, 'sort', 'sort_dir'] : [...OWN_FILTERS]);
 	return { params: notes ? { ...kept, search_type: 'title' } : kept, stripped };
 }

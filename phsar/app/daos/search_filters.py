@@ -112,16 +112,30 @@ def weighted_mean_votes_expr():
     return _relation_weighted_mean(Media.scored_by)
 
 
-def top_percent_ranking(*, per_anime: bool):
-    """`(id, top_percent)` for every scored anime or media: the "Top N%" badge, ranked
-    by `weighted_score_expr` over the whole catalogue (per anime, its relation-weighted
-    means), and unfiltered, so N% is the same figure whatever else a search selects.
-
-    `top_percent` is the rank as a percentage of the scored rows, rounded up — ties
-    share their best rank, and the worst row reads 100.
+def top_percent_of(metric):
+    """`metric`'s "Top N%" over the rows its query yields, best first: the rank as a
+    percentage of the rows, rounded up — ties share their best rank, and the worst row reads
+    100. One rule for MAL's badge and the caller's own.
 
     `rank()` rather than a count of the better rows, which would spare one badge its
     sort: the filter needs every row's rank."""
+    rank = func.rank().over(order_by=metric.desc())
+    total = func.count().over()
+    return (rank * 100 + total - 1) // total
+
+
+def percent_rank(population):
+    """`(id, metric, top_percent)` over `population`'s `(id, metric)` rows."""
+    return select(
+        population.c.id, population.c.metric, top_percent_of(population.c.metric).label("top_percent"),
+    ).subquery()
+
+
+def top_percent_ranking(*, per_anime: bool):
+    """`(id, metric, top_percent)` for every scored anime or media: the "Top N%" badge,
+    ranked by `weighted_score_expr` over the whole catalogue (per anime, its
+    relation-weighted means), and unfiltered, so N% is the same figure whatever else a
+    search selects."""
     if per_anime:
         mean_score = weighted_mean_score_expr()
         scored = (
@@ -136,10 +150,7 @@ def top_percent_ranking(*, per_anime: bool):
         scored = select(
             Media.id.label("id"), weighted_score_expr(Media.score, Media.scored_by).label("metric"),
         ).where(Media.score.is_not(None))
-    population = scored.subquery()
-    rank = func.rank().over(order_by=population.c.metric.desc())
-    total = func.count().over()
-    return select(population.c.id, ((rank * 100 + total - 1) // total).label("top_percent")).subquery()
+    return percent_rank(scored.subquery())
 
 
 async def top_percents(db: AsyncSession, ids: list[int], *, per_anime: bool) -> dict[int, int]:

@@ -154,13 +154,24 @@ async def get_catalogue_filters(
         default=None, description="Keep the rows on your watchlist, or the rows off it; an anime is on it "
         "when any of its media is.",
     ),
+    your_score_min: float | None = Query(
+        default=None, description="Keep the rows you scored this or higher: a media's own rating, an "
+        "anime's mean over its rated media. Unrated rows never pass.",
+    ),
+    your_score_max: float | None = None,
+    your_top_percent: int | None = Query(
+        default=None, ge=1, le=100,
+        description="Keep the rows in this top percentage of your own scores, ranked as the \"Top N%\" badge.",
+    ),
     current_user: Users = Depends(get_current_user),
 ) -> CatalogueSearchFilters:
-    if rated or watchlisted is not None:
-        await require_user_or_admin(current_user)
-    return CatalogueSearchFilters(
+    filters = CatalogueSearchFilters(
         **media_filters.model_dump(), upcoming_main=upcoming_main, rated=rated, watchlisted=watchlisted,
+        your_score_min=your_score_min, your_score_max=your_score_max, your_top_percent=your_top_percent,
     )
+    if filters.rated or filters.watchlisted is not None or filters.own_score_set:
+        await require_user_or_admin(current_user)
+    return filters
 
 
 @router.get("/anime", response_model=list[AnimeSearchResult])

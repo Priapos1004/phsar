@@ -15,6 +15,9 @@ describe('sanitizeFilters', () => {
 			upcoming_main: true,
 			rated: ['none', 'main'],
 			watchlisted: false,
+			your_score_min: 6.5,
+			your_score_max: 9,
+			your_top_percent: 25,
 			genres: { mode: 'any', groups: [{ mode: 'all', include: ['Action'], exclude_mode: 'any', exclude: ['Ecchi'] }] }
 		};
 		expect(sanitizeFilters(filters)).toEqual(filters);
@@ -29,6 +32,8 @@ describe('sanitizeFilters', () => {
 				studio_mode: 'some',
 				score_min: 'high',
 				top_percent: 0,
+				your_top_percent: 101,
+				your_score_min: 'high',
 				upcoming_main: 'yes',
 				rated: ['all', 'bogus'],
 				watchlisted: 'no',

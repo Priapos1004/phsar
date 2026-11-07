@@ -36,6 +36,7 @@ from app.schemas.media_filter_schema import (
 )
 from app.services.filter_service import (
     chronological_media_key,
+    own_scored_ids,
     personal_scope,
     sort_values,
 )
@@ -240,11 +241,12 @@ def anime_title_texts(anime) -> list[str | None]:
 async def _personal_anime_scope(
     db: AsyncSession, filters: CatalogueSearchFilters, user_id: int,
 ) -> tuple[set[int] | None, set[int]]:
-    """The caller's rated and watchlist filters as anime ids to keep and to drop."""
+    """The caller's personal filters as anime ids to keep and to drop."""
     return personal_scope(
         filters,
         await rated_states_by_anime_id(db, user_id) if filters.rated else {},
         await watchlist_dao.get_listed_ids(db, user_id, per_anime=True) if filters.watchlisted is not None else set(),
+        scored=await own_scored_ids(db, filters, user_id, per_anime=True),
     )
 
 

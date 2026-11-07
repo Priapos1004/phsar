@@ -55,6 +55,22 @@ async def test_coverage_reports_the_state_of_a_rated_anime(client, user_auth_hea
     assert entry["score"] == 7.25
 
 
+async def test_coverage_ranks_each_anime_among_the_callers_own(client, user_auth_headers, db_session):
+    """Its score's "Top N%" among the anime the caller rated, by the badge's rule
+    (`top_percent_of`): first, then tied second of three."""
+    scores = {-93100: 9.0, -93200: 7.0, -93300: 7.0}
+    uuids = {}
+    for seed, score in scores.items():
+        anime, media = await _anime_with_media(db_session, seed, 1)
+        await rate_media(client, user_auth_headers, media[0].uuid, rating=score)
+        uuids[str(anime.uuid)] = seed
+
+    res = await client.get("/ratings/coverage", headers=user_auth_headers)
+    assert res.status_code == 200
+    tops = {uuids[e["anime_uuid"]]: e["top_percent"] for e in res.json() if e["anime_uuid"] in uuids}
+    assert tops == {-93100: 34, -93200: 67, -93300: 67}
+
+
 async def test_coverage_is_closed_to_restricted_users(client, restricted_user_auth_headers):
     """They cannot rate at all, which is why the layout skips this fetch for them."""
     res = await client.get("/ratings/coverage", headers=restricted_user_auth_headers)

@@ -25,6 +25,9 @@ export const ratedStates = writable<Map<string, AnimeRatingCoverage['state']>>(n
 /** anime UUID → the caller's score for it, from the same response, with the same keys. */
 export const ratedScores = writable<Map<string, number>>(new Map());
 
+/** anime UUID → that score's "Top N%" among the caller's own, as the search filter ranks it. */
+export const ratedTopPercents = writable<Map<string, number>>(new Map());
+
 /** The same map as coverage tiers, for the coverage marking on cards. */
 export const ratingCoverage = derived(
 	ratedStates,
@@ -56,6 +59,7 @@ export function ensureRatingCoverage(): Promise<void> {
 			if (loadPromise !== pending) return;
 			ratedStates.set(new Map(entries.map((e) => [e.anime_uuid, e.state])));
 			ratedScores.set(new Map(entries.map((e) => [e.anime_uuid, e.score])));
+			ratedTopPercents.set(new Map(entries.map((e) => [e.anime_uuid, e.top_percent])));
 		})
 		.catch(() => {
 			// Not authenticated / restricted user / transient error — clear the cache
@@ -82,4 +86,5 @@ export function clearRatingCoverage(): void {
 	loadPromise = null;
 	ratedStates.set(new Map());
 	ratedScores.set(new Map());
+	ratedTopPercents.set(new Map());
 }
