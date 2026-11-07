@@ -105,13 +105,14 @@ def test_a_star_without_a_sector_takes_its_neighbours():
     assert _vote(tie, np.array([1] * half + [0] * half), np.zeros((1, 2))).tolist() == [1]
 
 
-def test_a_group_is_named_and_labelled_by_its_training_anime():
-    def profile(tags, year, score):
-        return {"majority_tags": tags, "top_source": None, "studios": set(), "score": score, "year": year}
+def _profile(tags, year, score):
+    return {"majority_tags": tags, "top_source": None, "studios": set(), "score": score, "year": year}
 
+
+def test_a_group_is_named_and_labelled_by_its_training_anime():
     profiles = (
-        [profile(["Mecha"], 2000, 7.0)] * 10 + [profile(["Mecha", "Kids"], 2025, None)] * 10
-        + [profile(["Romance"], 2000, 7.0)] * 40
+        [_profile(["Mecha"], 2000, 7.0)] * 10 + [_profile(["Mecha", "Kids"], 2025, None)] * 10
+        + [_profile(["Romance"], 2000, 7.0)] * 40
     )
     train = np.array([True] * 10 + [False] * 10 + [True] * 40)
     anime = [AnimeRow(i, [], 7.0, 1.0, synopsis=1) for i in range(60)]
@@ -119,6 +120,21 @@ def test_a_group_is_named_and_labelled_by_its_training_anime():
     group = _group("sector", 0, None, np.arange(20), np.arange(60), anime, profiles, train, Y)
     assert group["auto_name"] == "Mecha"
     assert (group["x"], group["y"]) == (0.0, 0.0)
+
+
+def test_a_split_groups_label_sits_on_its_denser_trained_part():
+    # Sector 0: eight trained stars around (0, 0), three around (100, 0) with ten placed ones
+    # beside them. Its trained mean is near 27; counting the placed would make the far part
+    # the denser one.
+    Y = np.array(
+        [[(i % 3) * 0.5, (i // 3) * 0.5] for i in range(8)] + [[100 + i * 0.5, 0.0] for i in range(3)]
+        + [[100.0, 0.5]] * 10 + [[50.0, 80.0]]
+    )
+    train = np.array([True] * 11 + [False] * 10 + [True])
+    anime = [AnimeRow(i, [], 7.0, 1.0, synopsis=1) for i in range(22)]
+    profiles = [_profile(["Mecha"], 2000, 7.0)] * 22
+    group = _group("sector", 0, None, np.arange(21), np.arange(22), anime, profiles, train, Y)
+    assert group["x"] < 2 and group["y"] < 2
 
 
 def test_placement_answers_in_the_fits_labels(fitted):

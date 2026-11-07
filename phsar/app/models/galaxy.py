@@ -41,7 +41,7 @@ class GalaxyGroup(BaseModel):
     # A hand name, carried onto each refit by member overlap; the auto name shows without one.
     name: Mapped[str | None] = mapped_column(String, nullable=True)
     auto_name: Mapped[str] = mapped_column(String, nullable=False)
-    # Where the label sits: the members' mean position.
+    # Where the label sits (`galaxy_compute.ANCHOR_RADIUS`).
     x: Mapped[float] = mapped_column(Float, nullable=False)
     y: Mapped[float] = mapped_column(Float, nullable=False)
 

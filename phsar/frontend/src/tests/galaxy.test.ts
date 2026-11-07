@@ -9,7 +9,6 @@ import {
 	fitWindow,
 	groupStats,
 	groupView,
-	labelAnchors,
 	labelCentre,
 	spreadLabels,
 	nebulaPixels,
@@ -23,20 +22,6 @@ const sector = (number: number, x: number, y: number): GalaxySector => ({ uuid: 
 
 const at = (anime_uuid: string, x: number, y: number, sector: number, more: Partial<GalaxyStar> = {}) =>
 	({ anime_uuid, x, y, sector, region: sector, genres: [], score: null, top_percent: null, ...more }) as GalaxyStar;
-
-describe('labelAnchors', () => {
-	it('puts a split group\'s name on its denser part, not between its parts', () => {
-		// Sector 0: eight stars around (0, 0) and three around (100, 0); its mean is near 27.
-		const stars = [
-			...Array.from({ length: 8 }, (_, i) => at(`a${i}`, (i % 3) * 0.5, Math.floor(i / 3) * 0.5, 0)),
-			...Array.from({ length: 3 }, (_, i) => at(`b${i}`, 100 + i * 0.5, 0, 0)),
-			at('c', 50, 80, 1)
-		];
-		const [x, y] = labelAnchors(stars, 'sector').get(0)!;
-		expect(x).toBeLessThan(2);
-		expect(y).toBeLessThan(2);
-	});
-});
 
 describe('groupView', () => {
 	const stars = [at('a', 10, 10, 0), at('b', 30, 20, 0), at('c', 90, 90, 1)];

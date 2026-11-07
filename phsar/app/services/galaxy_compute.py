@@ -38,7 +38,7 @@ FEATURES = 3
 # How the map is fitted from the vectors and what placement reads from the pickle. Bumped
 # with any change to either, so `built_from` refits the map and the old one stops taking new
 # stars, which it could no longer place.
-FITTING = 2
+FITTING = 3
 # A synopsis this many characters long counts as half known (`_raw_blocks`).
 SYNOPSIS_HALF = 50
 TOP_STUDIOS = 25
@@ -61,6 +61,10 @@ REGION_SIZE = 30
 # A hand name follows the new group sharing at least this much (Jaccard) of its old
 # trained members; below it the group shows its auto name.
 NAME_FLOOR = 0.4
+# A group's label sits on its densest cluster: around the trained member with the most of
+# the group's trained members within this share of the trained layout's extent, at their mean. The
+# members' mean lands between the parts of a group the layout split, or over a neighbour.
+ANCHOR_RADIUS = 0.04
 
 
 def vectors_key() -> str:
@@ -499,10 +503,14 @@ def _group(level: str, number: int, parent: int | None, members: np.ndarray, ref
     """A sector or region, named and labelled by its training members (docs/features/galaxy.md,
     "Names")."""
     own = members[train[members]]
+    P = Y[own]
+    radius = ANCHOR_RADIUS * float(np.ptp(Y[train], axis=0).max())
+    near = ((P[:, None] - P) ** 2).sum(-1) <= radius**2
+    x, y = P[near[near.sum(1).argmax()]].mean(0)
     return {
         "level": level, "number": number, "parent": parent,
         "auto_name": auto_name(profiles, own, reference[train[reference]]),
-        "x": float(Y[own, 0].mean()), "y": float(Y[own, 1].mean()),
+        "x": float(x), "y": float(y),
         "trained_members": sorted(anime[i].anime_id for i in own),
     }
 

@@ -25,7 +25,7 @@
 	import { escapeHtml, formatScoreWithStep, resolveTitle } from '$lib/utils/formatString';
 	import {
 		COVER_ASPECT, COVER_SPAN, FOCUS_SPAN, LIT_NO_VALUE, MIN_SPAN, NO_VALUE, REGION_LABELS_BELOW, SCORE_RAMP,
-		blankColour, coverCrop, coverSize, evenWindows, fitWindow, groupSizes, groupView, inGroup, labelAnchors, labelCentre, mineColour,
+		blankColour, coverCrop, coverSize, evenWindows, fitWindow, groupSizes, groupView, inGroup, labelCentre, mineColour,
 		nebulaPixels, onMap, packCovers, percentWindow, personal, rankShare, sectorHues, spreadLabels, starFigures,
 		sameGroup, type GalaxyColour, type GroupRef, type Pick,
 		type MapWindow, type NebulaSource
@@ -143,13 +143,6 @@
 		return out;
 	}
 
-	// From the trained stars alone, as the names are: an anime placed onto a group, the least
-	// known, never moves its name.
-	let anchors = $derived.by(() => {
-		const trained = map.stars.filter((s) => s.trained);
-		return { sector: labelAnchors(trained, 'sector'), region: labelAnchors(trained, 'region') };
-	});
-
 	/** Where colliding names hide (`labelInside`), ECharts keeps the one whose symbol has the
 	 *  larger area, so a name's invisible symbol is sized by its group, and the spotlit one's
 	 *  above every group's: the map always names what it is showing. Under a pixel, so it
@@ -157,15 +150,13 @@
 	const rankSize = (n: number) => n / (map.stars.length + 2);
 
 	const groupsOf = (level: 'sector' | 'region') => (level === 'sector' ? map.sectors : map.regions);
-	// A group with no stars keeps the place the map gave it.
-	const anchorOf = (level: 'sector' | 'region', g: { number: number; x: number; y: number }) => anchors[level].get(g.number) ?? [g.x, g.y];
 
 	function labels(level: 'sector' | 'region') {
 		const explored = personal(colour) ? ratedPer(level) : null;
 		return groupsOf(level).map((g) => {
 			const spotlit = spot != null && sameGroup(spot, { level, number: g.number });
 			return {
-				value: [...anchorOf(level, g), g.number],
+				value: [g.x, g.y, g.number],
 				name: g.name,
 				symbolSize: rankSize(spotlit ? map.stars.length + 1 : (sizes[level].get(g.number) ?? 0)),
 				label: {
@@ -217,7 +208,7 @@
 		if (view === spreadView) return spreadAt;
 		spreadView = view;
 		const placed = groupsOf(level).flatMap((g, i) => {
-			const anchor = chart.convertToPixel({ gridIndex: 0 }, anchorOf(level, g));
+			const anchor = chart.convertToPixel({ gridIndex: 0 }, [g.x, g.y]);
 			// Anchored off the map, a name stays off it (`labelCentre`) and makes no room.
 			if (!onMap(anchor, box)) return [];
 			const [width, height] = nameSize(level, g.name);

@@ -158,9 +158,8 @@ own rank from `/ratings/coverage`, the one the search's "your top" filter keeps 
 the search's own title match (`/search/anime`), kept to anime with a star. With nothing typed,
 Find suggests the day's picks (`dailyPicks`), reading watchlist priority from
 `/watchlist/media-tags`. The filters ask `/search/anime/uuids` which anime they keep, and the
-tab lights those. The tab places each group's name itself (`labelAnchors` says where and why)
-rather than at the position the payload gives the group, and settles names that collide itself
-too (`labelInside` says how, at each width). A picked sector or region shows
+tab lights those. The tab draws each group's name where the payload puts it, and settles names
+that collide itself (`labelInside` says how, at each width). A picked sector or region shows
 figures worked out from the payload and the viewer's scores (`groupStats`).
 
 ## Names
@@ -169,7 +168,8 @@ Every group gets an **auto name** on every fit, so a fresh database needs nothin
 The name lists the group's distinguishing values against a reference population: the
 catalogue for a sector, the parent sector for a region. Both are measured over the training
 anime alone, so the anime placed onto a group — the least known — neither name it nor move
-its label. Those values are:
+its label. The fit stores the label on the group's densest cluster of training anime rather
+than at their mean (`ANCHOR_RADIUS` says why). The name's values are:
 
 - the tags frequent in the group and rare in the reference;
 - a dominant source or studio;

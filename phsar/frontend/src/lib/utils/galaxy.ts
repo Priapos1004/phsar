@@ -225,31 +225,6 @@ export function groupView(
 	return { x: (x0 + x1) / 2 - ((insets.left - insets.right) / 2) * perPixel, y: (y0 + y1) / 2, width: span };
 }
 
-/** How far around a star its group counts as its cluster, as a share of the map's extent. */
-const ANCHOR_RADIUS = 0.04;
-
-/**
- * Where each group's name sits: on its densest cluster. The group's mean position, which the
- * map carries, lands between the parts of a group the layout split, or over a neighbour. The
- * densest spot is the star with the most of its group within `ANCHOR_RADIUS`; the name sits
- * at that neighbourhood's mean.
- */
-export function labelAnchors(stars: GalaxyStar[], level: GroupRef['level']): Map<number, [number, number]> {
-	const [x0, x1, y0, y1] = bounds(stars);
-	const r2 = (ANCHOR_RADIUS * Math.max(x1 - x0, y1 - y0)) ** 2;
-	return new Map(
-		[...Map.groupBy(stars, (s) => s[level])].map(([number, members]) => {
-			let best: GalaxyStar[] = [];
-			for (const s of members) {
-				const near = members.filter((t) => (t.x - s.x) ** 2 + (t.y - s.y) ** 2 <= r2);
-				if (near.length > best.length) best = near;
-			}
-			// Never empty: every star is within the radius of itself.
-			return [number, [mean(best.map((s) => s.x))!, mean(best.map((s) => s.y))!]];
-		})
-	);
-}
-
 /** How many genres and anime a group's panel lists. */
 const GROUP_GENRES = 5;
 const GROUP_TOP = 5;
