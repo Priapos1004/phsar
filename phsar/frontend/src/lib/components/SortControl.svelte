@@ -56,9 +56,9 @@
 			<button
 				{...props}
 				type="button"
-				class="size-8 flex items-center justify-center {cls.pageControl} disabled:opacity-40 disabled:hover:text-white/80"
+				class="size-8 flex items-center justify-center {cls.pageControl} aria-disabled:cursor-not-allowed aria-disabled:opacity-40 aria-disabled:hover:text-white/80"
 				aria-label="Reverse the order"
-				disabled={!order.dir}
+				aria-disabled={!order.dir}
 				onclick={flipDirection}
 			>
 				{#if order.dir === 'asc'}<ArrowUp class="size-4" />{:else}<ArrowDown class="size-4" />{/if}

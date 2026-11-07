@@ -5,7 +5,7 @@
     import * as Card from '$lib/components/ui/card';
     import Tooltip from '$lib/components/Tooltip.svelte';
     import Notice from '$lib/components/Notice.svelte';
-    import UsernameConfirmDialog from '$lib/components/UsernameConfirmDialog.svelte';
+    import TypeToConfirmDialog from '$lib/components/TypeToConfirmDialog.svelte';
     import * as Select from '$lib/components/ui/select';
     import { Input } from '$lib/components/ui/input';
     import { Badge } from '$lib/components/ui/badge';
@@ -514,7 +514,7 @@
     </Card.Content>
 </Card.Root>
 
-<UsernameConfirmDialog
+<TypeToConfirmDialog
     open={restoreFilename !== null}
     onOpenChange={(open) => { if (!open) restoreFilename = null; }}
     title="Restore from backup"
@@ -546,4 +546,4 @@
             {/if}
         </Notice>
     {/if}
-</UsernameConfirmDialog>
+</TypeToConfirmDialog>

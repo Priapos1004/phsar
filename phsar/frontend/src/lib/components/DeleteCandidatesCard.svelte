@@ -7,7 +7,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import Tooltip from '$lib/components/Tooltip.svelte';
-	import UsernameConfirmDialog from '$lib/components/UsernameConfirmDialog.svelte';
+	import TypeToConfirmDialog from '$lib/components/TypeToConfirmDialog.svelte';
 	import DismissedDecisionsSection from '$lib/components/admin/DismissedDecisionsSection.svelte';
 	import { Trash2, X, RefreshCw, Search, AlertTriangle } from 'lucide-svelte';
 	import { bumpCatalogueChanged, bumpCurationRefresh } from '$lib/stores/jobs';
@@ -329,7 +329,7 @@
 	</Card.Content>
 </Card.Root>
 
-<UsernameConfirmDialog
+<TypeToConfirmDialog
 	open={removeUuid !== null}
 	onOpenChange={(open) => {
 		if (!open) removeUuid = null;
@@ -371,4 +371,4 @@
 			</p>
 		</div>
 	</div>
-</UsernameConfirmDialog>
+</TypeToConfirmDialog>

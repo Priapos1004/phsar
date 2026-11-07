@@ -18,7 +18,7 @@
 	import GalaxyMap from '$lib/components/GalaxyMap.svelte';
 	import { Input } from '$lib/components/ui/input';
 	import Tooltip from '$lib/components/Tooltip.svelte';
-	import UsernameConfirmDialog from '$lib/components/UsernameConfirmDialog.svelte';
+	import TypeToConfirmDialog from '$lib/components/TypeToConfirmDialog.svelte';
 	import { ensureGenresLoaded, genreDescriptions } from '$lib/stores/genres';
 	import { galaxyView } from '$lib/stores/galaxyView';
 	import { ensureRatingCoverage, ratedScores, ratedStates, ratedTopPercents, ratingCoverage } from '$lib/stores/ratingCoverage';
@@ -284,8 +284,7 @@
 	});
 </script>
 
-<!-- Inert, not disabled, so a guest's tip still opens on hover and focus (as PillToggle's
-     guest options do). -->
+<!-- Inert, not disabled (rules/frontend.md, "Tooltips"). -->
 {#snippet colourPill(c: { value: GalaxyColour; label: string }, inert: boolean, props: Record<string, unknown>)}
 	<button
 		{...props}
@@ -602,7 +601,7 @@
 					Rebuild map
 				</button>
 			</div>
-			<UsernameConfirmDialog
+			<TypeToConfirmDialog
 				open={rebuildOpen}
 				onOpenChange={(open) => (rebuildOpen = open)}
 				title="Rebuild the map"
@@ -617,7 +616,7 @@
 					merge or change names. Hand names carry over to the groups that keep most of their
 					stars. The current layout cannot be brought back.
 				{/snippet}
-			</UsernameConfirmDialog>
+			</TypeToConfirmDialog>
 		{/if}
 	</div>
 {/if}

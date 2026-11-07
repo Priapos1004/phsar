@@ -19,23 +19,26 @@
 		busyAction: string;
 		busy: boolean;
 		error?: string;
-		/** Called with the typed username, only once it matches: the endpoint checks the same
+		/** Called with what was typed, only once it may confirm: the endpoint checks the same
 		 *  string, so the dialog hands it over rather than a bare yes. */
 		onConfirm: (confirm: string) => void;
+		/** Confirm with the account password instead of the admin's username: the dialog cannot
+		 *  check it, so any non-empty entry confirms and the endpoint rules on it. */
+		password?: boolean;
 		/** What goes between the description and the field: a warning, an option. */
 		children?: Snippet;
 	}
 
-	let { open, onOpenChange, title, description, action, busyAction, busy, error = '', onConfirm, children }: Props = $props();
+	let { open, onOpenChange, title, description, action, busyAction, busy, error = '', onConfirm, password = false, children }: Props = $props();
 
 	const getUsername = getContext<(() => string | null) | undefined>('username');
 	let username = $derived(getUsername?.() ?? '');
 	let typed = $state('');
-	// An empty username would match an empty field, so a match needs one at all.
-	let matches = $derived(!!username && typed === username);
+	let matches = $derived(!!typed && (password || typed === username));
+	let unavailable = $derived(!password && !username);
 	const id = $props.id();
 
-	// The dialog stays mounted while closed, so a typed name would carry into the next opening.
+	// The dialog stays mounted while closed, so what was typed would carry into the next opening.
 	$effect.pre(() => {
 		if (open) typed = '';
 	});
@@ -56,17 +59,23 @@
 			<!-- One span: Label is a flex row, and bare text around the <strong> would be three
 			     flex items, wrapping side by side as columns on a phone. -->
 			<Label for={id} class="text-sm">
-				<span>Type your admin username (<strong>{username}</strong>) to confirm.</span>
+				{#if password}
+					<span>Enter your password to confirm.</span>
+				{:else}
+					<span>Type your admin username (<strong>{username}</strong>) to confirm.</span>
+				{/if}
 			</Label>
 			<Input
 				{id}
 				bind:value={typed}
-				placeholder={username}
-				disabled={!username || busy}
+				type={password ? 'password' : 'text'}
+				autocomplete={password ? 'current-password' : undefined}
+				placeholder={password ? undefined : username}
+				disabled={unavailable || busy}
 				onkeydown={(e) => e.key === 'Enter' && confirm()}
 			/>
 		</div>
-		{#if !username}
+		{#if unavailable}
 			<p class="text-sm text-destructive">Your username is unavailable. Reload the page to confirm.</p>
 		{:else if error}
 			<p class="text-sm text-destructive">{error}</p>

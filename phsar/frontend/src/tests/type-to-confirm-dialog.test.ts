@@ -1,25 +1,25 @@
 /**
- * The type-to-confirm dialog every irreversible admin action shares: tested here once rather
- * than through each caller.
+ * The type-to-confirm dialog every irreversible action shares: tested here once rather than
+ * through each caller.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/svelte';
 import { createRawSnippet } from 'svelte';
-import UsernameConfirmDialog from '$lib/components/UsernameConfirmDialog.svelte';
+import TypeToConfirmDialog from '$lib/components/TypeToConfirmDialog.svelte';
 
 const description = createRawSnippet(() => ({ render: () => '<span>Everything goes.</span>' }));
 
 function renderDialog(username: string | null, props: Record<string, unknown> = {}) {
 	const onConfirm = vi.fn();
-	const view = render(UsernameConfirmDialog, {
+	const view = render(TypeToConfirmDialog, {
 		props: { open: true, onOpenChange: vi.fn(), title: 'Wipe it', description, action: 'Wipe', busyAction: 'Wiping…', busy: false, onConfirm, ...props },
 		context: new Map([['username', () => username]])
 	});
 	const button = screen.getByRole('button', { name: props.busy ? 'Wiping…' : 'Wipe' });
-	return { onConfirm, view, field: screen.getByLabelText(/type your admin username/i) as HTMLInputElement, button };
+	return { onConfirm, view, field: screen.getByLabelText(props.password ? /enter your password/i : /type your admin username/i) as HTMLInputElement, button };
 }
 
-describe('UsernameConfirmDialog', () => {
+describe('TypeToConfirmDialog', () => {
 	it('confirms only once the typed name matches, handing it over', async () => {
 		const { onConfirm, field, button } = renderDialog('admin');
 		await fireEvent.input(field, { target: { value: 'admi' } });
@@ -56,5 +56,18 @@ describe('UsernameConfirmDialog', () => {
 		await view.rerender({ open: false });
 		await view.rerender({ open: true });
 		expect((screen.getByLabelText(/type your admin username/i) as HTMLInputElement).value).toBe('');
+	});
+
+	it('with a password, confirms any entry and needs no username', async () => {
+		const { onConfirm, field, button } = renderDialog(null, { password: true });
+		expect(field.type).toBe('password');
+		expect(button).toBeDisabled();
+		await fireEvent.keyDown(field, { key: 'Enter' });
+		expect(onConfirm).not.toHaveBeenCalled();
+
+		await fireEvent.input(field, { target: { value: 'hunter2' } });
+		expect(button).toBeEnabled();
+		await fireEvent.keyDown(field, { key: 'Enter' });
+		expect(onConfirm).toHaveBeenCalledWith('hunter2');
 	});
 });
