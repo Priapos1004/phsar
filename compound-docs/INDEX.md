@@ -19,6 +19,8 @@ first within their subsystem.
 
 **Browse** — [browse + news](2026-10-10-v0.16.2-browse.md) (why filter-set overrides are `on` / `off` lists, why the seeder syncs links in place, the studies behind the News lineup and the type badge, why see-all is two routes) · [home + discover](2026-10-12-v0.16.3-home-and-discover.md) (why a carousel names its page, why Home's rows clear on a catalogue change rather than on navigation, why Discover's bag moves per spin and keeps the day's mood, why a thin row widens once, why the reveal is Canvas 2D) · [responsive pass, touch, genre groups](2026-10-23-v0.16.4-responsive-pass.md) (the overlap study behind Discover's genre exclusions, and why a cached media search drops on every write)
 
+**Galaxy** — [galaxy names](2026-11-07-galaxy-names.md) (the hand names of the first prod fit, the conventions behind them — label length, plain words, no near-twins — and what to re-check after a refit)
+
 **Jobs & sweeps** — [content pipeline](2026-05-09-v0.14.0-content-pipeline.md) (the original worker and BFS, the duplicate detector, the maintenance-window foundation — the largest single record) · [sweep observability](2026-06-15-v0.14.5-sweep-observability.md) (the audit-diff summary) · [media-level sweep](2026-06-17-v0.14.8-media-level-sweep.md) (anime → media selection) · [little fixes](2026-06-17-v0.14.7-little-fixes.md) (failure logging, not-yet-aired relations, spoiler-cache scoping) · [reliability bug-fixes](2026-07-17-v0.14.13-bug-fixes.md) (the outage circuit breaker, the sliding session, the embedding case-fold) · [quality-of-life upgrades](2026-08-29-v0.15.5-quality-of-life.md) (a MAL 404 as loop control, the sibling not-found exceptions)
 
 **Backups & deployment** — [deployment & infrastructure](2026-04-19-v0.13.0-deployment.md) (Coolify, images, the original backup design) · [backup retention refinement](2026-06-16-v0.14.6-backup-refinement.md) (the three pools) · [quality-of-life upgrades](2026-07-27-v0.15.3-quality-of-life.md) (backup revision stamping and the composite `status`; the archival cadence as a **per-row window on the long-tail tier**, not a fifth tier; filter/score scoping) · [browse + news](2026-10-10-v0.16.2-browse.md) (the `pg_restore --clean` leftover-table trap, and why a restore re-seeds browse) · [home + discover](2026-10-12-v0.16.3-home-and-discover.md) (why a migration in an rc tag has shipped)
@@ -78,3 +80,4 @@ first within their subsystem.
 | 2026-10-11 | [v0.16.2 browse + news](2026-10-10-v0.16.2-browse.md) |
 | 2026-10-21 | [v0.16.3 home + discover](2026-10-12-v0.16.3-home-and-discover.md) |
 | 2026-10-28 | [v0.16.4 responsive pass, touch, genre groups](2026-10-23-v0.16.4-responsive-pass.md) |
+| 2026-11-07 | [galaxy names](2026-11-07-galaxy-names.md) |

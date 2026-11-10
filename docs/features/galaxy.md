@@ -187,3 +187,4 @@ its auto name.
 
 **Why it is this way**
 - [Galaxy](../../compound-docs/2026-10-30-v0.16.5-galaxy.md): the study behind the grain, the training set, the weights, the pipeline and the name floor, and the stability backtests
+- [Galaxy names](../../compound-docs/2026-11-07-galaxy-names.md): the hand names of the first prod fit, the conventions behind them, and what to re-check after a refit
