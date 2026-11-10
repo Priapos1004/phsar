@@ -181,7 +181,9 @@ A group with nothing distinctive is named "mixed". The cut-offs are in `auto_nam
 An admin can set a **hand name** with `PATCH /admin/galaxy/groups/{uuid}`, and an empty
 name clears it. A hand name overrides the auto name and carries onto each refit by
 trained-member overlap (`galaxy_compute.carry_names`). A new group without a match shows
-its auto name.
+its auto name. A hand name no new group took is listed in the rebuild's summary
+(`names_dropped`) with every new group holding a share of its old members
+(`DROPPED_SHARE` says how much and why), since the old groups go with the old fit.
 
 ---
 

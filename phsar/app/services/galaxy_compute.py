@@ -61,6 +61,11 @@ REGION_SIZE = 30
 # A hand name follows the new group sharing at least this much (Jaccard) of its old
 # trained members; below it the group shows its auto name.
 NAME_FLOOR = 0.4
+# A name no group took records every new group holding at least this share of its old
+# trained members: share rather than Jaccard, so a split reads as its halves and a merge
+# as all of them inside the bigger group. Low, since a dissolved group's pieces are what
+# a rename needs, and the shares say which pieces are strays.
+DROPPED_SHARE = 0.1
 # A group's label sits on its densest cluster: around the trained member with the most of
 # the group's trained members within this share of the trained layout's extent, at their mean. The
 # members' mean lands between the parts of a group the layout split, or over a neighbour.
@@ -525,9 +530,13 @@ def place(blob: bytes, anime: list[AnimeRow], media: list[MediaRow]) -> list[dic
 
 
 def carry_names(previous: list[tuple[str, frozenset[int], str]],
-                new: list[tuple[str, frozenset[int]]]) -> dict[int, str]:
+                new: list[tuple[str, frozenset[int]]],
+                ) -> tuple[dict[int, str], list[tuple[str, str, list[tuple[int, float]]]]]:
     """Hand names onto a new fit, keyed by index into `new`. Groups are matched one to
-    one, greedily by the Jaccard overlap of their trained members, within a level."""
+    one, greedily by the Jaccard overlap of their trained members, within a level.
+
+    Also the names that found no match, in `previous`'s order, as (level, name,
+    [(index into `new`, share of its old trained members there)], largest first)."""
     pairs = sorted(
         ((len(old & fresh) / len(old | fresh), i, j)
          for i, (level, old, _) in enumerate(previous)
@@ -544,7 +553,16 @@ def carry_names(previous: list[tuple[str, frozenset[int], str]],
             continue
         used_old.add(i)
         out[j] = previous[i][2]
-    return out
+
+    def went_to(level: str, old: frozenset[int]) -> list[tuple[int, float]]:
+        if not old:
+            return []
+        shares = [(j, len(old & fresh) / len(old)) for j, (new_level, fresh) in enumerate(new) if new_level == level]
+        return sorted([js for js in shares if js[1] >= DROPPED_SHARE], key=lambda js: -js[1])
+
+    dropped = [(level, name, went_to(level, old))
+               for i, (level, old, name) in enumerate(previous) if i not in used_old]
+    return out, dropped
 
 
 def auto_name(profiles: list[dict[str, Any]], members: np.ndarray, reference: np.ndarray) -> str:

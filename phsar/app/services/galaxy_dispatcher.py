@@ -28,9 +28,20 @@ async def galaxy_rebuild_dispatcher(session: AsyncSession, job: Job) -> dict[str
 
     await progress.update(stage="Fitting the map", force=True)
     result = await galaxy_service.run_in_child(galaxy_compute.fit, anime, media, previous)
-    names = galaxy_compute.carry_names(
-        named, [(g["level"], frozenset(g["trained_members"])) for g in result["groups"]],
+    groups = result["groups"]
+    names, dropped = galaxy_compute.carry_names(
+        named, [(g["level"], frozenset(g["trained_members"])) for g in groups],
     )
+    # Each group the members went to by its number, which a label ("mixed") is not unique
+    # enough to stand in for, and by the label the map shows (`GalaxyDAO.map_groups`).
+    names_dropped = [
+        {"name": name, "level": level,
+         "went_to": [{"number": groups[j]["number"], "label": names.get(j) or groups[j]["auto_name"],
+                      "share": round(share, 2)} for j, share in went]}
+        for level, name, went in dropped
+    ]
+    # The fit keeps the summary without the list: `live_fit` loads it on every map and
+    # neighbours request, and the list is only the job's to report.
     summary = {**result["summary"], "names_carried": len(names)}
 
     await progress.update(stage="Saving", force=True)
@@ -42,9 +53,9 @@ async def galaxy_rebuild_dispatcher(session: AsyncSession, job: Job) -> dict[str
             "pair_cosine_percentiles": result["pair_cosine_percentiles"],
             "summary": summary,
         },
-        groups=result["groups"], names=names, stars=result["stars"],
+        groups=groups, names=names, stars=result["stars"],
     )
     await session.commit()
     await progress.update(stage="Done", force=True)
     logger.info("Galaxy map rebuilt: %s", summary)
-    return summary
+    return {**summary, "names_dropped": names_dropped}

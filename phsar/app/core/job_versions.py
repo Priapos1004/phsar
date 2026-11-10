@@ -54,7 +54,11 @@ JOB_KIND_VERSIONS: dict[JobKind, int] = {
     JobKind.restore: 1,
     # {trained, predicted, sectors, regions, between_share, names_carried, median_movement}
     # — median_movement only on a refit, as a share of the map's span.
-    JobKind.galaxy_rebuild: 1,
+    #   v2  `names_dropped[]` {name, level, went_to[{number, label, share}]}: the hand
+    #       names no new group matched. Bumped for the reason update_sweep's list gives
+    #       above. Not omitted from the Jobs Log list, which counts it, and the bell ships
+    #       it whole too: a few hundred bytes on a usual refit, and the rows are rare.
+    JobKind.galaxy_rebuild: 2,
 }
 
 # result_summary keys the Jobs Log *list* never reads — only the

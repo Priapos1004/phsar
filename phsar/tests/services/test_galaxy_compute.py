@@ -220,4 +220,23 @@ def test_hand_names_follow_their_members_one_to_one():
     # "Isekai" (Jaccard 0.6) and "Close second" (0.75) both want the first sector; the
     # better overlap wins and the other goes unplaced. A region never takes a sector's
     # name, and a group no one overlaps keeps its auto name.
-    assert carry_names(previous, new) == {0: "Close second", 1: "Cheat skills"}
+    carried, dropped = carry_names(previous, new)
+    assert carried == {0: "Close second", 1: "Cheat skills"}
+    # The outbid name still says where its members went; the orphaned one went nowhere
+    # (the region holding 90 and 91 is the wrong level).
+    assert dropped == [("sector", "Isekai", [(0, 0.75)]), ("sector", "Gone", [])]
+
+
+def test_a_dropped_name_lists_every_group_its_members_split_into():
+    previous = [("region", frozenset(range(10, 21)), "Split")]
+    new = [
+        ("region", frozenset(range(10, 15)) | frozenset(range(50, 60))),  # 5 of its 11
+        ("region", frozenset(range(15, 19)) | frozenset(range(60, 70))),  # 4 of 11
+        ("region", frozenset({19}) | frozenset(range(70, 80))),           # 1 of 11, a stray
+        ("sector", frozenset(range(10, 21))),                             # all, the wrong level
+    ]
+    # No half reaches the Jaccard floor (5/21, 4/21), so the name drops, listing both
+    # halves by their share: not the stray under a tenth, nor the group at another level.
+    carried, dropped = carry_names(previous, new)
+    assert carried == {}
+    assert dropped == [("region", "Split", [(0, 5 / 11), (1, 4 / 11)])]

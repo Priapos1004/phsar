@@ -717,6 +717,13 @@ export interface GalaxyRebuildSummary extends JobResultSummary {
 	regions?: number;
 	between_share?: number;
 	names_carried?: number;
+	// v2+: the hand names no new group matched, each with the new groups holding at least
+	// `DROPPED_SHARE` (galaxy_compute) of its old members, largest share first.
+	names_dropped?: {
+		name: string;
+		level: 'sector' | 'region';
+		went_to: { number: number; label: string; share: number }[];
+	}[];
 	// Only on a refit: how far the median star moved, as a share of the map's span.
 	median_movement?: number | null;
 }

@@ -52,6 +52,8 @@ const SUMMARY: Record<AdminJobResponse['kind'], (row: AdminJobResponse) => strin
 			`${num(s.trained)} fitted + ${num(s.predicted)} placed`,
 			`${num(s.names_carried)} names kept`,
 		];
+		const dropped = Array.isArray(s.names_dropped) ? s.names_dropped.length : 0;
+		if (dropped > 0) parts.push(`${dropped} names dropped`);
 		if (typeof s.median_movement === 'number') {
 			parts.push(`moved ${Math.round(s.median_movement * 100)}%`);
 		}

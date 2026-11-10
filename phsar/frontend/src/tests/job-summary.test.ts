@@ -121,6 +121,26 @@ describe('payloadSummary — galaxy_rebuild', () => {
 	it('is empty while running', () => {
 		expect(payloadSummary(row({ kind: 'galaxy_rebuild', status: 'running', result_summary: summary }))).toBe('');
 	});
+
+	const dropped = [
+		{ name: 'Seinen Classics', level: 'region', went_to: [{ number: 3, label: 'Auto region', share: 0.5 }] },
+		{ name: 'Modern Mecha', level: 'region', went_to: [] },
+	];
+
+	it('counts the names a refit dropped, beside the ones it kept', () => {
+		expect(
+			payloadSummary(row({
+				kind: 'galaxy_rebuild', version: 2,
+				result_summary: { ...summary, names_dropped: dropped, median_movement: 0.073 },
+			})),
+		).toBe('15 sectors · 54 regions · 1595 fitted + 369 placed · 60 names kept · 2 names dropped · moved 7%');
+	});
+
+	it('says nothing of dropped names when none were', () => {
+		expect(payloadSummary(row({
+			kind: 'galaxy_rebuild', version: 2, result_summary: { ...summary, names_dropped: [] },
+		}))).toBe('15 sectors · 54 regions · 1595 fitted + 369 placed · 60 names kept');
+	});
 });
 
 describe('payloadSummary — user_scrape', () => {

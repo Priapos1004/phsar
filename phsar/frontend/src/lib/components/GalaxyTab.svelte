@@ -263,7 +263,7 @@
 			const { job_uuid } = await api.post<{ job_uuid: string }>('/admin/galaxy/rebuild', { confirm });
 			// Seeds the bell until its next /jobs/mine fetch brings the real row.
 			addOptimisticJob({
-				uuid: job_uuid, kind: 'galaxy_rebuild', version: 1, status: 'queued', payload: {}, stage: null,
+				uuid: job_uuid, kind: 'galaxy_rebuild', version: 2, status: 'queued', payload: {}, stage: null,
 				items_total: null, items_done: 0, result_summary: null, error_message: null,
 				created_at: new Date().toISOString(), started_at: null, finished_at: null
 			});

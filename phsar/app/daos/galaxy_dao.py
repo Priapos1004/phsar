@@ -155,9 +155,12 @@ class GalaxyDAO(BaseDAO[GalaxyGroup]):
 
     async def named_groups(self, db: AsyncSession) -> list[tuple[str, frozenset[int], str]]:
         """The live map's hand-named groups with their trained members, for
-        `galaxy_compute.carry_names`."""
+        `galaxy_compute.carry_names`: sectors first, then by number, so a tie in its greedy
+        match and the order of the names it drops are the same on every run."""
         groups = (await db.execute(
-            select(GalaxyGroup.id, GalaxyGroup.parent_id, GalaxyGroup.name).where(GalaxyGroup.name.is_not(None))
+            select(GalaxyGroup.id, GalaxyGroup.parent_id, GalaxyGroup.name)
+            .where(GalaxyGroup.name.is_not(None))
+            .order_by(GalaxyGroup.parent_id.is_not(None), GalaxyGroup.number)
         )).all()
         if not groups:
             return []

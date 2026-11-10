@@ -78,10 +78,39 @@ async def test_a_rebuild_swaps_the_map_and_carries_hand_names(db_session, catalo
     names = dict((await db_session.execute(select(GalaxyGroup.auto_name, GalaxyGroup.name))).all())
     assert names == {"Auto sector": "Isekai Sprawl", "Auto region": None}
     assert summary["names_carried"] == 1
+    assert summary["names_dropped"] == []
     stars = (await db_session.execute(select(func.count()).select_from(GalaxyStar))).scalar_one()
     assert stars == (await db_session.execute(
         select(func.count()).select_from(Anime).where(Anime.anime_search.has())
     )).scalar_one()
+
+
+async def test_a_rebuild_lists_the_names_it_dropped(db_session, catalogue, stub_fit, monkeypatch):
+    await galaxy_rebuild_dispatcher(db_session, fake_job())
+    sector = (await db_session.execute(select(GalaxyGroup).where(GalaxyGroup.parent_id.is_(None)))).scalar_one()
+    await galaxy_service.rename_group(db_session, sector.uuid, "Isekai Sprawl")
+
+    def diluted(anime, media, previous):
+        # The new sector holds every old member plus twice as many others: a Jaccard of
+        # 1/3 whatever the catalogue's size, under the floor though all of them are there.
+        fit = _fake_fit(anime, media, previous)
+        ids = fit["groups"][0]["trained_members"]
+        fit["groups"][0]["trained_members"] = ids + [-k for k in range(1, 2 * len(ids) + 1)]
+        return fit
+
+    async def in_process(fn, *args):
+        return diluted(*args)
+
+    monkeypatch.setattr(galaxy_service, "run_in_child", in_process)
+    summary = await galaxy_rebuild_dispatcher(db_session, fake_job())
+
+    assert summary["names_carried"] == 0
+    assert summary["names_dropped"] == [
+        {"name": "Isekai Sprawl", "level": "sector",
+         "went_to": [{"number": 0, "label": "Auto sector", "share": 1.0}]},
+    ]
+    # The fit's own copy of the summary leaves the list to the job.
+    assert "names_dropped" not in (await db_session.execute(select(GalaxyFit.params))).scalar_one()["summary"]
 
 
 async def test_a_rebuild_starts_cold_only_after_the_vectors_changed(db_session, catalogue, stub_fit, monkeypatch):
@@ -230,4 +259,4 @@ def test_the_refit_date_is_the_latest_quarterly_fifteenth(now, refit):
 async def test_compute_runs_in_a_spawned_child():
     """The child imports `galaxy_compute` alone; this fails if the module drags the app
     (or the model) in, or cannot be imported from a fresh interpreter."""
-    assert await galaxy_service.run_in_child(galaxy_compute.carry_names, [], []) == {}
+    assert await galaxy_service.run_in_child(galaxy_compute.carry_names, [], []) == ({}, [])
