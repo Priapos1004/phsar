@@ -297,6 +297,24 @@ tr.focus-flash,
   }
 }
 
+/* An unavailable control (rules/frontend.md, "Tooltips"). An inert one dims in the base layer,
+   so a primitive's own disabled utilities still win; `hover` skips it and a `disabled` one,
+   keeping v4's touch guard, with `:where` holding hover's specificity. */
+@layer base {
+	[aria-disabled="true"] {
+		cursor: not-allowed;
+		opacity: 0.4;
+	}
+}
+
+@custom-variant hover {
+	@media (hover: hover) {
+		&:hover:where(:not(:disabled, [aria-disabled="true"])) {
+			@slot;
+		}
+	}
+}
+
 @utility no-scrollbar {
 	-ms-overflow-style: none;
 	scrollbar-width: none;

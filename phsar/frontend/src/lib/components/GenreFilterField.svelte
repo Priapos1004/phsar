@@ -134,7 +134,7 @@
 	<button
 		bind:this={addButton}
 		type="button"
-		class="inline-flex items-center gap-1 text-sm text-primary hover:underline disabled:opacity-50 disabled:no-underline"
+		class="inline-flex items-center gap-1 text-sm text-primary hover:underline disabled:opacity-50"
 		disabled={genres.groups.length >= MAX_GENRE_GROUPS}
 		onclick={() => onChange({ ...genres, groups: [...genres.groups, EMPTY_GROUP] })}
 	>

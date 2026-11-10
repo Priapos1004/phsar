@@ -27,14 +27,13 @@
 
 	const ON = 'bg-primary/15 text-primary font-medium';
 	const OFF = 'text-white/60 hover:text-white';
-	const DISABLED = 'text-white/30 cursor-not-allowed';
 </script>
 
 {#snippet pill(opt: Option, first: boolean, props: Record<string, unknown>)}
 	<button
 		{...props}
 		type="button"
-		class="px-3 py-1.5 text-sm transition-colors {first ? '' : 'border-l border-white/15'} {opt.disabled ? DISABLED : value === opt.value ? ON : OFF}"
+		class="px-3 py-1.5 text-sm transition-colors {first ? '' : 'border-l border-white/15'} {value === opt.value ? ON : OFF}"
 		aria-pressed={value === opt.value}
 		aria-disabled={opt.disabled}
 		onclick={() => !opt.disabled && onSelect(opt.value)}

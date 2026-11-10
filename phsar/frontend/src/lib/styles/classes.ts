@@ -127,13 +127,6 @@ export const coverBookmark =
 export const scoreCircle =
 	'rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center shrink-0';
 
-// Hero icon-button chrome (the watchlist bookmark + share actions on the anime/media
-// heroes). Disabled renders visible-but-inert rather than hidden, so a guest sees what
-// their own account could do.
-export const heroIconButton = 'p-2 rounded-lg transition';
-export const heroIconButtonEnabled = 'hover:bg-primary/10';
-export const heroIconButtonDisabled = 'opacity-50 cursor-not-allowed';
-
 // Small muted "pill" for a secondary label under a card title (main/side breakdown,
 // relation type) — shared by the ratings + watchlist grid cards so they can't drift.
 // Layout margin (e.g. `mt-auto`) is composed at the call site.

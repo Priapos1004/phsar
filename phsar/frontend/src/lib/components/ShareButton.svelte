@@ -8,14 +8,13 @@
 		tooltip: string;
 		ariaLabel: string;
 		onclick: () => void;
-		disabled?: boolean;
 	}
 
-	let { tooltip, ariaLabel, onclick, disabled = false }: Props = $props();
+	let { tooltip, ariaLabel, onclick }: Props = $props();
 </script>
 
-<HeroIconButton {tooltip} {ariaLabel} {onclick} {disabled}>
-	{#snippet icon(isDisabled)}
-		<Share2 class="size-6 {isDisabled ? 'text-muted-foreground' : 'text-primary'}" />
+<HeroIconButton {tooltip} {ariaLabel} {onclick}>
+	{#snippet icon()}
+		<Share2 class="size-6 text-primary" />
 	{/snippet}
 </HeroIconButton>

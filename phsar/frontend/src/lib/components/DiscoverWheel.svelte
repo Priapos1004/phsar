@@ -145,7 +145,7 @@
 		<circle r={R} fill="none" stroke="rgb(255 255 255 / 0.22)" stroke-width="1" />
 		<circle r="16" fill="rgb(255 255 255 / 0.1)" stroke="rgb(255 255 255 / 0.3)" stroke-width="0.8" />
 		<g filter="url(#{id}-glow)">
-			<circle r="6.5" class="fill-primary transition group-enabled:group-hover:opacity-75" />
+			<circle r="6.5" class="fill-primary transition group-hover:opacity-75" />
 			<path d="M -8 -115 L 8 -115 L 0 -98 Z" fill="white" />
 		</g>
 	</svg>

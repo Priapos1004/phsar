@@ -108,9 +108,11 @@ one (a chip, a select) gets an `InfoTip` ⓘ beside its label, and a text label 
 tooltip carries `cls.tooltipHint`, the dotted underline that tells a phone it can be tapped.
 
 **A `disabled` control never opens its tooltip.** Where the tip says why it is unavailable (a
-guest's bookmark — "Restricted accounts" below), make it inert instead — `aria-disabled`, a
-click that checks it, a dimmed look — as `HeroIconButton` does. One whose tip only names the
-action (zoom in at the closest zoom, a save while it runs) may take `disabled`.
+guest's bookmark — "Restricted accounts" below), make it inert instead — `aria-disabled` and a
+click that checks it — as `HeroIconButton` does. `app.css` gives every `aria-disabled` element
+the one dimmed look, and no `hover:` utility fires on it or on a `disabled` one, so a caller
+adds no hover guard to either, and no dim to an inert one. One whose tip only names the action (zoom in at the closest zoom, a save while
+it runs) may take `disabled`.
 
 ## Charts
 

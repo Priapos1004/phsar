@@ -291,7 +291,7 @@
 		type="button"
 		aria-pressed={colour === c.value}
 		aria-disabled={inert}
-		class="{cls.pagePill} {colour === c.value ? cls.pagePillOn : cls.pagePillOff} aria-disabled:cursor-not-allowed aria-disabled:opacity-40"
+		class="{cls.pagePill} {colour === c.value ? cls.pagePillOn : cls.pagePillOff}"
 		onclick={() => !inert && galaxyView.update((v) => ({ ...v, colour: c.value }))}
 	>
 		{c.label}
