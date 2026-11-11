@@ -30,7 +30,7 @@ marks a grab-bag ([conventions](conventions.md#it-says-what-the-group-holds)).
 | R14 | 70 | Mecha & Space | Evangelion, Gurren Lagann, Code Geass, Mobile Suit Gundam (1979) | mecha of every era, 1963–2026 |
 | R15 | 7 | Card & Game Battles | Yu-Gi-Oh! Sevens, Cardfight!! Vanguard, Duel Masters, Bakugan | shows built to sell a game; every member `between` |
 | **S4** | 52 | Long-Running Kids' TV | Doraemon, Pokémon, Pretty Cure, Sazae-san | broadcast franchises for older kids; one region |
-| R16 | 52 | Magical Girls & Family TV | Pretty Cure, Ojamajo Doremi, Chibi Maruko-chan, Heidi | S4's only region |
+| R16 | 52 | Magical Girls & Family TV | Pretty Cure, Ojamajo Doremi, Chibi Maruko-chan, Heidi | S4's only region: stored, not shown ([conventions](conventions.md#it-works-as-a-map-label)) |
 | **S5** | 179 | Mascots & Preschool TV | Chiikawa, Sumikko Gurashi, Pleasant Goat and Big Big Wolf, Tayo | the youngest audience and goods mascots |
 | R17 | 122 | Cute Mascot Shorts | Chiikawa, Rilakkuma and Kaoru, Mofusand, Bananya | also takes the one-off films nothing else does |
 | R18 | 57 | Preschool Cartoon Series | Tayo, Pleasant Goat and Big Big Wolf, Larva, Super Wings | 95% kids |

@@ -195,6 +195,15 @@ export interface GroupRef {
 export const inGroup = (s: GalaxyStar, g: GroupRef) => s[g.level] === g.number;
 export const sameGroup = (a: GroupRef, b: GroupRef) => a.level === b.level && a.number === b.number;
 
+/** Each sector's only region, as region → sector. The map shows such a region as its sector:
+ *  picking it apart from the sector would show the same stars under a second name. */
+export const soleRegions = (regions: { number: number; sector: number }[]): Map<number, number> =>
+	new Map([...Map.groupBy(regions, (r) => r.sector).values()].filter((rs) => rs.length === 1).map(([r]) => [r.number, r.sector]));
+
+/** The group as the map shows it: a sector's only region is the sector. */
+export const shownGroup = (g: GroupRef, sole: Map<number, number>): GroupRef =>
+	g.level === 'region' && sole.has(g.number) ? { level: 'sector', number: sole.get(g.number)! } : g;
+
 /** How many anime each sector or region holds. */
 export const groupSizes = (stars: GalaxyStar[], level: GroupRef['level']) =>
 	new Map([...Map.groupBy(stars, (s) => s[level])].map(([number, members]) => [number, members.length]));

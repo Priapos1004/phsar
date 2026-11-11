@@ -14,6 +14,9 @@ were chosen, with the alternatives that lost, is in
   "Romance Donghua" — wherever the sector has one (a demographic, "Donghua"), unless the
   name reads better without it ("Shy Crushes & Teasing"). Last, because some names have
   no good first-word form ("Modern Battle Shounen").
+- **A sector's only region needs no review.** The map shows it as its sector
+  ([USER_FLOWS §3d](../../../phsar/frontend/USER_FLOWS.md#3d-galaxy)), so its name is
+  never seen; whatever it holds stays stored and carries onto a refit like any other.
 
 ## It says what the group holds
 

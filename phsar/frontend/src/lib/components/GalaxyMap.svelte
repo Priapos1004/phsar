@@ -27,7 +27,7 @@
 		COVER_ASPECT, COVER_SPAN, FOCUS_SPAN, LIT_NO_VALUE, MIN_SPAN, NO_VALUE, REGION_LABELS_BELOW, SCORE_RAMP,
 		blankColour, coverCrop, coverSize, evenWindows, fitWindow, groupSizes, groupView, inGroup, labelCentre, mineColour,
 		nebulaPixels, onMap, packCovers, percentWindow, personal, rankShare, sectorHues, spreadLabels, starFigures,
-		sameGroup, type GalaxyColour, type GroupRef, type Pick,
+		sameGroup, shownGroup, soleRegions, type GalaxyColour, type GroupRef, type Pick,
 		type MapWindow, type NebulaSource
 	} from '$lib/utils/galaxy';
 	import type { AnimeRatingCoverage, GalaxyMap, GalaxyStar } from '$lib/types/api';
@@ -80,6 +80,9 @@
 	let hues = $derived(sectorHues(map.sectors));
 	let sectorName = $derived(new Map(map.sectors.map((g) => [g.number, g.name])));
 	let regionName = $derived(new Map(map.regions.map((g) => [g.number, g.name])));
+	let sole = $derived(soleRegions(map.regions));
+	// Renamed here, at the source both the drawn labels and their measuring (`spreadNames`) read.
+	let shownRegions = $derived(map.regions.map((r) => (sole.has(r.number) ? { ...r, name: sectorName.get(r.sector)! } : r)));
 	let sizes = $derived({ sector: groupSizes(map.stars, 'sector'), region: groupSizes(map.stars, 'region') });
 	const wide = new MediaQuery(cls.smUp);
 	const STATE_LABEL = new Map(RATED_STATES.anime.map((s) => [s.value, s.label]));
@@ -149,12 +152,12 @@
 	 *  never catches the pointer. */
 	const rankSize = (n: number) => n / (map.stars.length + 2);
 
-	const groupsOf = (level: 'sector' | 'region') => (level === 'sector' ? map.sectors : map.regions);
+	const groupsOf = (level: 'sector' | 'region') => (level === 'sector' ? map.sectors : shownRegions);
 
 	function labels(level: 'sector' | 'region') {
 		const explored = personal(colour) ? ratedPer(level) : null;
 		return groupsOf(level).map((g) => {
-			const spotlit = spot != null && sameGroup(spot, { level, number: g.number });
+			const spotlit = spot != null && sameGroup(spot, shownGroup({ level, number: g.number }, sole));
 			return {
 				value: [g.x, g.y, g.number],
 				name: g.name,
@@ -512,7 +515,8 @@
 		return (
 			`<b>${escapeHtml(title)}</b>` +
 			(title !== s.title ? dim(escapeHtml(s.title)) : '') +
-			`<br>${escapeHtml(sectorName.get(s.sector) ?? '')} › ${escapeHtml(regionName.get(s.region) ?? '')}` +
+			`<br>${escapeHtml(sectorName.get(s.sector) ?? '')}` +
+			(sole.has(s.region) ? '' : ` › ${escapeHtml(regionName.get(s.region) ?? '')}`) +
 			`<br>${starFigures(s)}` +
 			(s.genres.length ? dim(escapeHtml(s.genres.slice(0, 6).join(', '))) : '') +
 			(you ? `<br>You: ${you}` : '') +
@@ -617,7 +621,7 @@
 			const instance = echarts.init(container);
 			instance.on('click', (q: { seriesId: string; value: number[] }) => {
 				const level = NAME_LEVEL[q.seriesId];
-				if (level) onPick({ level, number: q.value[2] });
+				if (level) onPick(shownGroup({ level, number: q.value[2] }, sole));
 				else if (STAR_SERIES.includes(q.seriesId)) onPick(map.stars[q.value[2]].anime_uuid);
 			});
 			// A spotlight redraws the whole map, so a pointer passing over names on its way
@@ -626,7 +630,7 @@
 				const level = NAME_LEVEL[q.seriesId];
 				if (!level) return;
 				clearTimeout(spotTimer);
-				spotTimer = setTimeout(() => (hoverSpot = { level, number: q.value[2] }), 50);
+				spotTimer = setTimeout(() => (hoverSpot = shownGroup({ level, number: q.value[2] }, sole)), 50);
 			});
 			instance.on('mouseout', (q: { seriesId: string }) => {
 				if (!NAME_LEVEL[q.seriesId]) return;

@@ -31,7 +31,7 @@
 	import { formatScoreWithStep, formatShortDate, resolveTitle } from '$lib/utils/formatString';
 	import {
 		NO_VALUE, SCORE_RAMP, blankColour, dailyPicks, groupSizes, groupStats, mineColour, personal, starFigures,
-		malScore, sameGroup, type GalaxyColour, type GroupRef, type Pick, type PickReason
+		malScore, sameGroup, soleRegions, type GalaxyColour, type GroupRef, type Pick, type PickReason
 	} from '$lib/utils/galaxy';
 	import { COVERAGE_STYLE } from '$lib/utils/ratingCoverage';
 	import { buildDetailHref } from '$lib/utils/navigation';
@@ -85,6 +85,7 @@
 	/** With nothing picked the panel lists the sectors, biggest first: a phone has no hover
 	 *  to explore the map with, and its names hide where they collide. */
 	let sectorsBySize = $derived((map?.sectors ?? []).toSorted((a, b) => (sectorSize.get(b.number) ?? 0) - (sectorSize.get(a.number) ?? 0)));
+	let sole = $derived(soleRegions(map?.regions ?? []));
 	let sectorRegions = $derived(group?.level === 'sector' ? (map?.regions ?? []).filter((r) => r.sector === group.number) : []);
 	/** A panel list's row, and its section heading. */
 	const ROW = 'flex w-full gap-2.5 rounded-lg p-1.5 text-left hover:bg-white/5 focus-visible:bg-white/5';
@@ -511,11 +512,15 @@
 					<dl class="mt-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-xs">
 						<dt class="text-white/50">Sector</dt>
 						<dd>{@render groupLink({ level: 'sector', number: star.sector })}</dd>
-						<dt class="text-white/50">Region</dt>
-						<dd>{@render groupLink({ level: 'region', number: star.region })}</dd>
+						{#if !sole.has(star.region)}
+							<dt class="text-white/50">Region</dt>
+							<dd>{@render groupLink({ level: 'region', number: star.region })}</dd>
+						{/if}
 					</dl>
 					{#if star.between}
-						<p class="mt-1.5 text-xs text-white/50">It sits between regions: none of them claims it clearly.</p>
+						<p class="mt-1.5 text-xs text-white/50">
+							{sole.has(star.region) ? 'It sits at the edge of its sector: nothing in it claims it clearly.' : 'It sits between regions: none of them claims it clearly.'}
+						</p>
 					{/if}
 					<h3 class="mt-5 {HEADING}">Nearest neighbours</h3>
 					<p class="mb-1.5 text-xs text-white/50">Each with what it shares with this one.</p>
@@ -564,7 +569,7 @@
 							{#each stats.genres as g, i (g.name)}{#if i}{' · '}{/if}{@render genreHint(g.name)} <span class="text-white/50 tabular-nums">{Math.round(g.share * 100)}%</span>{/each}
 						</dd>
 					</dl>
-					{#if sectorRegions.length}
+					{#if sectorRegions.length > 1}
 						<h3 class="mt-5 mb-1.5 {HEADING}">Regions</h3>
 						{@render groupList('region', sectorRegions)}
 					{/if}

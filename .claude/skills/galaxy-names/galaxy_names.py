@@ -69,9 +69,11 @@ def write_digest(galaxy: dict, rebuild: dict, out: Path) -> None:
         heading = [f"## Sector S{sector['number']} — {sector['name']}", profile(by["sector"][sector["number"]])]
         section = list(heading)
         overview += ["", *heading]
-        for region in sorted((r for r in galaxy["regions"] if r["sector"] == sector["number"]), key=lambda g: g["number"]):
+        regions = sorted((r for r in galaxy["regions"] if r["sector"] == sector["number"]), key=lambda g: g["number"])
+        sole = " (the sector's only region, shown as the sector)" if len(regions) == 1 else ""
+        for region in regions:
             members = sorted(by["region"][region["number"]], key=lambda m: (m["score"] is None, -(m["score"] or 0)))
-            heading = [f"### Region R{region['number']} — {region['name']}", profile(members)]
+            heading = [f"### Region R{region['number']} — {region['name']}{sole}", profile(members)]
             overview += ["", *heading]
             section += ["", *heading, ""] + [member(m) for m in members]
         (out / f"S{sector['number']}.md").write_text("\n".join(section) + "\n")

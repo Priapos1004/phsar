@@ -14,6 +14,8 @@ import {
 	nebulaPixels,
 	packCovers,
 	sectorHues,
+	shownGroup,
+	soleRegions,
 	type MapWindow
 } from '$lib/utils/galaxy';
 import type { GalaxySector, GalaxyStar } from '$lib/types/api';
@@ -41,6 +43,25 @@ describe('groupView', () => {
 		const v = groupView(stars, { level: 'sector', number: 0 }, win, 1000, { left: 200, right: 0 });
 		expect(v.width).toBeCloseTo(28.75);
 		expect(v.x).toBeCloseTo(17.125);
+	});
+});
+
+describe('soleRegions', () => {
+	// Sector 0 splits into regions 0 and 1; sector 1's only region is 2.
+	const sole = soleRegions([
+		{ number: 0, sector: 0 },
+		{ number: 1, sector: 0 },
+		{ number: 2, sector: 1 }
+	]);
+
+	it("finds the regions that are their sector's only one", () => {
+		expect([...sole]).toEqual([[2, 1]]);
+	});
+
+	it('shows such a region as its sector, and leaves every other group as it is', () => {
+		expect(shownGroup({ level: 'region', number: 2 }, sole)).toEqual({ level: 'sector', number: 1 });
+		expect(shownGroup({ level: 'region', number: 0 }, sole)).toEqual({ level: 'region', number: 0 });
+		expect(shownGroup({ level: 'sector', number: 1 }, sole)).toEqual({ level: 'sector', number: 1 });
 	});
 });
 
