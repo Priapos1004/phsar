@@ -49,8 +49,19 @@ async def _cosine_to(vec, text: str) -> float:
     return cosine_similarity(vec, await generate_embedding(text))
 
 
+def _scope_passes(monkeypatch, scope: dict[str, list[int]]) -> None:
+    """Narrow each of `reembed_all_embeddings`' passes to `scope`'s rows, keeping its own
+    order and filters: on the dev database a pass otherwise walks the whole catalogue."""
+    real = embedding_backfiller._reembed
+
+    async def scoped(db, label, model, ids_stmt, regenerate):
+        return await real(db, label, model, ids_stmt.where(model.id.in_(scope[label])), regenerate)
+
+    monkeypatch.setattr(embedding_backfiller, "_reembed", scoped)
+
+
 @pytest.mark.asyncio
-async def test_reembed_regenerates_existing_vectors_in_place(db_session):
+async def test_reembed_regenerates_existing_vectors_in_place(db_session, monkeypatch):
     anime = Anime(mal_id=99001, title="Reembed Show", description="A reembed description.")
     db_session.add(anime)
     await db_session.flush()
@@ -90,8 +101,8 @@ async def test_reembed_regenerates_existing_vectors_in_place(db_session):
     r_row.note_embedding = _SENTINEL
     await db_session.flush()
 
-    counts = await reembed_all_embeddings(db_session)
-    assert counts["anime"] >= 1 and counts["media"] >= 1 and counts["ratings"] >= 1
+    _scope_passes(monkeypatch, {"anime": [anime.id], "media": [media.id], "ratings": [rating.id]})
+    assert await reembed_all_embeddings(db_session) == {"media": 1, "ratings": 1, "anime": 1}
 
     a_after = (await db_session.execute(
         select(AnimeSearch).where(AnimeSearch.anime_id == anime.id))).scalar_one()
@@ -113,10 +124,15 @@ async def test_reembed_regenerates_existing_vectors_in_place(db_session):
     assert await _cosine_to(r_after.note_embedding, rating.note) > 0.999
 
 
-async def _probe_row(db_session) -> AnimeSearch:
+async def _probe_row(db_session) -> tuple[AnimeSearch, dict[str, list[int]]]:
     """The row `embeddings_are_stale` reads (`probe_row`). Two fixture anime make sure one
     exists and give the anime pass a second row to cut on. One fixture media
-    gives the media pass a row to cut on, even on an empty database."""
+    gives the media pass a row to cut on, even on an empty database.
+
+    Returns the row with the passes' scope (`_scope_passes`). The probe is in it whether a
+    fixture or, on the dev database, a real anime, so a pass in the wrong order writes it
+    early on either."""
+    anime_ids = []
     for mal_id in (99011, 99012):
         anime = Anime(mal_id=mal_id, title=f"Probe {mal_id}", description="A probe description.")
         db_session.add(anime)
@@ -125,13 +141,17 @@ async def _probe_row(db_session) -> AnimeSearch:
             db_session, anime_id=anime.id,
             title_texts=anime_title_texts(anime), description_text=anime.description or "",
         )
-    db_session.add(Media(**media_kwargs(anime.id, 990120, title="Probe Media")))
+        anime_ids.append(anime.id)
+    media = Media(**media_kwargs(anime.id, 990120, title="Probe Media"))
+    db_session.add(media)
     await db_session.flush()
-    return await probe_row(db_session)
+    probe = await probe_row(db_session)
+    return probe, {"anime": [probe.anime_id, *anime_ids], "media": [media.id], "ratings": []}
 
 
 async def test_the_probe_tells_current_vectors_from_stale_ones(db_session):
-    anime = await db_session.get(Anime, (await _probe_row(db_session)).anime_id)
+    probe, _ = await _probe_row(db_session)
+    anime = await db_session.get(Anime, probe.anime_id)
     await regenerate_anime_embedding(
         db_session, anime_id=anime.id,
         title_texts=anime_title_texts(anime), description_text=anime.description or "",
@@ -163,9 +183,10 @@ async def test_a_pass_cut_short_leaves_the_probe_stale(db_session, monkeypatch, 
     """Cut on the first media row, or on the second anime row after one real write:
     either way the probe still reads stale. The anime pass stays real in the media
     case, so a pass that ran anime first would fail here."""
-    row = await _probe_row(db_session)
+    row, scope = await _probe_row(db_session)
     row.description_embedding = _SENTINEL
     await db_session.flush()
+    _scope_passes(monkeypatch, scope)
 
     monkeypatch.setattr(embedding_backfiller, "regenerate_rating_embedding", _skip)
     if cut == "media":

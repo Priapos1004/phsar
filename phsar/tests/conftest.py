@@ -77,7 +77,13 @@ def backup_dir(tmp_path, monkeypatch):
 
     Lives here rather than per-file because test modules in more than one
     directory need it — the router-level compression test is the one that put
-    it outside `tests/services/`."""
+    it outside `tests/services/`.
+
+    On the dev database it skips its test: most take it to dump the whole
+    catalogue, seconds a time, and nothing in its data changes what a backup
+    test checks."""
+    if ON_DEV_DB:
+        pytest.skip("dumps the whole database; the suite's own database runs it")
     monkeypatch.setattr(settings, "BACKUP_DIR", str(tmp_path))
     return tmp_path
 
