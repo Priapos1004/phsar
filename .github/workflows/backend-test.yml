@@ -91,57 +91,6 @@ jobs:
         sudo apt-get install -y postgresql-client-17
         echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
 
-    # Guards, in seconds and with no file written:
-    #  1. Models and migrations agree — an index or column declared in only one
-    #     of the two is exactly what makes the next `--autogenerate` propose a
-    #     destructive diff nobody reads closely.
-    #  2. The migration chain still replays from empty. Nothing else in CI does
-    #     this: the test DB below is built by `create_all`, so the chain is
-    #     never exercised end to end.
-    #  3. Every native enum holds its Python enum's labels (the comparator in
-    #     alembic/env.py).
-    #
-    # It needs its OWN database, built by replaying the chain. Run it against
-    # `testdb` and it would compare `create_all`'s metadata to the same
-    # metadata, passing no matter how far the migrations had drifted. The
-    # step-level DB_NAME override is enough — alembic/env.py builds its URL from
-    # `settings`, and env vars outrank .env. The migrations create their own
-    # extensions (vector, pg_trgm), so there is nothing to set up.
-    - name: Check migrations replay and match models
-      env:
-        DB_NAME: migrationcheck
-        PGPASSWORD: ${{ env.DB_PASSWORD }}
-      run: |
-        psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d postgres \
-          -c 'CREATE DATABASE migrationcheck'
-        alembic upgrade head
-        alembic check
-
-    - name: Create database schema and seed
-      run: |
-        python -c "
-        import asyncio
-        from app.core.db import engine, async_session_maker, Base
-        from sqlalchemy import text
-        import app.models  # registers all models with Base.metadata
-        from app.seeders.user_seeder import seed_admin_user
-        from app.seeders.genre_seeder import seed_genres
-        async def setup():
-            async with engine.begin() as conn:
-                await conn.execute(text('CREATE EXTENSION IF NOT EXISTS vector'))
-                await conn.execute(text('CREATE EXTENSION IF NOT EXISTS pg_trgm'))
-                await conn.run_sync(Base.metadata.create_all)
-            async with async_session_maker() as session:
-                await seed_genres(session)
-                await seed_admin_user(session)
-        asyncio.run(setup())
-        "
-        # `alembic_version` is Alembic-managed, so `create_all` never builds it —
-        # and the backup tests read it to compare a dump's stamped revision
-        # against the live DB's. Stamp (not `upgrade head`) because the schema is
-        # already at head from `create_all`; this only writes the version row.
-        alembic stamp head
-
     - name: Type check
       run: mypy
 

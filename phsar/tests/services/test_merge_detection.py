@@ -470,9 +470,9 @@ async def _media_for_anime(db_session, anime_id: int) -> _MediaIdPair:
 async def _our_pair_exists(db_session, a_id: int, b_id: int) -> MergeCandidate | None:
     """Look up the merge_candidates row for the (a_id, b_id) pair (after
     sorting). Returns the row if present, else None. Tests use this helper
-    instead of asserting on absolute inserted counts because the test DB
-    is shared with the dev DB — pre-existing dev data triggers unrelated
-    inserts that have nothing to do with the test scenario."""
+    instead of asserting on absolute inserted counts because under
+    `PHSAR_TEST_DB=dev` pre-existing dev data triggers unrelated inserts that
+    have nothing to do with the test scenario."""
     a_id, b_id = sorted((a_id, b_id))
     return (await db_session.execute(
         select(MergeCandidate).where(

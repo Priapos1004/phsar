@@ -293,7 +293,7 @@ _CLOSE = "Izume"
 _HUB = "Izumo Shrine"
 _INFIX = "Fixture Tankery"
 _LEAP = "Fixture Summer"
-# Enough far rows that on CI's empty database, where the fixtures are the whole population
+# Enough far rows that on the suite's own empty database, where the fixtures are the whole population
 # `description_cutoff` averages, the mean sits high enough for every premise below; a prod
 # restore holds them too.
 _FAR = ("Fixture Kitchen", "Fixture Ledger", "Fixture Circuit")
@@ -1180,7 +1180,7 @@ async def top_percent_set(db_session):
     anchor that outranks any real title. The anchor counts toward every rank, so a
     ranking over only the rows a search selects disagrees with the badge.
 
-    Three scored rows, so on CI, where they are the whole catalogue, every badge but
+    Three scored rows, so on the suite's own database, where they are the whole catalogue, every badge but
     the worst depends on rounding up: 34, 67 (and 100)."""
     await _make_anime(
         db_session, mal_id=87711, title=_TOP_ANCHOR, in_season=False,

@@ -4,7 +4,7 @@ The tier arithmetic is pinned in `tests/services/test_rating_coverage.py`; what
 these cover is the wiring — that the route is user-scoped and closed to the one
 role that cannot rate, and that `/search/media` reports the caller's own
 ratings. Search rows are scoped by a `SentinelSeason` so the assertions hold
-against a populated dev catalogue as well as CI's empty one.
+against a populated dev catalogue as well as the suite's own empty one.
 """
 
 from app.models.anime import Anime

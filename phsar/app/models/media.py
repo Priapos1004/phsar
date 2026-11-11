@@ -288,7 +288,7 @@ Index(
 # (`_media_sweep_atoms`). They must be declared HERE, not only in the migration
 # that creates them: autogenerate proposes DROPping any index missing from the
 # metadata, so a migration-only index is one unread diff away from taking the
-# nightly sweep's access paths with it. `alembic check` in CI enforces this.
+# nightly sweep's access paths with it. `alembic check` (`tests/test_migrations.py`) enforces this.
 #
 # Partial on the airing tier — "Currently Airing" is a small slice of the
 # catalog, so the index stays a fraction of a full one on anime_id.

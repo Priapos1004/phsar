@@ -83,8 +83,8 @@ value a day west of Greenwich.
 An index present in a migration but absent from the model's module-scope
 `Index(...)` block will be **proposed for DROP by the next `--autogenerate`**, so a
 migration-only index silently loses its query the access path it exists for.
-`alembic check` in CI is the guard — it must both agree with the models and replay
-from empty.
+`alembic check` is the guard, and only against a database the migration chain built —
+`tests/test_migrations.py` runs it against the suite's.
 
 **It is a partial guard.** Nullability, column types, indexes, FK constraints and native
 enum labels fail loudly; `server_default`, Python-side `default` and `onupdate` are not compared at all,
@@ -102,8 +102,7 @@ The Python enum and the Postgres type must hold the same labels. Adding a member
 hand-written `ALTER TYPE … ADD VALUE` migration, which autogenerate never writes:
 without it every write of the member fails, and a label the Python enum lacks makes
 every read of its rows raise `LookupError`. A comparator in `alembic/env.py` makes
-`alembic check` and `--autogenerate` raise while the labels differ — only against a DB
-the migrations built, which the test DB is not. It raises rather than writing the op
+`alembic check` and `--autogenerate` raise while the labels differ. It raises rather than writing the op
 because Alembic cannot reverse an `ExecuteSQLOp` into a downgrade.
 
 A downgrade that recreates the type to drop a label must drop and rebuild every partial
@@ -120,8 +119,8 @@ order means something, sort by an explicit key.
 
 An enum whose values are display labels (`OriginalSource`) persists them through
 `values_callable` — the default persists member *names*. Dropping it trips that
-comparator wherever a name differs from its value, and the round-trip test
-`test_enum_columns_store_their_label` covers the test DB.
+comparator wherever a name differs from its value; `test_enum_columns_store_their_label`
+pins the round-trip.
 
 ## A `case()` over an enum column takes the searched form
 

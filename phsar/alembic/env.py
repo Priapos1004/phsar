@@ -20,8 +20,9 @@ from app.core.db import Base
 # Alembic Config object
 config = context.config
 
-# Interpret the config file for Python logging
-if config.config_file_name is not None:
+# Interpret the config file for Python logging — unless the caller runs alembic in-process
+# (the test suite), where `fileConfig` would disable every logger already created.
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
     fileConfig(config.config_file_name)
 
 # Set SQLAlchemy URL from your settings
@@ -74,6 +75,8 @@ async def run_migrations_online():
 
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
+    # The test suite runs alembic in-process, where an undisposed pool outlives its loop.
+    await connectable.dispose()
 
 def do_run_migrations(connection):
     context.configure(

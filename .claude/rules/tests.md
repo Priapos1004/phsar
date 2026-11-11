@@ -1,5 +1,5 @@
 ---
-description: Test-authoring invariants — what makes a test a guard, and what the test environment (a shared database, jsdom, process-wide state) can't be trusted to show.
+description: Test-authoring invariants — what makes a test a guard, and what the test environment (the dev database under PHSAR_TEST_DB=dev, jsdom, process-wide state) can't be trusted to show.
 paths: "phsar/{tests,frontend/src/tests}/**/*"
 ---
 
@@ -35,9 +35,9 @@ zone. `rules/frontend.md` carries the date-formatter instance and its guard.
 
 ## A fixture in a database-wide list must outrank what the database holds
 
-The backend suite rolls back but shares a dev database's rows, so a fixture asserted in a
-capped, database-wide list passes on CI's empty database and drops out once the dev one
-fills. Give it a `created_at` ahead of now, and apart from each other fixture's: one
+Under `PHSAR_TEST_DB=dev` the suite runs on the dev database's rows, so a fixture asserted
+in a capped, database-wide list passes on its own empty database and drops out on the dev
+one. Give it a `created_at` ahead of now, and apart from each other fixture's: one
 transaction shares `now()`.
 
 ## Anything that outlives its call needs teardown

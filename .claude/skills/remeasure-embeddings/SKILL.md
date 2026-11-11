@@ -53,8 +53,8 @@ from `phsar/` with `PYTHONPATH=. ../.venv/bin/python <script>`.
    distances against the cutoff before they search; a failed premise means swapping a
    fixture text for one that holds on the new model, never loosening the assertion. A
    premise must hold on an empty database too: `description_cutoff` averages every stored
-   embedding, which on CI is the test's fixtures alone, so compute the cutoff over those
-   as well before trusting a local pass. The
+   embedding, which on the suite's own database is the test's fixtures alone, so compute
+   the cutoff over those as well before trusting a pass under `PHSAR_TEST_DB=dev`. The
    threshold test needs a duplicate pair above and a franchise-sibling pair below the new
    value, with some margin either side.
 7. **Discover's description rows** — `discover_rows.py`, with the backend running on the

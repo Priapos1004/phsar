@@ -1,7 +1,7 @@
 """seed_browse — the core carousels synced from the repo lists on every boot.
 
 Runs against whatever the database already holds (a booted dev DB has the rows,
-CI's is empty), so each test seeds once to reach a known state before it acts.
+the suite's own is empty), so each test seeds once to reach a known state before it acts.
 """
 
 import re

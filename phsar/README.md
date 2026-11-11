@@ -534,8 +534,10 @@ phsar/
 │   ├── inspect_jobs.py
 │   └── seed_demo_sweep_job.py
 └── tests/
+    ├── _database.py
     ├── _helpers.py
     ├── conftest.py
+    ├── test_migrations.py
     ├── test_readme_schema.py
     ├── routers/
     │   ├── conftest.py
@@ -1042,10 +1044,10 @@ bun run dev -- --open
 
 ```
 pytest
+PHSAR_TEST_DB=dev pytest
 ```
 
-Each test rolls back its database changes afterwards; the ones that must commit for
-real clean up after themselves.
+Which database the suite runs against: [Test Config](../CLAUDE.md#test-config).
 
 ### Frontend
 

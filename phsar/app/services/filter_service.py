@@ -218,8 +218,7 @@ async def _get_anime_aggregated_ranges(db: AsyncSession) -> dict:
 
 async def _fetch_shared_filter_values(db: AsyncSession) -> dict:
     """Categorical filter values shared between media and anime views."""
-    # Every option sorts in Python by an explicit key (rules/database.md). Where the key
-    # is declaration order, no test can see it: the test DB always has Python's order.
+    # Every option sorts in Python by an explicit key (rules/database.md).
     relation_types = sorted(
         await media_dao.get_unique_in_field(db, field_name="relation_type"),
         key=list(RelationType).index,

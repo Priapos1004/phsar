@@ -8,10 +8,10 @@ async_session_maker sessions and explicitly clean up the inserted
 rows after each test.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 
 from app.core.db import async_session_maker
 from app.exceptions import (
@@ -30,6 +30,14 @@ from app.schemas.search_schema import (
 from app.services.scrape_dispatcher import user_scrape_dispatcher
 from app.services.seasonal_sweep_dispatcher import seasonal_sweep_dispatcher
 from tests._helpers import NoopProgressReporter, fake_job, media_kwargs
+
+
+async def _db_now() -> datetime:
+    """Where a `created_at` window starts: the database's clock, which stamps the rows.
+    Python's clock can run ahead of it, so a window opened there can start after a row the
+    database stamps a moment later."""
+    async with async_session_maker() as s:
+        return (await s.execute(select(func.clock_timestamp()))).scalar_one()
 
 
 def _empty_extended() -> SearchResultDBExtended:
@@ -69,7 +77,7 @@ async def cleanup_seasonal_children():
     test. requested_by_user_id=None + kind=user_scrape uniquely
     identifies them; clean up by created_at window so we never touch
     rows from other tests that happen to be running in parallel."""
-    started_at = datetime.now(timezone.utc)
+    started_at = await _db_now()
     yield
     async with async_session_maker() as s:
         # Children first — the FK on parent_job_id is ON DELETE SET NULL,
@@ -197,7 +205,7 @@ async def test_dispatcher_enqueues_only_new_mal_ids(
     # Don't ping the worker; the test environment doesn't have one running.
     monkeypatch.setattr("app.services.seasonal_sweep_dispatcher.job_worker.notify", lambda: None)
 
-    started = datetime.now(timezone.utc)
+    started = await _db_now()
     summary = await _run_dispatcher()
 
     assert summary == {
@@ -285,7 +293,7 @@ async def test_dispatcher_dedupes_against_existing_media_mal_id(
     ])
     monkeypatch.setattr("app.services.seasonal_sweep_dispatcher.job_worker.notify", lambda: None)
 
-    started = datetime.now(timezone.utc)
+    started = await _db_now()
     summary = await _run_dispatcher()
 
     assert summary["new_entries_enqueued"] == 0
@@ -357,7 +365,7 @@ async def test_dispatcher_skips_entries_with_missing_mal_id(
     ])
     monkeypatch.setattr("app.services.seasonal_sweep_dispatcher.job_worker.notify", lambda: None)
 
-    started = datetime.now(timezone.utc)
+    started = await _db_now()
     summary = await _run_dispatcher()
 
     assert summary["new_entries_enqueued"] == 1
@@ -682,7 +690,7 @@ async def test_dispatcher_dedupes_duplicate_mal_ids_within_one_run(
     ])
     monkeypatch.setattr("app.services.seasonal_sweep_dispatcher.job_worker.notify", lambda: None)
 
-    started = datetime.now(timezone.utc)
+    started = await _db_now()
     summary = await _run_dispatcher()
 
     assert summary == {

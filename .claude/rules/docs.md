@@ -12,6 +12,7 @@ Ask: **what breaks if this is missing?**
 | Answer | Home | Loaded |
 |---|---|---|
 | Can't run or navigate the project | root `CLAUDE.md` | always |
+| A newcomer couldn't set the project up or run it | `README.md` (the repo), `phsar/README.md` (the app) | read by humans |
 | Would write code violating an invariant | `.claude/rules/<topic>.md` | when matching files are touched |
 | Couldn't say how a subsystem behaves across the modules it spans | `docs/features/<topic>.md` | read while planning work in that area |
 | Couldn't say what a screen does for the user | `phsar/frontend/USER_FLOWS.md` | read while changing UI behaviour |
@@ -21,10 +22,13 @@ Ask: **what breaks if this is missing?**
 | Would have to rediscover how to run a recurring procedure | `.claude/skills/<name>/` | when invoked |
 | Would set data on the deployed app that breaks its conventions, or lose track of what it holds | the skill that sets it, beside its steps | when invoked |
 
-The two rows that overlap in practice are the feature doc and USER_FLOWS, because
-one feature reaches both: the feature doc owns the **mechanism across modules**,
+The feature doc and USER_FLOWS overlap in practice, because one feature reaches both: the feature doc owns the **mechanism across modules**,
 USER_FLOWS owns **what the user sees**. Written from opposite ends, the same
 feature belongs in both — the same sentence belongs in neither.
+
+Root `CLAUDE.md` and the READMEs overlap too, on running the project: a README holds
+the steps and commands a person types, root `CLAUDE.md` the same commands for a session
+to run, and anything either says about how something behaves links to that thing's owner.
 
 A skill holds the **steps** of a procedure, never the invariants it leans on: those stay
 in their rule, which loads with the files it governs, and the skill links to them. A

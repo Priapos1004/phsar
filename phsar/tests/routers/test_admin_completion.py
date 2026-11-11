@@ -21,9 +21,8 @@ async def test_default_not_finished(client, admin_auth_headers, completion_anime
     assert detail.json()["is_finished"] is False
 
 
-# NOTE: the test harness binds the app session to a connection without
-# savepoint-join, so API commits persist to the dev DB; `list_finished` is a
-# *global* query (admin sees every marked anime), so assertions here are
+# `list_finished` is a *global* query (admin sees every marked anime), and on the
+# dev database (`PHSAR_TEST_DB=dev`) real anime are marked, so assertions here are
 # membership-based rather than asserting the whole list.
 
 

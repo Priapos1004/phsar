@@ -18,10 +18,10 @@ from app.models.users import RoleType, Users
 class SentinelSeason(NamedTuple):
     """A season that scopes a search response to one fixture's rows.
 
-    Router tests run against the real `DATABASE_URL`, so a search hits whatever
-    the developer's catalogue holds while CI's is empty. That asymmetry is what
-    makes a search assertion vacuous: sized or positioned against an unknown row
-    set, it has to hedge, and the hedge passes on the empty list CI produces.
+    Under `PHSAR_TEST_DB=dev` a search hits whatever the developer's catalogue holds,
+    while the suite's own database is empty. That asymmetry is what makes a search
+    assertion vacuous: sized or positioned against an unknown row set, it has to
+    hedge, and the hedge passes on the empty list the suite's own database produces.
 
     Stamp the fixture's media with `season.columns` and pass `season.filter` as
     the request's `anime_season`, and the response is the fixture's rows in both

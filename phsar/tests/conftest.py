@@ -16,6 +16,12 @@ from app.core.config import settings
 from app.core.db import DATABASE_URL, async_session_maker
 from app.core.db import engine as global_engine
 from app.models.job import Job
+from tests import ON_DEV_DB, _database
+
+
+def pytest_sessionstart(session):
+    if not ON_DEV_DB:
+        _database.build()
 
 
 @pytest.fixture(autouse=True)

@@ -7,10 +7,10 @@ filter-options service) and a `func.min`/`func.max` over it, so they're worth
 pinning independently of the caller.
 
 Every bounds test SEEDS its own media rather than reading whatever the catalogue
-happens to hold. The dev DB is a restored production dump while CI's is empty, so
-an assertion about existing rows passes locally and fails in CI — which is exactly
-what happened to the first version of this file. Sentinel values sit far outside
-any real anime, so `max` is the seeded row in both environments.
+happens to hold. The dev DB (`PHSAR_TEST_DB=dev`) is a restored production dump while
+the suite's own is empty, so an assertion about existing rows passes on one and fails
+on the other. Sentinel values sit far outside any real anime, so `max` is the seeded
+row in both.
 """
 
 import pytest
