@@ -17,11 +17,13 @@ from sqlalchemy import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.job_versions import make_job
+from app.core.maintenance import restores
 from app.daos.galaxy_dao import GalaxyDAO
 from app.daos.job_dao import JobDAO
 from app.exceptions import (
     ConfirmationMismatchError,
     GalaxyGroupNotFoundError,
+    GalaxyRestoredError,
     GalaxyStarNotFoundError,
 )
 from app.models.galaxy import GalaxyGroup
@@ -59,12 +61,18 @@ async def run_in_child(fn: Callable[..., Any], *args: Any) -> Any:
     share of the small VM's and grows with the catalogue, and it loads numba's JIT; both
     leave with the child instead of staying in the web process, and the CPU-bound fit
     never holds the event loop's GIL. Spawn, not fork: a forked child would inherit the
-    parent's threads and torch state."""
+    parent's threads and torch state.
+
+    A restore while the child runs discards its answer (`maintenance.restores` says why)."""
+    restores_before = restores()
     pool = ProcessPoolExecutor(max_workers=1, mp_context=multiprocessing.get_context("spawn"))
     try:
-        return await asyncio.get_running_loop().run_in_executor(pool, fn, *args)
+        result = await asyncio.get_running_loop().run_in_executor(pool, fn, *args)
     finally:
         pool.shutdown(wait=False)
+    if restores() != restores_before:
+        raise GalaxyRestoredError()
+    return result
 
 
 def built_from() -> dict[str, str]:

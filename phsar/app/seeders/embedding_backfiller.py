@@ -153,7 +153,12 @@ async def embeddings_are_stale(db: AsyncSession) -> bool:
     `reembed_all_embeddings` writes that row last, so it reads stale for the whole pass: a
     pass cut short leaves it stale for the next boot to retry, and
     `galaxy_rebuild_dispatcher` refuses while it does. The floor only absorbs float noise
-    between two encodes of the same text."""
+    between two encodes of the same text.
+
+    It assumes the pass is that row's only writer under a new encoder. Anything else that
+    re-encodes the row breaks that, rarely and silently: a pre-yield backfill, or a live write
+    landing before this check, skips the re-embed outright; one landing mid-pass lets an
+    interrupted pass read as done."""
     row = (await db.execute(
         select(Anime, AnimeSearch.description_embedding)
         .join(AnimeSearch, AnimeSearch.anime_id == Anime.id)
@@ -189,10 +194,10 @@ async def reembed_all_embeddings(db: AsyncSession) -> dict[str, int]:
             db, media_id=media.id, title_texts=media_title_texts(media),
             description_text=media.description or "",
         )),
-        # `or ""` only narrows the type: the query selects noted ratings.
+        # A note cleared since the ids were read comes back empty, and stays without a vector.
         "ratings": await _reembed(
             db, "ratings", Ratings, select(Ratings.id).where(Ratings.note.isnot(None)),
-            lambda rating: regenerate_rating_embedding(db, rating_id=rating.id, note=rating.note or ""),
+            lambda rating: regenerate_rating_embedding(db, rating_id=rating.id, note=rating.note),
         ),
         "anime": await _reembed(
             db, "anime", Anime, select(Anime.id).order_by(Anime.id.desc()),

@@ -101,8 +101,10 @@ The job reports the movement as `median_movement`.
 5. reads the hand names, after the fit (`galaxy_rebuild_dispatcher` says why);
 6. swaps the old fit for the new one in a single transaction (`replace_fit`).
 
-A failed fit writes nothing and leaves the live map in place. The job has no maintenance
-bracket, because it writes only its own tables.
+A failed fit writes nothing and leaves the live map in place. A restore while the child runs
+fails the rebuild, and a placement alike, rather than letting it write
+(`galaxy_service.run_in_child` says why). The job has no maintenance bracket, because it
+writes only its own tables.
 
 ### When the map is rebuilt
 

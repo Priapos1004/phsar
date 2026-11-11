@@ -527,6 +527,15 @@ class GalaxyVectorsStaleError(PermanentPhsarError):
         super().__init__("The stored embeddings are being re-encoded; the map is rebuilt once they are.")
 
 
+class GalaxyRestoredError(PhsarBaseError):
+    """Raised when a restore ran while `galaxy_service.run_in_child` computed. Retryable: a
+    retry reads the restored database."""
+    status_code = 409
+
+    def __init__(self):
+        super().__init__("The database was restored while the galaxy map was being computed; the result was discarded.")
+
+
 class MergeCandidateNotFoundError(PhsarBaseError):
     """Raised when a merge candidate UUID doesn't resolve."""
     status_code = 404

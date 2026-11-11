@@ -2,13 +2,15 @@
 new map, a failed fit leaving the live map alone, when a rebuild is due — and one real
 child process, since the fit's isolation rests on it."""
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import delete, func, select
 
+from app.core.maintenance import count_restore
 from app.daos.job_dao import JobDAO
-from app.exceptions import GalaxyVectorsStaleError
+from app.exceptions import GalaxyRestoredError, GalaxyVectorsStaleError
 from app.models.anime import Anime
 from app.models.galaxy import GalaxyFit, GalaxyGroup, GalaxyStar
 from app.models.job import Job, JobKind
@@ -262,3 +264,11 @@ async def test_compute_runs_in_a_spawned_child():
     """The child imports `galaxy_compute` alone; this fails if the module drags the app
     (or the model) in, or cannot be imported from a fresh interpreter."""
     assert await galaxy_service.run_in_child(galaxy_compute.carry_names, [], []) == ({}, [])
+
+
+async def test_a_restore_while_the_child_runs_discards_its_answer():
+    child = asyncio.create_task(galaxy_service.run_in_child(galaxy_compute.carry_names, [], []))
+    await asyncio.sleep(0)  # the task reads the count, then waits on the child
+    count_restore()
+    with pytest.raises(GalaxyRestoredError):
+        await child

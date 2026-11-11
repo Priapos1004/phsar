@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.db import async_session_maker, engine
 from app.core.job_versions import make_job
-from app.core.maintenance import set_maintenance
+from app.core.maintenance import count_restore, set_maintenance
 from app.daos.job_dao import JobDAO
 from app.exceptions import (
     BackupDiskSpaceError,
@@ -820,6 +820,7 @@ async def restore_backup(
     pre_snapshot = await create_backup(source=BackupSource.pre_restore)
 
     set_maintenance(True)
+    count_restore()
     restore_error: str | None = None
     try:
         # pg_restore --clean needs ACCESS EXCLUSIVE locks to DROP tables.

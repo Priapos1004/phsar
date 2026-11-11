@@ -33,8 +33,9 @@ from app.services.vector_embedding_service import (
     generate_embedding,
     regenerate_anime_embedding,
     regenerate_media_embedding,
+    regenerate_rating_embedding,
 )
-from tests._helpers import media_kwargs, probe_row
+from tests._helpers import make_user, media_kwargs, probe_row
 
 _SENTINEL = [0.5] * 384
 
@@ -217,3 +218,26 @@ async def test_a_reembed_reads_each_row_at_its_turn(db_session):
         select(MediaSearch.description_embedding).where(MediaSearch.media_id == edited.id))).scalar_one()
     fresh = await encode_description(media_title_texts(edited), "An edited description.")
     assert cosine_similarity(stored, fresh) > 0.9999
+
+
+async def test_a_note_cleared_under_the_pass_stays_without_a_vector(db_session):
+    """The pass read the rating's id while its note was set and re-reads the row at its
+    turn, so what reaches the regenerate is the cleared note. A vector is left in place to
+    show the cleared note drops it rather than only declining to add one."""
+    anime = Anime(mal_id=99031, title="Cleared Note Show")
+    db_session.add(anime)
+    await db_session.flush()
+    media = Media(**media_kwargs(anime.id, 990310))
+    db_session.add(media)
+    user = await make_user(db_session, "cleared-note-rater")
+    rating = Ratings(
+        rating=8.0, media_id=media.id, user_id=user.id,
+        note=None, episodes_watched=12, watch_status=WatchStatus.completed,
+    )
+    db_session.add(rating)
+    await db_session.flush()
+    await create_rating_embedding(db_session, rating_id=rating.id, note="A note since cleared")
+
+    await regenerate_rating_embedding(db_session, rating_id=rating.id, note=rating.note)
+    assert (await db_session.execute(
+        select(RatingSearch).where(RatingSearch.rating_id == rating.id))).scalar_one_or_none() is None
