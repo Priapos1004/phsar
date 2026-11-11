@@ -247,7 +247,7 @@ async def refresh_spoiler_cache_for_anime_ids(
     move *between the named anime* on merge/split, so recomputing exactly
     the affected anime is sufficient — O(users × changed) instead of
     O(users × all). Restricted users are skipped (they can't rate, pinned
-    to spoiler=off, never in the cache — see _seed_user / auth_service).
+    to spoiler=off, never in the cache — see auth_service.create_user).
     Per-user try/commit so one poisoned user doesn't abort the rest;
     `backfill_spoiler_visibility` mops up any skipped non-restricted user
     on next startup.

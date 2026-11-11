@@ -1,12 +1,16 @@
+import functools
+
 import pytest
-from fastapi import Header
+from fastapi import FastAPI, Header
 from httpx import ASGITransport, AsyncClient
 
 from app.core.config import settings
 from app.core.dependencies import get_db, require_jobs_cron_token
+from app.core.security import create_user_access_token, get_password_hash
 from app.exceptions import InvalidCronTokenError
 from app.main import create_app
 from app.models.users import RoleType
+from app.services.auth_service import create_user
 
 CRON_TOKEN = "test-token"
 CRON_AUTH_HEADER = {"Authorization": f"Bearer {CRON_TOKEN}"}
@@ -15,20 +19,25 @@ CRON_AUTH_HEADER = {"Authorization": f"Bearer {CRON_TOKEN}"}
 # tests can reuse them.
 
 
-@pytest.fixture
-async def client(db_session):
-    app = create_app()
+@pytest.fixture(scope="session")
+def asgi_app() -> FastAPI:
+    """One app for the run: it holds no per-test state but the dependency overrides, which
+    each client sets and clears around its test."""
+    return create_app()
 
+
+@pytest.fixture
+async def client(asgi_app, db_session):
     async def override_get_db():
         yield db_session
 
-    app.dependency_overrides[get_db] = override_get_db
+    asgi_app.dependency_overrides[get_db] = override_get_db
 
-    transport = ASGITransport(app=app)
+    transport = ASGITransport(app=asgi_app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         yield c
 
-    app.dependency_overrides.clear()
+    asgi_app.dependency_overrides.clear()
 
 @pytest.fixture
 async def get_admin_token(client):
@@ -51,7 +60,8 @@ async def get_admin_token(client):
 @pytest.fixture
 async def create_user_with_role(client, get_admin_token):
     """
-    Generic fixture to create & login a user with any RoleType.
+    Create & log in a user through the real HTTP flow — registration token, register,
+    login. For the tests of that flow; any other test takes `make_auth_user`.
     Usage:
     token = await create_user_with_role(username="myuser", password="mypass12", role=RoleType.User)
     """
@@ -85,44 +95,54 @@ async def create_user_with_role(client, get_admin_token):
         return login_resp.json()["access_token"]
     return _create_user
 
-@pytest.fixture
-async def admin_auth_headers(get_admin_token):
-    token = await get_admin_token()
-    return {"Authorization": f"Bearer {token}"}
 
-@pytest.fixture
-async def user_auth_headers(create_user_with_role):
-    token = await create_user_with_role(username="normaluser", password="userpassword", role=RoleType.User)
-    return {"Authorization": f"Bearer {token}"}
+@functools.cache
+def _password_hash(password: str) -> str:
+    """One real hash per password per run, so a fixture user's password still verifies wherever
+    the app checks one, without each test paying for argon2."""
+    return get_password_hash(password)
 
-@pytest.fixture
-async def restricted_user_auth_headers(create_user_with_role):
-    token = await create_user_with_role(username="restricteduser", password="restrictedpass", role=RoleType.RestrictedUser)
-    return {"Authorization": f"Bearer {token}"}
+
+def _bearer(username: str, role: RoleType) -> dict[str, str]:
+    """Auth headers carrying the token `/auth/login` would hand back, signed here."""
+    return {"Authorization": f"Bearer {create_user_access_token(username, role)}"}
 
 
 @pytest.fixture
-async def cron_client(db_session):
+def make_auth_user(db_session):
+    """A user created as registration creates one (`auth_service.create_user`), and its auth
+    headers."""
+    async def _make(username: str, password: str, role: RoleType) -> dict[str, str]:
+        await create_user(db_session, username, _password_hash(password), role)
+        return _bearer(username, role)
+    return _make
+
+@pytest.fixture
+def admin_auth_headers():
+    """The admin the suite's database is seeded with."""
+    return _bearer(settings.ADMIN_USERNAME, RoleType.Admin)
+
+@pytest.fixture
+async def user_auth_headers(make_auth_user):
+    return await make_auth_user("normaluser", "userpassword", RoleType.User)
+
+@pytest.fixture
+async def restricted_user_auth_headers(make_auth_user):
+    return await make_auth_user("restricteduser", "restrictedpass", RoleType.RestrictedUser)
+
+
+@pytest.fixture
+async def cron_client(asgi_app, client):
     """Test client whose require_jobs_cron_token dep accepts a literal
     token. Mirrors the production gate (raises InvalidCronTokenError on
     missing/wrong bearer) without depending on settings.JOBS_CRON_TOKEN
     being set in the test env. Shared across every cron-authed endpoint
     (sweep schedulers + /backups/auto) — they all consume the same token
     post-v0.14.0 consolidation."""
-    app = create_app()
-
-    async def override_get_db():
-        yield db_session
-
     def fake_require(authorization: str | None = Header(default=None)) -> None:
         if authorization != f"Bearer {CRON_TOKEN}":
             raise InvalidCronTokenError()
 
-    app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[require_jobs_cron_token] = fake_require
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as c:
-        yield c
-
-    app.dependency_overrides.clear()
+    # `client` clears it with its own override on teardown.
+    asgi_app.dependency_overrides[require_jobs_cron_token] = fake_require
+    return client

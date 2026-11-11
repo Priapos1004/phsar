@@ -36,7 +36,7 @@ Two small helpers with no feature doc of their own:
 
 ## Auth / settings / tokens
 
-- **`auth_service.py`** — registration, authentication, token issuance, account deletion
+- **`auth_service.py`** — user creation with every per-user default (`create_user`), registration, authentication, token issuance, account deletion
 - **`user_settings_service.py`** — user settings CRUD + default creation. `update_settings` takes the caller's `role` and drops `spoiler_level` from the update for `RestrictedUser` (guests are pinned to `off` — they can't rate, and are excluded from the spoiler cache; honouring a non-off value would read an empty cache and hide everything). All other settings stay editable
 - **`token_service.py`** — compressed JWT for shareable filter URLs
 - **`admin_service.py`** — registration token list + delete; `get_job_for_admin(uuid)` for the `/admin/jobs/[uuid]` detail page (404s on miss; routes through `JobDAO.get_by_uuid_with_relations` which eager-loads `requested_by` + `parent` via the shared `_ADMIN_LOAD_OPTIONS` tuple so list + detail paths can't drift). `result_summary` is the one place the two paths deliberately differ — see [jobs](../../../docs/features/jobs.md); what matters here is that `_job_to_admin_response` stays a single builder for both, so the difference is carried entirely by what the DAO hands it and the list path's rows are read-only by intent

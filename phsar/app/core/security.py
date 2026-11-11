@@ -9,6 +9,7 @@ from passlib.context import CryptContext
 
 from app.core.config import settings
 from app.exceptions import DecompressionError
+from app.models.users import RoleType
 
 pwd_context = CryptContext(
     schemes=["argon2"],
@@ -51,6 +52,10 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     return create_token(data, secret_key=settings.SECRET_KEY, extra_info={"exp": expire})
+
+def create_user_access_token(username: str, role: RoleType) -> str:
+    """The access token every auth route hands a user, so its claims live in one place."""
+    return create_access_token({"sub": username, "role": role.value})
 
 def create_url_token(data: dict) -> str:
     payload = {

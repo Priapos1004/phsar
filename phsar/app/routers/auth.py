@@ -3,7 +3,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user, get_db
-from app.core.security import create_access_token
+from app.core.security import create_user_access_token
 from app.schemas import auth_schema
 from app.services import auth_service
 
@@ -12,7 +12,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post("/register", response_model=auth_schema.Token)
 async def register(user: auth_schema.UserCreateWithToken, db: AsyncSession = Depends(get_db)):
     new_user = await auth_service.register(user, db)
-    access_token = create_access_token(data={"sub": new_user.username, "role": new_user.role.value})
+    access_token = create_user_access_token(new_user.username, new_user.role)
     return auth_schema.Token(access_token=access_token)
 
 @router.post("/login", response_model=auth_schema.Token)
@@ -21,7 +21,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
-    access_token = create_access_token(data={"sub": user.username, "role": user.role.value})
+    access_token = create_user_access_token(user.username, user.role)
     return auth_schema.Token(access_token=access_token)
 
 @router.get("/validate", response_model=auth_schema.TokenValidationResponse)
@@ -37,7 +37,5 @@ async def refresh(current_user = Depends(get_current_user)):
     # keep their sessions alive too. Role is re-read from the DB user, so a
     # role change propagates into the next token. No refresh-token table and
     # no absolute session cap — the frontend drives this on activity.
-    access_token = create_access_token(
-        data={"sub": current_user.username, "role": current_user.role.value}
-    )
+    access_token = create_user_access_token(current_user.username, current_user.role)
     return auth_schema.Token(access_token=access_token)

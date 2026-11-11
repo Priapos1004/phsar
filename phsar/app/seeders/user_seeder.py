@@ -10,7 +10,7 @@ from app.models.tag import Tag
 from app.models.user_settings import SpoilerLevel, UserSettings
 from app.models.user_visible_media import UserVisibleMedia
 from app.models.users import RoleType, Users
-from app.services import tag_service, user_settings_service
+from app.services import auth_service, tag_service, user_settings_service
 from app.services.spoiler_service import recompute_visibility_for_user
 
 logger = logging.getLogger(__name__)
@@ -27,21 +27,7 @@ async def _seed_user(
         logger.info(f"User '{username}' already exists.")
         return
 
-    hashed_password = get_password_hash(password)
-    new_user = Users(
-        username=username,
-        hashed_password=hashed_password,
-        role=role,
-    )
-    await user_dao.create(db, new_user)
-    await user_settings_service.create_default_settings(db, new_user.id)
-    # Restricted users are pinned to spoiler=off and never read the cache,
-    # so don't build one (it would also be re-seeded every startup by
-    # backfill_spoiler_visibility, which skips them too). They also can't write
-    # watchlists, so they get no default tag.
-    if role != RoleType.RestrictedUser:
-        await recompute_visibility_for_user(db, new_user.id)
-        await tag_service.create_default_tag(db, new_user.id)
+    await auth_service.create_user(db, username, get_password_hash(password), role)
     await db.commit()
     logger.info(f"User '{username}' created with role '{role.value}'.")
 

@@ -28,9 +28,8 @@ async def test_get_settings_admin(client, admin_auth_headers):
     assert "rating_step" in data
 
 
-async def test_update_theme(client, create_user_with_role):
-    token = await create_user_with_role(username="themeuser", password="pass1234", role=RoleType.User)
-    headers = {"Authorization": f"Bearer {token}"}
+async def test_update_theme(client, make_auth_user):
+    headers = await make_auth_user("themeuser", "pass1234", RoleType.User)
 
     resp = await client.put("/users/settings", json={"theme": "blue"}, headers=headers)
     assert resp.status_code == 200
@@ -41,9 +40,8 @@ async def test_update_theme(client, create_user_with_role):
     assert resp.json()["theme"] == "blue"
 
 
-async def test_update_settings_partial(client, create_user_with_role):
-    token = await create_user_with_role(username="partialuser", password="pass1234", role=RoleType.User)
-    headers = {"Authorization": f"Bearer {token}"}
+async def test_update_settings_partial(client, make_auth_user):
+    headers = await make_auth_user("partialuser", "pass1234", RoleType.User)
 
     # Update only rating_step
     resp = await client.put("/users/settings", json={"rating_step": "0.25"}, headers=headers)
@@ -54,9 +52,8 @@ async def test_update_settings_partial(client, create_user_with_role):
     assert resp.json()["spoiler_level"] == "off"
 
 
-async def test_update_settings_multiple_fields(client, create_user_with_role):
-    token = await create_user_with_role(username="multiuser", password="pass1234", role=RoleType.User)
-    headers = {"Authorization": f"Bearer {token}"}
+async def test_update_settings_multiple_fields(client, make_auth_user):
+    headers = await make_auth_user("multiuser", "pass1234", RoleType.User)
 
     resp = await client.put(
         "/users/settings",
@@ -74,9 +71,8 @@ async def test_update_settings_multiple_fields(client, create_user_with_role):
     assert data["spoiler_level"] == "blur"
 
 
-async def test_update_settings_persists(client, create_user_with_role):
-    token = await create_user_with_role(username="persistuser", password="pass1234", role=RoleType.User)
-    headers = {"Authorization": f"Bearer {token}"}
+async def test_update_settings_persists(client, make_auth_user):
+    headers = await make_auth_user("persistuser", "pass1234", RoleType.User)
 
     await client.put("/users/settings", json={"rating_step": "0.01"}, headers=headers)
 
@@ -115,12 +111,9 @@ async def test_restricted_user_spoiler_level_pinned_off(client, restricted_user_
     assert body["theme"] == "blue"  # other settings still editable
 
 
-async def test_normal_user_spoiler_level_persists(client, create_user_with_role):
+async def test_normal_user_spoiler_level_persists(client, make_auth_user):
     """The pin is role-gated — a normal user's spoiler_level still applies."""
-    token = await create_user_with_role(
-        username="spoileruser", password="pass1234", role=RoleType.User,
-    )
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = await make_auth_user("spoileruser", "pass1234", RoleType.User)
     resp = await client.put(
         "/users/settings", json={"spoiler_level": "hide"}, headers=headers,
     )
@@ -135,9 +128,8 @@ async def test_settings_unauthenticated(client):
 
 # --- Data Export ---
 
-async def test_export_json(client, create_user_with_role):
-    token = await create_user_with_role(username="exportuser", password="pass1234", role=RoleType.User)
-    headers = {"Authorization": f"Bearer {token}"}
+async def test_export_json(client, make_auth_user):
+    headers = await make_auth_user("exportuser", "pass1234", RoleType.User)
 
     resp = await client.get("/users/export?format=json", headers=headers)
     assert resp.status_code == 200
@@ -148,9 +140,8 @@ async def test_export_json(client, create_user_with_role):
     assert isinstance(data, list)
 
 
-async def test_export_json_filename_contains_date(client, create_user_with_role):
-    token = await create_user_with_role(username="dateuser", password="pass1234", role=RoleType.User)
-    headers = {"Authorization": f"Bearer {token}"}
+async def test_export_json_filename_contains_date(client, make_auth_user):
+    headers = await make_auth_user("dateuser", "pass1234", RoleType.User)
 
     resp = await client.get("/users/export?format=json", headers=headers)
     disposition = resp.headers["content-disposition"]
@@ -159,9 +150,8 @@ async def test_export_json_filename_contains_date(client, create_user_with_role)
     assert ".json" in disposition
 
 
-async def test_export_csv(client, create_user_with_role):
-    token = await create_user_with_role(username="csvuser", password="pass1234", role=RoleType.User)
-    headers = {"Authorization": f"Bearer {token}"}
+async def test_export_csv(client, make_auth_user):
+    headers = await make_auth_user("csvuser", "pass1234", RoleType.User)
 
     resp = await client.get("/users/export?format=csv", headers=headers)
     assert resp.status_code == 200
@@ -169,9 +159,8 @@ async def test_export_csv(client, create_user_with_role):
     assert "attachment" in resp.headers["content-disposition"]
 
 
-async def test_export_default_format_is_json(client, create_user_with_role):
-    token = await create_user_with_role(username="defaultfmt", password="pass1234", role=RoleType.User)
-    headers = {"Authorization": f"Bearer {token}"}
+async def test_export_default_format_is_json(client, make_auth_user):
+    headers = await make_auth_user("defaultfmt", "pass1234", RoleType.User)
 
     resp = await client.get("/users/export", headers=headers)
     assert resp.status_code == 200
@@ -186,9 +175,8 @@ async def test_export_forbidden_for_restricted_user(client, restricted_user_auth
 # --- Account Deletion ---
 
 
-async def test_delete_account(client, create_user_with_role):
-    token = await create_user_with_role(username="deleteuser", password="pass1234", role=RoleType.User)
-    headers = {"Authorization": f"Bearer {token}"}
+async def test_delete_account(client, make_auth_user):
+    headers = await make_auth_user("deleteuser", "pass1234", RoleType.User)
 
     resp = await client.request("DELETE", "/users/account", json={"password": "pass1234"}, headers=headers)
     assert resp.status_code == 204
@@ -198,9 +186,8 @@ async def test_delete_account(client, create_user_with_role):
     assert resp2.status_code == 401
 
 
-async def test_delete_account_wrong_password(client, create_user_with_role):
-    token = await create_user_with_role(username="wrongpwuser", password="pass1234", role=RoleType.User)
-    headers = {"Authorization": f"Bearer {token}"}
+async def test_delete_account_wrong_password(client, make_auth_user):
+    headers = await make_auth_user("wrongpwuser", "pass1234", RoleType.User)
 
     resp = await client.request("DELETE", "/users/account", json={"password": "wrong"}, headers=headers)
     assert resp.status_code == 403
@@ -210,10 +197,9 @@ async def test_delete_account_wrong_password(client, create_user_with_role):
     assert resp2.status_code == 200
 
 
-async def test_delete_account_cascades_ratings(client, create_user_with_role, admin_auth_headers):
+async def test_delete_account_cascades_ratings(client, make_auth_user, admin_auth_headers):
     """Deleting an account removes all user ratings via DB cascade."""
-    token = await create_user_with_role(username="cascadeuser", password="pass1234", role=RoleType.User)
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = await make_auth_user("cascadeuser", "pass1234", RoleType.User)
 
     # Verify settings exist before deletion
     resp = await client.get("/users/settings", headers=headers)
@@ -224,7 +210,7 @@ async def test_delete_account_cascades_ratings(client, create_user_with_role, ad
     assert resp.status_code == 204
 
 
-async def test_delete_account_preserves_registration_tokens(client, create_user_with_role, admin_auth_headers):
+async def test_delete_account_preserves_registration_tokens(client, admin_auth_headers):
     """After account deletion, registration tokens created by/used by the user still exist."""
     # Create a token via admin, then register a user with it
     create_resp = await client.post(

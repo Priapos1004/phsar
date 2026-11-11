@@ -32,6 +32,20 @@ user_dao = UserDAO()
 registration_token_dao = RegistrationTokenDAO()
 
 
+async def create_user(db: AsyncSession, username: str, hashed_password: str, role: RoleType) -> Users:
+    """A user with every per-user default. Every user the app creates comes from here, and the
+    router test fixtures' too, so a default added later reaches each. Does not commit."""
+    user = Users(username=username, hashed_password=hashed_password, role=role)
+    await user_dao.create(db, user)
+    await user_settings_service.create_default_settings(db, user.id)
+    # Restricted users are pinned to spoiler=off and never read the cache, so skip building
+    # one. They also can't write watchlists, so they get no default tag.
+    if role != RoleType.RestrictedUser:
+        await recompute_visibility_for_user(db, user.id)
+        await tag_service.create_default_tag(db, user.id)
+    return user
+
+
 async def register(user_data: UserCreateWithToken, db: AsyncSession):
     existing_user = await user_dao.get_by_username(db, user_data.username)
     if existing_user:
@@ -46,22 +60,7 @@ async def register(user_data: UserCreateWithToken, db: AsyncSession):
     if token_obj.is_expired:
         raise RegistrationTokenExpiredError()
 
-    hashed_pw = get_password_hash(user_data.password)
-    new_user = Users(
-        username=user_data.username,
-        hashed_password=hashed_pw,
-        role=token_obj.role,
-    )
-    await user_dao.create(db, new_user)
-    await user_settings_service.create_default_settings(db, new_user.id)
-
-    # Restricted users are pinned to spoiler=off and never read the cache,
-    # so skip building one (see spoiler_service / user_seeder). They also can't
-    # write watchlists, so they get no default tag.
-    if token_obj.role != RoleType.RestrictedUser:
-        await recompute_visibility_for_user(db, new_user.id)
-        await tag_service.create_default_tag(db, new_user.id)
-
+    new_user = await create_user(db, user_data.username, get_password_hash(user_data.password), token_obj.role)
     token_obj.was_used_for_user_id = new_user.id
     token_obj.used_at = datetime.now(timezone.utc)
 

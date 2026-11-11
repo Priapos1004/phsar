@@ -324,7 +324,7 @@ async def test_get_job_owner_can_read(client, user_auth_headers):
     assert resp.json()["uuid"] == uuid_
 
 
-async def test_get_job_other_user_blocked(client, user_auth_headers, create_user_with_role):
+async def test_get_job_other_user_blocked(client, user_auth_headers, make_auth_user):
     """A different normal user cannot read someone else's job."""
     create_resp = await client.post(
         "/jobs/scrape",
@@ -333,13 +333,8 @@ async def test_get_job_other_user_blocked(client, user_auth_headers, create_user
     )
     uuid_ = create_resp.json()["uuid"]
 
-    other_token = await create_user_with_role(
-        username="otheruser", password="otherpass", role=RoleType.User,
-    )
-    resp = await client.get(
-        f"/jobs/{uuid_}",
-        headers={"Authorization": f"Bearer {other_token}"},
-    )
+    other_headers = await make_auth_user("otheruser", "otherpass", RoleType.User)
+    resp = await client.get(f"/jobs/{uuid_}", headers=other_headers)
     assert resp.status_code == 403
 
 
