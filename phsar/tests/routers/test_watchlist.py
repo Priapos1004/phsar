@@ -174,6 +174,7 @@ async def test_upsert_entry_and_media_tags(client, user_auth_headers, test_media
     assert entry["tag_uuid"] == tag_uuid
     assert entry["tag_name"] == "Watchlist"
     assert entry["tag_color"]  # colored bookmark source
+    assert entry["priority"] == 1  # the galaxy's suggestions prefer a high one
 
     items = (await client.get("/watchlist/items", headers=user_auth_headers)).json()
     assert len(items) == 1

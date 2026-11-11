@@ -411,13 +411,13 @@ class BackupRestoreError(PhsarBaseError):
         super().__init__(message)
 
 
-class BackupConfirmationMismatchError(PhsarBaseError):
-    """Raised when the restore confirmation string does not match the caller's username."""
+class ConfirmationMismatchError(PhsarBaseError):
+    """Raised when the username typed into a type-to-confirm dialog (`.claude/rules/frontend.md`)
+    is not the caller's."""
     status_code = 400
 
     def __init__(self):
-        message = "Restore confirmation did not match your username."
-        super().__init__(message)
+        super().__init__("Confirmation did not match your username.")
 
 
 class InvalidCronTokenError(PhsarBaseError):
@@ -499,6 +499,41 @@ class DuplicateScrapeQueryError(PhsarBaseError):
                 "try again in a few days if something looks missing."
             )
         super().__init__(message)
+
+
+class GalaxyStarNotFoundError(PhsarBaseError):
+    """Raised when an anime has no star on the galaxy map — an unknown UUID, or an anime
+    not placed yet."""
+    status_code = 404
+
+    def __init__(self, uuid: str):
+        super().__init__(f"No galaxy star for anime '{uuid}'.")
+
+
+class GalaxyGroupNotFoundError(PhsarBaseError):
+    """Raised when a galaxy sector or region UUID doesn't resolve — including one from a
+    map a refit has since replaced."""
+    status_code = 404
+
+    def __init__(self, uuid: str):
+        super().__init__(f"Galaxy group not found: '{uuid}'.")
+
+
+class GalaxyVectorsStaleError(PermanentPhsarError):
+    """Raised when a galaxy rebuild finds the stored vectors still being re-encoded."""
+    status_code = 409
+
+    def __init__(self):
+        super().__init__("The stored embeddings are being re-encoded; the map is rebuilt once they are.")
+
+
+class GalaxyRestoredError(PhsarBaseError):
+    """Raised when a restore ran while `galaxy_service.run_in_child` computed. Retryable: a
+    retry reads the restored database."""
+    status_code = 409
+
+    def __init__(self):
+        super().__init__("The database was restored while the galaxy map was being computed; the result was discarded.")
 
 
 class MergeCandidateNotFoundError(PhsarBaseError):
@@ -599,16 +634,6 @@ class DeleteCandidateAlreadyResolvedError(PhsarBaseError):
     def __init__(self, status: str):
         message = f"Delete candidate is already {status} — cannot resolve again."
         super().__init__(message)
-
-
-class CurationConfirmationMismatchError(PhsarBaseError):
-    """Raised when a curation confirmation string does not match the caller's
-    username. Guards applying a delete candidate, which destroys catalogue rows
-    and the user data cascading off them."""
-    status_code = 400
-
-    def __init__(self):
-        super().__init__("Confirmation did not match your username.")
 
 
 class BackupUploadTooLargeError(PhsarBaseError):

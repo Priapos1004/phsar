@@ -24,7 +24,7 @@ import {
 } from '$lib/stores/ratingCoverage';
 
 const apiGet = api.get as unknown as ReturnType<typeof vi.fn>;
-const entry = (uuid: string, tier = 'all') => [{ anime_uuid: uuid, tier }];
+const entry = (uuid: string, state = 'all') => [{ anime_uuid: uuid, state }];
 
 describe('ratingCoverage cache', () => {
 	beforeEach(() => {

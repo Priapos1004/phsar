@@ -1,4 +1,12 @@
-import type { CoverageTier } from '$lib/types/api';
+import type { AnimeRatingCoverage } from '$lib/types/api';
+
+/** The looks the coverage marking has (docs/features/ratings.md); `coverageTier` picks one
+ *  from a rated state. */
+export type CoverageTier = 'some' | 'main' | 'all';
+
+export function coverageTier(state: AnimeRatingCoverage['state']): CoverageTier {
+	return state === 'all' || state === 'main' ? state : 'some';
+}
 
 /**
  * How each coverage tier marks a card.

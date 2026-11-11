@@ -26,6 +26,7 @@ from app.exceptions import IncompleteSeasonTargetError
 from app.models.job import JobKind, JobStatus
 from app.models.media import SeasonType
 from app.schemas import admin_schema, backup_schema
+from app.services import galaxy_service
 from app.services.backup_service import enqueue_backup_job
 from app.services.job_worker import job_worker
 
@@ -139,7 +140,11 @@ async def schedule_nightly(
     they never share a nightly run — a Wednesday-in-March never overloads the
     window with two season sweeps. Upcoming fires only in the LAST month of
     each quarter (`month % 3 == 0` → Mar/Jun/Sep/Dec) so next-quarter shows
-    surface roughly a month before the season starts, not the whole quarter."""
+    surface roughly a month before the season starts, not the whole quarter.
+
+    A galaxy rebuild joins them on the nights the map is due
+    (`galaxy_service.ensure_map`), queued behind the sweeps so it reads their
+    refreshed scores."""
     now = datetime.now(timezone.utc)
     backup = await enqueue_backup_job(
         db, backup_schema.BackupSource.cron, label=None, requested_by_user_id=None,
@@ -156,11 +161,14 @@ async def schedule_nightly(
             db, JobKind.upcoming_sweep, delay_minutes,
         )
 
+    galaxy = await galaxy_service.ensure_map(db, now=now, not_before_at=sweep.scheduled_at)
+
     return admin_schema.NightlyScheduleResponse(
         backup_uuid=backup.job_uuid,
         update_sweep_uuid=sweep.job_uuid,
         seasonal_sweep_uuid=seasonal.job_uuid if seasonal is not None else None,
         upcoming_sweep_uuid=upcoming.job_uuid if upcoming is not None else None,
+        galaxy_rebuild_uuid=galaxy.job_uuid if galaxy is not None else None,
         scheduled_at=sweep.scheduled_at,
     )
 

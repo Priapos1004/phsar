@@ -112,16 +112,30 @@ def weighted_mean_votes_expr():
     return _relation_weighted_mean(Media.scored_by)
 
 
-def top_percent_ranking(*, per_anime: bool):
-    """`(id, top_percent)` for every scored anime or media: the "Top N%" badge, ranked
-    by `weighted_score_expr` over the whole catalogue (per anime, its relation-weighted
-    means), and unfiltered, so N% is the same figure whatever else a search selects.
-
-    `top_percent` is the rank as a percentage of the scored rows, rounded up — ties
-    share their best rank, and the worst row reads 100.
+def top_percent_of(metric):
+    """`metric`'s "Top N%" over the rows its query yields, best first: the rank as a
+    percentage of the rows, rounded up — ties share their best rank, and the worst row reads
+    100. One rule for MAL's badge and the caller's own.
 
     `rank()` rather than a count of the better rows, which would spare one badge its
     sort: the filter needs every row's rank."""
+    rank = func.rank().over(order_by=metric.desc())
+    total = func.count().over()
+    return (rank * 100 + total - 1) // total
+
+
+def percent_rank(population):
+    """`(id, metric, top_percent)` over `population`'s `(id, metric)` rows."""
+    return select(
+        population.c.id, population.c.metric, top_percent_of(population.c.metric).label("top_percent"),
+    ).subquery()
+
+
+def top_percent_ranking(*, per_anime: bool):
+    """`(id, metric, top_percent)` for every scored anime or media: the "Top N%" badge,
+    ranked by `weighted_score_expr` over the whole catalogue (per anime, its
+    relation-weighted means), and unfiltered, so N% is the same figure whatever else a
+    search selects."""
     if per_anime:
         mean_score = weighted_mean_score_expr()
         scored = (
@@ -136,10 +150,7 @@ def top_percent_ranking(*, per_anime: bool):
         scored = select(
             Media.id.label("id"), weighted_score_expr(Media.score, Media.scored_by).label("metric"),
         ).where(Media.score.is_not(None))
-    population = scored.subquery()
-    rank = func.rank().over(order_by=population.c.metric.desc())
-    total = func.count().over()
-    return select(population.c.id, ((rank * 100 + total - 1) // total).label("top_percent")).subquery()
+    return percent_rank(scored.subquery())
 
 
 async def top_percents(db: AsyncSession, ids: list[int], *, per_anime: bool) -> dict[int, int]:
@@ -563,11 +574,10 @@ def title_match_passes(stmt, title_match, *, having: bool = False) -> list:
 
 # How far below the searched population's mean distance to the query a semantic hit
 # must sit (`description_cutoff`, `note_cutoff`); why relative is in
-# docs/features/search.md. Specific to the embedding model: the calibration studies are
-# in compound-docs/2026-10-07-v0.16.0-search-rework.md and
-# compound-docs/2026-10-09-v0.16.1-search-ui.md — re-measure every population on a model
-# change.
-SEMANTIC_MARGIN = 0.30
+# docs/features/search.md. Specific to the embedding model — re-measure on a model change
+# (`.claude/skills/remeasure-embeddings`); the current model's run is in
+# compound-docs/2026-10-30-v0.16.5-galaxy.md.
+SEMANTIC_MARGIN = 0.06
 
 
 def _description_distance(query_embedding):
@@ -622,15 +632,18 @@ def match_passes(stmt, literals: list, distance, cutoff, *, having: bool, aggreg
     ]
 
 
+def description_text():
+    """The text a media's description embedding encodes: its titles and description."""
+    return func.concat_ws(" ", *_title_variants(Media), Media.description)
+
+
 def description_passes(stmt, query: str, query_embedding, *, having: bool = False) -> list:
-    """Description search through `match_passes`, over the text the description
-    embedding encodes: the media's titles and description. Outer join, so a media
-    without an embedding can still be a literal hit. The anime grain averages its
-    media's distances; why is in docs/features/search.md."""
-    text = func.concat_ws(" ", *_title_variants(Media), Media.description)
+    """Description search through `match_passes`, over `description_text()`. Outer
+    join, so a media without an embedding can still be a literal hit. The anime grain
+    averages its media's distances; why is in docs/features/search.md."""
     return match_passes(
         stmt.outerjoin(MediaSearch, MediaSearch.media_id == Media.id),
-        literal_matches(query, text),
+        literal_matches(query, description_text()),
         _description_distance(query_embedding),
         description_cutoff(query_embedding),
         having=having, aggregate=func.avg,

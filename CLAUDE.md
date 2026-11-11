@@ -47,6 +47,7 @@ that touches its area, before settling on an approach.
 | [watchlist](docs/features/watchlist.md) | Entries and lists, bulk writes and the note target, what the bookmarks and the page read |
 | [browse](docs/features/browse.md) | Carousel definitions and filter sets, the resolver, page layouts |
 | [navigation](docs/features/navigation.md) | What survives leaving a page and coming back: route, origin, scroll position, filters — and when each resets |
+| [galaxy](docs/features/galaxy.md) | The fitted map of every anime: feature blocks, the fit and the warm refit, the rebuild job and its triggers, sector and region names |
 
 **`compound-docs/`** — why something changed, dated and frozen; feature docs say how
 it works now. [INDEX.md](compound-docs/INDEX.md) lists them by subsystem and by date.
@@ -146,8 +147,8 @@ several `admin_*` modules). The live contract is FastAPI's own
 | Prefix | Purpose |
 |---|---|
 | `/auth` | login, register, validate, refresh (sliding session) |
-| `/browse` | page carousels, one carousel with its filter sets switched, Discover's moods, the day's spin and an admin's preview of any mood |
-| `/search` | `/media` per-entry, `/anime` aggregated, `/mal` |
+| `/browse` | page carousels, one carousel with its filter sets switched, Discover's moods, the day's spin and an admin's preview of any mood, the galaxy map and a star's neighbours |
+| `/search` | `/media` per-entry, `/anime` aggregated, `/anime/uuids` every match, `/mal` |
 | `/media` | media + anime detail |
 | `/ratings` | rating CRUD, rewatch, scores projection, rated coverage, spoiler visibility |
 | `/watchlist` | entries + lists (a "list" is a tag) |
@@ -156,7 +157,7 @@ several `admin_*` modules). The live contract is FastAPI's own
 | `/library`, `/filters` | recent additions; filter options + genres + the search-token pair |
 | `/save`, `/seed` | internal save + seed entry points (not frontend-consumed) |
 | `/maintenance` | public status for the pre-warning banner |
-| `/admin*` | stats, jobs log, backups, registration tokens, merge/split/delete/completion curation, cron schedulers |
+| `/admin*` | stats, jobs log, backups, registration tokens, merge/split/delete/completion curation, cron schedulers, galaxy rebuild + group names |
 
 **`services/`** — business logic as module-level async functions; long-lived
 stateful components are classes. Per-service notes in
@@ -187,10 +188,11 @@ non-retryable; `TransientUpstreamError` sits outside it and stays retryable.
 **`seeders/`** — run from the lifespan: genres, the browse carousels, admin + optional guest user, then
 idempotent backfills (settings, default tags, spoiler visibility and its
 restricted-user purge, title suffixes, embeddings) before the yield; the backup
-self-heal and the catalogue-wide passes (relations, merge candidates, split
-candidates) after it. They re-run every boot and repair derived data. Merge-candidate backfill is the one that lives in
-`services/merge_detection_service.py` instead, because detection is shared with
-the save and sweep paths — you cannot find it from `seeders/`.
+self-heal and the catalogue-wide passes (a re-embed when the stored vectors are
+stale, the galaxy map's upkeep, relations, merge candidates, split candidates) after it. They re-run every boot and repair derived data. A pass that shares its logic with
+a runtime path lives in that path's service instead — merge candidates in
+`services/merge_detection_service.py`, shared with the save and sweep paths, for one — so
+`main.py`'s lifespan is the full list, not `seeders/`.
 
 **The post-yield order is load-bearing** — `main.py` comments the constraint at the
 call site.
@@ -287,7 +289,9 @@ MVCC-snapshot, so no banner is needed), an `update_sweep` at `now + delay_minute
 a `seasonal_sweep` at the same delay **on Sundays**, and an `upcoming_sweep` at the
 same delay **on Wednesdays in the last month of the quarter** (Mar/Jun/Sep/Dec), so
 next-quarter shows surface about a month early. The two season sweeps sit on
-different weekdays so one nightly run never fires both.
+different weekdays so one nightly run never fires both. On a night the galaxy map is
+due ([galaxy](docs/features/galaxy.md) says when) it also enqueues a `galaxy_rebuild` at
+the same delay, created last so FIFO runs it after the sweeps.
 
 The sweeps share `not_before_at`; the worker drains the backup first, then takes
 whichever sweep is next by FIFO. Ordering between them is undefined and immaterial —

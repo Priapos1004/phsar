@@ -42,13 +42,33 @@ async def _search(client, headers) -> dict[str, bool]:
     return {r["uuid"]: r["is_rated"] for r in res.json()}
 
 
-async def test_coverage_reports_the_tier_for_a_rated_anime(client, user_auth_headers, db_session):
-    anime, media = await _anime_with_media(db_session, -93000, 2)
-    await rate_media(client, user_auth_headers, media[0].uuid)
+async def test_coverage_reports_the_state_of_a_rated_anime(client, user_auth_headers, db_session):
+    anime, media = await _anime_with_media(db_session, -93000, 3)
+    await rate_media(client, user_auth_headers, media[0].uuid, rating=8.0)
+    await rate_media(client, user_auth_headers, media[1].uuid, rating=6.5)
 
     res = await client.get("/ratings/coverage", headers=user_auth_headers)
     assert res.status_code == 200
-    assert {e["anime_uuid"]: e["tier"] for e in res.json()}[str(anime.uuid)] == "some"
+    entry = next(e for e in res.json() if e["anime_uuid"] == str(anime.uuid))
+    assert entry["state"] == "in_progress"
+    # The mean of the two ratings: the unrated third media counts for nothing.
+    assert entry["score"] == 7.25
+
+
+async def test_coverage_ranks_each_anime_among_the_callers_own(client, user_auth_headers, db_session):
+    """Its score's "Top N%" among the anime the caller rated, by the badge's rule
+    (`top_percent_of`): first, then tied second of three."""
+    scores = {-93100: 9.0, -93200: 7.0, -93300: 7.0}
+    uuids = {}
+    for seed, score in scores.items():
+        anime, media = await _anime_with_media(db_session, seed, 1)
+        await rate_media(client, user_auth_headers, media[0].uuid, rating=score)
+        uuids[str(anime.uuid)] = seed
+
+    res = await client.get("/ratings/coverage", headers=user_auth_headers)
+    assert res.status_code == 200
+    tops = {uuids[e["anime_uuid"]]: e["top_percent"] for e in res.json() if e["anime_uuid"] in uuids}
+    assert tops == {-93100: 34, -93200: 67, -93300: 67}
 
 
 async def test_coverage_is_closed_to_restricted_users(client, restricted_user_auth_headers):

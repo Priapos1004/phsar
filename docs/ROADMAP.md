@@ -250,7 +250,7 @@ S5 (main)             → BLUR/HIDE
 
 **Three detectors feed the `merge_candidates` table:**
 1. **`title_studio`** — `max(SequenceMatcher.ratio, longest_match_size / min(len)) ≥ 0.85`, gated by studio overlap. The containment branch catches `"X" ⊂ "X: Subtitle"` cases that pure ratio under-counts.
-2. **`title_desc`** — title score ≥ 0.5 AND description-embedding cosine ≥ 0.85, also gated by studio overlap. Catches Dr. Stone / Dr. Stone: New World where the subtitle pushes title alone below the rule-1 threshold but the synopses lock onto the same characters/world.
+2. **`title_desc`** — title score ≥ 0.5 AND description-embedding cosine ≥ `DESC_THRESHOLD`, also gated by studio overlap. Catches Dr. Stone / Dr. Stone: New World where the subtitle pushes title alone below the rule-1 threshold but the synopses lock onto the same characters/world.
 3. **`relation_link`** — `media_relation_edges` sidecar links a media to media owned by a different anime via a strong-link MAL relation (`sequel`, `prequel`, `alternative_version` — the same `ALT_CHAIN_EDGES` set the relation classifier uses to build a chain). Strongest signal (MAL itself asserting the connection); no title or studio gate. The sidecar is the **single source of truth** — save, update_sweep, and backfill all converge through `find_cross_anime_relation_pairs` / `MergeCandidateDAO.get_cross_anime_relation_pairs` so the signal fires identically regardless of which job created the anime rows or when (the Evangelion-shape: NGE TV and Rebuild Movies as separate scrapes were missed by the original BFS-derived path).
 
 **MAL-ID match remains:** `MalIdAlreadyExistsError` raised at save-time if a media's mal_id already exists; this is the hard pre-detector guarantee.
@@ -288,7 +288,7 @@ Foundation for any destructive/long-running periodic job. Consumed by both the d
 - `update_sweep` dispatcher tier-selects due anime via a 4-tier OR query (LEFT JOIN against `anime_freshness`):
   - Tier 1: any media currently airing → always due
   - Tier 2: `stable_check_count < 3` → still stabilizing
-  - Tier 3: last-checked > 7 days AND has a main media whose `aired_from` is within `SWEEP_RECENT_MAIN_YEARS = 5` years (refined from "any main media exists" so dormant main-only franchises don't ride weekly cycles)
+  - Tier 3: last-checked > 7 days AND has a main media whose `aired_from` is within `SWEEP_RECENT_MAIN_YEARS` (refined from "any main media exists" so dormant main-only franchises don't ride weekly cycles)
   - Tier 4: last-checked > 180 days → long-tail safety net
 - For each due anime: refreshes child media via `/anime/{id}/full`, diffs `score`/`scored_by`/`episodes`/`airing_status`/`aired_to`. **Per-anime commit + per-anime try/except** — a worker crash mid-sweep preserves earlier successes; a single bad MAL response fails *that* anime only.
 - Score and scored_by are bundled through `_weighted_score(score, scored_by) = score * log10(scored_by + 1)` and only count as stability-resetting when `abs(new − old) >= 0.05`. Without this, every popular anime (One Piece, BNHA, Naruto:Shippuuden) would never stabilize because daily vote drift moved `scored_by`. New values are written through to the DB regardless; the threshold gates only the stability *signal*.
@@ -405,7 +405,10 @@ Separate page/route — the "deep dive" version of home page sections.
 - Production company analysis over embeddings
 
 ### Parked tabs (right of Discover)
-- **Galaxy** — a 2D map of the catalogue over combined embeddings (description, genres …): zoom, hop between neighbours, "six degrees" from one anime to another
+- **Galaxy** — ✓ built (v0.16.5, [galaxy](features/galaxy.md)): a 2D map of the catalogue over combined embeddings (description, genres …), zoom, hop between neighbours, light what the search's filters keep. Next:
+  - **"Show on the map" from a see-all page** — later: some rows search descriptions (Discover's moods), and a description match is a ranked list cut at a margin, which lit stars cannot show; the link waits for a way to draw that on the map.
+  - "Six degrees" from one anime to another.
+  - **A rebuild's detail page** (how the groups changed) — once a real refit over hand names shows what to look at. The old groups go with the old fit, so the page records its data from the refit it reports on.
 - **Games** — tonight's tournament (a bracket ending in one pick), higher or lower on MAL score, a swipe deck onto the watchlist; new row formats (ranked top-10, spotlight, blind box, versus) may live here too
 
 ### Key Decisions
@@ -455,6 +458,10 @@ Eye-catching landing page — light version of browse, serves new and returning 
 ### General Browsing
 - Browse page (Feature 5b) covers this — sections + search bar with filters gives full browsing capability
 - No separate "all anime" page: an empty search lists the whole catalogue, and each carousel has its see-all page
+
+### To study
+- **Franchise mentions in description searches.** Through [the anime grain's literal test](features/search.md#description-search) a long franchise surfaces on the strength of one movie or side story, in several of Discover's description rows at once. Counting only main-story mentions would cut them; measure what it removes, and which sequel-only hits it would cost, before deciding.
+- **Discover's no-repeat rule on today's catalogue.** Counted as [browse](features/browse.md#discover-draws-one-mood-a-day) counts it, several moods' rows now share far more than the bar allows (isekai and reborn share most of their pools). Re-tune those rows, or restate how the bar is counted for random rows; `discover_rows.py` in the remeasure-embeddings skill lists the pairs.
 
 ---
 
@@ -523,6 +530,9 @@ Eye-catching landing page — light version of browse, serves new and returning 
 - **Single cron token + combined nightly endpoint (v0.14.0 late).** Originally three cron-authed endpoints with two bearer tokens (`BACKUP_CRON_TOKEN` for `/backups/auto`, `JOBS_CRON_TOKEN` for the two sweep schedulers). Consolidated to a single `JOBS_CRON_TOKEN` and added `POST /admin/jobs/schedule-nightly` that enqueues backup (immediate) + `update_sweep` (delayed) + Sunday-UTC-only `seasonal_sweep` (same delay). The weekday check lives in the endpoint so one Coolify scheduled task covers everything; the three single-purpose endpoints stay for ad-hoc triggers. Sunday-UTC is intentional — the existing seasonal cron already ran weekly Sunday, so piggybacking that day on the daily maintenance window keeps the user-visible banner pattern unchanged. Ordering between `update_sweep` and `seasonal_sweep` is FIFO-with-tie-on-not_before_at (worker picks one, runs it, then the other); the maintenance flag bounces sub-second between them which is acceptable for an admin-only system flow.
 - **Maintenance mode during restore.** Process-wide in-memory flag; HTTP middleware 503s everything except `/` and `/health`, frontend bounces users to `/login?maintenance=1`. Single-worker assumption documented. Backup creation does NOT flip maintenance — `pg_dump` is read-only via MVCC, so user writes are safe during a dump window.
 - **Password handling.** `PGPASSWORD` env var on the subprocess, never on the CLI.
+
+### Planned
+- **A dump before a re-embed, and the embedding model each dump's vectors came from.** When the boot probe finds a model change, take a labelled dump first, then re-embed: restoring it is the fast way back if the new model disappoints, beside redeploying the old image and letting the probe re-embed (slower, keeps every write since). The database records which model wrote its vectors — one row the re-embed updates — so every dump carries it, and the backup reads it from the dump the way it reads the Alembic revision, uploads included. A dump from another model reads `outdated`, so the self-heal dumps fresh after a model change as it does after a migration.
 
 ---
 
@@ -631,7 +641,7 @@ length target.
 | **v0.16.2** | ✓ Browse + News | Carousel definitions in the DB with a resolver and seeded core rows; the Browse page and its News tab; a see-all page, also reached from search. JWT signing and verification move from python-jose to PyJWT. |
 | **v0.16.3** | ✓ Home + Discover | Home rows Lucky find and New to the catalogue replace two placeholders; seasonal hero art (Halloween); a Discover tab whose wheel draws each user one themed mood a day, cut to with a full-screen reveal; a To-anime link on the media page; paging arrows on every sideways row. |
 | **v0.16.4** | ✓ Responsive pass | Every page on a phone and at the widest layout; an In / Not in toggle on the watchlist's Lists filter; tooltips that open on a tap, and ⓘ explanations on the watchlist filters and settings; search results kept across a detail detour; the sweep card's nightly load against its cap; Future Shock's reveal is a UFO that beams its title down; genre filter groups (Any/All, Without, OR or AND between groups), which keep a Discover mood's rows from repeating each other. |
-| **v0.16.5** | Galaxy | Browse's parked Galaxy tab (Feature 5b): a 2D map of the catalogue. |
+| **v0.16.5** | ✓ Galaxy | Browse's parked Galaxy tab (Feature 5b): a 2D map of the catalogue. Search moves to multilingual-e5-small, which finds Japanese and translated queries far better. Search and the map filter by your own score and your top N%. The weekly sweep cycle narrows to three years. |
 | **v0.16.6** | Recommended | Home's Recommended row, from the user's own algorithm. |
 | **v0.16.7** | Guest accounts | A rework of the guest account logic. |
 | **v0.16.8** | Get-started page | The onboarding page (Feature 10). |

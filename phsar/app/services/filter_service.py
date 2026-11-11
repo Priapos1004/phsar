@@ -110,16 +110,19 @@ def personal_scope(
     states: dict[int, RatedState],
     listed: set[int],
     include: set[int] | None = None,
+    scored: set[int] | None = None,
 ) -> tuple[set[int] | None, set[int]]:
-    """The `(include, exclude)` ids the caller's `rated` and `watchlisted` filters
-    leave, at whichever grain `states` (the rated rows) and `listed` are keyed by.
-    `include` is a scope already in force — the spoiler frontier — and None means no
-    restriction.
+    """The `(include, exclude)` ids the caller's personal filters leave, at whichever
+    grain `states` (the rated rows), `listed` and `scored` (the rows their own-score
+    filters pass, None without one) are keyed by. `include` is a scope already in force —
+    the spoiler frontier — and None means no restriction.
 
     States are a union: with `none` selected the unrated rows pass, so the rated rows
     in an unselected state are excluded; without it, the selected ones are the include.
     An include absorbs the exclude, so the caller has one list to send."""
     exclude: set[int] = set()
+    if scored is not None:
+        include = scored if include is None else include & scored
     if filters.rated:
         selected = {id_ for id_, state in states.items() if state in filters.rated}
         if RatedState.NONE in filters.rated:
@@ -133,6 +136,19 @@ def personal_scope(
     if include is None:
         return None, exclude
     return include - exclude, set()
+
+
+async def own_scored_ids(
+    db: AsyncSession, filters: CatalogueSearchFilters, user_id: int, *, per_anime: bool,
+) -> set[int] | None:
+    """The rows the caller's own-score filters pass, for `personal_scope`'s `scored`; None
+    without one."""
+    if not filters.own_score_set:
+        return None
+    return await rating_dao.get_ids_by_own_score(
+        db, user_id, per_anime=per_anime,
+        score_min=filters.your_score_min, score_max=filters.your_score_max, top_percent=filters.your_top_percent,
+    )
 
 
 def sort_seasons(seasons: list[str]) -> list[str]:

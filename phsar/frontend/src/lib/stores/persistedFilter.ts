@@ -147,12 +147,12 @@ export function createPersistedFilter<T extends object>(
 /** `asc | desc` — every sortable list section has a direction. */
 export type Direction = 'asc' | 'desc';
 
-/** Whitelists shared by the ratings + watchlist filters, whose view and grain
- *  unions are the same two pairs. Kept beside `pickKey` (which consumes them)
- *  rather than duplicated per store. */
+/** Whitelists more than one section filter reads. Kept beside `pickKey` (which
+ *  consumes them) rather than duplicated per store. */
 export const VIEW_KEYS: Record<'grid' | 'table', true> = { grid: true, table: true };
 export const GRAIN_KEYS: Record<'anime' | 'media', true> = { anime: true, media: true };
 export const DIRECTION_KEYS: Record<Direction, true> = { asc: true, desc: true };
+export const MATCH_MODE_KEYS: Record<'any' | 'all', true> = { any: true, all: true };
 
 /**
  * Whitelist a stored string against a `Record<Union, …>` key set.

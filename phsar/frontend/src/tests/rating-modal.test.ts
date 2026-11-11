@@ -212,6 +212,7 @@ describe('watchlist removal offer', () => {
 		tag_uuid: 'tag-uuid-1',
 		tag_name: 'Plan',
 		tag_color: '#000000',
+		priority: 3,
 	};
 
 	beforeEach(() => watchlistTags.set(new Map([[listed.media_uuid, listed]])));

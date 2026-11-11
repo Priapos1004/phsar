@@ -79,10 +79,10 @@ class Settings(BaseSettings):
     # runaway scripts. Counts all statuses — failed jobs still cost MAL
     # API quota and admin attention.
     JOBS_DAILY_LIMIT: int = 50
-    # Bounds the nightly update_sweep batch. v0.14.8 made this a MEDIA count
-    # (was anime): ~500 media ≈ a 6–7 min maintenance window at MAL's rate.
-    # Only binds during the post-migration herd + stabilizing bursts; steady
-    # state finishes in seconds.
+    # Bounds the nightly update_sweep batch, in media: ~500 ≈ a 6–7 min
+    # maintenance window at MAL's rate. What it cuts spills into the following
+    # nights, the longest-unchecked first; the Overview's sweep card shows the
+    # nightly load against it.
     JOBS_SWEEP_MAX_PER_RUN: int = 500
     # Circuit breaker for a total MAL outage during update_sweep. Each anime
     # burns the full tenacity retry budget (~30s on fast 504s, up to ~11 min
@@ -114,15 +114,6 @@ class Settings(BaseSettings):
     # rows and run in seconds. Default on; disable for tight maintenance
     # windows on a fresh deployment.
     RELATION_BACKFILL_ON_STARTUP: bool = True
-
-    # One-shot: regenerate EVERY search embedding in place at startup so the
-    # catalog picks up a `generate_embedding` change (the case-folding fix).
-    # Default OFF — a ~5-9 min catalog re-encode on the 2-vCPU VM is wasteful
-    # on every restart. Flip ON in Coolify for a single deploy, watch for the
-    # "Re-embed complete" log line, then flip OFF. Runs post-yield in the
-    # background so it never blocks /health. See
-    # `embedding_backfiller.reembed_all_embeddings`.
-    EMBEDDING_REEMBED_ON_STARTUP: bool = False
 
     model_config = SettingsConfigDict(env_file=".env")  # Tell Pydantic to load from .env
 

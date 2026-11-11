@@ -16,6 +16,7 @@ there is one copy to keep correct.
 | `scrape_dispatcher.py`, `seasonal_sweep_dispatcher.py` | [jobs](../../../docs/features/jobs.md) |
 | `backup_dispatcher.py`, `backup_service.py` | [backups](../../../docs/features/backups.md) |
 | `browse_service.py` (and `seeders/browse_seeder.py`) | [browse](../../../docs/features/browse.md) |
+| `galaxy_compute.py`, `galaxy_dispatcher.py`, `galaxy_service.py` | [galaxy](../../../docs/features/galaxy.md) |
 | `vector_embedding_service.py` | [search](../../../docs/features/search.md) |
 | `media_search_service.py`, `anime_search_service.py`, `filter_service.py` | [search](../../../docs/features/search.md) |
 | `spoiler_service.py` | [spoilers](../../../docs/features/spoilers.md) |

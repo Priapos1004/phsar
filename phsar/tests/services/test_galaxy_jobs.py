@@ -1,0 +1,274 @@
+"""The galaxy rebuild job, with the fit itself stubbed: the swap, names carried onto the
+new map, a failed fit leaving the live map alone, when a rebuild is due — and one real
+child process, since the fit's isolation rests on it."""
+
+import asyncio
+from datetime import datetime, timedelta, timezone
+
+import pytest
+from sqlalchemy import delete, func, select
+
+from app.core.maintenance import count_restore
+from app.daos.job_dao import JobDAO
+from app.exceptions import GalaxyRestoredError, GalaxyVectorsStaleError
+from app.models.anime import Anime
+from app.models.galaxy import GalaxyFit, GalaxyGroup, GalaxyStar
+from app.models.job import Job, JobKind
+from app.services import galaxy_compute, galaxy_service
+from app.services.anime_search_service import anime_title_texts
+from app.services.galaxy_dispatcher import galaxy_rebuild_dispatcher
+from app.services.vector_embedding_service import MODEL_NAME, create_anime_embedding
+from tests._helpers import NoopProgressReporter, fake_galaxy_fit, fake_job, probe_row
+
+
+@pytest.fixture
+def stub_fit(monkeypatch):
+    monkeypatch.setattr("app.services.galaxy_dispatcher.ProgressReporter", NoopProgressReporter)
+
+    async def in_process(fn, *args):
+        assert fn is galaxy_compute.fit
+        return fake_galaxy_fit(*args)
+
+    monkeypatch.setattr(galaxy_service, "run_in_child", in_process)
+
+
+async def _embedded_anime(db_session, mal_id: int, title: str, description: str) -> Anime:
+    """An anime with its description embedding: what a fit or a placement reads."""
+    anime = Anime(mal_id=mal_id, title=title, description=description)
+    db_session.add(anime)
+    await db_session.flush()
+    await create_anime_embedding(
+        db_session, anime_id=anime.id, title_texts=anime_title_texts(anime), description_text=description,
+    )
+    return anime
+
+
+@pytest.fixture
+async def catalogue(db_session):
+    """An anime with an embedding, so the fit has something to load on an empty database."""
+    await _embedded_anime(db_session, 99101, "Galaxy Fixture", "A fixture for the map.")
+
+
+async def test_a_rebuild_swaps_the_map_and_carries_hand_names(db_session, catalogue, stub_fit):
+    await galaxy_rebuild_dispatcher(db_session, fake_job())
+    sector = (await db_session.execute(select(GalaxyGroup).where(GalaxyGroup.parent_id.is_(None)))).scalar_one()
+    await galaxy_service.rename_group(db_session, sector.uuid, "Isekai Sprawl")
+
+    summary = await galaxy_rebuild_dispatcher(db_session, fake_job())
+
+    assert (await db_session.execute(select(func.count()).select_from(GalaxyFit))).scalar_one() == 1
+    names = dict((await db_session.execute(select(GalaxyGroup.auto_name, GalaxyGroup.name))).all())
+    assert names == {"Auto sector": "Isekai Sprawl", "Auto region": None}
+    assert summary["names_carried"] == 1
+    assert summary["names_dropped"] == []
+    stars = (await db_session.execute(select(func.count()).select_from(GalaxyStar))).scalar_one()
+    assert stars == (await db_session.execute(
+        select(func.count()).select_from(Anime).where(Anime.anime_search.has())
+    )).scalar_one()
+
+
+async def test_a_rename_made_during_the_fit_carries(db_session, catalogue, stub_fit, monkeypatch):
+    await galaxy_rebuild_dispatcher(db_session, fake_job())
+    sector = (await db_session.execute(select(GalaxyGroup).where(GalaxyGroup.parent_id.is_(None)))).scalar_one()
+
+    async def renamed_meanwhile(fn, *args):
+        await galaxy_service.rename_group(db_session, sector.uuid, "Isekai Sprawl")
+        return fake_galaxy_fit(*args)
+
+    monkeypatch.setattr(galaxy_service, "run_in_child", renamed_meanwhile)
+    summary = await galaxy_rebuild_dispatcher(db_session, fake_job())
+
+    assert summary["names_carried"] == 1
+    assert (await db_session.execute(
+        select(GalaxyGroup.name).where(GalaxyGroup.parent_id.is_(None)))).scalar_one() == "Isekai Sprawl"
+
+
+async def test_no_fit_while_the_vectors_are_being_reencoded(db_session, catalogue, stub_fit):
+    (await probe_row(db_session)).description_embedding = [0.5] * 384
+    await db_session.flush()
+    live = (await db_session.execute(select(GalaxyFit.id))).scalars().all()
+
+    with pytest.raises(GalaxyVectorsStaleError):
+        await galaxy_rebuild_dispatcher(db_session, fake_job())
+    assert (await db_session.execute(select(GalaxyFit.id))).scalars().all() == live
+
+
+async def test_a_rebuild_lists_the_names_it_dropped(db_session, catalogue, stub_fit, monkeypatch):
+    await galaxy_rebuild_dispatcher(db_session, fake_job())
+    sector = (await db_session.execute(select(GalaxyGroup).where(GalaxyGroup.parent_id.is_(None)))).scalar_one()
+    await galaxy_service.rename_group(db_session, sector.uuid, "Isekai Sprawl")
+
+    def diluted(anime, media, previous):
+        # The new sector holds every old member plus twice as many others: a Jaccard of
+        # 1/3 whatever the catalogue's size, under the floor though all of them are there.
+        fit = fake_galaxy_fit(anime, media, previous)
+        ids = fit["groups"][0]["trained_members"]
+        fit["groups"][0]["trained_members"] = ids + [-k for k in range(1, 2 * len(ids) + 1)]
+        return fit
+
+    async def in_process(fn, *args):
+        return diluted(*args)
+
+    monkeypatch.setattr(galaxy_service, "run_in_child", in_process)
+    summary = await galaxy_rebuild_dispatcher(db_session, fake_job())
+
+    assert summary["names_carried"] == 0
+    assert summary["names_dropped"] == [
+        {"name": "Isekai Sprawl", "level": "sector",
+         "went_to": [{"number": 0, "label": "Auto sector", "share": 1.0}]},
+    ]
+    # The fit's own copy of the summary leaves the list to the job.
+    assert "names_dropped" not in (await db_session.execute(select(GalaxyFit.params))).scalar_one()["summary"]
+
+
+async def test_a_rebuild_starts_cold_only_after_the_vectors_changed(db_session, catalogue, stub_fit, monkeypatch):
+    starts = []
+
+    async def in_process(fn, anime, media, previous):
+        starts.append(bool(previous))
+        return fake_galaxy_fit(anime, media, previous)
+
+    async def rebuild_after(change: dict[str, str]):
+        fit = (await db_session.execute(select(GalaxyFit))).scalar_one()
+        fit.params = {**fit.params, "built_from": {**galaxy_service.built_from(), **change}}
+        await db_session.flush()
+        await galaxy_rebuild_dispatcher(db_session, fake_job())
+
+    await galaxy_rebuild_dispatcher(db_session, fake_job())
+    monkeypatch.setattr(galaxy_service, "run_in_child", in_process)
+    await rebuild_after({"numpy": "0"})
+    await rebuild_after({"vectors": "0"})
+    assert starts == [True, False]
+
+
+async def test_a_reembed_leaves_the_map_due_a_cold_refit(db_session, catalogue, stub_fit):
+    """Under the same model name a re-embed is invisible to `built_from`, so the boot says so."""
+    await galaxy_rebuild_dispatcher(db_session, fake_job())
+    await galaxy_service.vectors_reembedded(db_session)
+    fit = (await db_session.execute(select(GalaxyFit))).scalar_one()
+    assert not galaxy_service.is_current(fit)
+    assert not galaxy_service.same_vectors(fit)
+
+
+async def test_a_failed_fit_keeps_the_live_map(db_session, catalogue, stub_fit, monkeypatch):
+    await galaxy_rebuild_dispatcher(db_session, fake_job())
+    live = (await db_session.execute(select(GalaxyFit.id))).scalar_one()
+
+    async def fails(*_args):
+        raise RuntimeError("fit died")
+
+    monkeypatch.setattr(galaxy_service, "run_in_child", fails)
+    with pytest.raises(RuntimeError, match="fit died"):
+        await galaxy_rebuild_dispatcher(db_session, fake_job())
+    assert (await db_session.execute(select(GalaxyFit.id))).scalar_one() == live
+
+
+async def test_new_anime_are_placed_onto_the_live_map(db_session, catalogue, stub_fit, monkeypatch):
+    """Only the anime without a star go through `place`; the second pass finds none."""
+    await db_session.execute(delete(Job).where(Job.kind == JobKind.galaxy_rebuild))
+    await galaxy_rebuild_dispatcher(db_session, fake_job())
+    newcomer = await _embedded_anime(db_session, 99102, "Galaxy Newcomer", "Scraped after the fit.")
+    placed: list[int] = []
+
+    async def in_process(fn, _blob, anime, media):
+        assert fn is galaxy_compute.place
+        placed.extend(a.anime_id for a in anime)
+        return [{**star, "trained": False} for star in fake_galaxy_fit(anime, media, {})["stars"]]
+
+    monkeypatch.setattr(galaxy_service, "run_in_child", in_process)
+    assert await galaxy_service.place_unplaced(db_session) == 1
+    assert placed == [newcomer.id]
+    star = (await db_session.execute(select(GalaxyStar).where(GalaxyStar.anime_id == newcomer.id))).scalar_one()
+    assert not star.trained
+    assert await galaxy_service.place_unplaced(db_session) == 0
+
+
+@pytest.mark.parametrize("why", ["no map", "another model", "rebuild waiting"])
+async def test_nothing_is_placed_onto_a_map_on_its_way_out(db_session, catalogue, stub_fit, monkeypatch, why):
+    """No map, one fitted on another model's vectors, or one a queued rebuild will replace:
+    the rebuild places everyone, so placing would only spend a child."""
+    await db_session.execute(delete(Job).where(Job.kind == JobKind.galaxy_rebuild))
+    await galaxy_rebuild_dispatcher(db_session, fake_job())
+    await _embedded_anime(db_session, 99103, "Galaxy Latecomer", "Scraped after the fit.")
+    if why == "no map":
+        await db_session.execute(delete(GalaxyFit))
+    elif why == "another model":
+        fit = (await db_session.execute(select(GalaxyFit))).scalar_one()
+        fit.params = {**fit.params, "built_from": {**fit.params["built_from"], "model": "another-model"}}
+    else:
+        await galaxy_service.enqueue_rebuild(db_session)
+    await db_session.flush()
+
+    async def never(*_args):
+        raise AssertionError("no child for a map on its way out")
+
+    monkeypatch.setattr(galaxy_service, "run_in_child", never)
+    assert await galaxy_service.place_unplaced(db_session) == 0
+
+
+# This quarter's refit date is 2026-04-15.
+NOW = datetime(2026, 5, 2, tzinfo=timezone.utc)
+
+
+async def _waiting_rebuilds(db_session) -> int:
+    return await JobDAO().count_active_by_kind(db_session, JobKind.galaxy_rebuild)
+
+
+@pytest.mark.parametrize(("fitted_at", "model", "enqueued"), [
+    (None, None, 1),  # no map: a first deploy or a fresh database
+    (NOW - timedelta(days=1), MODEL_NAME, 0),
+    (datetime(2026, 4, 14, tzinfo=timezone.utc), MODEL_NAME, 1),  # before this quarter's refit date
+    (NOW - timedelta(days=1), "another-model", 1),  # the boot re-embedded the vectors under it
+])
+async def test_a_rebuild_is_enqueued_when_the_map_is_due(
+    db_session, catalogue, monkeypatch, fitted_at, model, enqueued,
+):
+    monkeypatch.setattr(galaxy_compute, "MIN_CATALOGUE", 1)
+    await db_session.execute(delete(Job).where(Job.kind == JobKind.galaxy_rebuild))
+    await db_session.execute(delete(GalaxyFit))
+    if fitted_at is not None:
+        db_session.add(GalaxyFit(
+            models=b"", params={"built_from": {**galaxy_service.built_from(), "model": model}},
+            created_at=fitted_at,
+        ))
+        await db_session.flush()
+
+    await galaxy_service.ensure_map(db_session, now=NOW)
+    assert await _waiting_rebuilds(db_session) == enqueued
+    # Asked again while that one waits (the next boot, the next night), it does not stack.
+    await galaxy_service.ensure_map(db_session, now=NOW)
+    assert await _waiting_rebuilds(db_session) == enqueued
+
+
+async def test_no_rebuild_on_a_catalogue_too_small_to_fit(db_session, catalogue, monkeypatch):
+    await db_session.execute(delete(Job).where(Job.kind == JobKind.galaxy_rebuild))
+    await db_session.execute(delete(GalaxyFit))
+    size = await galaxy_service.galaxy_dao.catalogue_size(db_session)
+    monkeypatch.setattr(galaxy_compute, "MIN_CATALOGUE", size + 1)
+    assert await galaxy_service.ensure_map(db_session, now=NOW) is None
+    assert await _waiting_rebuilds(db_session) == 0
+
+
+@pytest.mark.parametrize(("now", "refit"), [
+    (datetime(2026, 1, 10, tzinfo=timezone.utc), datetime(2025, 10, 15, tzinfo=timezone.utc)),
+    (datetime(2026, 1, 15, tzinfo=timezone.utc), datetime(2026, 1, 15, tzinfo=timezone.utc)),
+    (datetime(2026, 3, 31, 23, tzinfo=timezone.utc), datetime(2026, 1, 15, tzinfo=timezone.utc)),
+    (datetime(2026, 4, 14, 23, tzinfo=timezone.utc), datetime(2026, 1, 15, tzinfo=timezone.utc)),
+    (datetime(2026, 12, 31, tzinfo=timezone.utc), datetime(2026, 10, 15, tzinfo=timezone.utc)),
+])
+def test_the_refit_date_is_the_latest_quarterly_fifteenth(now, refit):
+    assert galaxy_service.refit_date(now) == refit
+
+
+async def test_compute_runs_in_a_spawned_child():
+    """The child imports `galaxy_compute` alone; this fails if the module drags the app
+    (or the model) in, or cannot be imported from a fresh interpreter."""
+    assert await galaxy_service.run_in_child(galaxy_compute.carry_names, [], []) == ({}, [])
+
+
+async def test_a_restore_while_the_child_runs_discards_its_answer():
+    child = asyncio.create_task(galaxy_service.run_in_child(galaxy_compute.carry_names, [], []))
+    await asyncio.sleep(0)  # the task reads the count, then waits on the child
+    count_restore()
+    with pytest.raises(GalaxyRestoredError):
+        await child

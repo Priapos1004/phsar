@@ -1,11 +1,12 @@
 # Background jobs
 
-Everything slow runs as a job: catalogue scrapes, the nightly sweeps, backups.
-Current behaviour; decisions are in the linked compound-docs.
+Everything slow runs as a job; the kinds are in the table below. Current behaviour;
+decisions are in the linked compound-docs.
 
 **Code**: `services/job_submission_service.py` (user submission) →
 `services/job_worker.py` (the worker) → `services/scrape_dispatcher.py`,
-`services/seasonal_sweep_dispatcher.py`, `services/backup_dispatcher.py` (handlers)
+`services/seasonal_sweep_dispatcher.py`, `services/backup_dispatcher.py`,
+`services/galaxy_dispatcher.py` (handlers)
 → `services/progress_reporter.py` (progress) → `models/job.py`, `daos/job_dao.py`.
 
 ## The worker
@@ -44,6 +45,7 @@ row to `failed`, so a mid-job restart can't strand a row forever.
 | `upcoming_sweep` | Scrapes the next season | yes |
 | `backup` | `pg_dump` + verify + retention | no |
 | `restore` | Restores a dump | yes (request-scoped) |
+| `galaxy_rebuild` | Refits the [galaxy](galaxy.md) map in a child process and swaps it in | no |
 
 `restore` has no dispatcher and is never queued or drained: its row is written
 afterwards with its final status already set, as an audit record. Every other kind
@@ -106,7 +108,7 @@ test on the media row plus its freshness sidecar:
 |---|---|
 | airing now | `airing_status = 'Currently Airing'`, minus media awaiting a delete decision |
 | stabilizing | `stable_check_count < SWEEP_STABILIZE_THRESHOLD` (3) |
-| recent main | a main entry with a recent premiere, weekly |
+| recent main | a main entry premiered within `SWEEP_RECENT_MAIN_YEARS` (3), weekly |
 | long tail | everything else, on a per-row window |
 
 The airing tier carries an exclusion the others do not need: it has no staleness term
@@ -139,7 +141,9 @@ refreshed.
 **Step 2** probes relations for anime that are settled (not airing, stable count
 past `SWEEP_STABILIZE_THRESHOLD`, last probe ≥ 7 days ago) and attaches whatever
 is discovered. The 7-day floor keeps probing roughly weekly even though
-media-level selection can re-touch an anime on consecutive nights.
+media-level selection can re-touch an anime on consecutive nights. Only anime with a
+media due that night reach step 2, so the recent-main window also sets how soon a
+sequel to a settled franchise is found.
 
 Each anime commits twice, inside its own try/except: step 1 always commits (so a
 crash mid-sweep keeps the diff work, and one bad MAL response fails only that

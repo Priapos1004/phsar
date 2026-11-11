@@ -70,9 +70,9 @@ async def get_rating_coverage(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_user_or_admin),
 ):
-    """How completely the caller has rated each anime they have touched, for the
-    per-anime coverage indicator on cards. Only anime with at least one rating are
-    returned; everything else is absent rather than listed as untouched."""
+    """How completely the caller has rated each anime they have touched, and their score
+    for it. Only anime with at least one rating are returned; everything else is absent
+    rather than listed as untouched."""
     return await rating_service.get_rating_coverage(db, current_user.id)
 
 

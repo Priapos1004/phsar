@@ -4,6 +4,7 @@ import {
 	createPersistedFilter,
 	DIRECTION_KEYS,
 	GRAIN_KEYS,
+	MATCH_MODE_KEYS,
 	pickKey,
 	pickNumbers,
 	pickStrings,
@@ -41,9 +42,8 @@ export const DEFAULT_RATINGS_FILTER: RatingsFilterState = {
 	seasons: [],
 };
 
-// Rehydration whitelists — see `pickKey`. View/grain/direction come from
-// persistedFilter; the rest are section-specific.
-const GENRE_MODES: Record<GenreMode, true> = { any: true, all: true };
+// Rehydration whitelists — see `pickKey`. The shared ones come from persistedFilter;
+// the rest are section-specific.
 const SORT_KEYS: Record<SortKey, true> = {
 	score: true,
 	title: true,
@@ -72,7 +72,7 @@ function sanitize(raw: Record<string, unknown>): RatingsFilterState {
 		bandDir: pickKey(raw.bandDir, DIRECTION_KEYS, DEFAULT_RATINGS_FILTER.bandDir),
 		statsSection: pickKey(raw.statsSection, STATS_SECTIONS, DEFAULT_RATINGS_FILTER.statsSection),
 		genres: pickStrings(raw.genres),
-		genreMode: pickKey(raw.genreMode, GENRE_MODES, DEFAULT_RATINGS_FILTER.genreMode),
+		genreMode: pickKey(raw.genreMode, MATCH_MODE_KEYS, DEFAULT_RATINGS_FILTER.genreMode),
 		ageRatings: pickNumbers(raw.ageRatings),
 		seasons: pickStrings(raw.seasons),
 	};

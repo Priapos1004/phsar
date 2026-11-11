@@ -18,11 +18,13 @@ consolidation.
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.core import maintenance
+from app.models.galaxy import GalaxyFit
 from app.models.job import Job, JobKind, JobStatus
 from app.routers import admin_jobs as admin_jobs_router
+from app.services import galaxy_compute, galaxy_service
 from tests.routers.conftest import CRON_AUTH_HEADER as GOOD_HEADER
 
 URL = "/admin/jobs/schedule-nightly"
@@ -144,6 +146,36 @@ async def test_schedule_nightly_sunday_also_enqueues_seasonal(
         select(Job).where(Job.uuid == body["update_sweep_uuid"])
     )).scalars().first()
     assert seasonal.not_before_at == sweep.not_before_at
+
+
+@pytest.mark.parametrize("due", [True, False])
+async def test_schedule_nightly_refits_the_galaxy_when_the_map_is_due(
+    cron_client, db_session, freeze_admin_clock, monkeypatch, due,
+):
+    """Queued behind the sweeps (same `not_before_at`, created after them), so the refit
+    reads their refreshed scores. When the map is due is `galaxy_service.ensure_map`'s
+    rule, tested beside it."""
+    freeze_admin_clock(MONDAY_FIXED)
+    monkeypatch.setattr(galaxy_compute, "MIN_CATALOGUE", 0)
+    await db_session.execute(delete(Job).where(Job.kind == JobKind.galaxy_rebuild))
+    await db_session.execute(delete(GalaxyFit))
+    if not due:
+        db_session.add(GalaxyFit(
+            models=b"", params={"built_from": galaxy_service.built_from()}, created_at=MONDAY_FIXED,
+        ))
+        await db_session.flush()
+
+    resp = await cron_client.post(URL + "?delay_minutes=20", headers=GOOD_HEADER)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert (body["galaxy_rebuild_uuid"] is not None) == due
+    if due:
+        galaxy = (await db_session.execute(select(Job).where(Job.uuid == body["galaxy_rebuild_uuid"]))).scalar_one()
+        sweep = (await db_session.execute(select(Job).where(Job.uuid == body["update_sweep_uuid"]))).scalar_one()
+        assert galaxy.kind is JobKind.galaxy_rebuild
+        assert galaxy.requested_by_user_id is None
+        assert galaxy.not_before_at == sweep.not_before_at
+        assert galaxy.id > sweep.id
 
 
 @pytest.mark.asyncio

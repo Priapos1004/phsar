@@ -2,6 +2,7 @@
 name: pr
 description: Open a pull request — full test run, ISO 25010 review panel, re-ship if the review changed anything substantial, compound doc, then stop for approval before pushing.
 argument-hint: [PR title or focus]
+disable-model-invocation: true
 ---
 
 # Open a pull request

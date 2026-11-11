@@ -1,6 +1,8 @@
 import logging
+from datetime import datetime, timezone
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.anime import Anime
@@ -9,12 +11,15 @@ from app.models.media import Media
 from app.models.media_search import MediaSearch
 from app.models.rating_search import RatingSearch
 from app.models.ratings import Ratings
+from app.services import galaxy_service
 from app.services.anime_search_service import anime_title_texts
 from app.services.media_search_service import media_title_texts
 from app.services.vector_embedding_service import (
+    cosine_similarity,
     create_anime_embedding,
     create_media_embedding,
     create_rating_embedding,
+    encode_description,
     regenerate_anime_embedding,
     regenerate_media_embedding,
     regenerate_rating_embedding,
@@ -22,11 +27,9 @@ from app.services.vector_embedding_service import (
 
 logger = logging.getLogger(__name__)
 
-# Commit checkpoint cadence for the full re-embed. A mid-run container
-# restart leaves the committed rows re-normalized and the rest on their
-# old (still-valid) vectors — search keeps serving throughout — and a
-# re-run is idempotent. Small batches bound the transaction and the
-# lost-work window without paying a commit per row.
+# Commit checkpoint cadence for the full re-embed (`reembed_all_embeddings`).
+# Small batches bound the transaction and the lost-work window without paying
+# a commit per row.
 _REEMBED_COMMIT_BATCH = 50
 
 
@@ -107,8 +110,8 @@ async def _backfill_rating_embeddings(db: AsyncSession):
 async def backfill_embeddings(db: AsyncSession):
     """Backfill missing embeddings for anime, media, and ratings.
 
-    Intended to run at startup so that an embedding model swap
-    (Alembic migration wipes vectors) is followed by automatic regeneration.
+    Runs at startup so any row without one gets one. A model change goes through
+    `reembed_all_embeddings` instead.
     """
     anime_count = await _backfill_anime_embeddings(db)
     media_count = await _backfill_media_embeddings(db)
@@ -122,74 +125,100 @@ async def backfill_embeddings(db: AsyncSession):
         await db.commit()
 
 
-async def _reembed_anime(db: AsyncSession) -> int:
-    rows = (await db.execute(select(Anime))).scalars().all()
-    for i, anime in enumerate(rows, start=1):
-        await regenerate_anime_embedding(
-            db,
-            anime_id=anime.id,
-            title_texts=anime_title_texts(anime),
-            description_text=anime.description or "",
-        )
+async def _reembed(db: AsyncSession, label: str, model, ids_stmt, regenerate) -> int:
+    """Each row re-read at its turn in its own savepoint: a live write's clash skips it, any
+    other failure (the model, the database) ends the pass."""
+    ids = (await db.execute(ids_stmt)).scalars().all()
+    for i, row_id in enumerate(ids, start=1):
+        try:
+            async with db.begin_nested():
+                row = await db.get(model, row_id, populate_existing=True)
+                if row is not None:
+                    await regenerate(row)
+        except IntegrityError:
+            logger.warning(f"Re-embed {label}: skipped row {i}, changed under the pass", exc_info=True)
         if i % _REEMBED_COMMIT_BATCH == 0:
             await db.commit()
-            logger.info(f"Re-embed anime: {i}/{len(rows)}")
+            logger.info(f"Re-embed {label}: {i}/{len(ids)}")
     await db.commit()
-    return len(rows)
+    return len(ids)
 
 
-async def _reembed_media(db: AsyncSession) -> int:
-    rows = (await db.execute(select(Media))).scalars().all()
-    for i, media in enumerate(rows, start=1):
-        await regenerate_media_embedding(
-            db,
-            media_id=media.id,
-            title_texts=media_title_texts(media),
-            description_text=media.description or "",
-        )
-        if i % _REEMBED_COMMIT_BATCH == 0:
-            await db.commit()
-            logger.info(f"Re-embed media: {i}/{len(rows)}")
-    await db.commit()
-    return len(rows)
+async def embeddings_are_stale(db: AsyncSession) -> bool:
+    """Whether the stored vectors predate what `generate_embedding` produces now.
+    Re-encodes one stored row, the lowest-id anime, and
+    compares: one encode per check instead of a flag someone must remember to
+    flip, where forgetting leaves search comparing two models without an error.
 
+    `reembed_all_embeddings` writes that row last, so it reads stale for the whole pass: a
+    pass cut short leaves it stale for the next boot to retry, and
+    `galaxy_rebuild_dispatcher` refuses while it does. The floor only absorbs float noise
+    between two encodes of the same text.
 
-async def _reembed_ratings(db: AsyncSession) -> int:
-    rows = (await db.execute(select(Ratings).where(Ratings.note.isnot(None)))).scalars().all()
-    for i, rating in enumerate(rows, start=1):
-        assert rating.note is not None  # the query selects noted ratings only
-        await regenerate_rating_embedding(db, rating_id=rating.id, note=rating.note)
-        if i % _REEMBED_COMMIT_BATCH == 0:
-            await db.commit()
-            logger.info(f"Re-embed ratings: {i}/{len(rows)}")
-    await db.commit()
-    return len(rows)
+    It assumes the pass is that row's only writer under a new encoder. Anything else that
+    re-encodes the row breaks that, rarely and silently: a pre-yield backfill, or a live write
+    landing before this check, skips the re-embed outright; one landing mid-pass lets an
+    interrupted pass read as done."""
+    row = (await db.execute(
+        select(Anime, AnimeSearch.description_embedding)
+        .join(AnimeSearch, AnimeSearch.anime_id == Anime.id)
+        .order_by(Anime.id)
+        .limit(1)
+    )).first()
+    if row is None:
+        return False
+    anime, stored = row
+    fresh = await encode_description(anime_title_texts(anime), anime.description or "")
+    return cosine_similarity(stored, fresh) < 0.9999
 
 
 async def reembed_all_embeddings(db: AsyncSession) -> dict[str, int]:
     """Regenerate EVERY search embedding in place via the current
-    `generate_embedding` normalization.
+    `generate_embedding`.
 
     Distinct from `backfill_embeddings`, which only fills NULL rows: this
-    overwrites existing vectors. It's the one-time re-normalization path
-    after a `generate_embedding` change — specifically the case-folding fix
-    (see `vector_embedding_service.generate_embedding`): query and document
-    embeddings must share one case space, and the existing catalog predates
-    the fold. Gated by `EMBEDDING_REEMBED_ON_STARTUP` and fired post-yield
-    in the background (see `main._post_yield_backfills`) so a ~5-9 min
-    catalog re-encode on the 2-vCPU VM can't stall /health.
+    overwrites existing vectors, after any change to what a stored vector is built
+    from — query and stored vectors must come from the same model and text.
 
     In-place regen (delete+insert per row) keeps search serving the old
-    vectors until each row is overwritten — no empty-result window. Commits
-    in `_REEMBED_COMMIT_BATCH` batches so a mid-run restart checkpoints
-    progress; re-running is idempotent (re-encoding an already-folded row
-    yields the same vector). Reachable only via the env flag — flip it on
-    for one deploy, watch for the completion log, flip it back off."""
-    logger.info("Re-embedding entire catalog (full re-normalization pass)")
-    anime_count = await _reembed_anime(db)
-    media_count = await _reembed_media(db)
-    rating_count = await _reembed_ratings(db)
+    vectors until each row is overwritten — no empty-result window. After a
+    model change those old vectors sit in the other model's space, so semantic
+    results are poor until the pass ends; that window is accepted. Commits
+    in `_REEMBED_COMMIT_BATCH` batches; re-running is idempotent (re-encoding a
+    row with the current model yields the same vector)."""
+    logger.info("Stored embeddings are stale — re-embedding entire catalog")
+    # Anime last, highest id first: the probe's row is the last one written
+    # (`embeddings_are_stale`).
+    counts = {
+        "media": await _reembed(db, "media", Media, select(Media.id), lambda media: regenerate_media_embedding(
+            db, media_id=media.id, title_texts=media_title_texts(media),
+            description_text=media.description or "",
+        )),
+        # A note cleared since the ids were read comes back empty, and stays without a vector.
+        "ratings": await _reembed(
+            db, "ratings", Ratings, select(Ratings.id).where(Ratings.note.isnot(None)),
+            lambda rating: regenerate_rating_embedding(db, rating_id=rating.id, note=rating.note),
+        ),
+        "anime": await _reembed(
+            db, "anime", Anime, select(Anime.id).order_by(Anime.id.desc()),
+            lambda anime: regenerate_anime_embedding(
+                db, anime_id=anime.id, title_texts=anime_title_texts(anime),
+                description_text=anime.description or "",
+            ),
+        ),
+    }
     logger.info(
-        f"Re-embed complete: {anime_count} anime, {media_count} media, {rating_count} ratings"
+        f"Re-embed complete: {counts['anime']} anime, {counts['media']} media, {counts['ratings']} ratings"
     )
-    return {"anime": anime_count, "media": media_count, "ratings": rating_count}
+    return counts
+
+
+async def sync_vectors_and_map(db: AsyncSession) -> None:
+    """Re-embed when the stored vectors are stale, then bring the galaxy map in line with
+    them. The map's check waits for the re-embed and is skipped when it fails, so a fit it
+    asks for never reads half-re-encoded vectors."""
+    if await embeddings_are_stale(db):
+        await reembed_all_embeddings(db)
+        await galaxy_service.vectors_reembedded(db)
+    await galaxy_service.ensure_map(db, now=datetime.now(timezone.utc))
+    await galaxy_service.place_unplaced(db)

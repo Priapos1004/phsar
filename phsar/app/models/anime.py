@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from app.models.anime_completion import AnimeCompletion
     from app.models.anime_freshness import AnimeFreshness
     from app.models.anime_search import AnimeSearch
+    from app.models.galaxy import GalaxyStar
     from app.models.media import Media
 
 
@@ -44,6 +45,15 @@ class Anime(BaseModel):
     # One-to-one sidecar: presence = admin marked the story as complete (v0.14.10).
     completion: Mapped["AnimeCompletion | None"] = relationship(
         "AnimeCompletion",
+        back_populates="anime",
+        cascade="all, delete-orphan",
+        uselist=False,
+        lazy="raise",
+    )
+
+    # One-to-one sidecar: the anime's star on the galaxy map; absent until it is placed.
+    galaxy_star: Mapped["GalaxyStar | None"] = relationship(
+        "GalaxyStar",
         back_populates="anime",
         cascade="all, delete-orphan",
         uselist=False,

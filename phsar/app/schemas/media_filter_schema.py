@@ -143,9 +143,18 @@ class CatalogueSearchFilters(MediaSearchFilters):
     """The filters only the catalogue searches take, beyond the `MediaSearchFilters`
     every filtered search shares."""
     upcoming_main: bool = False
-    # The caller's own: a union of states, and listed or not (None filters nothing).
+    # The caller's own: a union of states, listed or not, and their own score for the row
+    # with its rank among theirs (None filters nothing).
     rated: list[RatedState] | None = None
     watchlisted: bool | None = None
+    your_score_min: float | None = None
+    your_score_max: float | None = None
+    your_top_percent: int | None = Field(default=None, ge=1, le=100)
+
+    @property
+    def own_score_set(self) -> bool:
+        """One answer for the guest gate and the lookup that resolves the bounds."""
+        return any(bound is not None for bound in (self.your_score_min, self.your_score_max, self.your_top_percent))
 
 
 class ExtendedMediaSearchFilters(CatalogueSearchFilters):

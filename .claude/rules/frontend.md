@@ -107,6 +107,13 @@ that must reach a phone goes on text outside both, never on a control. A control
 one (a chip, a select) gets an `InfoTip` ⓘ beside its label, and a text label that opens a
 tooltip carries `cls.tooltipHint`, the dotted underline that tells a phone it can be tapped.
 
+**A `disabled` control never opens its tooltip.** Where the tip says why it is unavailable (a
+guest's bookmark — "Restricted accounts" below), make it inert instead — `aria-disabled` and a
+click that checks it — as `HeroIconButton` does. `app.css` gives every `aria-disabled` element
+the one dimmed look, and no `hover:` utility fires on it or on a `disabled` one, so a caller
+adds no hover guard to either, and no dim to an inert one. One whose tip only names the action (zoom in at the closest zoom, a save while
+it runs) may take `disabled`.
+
 ## Charts
 
 Every chart sets `emphasis: { disabled: true }`, and every chart **that has a hover**
@@ -190,7 +197,8 @@ destructive the verb sounds:
 
 The arm-in-place mechanism lives in `CompletionStatusCard` and
 `DismissedDecisionsSection`; copy whichever is closer rather than re-deriving the
-timer.
+timer. A type-to-confirm is `TypeToConfirmDialog`, with `password` outside admin, never a new
+copy: hand-written ones drift in their copy and in when Enter may confirm.
 
 **Arming a text button needs a width floor.** The icon-button case gets
 no-reflow for free — a fixed square swapping one glyph for another — but a

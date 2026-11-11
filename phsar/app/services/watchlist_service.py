@@ -279,7 +279,7 @@ async def get_watchlisted_media_tags(db: AsyncSession, user_id: int) -> Watchlis
     return WatchlistMediaTags(entries=[
         WatchlistMediaTag(
             media_uuid=media_uuid, anime_uuid=anime_uuid,
-            tag_uuid=tag_uuid, tag_name=tag_name, tag_color=tag_color,
+            tag_uuid=tag_uuid, tag_name=tag_name, tag_color=tag_color, priority=priority,
         )
-        for (media_uuid, anime_uuid, tag_uuid, tag_name, tag_color) in rows
+        for (media_uuid, anime_uuid, tag_uuid, tag_name, tag_color, priority) in rows
     ])

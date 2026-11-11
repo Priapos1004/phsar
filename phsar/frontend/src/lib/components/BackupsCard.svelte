@@ -5,9 +5,8 @@
     import * as Card from '$lib/components/ui/card';
     import Tooltip from '$lib/components/Tooltip.svelte';
     import Notice from '$lib/components/Notice.svelte';
+    import TypeToConfirmDialog from '$lib/components/TypeToConfirmDialog.svelte';
     import * as Select from '$lib/components/ui/select';
-    import * as Dialog from '$lib/components/ui/dialog';
-    import { Label } from '$lib/components/ui/label';
     import { Input } from '$lib/components/ui/input';
     import { Badge } from '$lib/components/ui/badge';
     import { compareByRestorability } from '$lib/utils/backupStatus';
@@ -31,12 +30,6 @@
     import * as cls from '$lib/styles/classes';
     import type { BackupListResponse, BackupMetadata, BackupSource } from '$lib/types/api';
 
-    interface Props {
-        currentUsername: string;
-    }
-
-    let { currentUsername }: Props = $props();
-
     type SortOption = 'newest' | 'oldest' | 'largest' | 'status';
 
     const SORT_OPTIONS: { value: SortOption; label: string }[] = [
@@ -53,9 +46,6 @@
         pre_restore: 'Pre-restore',
         upload: 'Upload',
     };
-
-    const USERNAME_UNAVAILABLE_ERROR =
-        'Your username is unavailable — please reload the page before restoring.';
 
     let backups = $state<BackupMetadata[]>([]);
     let loading = $state(true);
@@ -82,7 +72,6 @@
     let restoreFilename = $state<string | null>(null);
     // The row being restored, so the confirm dialog can state its verdict.
     let restoreTarget = $derived(backups.find((b) => b.filename === restoreFilename));
-    let restoreConfirmInput = $state('');
     let restoring = $state(false);
     let restoreError = $state('');
     let restoreResultMessage = $state('');
@@ -264,25 +253,18 @@
 
     function openRestore(filename: string) {
         restoreFilename = filename;
-        restoreConfirmInput = '';
-        restoreError = currentUsername ? '' : USERNAME_UNAVAILABLE_ERROR;
+        restoreError = '';
         restoreResultMessage = '';
     }
 
-    async function handleRestore() {
+    async function handleRestore(confirm: string) {
         if (!restoreFilename) return;
-        // Defense-in-depth: empty `currentUsername` would match an empty input
-        // and silently authorize the destructive action if `disabled` is bypassed.
-        if (!currentUsername) {
-            restoreError = USERNAME_UNAVAILABLE_ERROR;
-            return;
-        }
         restoring = true;
         restoreError = '';
         try {
             const snapshot = await api.post<BackupMetadata>(
                 `/admin/backups/${encodeURIComponent(restoreFilename)}/restore`,
-                { confirm: restoreConfirmInput },
+                { confirm },
             );
             restoreResultMessage = `Restore complete. Pre-restore snapshot saved as ${snapshot.filename}.`;
             restoreFilename = null;
@@ -339,16 +321,17 @@
                 </Select.Content>
             </Select.Root>
             <!-- The live schema revision, as the reference every row's own revision is
-                 compared against. `ml-auto` so it sits at the far right of the controls
-                 row. It comes from the response envelope (see the `load` comment) —
-                 null ONLY when the server could not read it, which no backup can fix. -->
+                 compared against. `ml-auto` on the Tooltip, whose span is the row's flex
+                 item, so it sits at the far right of the controls row. It comes from the
+                 response envelope (see the `load` comment) — null ONLY when the server could
+                 not read it, which no backup can fix. -->
             <Tooltip
-                class={cls.tooltipHint}
+                class="ml-auto text-xs text-muted-foreground {cls.tooltipHint}"
                 text={dbRevision
                     ? `The database is at Alembic revision ${dbRevision}. A dump on a different revision would roll the schema back if restored.`
                     : 'The live schema revision couldn’t be read from the database, so no dump can be confirmed against it.'}
             >
-                <span class="ml-auto text-xs text-muted-foreground" data-testid="live-db-revision">
+                <span data-testid="live-db-revision">
                     DB schema <code class="text-card-foreground">{dbRevision?.slice(0, 8) ?? 'unknown'}</code>
                 </span>
             </Tooltip>
@@ -531,67 +514,36 @@
     </Card.Content>
 </Card.Root>
 
-<Dialog.Root open={restoreFilename !== null} onOpenChange={(open) => { if (!open) restoreFilename = null; }}>
-    <Dialog.Content class="sm:max-w-md">
-        <Dialog.Header>
-            <Dialog.Title class="text-destructive">Restore from backup</Dialog.Title>
-            <Dialog.Description>
-                This will replace the current database with the contents of
-                <code>{restoreFilename ?? ''}</code>. A pre-restore snapshot will be
-                taken automatically. To confirm, type your admin username
-                (<strong>{currentUsername}</strong>) below.
-            </Dialog.Description>
-        </Dialog.Header>
-        <div class="space-y-4 py-2">
-            <!-- The restorability verdict AT THE POINT OF DECISION: the modal covers the
-                 row badge that carries it in the list. Restoring a non-`ok` dump stays
-                 allowed — it just may not be silent. No `corrupt` arm: the restore
-                 trigger is disabled for those, so this dialog can't open on one. -->
-            {#if restoreTarget && restoreTarget.status !== 'ok'}
-                <Notice>
-                    {#if restoreTarget.status === 'outdated'}
-                        This dump is on Alembic revision <code>{restoreTarget.alembic_revision}</code>
-                        but the database is at <code>{dbRevision ?? 'a newer revision'}</code>.
-                        Restoring it rolls the schema back under the running app — expect
-                        errors until you redeploy a matching version.
-                    {:else}
-                        This dump records no schema revision, so there is no way to confirm
-                        it matches the running app before restoring it.
-                    {/if}
-                </Notice>
+<TypeToConfirmDialog
+    open={restoreFilename !== null}
+    onOpenChange={(open) => { if (!open) restoreFilename = null; }}
+    title="Restore from backup"
+    action="Restore now"
+    busyAction="Restoring…"
+    busy={restoring}
+    error={restoreError}
+    onConfirm={handleRestore}
+>
+    {#snippet description()}
+        This will replace the current database with the contents of
+        <code>{restoreFilename}</code>. A pre-restore snapshot will be
+        taken automatically.
+    {/snippet}
+    <!-- The restorability verdict AT THE POINT OF DECISION: the modal covers the
+         row badge that carries it in the list. Restoring a non-`ok` dump stays
+         allowed — it just may not be silent. No `corrupt` arm: the restore
+         trigger is disabled for those, so this dialog can't open on one. -->
+    {#if restoreTarget && restoreTarget.status !== 'ok'}
+        <Notice>
+            {#if restoreTarget.status === 'outdated'}
+                This dump is on Alembic revision <code>{restoreTarget.alembic_revision}</code>
+                but the database is at <code>{dbRevision ?? 'a newer revision'}</code>.
+                Restoring it rolls the schema back under the running app — expect
+                errors until you redeploy a matching version.
+            {:else}
+                This dump records no schema revision, so there is no way to confirm
+                it matches the running app before restoring it.
             {/if}
-            <div class="space-y-2">
-                <Label for="restore-confirm">Your username</Label>
-                <Input
-                    id="restore-confirm"
-                    bind:value={restoreConfirmInput}
-                    placeholder={currentUsername}
-                    disabled={!currentUsername}
-                    onkeydown={(e: KeyboardEvent) => {
-                        if (
-                            e.key === 'Enter'
-                            && !!currentUsername
-                            && restoreConfirmInput === currentUsername
-                            && !restoring
-                        ) handleRestore();
-                    }}
-                />
-            </div>
-            {#if restoreError}
-                <p class="text-destructive text-sm">{restoreError}</p>
-            {/if}
-        </div>
-        <Dialog.Footer>
-            <Button variant="secondary" onclick={() => (restoreFilename = null)} disabled={restoring}>
-                Cancel
-            </Button>
-            <Button
-                variant="destructive"
-                onclick={handleRestore}
-                disabled={restoring || !currentUsername || restoreConfirmInput !== currentUsername}
-            >
-                {restoring ? 'Restoring...' : 'Restore now'}
-            </Button>
-        </Dialog.Footer>
-    </Dialog.Content>
-</Dialog.Root>
+        </Notice>
+    {/if}
+</TypeToConfirmDialog>

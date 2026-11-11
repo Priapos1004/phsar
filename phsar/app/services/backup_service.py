@@ -16,15 +16,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.db import async_session_maker, engine
 from app.core.job_versions import make_job
-from app.core.maintenance import set_maintenance
+from app.core.maintenance import count_restore, set_maintenance
 from app.daos.job_dao import JobDAO
 from app.exceptions import (
-    BackupConfirmationMismatchError,
     BackupDiskSpaceError,
     BackupIntegrityError,
     BackupNotFoundError,
     BackupRestoreError,
     BackupUploadTooLargeError,
+    ConfirmationMismatchError,
     DuplicateBackupError,
 )
 from app.models.job import JobKind, JobStatus
@@ -37,6 +37,7 @@ from app.schemas.backup_schema import (
     BackupStatus,
 )
 from app.seeders.browse_seeder import seed_browse
+from app.seeders.embedding_backfiller import sync_vectors_and_map
 from app.services._pg_subprocess import run_capture
 from app.services.job_worker import job_worker
 
@@ -789,6 +790,19 @@ async def set_backup_name(filename: str, name: str | None) -> BackupMetadata:
     return await _set_meta_field(filename, name=(name or "").strip() or None)
 
 
+# The post-restore vectors-and-map pass outlives the request that started it; the event
+# loop keeps only a weak reference to a task.
+_post_restore_tasks: set[asyncio.Task] = set()
+
+
+async def _sync_vectors_and_map() -> None:
+    try:
+        async with async_session_maker() as session:
+            await sync_vectors_and_map(session)
+    except Exception:
+        logger.exception("Post-restore re-embed or galaxy map check failed")
+
+
 async def restore_backup(
     filename: str,
     confirm: str,
@@ -796,7 +810,7 @@ async def restore_backup(
     caller_user_id: int,
 ) -> BackupMetadata:
     if confirm != caller_username:
-        raise BackupConfirmationMismatchError()
+        raise ConfirmationMismatchError()
 
     target_path = get_backup_path(filename)
 
@@ -806,6 +820,7 @@ async def restore_backup(
     pre_snapshot = await create_backup(source=BackupSource.pre_restore)
 
     set_maintenance(True)
+    count_restore()
     restore_error: str | None = None
     try:
         # pg_restore --clean needs ACCESS EXCLUSIVE locks to DROP tables.
@@ -908,6 +923,10 @@ async def restore_backup(
         except Exception:
             logger.exception("set_maintenance(False) failed in restore finally")
 
+    # Outside the gate: a re-embed runs for minutes.
+    task = asyncio.create_task(_sync_vectors_and_map())
+    _post_restore_tasks.add(task)
+    task.add_done_callback(_post_restore_tasks.discard)
     return pre_snapshot
 
 

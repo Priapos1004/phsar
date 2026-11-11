@@ -89,6 +89,7 @@ shape on purpose.
 - **Readiness** — reads the entries and the user's ratings: [readiness.md](readiness.md).
 - **Curation** — a media delete cascades to its entries: [curation.md](curation.md).
 - **Search** — `watchlisted` filters by the entries: [search.md](search.md#personal-filters-and-sort).
+- **Galaxy** — Find's daily picks prefer high-priority entries: [galaxy.md](galaxy.md#the-tab).
 
 ---
 

@@ -90,10 +90,11 @@ row that matches:
 | `in_progress` | anything else rated |
 | `none` | nothing rated |
 
-Search filters by it ([search.md](search.md#personal-filters-and-sort)).
-`get_rating_coverage` (`GET /ratings/coverage`) serves its coarser view, the
-`CoverageTier` behind the card's coverage indicator: `all`, `main`, and `some` for
-every incomplete state.
+Search filters by it ([search.md](search.md#personal-filters-and-sort)), and
+`get_rating_coverage` (`GET /ratings/coverage`) serves it per anime, with the user's score
+for it (`your_rating_key`, [search.md](search.md#sorting)) and that score's rank among theirs
+(by `own_score_ranking`'s rule). The card's coverage indicator shows a coarser view of it, derived in
+the frontend (`utils/ratingCoverage.ts`): `all`, `main`, and `some` for every incomplete state.
 
 `dropped` and `on_hold` are opinions rather than completions, so they hold an anime
 below `main`: dropping a side story still leaves `main` reachable, dropping a main

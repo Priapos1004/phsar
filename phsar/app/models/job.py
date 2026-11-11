@@ -39,6 +39,8 @@ class JobKind(str, enum.Enum):
     # jobs table tells a chronologically complete story of system-mutating
     # operations.
     restore = "restore"
+    # Refits the galaxy map; docs/features/galaxy.md says when.
+    galaxy_rebuild = "galaxy_rebuild"
 
 
 class JobStatus(str, enum.Enum):

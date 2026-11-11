@@ -29,7 +29,7 @@ from app.schemas.search_schema import (
 )
 from app.services.scrape_dispatcher import user_scrape_dispatcher
 from app.services.seasonal_sweep_dispatcher import seasonal_sweep_dispatcher
-from tests._helpers import media_kwargs
+from tests._helpers import NoopProgressReporter, fake_job, media_kwargs
 
 
 def _empty_extended() -> SearchResultDBExtended:
@@ -135,18 +135,10 @@ def _patch_scraper(
     return fetched
 
 
-class _NoopProgressReporter:
-    def __init__(self, *_args, **_kwargs):
-        pass
-
-    async def update(self, *_args, **_kwargs):
-        return None
-
-
 def _patch_progress(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.services.seasonal_sweep_dispatcher.ProgressReporter",
-        _NoopProgressReporter,
+        NoopProgressReporter,
     )
 
 
@@ -420,13 +412,10 @@ async def test_user_scrape_rejects_a_pre_blacklisted_seed_before_the_bfs(
         "app.services.scrape_dispatcher.handle_search_mal_api_results", fake_handle,
     )
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+        "app.services.scrape_dispatcher.ProgressReporter", NoopProgressReporter,
     )
 
-    job = type("FakeJob", (), {
-        "id": 7712,
-        "payload": {"query": "Curated Out", "mal_id": seed_mal_id},
-    })()
+    job = fake_job({"query": "Curated Out", "mal_id": seed_mal_id}, job_id=7712)
     async with async_session_maker() as session:
         with pytest.raises(AnimeFilteredOutError) as exc_info:
             await user_scrape_dispatcher(session, job)
@@ -461,14 +450,11 @@ async def test_user_scrape_raises_filtered_out_when_seed_in_unwanted(
         fake_handle,
     )
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+        "app.services.scrape_dispatcher.ProgressReporter", NoopProgressReporter,
     )
     tracked_unwanted.append(seed_mal_id)
 
-    job = type("FakeJob", (), {
-        "id": 7711,
-        "payload": {"query": "Some PV", "mal_id": seed_mal_id},
-    })()
+    job = fake_job({"query": "Some PV", "mal_id": seed_mal_id}, job_id=7711)
     async with async_session_maker() as session:
         with pytest.raises(AnimeFilteredOutError) as exc_info:
             await user_scrape_dispatcher(session, job)
@@ -496,13 +482,10 @@ async def test_user_scrape_raises_main_not_found_when_seed_has_no_anchor(monkeyp
         fake_handle,
     )
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+        "app.services.scrape_dispatcher.ProgressReporter", NoopProgressReporter,
     )
 
-    job = type("FakeJob", (), {
-        "id": 7712,
-        "payload": {"query": "Ghost Show", "mal_id": seed_mal_id},
-    })()
+    job = fake_job({"query": "Ghost Show", "mal_id": seed_mal_id}, job_id=7712)
     async with async_session_maker() as session:
         with pytest.raises(MainMediaNotFoundError):
             await user_scrape_dispatcher(session, job)
@@ -522,13 +505,10 @@ async def test_user_scrape_raises_not_found_when_no_seed_and_empty(monkeypatch):
         fake_handle,
     )
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+        "app.services.scrape_dispatcher.ProgressReporter", NoopProgressReporter,
     )
 
-    job = type("FakeJob", (), {
-        "id": 7713,
-        "payload": {"query": "Some Fuzzy Query"},  # no mal_id
-    })()
+    job = fake_job({"query": "Some Fuzzy Query"}, job_id=7713)  # no mal_id
     async with async_session_maker() as session:
         with pytest.raises(AnimeNotFoundError):
             await user_scrape_dispatcher(session, job)
@@ -625,13 +605,10 @@ async def test_user_scrape_attaches_orphan_graph_to_existing_parent(
         fake_attach,
     )
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+        "app.services.scrape_dispatcher.ProgressReporter", NoopProgressReporter,
     )
 
-    job = type("FakeJob", (), {
-        "id": 7801,
-        "payload": {"query": "Orphan Side Story", "mal_id": orphan_seed_mal_id},
-    })()
+    job = fake_job({"query": "Orphan Side Story", "mal_id": orphan_seed_mal_id}, job_id=7801)
     async with async_session_maker() as session:
         summary = await user_scrape_dispatcher(session, job)
 
@@ -676,13 +653,10 @@ async def test_user_scrape_attach_target_vanished_falls_through_to_error(monkeyp
         fake_handle,
     )
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+        "app.services.scrape_dispatcher.ProgressReporter", NoopProgressReporter,
     )
 
-    job = type("FakeJob", (), {
-        "id": 7802,
-        "payload": {"query": "Orphan", "mal_id": -7802},
-    })()
+    job = fake_job({"query": "Orphan", "mal_id": -7802}, job_id=7802)
     async with async_session_maker() as session:
         with pytest.raises(MainMediaNotFoundError):
             await user_scrape_dispatcher(session, job)

@@ -56,7 +56,7 @@ from app.models.media_relation_edges import MediaRelationEdges
 from app.models.media_studio import MediaStudio
 from app.models.studio import Studio
 from app.schemas.search_schema import AttachToExistingAction
-from app.services import delete_candidate_service
+from app.services import delete_candidate_service, galaxy_service
 from app.services.anime_relation_service import (
     ReclassifyDiff,
     reclassify_anime,
@@ -693,6 +693,14 @@ async def update_sweep_dispatcher(session: AsyncSession, job: Job) -> dict:
         logger.exception("Post-sweep orphaned-studio cleanup failed")
         await session.rollback()
 
+    # Anime with no star yet join the galaxy map, all in one child process.
+    # Soft-warn like the blocks above.
+    try:
+        await galaxy_service.place_unplaced(session)
+    except Exception:
+        logger.exception("Post-sweep galaxy placement failed")
+        await session.rollback()
+
     await progress.update(stage="Done", items_done=media_refreshed, force=True)
     return build_result_summary()
 
@@ -1172,7 +1180,7 @@ def _weighted_score(score: float | None, scored_by: int | None) -> float | None:
 
 
 # Fields whose change regenerates the MediaSearch embedding.
-# `_description_embedding` encodes the titles with the description, so a
+# `encode_description` encodes the titles with the description, so a
 # title-side change invalidates it too — same reason the anime-side
 # reclassifier collapses these into a single regen trigger.
 _EMBEDDING_TEXT_FIELDS = ("title", "name_eng", "name_jap", "other_names", "description")

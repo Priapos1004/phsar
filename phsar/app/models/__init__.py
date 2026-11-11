@@ -5,6 +5,7 @@ from app.models.anime_search import AnimeSearch
 from app.models.browse import BrowseCarousel, BrowseFilterSet, CarouselFilterSet
 from app.models.delete_candidate import DeleteCandidate
 from app.models.discover_progress import DiscoverProgress
+from app.models.galaxy import GalaxyFit, GalaxyGroup, GalaxyStar
 from app.models.genre import Genre
 from app.models.job import Job
 from app.models.media import Media

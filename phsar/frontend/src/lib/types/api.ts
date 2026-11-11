@@ -1,6 +1,6 @@
 /** TypeScript types mirroring backend Pydantic schemas */
 import type { ThemeKey } from '$lib/themes';
-import type { MediaSearchFilters } from '$lib/utils/search';
+import type { MediaSearchFilters, RatedState } from '$lib/utils/search';
 
 // Auth
 export interface TokenResponse {
@@ -67,13 +67,14 @@ export interface SortValues {
 	your_rating?: number | null;
 }
 
-// How completely the caller has rated one anime (GET /ratings/coverage). Tiers and
-// what earns each are in docs/features/ratings.md.
-export type CoverageTier = 'some' | 'main' | 'all';
-
+// How far the caller has got with one anime (GET /ratings/coverage); the states are in
+// docs/features/ratings.md. An anime the caller has not rated is absent.
 export interface AnimeRatingCoverage {
 	anime_uuid: string;
-	tier: CoverageTier;
+	state: Exclude<RatedState, 'none' | 'completed'>;
+	score: number;
+	/** That score's "Top N%" among the caller's rated anime, by the search badge's rule. */
+	top_percent: number;
 }
 
 // Genre name + description (GET /filters/genres) — powers genre-badge tooltips
@@ -359,6 +360,62 @@ export interface AnimeDetail extends AnimeAggregatedBase {
 	media: AnimeMediaItem[];
 }
 
+// Galaxy map (GET /browse/galaxy) and a star's neighbours — docs/features/galaxy.md
+export interface GalaxySector {
+	uuid: string;
+	number: number;
+	name: string;
+	x: number;
+	y: number;
+}
+
+export interface GalaxyRegion extends GalaxySector {
+	sector: number;
+}
+
+export interface GalaxyAnime {
+	anime_uuid: string;
+	title: string;
+	name_eng: string | null;
+	name_jap: string | null;
+	cover_image: string | null;
+	score: number | null;
+	year: number | null;
+}
+
+export interface GalaxyStar extends GalaxyAnime {
+	x: number;
+	y: number;
+	sector: number;
+	region: number;
+	between: boolean;
+	trained: boolean;
+	genres: string[];
+	/** The "Top N%" badge. */
+	top_percent: number | null;
+}
+
+export interface GalaxyMap {
+	fitted_at: string | null;
+	sectors: GalaxySector[];
+	regions: GalaxyRegion[];
+	stars: GalaxyStar[];
+}
+
+/** One thing a neighbour shares with the anime asked about. */
+export interface GalaxyShared {
+	kind: 'synopsis' | 'genre' | 'studio' | 'source' | 'format';
+	/** The genre, studio, source or format; null for the synopsis. */
+	name: string | null;
+	/** How often two anime on the map share it by chance, 0–1. */
+	chance: number;
+}
+
+export interface GalaxyNeighbour extends GalaxyAnime {
+	/** Rarest first, already cut to the few worth showing. */
+	shared: GalaxyShared[];
+}
+
 // Search token (POST /filters/create-token)
 export interface SearchTokenResponse {
 	token: string;
@@ -471,6 +528,7 @@ export interface WatchlistMediaTag {
 	tag_uuid: string;
 	tag_name: string;
 	tag_color: string;
+	priority: number;
 }
 
 export interface WatchlistMediaTags {
@@ -613,7 +671,14 @@ export interface RegistrationTokenListItem {
 }
 
 // Jobs (content pipeline)
-export type JobKind = 'user_scrape' | 'update_sweep' | 'seasonal_sweep' | 'upcoming_sweep' | 'backup' | 'restore';
+export type JobKind =
+	| 'user_scrape'
+	| 'update_sweep'
+	| 'seasonal_sweep'
+	| 'upcoming_sweep'
+	| 'backup'
+	| 'restore'
+	| 'galaxy_rebuild';
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 
 // Mirrors backend `job_worker.ERROR_CATEGORY_*`. Keep both sides in sync —
@@ -643,6 +708,24 @@ export interface BackupResultSummary extends JobResultSummary {
 export interface RestoreResultSummary extends JobResultSummary {
 	restored_from?: string;
 	pre_restore_snapshot?: string | null;
+}
+
+export interface GalaxyRebuildSummary extends JobResultSummary {
+	trained?: number;
+	predicted?: number;
+	sectors?: number;
+	regions?: number;
+	between_share?: number;
+	names_carried?: number;
+	// v2+: the hand names no new group matched, each with the new groups holding at least
+	// `DROPPED_SHARE` (galaxy_compute) of its old members, largest share first.
+	names_dropped?: {
+		name: string;
+		level: 'sector' | 'region';
+		went_to: { number: number; label: string; share: number }[];
+	}[];
+	// Only on a refit: how far the median star moved, as a share of the map's span.
+	median_movement?: number | null;
 }
 
 // One field's before/after on the update_sweep detail page. `old`/`new`

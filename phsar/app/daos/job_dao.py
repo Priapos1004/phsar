@@ -128,10 +128,10 @@ class JobDAO(BaseDAO[Job]):
     async def count_active_by_kind(self, db: AsyncSession, kind: JobKind) -> int:
         """Counts queued + running jobs of one kind, regardless of requester.
 
-        The kind-scoped sibling of `count_active_for_user` — used by the startup
-        backup self-heal to avoid stacking a second dump when a restart lands
-        while one is still queued or running (system jobs have no user to scope
-        by, so the per-user cap doesn't cover them)."""
+        The kind-scoped sibling of `count_active_for_user` — used where a system job
+        is enqueued at boot or on a schedule, to avoid stacking a second one while one
+        is still queued or running (system jobs have no user to scope by, so the
+        per-user cap doesn't cover them)."""
         stmt = (
             select(func.count(Job.id))
             .where(Job.kind == kind)

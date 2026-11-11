@@ -1,4 +1,4 @@
-"""Process-wide maintenance flag + pre-maintenance schedule.
+"""Process-wide maintenance flag + pre-maintenance schedule + restore count.
 
 `_active` is flipped on by destructive operations (backup restore in v0.13.0,
 nightly sweeps once their job is claimed in v0.14.0+) to short-circuit the
@@ -11,7 +11,7 @@ The schedule-sweep cron endpoint (lands in 7b) sets this when it enqueues a
 delayed sweep; the worker clears it the moment the job actually starts (the
 banner is for warning the user before the window, not during).
 
-Single-process assumption: both values are in-memory module globals. If the
+Single-process assumption: every value here is an in-memory module global. If the
 backend ever runs multiple workers behind a load balancer, this becomes a
 file sentinel or a DB row. Not in scope for v0.14.0.
 
@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 _active: bool = False
 _scheduled_at: datetime | None = None
+_restores: int = 0
 
 
 def is_maintenance_active() -> bool:
@@ -71,3 +72,16 @@ def get_scheduled_at() -> datetime | None:
 def set_scheduled_at(when: datetime | None) -> None:
     global _scheduled_at
     _scheduled_at = when
+
+
+def restores() -> int:
+    """How many restores this process has started. Work that holds no connection between
+    its read and its write compares it across the gap: a restore terminates connections, so
+    only work without one can carry the replaced database's data into the restored one.
+    Not counted in `set_maintenance`, which a sweep also flips."""
+    return _restores
+
+
+def count_restore() -> None:
+    global _restores
+    _restores += 1

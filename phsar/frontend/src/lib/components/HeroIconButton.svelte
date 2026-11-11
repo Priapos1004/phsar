@@ -1,20 +1,19 @@
 <script lang="ts">
 	// The icon-action chrome on the anime + media heroes (watchlist bookmark, share).
-	// Extracted so the padding, hover tint and disabled-not-hidden wiring live in one
+	// Extracted so the padding, hover tint and inert-not-hidden wiring live in one
 	// place — the hero row's actions have to stay visually aligned, and a tap-target or
 	// hover change applied to only one of them is exactly how they drift apart.
 	import type { Snippet } from 'svelte';
 	import Tooltip from '$lib/components/Tooltip.svelte';
-	import * as cls from '$lib/styles/classes';
 
 	interface Props {
 		tooltip: string;
 		ariaLabel: string;
 		onclick: () => void;
-		/** Visible-but-inert: the affordance shows, clicking does nothing. */
+		/** Visible-but-inert: the affordance shows, clicking does nothing, and its tooltip still
+		 *  opens to say why (rules/frontend.md, "Tooltips"). */
 		disabled?: boolean;
-		/** The glyph. Receives `disabled` so an icon can dim itself. */
-		icon: Snippet<[boolean]>;
+		icon: Snippet;
 	}
 
 	let { tooltip, ariaLabel, onclick, disabled = false, icon }: Props = $props();
@@ -24,12 +23,12 @@
 	{#snippet trigger(props)}
 		<button
 			{...props}
-			class="{cls.heroIconButton} {disabled ? cls.heroIconButtonDisabled : cls.heroIconButtonEnabled}"
+			class="p-2 rounded-lg transition hover:bg-primary/10"
 			onclick={disabled ? undefined : onclick}
-			{disabled}
+			aria-disabled={disabled}
 			aria-label={ariaLabel}
 		>
-			{@render icon(disabled)}
+			{@render icon()}
 		</button>
 	{/snippet}
 </Tooltip>

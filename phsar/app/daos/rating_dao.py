@@ -18,6 +18,8 @@ from app.daos.search_filters import (
     literal_matches,
     match_passes,
     per_owner,
+    percent_rank,
+    top_percent_of,
 )
 from app.models.anime import Anime
 from app.models.media import MAIN_STORY_RELATIONS, Media
@@ -47,6 +49,15 @@ def your_rating_key(*, per_anime: bool):
     per anime: docs/features/search.md#sorting. One definition for the order and the value
     shown."""
     return func.avg(Ratings.rating) if per_anime else Ratings.rating
+
+
+def own_score_ranking(user_id: int, *, per_anime: bool):
+    """`(id, metric, top_percent)` for every anime or media `user_id` rated: their score for
+    it (`your_rating_key`) and its rank among their own, by MAL's badge rule
+    (`percent_rank`), so "your top 10%" reads as "Top 10%" does."""
+    key = Media.anime_id if per_anime else Media.id
+    rated = select(key.label("id"), your_rating_key(per_anime=per_anime).label("metric")).join(Ratings, rating_of(user_id))
+    return percent_rank((rated.group_by(Media.anime_id) if per_anime else rated).subquery())
 
 
 def _note_distance(query_embedding):
@@ -182,9 +193,9 @@ class RatingDAO(BaseDAO[Ratings]):
         return best
 
     async def get_anime_coverage(self, db: AsyncSession, user_id: int) -> list[Row]:
-        """Per-anime counts behind the rated state and the coverage tier, for every
-        anime the user has rated at least one media of. The counts, not the state —
-        `rating_service` turns them into one.
+        """Per-anime counts behind the rated state, and the user's score for it with its rank
+        among theirs, for every anime the user has rated at least one media of. The counts, not the
+        state — `rating_service` turns them into one.
 
         Scoped to the anime the user has actually rated — bounded by their library,
         not the catalogue — for the reason spelled out in
@@ -208,6 +219,10 @@ class RatingDAO(BaseDAO[Ratings]):
                 func.count().filter(main & completed).label("done_main"),
                 func.count().filter(main & (status == WatchStatus.dropped)).label("dropped_main"),
                 func.count().filter(main & (status == WatchStatus.on_hold)).label("on_hold_main"),
+                your_rating_key(per_anime=True).label("score"),
+                # Ranked over these rows, which are the user's rated anime: the population
+                # `own_score_ranking` ranks, by the same rule.
+                top_percent_of(your_rating_key(per_anime=True)).label("top_percent"),
             )
             .select_from(Media)
             .join(Anime, Anime.id == Media.anime_id)
@@ -216,6 +231,28 @@ class RatingDAO(BaseDAO[Ratings]):
             .group_by(Anime.id)
         )
         return list((await db.execute(stmt)).all())
+
+    async def get_ids_by_own_score(
+        self,
+        db: AsyncSession,
+        user_id: int,
+        *,
+        per_anime: bool,
+        score_min: float | None,
+        score_max: float | None,
+        top_percent: int | None,
+    ) -> set[int]:
+        """The anime or media `user_id` rated whose own score and rank pass the bounds that
+        are set — the personal twin of the MAL score range and `top_percent`."""
+        ranking = own_score_ranking(user_id, per_anime=per_anime)
+        stmt = select(ranking.c.id)
+        if score_min is not None:
+            stmt = stmt.where(ranking.c.metric >= score_min)
+        if score_max is not None:
+            stmt = stmt.where(ranking.c.metric <= score_max)
+        if top_percent is not None:
+            stmt = stmt.where(ranking.c.top_percent <= top_percent)
+        return set((await db.execute(stmt)).scalars().all())
 
     async def get_watch_status_by_media_id(self, db: AsyncSession, user_id: int) -> dict[int, WatchStatus]:
         """Every media the user has rated, with the rating's watch status — a media's

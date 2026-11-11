@@ -7,8 +7,7 @@
     import * as Card from '$lib/components/ui/card';
     import * as Dialog from '$lib/components/ui/dialog';
     import { Button } from '$lib/components/ui/button';
-    import { Input } from '$lib/components/ui/input';
-    import { Label } from '$lib/components/ui/label';
+    import TypeToConfirmDialog from '$lib/components/TypeToConfirmDialog.svelte';
     import { Lock, Unlock, Trash2 } from 'lucide-svelte';
 
     interface Props {
@@ -26,7 +25,6 @@
 
     // Delete flow
     let showConfirm = $state(false);
-    let password = $state('');
     let deleting = $state(false);
     let deleteError = $state('');
 
@@ -74,12 +72,11 @@
     }
 
     function openConfirm() {
-        password = '';
         deleteError = '';
         showConfirm = true;
     }
 
-    async function handleDelete() {
+    async function handleDelete(password: string) {
         deleting = true;
         deleteError = '';
         try {
@@ -186,44 +183,21 @@
     </Card.Content>
 </Card.Root>
 
-<!-- Confirmation dialog -->
-<Dialog.Root bind:open={showConfirm}>
-    <Dialog.Content class="sm:max-w-md">
-        <Dialog.Header>
-            <Dialog.Title class="text-destructive">Delete Account</Dialog.Title>
-            <Dialog.Description>
-                This will permanently delete your account, ratings, watchlist, and all associated data. Enter your password to confirm.
-            </Dialog.Description>
-        </Dialog.Header>
-        <div class="space-y-4 py-2">
-            <div class="space-y-2">
-                <Label for="delete-password">Password</Label>
-                <Input
-                    id="delete-password"
-                    type="password"
-                    bind:value={password}
-                    placeholder="Enter your password"
-                    onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter' && password && !deleting) handleDelete(); }}
-                />
-            </div>
-            {#if deleteError}
-                <p class="text-destructive text-sm">{deleteError}</p>
-            {/if}
-        </div>
-        <Dialog.Footer>
-            <Button variant="secondary" onclick={() => (showConfirm = false)} disabled={deleting}>
-                Cancel
-            </Button>
-            <Button
-                variant="destructive"
-                onclick={handleDelete}
-                disabled={!password || deleting}
-            >
-                {deleting ? 'Deleting...' : 'Delete my account'}
-            </Button>
-        </Dialog.Footer>
-    </Dialog.Content>
-</Dialog.Root>
+<TypeToConfirmDialog
+    password
+    open={showConfirm}
+    onOpenChange={(open) => (showConfirm = open)}
+    title="Delete Account"
+    action="Delete my account"
+    busyAction="Deleting…"
+    busy={deleting}
+    error={deleteError}
+    onConfirm={handleDelete}
+>
+    {#snippet description()}
+        This will permanently delete your account, ratings, watchlist, and all associated data.
+    {/snippet}
+</TypeToConfirmDialog>
 
 <!-- Farewell dialog (non-dismissible, like token expiry) -->
 <Dialog.Root bind:open={showFarewell}>

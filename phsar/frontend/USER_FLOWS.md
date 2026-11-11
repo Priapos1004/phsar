@@ -101,7 +101,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 | `/` | Home: hero banner, search bar, rows of anime (see 3) | Yes |
 | `/login?next=<path>` | Login form; optional validated post-login destination (1.1) | No |
 | `/register?next=<path>` | Registration form (requires token); `next` carried over from the login link | No |
-| `/browse?tab=news\|discover` | Browse: rows of anime (`news`, default) + the day's mood of anime (`discover`, 3c) | Yes |
+| `/browse?tab=news\|discover\|galaxy` | Browse: rows of anime (`news`, default) + the day's mood of anime (`discover`, 3c) + the map of every anime (`galaxy`, 3d) | Yes |
 | `/browse/<key>` | A Browse row's see-all (3b) | Yes |
 | `/search?q=<token>` | Search results (anime or media view) | Yes |
 | `/search/all?q=<token>` | A search's see-all, past the 50 the search shows (3b); bare `/search/all` for the default search | Yes |
@@ -130,7 +130,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 
 ## 3a. Browse Page
 
-`/browse` has a **News** tab (default) and a **Discover** tab (3c).
+`/browse` has a **News** tab (default), a **Discover** tab (3c) and a **Galaxy** tab (3d).
 
 **News** is a column of rows in the order the backend lays them out, each a saved search of up to 25 anime:
 - A row loads when you scroll near it, showing a skeleton until then, and eases to its new height rather than jumping the page below. An empty one shows a "Nothing here right now" note; where the row narrows by default, the note names **See all** as the place to switch a filter off.
@@ -172,6 +172,22 @@ The Discover tab shows one **mood** a day: a themed group of rows (Beasts & Lege
 - A **guest** can't spin: the wheel and the reveal play once per visit to Browse and land on the day's mood.
 - With reduced motion the wheel doesn't turn, no reveal plays and no particles show.
 
+## 3d. Galaxy
+
+The Galaxy tab is a map of every anime: each a star, near the ones it is most like, grouped into named **sectors** that split into **regions**. A sector with a single region is shown as the sector throughout: its name at every zoom, no region line in a star's hover or panel, and no region list in its own panel.
+- Sector names show zoomed out; past about half zoom, region names replace them. Each name sits on its group's densest cluster, and names that would collide move apart as little as they can, so every group keeps its name. On a phone, or a landscape phone's shorter map, the smaller group's name hides instead and a zoom brings it back; the hovered or picked name always shows. The names button under the zoom buttons hides them all, so a star beneath one takes the hover. A name near the edge stays inside the map, a long one on two lines. Hovering a name makes it glow and greys out everything outside its sector or region.
+- The wheel, a pinch, or the **+ / − / whole map** buttons zoom; the map keeps its shape at every zoom and against every edge. With a star picked, + and − zoom around it. Zoomed in, an overview in the bottom corner shows where the view is (a click on it moves there) and the hovered or picked group's stars, or the picked anime, in cyan. Deep in, stars turn into covers, growing with the zoom and never overlapping.
+- **Colour by:** *Sectors* (neighbouring sectors never share a colour; faded stars sit between regions, hollow ones joined after the map was fitted), *MAL score* (by the "Top N%" rank, Top 100% to Top 1%; unscored ones grey), *My progress* (grey not rated, your theme colour in progress / on hold / dropped, gold main story done, obsidian all done, each with its count; names of areas you have rated nothing in are dimmed) or *My scores* (what you rated, by its Top N% among your own scores on MAL score's ramp; the rest grey; names dimmed as in My progress).
+- **Filters** opens Search's filter sheet (4.4) in its anime view, and the button shows how many are on. Show results lights the anime they keep. The rest turn small and grey and take no hover. The lit ones grow, keep the colouring (teal where they have no value in it: unscored, or not rated), and are the only ones that glow and turn into covers, beside the picked star and its neighbours. A line above the legend gives the count, and My progress and My scores count only those anime. If the filters can't be applied, it says so and the map stays unlit. The colouring, the filters and the names button survive a reload and an anime page, and reset on leaving Browse.
+- Hovering a star shows its title, sector › region, score · Top N% · year, genres, and your rated state, score and Top N% among your ratings.
+- **Find an anime** searches titles as Search's title mode does and suggests up to 8 anime on the map, each with its cover and year; arrow keys move through them, Enter picks, Esc closes. With nothing typed, it suggests six anime for the day under captions: *Your favourites* (two from your top 10% by your own score, or your best two while fewer sit there), *On your watchlist* (two, highest priority first) and *From the top 5%* (anime you have neither rated nor listed). A guest gets six from the top 5%.
+- **Picking a star** (on the map, from Find, or from any anime the panel lists) glides the map to it, close enough for covers, and opens the panel beside the map (below it on a phone): the cover and title (both open the anime page, 7.6 for the way back), score · Top N% · year, genres (each opens its description, by hover or tap), sector and region (each a link that picks it), and its 8 **nearest neighbours** linked to it on the map. Each neighbour shows its cover and up to five things the two share, rarest first: a synopsis similarity rank ("Top 1% synopsis similarity"), genres, "Source: …", "Studio: …", "Mostly movies" (or whichever format the two share). Hovering one brightens its link and fades the others.
+- **Picking a name** (a click, a sector or region link in the panel, or a sector from the list the panel shows while nothing is picked, biggest first) opens that sector or region in the panel, and keeps its name glowing and everything outside it greyed until something else is picked. The map frames all its stars clear of the overview and the zoom buttons. The panel shows its anime count and how many you rated, its average score (★ MAL · You), its top genres with their share, a sector's regions or a region's sector (as links), and its five best anime by Top N%. A greyed star can still be clicked, unless the filters greyed it.
+- Clicking a neighbour picks it; the back arrow, naming what you came from, walks the picks back. **✕** closes the panel, forgets the picks and glides back out to the whole map.
+- A **guest** sees My progress and My scores dimmed, with a tooltip, and no rated counts in a group's panel; the rest is the same.
+- An **admin** gets a card under the map: when the map was fitted, and **Rebuild map**, which asks for the admin's username (as a backup restore does), then queues the rebuild (the bell tracks it); the new map shows on the next visit.
+- Until the first map is fitted, the tab says so instead.
+
 ---
 
 ## 4. Search Flow
@@ -179,7 +195,7 @@ The Discover tab shows one **mood** a day: a themed group of rows (Beasts & Lege
 ### 4.1 Anime/Media View Toggle
 - A small pill-shaped toggle sits in the top-right corner of the search page, below the navbar — the same pill as the ratings and watchlist grain toggles
 - Default view: **Anime** (aggregated search grouping media by parent anime)
-- Switching toggle: **partial clear** — carries the query, its mode, the sort and every filter into a fresh search token except what doesn't translate: relation type (media only), the view-relative ranges (episodes, scored-by, duration, watch time; the 0–10 score carries) and the rated states only one view has (4.4). Then it re-runs the search; the sheet's options follow the new view
+- Switching toggle: **partial clear** — carries the query, its mode, the sort and every filter into a fresh search token except what doesn't translate: relation type (media only), the view-relative ranges (episodes, scored-by, duration, watch time; the 0–10 scores, MAL's and yours, carry) and the rated states only one view has (4.4). Then it re-runs the search; the sheet's options follow the new view
 - The `view_type` is encoded in the search token, so "Back to search" restores the correct toggle state
 - SearchBar placeholder changes: "Search anime..." / "Search media..."
 
@@ -201,7 +217,7 @@ The Discover tab shows one **mood** a day: a themed group of rows (Beasts & Lege
 7. "Show More" button loads 20 more results per click; when more than 50 match, **See all results** beside it opens the search's see-all (3b)
 8. If no results: "No results found :-("
 
-**Results header:** above the cards, the result count ("50+ anime" when more than 50 match), a **sort** menu and a direction arrow. The menu opens with its right edge under the arrow, and each sort option says under its name what it orders by. Best match appears only with a query — without one the list is Top rated; Random is daily, the same shuffle for everyone today; Your rating is disabled for a guest. The arrow reverses the order, its tooltip naming the current direction; it is disabled where reversing means nothing (the query's own order, a daily shuffle). A sort applies at once and lives in the link, so a reload or "Back to search" keeps it. Submitting a **different query** starts again from Best match and keeps the filters; switching mode keeps the sort.
+**Results header:** above the cards, the result count ("50+ anime" when more than 50 match), a **sort** menu and a direction arrow. The menu opens with its right edge under the arrow, and each sort option says under its name what it orders by. Best match appears only with a query — without one the list is Top rated; Random is daily, the same shuffle for everyone today; Your rating is disabled for a guest. The arrow reverses the order, its tooltip naming the current direction; where reversing means nothing (the query's own order, a daily shuffle) it is inert, its tooltip saying the sort has no direction. A sort applies at once and lives in the link, so a reload or "Back to search" keeps it. Submitting a **different query** starts again from Best match and keeps the filters; switching mode keeps the sort.
 
 **Returning from a card** (7.6) shows the results at once, here and on the see-all (3b): the last search each loaded is kept for the trip, reloaded only if its results could have changed meanwhile. It re-expands the list far enough to render the one you opened before scrolling to it, so a result deep in the list doesn't need its "Show More" clicks repeated. Expanding issues no request — the results are already in hand. An expansion wider than that card needs is left alone.
 
@@ -219,7 +235,7 @@ The Discover tab shows one **mood** a day: a themed group of rows (Beasts & Lege
 ### 4.4 Search Filters
 Filters live in a **sheet** that slides in from the right (full width on a phone), opened by the filter button or a chip. Edits are **staged**: **Show results** applies them as a new search; closing the sheet (✕, Esc, a click outside) discards them; the sheet's own **Clear all** resets only the sheet's filters, keeping the sort. Clearing — Clear all, or a tag's ✕ — leaves the sheet scrolled where it was. Options adapt to the current view type.
 
-- **Yours** — **Rated**: any of the rated states (anime: Unrated, In Progress, On Hold, Dropped, Main Done, All Done; media: Unrated, Completed, On Hold, Dropped — the watch statuses read as on the rating badge). **Watchlist**: Any / In list / Not in list. A guest sees "Guest accounts have no ratings or watchlist to filter by." instead
+- **Yours** — **Rated**: any of the rated states (anime: Unrated, In Progress, On Hold, Dropped, Main Done, All Done; media: Unrated, Completed, On Hold, Dropped — the watch statuses read as on the rating badge). **Your score** (0–10, stepping by your rating step; the anime view reads your mean over its rated media, as the Your rating sort shows, the media view your rating) and **Your top** N% (Top's choices under Score, ranked among your own scores as the Top N% badge ranks); unrated rows never pass. **Watchlist**: Any / In list / Not in list. A guest sees "Guest accounts have no ratings or watchlist to filter by." instead
 - **Release** — Airing status, Season, **Upcoming main story** (anime with aired content and an announced main-story entry; in the media view, those entries)
 - **Score** — Score (0–10), **Top** N% (Any · 5 · 10 · 20 · 50 · 75 — keeps what the detail page's "Top N%" badge shows at that cut-off or better; a link carrying another value adds it to the list), Scored by (logarithmic — the average over main entries in the anime view)
 - **Content** — Genres (below), Studios with an **Any/All** toggle (default Any), Source, Media type, Relation type (**media view only** — a per-media property, meaningless on aggregated anime rows), Age rating. Searchable tag-selects, max 5 each; the list stays open after a pick
@@ -307,7 +323,7 @@ can rate.
 - Stats grid: total episodes, media count, season range, total watch time — two columns, four from 1024px
 - Source names — every source its media have, most frequent first — each a button linking to an anime-view search filtered to that source
 - Studio names — most frequent first — each a button linking to an anime-view search filtered to that studio ("other anime from this studio"). The Source and Studio rows' badges line up
-- **Watchlist bookmark** (disabled, not hidden, for restricted users): outline when none of the anime's media are listed, filled/gradient (colored by the lists in play) when some are. Clicking it when empty opens a bulk-add dialog (adds all **main** media — Main + AlternativeVersion — with an optional "Include side stories" checkbox that offers side stories only, not summaries/recaps). Clicking it when populated opens the same dialog in **update** mode over exactly the media already listed — prefilled with their list, priority and note, so a whole anime moves between lists or priorities in one step. Removal lives inside that dialog as a click-to-arm button (first click relabels to "Sure?", a second within ~3s clears all of this anime's watchlisted media). When the listed media don't share one list or priority, the dialog says how many of each they span and preselects neither, so saving can't silently demote one of them. If loading the stored values fails, the dialog says so and Save stays disabled until it is reopened
+- **Watchlist bookmark** (inert, not hidden, for restricted users, its tooltip saying why): outline when none of the anime's media are listed, filled/gradient (colored by the lists in play) when some are. Clicking it when empty opens a bulk-add dialog (adds all **main** media — Main + AlternativeVersion — with an optional "Include side stories" checkbox that offers side stories only, not summaries/recaps). Clicking it when populated opens the same dialog in **update** mode over exactly the media already listed — prefilled with their list, priority and note, so a whole anime moves between lists or priorities in one step. Removal lives inside that dialog as a click-to-arm button (first click relabels to "Sure?", a second within ~3s clears all of this anime's watchlisted media). When the listed media don't share one list or priority, the dialog says how many of each they span and preselects neither, so saving can't silently demote one of them. If loading the stored values fails, the dialog says so and Save stays disabled until it is reopened
 - **Share** icon, immediately left of the bookmark: opens the share dialog (see 6.7). **Never disabled** — when you've rated any of this anime's media it offers your rating card, and when you haven't (including on a guest account, which can't rate at all) it offers the info card instead, since telling someone about a show you haven't watched is the case that card exists for
 
 ### 6.3 Synopsis
@@ -393,7 +409,7 @@ can rate.
 - Stats grid: episodes, duration per episode ("24m / ep"), season, total watch time — two columns, four from 1024px
 - Source — a button linking to an anime-view search filtered to that source
 - Studio names — A→Z — each a button linking to an anime-view search filtered to that studio, the row aligned with Source as on the anime page
-- **Watchlist bookmark** (disabled, not hidden, for restricted users): outline when not listed, filled in the list's color when it is. Clicking opens the add/edit/remove dialog (list select + priority + note; "Update" enabled only when something changed; a "Remove" button on an existing entry)
+- **Watchlist bookmark** (inert, not hidden, for restricted users, its tooltip saying why): outline when not listed, filled in the list's color when it is. Clicking opens the add/edit/remove dialog (list select + priority + note; "Update" enabled only when something changed; a "Remove" button on an existing entry)
 - **Share** icon, immediately left of the bookmark: opens the share dialog (see 6.7) for this entry — your rating card when you've rated it (one score, this media's attributes, the parent anime name as the subtitle), the info card when you haven't. **Never disabled**, including for an entry your spoiler setting is blurring: opening the dialog is a deliberate request to see this entry described
 
 ### 7.3 Synopsis
@@ -443,6 +459,7 @@ can rate.
   - `?from=browse` → "Back to browse" (a Browse tile → `/browse`, scrolled to that row and the row to that tile)
   - `?from=home` → "Back to home" (a home row's tile → `/`, landing as `?from=browse` does)
   - `?from=discover` → "Back to discover" (a Discover row's tile → `/browse?tab=discover`, landing as `?from=browse` does)
+  - `?from=galaxy` → "Back to the galaxy" (the Galaxy panel's title or cover → `/browse?tab=galaxy`, that anime picked and the map on it)
   - `?from=carousel&carousel=<key>` → "Back to the list" (a row's see-all tile → `/browse/<key>`, at that tile)
   - `?from=search-all[&q=<token>]` → "Back to all results" (a search's see-all tile → `/search/all?q=token`, or `/search/all` without a token, at that tile)
   - neither → no back button (direct-URL arrivals stay clean)
@@ -627,7 +644,7 @@ own.
 ### 12.1c Jobs Log tab
 - Paginated all-jobs table sourced from `GET /admin/jobs` (50 rows per page, newest-first by `created_at`). Backed by `ix_jobs_created_at_desc` so the default unfiltered scan + COUNT stays cheap as the jobs table grows
 - **Clustering**: the default view hides rows whose `parent_job_id` is set, so the list isn't dominated by ~50 system user_scrape children that land after every Sunday's seasonal_sweep. Each season-sweep row (`seasonal_sweep` and `upcoming_sweep` — both enqueue parented children off the same dispatcher) renders an expander chevron — clicking fetches `?parent_uuid=<UUID>&limit=500` and renders the children inline below the parent, indented with a left primary-tinted border. Re-collapse hides them without re-fetching (state cached per parent). If a sweep ever exceeds the 500-row cap, the expanded view surfaces an amber "Showing X of Y children — rest are older than the 500-row cap" notice rather than silently truncating
-- Filters: **Kind** dropdown (All / User scrape / Update sweep / Seasonal sweep / Upcoming sweep / Backup / Restore — built from the shared kind-label map, so it can't omit a kind) and **Status** dropdown (All / queued / running / succeeded / failed). Changing either filter resets pagination to page 1 — keeping a stale offset against a narrower filter would strand the admin past the result tail. A monotonic request-id guards against a fast filter-then-page click letting an older response overwrite the newer state
+- Filters: **Kind** dropdown (All, then one option per job kind — built from the shared kind-label map, so it can't omit a kind) and **Status** dropdown (All / queued / running / succeeded / failed). Changing either filter resets pagination to page 1 — keeping a stale offset against a narrower filter would strand the admin past the result tail. A monotonic request-id guards against a fast filter-then-page click letting an older response overwrite the newer state
 - **Filter persistence**: the active filter **and which page you are on** are held in a per-tab session store, so both stay applied — the filter also shown in the dropdowns — across admin tab switches, a job's detail page, a hard refresh, and a detour to an anime or media page opened from a job's failure list. Opening a job from page 3 and coming back lands on page 3, on the row you left (7.6). Leaving the admin section for any other page (e.g. Settings) clears it, so re-entering `/admin` starts unfiltered. It is not reflected in the URL, so browser-back after leaving does not resurrect it, and it is discarded on logout or a user switch
 - Columns:
   - **Created** — short datetime
@@ -635,7 +652,7 @@ own.
   - **Status** — color-coded badge (queued muted, running primary, succeeded emerald, failed destructive)
   - **Duration** — wall-clock seconds since `started_at` (or `started_at → finished_at`). Live-ticks every 1s while any row on the page is `running`; queued rows show `—`. The interval is gated by a `hasRunning` derived AND by tab visibility, so neither a stable page nor a hidden tab keeps the timer alive
   - **User** — `requested_by_username` (flattened server-side from the eager-loaded relationship) or `system` for cron + seasonal-sweep children
-  - **Detail** — for failed rows, the `error_message` in destructive color; for succeeded rows the dispatcher's `result_summary` rendered per-kind: user_scrape → "+N anime · +M media", update_sweep v5 → "N media refreshed · X media w/ dynamic · Y media w/ static · Z umbrella · W new attached" (v2–v4 use the anime-grained "N touched · X anime w/ dynamic · …"; v1 rows fall back to the legacy "refreshed N anime · M changed · …" copy), both season sweeps → "Fall 2026 · N entries · M new · K known" (new = scrapes enqueued, known = entries not enqueued: already in the catalogue, blacklisted or repeated; the season prefix is omitted on rows predating v0.15.3, which didn't record it), backup → filename · dump size, restore → filename
+  - **Detail** — for failed rows, the `error_message` in destructive color; for succeeded rows the dispatcher's `result_summary` rendered per-kind: user_scrape → "+N anime · +M media", update_sweep v5 → "N media refreshed · X media w/ dynamic · Y media w/ static · Z umbrella · W new attached" (v2–v4 use the anime-grained "N touched · X anime w/ dynamic · …"; v1 rows fall back to the legacy "refreshed N anime · M changed · …" copy), both season sweeps → "Fall 2026 · N entries · M new · K known" (new = scrapes enqueued, known = entries not enqueued: already in the catalogue, blacklisted or repeated; the season prefix is omitted on rows predating v0.15.3, which didn't record it), backup → filename · dump size, restore → filename, galaxy_rebuild → "N sectors · M regions · X fitted + Y placed · K names kept · D names dropped · moved P%" (fitted = the settled anime the map was trained on, placed = the rest; the dropped count shows only when a hand name found no group to carry onto; the movement is omitted on a first fit, which has nothing to move from)
 - **Click-through to detail page**: rows of kind `update_sweep` with `version >= 2` are clickable (cursor-pointer, hover tint, keyboard-accessible via Enter) — they route to `/admin/jobs/[uuid]` (see 12.1d). Other kinds and pre-v0.14.5 update_sweep rows stay non-clickable since the detail page has nothing to add beyond what the row already shows
 - **Unknown-genre-tag highlight**: update_sweep v3 rows whose `result_summary.unknown_genre_tags` is non-empty get an amber tint + a left amber accent border + an inline subline under the payload summary listing the missing tag names ("⚠ New genre tags need seeding: Survival Game, Dark Fantasy"). The seeder is the deliberate source of truth for the user-facing genre taxonomy, so unknown tags don't auto-seed — they surface here for admin to add manually before the next sweep
 - **Unknown-MAL-value highlight**: update_sweep v10 rows whose `result_summary.unknown_mal_values` is non-empty get the same amber treatment, with a subline of `column: code` pairs ("⚠ MAL values need an enum member: original_source: web_comic"). The code has no enum member yet, so nothing was stored for it
@@ -750,7 +767,7 @@ own.
 |----------|--------|------|
 | `/auth/login` | POST | Login form submission |
 | `/filters/options?view_type=anime\|media` | GET | The filter sheet's first opening per view (cached for the session by the `filterOptions` store; cleared when the catalogue changes, as Home's rows are (3)) |
-| `/filters/genres` | GET | Genre-badge tooltips (cached once per session by the `genres` store) |
+| `/filters/genres` | GET | Genre tooltips (cached once per session by the `genres` store) |
 | `/filters/create-token` | POST | Search submission |
 | `/filters/verify-token` | POST | Search page load |
 | `/browse/{page}` | GET | `news` for Browse's News tab, `home` for the home page's rows: each with the search it runs and the page it sits on |
@@ -758,12 +775,15 @@ own.
 | `/browse/moods` | GET | The Discover tab: the wheel's moods, and today's mood with its rows once spun — always, for a guest |
 | `/browse/moods/spin` | POST | **Spin the wheel**: today's mood with its rows, the day's first spin counted; never sent for a guest |
 | `/browse/moods/{mood}` | GET | Dev replay only (`?reveal=<key>`, admin): any mood with its rows, counting no spin |
-| `/search/anime` | GET | Anime-view search after token verification (with the token's `sort`/`sort_dir`, and `limit=61`); each Browse row's search (`limit=25`); a row's see-all (its own limit) and a search's (`limit=1000`); the Completion tab's search-to-mark (12.9) |
+| `/browse/galaxy` | GET | The Galaxy tab's first visit: the live map whole — sectors, regions, every star with its hover card's fields and Top N% — the same for a guest |
+| `/browse/galaxy/{anime_uuid}/neighbours` | GET | Picking a star (3d): its 8 nearest neighbours, each with what it shares, rarest first |
+| `/search/anime` | GET | Anime-view search after token verification (with the token's `sort`/`sort_dir`, and `limit=61`); each Browse row's search (`limit=25`); a row's see-all (its own limit) and a search's (`limit=1000`); the Completion tab's search-to-mark (12.9); the Galaxy's Find an anime (title search, `limit=10`) |
+| `/search/anime/uuids` | GET | The Galaxy's filters (3d): every anime they keep, by uuid. The anime-view filters, with no query, sort or cap |
 | `/search/media` | GET | Media-view search after token verification (same params); a media-view search's see-all (`limit=1000`) |
 | `/media/anime/{uuid}` | GET | Anime detail page load |
 | `/media/{uuid}` | GET | Media detail page load |
 | `/ratings/scores` | GET | The `/ratings` page, the watchlist Statistics subtab, and the rating-consistency panel — one shared session-cached fetch (`ratingScores` store), invalidated by any rating write |
-| `/ratings/coverage` | GET | `/search` (anime view), `/ratings` and `/browse` on mount, when stale — per-anime rated-coverage tiers (`ratingCoverage` store) for the card marking in 5.3 |
+| `/ratings/coverage` | GET | `/search` (anime view), `/ratings` and `/browse` on mount, when stale — per-anime rated state, the caller's score for it and that score's rank among theirs: the card marking (5.3) reads the tier, and every personal figure the Galaxy shows (3d) reads them |
 | `/ratings/media/{uuid}` | GET | Media detail page load (fetch user's rating) |
 | `/ratings/anime/{uuid}` | GET | Anime detail page load (fetch user's ratings for all media) |
 | `/ratings/media/{uuid}` | PUT | Create or update a rating |
@@ -772,7 +792,7 @@ own.
 | `/ratings/bulk-delete` | POST | Bulk delete ratings from anime detail |
 | `/ratings/{uuid}` | DELETE | Delete a rating |
 | `/ratings/spoiler-visibility` | GET | Layout auth (fetch visible media UUIDs for spoiler protection) |
-| `/watchlist/media-tags` | GET | Layout auth + after any watchlist mutation (bookmark icon-state + per-media list color) |
+| `/watchlist/media-tags` | GET | Layout auth + after any watchlist mutation (bookmark icon-state + per-media list color); the Galaxy's Find picks read its priority |
 | `/watchlist/tags` | GET | Login (layout) + the watchlist **Lists** tab on mount + dialogs. Not on every `/watchlist` visit: only that tab reads the per-list entry counts, and it mounts on demand |
 | `/watchlist/tags` | POST | Watchlist Lists tab (create a list) |
 | `/watchlist/tags/{uuid}` | PATCH | Watchlist Lists tab (rename / recolor a list) |
@@ -798,6 +818,7 @@ own.
 | `/admin/registration-tokens/{uuid}` | DELETE | Admin page (delete unused token) |
 | `/admin/backups` | GET | Admin page Backups card (list dumps) |
 | `/admin/backups` | POST | Admin page Backups card "Create backup" — enqueues a `backup` job and returns 202; bell tracks progress, dump list auto-refreshes on succeeded |
+| `/admin/galaxy/rebuild` | POST | The Galaxy tab's admin card "Rebuild map" (username confirmation) — enqueues a `galaxy_rebuild` job and returns 202; the bell tracks it |
 | `/admin/backups/{filename}` | GET | Admin page Backups card (download dump) |
 | `/admin/backups/{filename}` | DELETE | Admin page Backups card (delete dump) |
 | `/admin/backups/{filename}` | PATCH | Admin page Backups card (rename / pin a dump; blank name unpins) |

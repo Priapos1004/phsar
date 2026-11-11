@@ -4,6 +4,7 @@ import { clearWatchlistFilter } from '$lib/stores/watchlistFilter';
 import { clearJobsFilter } from '$lib/stores/adminJobsFilter';
 import { clearSearchRows, clearSectionRows } from '$lib/stores/browseRows';
 import { clearBrowseRefinements } from '$lib/stores/browseRefinements';
+import { clearGalaxyView } from '$lib/stores/galaxyView';
 
 /**
  * When a section's list state — its filters, and any cache of what it loaded — is reset.
@@ -43,6 +44,7 @@ export const SECTION_RESETS: readonly SectionReset[] = [
 		clear: () => {
 			clearSectionRows();
 			clearBrowseRefinements();
+			clearGalaxyView();
 		},
 	},
 	{ prefix: '/search', clear: clearSearchRows },

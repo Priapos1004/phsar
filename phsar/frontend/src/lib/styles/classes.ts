@@ -17,6 +17,11 @@ export const pageGutter = `${mainGutter} max-xs:px-2`;
 // scrolls natively — a fixed overlay keeps a phone's address bar from collapsing.
 export const authScreen = `min-h-dvh bg-gradient-to-br from-[var(--auth-gradient-from)] via-[var(--auth-gradient-via)] to-[var(--auth-gradient-to)] flex justify-center items-start pt-20 pb-8 ${mainGutter}`;
 export const sectionSpacing = 'space-y-8';
+// The galaxy map's box, and its loading skeleton's. Never taller than a landscape phone shows
+// under the navbar's 4rem, so the map fits whole and leaves page to scroll by: a drag on the
+// map pans it. `galaxyMapFloor` is the 420px, for the map's script.
+export const galaxyMapHeight = 'h-[70vh] min-h-[min(420px,100svh_-_6rem)]';
+export const galaxyMapFloor = 420;
 // Tailwind's breakpoints as media queries, for what a class can't switch (a placeholder, a
 // chart's size). In rem, as Tailwind's own, so a larger default font moves both together.
 export const smUp = 'min-width: 40rem';
@@ -122,13 +127,6 @@ export const coverBookmark =
 export const scoreCircle =
 	'rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center shrink-0';
 
-// Hero icon-button chrome (the watchlist bookmark + share actions on the anime/media
-// heroes). Disabled renders visible-but-inert rather than hidden, so a guest sees what
-// their own account could do.
-export const heroIconButton = 'p-2 rounded-lg transition';
-export const heroIconButtonEnabled = 'hover:bg-primary/10';
-export const heroIconButtonDisabled = 'opacity-50 cursor-not-allowed';
-
 // Small muted "pill" for a secondary label under a card title (main/side breakdown,
 // relation type) — shared by the ratings + watchlist grid cards so they can't drift.
 // Layout margin (e.g. `mt-auto`) is composed at the call site.
@@ -177,8 +175,10 @@ export const diffTable =
 export const fieldLabel = 'text-sm font-medium text-card-foreground';
 
 // A label that opens a tooltip (the Tooltip's span brings the help cursor). The label's font
-// size sits on its parent, so the line box matches a plain label's beside it.
-export const tooltipHint = 'border-b border-dotted border-muted-foreground/40';
+// size sits on its parent, so the line box matches a plain label's beside it. An underline,
+// not a bottom border, so a wrapped label is underlined under each line's text; in the
+// label's own colour, so it reads on every surface.
+export const tooltipHint = 'underline decoration-dotted decoration-current/40 underline-offset-2';
 
 // A 32px touch target centred on a small control, invisible, so a near miss still lands
 // without the control looking any bigger. Hangs off the control, which must be positioned —

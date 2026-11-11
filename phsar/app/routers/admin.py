@@ -21,6 +21,7 @@ from app.models.job import JobKind, JobStatus
 from app.models.users import RoleType
 from app.routers.admin_completion import router as admin_completion_router
 from app.routers.admin_delete import router as admin_delete_router
+from app.routers.admin_galaxy import router as admin_galaxy_router
 from app.routers.admin_jobs import router as admin_jobs_router
 from app.routers.admin_merge import router as admin_merge_router
 from app.routers.admin_split import router as admin_split_router
@@ -237,3 +238,4 @@ router.include_router(admin_merge_router)
 router.include_router(admin_split_router)
 router.include_router(admin_delete_router)
 router.include_router(admin_completion_router)
+router.include_router(admin_galaxy_router)

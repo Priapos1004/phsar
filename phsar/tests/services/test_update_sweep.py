@@ -36,6 +36,7 @@ from app.models.media_relation_edges import MediaRelationEdges
 from app.models.media_studio import MediaStudio
 from app.models.media_unwanted import MediaUnwanted
 from app.models.studio import Studio
+from app.services import galaxy_service
 from app.services.scrape_dispatcher import (
     HentaiRemoval,
     _advance_anime_freshness,
@@ -48,7 +49,7 @@ from app.services.scrape_dispatcher import (
     _refresh_one_anime,
     update_sweep_dispatcher,
 )
-from tests._helpers import media_kwargs
+from tests._helpers import NoopProgressReporter, fake_job, media_kwargs
 
 
 class _FakeScraper:
@@ -1639,14 +1640,6 @@ async def test_stabilizing_breakdown_anime_uses_least_settled_member(db_session)
 # ---------------------------------------------------------------------------
 
 
-class _NoopProgressReporter:
-    def __init__(self, *_args, **_kwargs):
-        pass
-
-    async def update(self, *_args, **_kwargs):
-        return None
-
-
 class _RecordingProgressReporter:
     """Captures the latest items_total / items_done so a test can assert the
     progress contract (media-grained in v0.14.8)."""
@@ -1662,6 +1655,24 @@ class _RecordingProgressReporter:
             type(self).last_items_total = items_total
         if items_done is not None:
             type(self).last_items_done = items_done
+
+
+@pytest.fixture(autouse=True)
+def _placements(monkeypatch) -> list:
+    """Galaxy placement at sweep end, stubbed for every test and recording its calls.
+
+    Like the low-signal pass below it is catalogue-wide — every anime with no star,
+    which on a developer's database with a map includes each test's seeded anime — and it
+    would spawn a placing child per sweep test. `test_sweep_end_places_new_anime` pins
+    the call itself."""
+    calls: list = []
+
+    async def place(session):
+        calls.append(session)
+        return 0
+
+    monkeypatch.setattr(galaxy_service, "place_unplaced", place)
+    return calls
 
 
 @pytest.fixture(autouse=True)
@@ -1810,7 +1821,7 @@ async def _run_dispatcher_harness(
         "app.services.scrape_dispatcher.MalScraper", lambda: fake_scraper,
     )
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+        "app.services.scrape_dispatcher.ProgressReporter", NoopProgressReporter,
     )
     _patch_select_due(monkeypatch, anime_ids)
     attach_calls = recompute_calls = None
@@ -1818,7 +1829,7 @@ async def _run_dispatcher_harness(
         attach_calls, recompute_calls = _patch_probe_pipeline(monkeypatch)
 
     async with async_session_maker() as session:
-        job = type("FakeJob", (), {"id": job_id})()
+        job = fake_job(job_id=job_id)
         summary = await update_sweep_dispatcher(session, job)
 
     return summary, attach_calls, recompute_calls
@@ -1847,6 +1858,25 @@ async def test_dispatcher_returns_summary(tracked_anime, monkeypatch):
     assert summary["counters"]["anime_touched"] == 2
     assert summary["counters"]["media_with_dynamic_changes"] == 1
     assert sorted(fake.refresh_calls) == sorted([-8001 * 100, -8002 * 100])
+
+
+@pytest.mark.parametrize("fails", [False, True])
+async def test_sweep_end_places_new_anime(tracked_anime, monkeypatch, _placements, fails):
+    """Once per sweep, after the catalogue work; a failure delays the new stars, never
+    fails the sweep."""
+    a_id = await _real_seed(mal_id=-8021, last_checked_at=datetime.now(timezone.utc) - timedelta(days=10))
+    tracked_anime.append(a_id)
+    if fails:
+        async def place(_session):
+            _placements.append(_session)
+            raise RuntimeError("placement died")
+
+        monkeypatch.setattr(galaxy_service, "place_unplaced", place)
+
+    summary, _, _ = await _run_dispatcher_harness(monkeypatch, _FakeScraper({-8021 * 100: _payload()}), [a_id])
+
+    assert len(_placements) == 1
+    assert summary["counters"]["media_refreshed"] == 1
 
 
 @pytest.mark.asyncio
@@ -2788,14 +2818,14 @@ async def test_probe_persists_unwanted_media_returned_by_search_title(
         "app.services.scrape_dispatcher.MalScraper", lambda: fake_scraper,
     )
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+        "app.services.scrape_dispatcher.ProgressReporter", NoopProgressReporter,
     )
     _patch_select_due(monkeypatch, [a_id])
     _patch_probe_pipeline(monkeypatch)
 
     try:
         async with async_session_maker() as session:
-            job = type("FakeJob", (), {"id": 7421})()
+            job = fake_job(job_id=7421)
             await update_sweep_dispatcher(session, job)
 
         async with async_session_maker() as s:
@@ -2834,13 +2864,13 @@ async def test_relations_probe_failure_preserves_field_diff_but_not_anime_freshn
         "app.services.scrape_dispatcher.MalScraper", lambda: fake_scraper,
     )
     monkeypatch.setattr(
-        "app.services.scrape_dispatcher.ProgressReporter", _NoopProgressReporter,
+        "app.services.scrape_dispatcher.ProgressReporter", NoopProgressReporter,
     )
     _patch_select_due(monkeypatch, [a_id])
     _attach, recompute_calls = _patch_probe_pipeline(monkeypatch)
 
     async with async_session_maker() as session:
-        job = type("FakeJob", (), {"id": 7801})()
+        job = fake_job(job_id=7801)
         summary = await update_sweep_dispatcher(session, job)
 
     assert summary["counters"]["probe_failed"] == 1

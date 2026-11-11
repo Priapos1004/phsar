@@ -1,13 +1,11 @@
-"""Rated-coverage tiers — the per-anime "how much of this have I rated" state.
+"""Rated coverage — the per-anime "how far have I got with this" state.
 
 Every case drives `rating_service.get_rating_coverage`, so each one covers the
-grouped query in `RatingDAO.get_anime_coverage` and the ladder in `_rated_state`,
-through its `CoverageTier` view `_coverage_tier`, together. That is deliberate: the
-two halves are only meaningful as a pair, and the state is what both exist to
-produce; this file pins its tier view.
+grouped query in `RatingDAO.get_anime_coverage` and the ladder in `_rated_state`
+together. That is deliberate: the two halves are only meaningful as a pair.
 
-Pins: the tier ordering; that `dropped`/`on_hold` hold an anime at `some`; that
-a not-yet-aired media leaves both numerator and denominator; the
+Pins: the ladder's order; that `dropped`/`on_hold` on a main hold an anime below
+`main`; that a not-yet-aired media leaves both numerator and denominator; the
 at-least-one-aired-main guard that stops a side story earning `all`; and that
 an untouched anime is absent rather than reported untouched.
 """
@@ -17,7 +15,7 @@ import pytest
 from app.models.anime import Anime
 from app.models.media import Media, RelationType
 from app.models.ratings import Ratings, WatchStatus
-from app.schemas.rating_schema import CoverageTier
+from app.schemas.media_filter_schema import RatedState
 from app.services import rating_service
 from tests._helpers import make_user, media_kwargs
 
@@ -40,9 +38,9 @@ def _rate(db, user, media, status=WatchStatus.completed):
     db.add(Ratings(user_id=user.id, media_id=media.id, rating=8.0, watch_status=status))
 
 
-async def _tier(db, user, anime_uuid) -> CoverageTier | None:
+async def _state(db, user, anime_uuid) -> RatedState | None:
     rows = await rating_service.get_rating_coverage(db, user.id)
-    return next((r.tier for r in rows if r.anime_uuid == anime_uuid), None)
+    return next((r.state for r in rows if r.anime_uuid == anime_uuid), None)
 
 
 async def test_all_media_completed_reports_all(db_session):
@@ -54,7 +52,7 @@ async def test_all_media_completed_reports_all(db_session):
     for m in media:
         _rate(db_session, user, m)
     await db_session.flush()
-    assert await _tier(db_session, user, anime.uuid) == CoverageTier.all
+    assert await _state(db_session, user, anime.uuid) == RatedState.ALL
 
 
 async def test_unrated_side_story_holds_the_anime_at_main(db_session):
@@ -65,18 +63,19 @@ async def test_unrated_side_story_holds_the_anime_at_main(db_session):
     )
     _rate(db_session, user, media[0])
     await db_session.flush()
-    assert await _tier(db_session, user, anime.uuid) == CoverageTier.main
+    assert await _state(db_session, user, anime.uuid) == RatedState.MAIN
 
 
 @pytest.mark.parametrize(
-    ("status", "seed"), [(WatchStatus.dropped, -91200), (WatchStatus.on_hold, -91300)],
+    ("status", "seed", "state"),
+    [(WatchStatus.dropped, -91200, RatedState.DROPPED), (WatchStatus.on_hold, -91300, RatedState.ON_HOLD)],
 )
-async def test_an_incomplete_main_falls_back_to_some(db_session, status, seed):
+async def test_an_incomplete_main_reports_its_status(db_session, status, seed, state):
     user = await make_user(db_session, f"cov_{status.value}")
     anime, media = await _anime(db_session, seed, (RelationType.Main, "Finished Airing"))
     _rate(db_session, user, media[0], status)
     await db_session.flush()
-    assert await _tier(db_session, user, anime.uuid) == CoverageTier.some
+    assert await _state(db_session, user, anime.uuid) == state
 
 
 async def test_dropped_side_story_still_leaves_main_reachable(db_session):
@@ -90,7 +89,7 @@ async def test_dropped_side_story_still_leaves_main_reachable(db_session):
     _rate(db_session, user, media[0])
     _rate(db_session, user, media[1], WatchStatus.dropped)
     await db_session.flush()
-    assert await _tier(db_session, user, anime.uuid) == CoverageTier.main
+    assert await _state(db_session, user, anime.uuid) == RatedState.MAIN
 
 
 async def test_not_yet_aired_media_leaves_the_denominator(db_session):
@@ -103,7 +102,7 @@ async def test_not_yet_aired_media_leaves_the_denominator(db_session):
     )
     _rate(db_session, user, media[0])
     await db_session.flush()
-    assert await _tier(db_session, user, anime.uuid) == CoverageTier.all
+    assert await _state(db_session, user, anime.uuid) == RatedState.ALL
 
 
 async def test_currently_airing_media_counts(db_session):
@@ -115,10 +114,10 @@ async def test_currently_airing_media_counts(db_session):
     )
     _rate(db_session, user, media[0])
     await db_session.flush()
-    assert await _tier(db_session, user, anime.uuid) == CoverageTier.some
+    assert await _state(db_session, user, anime.uuid) == RatedState.IN_PROGRESS
 
 
-async def test_completed_side_story_under_an_unaired_main_stays_some(db_session):
+async def test_completed_side_story_under_an_unaired_main_stays_in_progress(db_session):
     user = await make_user(db_session, "cov_no_main")
     anime, media = await _anime(
         db_session, -91700,
@@ -126,7 +125,7 @@ async def test_completed_side_story_under_an_unaired_main_stays_some(db_session)
     )
     _rate(db_session, user, media[1])
     await db_session.flush()
-    assert await _tier(db_session, user, anime.uuid) == CoverageTier.some
+    assert await _state(db_session, user, anime.uuid) == RatedState.IN_PROGRESS
 
 
 async def test_alternative_version_counts_as_main_story(db_session):
@@ -140,13 +139,13 @@ async def test_alternative_version_counts_as_main_story(db_session):
     )
     _rate(db_session, user, media[0])
     await db_session.flush()
-    assert await _tier(db_session, user, anime.uuid) == CoverageTier.some
+    assert await _state(db_session, user, anime.uuid) == RatedState.IN_PROGRESS
 
 
 async def test_untouched_anime_is_absent_from_the_response(db_session):
     user = await make_user(db_session, "cov_absent")
     anime, _ = await _anime(db_session, -91900, (RelationType.Main, "Finished Airing"))
-    assert await _tier(db_session, user, anime.uuid) is None
+    assert await _state(db_session, user, anime.uuid) is None
 
 
 async def test_coverage_is_scoped_to_the_caller(db_session):
@@ -155,5 +154,5 @@ async def test_coverage_is_scoped_to_the_caller(db_session):
     anime, media = await _anime(db_session, -92000, (RelationType.Main, "Finished Airing"))
     _rate(db_session, user, media[0])
     await db_session.flush()
-    assert await _tier(db_session, user, anime.uuid) == CoverageTier.all
-    assert await _tier(db_session, other, anime.uuid) is None
+    assert await _state(db_session, user, anime.uuid) == RatedState.ALL
+    assert await _state(db_session, other, anime.uuid) is None

@@ -1,6 +1,7 @@
 """Browse pages and their carousels (docs/features/browse.md)."""
 
 from typing import Annotated
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,7 +19,8 @@ from app.schemas.browse_schema import (
     DiscoverOut,
     DiscoverTodayOut,
 )
-from app.services import browse_service
+from app.schemas.galaxy_schema import GalaxyMapOut, GalaxyNeighbourOut
+from app.services import browse_service, galaxy_service
 
 router = APIRouter(prefix="/browse", tags=["browse"])
 require_admin = require_roles(RoleType.Admin)
@@ -64,6 +66,26 @@ async def preview_mood(
     """Any mood with its rows, without a spin. Admins only, because the draw is the game —
     a viewer who could open any mood would have no reason to spin."""
     return await browse_service.preview(db, mood)
+
+
+# Above `/{page}`, which would otherwise take "galaxy" for a page name.
+@router.get("/galaxy", response_model=GalaxyMapOut)
+async def get_galaxy(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """The galaxy map: every anime's star, and the sectors and regions they fall in."""
+    return await galaxy_service.get_map(db)
+
+
+@router.get("/galaxy/{anime_uuid}/neighbours", response_model=list[GalaxyNeighbourOut])
+async def get_galaxy_neighbours(
+    anime_uuid: UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """The stars nearest one anime's, with what each shares with it."""
+    return await galaxy_service.neighbours(db, anime_uuid)
 
 
 @router.get("/{page}", response_model=list[BrowseCarouselOut])

@@ -1,5 +1,4 @@
 from datetime import datetime
-from enum import Enum
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -19,6 +18,7 @@ from app.models.ratings import (
     WatchStatus,
 )
 from app.schemas.common_schema import BulkMediaUuids
+from app.schemas.media_filter_schema import RatedState
 
 
 class RatingAttributes(BaseModel):
@@ -171,15 +171,10 @@ class SpoilerVisibility(BaseModel):
     visible_media_uuids: list[UUID]
 
 
-class CoverageTier(str, Enum):
-    """How completely one user has rated one anime. What each tier means is in
-    docs/features/ratings.md; `rating_service._coverage_tier` is what picks one
-    from a set of counts."""
-    some = "some"
-    main = "main"
-    all = "all"
-
-
 class AnimeRatingCoverage(BaseModel):
+    """How far one user has got with one anime, their score for it, and that score's rank
+    among theirs (by `own_score_ranking`'s rule): docs/features/ratings.md."""
     anime_uuid: UUID
-    tier: CoverageTier
+    state: RatedState
+    score: float
+    top_percent: int
