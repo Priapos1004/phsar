@@ -6,8 +6,11 @@ canonical version; new tests should import it instead of redeclaring.
 """
 
 import json
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
+from sqlalchemy import select
+
+from app.models.anime_search import AnimeSearch
 from app.models.media import MediaType, RelationType, SeasonType
 from app.models.users import RoleType, Users
 
@@ -135,3 +138,30 @@ class NoopProgressReporter:
 def fake_job(payload: dict | None = None, job_id: int = 12345):
     """A stand-in `Job` for a dispatcher called directly: its id and payload are all one reads."""
     return type("FakeJob", (), {"id": job_id, "payload": payload or {}})()
+
+
+async def probe_row(db) -> AnimeSearch:
+    """The row `embeddings_are_stale` re-encodes: the lowest-id anime's."""
+    return (await db.execute(select(AnimeSearch).order_by(AnimeSearch.anime_id).limit(1))).scalar_one()
+
+
+def fake_galaxy_fit(anime, _media, _previous) -> dict[str, Any]:
+    """A stand-in for `galaxy_compute.fit`: one sector holding one region and every anime,
+    enough for the swap to write. `test_galaxy_compute` holds it to the real fit's shape."""
+    ids = [a.anime_id for a in anime]
+    return {
+        "stars": [
+            {"anime_id": aid, "x": 0.0, "y": 0.0, "z10": [0.0] * 10, "sector": 0, "region": 0,
+             "between": False, "trained": True, "features": [1.0, 0.0], "uncertainty": 0.0}
+            for aid in ids
+        ],
+        "groups": [
+            {"level": "sector", "number": 0, "parent": None, "auto_name": "Auto sector", "x": 0.0, "y": 0.0,
+             "trained_members": ids},
+            {"level": "region", "number": 0, "parent": 0, "auto_name": "Auto region", "x": 0.0, "y": 0.0,
+             "trained_members": ids},
+        ],
+        "blob": b"models",
+        "pair_cosine_percentiles": [0.0] * 101,
+        "summary": {"trained": len(ids), "predicted": 0, "sectors": 1, "regions": 1, "between_share": 0.0},
+    }

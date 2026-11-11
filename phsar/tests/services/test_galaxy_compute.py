@@ -23,6 +23,7 @@ from app.services.galaxy_compute import (
     fit,
     place,
 )
+from tests._helpers import fake_galaxy_fit
 
 _CLUSTERS = [
     (genre, demo, f"Studio {i}", source)
@@ -62,6 +63,26 @@ def _catalogue() -> tuple[list[AnimeRow], list[MediaRow]]:
 def fitted():
     anime, media = _catalogue()
     return anime, media, fit(anime, media, {})
+
+
+def test_the_job_tests_stub_answers_in_the_fits_shape(fitted):
+    """The job tests stand `fake_galaxy_fit` in for the fit, and the swap reads the keys the real
+    fit writes: a key renamed on one side alone fails here rather than after a real fit."""
+    anime, media, result = fitted
+    fake = fake_galaxy_fit(anime, media, {})
+    assert fake.keys() == result.keys()
+    assert fake["stars"][0].keys() == result["stars"][0].keys() == place(result["blob"], anime[:1], media[:1])[0].keys()
+    assert {frozenset(g) for g in fake["groups"]} == {frozenset(g) for g in result["groups"]}
+
+
+def test_the_era_has_no_ceiling(fitted):
+    """Two anime alike but for their year, both years past every year the fixture catalogue holds, still
+    stand apart: the era block reads a newer year as newer rather than clipping it."""
+    anime, media, result = fitted
+    rows = [anime[0]._replace(anime_id=-k) for k in (1, 2)]
+    years = [media[0]._replace(anime_id=-1, season_year=2030), media[0]._replace(anime_id=-2, season_year=2040)]
+    near, far = place(result["blob"], rows, years)
+    assert near["features"] != far["features"]
 
 
 def test_every_star_sits_in_a_region_of_its_sector(fitted):

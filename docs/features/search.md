@@ -16,8 +16,11 @@ row's titles together with its description, so a title change regenerates it. Ti
 have no embedding of their own: title search matches literally (below). Changing the
 model, or capping its input below the 512 tokens the constants are calibrated at,
 re-tunes every constant calibrated on it, each marked "re-measure on a model change".
-The stored vectors follow by themselves: each boot re-encodes one stored row, and a
-mismatch re-embeds the catalogue (`embeddings_are_stale`).
+The stored vectors follow by themselves: each boot, and each restore, re-encodes one
+stored row, and a mismatch re-embeds the catalogue (`sync_vectors_and_map`) — a model
+change needs no migration, so a dump of the old model's vectors stays restorable. The pass
+runs beside live writes: a row deleted or re-encoded meanwhile is skipped rather than
+ending it (`_reembed`).
 
 **Everything is case-folded before encoding.** The model is *cased*, so the same
 text in different capitalisation produces materially different vectors — enough

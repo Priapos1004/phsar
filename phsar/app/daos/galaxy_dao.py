@@ -1,4 +1,5 @@
 from collections import defaultdict
+from itertools import batched
 from typing import Any
 
 from sqlalchemy import Float, Numeric, Row, cast, delete, distinct, func, insert, select
@@ -108,7 +109,7 @@ class GalaxyDAO(BaseDAO[GalaxyGroup]):
         if anime_ids is not None:
             anime_stmt = anime_stmt.where(AnimeSearch.anime_id.in_(anime_ids))
         anime = [
-            AnimeRow(aid, [float(v) for v in vec], *scores.get(aid, (None, None)), synopsis=chars)
+            AnimeRow(aid, vec.tolist(), *scores.get(aid, (None, None)), synopsis=chars)
             for aid, vec, chars in (await db.execute(anime_stmt)).all()
         ]
 
@@ -325,14 +326,15 @@ class GalaxyDAO(BaseDAO[GalaxyGroup]):
     async def _insert_stars(db: AsyncSession, ids: dict[tuple[str, int], int], stars: list[dict[str, Any]]) -> None:
         """Stars as `galaxy_compute` answers them, their sector and region numbers resolved
         to the fit's group ids."""
-        if not stars:
-            # An empty executemany falls back to a single insert of defaults.
-            return
-        await db.execute(insert(GalaxyStar), [
-            {
-                "anime_id": s["anime_id"], "x": s["x"], "y": s["y"], "z10": s["z10"],
-                "features": s["features"], "uncertainty": s["uncertainty"], "between": s["between"], "trained": s["trained"],
-                "sector_id": ids[("sector", s["sector"])], "region_id": ids[("region", s["region"])],
-            }
-            for s in stars
-        ])
+        # In chunks: pgvector writes each vector out as text on the event loop, in time that
+        # grows with the catalogue, and a chunk at a time lets requests run between.
+        # Never an empty one, which would fall back to a single insert of defaults.
+        for chunk in batched(stars, 200):
+            await db.execute(insert(GalaxyStar), [
+                {
+                    "anime_id": s["anime_id"], "x": s["x"], "y": s["y"], "z10": s["z10"],
+                    "features": s["features"], "uncertainty": s["uncertainty"], "between": s["between"], "trained": s["trained"],
+                    "sector_id": ids[("sector", s["sector"])], "region_id": ids[("region", s["region"])],
+                }
+                for s in chunk
+            ])

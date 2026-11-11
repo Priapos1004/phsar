@@ -37,6 +37,7 @@ from app.schemas.backup_schema import (
     BackupStatus,
 )
 from app.seeders.browse_seeder import seed_browse
+from app.seeders.embedding_backfiller import sync_vectors_and_map
 from app.services._pg_subprocess import run_capture
 from app.services.job_worker import job_worker
 
@@ -789,6 +790,19 @@ async def set_backup_name(filename: str, name: str | None) -> BackupMetadata:
     return await _set_meta_field(filename, name=(name or "").strip() or None)
 
 
+# The post-restore vectors-and-map pass outlives the request that started it; the event
+# loop keeps only a weak reference to a task.
+_post_restore_tasks: set[asyncio.Task] = set()
+
+
+async def _sync_vectors_and_map() -> None:
+    try:
+        async with async_session_maker() as session:
+            await sync_vectors_and_map(session)
+    except Exception:
+        logger.exception("Post-restore re-embed or galaxy map check failed")
+
+
 async def restore_backup(
     filename: str,
     confirm: str,
@@ -908,6 +922,10 @@ async def restore_backup(
         except Exception:
             logger.exception("set_maintenance(False) failed in restore finally")
 
+    # Outside the gate: a re-embed runs for minutes.
+    task = asyncio.create_task(_sync_vectors_and_map())
+    _post_restore_tasks.add(task)
+    task.add_done_callback(_post_restore_tasks.discard)
     return pre_snapshot
 
 

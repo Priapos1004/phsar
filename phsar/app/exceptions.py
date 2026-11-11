@@ -519,6 +519,14 @@ class GalaxyGroupNotFoundError(PhsarBaseError):
         super().__init__(f"Galaxy group not found: '{uuid}'.")
 
 
+class GalaxyVectorsStaleError(PermanentPhsarError):
+    """Raised when a galaxy rebuild finds the stored vectors still being re-encoded."""
+    status_code = 409
+
+    def __init__(self):
+        super().__init__("The stored embeddings are being re-encoded; the map is rebuilt once they are.")
+
+
 class MergeCandidateNotFoundError(PhsarBaseError):
     """Raised when a merge candidate UUID doesn't resolve."""
     status_code = 404

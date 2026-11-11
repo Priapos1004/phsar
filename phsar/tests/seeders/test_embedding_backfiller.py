@@ -7,7 +7,8 @@ import itertools
 
 import numpy as np
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
+from sqlalchemy.exc import IntegrityError
 
 from app.models.anime import Anime
 from app.models.anime_search import AnimeSearch
@@ -22,15 +23,18 @@ from app.seeders.embedding_backfiller import (
     reembed_all_embeddings,
 )
 from app.services.anime_search_service import anime_title_texts
+from app.services.media_search_service import media_title_texts
 from app.services.vector_embedding_service import (
     cosine_similarity,
     create_anime_embedding,
     create_media_embedding,
     create_rating_embedding,
+    encode_description,
     generate_embedding,
     regenerate_anime_embedding,
+    regenerate_media_embedding,
 )
-from tests._helpers import media_kwargs
+from tests._helpers import media_kwargs, probe_row
 
 _SENTINEL = [0.5] * 384
 
@@ -109,8 +113,8 @@ async def test_reembed_regenerates_existing_vectors_in_place(db_session):
 
 
 async def _probe_row(db_session) -> AnimeSearch:
-    """The row `embeddings_are_stale` reads — the lowest-id anime's. Two fixture anime
-    make sure one exists and give the anime pass a second row to cut on. One fixture media
+    """The row `embeddings_are_stale` reads (`probe_row`). Two fixture anime make sure one
+    exists and give the anime pass a second row to cut on. One fixture media
     gives the media pass a row to cut on, even on an empty database."""
     for mal_id in (99011, 99012):
         anime = Anime(mal_id=mal_id, title=f"Probe {mal_id}", description="A probe description.")
@@ -122,8 +126,7 @@ async def _probe_row(db_session) -> AnimeSearch:
         )
     db_session.add(Media(**media_kwargs(anime.id, 990120, title="Probe Media")))
     await db_session.flush()
-    return (await db_session.execute(
-        select(AnimeSearch).order_by(AnimeSearch.anime_id).limit(1))).scalar_one()
+    return await probe_row(db_session)
 
 
 async def test_the_probe_tells_current_vectors_from_stale_ones(db_session):
@@ -176,3 +179,41 @@ async def test_a_pass_cut_short_leaves_the_probe_stale(db_session, monkeypatch, 
     with pytest.raises(RuntimeError, match="cut"):
         await reembed_all_embeddings(db_session)
     assert await embeddings_are_stale(db_session)
+
+
+async def test_a_reembed_reads_each_row_at_its_turn(db_session):
+    """Live writes land between the pass's load and a row's turn: a deleted row is skipped, a
+    row whose write clashes is skipped without ending the pass, and an edited row is encoded
+    from its new text rather than the text the pass loaded."""
+    anime = Anime(mal_id=99021, title="Turn Show")
+    db_session.add(anime)
+    await db_session.flush()
+    writer, gone, clash, edited = rows = [
+        Media(**media_kwargs(anime.id, 990210 + i, description="The loaded description.")) for i in range(4)
+    ]
+    db_session.add_all(rows)
+    await db_session.flush()
+
+    async def regenerate(media):
+        if media.id == writer.id:
+            # As another session would write: the rows this session loaded keep the old state.
+            unsynced = {"synchronize_session": False}
+            await db_session.execute(delete(Media).where(Media.id == gone.id), execution_options=unsynced)
+            await db_session.execute(
+                update(Media).where(Media.id == edited.id).values(description="An edited description."),
+                execution_options=unsynced,
+            )
+        if media.id == clash.id:
+            raise IntegrityError("INSERT", {}, Exception("a live write got there first"))
+        await regenerate_media_embedding(
+            db_session, media_id=media.id, title_texts=media_title_texts(media),
+            description_text=media.description or "",
+        )
+
+    await embedding_backfiller._reembed(
+        db_session, "media", Media, select(Media.id).where(Media.anime_id == anime.id).order_by(Media.id), regenerate)
+
+    stored = (await db_session.execute(
+        select(MediaSearch.description_embedding).where(MediaSearch.media_id == edited.id))).scalar_one()
+    fresh = await encode_description(media_title_texts(edited), "An edited description.")
+    assert cosine_similarity(stored, fresh) > 0.9999

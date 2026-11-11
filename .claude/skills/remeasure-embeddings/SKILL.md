@@ -22,8 +22,15 @@ from `phsar/` with `PYTHONPATH=. ../.venv/bin/python <script>`.
 2. **Make the change and re-embed.** Restart the backend on the new code: the boot probe
    (`embeddings_are_stale`) sees the mismatch and re-embeds the catalogue; wait for the
    "Re-embed complete" log line. If the change is to the encode length or to
-   `encode_description`, check the probe really fires — it compares one stored anime. The
-   re-embed also marks the galaxy map's vectors stale, so the same boot refits it, cold
+   `encode_description`, check the probe really fires — it compares one stored anime, whose
+   text may sit under a new cap. If it doesn't, spoil that one row and restart:
+
+   ```sql
+   UPDATE anime_search SET description_embedding = array_fill(1, ARRAY[384])::vector
+   WHERE anime_id = (SELECT min(anime_id) FROM anime_search);
+   ```
+
+   The re-embed also marks the galaxy map's vectors stale, so the same boot refits it, cold
    (`docs/features/galaxy.md`).
 3. **Description margin** — `margins.py`, first two sections. The rule: the smallest margin
    at which every name and nonsense query admits **≤ 2** semantic-only media. Then read the

@@ -531,7 +531,7 @@ Eye-catching landing page — light version of browse, serves new and returning 
 - **Password handling.** `PGPASSWORD` env var on the subprocess, never on the CLI.
 
 ### Planned
-- **A dump before a re-embed, and the embedding model each dump's vectors came from.** When the boot probe finds a model change, take a labelled dump first, then re-embed: restoring it is the fast way back if the new model disappoints, beside redeploying the old image and letting the probe re-embed (slower, keeps every write since). The database records which model wrote its vectors — one row the re-embed updates — so every dump carries it, and the backup reads it from the dump the way it reads the Alembic revision, uploads included. A dump from another model reads `outdated`, so the self-heal dumps fresh after a model change as it does after a migration. Restoring one starts a re-embed in the background, so search never runs on two models' vectors until the next restart.
+- **A dump before a re-embed, and the embedding model each dump's vectors came from.** When the boot probe finds a model change, take a labelled dump first, then re-embed: restoring it is the fast way back if the new model disappoints, beside redeploying the old image and letting the probe re-embed (slower, keeps every write since). The database records which model wrote its vectors — one row the re-embed updates — so every dump carries it, and the backup reads it from the dump the way it reads the Alembic revision, uploads included. A dump from another model reads `outdated`, so the self-heal dumps fresh after a model change as it does after a migration.
 
 ---
 

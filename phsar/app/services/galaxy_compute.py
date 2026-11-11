@@ -34,15 +34,18 @@ TAG_GROUPS = {"tags": ("genres", "explicit_genres", "themes"), "demographics": (
 TAG_PSEUDO = 2
 # How a feature vector is built. Bumped with any change to that code; with the tunables it
 # reads, it makes `vectors_key`.
-FEATURES = 3
+FEATURES = 4
 # How the map is fitted from the vectors and what placement reads from the pickle. Bumped
 # with any change to either, so `built_from` refits the map and the old one stops taking new
 # stars, which it could no longer place.
-FITTING = 3
+FITTING = 4
 # A synopsis this many characters long counts as half known (`_raw_blocks`).
 SYNOPSIS_HALF = 50
 TOP_STUDIOS = 25
-ERA = (1970, 2027)
+# Years before this one read as it: the few older shorts sit together rather than stretching
+# the era axis. No ceiling: the block is rescaled by its own spread, so a newer year needs
+# no bound to stay in scale, and a ceiling would only clip it.
+ERA_FROM = 1970
 SEED = 42
 # Sectors: HDBSCAN on the 10-D layout (on the raw vectors it calls most stars noise).
 # The size cap stops excess-of-mass from collapsing into one giant sector.
@@ -75,7 +78,7 @@ ANCHOR_RADIUS = 0.04
 def vectors_key() -> str:
     """What a feature vector is built from: the code's version and every tunable it reads,
     recorded in `built_from`."""
-    tunables = (WEIGHTS, TAG_GROUPS, TAG_PSEUDO, SYNOPSIS_HALF, TOP_STUDIOS, ERA)
+    tunables = (WEIGHTS, TAG_GROUPS, TAG_PSEUDO, SYNOPSIS_HALF, TOP_STUDIOS, ERA_FROM)
     return f"{FEATURES}-{hashlib.sha256(repr(tunables).encode()).hexdigest()[:12]}"
 
 
@@ -162,7 +165,6 @@ def _fit_stats(profiles: list[dict[str, Any]], train: np.ndarray) -> dict[str, A
     held = _held(trained, tags["tags"], TAG_GROUPS["tags"])
     return {
         "weights": dict(WEIGHTS),
-        "era": ERA,
         "tags": tags,
         "tag_weights": tag_weights.tolist(),
         "tag_pseudo": TAG_PSEUDO * float((held * tag_weights).sum() / (held.sum() or 1)),
@@ -244,8 +246,7 @@ def _raw_blocks(
             else:
                 studios[i, len(top) + _studio_size(stats, s)] = 1
     col = lambda v: np.asarray(v, np.float32).reshape(-1, 1)  # noqa: E731
-    era = stats["era"]
-    year = np.clip([p["year"] or era[0] for p in profiles], *era)
+    year = np.maximum([p["year"] or ERA_FROM for p in profiles], ERA_FROM)
     blocks = {
         "desc": desc.copy(),  # `_blocks` shrinks it in place; the fit reads the caller's as given
         "tags": tags,
@@ -256,7 +257,7 @@ def _raw_blocks(
             col(np.log1p([p["watch_hours"] for p in profiles])),
         ]),
         "age": col([(p["age"] or 0) / 18 for p in profiles]),
-        "era": col((year - era[0]) / (era[1] - era[0])),
+        "era": col(year - ERA_FROM),
         "studios": studios,
         "quality": np.array([(p["score"] or 0, np.log1p(p["votes"] or 0)) for p in profiles], np.float32).reshape(n, 2),
     }
@@ -430,7 +431,9 @@ def fit(anime: list[AnimeRow], media: list[MediaRow],
         "score_z": _z([p["score"] for p in profiles]),
         "era_z": _z([p["year"] for p in profiles]),
         "regions": {},
-        "between_at": float(np.quantile(sectors.outlier_scores_, 1 - BETWEEN_SHARE)),
+        # `higher`, not the interpolated quantile: strictly past a score between two stars
+        # would take one star more than the share whenever it is not a whole number.
+        "between_at": float(np.quantile(sectors.outlier_scores_, 1 - BETWEEN_SHARE, method="higher")),
     }
     extra = _quality_era(profiles, m)
     region_t = np.empty(n, int)

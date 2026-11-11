@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy import delete, func, select
 
 from app.daos.job_dao import JobDAO
+from app.exceptions import GalaxyVectorsStaleError
 from app.models.anime import Anime
 from app.models.galaxy import GalaxyFit, GalaxyGroup, GalaxyStar
 from app.models.job import Job, JobKind
@@ -15,28 +16,7 @@ from app.services import galaxy_compute, galaxy_service
 from app.services.anime_search_service import anime_title_texts
 from app.services.galaxy_dispatcher import galaxy_rebuild_dispatcher
 from app.services.vector_embedding_service import MODEL_NAME, create_anime_embedding
-from tests._helpers import NoopProgressReporter, fake_job
-
-
-def _fake_fit(anime, _media, _previous):
-    """One sector holding one region and every anime — enough for the swap to write."""
-    ids = [a.anime_id for a in anime]
-    return {
-        "stars": [
-            {"anime_id": aid, "x": 0.0, "y": 0.0, "z10": [0.0] * 10, "sector": 0, "region": 0,
-             "between": False, "trained": True, "features": [1.0, 0.0], "uncertainty": 0.0}
-            for aid in ids
-        ],
-        "groups": [
-            {"level": "sector", "number": 0, "parent": None, "auto_name": "Auto sector", "x": 0.0, "y": 0.0,
-             "trained_members": ids},
-            {"level": "region", "number": 0, "parent": 0, "auto_name": "Auto region", "x": 0.0, "y": 0.0,
-             "trained_members": ids},
-        ],
-        "blob": b"models",
-        "pair_cosine_percentiles": [0.0] * 101,
-        "summary": {"trained": len(ids), "predicted": 0, "sectors": 1, "regions": 1, "between_share": 0.0},
-    }
+from tests._helpers import NoopProgressReporter, fake_galaxy_fit, fake_job, probe_row
 
 
 @pytest.fixture
@@ -45,7 +25,7 @@ def stub_fit(monkeypatch):
 
     async def in_process(fn, *args):
         assert fn is galaxy_compute.fit
-        return _fake_fit(*args)
+        return fake_galaxy_fit(*args)
 
     monkeypatch.setattr(galaxy_service, "run_in_child", in_process)
 
@@ -85,6 +65,32 @@ async def test_a_rebuild_swaps_the_map_and_carries_hand_names(db_session, catalo
     )).scalar_one()
 
 
+async def test_a_rename_made_during_the_fit_carries(db_session, catalogue, stub_fit, monkeypatch):
+    await galaxy_rebuild_dispatcher(db_session, fake_job())
+    sector = (await db_session.execute(select(GalaxyGroup).where(GalaxyGroup.parent_id.is_(None)))).scalar_one()
+
+    async def renamed_meanwhile(fn, *args):
+        await galaxy_service.rename_group(db_session, sector.uuid, "Isekai Sprawl")
+        return fake_galaxy_fit(*args)
+
+    monkeypatch.setattr(galaxy_service, "run_in_child", renamed_meanwhile)
+    summary = await galaxy_rebuild_dispatcher(db_session, fake_job())
+
+    assert summary["names_carried"] == 1
+    assert (await db_session.execute(
+        select(GalaxyGroup.name).where(GalaxyGroup.parent_id.is_(None)))).scalar_one() == "Isekai Sprawl"
+
+
+async def test_no_fit_while_the_vectors_are_being_reencoded(db_session, catalogue, stub_fit):
+    (await probe_row(db_session)).description_embedding = [0.5] * 384
+    await db_session.flush()
+    live = (await db_session.execute(select(GalaxyFit.id))).scalars().all()
+
+    with pytest.raises(GalaxyVectorsStaleError):
+        await galaxy_rebuild_dispatcher(db_session, fake_job())
+    assert (await db_session.execute(select(GalaxyFit.id))).scalars().all() == live
+
+
 async def test_a_rebuild_lists_the_names_it_dropped(db_session, catalogue, stub_fit, monkeypatch):
     await galaxy_rebuild_dispatcher(db_session, fake_job())
     sector = (await db_session.execute(select(GalaxyGroup).where(GalaxyGroup.parent_id.is_(None)))).scalar_one()
@@ -93,7 +99,7 @@ async def test_a_rebuild_lists_the_names_it_dropped(db_session, catalogue, stub_
     def diluted(anime, media, previous):
         # The new sector holds every old member plus twice as many others: a Jaccard of
         # 1/3 whatever the catalogue's size, under the floor though all of them are there.
-        fit = _fake_fit(anime, media, previous)
+        fit = fake_galaxy_fit(anime, media, previous)
         ids = fit["groups"][0]["trained_members"]
         fit["groups"][0]["trained_members"] = ids + [-k for k in range(1, 2 * len(ids) + 1)]
         return fit
@@ -118,7 +124,7 @@ async def test_a_rebuild_starts_cold_only_after_the_vectors_changed(db_session, 
 
     async def in_process(fn, anime, media, previous):
         starts.append(bool(previous))
-        return _fake_fit(anime, media, previous)
+        return fake_galaxy_fit(anime, media, previous)
 
     async def rebuild_after(change: dict[str, str]):
         fit = (await db_session.execute(select(GalaxyFit))).scalar_one()
@@ -162,14 +168,10 @@ async def test_new_anime_are_placed_onto_the_live_map(db_session, catalogue, stu
     newcomer = await _embedded_anime(db_session, 99102, "Galaxy Newcomer", "Scraped after the fit.")
     placed: list[int] = []
 
-    async def in_process(fn, _blob, anime, _media):
+    async def in_process(fn, _blob, anime, media):
         assert fn is galaxy_compute.place
         placed.extend(a.anime_id for a in anime)
-        return [
-            {"anime_id": a.anime_id, "x": 0.0, "y": 0.0, "z10": [0.0] * 10, "sector": 0, "region": 0,
-             "between": False, "trained": False, "features": [1.0, 0.0], "uncertainty": 0.0}
-            for a in anime
-        ]
+        return [{**star, "trained": False} for star in fake_galaxy_fit(anime, media, {})["stars"]]
 
     monkeypatch.setattr(galaxy_service, "run_in_child", in_process)
     assert await galaxy_service.place_unplaced(db_session) == 1

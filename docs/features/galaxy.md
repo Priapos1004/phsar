@@ -23,7 +23,8 @@ A star's feature vector joins blocks read off the anime and its media:
   because lacking one says something: a demographic follows the source magazine, which a
   light novel or an original has none of;
 - **source and format**: shares over the main story, with log watch hours added to format;
-- **age and era**: the highest age tier and the first main-story year;
+- **age and era**: the highest age tier and the first main-story year (`ERA_FROM` says
+  why it has a floor and no ceiling);
 - **studios**: the most productive studios one-hot, and every other studio as a big, mid
   or small output bucket;
 - **quality**: the anime's MAL score and log vote count, as the app shows them.
@@ -80,7 +81,7 @@ not seen yet.
 **A refit starts from the live map.** Both UMAPs start from the stars' stored coordinates,
 a newcomer beside its nearest known stars. As a result the median star moves a few percent
 of the map instead of the whole map reshuffling. Not after the vectors change — a model
-swap, a new `vectors_key`, or the boot re-embedding the stored synopsis vectors
+swap, a new `vectors_key`, or a re-embed of the stored synopsis vectors
 (`galaxy_service.same_vectors`, `vectors_reembedded`): that layout means nothing to the new
 vectors, so the refit starts cold. A library bump or a change to the fitting alone keeps the
 warm start.
@@ -92,11 +93,13 @@ The job reports the movement as `median_movement`.
 
 `galaxy_rebuild`:
 
-1. loads the catalogue, the live map's coordinates (when its vectors still match) and its
-   hand names;
-2. commits, so no transaction stays open across the fit;
-3. runs the fit in a spawned child (`galaxy_service.run_in_child` says why);
-4. swaps the old fit for the new one in a single transaction (`replace_fit`).
+1. refuses while the stored vectors are being re-encoded (`galaxy_rebuild_dispatcher` says
+   why); the pass doing it asks for the rebuild once it ends;
+2. loads the catalogue and the live map's coordinates (when its vectors still match);
+3. commits, so no transaction stays open across the fit;
+4. runs the fit in a spawned child (`galaxy_service.run_in_child` says why);
+5. reads the hand names, after the fit (`galaxy_rebuild_dispatcher` says why);
+6. swaps the old fit for the new one in a single transaction (`replace_fit`).
 
 A failed fit writes nothing and leaves the live map in place. The job has no maintenance
 bracket, because it writes only its own tables.
@@ -105,8 +108,9 @@ bracket, because it writes only its own tables.
 
 An admin can rebuild on demand with `POST /admin/galaxy/rebuild`, confirmed by typing their
 username, because the new fit replaces the live map whole; the job shows in their bell.
-Otherwise `galaxy_service.ensure_map` decides. It is asked at every boot, behind the
-re-embed (`main.py` says why), and by every `schedule-nightly`. It enqueues a rebuild
+Otherwise `galaxy_service.ensure_map` decides. It is asked at every boot and after every
+restore, behind the re-embed (`sync_vectors_and_map` says why), and by every
+`schedule-nightly`. It enqueues a rebuild
 when the map is due:
 
 - **there is no map**: a first deploy or a fresh database;

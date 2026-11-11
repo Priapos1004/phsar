@@ -277,11 +277,14 @@
 		}
 	}
 
+	// Over the map's stars: the filters also keep anime scraped since the last placement,
+	// which have no star to light yet.
 	let mineCounts = $derived.by(() => {
 		const c = { none: 0, some: 0, main: 0, all: 0 };
 		for (const s of map?.stars ?? []) if (!lit || lit.has(s.anime_uuid)) c[$ratingCoverage.get(s.anime_uuid) ?? 'none']++;
 		return c;
 	});
+	let litCount = $derived(mineCounts.none + mineCounts.some + mineCounts.main + mineCounts.all);
 </script>
 
 <!-- Inert, not disabled (rules/frontend.md, "Tooltips"). -->
@@ -416,7 +419,7 @@
 			<p class="text-xs text-white/70">The filters could not be applied to the map.</p>
 		{:else if lit}
 			<p class="inline-flex items-center gap-1.5 text-xs text-white/70">
-				{lit.size} anime match the filters; the rest are greyed out {@render dot(NO_VALUE)}
+				{litCount} anime match the filters; the rest are greyed out {@render dot(NO_VALUE)}
 			</p>
 		{/if}
 

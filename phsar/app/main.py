@@ -2,7 +2,6 @@ import asyncio
 import contextlib
 import logging
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,11 +19,7 @@ from app.exceptions import PhsarBaseError
 from app.models.job import JobKind
 from app.seeders.anime_title_backfiller import backfill_anime_title_suffixes
 from app.seeders.browse_seeder import seed_browse
-from app.seeders.embedding_backfiller import (
-    backfill_embeddings,
-    embeddings_are_stale,
-    reembed_all_embeddings,
-)
+from app.seeders.embedding_backfiller import backfill_embeddings, sync_vectors_and_map
 from app.seeders.genre_seeder import seed_genres
 from app.seeders.relation_backfiller import backfill_relations
 from app.seeders.split_candidate_backfiller import backfill_split_candidates
@@ -36,7 +31,7 @@ from app.seeders.user_seeder import (
     seed_admin_user,
     seed_guest_user,
 )
-from app.services import backup_service, galaxy_service
+from app.services import backup_service
 from app.services.backup_dispatcher import backup_dispatcher
 from app.services.galaxy_dispatcher import galaxy_rebuild_dispatcher
 from app.services.job_worker import job_worker
@@ -97,16 +92,10 @@ async def _post_yield_backfills() -> None:
         logger.exception("Backup self-heal failed — catalog backfills continue")
 
     # Its OWN try/except: a re-embed failure is the model or the database, so it hits
-    # every row — the backfills below must still run, and the next boot retries. The
-    # galaxy check sits behind the re-embed and is skipped with it, so a fit never reads
-    # half-re-encoded vectors.
+    # every row — the backfills below must still run, and the next boot retries.
     try:
         async with async_session_maker() as session:
-            if await embeddings_are_stale(session):
-                await reembed_all_embeddings(session)
-                await galaxy_service.vectors_reembedded(session)
-            await galaxy_service.ensure_map(session, now=datetime.now(timezone.utc))
-            await galaxy_service.place_unplaced(session)
+            await sync_vectors_and_map(session)
     except Exception:
         logger.exception("Re-embed or galaxy map check failed — catalog backfills continue")
 

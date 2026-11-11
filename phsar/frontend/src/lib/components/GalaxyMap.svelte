@@ -739,7 +739,7 @@
 {#snippet mapButton(tip: string, label: string, onclick: () => void, disabled: boolean, Icon: typeof Plus, pressed?: boolean)}
 	<Tooltip text={tip} side="left">
 		{#snippet trigger(props)}
-			<button {...props} type="button" class="map-button" aria-label={label} aria-pressed={pressed} {onclick} {disabled}>
+			<button {...props} type="button" class="grid size-8 place-items-center rounded-lg border border-white/15 bg-[#070814]/70 text-white/85 hover:border-white/35 hover:text-white disabled:opacity-40" aria-label={label} aria-pressed={pressed} {onclick} {disabled}>
 				<Icon class="size-4" />
 			</button>
 		{/snippet}
@@ -773,22 +773,5 @@
 			radial-gradient(1.5px 1.5px at 52% 9%, rgba(230, 232, 255, 0.55), transparent),
 			radial-gradient(120% 90% at 50% 40%, #121630 0%, #070814 70%);
 		background-size: 220px 180px, 260px 210px, 300px 240px, 180px 150px, 340px 280px, auto;
-	}
-	.map-button {
-		display: grid;
-		place-items: center;
-		width: 2rem;
-		height: 2rem;
-		border-radius: 0.5rem;
-		border: 1px solid rgb(255 255 255 / 0.15);
-		background: rgb(7 8 20 / 0.7);
-		color: rgb(255 255 255 / 0.85);
-	}
-	.map-button:hover:not(:disabled) {
-		border-color: rgb(255 255 255 / 0.35);
-		color: white;
-	}
-	.map-button:disabled {
-		opacity: 0.35;
 	}
 </style>

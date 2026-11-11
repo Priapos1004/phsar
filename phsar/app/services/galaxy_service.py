@@ -132,8 +132,8 @@ async def ensure_map(
     db: AsyncSession, *, now: datetime, not_before_at: datetime | None = None,
 ) -> JobEnqueuedResponse | None:
     """Enqueue a rebuild when the map is due, unless one is already waiting or the
-    catalogue is too small to fit. Boot and the nightly cron both ask, so a missed night
-    catches up on the next."""
+    catalogue is too small to fit. Asked whenever the map may be due (docs/features/galaxy.md,
+    "When the map is rebuilt"), so a missed night catches up on the next."""
     fit = await galaxy_dao.live_fit(db)
     if fit is None:
         reason = "missing"
