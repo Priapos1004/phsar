@@ -189,8 +189,11 @@ its auto name. A hand name no new group took is listed in the rebuild's summary
 (`names_dropped`) with every new group holding a share of its old members
 (`DROPPED_SHARE` says how much and why), since the old groups go with the old fit.
 
+The names in use, the rules they follow and the pass that sets them after a refit are the
+[galaxy-names skill](../../.claude/skills/galaxy-names/SKILL.md).
+
 ---
 
 **Why it is this way**
 - [Galaxy](../../compound-docs/2026-10-30-v0.16.5-galaxy.md): the study behind the grain, the training set, the weights, the pipeline and the name floor, and the stability backtests
-- [Galaxy names](../../compound-docs/2026-11-07-galaxy-names.md): the hand names of the first prod fit, the conventions behind them, and what to re-check after a refit
+- [Galaxy names](../../compound-docs/2026-11-07-galaxy-names.md): why the first prod fit's hand names were chosen, and the alternatives that lost
