@@ -408,6 +408,7 @@ Separate page/route — the "deep dive" version of home page sections.
 - **Galaxy** — ✓ built (v0.16.5, [galaxy](features/galaxy.md)): a 2D map of the catalogue over combined embeddings (description, genres …), zoom, hop between neighbours, light what the search's filters keep. Next:
   - **"Show on the map" from a see-all page** — later: some rows search descriptions (Discover's moods), and a description match is a ranked list cut at a margin, which lit stars cannot show; the link waits for a way to draw that on the map.
   - "Six degrees" from one anime to another.
+  - **A rebuild's detail page** (how the groups changed) — once a real refit over hand names shows what to look at. The old groups go with the old fit, so the page records its data from the refit it reports on.
 - **Games** — tonight's tournament (a bracket ending in one pick), higher or lower on MAL score, a swipe deck onto the watchlist; new row formats (ranked top-10, spotlight, blind box, versus) may live here too
 
 ### Key Decisions
@@ -640,7 +641,7 @@ length target.
 | **v0.16.2** | ✓ Browse + News | Carousel definitions in the DB with a resolver and seeded core rows; the Browse page and its News tab; a see-all page, also reached from search. JWT signing and verification move from python-jose to PyJWT. |
 | **v0.16.3** | ✓ Home + Discover | Home rows Lucky find and New to the catalogue replace two placeholders; seasonal hero art (Halloween); a Discover tab whose wheel draws each user one themed mood a day, cut to with a full-screen reveal; a To-anime link on the media page; paging arrows on every sideways row. |
 | **v0.16.4** | ✓ Responsive pass | Every page on a phone and at the widest layout; an In / Not in toggle on the watchlist's Lists filter; tooltips that open on a tap, and ⓘ explanations on the watchlist filters and settings; search results kept across a detail detour; the sweep card's nightly load against its cap; Future Shock's reveal is a UFO that beams its title down; genre filter groups (Any/All, Without, OR or AND between groups), which keep a Discover mood's rows from repeating each other. |
-| **v0.16.5** | Galaxy | Browse's parked Galaxy tab (Feature 5b): a 2D map of the catalogue. Search moves to multilingual-e5-small, which finds Japanese and translated queries far better. Search and the map filter by your own score and your top N%. The weekly sweep cycle narrows to three years. |
+| **v0.16.5** | ✓ Galaxy | Browse's parked Galaxy tab (Feature 5b): a 2D map of the catalogue. Search moves to multilingual-e5-small, which finds Japanese and translated queries far better. Search and the map filter by your own score and your top N%. The weekly sweep cycle narrows to three years. |
 | **v0.16.6** | Recommended | Home's Recommended row, from the user's own algorithm. |
 | **v0.16.7** | Guest accounts | A rework of the guest account logic. |
 | **v0.16.8** | Get-started page | The onboarding page (Feature 10). |
