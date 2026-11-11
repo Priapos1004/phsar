@@ -61,20 +61,50 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Set up Python
+      id: python
       uses: actions/setup-python@v5
       with:
         python-version: '3.12'
-        cache: 'pip'
-        # Default is **/requirements.txt, which would leave the torch pin out of
-        # the key — bumping it would hit a stale cache and re-pull the wheel forever.
-        cache-dependency-path: phsar/requirements*.txt
 
-    # Before requirements.txt; the file it installs explains why.
-    - name: Install CPU-only torch
-      run: pip install -r requirements-torch.txt
+    # The installed virtualenv, not pip's download cache: unpacking the wheels — torch's
+    # above all — is most of what an install costs. Keyed on the exact interpreter the
+    # venv links to and on every requirements file, torch's pin included.
+    - name: Cache the virtualenv
+      id: venv
+      uses: actions/cache@v4
+      with:
+        path: .venv
+        key: venv-${{ runner.os }}-${{ runner.arch }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('phsar/requirements*.txt') }}
 
+    # Torch before requirements.txt; requirements-torch.txt explains why.
     - name: Install dependencies
-      run: pip install -r requirements.txt -r requirements-dev.txt
+      if: steps.venv.outputs.cache-hit != 'true'
+      run: |
+        python -m venv ../.venv
+        ../.venv/bin/pip install -r requirements-torch.txt
+        ../.venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+
+    - name: Use the virtualenv
+      run: echo "$GITHUB_WORKSPACE/.venv/bin" >> "$GITHUB_PATH"
+
+    # The embedding model the suite loads at import, otherwise downloaded from the Hub
+    # on every run.
+    - name: Cache the embedding model
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/huggingface
+        key: hf-${{ hashFiles('phsar/app/services/vector_embedding_service.py') }}
+        restore-keys: |
+          hf-
+
+    # mypy's incremental cache: a run restores the latest and re-checks what changed.
+    - name: Cache mypy
+      uses: actions/cache@v4
+      with:
+        path: phsar/.mypy_cache
+        key: mypy-${{ runner.os }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('phsar/requirements*.txt') }}-${{ hashFiles('phsar/app/**/*.py') }}
+        restore-keys: |
+          mypy-${{ runner.os }}-py${{ steps.python.outputs.python-version }}-${{ hashFiles('phsar/requirements*.txt') }}-
 
     # The pg17 service container needs a matching pg17 client: ubuntu-latest
     # ships postgresql-client-16, and pg_dump refuses to dump a newer server
@@ -94,5 +124,7 @@ jobs:
     - name: Type check
       run: mypy
 
+    # Fewer workers than vCPUs: Postgres runs on the same cores, and a worker per core
+    # contends with it.
     - name: Run tests
-      run: pytest --tb=short -q
+      run: pytest -n 3 --tb=short -q

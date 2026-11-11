@@ -82,6 +82,7 @@ pytest
 pytest tests/routers/test_auth.py           # single file
 pytest tests/routers/test_auth.py::test_fn  # single test
 PHSAR_TEST_DB=dev pytest                    # against the dev DB, not the suite's own
+pytest -n 4                                 # parallel; more workers contend for one Postgres
 
 # To quieten the DEBUG spam, raise the level (--log-cli-level=WARNING). Never
 # with -p no:logging: caplog ships in the plugin that flag unloads, so the tests
@@ -315,7 +316,7 @@ the price of pre-PR feedback. Cancelling is disabled on `main`, where it would l
 the branch the README badges track sitting on a cancelled status.
 
 - **Backend Lint** (`backend-lint.yml`): `ruff check .` in `phsar/`
-- **Backend Tests** (`backend-test.yml`): `mypy` then `pytest` against a pgvector service container — the type check lives in this job because it needs SQLAlchemy's and Pydantic's own types, which only this job installs. pytest builds its database by replaying the migration chain and runs **`alembic check`** against it (`.claude/rules/database.md` says what that guards)
+- **Backend Tests** (`backend-test.yml`): `mypy` then `pytest` against a pgvector service container — the type check lives in this job because it needs SQLAlchemy's and Pydantic's own types, which only this job installs. pytest builds its database by replaying the migration chain and runs **`alembic check`** against it (`.claude/rules/database.md` says what that guards). pytest runs fewer workers than the runner has vCPUs, and the job caches what it would otherwise rebuild every run
 - **Frontend Check** (`frontend-check.yml`): `bun run check` + `bun run test` + `bun run build`. The build step is not redundant with the type check — `svelte-check` reads sources, and only a real adapter-node build proves the bundle still comes out
 - **Commit Gate** (`gate.yml`): `.claude/hooks/test-gate.sh`, on `.claude/**`. Its own workflow because the suite needs no project toolchain — it drives the hook against the checked-out tree on whatever the runner ships — and because a red result here means something other than a lint failure
 - **Build & Push Images** (`build-images.yml`): builds + pushes to ghcr.io — tag push (`v*`) or manual dispatch. No cancellation: a tag build must never be superseded
@@ -329,7 +330,7 @@ mypy's settings sit in the same file, with the reasoning beside them. Its suppre
 
 ## Test Config
 
-- **Backend** (`pytest.ini`): `asyncio_mode = auto`, so no `@pytest.mark.asyncio` decorators. Tests run against a real database, not mocks: their own `<DB_NAME>_test`, rebuilt every session (`tests/_database.py`), or the dev DB under `PHSAR_TEST_DB=dev`. Each test rolls back after itself.
+- **Backend** (`pytest.ini`): `asyncio_mode = auto`, so no `@pytest.mark.asyncio` decorators. Tests run against a real database, not mocks: their own `<DB_NAME>_test` (`<DB_NAME>_gwN_test` per worker under `-n`), rebuilt every session (`tests/_database.py`), or the dev DB under `PHSAR_TEST_DB=dev`. Each test rolls back after itself.
 - **Frontend** (`vite.config.ts`): Vitest with jsdom and `@testing-library/svelte`; `resolve.conditions: ['browser']` for Svelte 5, applied in Vitest's `test` mode only (`vite.config.ts` says why). SvelteKit modules (`$app/navigation`, `$app/environment`, `$app/state`) are mocked in `src/tests/setup.ts`.
 
 ## License

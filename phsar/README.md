@@ -1044,6 +1044,7 @@ bun run dev -- --open
 
 ```
 pytest
+pytest -n 4
 PHSAR_TEST_DB=dev pytest
 ```
 

@@ -39,7 +39,7 @@ one expected exception; step 5 rewrites and commits it.
 ## 2. Tests
 
 ```
-(cd phsar && pytest)
+(cd phsar && pytest -n 4)
 (cd phsar/frontend && bun run test)
 ```
 

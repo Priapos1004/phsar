@@ -6,6 +6,7 @@ tests/routers/conftest.py.
 """
 
 import asyncio
+import logging
 
 import pytest
 from sqlalchemy import delete
@@ -16,11 +17,28 @@ from app.core.config import settings
 from app.core.db import DATABASE_URL, async_session_maker
 from app.core.db import engine as global_engine
 from app.models.job import Job
-from tests import ON_DEV_DB, _database
+from tests import ON_DEV_DB, WORKER
+
+# `pytest.ini`'s DEBUG live log would otherwise render numba's compiler passes during every
+# galaxy fit: hundreds of thousands of records, which cost CI tens of seconds.
+logging.getLogger("numba").setLevel(logging.WARNING)
+
+
+def pytest_configure(config):
+    # Workers would share the dev database: fixed usernames would block each other's
+    # inserts, and the backup tests' staging table and dedupe would collide.
+    if ON_DEV_DB and config.getoption("numprocesses"):
+        raise pytest.UsageError("PHSAR_TEST_DB=dev runs serially; drop -n.")
 
 
 def pytest_sessionstart(session):
-    if not ON_DEV_DB:
+    # Under pytest-xdist the controller (it has workers to start, `tx`) runs no tests; each
+    # worker builds its own database.
+    if not ON_DEV_DB and (WORKER or not session.config.getoption("tx")):
+        # Imported here: it loads the seeders and with them the embedding model, which the
+        # controller has no use for.
+        from tests import _database
+
         _database.build()
 
 
