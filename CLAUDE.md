@@ -48,7 +48,7 @@ that touches its area, before settling on an approach.
 | [browse](docs/features/browse.md) | Carousel definitions and filter sets, the resolver, page layouts |
 | [navigation](docs/features/navigation.md) | What survives leaving a page and coming back: route, origin, scroll position, filters — and when each resets |
 | [galaxy](docs/features/galaxy.md) | The fitted map of every anime: feature blocks, the fit and the warm refit, the rebuild job and its triggers, sector and region names |
-| [recommender](docs/features/recommender.md) | The per-user ranking: natural history and imports, candidates and readiness, what a pick commits to, the pooled model's features, the calibrated row |
+| [recommender](docs/features/recommender.md) | The per-user ranking: natural history and imports, candidates and readiness, what a pick commits to, the pooled model's features, the calibrated row, the harness that fits and measures it |
 
 **`compound-docs/`** — why something changed, dated and frozen; feature docs say how
 it works now. [INDEX.md](compound-docs/INDEX.md) lists them by subsystem and by date.

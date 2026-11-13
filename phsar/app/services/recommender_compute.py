@@ -82,8 +82,16 @@ NAMES: tuple[str, ...] = (
     "F10_finale_propensity",
 )
 COLUMN = {name: i for i, name in enumerate(NAMES)}
-# The two interactions are already scaled; every other feature is standardised per decision.
-SCALED = np.array([name not in ("F6_loglen_x_load", "F6_long_x_days") for name in NAMES])
+
+
+def family(name: str) -> str:
+    return "F6x" if "_x_" in name else name.split("_")[0]
+
+
+HARNESS = ("F3", "F4", "F6x")  # what `decide(harness=True)` adds: measured, never ranked
+# The intensity interactions are already scaled; which features stay raw and why:
+# docs/features/recommender.md, "The ranking".
+SCALED = np.array([family(name) not in ("F6x", "W") for name in NAMES])
 
 # What a feature says about a pick, when its group contributes the most to its score. A group
 # absent from this map never leads a reason.
@@ -98,20 +106,19 @@ for _name, _j in COLUMN.items():
     if _kind:
         _REASON_COLUMNS[_kind].append(_j)
 
-# The bake-off's reference fit (the compound doc has it): a stand-in until a fit on the shipped
-# families replaces it.
+# The reviewed output of `scripts/backtest_recommender.py --fit --dumps`: docs/features/
+# recommender.md, "The ranking"; the compound doc has its numbers.
 WEIGHTS: dict[str, float] = {
-    "F1_sim_lag1": 0.2188, "F1_sim_lag2": 0.1938, "F1_sim_lag3": -0.1099, "F1_sim_decay10": 0.2011,
-    "F2_sector_lag1": -0.2078, "F2_region_lag1": 0.0434, "F2_genreJac_lag1": 0.1221,
-    "F2_studio_lag1": 0.0987, "F2_len_lag1": 0.0562, "F2_age_lag1": 0.1568,
-    "F2_sector_lag2": -0.0866, "F2_region_lag2": 0.0285, "F2_genreJac_lag2": 0.1185,
-    "F2_studio_lag2": 0.0590, "F2_len_lag2": 0.0892, "F2_age_lag2": 0.0876,
-    "F2_sector_lag3": -0.0006, "F2_region_lag3": 0.0487, "F2_genreJac_lag3": 0.0211,
-    "F2_studio_lag3": 0.0385, "F2_len_lag3": 0.1484, "F2_age_lag3": 0.0529,
-    "F5_knn_pct": -0.1830, "F5_top20_sim": 0.6145, "F5_mal": 0.0051, "F5_mal_missing": -0.1927,
-    "F5_logvotes": 0.4892, "F6_loglen": -0.0121, "F6_long": -0.2027,
-    "F7_is_cont": 0.3392, "F7_own_pct": 0.0470, "F7_log_days_since": -0.3620,
-    "F8_age_propensity": 0.4213,
+    "F1_sim_lag1": 0.1919, "F1_sim_lag2": 0.2084, "F1_sim_lag3": -0.1023, "F1_sim_decay10": 0.1619,
+    "F2_sector_lag1": -0.1311, "F2_region_lag1": 0.0478, "F2_genreJac_lag1": 0.1454, "F2_studio_lag1": 0.1041,
+    "F2_len_lag1": -0.0005, "F2_age_lag1": 0.0756, "F2_sector_lag2": -0.006, "F2_region_lag2": 0.0372,
+    "F2_genreJac_lag2": 0.0863, "F2_studio_lag2": 0.0749, "F2_len_lag2": 0.0476, "F2_age_lag2": 0.0205,
+    "F2_sector_lag3": 0.069, "F2_region_lag3": 0.0625, "F2_genreJac_lag3": -0.0233, "F2_studio_lag3": 0.0506,
+    "F2_len_lag3": 0.1217, "F2_age_lag3": -0.0374, "F5_knn_pct": -0.2144, "F5_top20_sim": 0.5822,
+    "F5_mal": -0.0911, "F5_mal_missing": -0.1531, "F5_logvotes": 0.4522, "F6_loglen": -0.0912,
+    "F6_long": -0.2511, "F7_is_cont": 0.2462, "F7_own_pct": 0.0381, "F7_log_days_since": -0.229,
+    "F8_age_propensity": 0.2226, "F9_len_propensity": 0.1541, "W_p1": 0.5761, "W_p2": 0.1125, "W_p3": -0.3258,
+    "W_log_age": 0.0729, "W_backlog": 0.7544, "F10_finale_propensity": 0.4593,
 }
 
 VERSION = 1
@@ -170,11 +177,12 @@ class RatingRow(NamedTuple):
 class ListingRow(NamedTuple):
     """One stretch of a watchlist entry at one priority. A live entry runs from its last
     change to now (`until` None); history rebuilt from the dumps splits an entry at each
-    priority change and ends it where it left the list."""
+    change and ends it where it left the list."""
     media_id: int
     priority: int
     since: float  # listed, or last changed
     until: float | None
+    tag: str | None = None  # the list's name
 
 
 class Pick(NamedTuple):
@@ -354,8 +362,9 @@ class Ledger(NamedTuple):
     pick_age: np.ndarray  # time, and whether it continued a started anime
     pick_finale: np.ndarray
     pick_cont: np.ndarray
-    listed: list[tuple[int, int, float, float]]  # (position, priority, since, until)
-    picks_listed: tuple[int, int]  # natural picks whose listing at the time is known, and listed
+    listed: list[tuple[int, int, float, float, str | None]]  # (position, priority, since, until, tag)
+    pick_listed: np.ndarray  # whether each natural pick was listed at the time, NaN when unknown
+    listed_from: float  # when `listed` starts to hold the whole history, inf when it never does
     franchise: dict[int, tuple[bool, int | None]]  # per star: `franchise_signals`
 
 
@@ -395,11 +404,12 @@ def natural_days(days: dict[int, tuple[float, int]], override: int | None) -> tu
 
 def ledger(
     cat: Catalogue, ratings: list[RatingRow], listings: list[ListingRow],
-    override: date | None = None, picks_listed: tuple[int, int] = (0, 0),
-    franchise: dict[int, tuple[bool, int | None]] | None = None,
+    override: date | None = None, franchise: dict[int, tuple[bool, int | None]] | None = None,
+    listed_from: float = math.inf,
 ) -> Ledger:
     """`franchise` maps anime ids to `franchise_signals`; the backtest replays them as they
-    stand today."""
+    stand today. `listed_from` is when `listings` start to hold the whole watchlist history:
+    a pick before it, or with no such history, has an unknown listing."""
     rated = [r for r in ratings if r.media_id in cat.position_of]
     position = np.array([cat.position_of[r.media_id] for r in rated], dtype=np.int64)
     t = np.array([event_time(r) for r in rated], dtype=float)
@@ -441,16 +451,42 @@ def ledger(
         finales.append(int(finale_bucket(np.array([span[2]]), e.t)[0]))
         conts.append(bool(s.continuation[e.row]))
     listed = [
-        (cat.position_of[x.media_id], x.priority, x.since, math.inf if x.until is None else x.until)
+        (cat.position_of[x.media_id], x.priority, x.since, math.inf if x.until is None else x.until, x.tag)
         for x in listings if x.media_id in cat.position_of
     ]
+    pick_listed = np.array([
+        float(any(cat.media_row[p] == e.row for p, *_ in _active(listed, listed_from, e.t))) if e.t >= listed_from
+        else math.nan
+        for e in events
+    ])
     return Ledger(
         position=position, t=t, rating=ratings_, status=status, natural=events, start=start,
         pick_length=np.array(lengths, dtype=np.int64), pick_age=np.array(ages, dtype=np.int64),
         pick_finale=np.array(finales, dtype=np.int64),
-        pick_cont=np.array(conts, dtype=bool), listed=listed, picks_listed=picks_listed,
+        pick_cont=np.array(conts, dtype=bool), listed=listed, pick_listed=pick_listed, listed_from=listed_from,
         franchise={cat.row_of[a]: v for a, v in (franchise or {}).items() if a in cat.row_of},
     )
+
+
+def _active(listed: list, listed_from: float, t: float) -> list[tuple[int, int, float, str | None]]:
+    """The stretches on the list at `t`: none before `listed_from`, docs/features/recommender.md,
+    "The ranking"."""
+    if t < listed_from:
+        return []
+    return [(p, prio, since, tag) for p, prio, since, until, tag in listed if since <= t < until]
+
+
+def listing(cat: Catalogue, led: Ledger, t: float) -> tuple[list[tuple[int, int, float, str | None]], np.ndarray, np.ndarray]:
+    """The watchlist at `t`: its stretches then active (position, priority, since, tag), and
+    per star the best priority (0 when unlisted) and when it was last listed or changed."""
+    active = _active(led.listed, led.listed_from, t)
+    priority = np.zeros(len(cat.anime_id), dtype=np.int64)
+    touched = np.full(len(cat.anime_id), -math.inf)
+    for p, prio, since, _ in active:
+        r = cat.media_row[p]
+        priority[r] = prio if priority[r] == 0 else min(priority[r], prio)
+        touched[r] = max(touched[r], since)
+    return active, priority, touched
 
 
 # --- Can it be started tonight? ----------------------------------------------------------------
@@ -500,7 +536,9 @@ def readiness(items: list[ReadyItem], franchise_airing: bool, franchise_upcoming
     return "standalone" if standalone else "ready"
 
 
-def _verdicts(cat: Catalogue, C: np.ndarray, led: Ledger, listed: np.ndarray, status_of: dict[int, str], t: float) -> np.ndarray:
+def _verdicts(
+    cat: Catalogue, C: np.ndarray, led: Ledger, listed: np.ndarray, planned: np.ndarray, status_of: dict[int, str], t: float,
+) -> np.ndarray:
     """Each candidate's verdict, over the selection docs/features/recommender.md,
     "Candidates", gives."""
     selection: dict[int, list[int]] = defaultdict(list)
@@ -509,7 +547,7 @@ def _verdicts(cat: Catalogue, C: np.ndarray, led: Ledger, listed: np.ndarray, st
     next_key = next_season_key(t)
     out = []
     for r in C.tolist():
-        items = [cat.ready[p]._replace(watch_status=status_of.get(p)) for p in selection.get(r) or cat.main_of[r]]
+        items = [cat.ready[p]._replace(watch_status=status_of.get(p)) for p in (selection[r] if planned[r] else cat.main_of[r])]
         out.append(readiness(items, *led.franchise.get(r, (False, None)), next_key))
     return np.array(out, dtype="U10")
 
@@ -519,6 +557,7 @@ def _verdicts(cat: Catalogue, C: np.ndarray, led: Ledger, listed: np.ndarray, st
 class State(NamedTuple):
     candidate: np.ndarray  # per star
     continuation: np.ndarray
+    planned: np.ndarray  # some listed media has aired: the list, not the main story, is the commitment
     hours: np.ndarray  # what picking it commits to
     start: np.ndarray  # the day that commitment's earliest season starts, NaN when unknown
     finale: np.ndarray  # the day its last season ends
@@ -549,12 +588,13 @@ def state(
     continuation = touched & ~dropped_main & (per_star(unwatched) > 0)
     candidate = (has_main & ~touched) | continuation
     commit = unwatched
+    planned = np.zeros(n, dtype=bool)
     if listed is not None:
         on_list = flag(listed) & aired
         planned = per_star(on_list) > 0
         candidate = candidate | (planned & has_main)
         commit = np.where(planned[cat.media_row], on_list, unwatched)
-    return State(candidate, continuation, *_commitment(cat, commit, n))
+    return State(candidate, continuation, planned, *_commitment(cat, commit, n))
 
 
 def _commitment(cat: Catalogue, mask: np.ndarray, n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -655,11 +695,11 @@ def decide(cat: Catalogue, led: Ledger, t: float, *, hot: bool = True, harness: 
     before = led.t < t
     rated, status = led.position[before], led.status[before]
     dropped = status == "dropped"
-    listed_now = [(p, prio, since) for p, prio, since, until in led.listed if since <= t < until]
-    listed_positions = np.array([p for p, _, _ in listed_now], dtype=np.int64)
+    listed_now, priority, touched = listing(cat, led, t)
+    listed_positions = np.array([p for p, *_ in listed_now], dtype=np.int64)
     s = state(cat, t, rated, status, listed_positions)
     C = np.flatnonzero(s.candidate)
-    verdicts = _verdicts(cat, C, led, listed_positions, dict(zip(rated.tolist(), status.tolist(), strict=True)), t)
+    verdicts = _verdicts(cat, C, led, listed_positions, s.planned, dict(zip(rated.tolist(), status.tolist(), strict=True)), t)
     C = C[(verdicts != "waiting") & (hot | (verdicts != "hot"))]
     n = len(C)
     X = np.zeros((n, len(NAMES)))
@@ -782,12 +822,6 @@ def decide(cat: Catalogue, led: Ledger, t: float, *, hot: bool = True, harness: 
     X[:, COLUMN["F9_len_propensity"]] = _propensity(lengths, len_c, len(LENGTH_EDGES) + 1)
     X[:, COLUMN["F10_finale_propensity"]] = _propensity(led.pick_finale[:nh], finale_c, len(FINALE_EDGES) + 2)
 
-    priority = np.zeros(len(cat.anime_id), dtype=np.int64)
-    touched = np.full(len(cat.anime_id), -math.inf)
-    for p, prio, since_t in listed_now:
-        r = cat.media_row[p]
-        priority[r] = prio if priority[r] == 0 else min(priority[r], prio)
-        touched[r] = max(touched[r], since_t)
     pr = priority[C]
     on_list = pr > 0
     for level in (1, 2, 3):
@@ -822,8 +856,8 @@ def weight_vector(weights: dict[str, float]) -> np.ndarray:
 def caps(led: Ledger) -> tuple[int, int]:
     """How many listed anime and continuations each window of the row holds at most:
     docs/features/recommender.md, "The row"."""
-    known, listed = led.picks_listed
-    p_listed = (listed + CAP_PRIOR * POOLED_LISTED) / (known + CAP_PRIOR)
+    known = ~np.isnan(led.pick_listed)
+    p_listed = (led.pick_listed[known].sum() + CAP_PRIOR * POOLED_LISTED) / (known.sum() + CAP_PRIOR)
     n = len(led.pick_cont)
     p_cont = (led.pick_cont.sum() + CAP_PRIOR * POOLED_CONTINUATION) / (n + CAP_PRIOR)
     return round(ROW * p_listed), round(ROW * p_cont)
@@ -893,6 +927,11 @@ def slate(score: np.ndarray, dec: Decision, cat: Catalogue, listed_cap: int, con
     return ranked, explored[ranked]
 
 
+def ranking_score(dec: Decision, w: np.ndarray) -> np.ndarray:
+    """The logit plus the enjoyment tilt."""
+    return dec.X @ w + ALPHA * dec.X[:, COLUMN["F5_knn_pct"]]
+
+
 def recommend(
     cat: Catalogue, led: Ledger, now: float, weights: dict[str, float] | None = None, *, hot: bool = True,
 ) -> list[Pick]:
@@ -902,7 +941,7 @@ def recommend(
     if not len(dec.rows):
         return []
     w = weight_vector(WEIGHTS if weights is None else weights)
-    score = dec.X @ w + ALPHA * dec.X[:, COLUMN["F5_knn_pct"]]
+    score = ranking_score(dec, w)
     reasons = _reasons(dec, w)
     order, explored = slate(score, dec, cat, *caps(led))
     picks = []

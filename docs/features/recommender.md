@@ -7,7 +7,8 @@ and compares anime on the [galaxy map](galaxy.md)'s distance.
 **Code**: `services/recommender_compute.py` (the numerics, app-free) ←
 `services/recommender_service.py` (`load_inputs`) ← `daos/recommendation_dao.py` (the
 catalogue as the map sees it, and the franchise signals readiness reads),
-`RatingDAO.history`, `WatchlistDAO.priorities`. Nothing serves the ranking yet.
+`RatingDAO.history`, `WatchlistDAO.priorities`. `services/recommender_eval.py` fits and
+measures it. Nothing serves the ranking yet.
 
 ## The natural history
 
@@ -46,8 +47,10 @@ An anime is a candidate when it has an aired main-story media and is one of:
 Finished, unlisted anime are not ranked: complete rewatches are too hard to predict yet.
 
 **Readiness gates them.** A candidate takes the [readiness](readiness.md) verdict: over what
-the user listed of it, on every list, or, unlisted, over its whole main story as though it were
-listed — so an airing season or one due next season makes it hot. A `waiting` anime — nothing
+the user listed of it, on every list, once some of that has aired; otherwise over its whole
+main story as though it were listed — so an airing season or one due next season makes it hot.
+A list holding only an unannounced sequel commits to nothing yet, so the season the user has
+left can read ready here where the watchlist reads Waiting. A `waiting` anime — nothing
 to watch until a sequel lands — is never a candidate. A `hot` one is left out when the ranking
 is asked to (`hot=False`): ratings land at the finale, so a weekly watcher and a finale-week
 binge look the same in the data, and only the user can say which they are.
@@ -68,8 +71,9 @@ first it stands alone, and later it ends the sum.
 
 A **pooled conditional logit**: each candidate's score is one weight vector times its
 features, standardised within the moment's candidates, and the weights are shared by every
-user. Per-user behaviour enters through the user's own history and propensities, not through
-per-user weights.
+user. The watchlist's features stay raw: a list holds a handful of the candidates, and a
+column that sparse standardises to values that swamp every other feature. Per-user behaviour
+enters through the user's own history and propensities, not through per-user weights.
 
 The families (`NAMES`), each read from the history before the moment ranked:
 
@@ -87,13 +91,18 @@ The families (`NAMES`), each read from the history before the moment ranked:
 - **the watchlist**: priority, how long ago the entry was listed or last changed, and how
   much watching the list holds.
 
+**The list is known from the ledger's `listed_from` on**, and reads as empty before it. Today's
+list replayed at a past moment holds only what was not picked since, so it would teach the
+model that listed means not picked. The live ranking reads today's list, so its history
+starts now.
+
 Due-ness, trends and watch intensity are computed only on request (`harness`), for measuring
 rather than ranking.
 
 **The final score adds an enjoyment tilt**, `ALPHA` times the kNN estimate.
 
-**`WEIGHTS` are a stand-in**: the bake-off's reference fit. A family absent from it scores
-zero until a fit on the shipped families replaces it.
+**`WEIGHTS` are a reviewed fit**: the harness's pooled fit over every user's natural picks
+(below), committed as constants and refit as the data grows.
 
 ## The row
 
@@ -101,9 +110,9 @@ The order walks the scores in windows of `ROW`:
 
 - **Caps** hold each window to the user's own share of listed anime and of continuations
   among their natural picks, pulled toward the pooled shares by `CAP_PRIOR` pseudo-picks while
-  their history is short (`caps`). Which picks were listed is unknown until the watchlist's
-  history records it, so the listed share is the pooled one until then. A list is the strongest single signal, so uncapped it
-  would fill the row with the anime the user is likeliest to start anyway.
+  their history is short (`caps`). A pick was listed when its anime was on the list at that
+  moment, which is known only from `listed_from` on. A list is the strongest single signal,
+  so uncapped it would fill the row with the anime the user is likeliest to start anyway.
 - **`EXPLORE_SLOTS`** go to new territory: the best-rated candidates from the regions the user
   has covered least. Exploration predicts nothing, so it takes slots rather than competing
   in the score.
@@ -115,9 +124,36 @@ A user with no ratings gets the catalogue's popular picks around the explore slo
 watchlist, fresh, recent, favourite or popular — or `explore` for a slot. A recent or
 favourite reason also names the anime it is nearest.
 
+## Measuring it
+
+`recommender_eval` replays every user's natural history: each pick after the first `LAGS` is a
+decision among the candidates of its moment, with the features `decide` gives them then. A
+pick that was no candidate then — a side story alone — has nothing to rank.
+
+- **The fit** is the conditional logit over each decision's full candidate set, L2 `LAMBDA`,
+  on the shipped families.
+- **The splits**: the time split tests each user's latest decisions on a fit to their earlier
+  ones and everyone else's; leave-one-user-out tests each user on a fit to the others. Each
+  reports the pick's rank under the logit alone, under the ranking's score and in the row —
+  median and hit@`ROW`, also over the picks the user rated at or above their median — and the
+  held-out NLL, for given weights and a fresh fit — and on the logit alone for the similarity
+  baseline.
+- **Ablations**: what each family adds, the shipped set fitted with and without it, with a
+  paired sign-flip p on the NLL. The harness-only families are measured as additions, and
+  `W_backlog` alone as well: it ships only while removing it raises the held-out NLL in every
+  split.
+- **Per-user weights**, pulled toward the pooled ones, on the time split.
+- **The watchlist**: from `listed_from` on, the share of picks listed at the time, their lift
+  by priority, entry age and list over what choosing at random among the candidates gives,
+  and the conversion hazard per listed-anime-day. Each figure carries its n: they arrive thin
+  and firm up as the history grows.
+
+`scripts/backtest_recommender.py` prints the report, and can rebuild the watchlist's past from
+the backups.
+
 ---
 
 **Why it is this way**
 - [Recommender](../../compound-docs/2026-11-12-v0.16.6-recommender.md): the measurements
-  behind every family, the bake-off, the watchlist rebuilt from the backups, and the
-  approaches that lost
+  behind every family, the bake-off, the watchlist rebuilt from the backups, the first fit,
+  and the approaches that lost

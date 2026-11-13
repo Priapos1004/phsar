@@ -161,6 +161,7 @@ phsar/
 │       ├── progress_reporter.py
 │       ├── rating_service.py
 │       ├── recommender_compute.py
+│       ├── recommender_eval.py
 │       ├── recommender_service.py
 │       ├── relation_classifier.py
 │       ├── save_service.py
@@ -532,6 +533,7 @@ phsar/
 │   ├── audit_cross_franchise.py
 │   ├── audit_relation_backfill.py
 │   ├── backfill_seasonal_sweep_parents.py
+│   ├── backtest_recommender.py
 │   ├── delete_anime_by_title.py
 │   ├── find_anime.py
 │   ├── inspect_anime_relations.py
@@ -607,6 +609,7 @@ phsar/
         ├── test_progress_reporter.py
         ├── test_rating_coverage.py
         ├── test_recommender_compute.py
+        ├── test_recommender_eval.py
         ├── test_relation_classifier.py
         ├── test_save_service.py
         ├── test_score_percentile.py

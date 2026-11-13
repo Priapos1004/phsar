@@ -58,7 +58,8 @@ def _rating(media_id, at, status="completed", rating=7.0):
 
 
 def _ledger(cat, ratings, listings=(), franchise=None):
-    return rc.ledger(cat, list(ratings), list(listings), franchise=franchise)
+    """The whole watchlist history known."""
+    return rc.ledger(cat, list(ratings), list(listings), franchise=franchise, listed_from=0.0)
 
 
 # --- The natural history -------------------------------------------------------------------------
@@ -96,6 +97,17 @@ def test_the_override_date_feeds_the_ledger():
     cat = _franchise_catalogue()
     led = rc.ledger(cat, [_rating(10, T0), _rating(20, T0 + 60)], [], override=date(2026, 9, 1))
     assert led.start == (date(2026, 9, 1) - rc.EPOCH).days
+
+
+def test_a_pick_is_listed_when_its_anime_was_on_the_list_at_the_time():
+    """By anime, not media: a pick of season one counts as listed when only season two was.
+    Before `listed_from` nothing is known."""
+    cat = _franchise_catalogue()
+    listings = [rc.ListingRow(10, 1, T0 - DAY, None), rc.ListingRow(21, 2, T0 - DAY, None)]
+    ratings = [_rating(10, T0), _rating(20, T0 + 2 * DAY), _rating(40, T0 + 4 * DAY)]
+    led = rc.ledger(cat, ratings, listings, listed_from=T0 + DAY)
+    assert np.isnan(led.pick_listed[0])
+    assert led.pick_listed[1:].tolist() == [1.0, 0.0]
 
 
 def test_a_completed_media_counts_when_it_was_finished():
@@ -203,6 +215,16 @@ def test_the_hot_setting_leaves_out_hot_anime_and_waiting_ones_never_show():
     assert {p.anime_id for p in rc.recommend(cat, led, T0)} == {1, 2, 3}
 
 
+def test_a_listed_unaired_sequel_leaves_the_aired_season_a_candidate():
+    """With only an unannounced sequel listed, the list commits to nothing yet, so the verdict
+    reads the main story like an unlisted anime's: the aired season left is ready, not
+    Waiting on the sequel."""
+    media = [_media(10, 1, year=2020), _media(11, 1, year=2021), _media(12, 1, unaired=True, year=None, season=None)]
+    cat = _catalogue([_star(1, [0.0])], media)
+    led = _ledger(cat, [_rating(10, T0 - 30 * DAY)], [rc.ListingRow(12, 1, T0 - DAY, None)])
+    assert [p.anime_id for p in rc.recommend(cat, led, T0)] == [1]
+
+
 def test_the_franchise_signals_reach_the_verdict():
     """A listed season is Hot when the franchise has an unlisted season airing — the signal
     the watchlist's own query computes, dropped seasons already excused."""
@@ -284,12 +306,30 @@ def test_similarity_carries_each_stars_uncertainty():
     assert sim[2] > sim[3]
 
 
+def test_the_watchlist_features_stay_unstandardised():
+    """A listed anime's priority reads 1, not the z of a handful among thousands."""
+    cat = _wide_catalogue()
+    led = _ledger(cat, [], [rc.ListingRow(1, 1, T0 - DAY, None)])
+    dec = rc.decide(cat, led, T0)
+    assert sorted(set(dec.X[:, rc.COLUMN["W_p1"]].tolist())) == [0.0, 1.0]
+
+
+def test_the_list_is_unknown_before_listed_from():
+    """Replayed before the watchlist's history starts, today's list reads as empty: no listed
+    anime, no watchlist feature."""
+    cat = _wide_catalogue()
+    listing = [rc.ListingRow(1, 1, T0 - 10 * DAY, None)]
+    led = rc.ledger(cat, [], listing, listed_from=T0)
+    assert not rc.decide(cat, led, T0 - DAY).listed.any()
+    assert rc.decide(cat, led, T0).listed.any()
+
+
 # --- The row ---------------------------------------------------------------------------------------------
 
 def test_caps_follow_the_users_own_mix_pulled_toward_the_pool():
     led = _ledger(_franchise_catalogue(), [])
     assert rc.caps(led) == (round(rc.ROW * rc.POOLED_LISTED), round(rc.ROW * rc.POOLED_CONTINUATION))
-    listed_cap, cont_cap = rc.caps(led._replace(picks_listed=(80, 0), pick_cont=np.ones(80, dtype=bool)))
+    listed_cap, cont_cap = rc.caps(led._replace(pick_listed=np.zeros(80), pick_cont=np.ones(80, dtype=bool)))
     assert listed_cap < round(rc.ROW * rc.POOLED_LISTED) and cont_cap > round(rc.ROW * rc.POOLED_CONTINUATION)
 
 
