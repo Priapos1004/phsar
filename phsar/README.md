@@ -40,6 +40,7 @@ phsar/
 │   │   ├── media_unwanted_dao.py
 │   │   ├── merge_candidate_dao.py
 │   │   ├── rating_dao.py
+│   │   ├── recommendation_dao.py
 │   │   ├── registration_token_dao.py
 │   │   ├── search_filters.py
 │   │   ├── split_candidate_dao.py
@@ -159,6 +160,8 @@ phsar/
 │       ├── merge_detection_service.py
 │       ├── progress_reporter.py
 │       ├── rating_service.py
+│       ├── recommender_compute.py
+│       ├── recommender_service.py
 │       ├── relation_classifier.py
 │       ├── save_service.py
 │       ├── scrape_dispatcher.py
@@ -430,6 +433,7 @@ phsar/
 │   │       ├── SpoilerGuardTest.svelte
 │   │       ├── fixtures/
 │   │       │   ├── jwt.ts
+│   │       │   ├── readiness-cases.json
 │   │       │   ├── response.ts
 │   │       │   └── watchlistItem.ts
 │   │       ├── admin-jobs-filter.test.ts
@@ -602,6 +606,7 @@ phsar/
         ├── test_merge_preservation.py
         ├── test_progress_reporter.py
         ├── test_rating_coverage.py
+        ├── test_recommender_compute.py
         ├── test_relation_classifier.py
         ├── test_save_service.py
         ├── test_score_percentile.py

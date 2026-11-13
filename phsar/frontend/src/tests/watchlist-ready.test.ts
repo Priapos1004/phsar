@@ -12,6 +12,8 @@ import {
 } from '$lib/utils/watchlistReady';
 import { filterByReadiness, filterByTags } from '$lib/utils/watchlistStats';
 import { nextSeasonKey, seasonKey } from '$lib/utils/getSeason';
+import type { WatchlistItem } from '$lib/types/api';
+import readinessCases from './fixtures/readiness-cases.json';
 
 const aired = (o = {}) => item({ airing_status: 'Finished Airing', ...o });
 const airing = (o = {}) => item({ airing_status: 'Currently Airing', ...o });
@@ -59,110 +61,35 @@ describe('mediaClass', () => {
 });
 
 describe('animeStatus — the case table', () => {
-	const cases: [string, ReturnType<typeof item>[], string][] = [
-		// A — is there something to watch?
-		['a lone unwatched finished season', [aired()], 'ready'],
-		['a finished season already rated, i.e. a rewatch', [aired({ watch_status: 'completed' })], 'ready'],
-		[
-			'everything watched, with a far-off sequel listed — nothing new to watch',
-			[aired({ watch_status: 'completed' }), unaired('Winter', 2028, {})],
-			'waiting',
-		],
-		[
-			'everything watched but one finished part still unwatched, sequel far off',
-			[
-				aired({ watch_status: 'completed' }),
-				aired({ watch_status: null }),
-				unaired('Winter', 2028, {}),
-			],
-			'ready',
-		],
-		['nothing but future bookmarks', [unaired('Winter', 2028, {})], 'waiting'],
-
-		// B1 — nothing YOU listed is airing or imminent.
-		['a listed season airing right now', [aired(), airing()], 'hot'],
-		['a listed season due next season', [aired(), unaired('Fall', 2026)], 'hot'],
-		['a listed season two seasons out does not block', [aired(), unaired('Winter', 2027)], 'ready'],
-		[
-			'dropping a season you listed does NOT unblock it',
-			[aired(), airing({ watch_status: 'dropped' })],
-			'hot',
-		],
-		[
-			'a listed upcoming OVA is not a season you wait for',
-			[aired(), unaired('Fall', 2026, { relation_type: 'side_story' })],
-			'ready',
-		],
-		// ...but only because a main-story entry is listed alongside it to govern.
-		// The three below are the no-main-story fallback; `readiness.md` owns why.
-		[
-			'an airing side story blocks when it is the only thing listed',
-			[airing({ relation_type: 'side_story' })],
-			'hot',
-		],
-		[
-			'an upcoming side story blocks when it is the only thing listed',
-			[unaired('Fall', 2026, { relation_type: 'side_story' })],
-			'hot',
-		],
-		[
-			'a finished side story alone is still ready',
-			[aired({ relation_type: 'side_story' })],
-			'ready',
-		],
-
-		// B2 — the franchise, including media never listed.
-		['an unlisted sequel airing now blocks', [aired({ franchise_airing: true })], 'hot'],
-		[
-			'an unlisted sequel due next season blocks',
-			[aired({ franchise_upcoming_key: seasonKey('Fall', 2026) })],
-			'hot',
-		],
-		[
-			'an unlisted sequel two seasons out does not',
-			[aired({ franchise_upcoming_key: seasonKey('Winter', 2027) })],
-			'ready',
-		],
-	];
+	// The table is shared with the backend: docs/features/readiness.md, "Where it is computed".
+	const now = new Date(readinessCases.now);
+	const cases = readinessCases.cases.map((c) => {
+		const signals = {
+			franchise_airing: c.franchise_airing ?? false,
+			franchise_upcoming_key: c.franchise_upcoming ? seasonKey(c.franchise_upcoming[0] as string, c.franchise_upcoming[1] as number) : null,
+		};
+		const items = c.items.map((raw) => {
+			const o = { ...readinessCases.defaults, ...raw };
+			return item({
+				airing_status: o.airing_status,
+				watch_status: o.watch_status as WatchlistItem['watch_status'],
+				relation_type: o.relation_type as WatchlistItem['relation_type'],
+				anime_season_name: (o.season?.[0] ?? null) as WatchlistItem['anime_season_name'],
+				anime_season_year: (o.season?.[1] ?? null) as number | null,
+				total_watch_time: o.total_watch_time,
+				...signals,
+			});
+		});
+		return [c.label, items, c.expected] as const;
+	});
 
 	it.each(cases)('%s → %s', (_label, items, expected) => {
-		expect(animeStatus(items, NOW)).toBe(expected);
-	});
-});
-
-describe('the standalone rule', () => {
-	const HOURS = 3600;
-
-	it('lets one long entry stand alone against an airing franchise', () => {
-		// Dragon Ball's classic run is 61h in a single media.
-		const items = [aired({ franchise_airing: true, total_watch_time: 61 * HOURS })];
-		expect(animeStatus(items, NOW)).toBe('standalone');
-		expect(isReady(animeStatus(items, NOW))).toBe(true);
+		expect(animeStatus([...items], now)).toBe(expected);
 	});
 
-	it('is per media, not summed — a long story split into short seasons does not qualify', () => {
-		// Boku no Hero shaped: 7 seasons of 10h each. 70h in total, but you would still
-		// want the new season, so summing here would give the wrong answer.
-		const items = Array.from({ length: 7 }, () =>
-			aired({ franchise_airing: true, total_watch_time: 10 * HOURS }),
-		);
-		expect(animeStatus(items, NOW)).toBe('hot');
-	});
-
-	it('holds at the boundary', () => {
-		const at = (seconds: number) => animeStatus([aired({ franchise_airing: true, total_watch_time: seconds })], NOW);
-		expect(at(STANDALONE_SECONDS - 1)).toBe('hot');
-		expect(at(STANDALONE_SECONDS)).toBe('standalone');
-	});
-
-	it('never fires on an open-ended show, whose runtime is unknown', () => {
-		expect(animeStatus([aired({ franchise_airing: true, total_watch_time: null })], NOW)).toBe('hot');
-	});
-
-	it('does not rescue a season you listed yourself', () => {
-		// B1 has no standalone exemption: listing the airing season means you want it.
-		const items = [aired({ total_watch_time: 61 * HOURS }), airing()];
-		expect(animeStatus(items, NOW)).toBe('hot');
+	it('counts a standalone anime as ready', () => {
+		const long = [aired({ franchise_airing: true, total_watch_time: STANDALONE_SECONDS })];
+		expect(isReady(animeStatus(long, NOW))).toBe(true);
 	});
 });
 

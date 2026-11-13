@@ -112,6 +112,16 @@ def weighted_mean_votes_expr():
     return _relation_weighted_mean(Media.scored_by)
 
 
+def anime_mal_figures(anime_id_scope):
+    """Per anime in `anime_id_scope`, `(anime_id, score, votes)`: the MAL score and vote count
+    its card shows."""
+    return (
+        select(Media.anime_id, weighted_mean_score_expr().label("score"), weighted_mean_votes_expr().label("votes"))
+        .where(Media.anime_id.in_(anime_id_scope))
+        .group_by(Media.anime_id)
+    )
+
+
 def top_percent_of(metric):
     """`metric`'s "Top N%" over the rows its query yields, best first: the rank as a
     percentage of the rows, rounded up — ties share their best rank, and the worst row reads
@@ -333,6 +343,19 @@ def anime_genre_majority_relation(genre_names: set[str] | None = None):
         .join(media_totals, media_totals.c.anime_id == genre_counts_sq.c.anime_id)
         .where(genre_counts_sq.c.genre_count * 2 > media_totals.c.total)
     ).subquery()
+
+
+def anime_main_studios(anime_id_scope):
+    """Per anime in `anime_id_scope`, the studios behind its main story — a subquery of
+    `(anime_id, studios)`."""
+    return (
+        select(Media.anime_id.label("anime_id"), func.array_agg(distinct(Studio.name)).label("studios"))
+        .join(MediaStudio, MediaStudio.media_id == Media.id)
+        .join(Studio, Studio.id == MediaStudio.studio_id)
+        .where(Media.anime_id.in_(anime_id_scope), MAIN_STORY)
+        .group_by(Media.anime_id)
+        .subquery()
+    )
 
 
 _GENRE_NAMES = ARRAY(Text)

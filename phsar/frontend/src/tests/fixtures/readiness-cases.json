@@ -1,0 +1,84 @@
+{
+	"about": "The readiness verdict, case by case (docs/features/readiness.md). Walked by both implementations: watchlist-ready.test.ts (utils/watchlistReady) and tests/services/test_recommender_compute.py (recommender_compute.readiness). An item states only what differs from `defaults`; a case's franchise signals apply to every item, as the API sends them per entry.",
+	"now": "2026-08-15T00:00:00Z",
+	"defaults": {
+		"airing_status": "Finished Airing",
+		"watch_status": null,
+		"relation_type": "main",
+		"season": null,
+		"total_watch_time": null
+	},
+	"cases": [
+		{ "label": "a lone unwatched finished season", "items": [{}], "expected": "ready" },
+		{ "label": "a finished season already rated, i.e. a rewatch", "items": [{ "watch_status": "completed" }], "expected": "ready" },
+		{
+			"label": "everything watched, with a far-off sequel listed — nothing new to watch",
+			"items": [{ "watch_status": "completed" }, { "airing_status": "Not yet aired", "season": ["Winter", 2028] }],
+			"expected": "waiting"
+		},
+		{
+			"label": "everything watched but one finished part still unwatched, sequel far off",
+			"items": [{ "watch_status": "completed" }, {}, { "airing_status": "Not yet aired", "season": ["Winter", 2028] }],
+			"expected": "ready"
+		},
+		{ "label": "nothing but future bookmarks", "items": [{ "airing_status": "Not yet aired", "season": ["Winter", 2028] }], "expected": "waiting" },
+
+		{ "label": "a listed season airing right now", "items": [{}, { "airing_status": "Currently Airing" }], "expected": "hot" },
+		{ "label": "a listed season due next season", "items": [{}, { "airing_status": "Not yet aired", "season": ["Fall", 2026] }], "expected": "hot" },
+		{
+			"label": "a listed season two seasons out does not block",
+			"items": [{}, { "airing_status": "Not yet aired", "season": ["Winter", 2027] }],
+			"expected": "ready"
+		},
+		{
+			"label": "dropping a season you listed does NOT unblock it",
+			"items": [{}, { "airing_status": "Currently Airing", "watch_status": "dropped" }],
+			"expected": "hot"
+		},
+		{
+			"label": "a listed upcoming OVA is not a season you wait for",
+			"items": [{}, { "airing_status": "Not yet aired", "season": ["Fall", 2026], "relation_type": "side_story" }],
+			"expected": "ready"
+		},
+		{
+			"label": "an airing side story blocks when it is the only thing listed",
+			"items": [{ "airing_status": "Currently Airing", "relation_type": "side_story" }],
+			"expected": "hot"
+		},
+		{
+			"label": "an upcoming side story blocks when it is the only thing listed",
+			"items": [{ "airing_status": "Not yet aired", "season": ["Fall", 2026], "relation_type": "side_story" }],
+			"expected": "hot"
+		},
+		{ "label": "a finished side story alone is still ready", "items": [{ "relation_type": "side_story" }], "expected": "ready" },
+
+		{ "label": "an unlisted sequel airing now blocks", "items": [{}], "franchise_airing": true, "expected": "hot" },
+		{ "label": "an unlisted sequel due next season blocks", "items": [{}], "franchise_upcoming": ["Fall", 2026], "expected": "hot" },
+		{ "label": "an unlisted sequel two seasons out does not", "items": [{}], "franchise_upcoming": ["Winter", 2027], "expected": "ready" },
+
+		{
+			"label": "one long entry stands alone against an airing franchise",
+			"items": [{ "total_watch_time": 219600 }],
+			"franchise_airing": true,
+			"expected": "standalone"
+		},
+		{
+			"label": "per media, never summed: seven 10 h seasons stay blocked",
+			"items": [
+				{ "total_watch_time": 36000 }, { "total_watch_time": 36000 }, { "total_watch_time": 36000 },
+				{ "total_watch_time": 36000 }, { "total_watch_time": 36000 }, { "total_watch_time": 36000 },
+				{ "total_watch_time": 36000 }
+			],
+			"franchise_airing": true,
+			"expected": "hot"
+		},
+		{ "label": "a second short of the standalone line", "items": [{ "total_watch_time": 71999 }], "franchise_airing": true, "expected": "hot" },
+		{ "label": "exactly on the standalone line", "items": [{ "total_watch_time": 72000 }], "franchise_airing": true, "expected": "standalone" },
+		{ "label": "an open-ended show, whose runtime is unknown", "items": [{}], "franchise_airing": true, "expected": "hot" },
+		{
+			"label": "a season you listed yourself is not rescued by a long entry",
+			"items": [{ "total_watch_time": 219600 }, { "airing_status": "Currently Airing" }],
+			"expected": "hot"
+		}
+	]
+}

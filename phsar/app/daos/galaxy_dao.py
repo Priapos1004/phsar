@@ -2,7 +2,7 @@ from collections import defaultdict
 from itertools import batched
 from typing import Any
 
-from sqlalchemy import Float, Numeric, Row, cast, delete, distinct, func, insert, select
+from sqlalchemy import Float, Numeric, Row, cast, delete, func, insert, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased, defer
@@ -11,9 +11,10 @@ from app.daos.base_dao import BaseDAO
 from app.daos.search_filters import (
     MAIN_STORY,
     anime_genre_majority_relation,
+    anime_main_studios,
+    anime_mal_figures,
     top_percent_ranking,
     weighted_mean_score_expr,
-    weighted_mean_votes_expr,
 )
 from app.models.anime import Anime
 from app.models.anime_search import AnimeSearch
@@ -58,18 +59,6 @@ def _anime_genres(scope):
     )
 
 
-def _anime_studios(scope):
-    """Per anime in `scope`, the studios behind its main story."""
-    return (
-        select(Media.anime_id.label("anime_id"), func.array_agg(distinct(Studio.name)).label("studios"))
-        .join(MediaStudio, MediaStudio.media_id == Media.id)
-        .join(Studio, Studio.id == MediaStudio.studio_id)
-        .where(Media.anime_id.in_(scope), MAIN_STORY)
-        .group_by(Media.anime_id)
-        .subquery()
-    )
-
-
 def _card_columns(figures, genres) -> tuple:
     """What a map star and a neighbour both show of their anime."""
     return (
@@ -94,12 +83,10 @@ class GalaxyDAO(BaseDAO[GalaxyGroup]):
         the app's own definitions resolved here — the compute side imports nothing from
         the app. Flat queries rather than eager-loaded ORM graphs: the fit reads a dozen
         scalars per media and nothing else."""
-        in_catalogue = Media.anime_id.in_(select(AnimeSearch.anime_id) if anime_ids is None else anime_ids)
+        scope = select(AnimeSearch.anime_id) if anime_ids is None else anime_ids
+        in_catalogue = Media.anime_id.in_(scope)
         scores = {
-            aid: (score, votes) for aid, score, votes in (await db.execute(
-                select(Media.anime_id, weighted_mean_score_expr(), weighted_mean_votes_expr())
-                .where(in_catalogue).group_by(Media.anime_id)
-            )).all()
+            aid: (score, votes) for aid, score, votes in (await db.execute(anime_mal_figures(scope))).all()
         }
         anime_stmt = (
             select(AnimeSearch.anime_id, AnimeSearch.description_embedding, func.length(func.coalesce(Anime.description, "")))
@@ -268,7 +255,7 @@ class GalaxyDAO(BaseDAO[GalaxyGroup]):
         majority, figures = anime_genre_majority_relation(), _anime_figures(placed)
         total = (await db.execute(select(func.count()).select_from(GalaxyStar))).scalar_one()
         genres = select(majority.c.genre_name, func.count()).where(majority.c.anime_id.in_(placed)).group_by(majority.c.genre_name)
-        named = select(func.unnest(_anime_studios(placed).c.studios).label("name")).subquery()
+        named = select(func.unnest(anime_main_studios(placed).c.studios).label("name")).subquery()
         studios = select(named.c.name, func.count()).group_by(named.c.name)
         # Source and format in one query, so `_anime_figures` runs once.
         both = select(figures.c.source, figures.c.format, func.count()).group_by(figures.c.source, figures.c.format)
@@ -283,7 +270,7 @@ class GalaxyDAO(BaseDAO[GalaxyGroup]):
 
     async def anime_facts(self, db: AsyncSession, anime_ids: list[int]) -> dict[int, Row]:
         """What the neighbour reasons compare, per anime."""
-        figures, genres, studios = _anime_figures(anime_ids), _anime_genres(anime_ids), _anime_studios(anime_ids)
+        figures, genres, studios = _anime_figures(anime_ids), _anime_genres(anime_ids), anime_main_studios(anime_ids)
         rows = (await db.execute(
             select(
                 Anime.id, *_card_columns(figures, genres),

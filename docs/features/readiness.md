@@ -1,9 +1,9 @@
 # Readiness
 
 What "can I start this anime tonight?" means, and where the answer is computed. The
-watchlist is its only surface today — its **Status** filter and the badges beside it —
-but the verdict is a property of an anime plus a user, not of that page, so it is
-written down here rather than with the page. The watchlist itself — entries, lists,
+watchlist shows it — its **Status** filter and the badges beside it — and the
+[recommender](recommender.md) gates its candidates on it. The verdict is a property of an
+anime plus a user, not of any page that shows it, so it is written down here. The watchlist itself — entries, lists,
 priorities — is in [watchlist.md](watchlist.md).
 
 ## The problem
@@ -23,7 +23,7 @@ the entry itself:
 | Layer | Depends on | Lives in |
 |---|---|---|
 | A media's **temporal class** | the catalogue alone — `airing_status`, `anime_season_*` | derived at read time from columns the sweeps refresh |
-| An anime's **verdict** | those classes, which media the user watchlisted, and their ratings | `utils/watchlistReady`, per request |
+| An anime's **verdict** | those classes, which media the user watchlisted, and their ratings | `utils/watchlistReady` per request, and `recommender_compute.readiness` |
 
 The verdict is per-user and no table can hold it: two users with the same anime get
 different answers, because it reads their own selection and ratings. The class needs
@@ -152,18 +152,21 @@ shown beside a badge always agrees with it.
 
 ## Where it is computed
 
-The rules are client-side, and live in `utils/watchlistReady` because the watchlist is
-the only surface so far: `/watchlist/items` already returns the user's whole watchlist in
-one fetch, and both grains are derived from it in the browser. A second surface wanting
-the same verdict is the point to revisit that — the compound doc argues why it is not
-already a server-side column. The backend supplies only the inputs the client cannot
-derive:
+The watchlist's verdict is client-side, in `utils/watchlistReady`: `/watchlist/items`
+already returns the user's whole watchlist in one fetch, and both grains are derived from
+it in the browser. The [recommender](recommender.md) needs the same verdict for anime the
+user never listed, so `recommender_compute.readiness` runs the rule again in the backend,
+over the inputs the watchlist's come from. Neither is a stored column — the compound doc argues why. The rule itself cannot be shared
+across the two languages, so both walk one case table,
+`frontend/src/tests/fixtures/readiness-cases.json`: a rule changed in one fails the other's
+suite until it moves too. For the watchlist, the backend supplies only the inputs
+the client cannot derive:
 
 | Input | Source |
 |---|---|
 | `airing_status`, `anime_season_*`, `relation_type`, `total_watch_time` | the media row |
 | `watch_status` | `LEFT JOIN ratings` scoped to the caller |
-| `franchise_airing`, `franchise_upcoming_key` | `WatchlistDAO._franchise_signals` |
+| `franchise_airing`, `franchise_upcoming_key` | `watchlist_dao.franchise_signals` |
 
 The franchise pair is the only part of the projection that reads media **outside** the
 user's watchlist, which is what makes B2 possible — no entry row can carry the status

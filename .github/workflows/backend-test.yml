@@ -11,6 +11,7 @@ on:
       - 'phsar/frontend/src/lib/stores/browseRefinements.ts'
       - 'phsar/frontend/src/lib/utils/ratingLimits.ts'
       - 'phsar/frontend/src/lib/utils/search.ts'
+      - 'phsar/frontend/src/tests/fixtures/readiness-cases.json'
       - '.github/workflows/backend-test.yml'
   pull_request:
 

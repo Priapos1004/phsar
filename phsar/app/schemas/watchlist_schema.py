@@ -89,7 +89,7 @@ class WatchlistItem(BaseModel):
     anime_season_name: str | None
     anime_season_year: int | None
     mal_id: int
-    # --- Readiness inputs; `WatchlistDAO._franchise_signals` argues their scopes ---
+    # --- Readiness inputs; `watchlist_dao.franchise_signals` argues their scopes ---
     # This media's own state, and the caller's rating on it (None = never rated).
     airing_status: str
     watch_status: str | None

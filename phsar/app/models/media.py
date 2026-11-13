@@ -300,7 +300,7 @@ Index(
 # Composite for the recent-main tier: anime_id groups, relation_type selects
 # Main, aired_from is the range bound.
 #
-# Its first two columns also serve `watchlist_dao._franchise_signals`, which asks the
+# Its first two columns also serve `watchlist_dao.franchise_signals`, which asks the
 # same "this anime's main story" question without the date bound — so narrowing this
 # index (making it partial on `relation_type = 'Main'`, say) would cost the watchlist
 # page its access path too, not just the sweep's.

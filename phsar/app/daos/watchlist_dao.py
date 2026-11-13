@@ -27,7 +27,7 @@ from app.models.tag import Tag
 from app.models.watchlist import Watchlist
 
 
-def _franchise_signals(anime_id_scope, user_id: int):
+def franchise_signals(anime_id_scope, user_id: int):
     """Per-anime "is new content coming?" signals over the WHOLE franchise, as a
     subquery to LEFT JOIN on `anime_id`.
 
@@ -46,9 +46,9 @@ def _franchise_signals(anime_id_scope, user_id: int):
       unrated media (NULL) still counts as blocking. The upcoming half needs no such
       guard: a not-yet-aired media can never carry a rating (`CannotRateUnairedError`).
 
-    Scoped to the anime ids the user actually watchlisted, for the reason spelled out
-    in `media_projections._name_agg` — grouped once over a bounded set, not correlated
-    per row and not over the whole catalogue.
+    Scoped to the caller's anime ids, for the reason spelled out in
+    `media_projections._name_agg` — grouped once over a bounded set, not correlated per
+    row.
     """
     return (
         select(
@@ -165,14 +165,14 @@ class WatchlistDAO(BaseDAO[Watchlist]):
         they carry `tag_*` labels for the same reason.)
 
         The readiness columns are the media's own `airing_status`, the caller's
-        `watch_status` on it, and the `_franchise_signals` pair — the only values
+        `watch_status` on it, and the `franchise_signals` pair — the only values
         here that read media OUTSIDE the user's watchlist.
         """
         media_scope = select(Watchlist.media_id).where(Watchlist.user_id == user_id)
         anime_scope = select(Media.anime_id).where(Media.id.in_(media_scope))
         genres = media_genre_names(media_scope)
         studios = media_studio_names(media_scope)
-        franchise = _franchise_signals(anime_scope, user_id)
+        franchise = franchise_signals(anime_scope, user_id)
         stmt = (
             select(
                 Watchlist.uuid,
@@ -258,6 +258,11 @@ class WatchlistDAO(BaseDAO[Watchlist]):
             .join(Anime, Anime.id == Media.anime_id)
             .where(Watchlist.user_id == user_id)
         )
+        return list((await db.execute(stmt)).all())
+
+    async def priorities(self, db: AsyncSession, user_id: int) -> list[Row]:
+        """Each listed media's priority and when it was listed or last changed."""
+        stmt = select(Watchlist.media_id, Watchlist.priority, Watchlist.modified_at).where(Watchlist.user_id == user_id)
         return list((await db.execute(stmt)).all())
 
     async def get_listed_ids(self, db: AsyncSession, user_id: int, *, per_anime: bool) -> set[int]:

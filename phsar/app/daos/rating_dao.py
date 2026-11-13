@@ -25,6 +25,7 @@ from app.models.anime import Anime
 from app.models.media import MAIN_STORY_RELATIONS, Media
 from app.models.rating_search import RatingSearch
 from app.models.ratings import Ratings, WatchStatus
+from app.models.watch_event import WatchEvent
 from app.schemas.rating_schema import RatingAttributes
 from app.services.vector_embedding_service import generate_query_embedding
 
@@ -191,6 +192,25 @@ class RatingDAO(BaseDAO[Ratings]):
         for anime_id, note in (await db.execute(stmt)).all():
             best.setdefault(anime_id, note)
         return best
+
+    async def history(self, db: AsyncSession, user_id: int) -> list[Row]:
+        """Every rating of the user with its first watch event, which says when a completed
+        media was finished (`recommender_compute.event_time` reads both)."""
+        first_watch = (
+            select(WatchEvent.media_id, func.min(WatchEvent.watched_at).label("watched_at"))
+            .where(WatchEvent.user_id == user_id)
+            .group_by(WatchEvent.media_id)
+            .subquery()
+        )
+        stmt = (
+            select(
+                Ratings.media_id, Ratings.rating, Ratings.watch_status, Ratings.created_at,
+                first_watch.c.watched_at, Ratings.episodes_watched,
+            )
+            .outerjoin(first_watch, first_watch.c.media_id == Ratings.media_id)
+            .where(Ratings.user_id == user_id)
+        )
+        return list((await db.execute(stmt)).all())
 
     async def get_anime_coverage(self, db: AsyncSession, user_id: int) -> list[Row]:
         """Per-anime counts behind the rated state, and the user's score for it with its rank
