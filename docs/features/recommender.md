@@ -97,7 +97,9 @@ model that listed means not picked. The live ranking reads today's list, so its 
 starts now.
 
 Due-ness, trends and watch intensity are computed only on request (`harness`), for measuring
-rather than ranking.
+rather than ranking. So are the features of the ranked families that `WEIGHTS` leaves out:
+none adds signal of its own once the rest are in, and without them the weights hold steadier
+from one fit to the next.
 
 **The final score adds an enjoyment tilt**, `ALPHA` times the kNN estimate.
 
@@ -131,7 +133,7 @@ decision among the candidates of its moment, with the features `decide` gives th
 pick that was no candidate then — a side story alone — has nothing to rank.
 
 - **The fit** is the conditional logit over each decision's full candidate set, L2 `LAMBDA`,
-  on the shipped families.
+  on the features `WEIGHTS` ranks.
 - **The splits**: the time split tests each user's latest decisions on a fit to their earlier
   ones and everyone else's; leave-one-user-out tests each user on a fit to the others. Each
   reports the pick's rank under the logit alone, under the ranking's score and in the row —
@@ -139,9 +141,9 @@ pick that was no candidate then — a side story alone — has nothing to rank.
   held-out NLL, for given weights and a fresh fit — and on the logit alone for the similarity
   baseline.
 - **Ablations**: what each family adds, the shipped set fitted with and without it, with a
-  paired sign-flip p on the NLL. The harness-only families are measured as additions, and
-  `W_backlog` alone as well: it ships only while removing it raises the held-out NLL in every
-  split.
+  paired sign-flip p on the NLL. The harness-only families and the unranked features are
+  measured as additions, and `W_backlog` alone as well: it ships only while removing it raises
+  the held-out NLL in every split.
 - **Per-user weights**, pulled toward the pooled ones, on the time split.
 - **The watchlist**: from `listed_from` on, the share of picks listed at the time, their lift
   by priority, entry age and list over what choosing at random among the candidates gives,

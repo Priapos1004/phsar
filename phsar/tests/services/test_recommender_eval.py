@@ -126,6 +126,7 @@ def test_the_whole_report_runs_on_two_users():
     }
     report = ev.evaluate(cat, ledgers, rc.WEIGHTS, refit=True, now=T0 + 10 * DAY)
     assert report["decisions"] == {"total": 10, "1": 5, "2": 5}
-    assert set(report["ablations"]) == {*dict.fromkeys(ev._FAMILY), "W_backlog"}
-    assert set(report["weights"]) == {n for n in rc.NAMES if rc.family(n) not in rc.HARNESS}
+    unranked = {f"{rc.family(n)}_unranked" for n in rc.NAMES if n not in rc.WEIGHTS and rc.family(n) not in rc.HARNESS}
+    assert set(report["ablations"]) == {*dict.fromkeys(ev._FAMILY), "W_backlog", *unranked}
+    assert set(report["weights"]) == set(rc.WEIGHTS)
     assert report["refit"]["louo"]["row"]["n"] == 10

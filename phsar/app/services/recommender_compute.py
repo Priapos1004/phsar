@@ -106,19 +106,16 @@ for _name, _j in COLUMN.items():
     if _kind:
         _REASON_COLUMNS[_kind].append(_j)
 
-# The reviewed output of `scripts/backtest_recommender.py --fit --dumps`: docs/features/
-# recommender.md, "The ranking"; the compound doc has its numbers.
+# The reviewed output of `scripts/backtest_recommender.py --fit --dumps`; its keys are what ranks.
+# Which features stay out and why: docs/features/recommender.md, "The ranking"; the compound doc
+# has its numbers.
 WEIGHTS: dict[str, float] = {
-    "F1_sim_lag1": 0.1919, "F1_sim_lag2": 0.2084, "F1_sim_lag3": -0.1023, "F1_sim_decay10": 0.1619,
-    "F2_sector_lag1": -0.1311, "F2_region_lag1": 0.0478, "F2_genreJac_lag1": 0.1454, "F2_studio_lag1": 0.1041,
-    "F2_len_lag1": -0.0005, "F2_age_lag1": 0.0756, "F2_sector_lag2": -0.006, "F2_region_lag2": 0.0372,
-    "F2_genreJac_lag2": 0.0863, "F2_studio_lag2": 0.0749, "F2_len_lag2": 0.0476, "F2_age_lag2": 0.0205,
-    "F2_sector_lag3": 0.069, "F2_region_lag3": 0.0625, "F2_genreJac_lag3": -0.0233, "F2_studio_lag3": 0.0506,
-    "F2_len_lag3": 0.1217, "F2_age_lag3": -0.0374, "F5_knn_pct": -0.2144, "F5_top20_sim": 0.5822,
-    "F5_mal": -0.0911, "F5_mal_missing": -0.1531, "F5_logvotes": 0.4522, "F6_loglen": -0.0912,
-    "F6_long": -0.2511, "F7_is_cont": 0.2462, "F7_own_pct": 0.0381, "F7_log_days_since": -0.229,
-    "F8_age_propensity": 0.2226, "F9_len_propensity": 0.1541, "W_p1": 0.5761, "W_p2": 0.1125, "W_p3": -0.3258,
-    "W_log_age": 0.0729, "W_backlog": 0.7544, "F10_finale_propensity": 0.4593,
+    "F1_sim_decay10": 0.33, "F2_sector_lag1": -0.11, "F2_region_lag1": 0.06, "F2_genreJac_lag1": 0.17,
+    "F2_studio_lag1": 0.13, "F2_len_lag1": 0.01, "F2_age_lag1": 0.1, "F5_knn_pct": -0.24,
+    "F5_top20_sim": 0.65, "F5_mal": -0.09, "F5_mal_missing": -0.14, "F5_logvotes": 0.45,
+    "F6_loglen": -0.13, "F6_long": -0.24, "F7_is_cont": 0.06, "F8_age_propensity": 0.23,
+    "F9_len_propensity": 0.22, "W_p1": 0.57, "W_p2": 0.11, "W_p3": -0.31, "W_log_age": 0.08,
+    "W_backlog": 0.77, "F10_finale_propensity": 0.44,
 }
 
 VERSION = 1

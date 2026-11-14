@@ -23,7 +23,7 @@ AGE_LABELS = ("<=7d", "8-30d", "31-90d", ">90d")
 
 
 _FAMILY = np.array([rc.family(n) for n in rc.NAMES])
-SHIPPED = ~np.isin(_FAMILY, rc.HARNESS)
+SHIPPED = np.isin(rc.NAMES, list(rc.WEIGHTS))
 # The similarity baseline the learned model has to beat: the recent picks plus closeness to
 # the favourites, each already standardised within its decision.
 BASELINE = rc.weight_vector({"F1_sim_decay10": 1.0, "F5_top20_sim": 1.0})
@@ -210,7 +210,10 @@ def _refit(cat, chosen, folds, liked, lam) -> dict[str, Any]:
 
     variants = {f: (SHIPPED & (f != _FAMILY), SHIPPED) for f in dict.fromkeys(_FAMILY[SHIPPED])}
     variants["W_backlog"] = (SHIPPED & (np.array(rc.NAMES) != "W_backlog"), SHIPPED)
-    variants.update({f: (SHIPPED, SHIPPED | (f == _FAMILY)) for f in rc.HARNESS})
+    variants.update({
+        f if f in rc.HARNESS else f"{f}_unranked": (SHIPPED, SHIPPED | (f == _FAMILY))
+        for f in dict.fromkeys(_FAMILY[~SHIPPED])
+    })
     for name, (without, with_) in variants.items():
         out["ablations"][name] = {}
         for split in folds:
@@ -227,7 +230,8 @@ def _refit(cat, chosen, folds, liked, lam) -> dict[str, Any]:
         h = held_out(cat, chosen, [f for f in folds["time"] if len(f[1])], per_user, row=False)
         out["per_user"][str(lam_u)] = _report(h, liked)
     w = fit(chosen, SHIPPED, lam)
-    out["weights"] = {name: round(float(v), 4) for name, v in zip(rc.NAMES, w, strict=True) if SHIPPED[rc.COLUMN[name]]}
+    # Two decimals: rounding there moves no held-out metric, and the digits below are noise.
+    out["weights"] = {name: round(float(v), 2) for name, v in zip(rc.NAMES, w, strict=True) if SHIPPED[rc.COLUMN[name]]}
     return out
 
 
