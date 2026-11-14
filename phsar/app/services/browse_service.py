@@ -51,7 +51,7 @@ MOODS: dict[str, Mood] = {
 
 # Each page's carousels, top to bottom.
 PAGE_LAYOUT: dict[BrowsePage, tuple[str, ...]] = {
-    BrowsePage.HOME: ("lucky-find", "new-to-catalogue"),
+    BrowsePage.HOME: ("recommended", "lucky-find", "new-to-catalogue"),
     BrowsePage.NEWS: ("just-announced", "fresh", "announced-continuations", "new-this-season", "next-season"),
     BrowsePage.DISCOVER: tuple(dict.fromkeys(key for mood in MOODS.values() for key in mood.carousels)),
 }

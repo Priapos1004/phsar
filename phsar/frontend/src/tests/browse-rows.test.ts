@@ -13,7 +13,7 @@ vi.mock('$lib/api', () => ({
 
 import { api } from '$lib/api';
 import {
-	browsePage, browseRow, carouselResults, clearBrowseRows, discoverMoods, knownStep, refinedFromDefaults,
+	browsePage, browseRow, carouselResults, clearBrowseRows, discoverMoods, dropPersonalRows, knownStep, refinedFromDefaults,
 	searchRows, settledSearch, spinMood, verifiedToken,
 } from '$lib/stores/browseRows';
 import { NO_REFINEMENT } from '$lib/stores/browseRefinements';
@@ -118,6 +118,14 @@ describe('browse row cache', () => {
 		await browseRow({ ...FRESH, watchlisted: true }, 25);
 		await refreshWatchlist();
 		await browseRow({ ...FRESH, watchlisted: true }, 25);
+		expect(rowCalls()).toBe(2);
+	});
+
+	it('refetches the recommendation row on any write it reads, a setting included', async () => {
+		const recommended: MediaSearchFilters = { query: '', search_type: 'title', sort: 'for_you', recommended: true };
+		await browseRow(recommended, 25);
+		dropPersonalRows();
+		await browseRow(recommended, 25);
 		expect(rowCalls()).toBe(2);
 	});
 

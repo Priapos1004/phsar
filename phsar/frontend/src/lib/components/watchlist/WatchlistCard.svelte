@@ -49,7 +49,7 @@
 
 			<!-- Tag color (top-left) — absolute wraps the Tooltip so the popup anchors to the dot -->
 			<div class="absolute top-1.5 left-1.5">
-				<Tooltip text={row.tagLabel}>
+				<Tooltip text={row.tagLabel} insideLink>
 					<span class="block size-4 rounded-full ring-2 ring-white/60 shadow" style="background:{dotBg}"></span>
 				</Tooltip>
 			</div>
@@ -57,7 +57,7 @@
 			{#if row.note}
 				<!-- "Has a note" — hover shows the note text -->
 				<div class="absolute top-1.5 right-1.5">
-					<Tooltip text={row.note}>
+					<Tooltip text={row.note} insideLink>
 						<span class="block rounded-md bg-black/45 p-1 backdrop-blur-sm">
 							<StickyNote class="size-3.5 text-white" />
 						</span>
@@ -66,7 +66,7 @@
 			{:else if row.noteCount > 0}
 				<!-- Anime grain: hover shows each noted media's note (media-table order) -->
 				<div class="absolute top-1.5 right-1.5">
-					<Tooltip text={joinNoteTexts(row.noteTexts)} contentClass="whitespace-pre-line">
+					<Tooltip text={joinNoteTexts(row.noteTexts)} contentClass="whitespace-pre-line" insideLink>
 						<span class="flex items-center gap-0.5 rounded-md bg-black/45 px-1.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">
 							<StickyNote class="size-3" />{row.noteCount}
 						</span>
@@ -82,7 +82,7 @@
 			<div class="absolute bottom-1.5 right-1.5">
 				{#if watch.hint}
 					<!-- On the trigger span itself, for the reason given below. -->
-					<Tooltip text={watch.hint} class={watchPill}>{watch.label}</Tooltip>
+					<Tooltip text={watch.hint} class={watchPill} insideLink>{watch.label}</Tooltip>
 				{:else}
 					<span class="block {watchPill}">{watch.label}</span>
 				{/if}
@@ -108,7 +108,7 @@
 						<!-- Pill classes go on the Tooltip's own trigger span, not a span inside
 						     it: nested, the pill is an inline box whose vertical padding adds no
 						     height, so it renders shorter than the mutedPill beside it. -->
-						<Tooltip text={badge.title} class="{cls.readyPill} {badge.class}">{badge.label}</Tooltip>
+						<Tooltip text={badge.title} class="{cls.readyPill} {badge.class}" insideLink>{badge.label}</Tooltip>
 					{/if}
 				</div>
 			{/if}

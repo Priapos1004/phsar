@@ -197,6 +197,22 @@ describe('SearchBar', () => {
 		expect(onSearch).toHaveBeenCalledWith(expect.objectContaining({ rated: ['dropped'] }));
 	});
 
+	it('Recommended only stages the filter, and unticking it clears it', async () => {
+		const onSearch = vi.fn();
+		const { rerender } = render(SearchBar, { props: { onSearch, applied: BASE } });
+		await openSheet();
+		await fireEvent.click(screen.getByRole('checkbox', { name: 'Recommended only' }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Show results' }));
+		expect(onSearch).toHaveBeenLastCalledWith(expect.objectContaining({ recommended: true }));
+		await vi.waitFor(() => expect(screen.queryByText('Scored by')).not.toBeInTheDocument());
+
+		await rerender({ applied: { ...BASE, recommended: true } });
+		await openSheet();
+		await fireEvent.click(screen.getByRole('checkbox', { name: 'Recommended only', checked: true }));
+		await fireEvent.click(screen.getByRole('button', { name: 'Show results' }));
+		expect(onSearch.mock.lastCall![0].recommended).toBeUndefined();
+	});
+
 	it('notes mode is shown to a guest but not selectable', async () => {
 		const onSearch = vi.fn();
 		render(SearchBar, { props: { onSearch }, context: new Map([['userRole', () => 'restricted_user']]) });

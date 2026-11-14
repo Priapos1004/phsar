@@ -5,7 +5,6 @@
 	import { defaultSearchView } from '$lib/stores/userSettings';
 	import type { MediaSearchFilters } from '$lib/utils/search';
 	import * as cls from '$lib/styles/classes';
-    import ScrollableCard from '$lib/components/ScrollableCard.svelte';
     import InfoDiashow from '$lib/components/InfoDiashow.svelte';
 
 	let defaultView = $derived($defaultSearchView);
@@ -28,7 +27,6 @@
 
 	<!-- Sections below -->
 	<div class={cls.sectionSpacing}>
-        <ScrollableCard title="Recommended" text="Your recommended animes will appear here." />
         <BrowsePageRows page="home" />
     </div>
 </div>

@@ -39,12 +39,12 @@
 		     exactly the content column. -->
 		<Select.Content class="w-80 max-w-[calc(100vw-4rem)]" customAnchor={anchor} align="end">
 			{#each sortOptions as opt (opt.value)}
-				{@const guestOnly = opt.value === 'your_rating' && isGuest}
+				{@const guestOnly = isGuest && !!opt.guest}
 				<Select.Item value={opt.value} label={opt.label} disabled={guestOnly}>
 					<div class="flex flex-col">
 						<span>{opt.label}</span>
 						<span class="text-xs text-muted-foreground">
-							{guestOnly ? 'Guest accounts have no ratings to sort by' : opt.hint}
+							{guestOnly ? opt.guest : opt.hint}
 						</span>
 					</div>
 				</Select.Item>

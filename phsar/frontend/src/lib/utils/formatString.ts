@@ -275,9 +275,10 @@ export function cleanDescription(text: string): string {
  * zone can shift it.
  *
  * The year is dropped when it matches the current one — a show airing now almost
- * always ends inside it, and "until Sep 21" is the shorter read.
+ * always ends inside it, and "until Sep 21" is the shorter read — and always with `now`
+ * null, for a date its context already places (a release just out).
  */
-export function formatAirDate(ymd: string, now: Date = new Date()): string {
+export function formatAirDate(ymd: string, now: Date | null = new Date()): string {
 	const [year, month, day] = ymd.split('-').map(Number);
 	// Range-checked because `Date.UTC` rolls over rather than rejecting — month 13
 	// would silently render as the following January.
@@ -286,7 +287,7 @@ export function formatAirDate(ymd: string, now: Date = new Date()): string {
 		timeZone: 'UTC',
 		month: 'short',
 		day: 'numeric',
-		...(year === now.getFullYear() ? {} : { year: 'numeric' }),
+		...(!now || year === now.getFullYear() ? {} : { year: 'numeric' }),
 	});
 }
 

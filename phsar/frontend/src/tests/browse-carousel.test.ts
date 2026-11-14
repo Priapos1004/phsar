@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/svelte';
+import { cleanup, render, screen, waitFor } from '@testing-library/svelte';
 import BrowseCarousel from '$lib/components/BrowseCarousel.svelte';
 import { api } from '$lib/api';
 import { carouselResults, clearBrowseRows, clearSectionRows } from '$lib/stores/browseRows';
@@ -51,6 +51,21 @@ describe('BrowseCarousel', () => {
 		expect(screen.getByRole('link', { name: /Announced continuations/ })).toHaveAttribute(
 			'href', '/browse/announced-continuations',
 		);
+	});
+
+	it.each<Carousel['params']>([{ recommended: true }, { sort: 'for_you' }])('links a row over the ranking to its settings, for a full account only (%o)', (params) => {
+		vi.spyOn(api, 'get').mockResolvedValue([]);
+		const recommended: Carousel = { ...continuations, key: 'picks', params, page: 'home' };
+		const settings = () => screen.queryByRole('link', { name: 'Recommendation settings' });
+		render(BrowseCarousel, { props: { carousel: recommended, isGuest: false } });
+		expect(settings()).toHaveAttribute('href', '/settings?tab=recommendations');
+		cleanup();
+		render(BrowseCarousel, { props: { carousel: continuations, isGuest: false } });
+		expect(settings()).not.toBeInTheDocument();
+		cleanup();
+		render(BrowseCarousel, { props: { carousel: recommended, isGuest: true } });
+		expect(screen.getByText(/guest accounts have neither/)).toBeInTheDocument();
+		expect(settings()).not.toBeInTheDocument();
 	});
 
 	it("links a home row's tiles back to home", async () => {

@@ -6,9 +6,10 @@
 	// row a back link names loads at once instead, since it is the one the page is about
 	// to scroll to.
 	import { onMount, tick, untrack } from 'svelte';
-	import { ArrowRight, ChevronRight, SearchX } from 'lucide-svelte';
+	import { ArrowRight, ChevronRight, Pencil, SearchX } from 'lucide-svelte';
 	import PosterCard from '$lib/components/PosterCard.svelte';
 	import ScrollRow from '$lib/components/ScrollRow.svelte';
+	import Tooltip from '$lib/components/Tooltip.svelte';
 	import * as cls from '$lib/styles/classes';
 	import type { AnimeSearchResult, BrowseCarousel } from '$lib/types/api';
 	import { NO_REFINEMENT, refinedSearch, ROW_SIZE } from '$lib/stores/browseRefinements';
@@ -37,6 +38,9 @@
 	let sort = $derived(effectiveSort(search).sort);
 	// A row pinned to one season names it; no carousel field says so.
 	let season = $derived(pinnedSeason(search));
+	// A row over the ranking links to the settings that shape it, as its params say, like the
+	// guest card above.
+	let readsRanking = $derived(sort === 'for_you' || search.recommended != null);
 
 	// A row already in hand (a return to the page) shows at once, at its final height. Read
 	// once, as the row mounts: it loads once per mount either way.
@@ -107,6 +111,18 @@
 				{carousel.title}
 				<ChevronRight class="size-5 transition group-hover:translate-x-0.5" />
 			</a>
+			{#if readsRanking}
+				<Tooltip text="Recommendation settings">
+					{#snippet trigger(props)}
+						<a
+							{...props}
+							href="/settings?tab=recommendations"
+							class="relative text-white/60 hover:text-primary transition {cls.hitArea}"
+							aria-label="Recommendation settings"
+						><Pencil class="size-4" /></a>
+					{/snippet}
+				</Tooltip>
+			{/if}
 			{#if season}
 				<span class={cls.seasonPill}>{season}</span>
 			{/if}

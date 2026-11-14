@@ -12,6 +12,7 @@
 	import { consumeFocus, pageCovering, revealFocused } from '$lib/utils/scrollFocus';
 	import {
 		effectiveSort,
+		SEE_ALL_LIMIT,
 		SEE_ALL_STEP,
 		type MediaSearchFilters,
 		type SortDir,
@@ -33,7 +34,9 @@
 		/** `rows` is the first step of a list whose rest is still loading: the count reads
 		 *  "+", and a Show More clicked meanwhile waits for the rest. */
 		pending?: boolean;
-		/** The most the page asked for; a list that long says so with a "+". */
+		/** The list's cap. `rows` may run one past it, a probe telling a list exactly this long
+		 *  from a longer one; the endpoint's own cap (`SEE_ALL_LIMIT`) can't be probed, so a list
+		 *  reaching it says "+" too. */
 		limit: number;
 		/** Shown in place of the list — a failure, or a guest's explanation. */
 		notice?: string;
@@ -58,10 +61,9 @@
 	let orderLabel = $derived(
 		order ? (order.dir && order.option.dir ? `${order.option.label} · ${order.option.dir[order.dir]}` : order.option.label) : '',
 	);
-	// Exactly at the cap reads "+" too: the cap can be the endpoint's own, which can't be
-	// probed by asking for one more.
-	const count = (n: number) => (pending ? `${n}+` : n >= limit ? `${limit}+` : `${n}`);
+	const count = (n: number) => (pending ? `${n}+` : n > limit || n >= SEE_ALL_LIMIT ? `${limit}+` : `${n}`);
 	let countLabel = $derived(rows ? `${count(rows.length)} ${grain}` : '');
+	let listed = $derived(rows?.slice(0, limit) ?? null);
 
 	let visibleCount = $state(SEE_ALL_STEP);
 	// A Show More clicked before the rest arrived.
@@ -78,11 +80,11 @@
 	// the whole list, which a first step may not reach.
 	let revealed = false;
 	$effect(() => {
-		if (revealed || !rows?.length || pending) return;
+		if (revealed || !listed?.length || pending) return;
 		revealed = true;
 		const uuid = consumeFocus(page.url);
 		if (!uuid) return;
-		const index = rows.findIndex((r) => r.uuid === uuid);
+		const index = listed.findIndex((r) => r.uuid === uuid);
 		if (index < 0) return;
 		visibleCount = pageCovering(index, SEE_ALL_STEP, visibleCount);
 		revealFocused(uuid);
@@ -117,8 +119,8 @@
 		{/if}
 
 		<div class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-3">
-			{#if rows}
-				{#each rows.slice(0, visibleCount) as row (row.uuid)}
+			{#if listed}
+				{#each listed.slice(0, visibleCount) as row (row.uuid)}
 					<div data-focus-uuid={row.uuid}>
 						<PosterCard
 							{row}
@@ -137,9 +139,9 @@
 			{/if}
 		</div>
 
-		{#if rows && rows.length === 0}
+		{#if listed && listed.length === 0}
 			<p class="text-center text-white/60">Nothing here right now.</p>
-		{:else if rows && (rows.length > visibleCount || pending)}
+		{:else if listed && (listed.length > visibleCount || pending)}
 			<div class="text-center">
 				<button
 					onclick={() => (visibleCount += SEE_ALL_STEP)}

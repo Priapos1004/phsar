@@ -24,7 +24,11 @@ export const hugLines: Attachment<HTMLElement> = (node) => {
 		const frame = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
 			+ parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
 		const widest = Math.max(...rects.map((r) => r.right)) - Math.min(...rects.map((r) => r.left));
-		node.style.width = `${Math.ceil(widest + frame)}px`;
+		// Rects come back transformed, and a tooltip measures mid zoom-in: back to its own scale.
+		// Against the unrounded width (border-box, as preflight sets every box): `offsetWidth`
+		// rounds, and a one-line sentence then comes out a fraction short and wraps its last word.
+		const scale = node.getBoundingClientRect().width / parseFloat(style.width) || 1;
+		node.style.width = `${Math.ceil(widest / scale + frame)}px`;
 	};
 	fit();
 	const edits = new MutationObserver(fit);

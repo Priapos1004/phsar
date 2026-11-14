@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as TooltipPrimitive from '$lib/components/ui/tooltip';
 	import { cn } from '$lib/utils';
+	import { hugLines } from '$lib/utils/hugLines';
 	import type { Snippet } from 'svelte';
 
 	type Side = 'top' | 'right' | 'bottom' | 'left';
@@ -27,9 +28,15 @@
 		 * (not just hover) reveals the tooltip and no element gets double-wrapped.
 		 */
 		trigger?: Snippet<[Record<string, unknown>]>;
+		/**
+		 * A touch or pen tap opens the tooltip and stays put, where it would also follow the
+		 * link; mouse and keyboard still follow it. Children mode only. Who takes it:
+		 * rules/frontend.md, "Tooltips".
+		 */
+		insideLink?: boolean;
 	}
 
-	let { text, content, side = 'top', class: className, contentClass, children, trigger }: Props = $props();
+	let { text, content, side = 'top', class: className, contentClass, children, trigger, insideLink = false }: Props = $props();
 
 	let open = $state(false);
 
@@ -37,8 +44,15 @@
 	// pointerup, which a scroll cancels and iOS sends even where it would send no click; `open`
 	// there is still the pre-tap state, since bits-ui ignores the focus a tap brings until the
 	// pointer lifts. Trigger mode stays hover and focus only (rules/frontend.md, "Tooltips").
+	// Whether the press a click ends was a tap; a click always follows its own pointerup.
+	let tapped = false;
 	function toggleOnTap(e: PointerEvent) {
-		if (e.pointerType !== 'mouse') open = !open;
+		tapped = e.pointerType !== 'mouse';
+		if (tapped) open = !open;
+	}
+
+	function holdTap(e: MouseEvent) {
+		if (insideLink && tapped) e.preventDefault();
 	}
 
 	// A lifted finger leaves its element, and bits-ui's hover tracking (`SafePolygon`) reads that
@@ -66,17 +80,20 @@
 			{#if trigger}
 				{@render trigger(props)}
 			{:else}
-				<!-- Capture phase, so bits-ui's own handlers in `props` stay. No preventDefault:
-				     a tooltip inside a link still navigates. -->
+				<!-- Capture phase, so bits-ui's own handlers in `props` stay. -->
 				<span
 					{...props}
 					class={cn('cursor-help', className)}
 					onpointerupcapture={toggleOnTap}
 					onpointerleavecapture={keepOnLift}
+					onclickcapture={holdTap}
 				>{@render children?.()}</span>
 			{/if}
 		{/snippet}
 	</TooltipPrimitive.Trigger>
-	<TooltipPrimitive.Content {side} class={contentClass}>{#if content}{@render content()}{:else}{text}{/if}</TooltipPrimitive.Content>
+	<!-- A bubble whose text wraps fits its widest line, rather than keeping the width it wrapped at. -->
+	<TooltipPrimitive.Content {side} class={contentClass}>
+		<div {@attach hugLines}>{#if content}{@render content()}{:else}{text}{/if}</div>
+	</TooltipPrimitive.Content>
 </TooltipPrimitive.Root>
 </TooltipPrimitive.Provider>

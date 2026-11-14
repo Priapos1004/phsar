@@ -77,6 +77,8 @@ export interface MediaSearchFilters {
 	// its rank among theirs — the twins of the score range and `top_percent`.
 	rated?: RatedState[] | null;
 	watchlisted?: boolean | null;
+	/** The top `RECOMMENDED` of the caller's ranking, or false the rest. */
+	recommended?: boolean | null;
 	your_score_min?: number | null;
 	your_score_max?: number | null;
 	your_top_percent?: number | null;
@@ -198,6 +200,8 @@ export interface SortOption {
 	/** What each direction reads as. A key whose reverse means nothing has none: the
 	 * query's own order, or a shuffle, which reversed is just another shuffle. */
 	dir?: Record<SortDir, string>;
+	/** Set on a key over the caller's own data, which a guest can't sort by: why, in the menu. */
+	guest?: string;
 }
 
 /** Every sort the search knows, in menu order. */
@@ -232,9 +236,17 @@ export const SORT_OPTIONS: SortOption[] = [
 	{ value: 'random', label: 'Random (daily)', hint: 'Same shuffle for everyone today' },
 	{
 		value: 'your_rating', label: 'Your rating', hint: 'Your mean rating, unrated last',
-		dir: { desc: 'Highest first', asc: 'Lowest first' },
+		dir: { desc: 'Highest first', asc: 'Lowest first' }, guest: 'Guest accounts have no ratings to sort by',
+	},
+	// No direction: the ranking reversed is no order anyone wants.
+	{
+		value: 'for_you', label: 'For you', hint: 'Recommendation of what to start next',
+		guest: 'Guest accounts get no recommendations',
 	},
 ];
+
+/** The sorts over the caller's own data. */
+export const PERSONAL_SORTS = SORT_OPTIONS.filter((o) => o.guest).map((o) => o.value);
 
 // The keys the backend ascends unless told otherwise; the rest descend. One line, because
 // a backend test reads it against `search_filters.ASCENDING_SORTS`.
@@ -576,6 +588,10 @@ export function filterChips(params: MediaSearchFilters, view: ViewType): FilterC
 	if (params.watchlisted != null) {
 		chips.push(chip('watchlisted', undefined, params.watchlisted ? 'In watchlist' : 'Not in watchlist', ['watchlisted']));
 	}
+	// The sheet only sets true; a link carrying false still shows, so it never filters unseen.
+	if (params.recommended != null) {
+		chips.push(chip('recommended', undefined, params.recommended ? 'Recommended' : 'Not recommended', ['recommended']));
+	}
 	if (params.upcoming_main) chips.push(chip('upcoming_main', undefined, 'Upcoming main story', ['upcoming_main']));
 	if (params.top_percent != null) {
 		chips.push(chip('top_percent', undefined, `Top ${params.top_percent}%`, ['top_percent']));
@@ -630,7 +646,7 @@ const ACROSS_VIEWS = {
 	scored_by_min: 'drop', scored_by_max: 'drop', episodes_min: 'drop', episodes_max: 'drop',
 	duration_per_episode_min: 'drop', duration_per_episode_max: 'drop',
 	total_watch_time_min: 'drop', total_watch_time_max: 'drop',
-	top_percent: 'carry', upcoming_main: 'carry', rated: 'common', watchlisted: 'carry',
+	top_percent: 'carry', upcoming_main: 'carry', rated: 'common', watchlisted: 'carry', recommended: 'carry',
 	your_score_min: 'carry', your_score_max: 'carry', your_top_percent: 'carry',
 	sort: 'carry', sort_dir: 'carry',
 } as const satisfies Record<keyof Required<MediaSearchFilters>, 'carry' | 'drop' | 'common'>;
@@ -659,16 +675,16 @@ export function carryAcrossView(params: MediaSearchFilters, view: ViewType): Med
 
 /** What a guest is told when `stripForGuest` dropped something from their link. */
 export const GUEST_STRIPPED_NOTICE =
-	"This link used ratings, notes or the watchlist, which guest accounts don't have, so it opened without them — a notes search runs on titles instead.";
+	"This link used ratings, notes, the watchlist or recommendations, which guest accounts don't have, so it opened without them — a notes search runs on titles instead.";
 
-/** The filters over the caller's own ratings and watchlist. */
-const OWN_FILTERS = ['rated', 'watchlisted', 'your_score_min', 'your_score_max', 'your_top_percent'] as const;
+/** The filters over the caller's own ratings, watchlist and recommendations. */
+const OWN_FILTERS = ['rated', 'watchlisted', 'recommended', 'your_score_min', 'your_score_max', 'your_top_percent'] as const;
 
-/** Whether a search, or a filter set's part of one, reads the caller's own ratings, notes
- * or watchlist — what a guest is refused (docs/features/search.md, Personal filters and sort). */
+/** Whether a search, or a filter set's part of one, reads the caller's own data — what a
+ * guest is refused (docs/features/search.md, Personal filters and sort). */
 export function readsOwnData(params: Partial<MediaSearchFilters>): boolean {
 	const set = (value: unknown) => (Array.isArray(value) ? value.length > 0 : value != null);
-	return OWN_FILTERS.some((key) => set(params[key])) || params.sort === 'your_rating'
+	return OWN_FILTERS.some((key) => set(params[key])) || PERSONAL_SORTS.includes(params.sort ?? 'relevance')
 		|| params.search_type === 'rating_notes';
 }
 
@@ -685,10 +701,10 @@ export function forGuest(params: MediaSearchFilters): MediaSearchFilters {
 /** A shared link opened by a guest: drop what `readsOwnData` names, and say whether anything
  * went, so the page can tell them. Notes fall back to a title search. */
 export function stripForGuest(params: MediaSearchFilters): { params: MediaSearchFilters; stripped: boolean } {
-	const byRating = params.sort === 'your_rating';
+	const byOwn = PERSONAL_SORTS.includes(params.sort ?? 'relevance');
 	const notes = params.search_type === 'rating_notes';
 	const stripped = readsOwnData(params);
 	if (!stripped) return { params, stripped };
-	const kept = omitKeys(params, byRating ? [...OWN_FILTERS, 'sort', 'sort_dir'] : [...OWN_FILTERS]);
+	const kept = omitKeys(params, byOwn ? [...OWN_FILTERS, 'sort', 'sort_dir'] : [...OWN_FILTERS]);
 	return { params: notes ? { ...kept, search_type: 'title' } : kept, stripped };
 }

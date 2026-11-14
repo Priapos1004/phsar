@@ -15,6 +15,7 @@ describe('sanitizeFilters', () => {
 			upcoming_main: true,
 			rated: ['none', 'main'],
 			watchlisted: false,
+			recommended: true,
 			your_score_min: 6.5,
 			your_score_max: 9,
 			your_top_percent: 25,
@@ -37,6 +38,7 @@ describe('sanitizeFilters', () => {
 				upcoming_main: 'yes',
 				rated: ['all', 'bogus'],
 				watchlisted: 'no',
+				recommended: 'yes',
 				genres: { mode: 'any', groups: Array(5).fill({ include: ['Action'] }) },
 				colour: 'neon'
 			})

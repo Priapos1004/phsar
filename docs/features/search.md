@@ -265,8 +265,8 @@ onto the caller's ratings, `for_you` as one over their stored ranking
   at its anime's, one anime's media in watching order (`recommendation_dao.for_you_key`, the
   SQL form of [`chronological_media_key`](#ordering-media-within-an-anime)), unranked rows last
   in the sort's own tiebreak. It ascends by default. A result carries its reason and what that
-  names (`reason`, `reason_name`). `recommended` keeps the rows the ranking holds — every
-  candidate, not just the Home row — or, false, the rest; a media is held when its anime is.
+  names (`reason`, `reason_name`). `recommended` keeps the ranking's top `RECOMMENDED`
+  or, false, the rest; a media is held when its anime is.
 - **They narrow the spoiler scope, never replace it**: in hide mode the media grain
   starts from the visible set.
 - **A guest gets 403** for any of them, `watchlisted=false` and the notes mode without a

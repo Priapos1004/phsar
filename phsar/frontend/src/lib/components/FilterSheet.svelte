@@ -10,6 +10,7 @@
 	import TagSelect from '$lib/components/TagSelect.svelte';
 	import GenreFilterField from '$lib/components/GenreFilterField.svelte';
 	import DoubleRangeSlider from '$lib/components/DoubleRangeSlider.svelte';
+	import InfoTip from '$lib/components/InfoTip.svelte';
 	import SegmentedControl from '$lib/components/SegmentedControl.svelte';
 	import { Button } from '$lib/components/ui/button';
 	import { Checkbox } from '$lib/components/ui/checkbox';
@@ -220,6 +221,20 @@
 								options={[...WATCHLIST]}
 								value={watchlistChoice}
 								onSelect={(v) => stage({ watchlisted: v === 'any' ? undefined : v === 'in' })}
+							/>
+						</div>
+						<div class="flex items-center gap-2">
+							<Checkbox
+								id="recommended-only"
+								checked={staged.recommended ?? false}
+								onCheckedChange={(v) => stage({ recommended: v || undefined })}
+							/>
+							<Label for="recommended-only" class="text-sm text-card-foreground cursor-pointer select-none">
+								Recommended only
+							</Label>
+							<InfoTip
+								label="What Recommended only keeps"
+								text="Keeps only Phsar's recommendations for you."
 							/>
 						</div>
 					{/if}

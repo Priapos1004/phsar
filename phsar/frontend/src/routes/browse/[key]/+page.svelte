@@ -22,7 +22,7 @@
 	import { ensureRatingCoverage } from '$lib/stores/ratingCoverage';
 	import type { AnimeSearchResult, BrowseCarousel, BrowseFilterSet } from '$lib/types/api';
 	import { buildDetailHref, carouselOrigin, navigateToSearch } from '$lib/utils/navigation';
-	import { pinnedSeason, readsOwnData, type SortDir, type SortKey } from '$lib/utils/search';
+	import { pinnedSeason, readsOwnData, SEE_ALL_LIMIT, type SortDir, type SortKey } from '$lib/utils/search';
 
 	const GUEST_HINT = 'Guest accounts have no ratings or watchlist';
 
@@ -73,7 +73,8 @@
 			else carousel = c;
 			// Unawaited: the tiers decorate tiles, so they must not hold the list back.
 			if (!isGuest) void ensureRatingCoverage();
-			const listed = await carouselResults(c, asked, isGuest, c.see_all_limit, { slot: key });
+			// One past the cap: `SeeAllResults`' `limit`.
+			const listed = await carouselResults(c, asked, isGuest, Math.min(c.see_all_limit + 1, SEE_ALL_LIMIT), { slot: key });
 			if (id !== request) return;
 			show(listed);
 			rows = listed.results;

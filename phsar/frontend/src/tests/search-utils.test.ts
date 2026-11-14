@@ -10,6 +10,7 @@ import {
 	matchesGenres,
 	normalizeFilters,
 	omitKeys,
+	readsOwnData,
 	sortLine,
 	unusualAnnouncedType,
 	stripForGuest,
@@ -106,6 +107,13 @@ describe('filterChips', () => {
 		]);
 	});
 
+	it('names the recommended filter either way, so a link carrying false never filters unseen', () => {
+		expect(filterChips({ ...BASE, recommended: true }, 'anime').map((c) => [c.label, c.keys])).toEqual([
+			['Recommended', ['recommended']],
+		]);
+		expect(filterChips({ ...BASE, recommended: false }, 'media').map((c) => c.label)).toEqual(['Not recommended']);
+	});
+
 	it('removing a chip clears exactly its keys', () => {
 		const params = { ...BASE, studio_name: ['MAPPA'], studio_mode: 'all' as const, top_percent: 5 };
 		expect(omitKeys(params, ['studio_name', 'studio_mode'])).toEqual({ ...BASE, top_percent: 5 });
@@ -166,7 +174,7 @@ describe('carryAcrossView', () => {
 		score_min: 8, score_max: 10, scored_by_min: 1, scored_by_max: 2, episodes_min: 1, episodes_max: 2,
 		duration_per_episode_min: 1, duration_per_episode_max: 2, total_watch_time_min: 1, total_watch_time_max: 2,
 		top_percent: 10, upcoming_main: true, rated: ['in_progress', 'on_hold', 'dropped'], watchlisted: true,
-		your_score_min: 7, your_score_max: 9.5, your_top_percent: 20,
+		recommended: true, your_score_min: 7, your_score_max: 9.5, your_top_percent: 20,
 		sort: 'release', sort_dir: 'desc',
 	};
 
@@ -177,7 +185,7 @@ describe('carryAcrossView', () => {
 			anime_season: ['Fall 2023'], studio_name: ['Madhouse'], original_source: ['Manga'],
 			studio_mode: 'all', genres: genres('any', group(['Fantasy'])), score_min: 8, score_max: 10,
 			top_percent: 10, upcoming_main: true, rated: ['on_hold', 'dropped'], watchlisted: true,
-			your_score_min: 7, your_score_max: 9.5, your_top_percent: 20,
+			recommended: true, your_score_min: 7, your_score_max: 9.5, your_top_percent: 20,
 			sort: 'release', sort_dir: 'desc',
 		});
 	});
@@ -198,6 +206,15 @@ describe('forGuest', () => {
 	});
 });
 
+describe('readsOwnData', () => {
+	it('counts the recommendations as the caller\'s own: the sort, and the filter either way', () => {
+		expect(readsOwnData({ ...BASE, sort: 'for_you' })).toBe(true);
+		expect(readsOwnData({ ...BASE, recommended: true })).toBe(true);
+		expect(readsOwnData({ ...BASE, recommended: false })).toBe(true);
+		expect(readsOwnData({ ...BASE, sort: 'top_rated', recommended: null })).toBe(false);
+	});
+});
+
 describe('stripForGuest', () => {
 	it('drops what reads your own ratings and watchlist, watchlisted=false included', () => {
 		expect(stripForGuest({ ...BASE, watchlisted: false, genres: genres('all', group(['Action'])) })).toEqual({
@@ -208,6 +225,12 @@ describe('stripForGuest', () => {
 
 	it('drops your own score filters', () => {
 		expect(stripForGuest({ ...BASE, your_score_min: 8, your_top_percent: 10, top_percent: 5 })).toEqual({
+			params: { ...BASE, top_percent: 5 }, stripped: true,
+		});
+	});
+
+	it('drops a sort by your recommendations, and the recommended filter', () => {
+		expect(stripForGuest({ ...BASE, sort: 'for_you', recommended: true, top_percent: 5 })).toEqual({
 			params: { ...BASE, top_percent: 5 }, stripped: true,
 		});
 	});

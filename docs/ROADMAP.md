@@ -383,11 +383,11 @@ Separate page/route — the "deep dive" version of home page sections.
 **Refinements**: per-carousel filter sets — docs/features/browse.md
 
 ### Sections (horizontal scrollable card rows — Crunchyroll-style, same as home page)
-- **Recommendation algo** (top of page) — dropdown/selector to choose algorithm. Designed for experimentation — swap in new algos over time, users can try different ones. Could also be a user setting.
+- **Recommendation algo** — ✓ built as Home's row instead (v0.16.6, [recommender](features/recommender.md)): one ranking per user, with no algorithm to choose
 - **Give it a second chance** — dropped anime (from ratings data)
 - **Continue watching** — anime on watchlist with partial ratings (e.g. watched S1, S2 waiting)
 - **Genre-based sections** — ✓ built as Discover's moods (v0.16.3, [browse](features/browse.md#discover-draws-one-mood-a-day))
-- **Unexplored territory** — cluster-based discovery, anime outside user's usual selection
+- **Unexplored territory** — cluster-based discovery, anime outside user's usual selection — ✓ the recommendation row's explore slots (v0.16.6)
 - **Others also liked** — cross-user signal (users who rated similar anime highly)
 - **Rising on MAL** — high `log(scored_by) * score` weighting
 
@@ -412,7 +412,7 @@ Separate page/route — the "deep dive" version of home page sections.
 - **Games** — tonight's tournament (a bracket ending in one pick), higher or lower on MAL score, a swipe deck onto the watchlist; new row formats (ranked top-10, spotlight, blind box, versus) may live here too
 
 ### Key Decisions
-- Algorithm selector (dropdown or user setting) keeps backend flexible for experimentation
+- One recommendation ranking per user, a pooled model fitted offline and reviewed, rather than an algorithm selector
 - Advanced recommendation algos are separate work items — not blocking browse page v1
 - Browse page and home page share section components but home is lightweight subset
 
@@ -425,7 +425,7 @@ Eye-catching landing page — light version of browse, serves new and returning 
 
 ### Sections (horizontal scrollable card rows — Crunchyroll-style)
 - **Current season diashow** (existing) — rotate through new anime of the season
-- **Recommended** (existing placeholder) — from selected algo
+- **Shit You Might Dig** — ✓ built (v0.16.6, USER_FLOWS §3, [recommender](features/recommender.md)): the top of your ranking, first on Home
 - **Lucky find**, **New to the catalogue** — built in v0.16.3 (USER_FLOWS §3). The planned Upcoming row is dropped: the News tab covers it
 
 ### UI Pattern
@@ -434,7 +434,7 @@ Eye-catching landing page — light version of browse, serves new and returning 
 - Anime cover cards that scroll left/right
 
 ### Key Decisions
-- Recommendation section uses same algo as browse page top section
+- One ranking per user, served as Home's row, the For you sort and the Recommended only filter
 - Home page sections reuse browse page components (lighter presentation)
 - For logged-out / new users: show season diashow, popular, recently added (skip personalized sections)
 - `RelatedMediaCarousel` (from v0.10.0) is a starting point — generalize it into a reusable horizontal card carousel component that accepts any card content (anime covers, media cards, recommendations) for both browse and home page sections
@@ -642,7 +642,7 @@ length target.
 | **v0.16.3** | ✓ Home + Discover | Home rows Lucky find and New to the catalogue replace two placeholders; seasonal hero art (Halloween); a Discover tab whose wheel draws each user one themed mood a day, cut to with a full-screen reveal; a To-anime link on the media page; paging arrows on every sideways row. |
 | **v0.16.4** | ✓ Responsive pass | Every page on a phone and at the widest layout; an In / Not in toggle on the watchlist's Lists filter; tooltips that open on a tap, and ⓘ explanations on the watchlist filters and settings; search results kept across a detail detour; the sweep card's nightly load against its cap; Future Shock's reveal is a UFO that beams its title down; genre filter groups (Any/All, Without, OR or AND between groups), which keep a Discover mood's rows from repeating each other. |
 | **v0.16.5** | ✓ Galaxy | Browse's parked Galaxy tab (Feature 5b): a 2D map of the catalogue. Search moves to multilingual-e5-small, which finds Japanese and translated queries far better. Search and the map filter by your own score and your top N%. The weekly sweep cycle narrows to three years. |
-| **v0.16.6** | Recommended | Home's Recommended row, from the user's own algorithm. |
+| **v0.16.6** | Recommended | Shit You Might Dig, first on Home: a per-user ranking of what to start next, each tile saying why. Search sorts by it (For you) and filters to its top (Recommended only). Settings gets a Recommendations tab: where your rating history starts, and whether hot anime are recommended. |
 | **v0.16.7** | Guest accounts | A rework of the guest account logic. |
 | **v0.16.8** | Get-started page | The onboarding page (Feature 10). |
 | **v0.17.0** | Advanced analytics (v2) | Heavy/precomputed analytics that go beyond v0.14.12's client-side stats: embedding/taste clustering (HDBSCAN), production-company deep-dives, monthly pre-computed reports, and a true watch-history time series from the `watch_event` table (actual watch moments + rewatches, vs v0.14.12's `created_at` proxy). The standard graphs (score histogram, genre distribution, watch-time) already shipped client-side in **v0.14.12**. |

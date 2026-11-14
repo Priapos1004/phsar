@@ -41,3 +41,20 @@ describe('SeeAllResults while the rest loads', () => {
 		expect(tiles(container)).toBe(SEE_ALL_STEP);
 	});
 });
+
+describe('SeeAllResults count', () => {
+	it('reads a list exactly at its cap as whole, and one past it with a "+"', async () => {
+		const { container, rerender } = render(SeeAllResults, { props: { ...props, limit: 250, rows: list(250) } });
+		expect(screen.getByText('250 anime')).toBeInTheDocument();
+
+		await rerender({ rows: list(251) });
+		expect(screen.getByText('250+ anime')).toBeInTheDocument();
+		for (let i = 0; i < 4; i++) await fireEvent.click(screen.getByRole('button', { name: 'Show More' }));
+		expect(tiles(container)).toBe(250);
+	});
+
+	it("reads a list at the endpoint's own cap with a \"+\", since nothing probed past it", () => {
+		render(SeeAllResults, { props: { ...props, rows: list(1000) } });
+		expect(screen.getByText('1000+ anime')).toBeInTheDocument();
+	});
+});

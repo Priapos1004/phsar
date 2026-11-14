@@ -24,7 +24,10 @@ LIVE[:3] = True
 def _case(X, target=0, user=1, t=0.0):
     n = len(X)
     empty = np.zeros(n, dtype=np.int64)
-    dec = rc.Decision(np.arange(n), X, np.zeros(n), np.zeros(n, bool), empty, np.zeros(n, bool), empty, empty, np.zeros(n))
+    dec = rc.Decision(
+        np.arange(n), X, np.zeros(n), np.zeros(n, bool), empty, np.zeros(n, bool), empty, empty, np.zeros(n), empty,
+        np.zeros(n), np.zeros(n, bool),
+    )
     return ev.Case(user, t, dec, target, True, (rc.ROW, rc.ROW))
 
 

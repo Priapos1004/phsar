@@ -107,6 +107,10 @@ that must reach a phone goes on text outside both, never on a control. A control
 one (a chip, a select) gets an `InfoTip` ⓘ beside its label, and a text label that opens a
 tooltip carries `cls.tooltipHint`, the dotted underline that tells a phone it can be tapped.
 
+**A children-mode tooltip inside a link opens and navigates both**, except a marker on a tile —
+the reason dot, the watchlist card's markers and readiness badge — which takes `insideLink`.
+Nothing else takes it: a control keeps its tap action.
+
 **A `disabled` control never opens its tooltip.** Where the tip says why it is unavailable (a
 guest's bookmark — "Restricted accounts" below), make it inert instead — `aria-disabled` and a
 click that checks it — as `HeroIconButton` does. `app.css` gives every `aria-disabled` element

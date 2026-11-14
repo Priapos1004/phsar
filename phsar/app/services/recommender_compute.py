@@ -13,6 +13,7 @@ compound-docs/2026-11-12-v0.16.6-recommender.md.
 
 import hashlib
 import math
+from bisect import bisect_left
 from collections import defaultdict
 from datetime import date, timedelta
 from typing import NamedTuple
@@ -36,6 +37,8 @@ MEDIAN_EPISODES = {"TV": 13, "ONA": 12, "Movie": 1, "Special": 1, "OVA": 1, "TVS
 MEDIAN_DURATION = {"TV": 1420, "Movie": 5160, "ONA": 641, "Special": 660, "OVA": 1500, "TVSpecial": 1441}
 # Days from a commitment's finale to now that bound its freshness buckets (`finale_bucket`).
 FINALE_EDGES = (-7, 30, 90, 365, 730)
+# Days ago that bound the older release-age buckets (`age_bucket`): two, five and ten years.
+ERA_DAYS = (730, 1826, 3652)
 
 # --- Features -------------------------------------------------------------------------------
 LAGS = 3  # the last picks matched one by one
@@ -55,6 +58,9 @@ LONG_MEAN, LONG_SD = 3.7243, 0.9476
 
 # --- The row --------------------------------------------------------------------------------
 ROW = 25  # the Home row's length, and the window the caps and slots apply to
+# What `recommended` keeps and the row's see-all lists: past it the ranking is only its tail,
+# and most of the catalogue is a candidate, so "every ranked anime" would barely filter.
+RECOMMENDED = 250
 EXPLORE_SLOTS = (8, 16, 24)  # 1-based positions in each window of ROW
 REGION_CAP = 3  # tiles per galaxy region in each window
 EXPLORE_COVERAGE = 1 / 3  # regions in the user's least-covered third feed the explore slots
@@ -118,7 +124,7 @@ WEIGHTS: dict[str, float] = {
     "W_backlog": 0.77, "F10_finale_propensity": 0.43,
 }
 
-VERSION = 1
+VERSION = 2
 EPOCH = date(1970, 1, 1)
 DAY = 86400.0
 
@@ -245,7 +251,7 @@ def age_bucket(start: np.ndarray, t: float) -> np.ndarray:
     age = today - start
     with np.errstate(invalid="ignore"):
         return np.select(
-            [np.isnan(start), start >= this, start >= last, age <= 730, age <= 1826, age <= 3652],
+            [np.isnan(start), start >= this, start >= last, *(age <= edge for edge in ERA_DAYS)],
             [6, 0, 1, 2, 3, 4], default=5,
         ).astype(np.int64)
 
@@ -287,6 +293,7 @@ class Catalogue(NamedTuple):
     standalone: np.ndarray
     start: np.ndarray  # day, NaN when unknown
     finale: np.ndarray  # day its last episode airs, inf while airing with no end in sight
+    finale_dated: np.ndarray  # the finale is MAL's end date or a single episode's day, not estimated
     aired_day: np.ndarray  # NaN when no air date
     unaired: np.ndarray
     ready: list["ReadyItem"]  # each media's readiness facts, its watch status left to the user
@@ -338,6 +345,7 @@ def catalogue(stars: list[StarRow], media: list[MediaRow], chronological) -> Cat
         standalone=np.array([(m.total_watch_time or 0) >= STANDALONE_SECONDS for m in media], dtype=bool),
         start=np.array([_start_day(m) for m in media]),
         finale=np.array([_finale_day(m) for m in media]),
+        finale_dated=np.array([bool(m.aired_to or (m.episodes == 1 and m.aired_from)) for m in media], dtype=bool),
         aired_day=np.array([float((m.aired_from - EPOCH).days) if m.aired_from else math.nan for m in media]),
         unaired=np.array([m.unaired for m in media], dtype=bool),
         ready=[
@@ -598,6 +606,7 @@ class State(NamedTuple):
     hours: np.ndarray  # what picking it commits to
     start: np.ndarray  # the day that commitment's earliest season starts, NaN when unknown
     finale: np.ndarray  # the day its last season ends
+    finale_dated: np.ndarray  # whether that day is dated (`Catalogue.finale_dated`)
 
 
 def state(
@@ -634,14 +643,14 @@ def state(
     return State(candidate, continuation, planned, *_commitment(cat, commit, n))
 
 
-def _commitment(cat: Catalogue, mask: np.ndarray, n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Per star, the hours, earliest start and last finale of the media picking it starts:
+def _commitment(cat: Catalogue, mask: np.ndarray, n: int) -> tuple[np.ndarray, ...]:
+    """Per star, the hours, earliest start, last finale, and whether that finale is dated, of the media picking it starts:
     walking its masked media in order, everything up to the first standalone media, or that
     media alone when it comes first."""
     idx = np.flatnonzero(mask)
     hours = np.zeros(n)
     if not len(idx):
-        return hours, np.full(n, math.nan), np.full(n, math.nan)
+        return hours, np.full(n, math.nan), np.full(n, math.nan), np.zeros(n, dtype=bool)
     rows = cat.media_row[idx]
     alone = cat.standalone[idx]
     first = np.r_[True, rows[1:] != rows[:-1]]
@@ -649,11 +658,15 @@ def _commitment(cat: Catalogue, mask: np.ndarray, n: int) -> tuple[np.ndarray, n
     before_group = np.maximum.accumulate(np.where(first, seen - alone, 0))
     opens_alone = alone[first][np.cumsum(first) - 1]
     take = first | (~opens_alone & (seen - before_group == 0))
-    np.add.at(hours, rows[take], cat.hours[idx][take])
+    star, taken = rows[take], idx[take]
+    np.add.at(hours, star, cat.hours[taken])
     start, finale = np.full(n, math.nan), np.full(n, math.nan)
-    np.fmin.at(start, rows[take], cat.start[idx][take])
-    np.fmax.at(finale, rows[take], cat.finale[idx][take])
-    return hours, start, finale
+    np.fmin.at(start, star, cat.start[taken])
+    np.fmax.at(finale, star, cat.finale[taken])
+    dated = np.zeros(n, dtype=bool)
+    last = cat.finale[taken] == finale[star]
+    np.logical_or.at(dated, star[last], cat.finale_dated[taken][last])
+    return hours, start, finale, dated
 
 
 # --- Features ------------------------------------------------------------------------------------------
@@ -668,6 +681,9 @@ class Decision(NamedTuple):
     nearest_recent: np.ndarray  # star row of the recent pick nearest each candidate, -1 if none
     nearest_favourite: np.ndarray
     coverage: np.ndarray  # per star: the user's share of rated anime in its region
+    age: np.ndarray  # per candidate: its release-age bucket (`age_bucket`)
+    finale_day: np.ndarray  # its finale's day and whether that is dated, which a fresh pick names
+    finale_dated: np.ndarray
 
 
 def _rank(x: np.ndarray) -> np.ndarray:
@@ -742,7 +758,10 @@ def decide(cat: Catalogue, led: Ledger, t: float, *, hot: bool = True, harness: 
     X = np.zeros((n, len(NAMES)))
     if not n:
         empty = np.zeros(0, dtype=np.int64)
-        return Decision(C, X, np.zeros(0), np.zeros(0, bool), empty, np.zeros(0, bool), empty, empty, np.zeros(len(cat.anime_id)))
+        return Decision(
+            C, X, np.zeros(0), np.zeros(0, bool), empty, np.zeros(0, bool), empty, empty, np.zeros(len(cat.anime_id)),
+            empty, np.zeros(0), np.zeros(0, bool),
+        )
     picks = [e for e in led.natural if e.t < t]
     nh = len(picks)
     hist_rows = np.array([e.row for e in picks], dtype=np.int64)
@@ -874,7 +893,10 @@ def decide(cat: Catalogue, led: Ledger, t: float, *, hot: bool = True, harness: 
 
     size = np.bincount(cat.region)
     coverage = (np.bincount(cat.region[RA], minlength=len(size)) / np.maximum(size, 1))[cat.region]
-    return Decision(C, X, raw_knn, on_list, pr, cont, nearest_recent, nearest_favourite, coverage)
+    return Decision(
+        C, X, raw_knn, on_list, pr, cont, nearest_recent, nearest_favourite, coverage, age_c,
+        s.finale[C], s.finale_dated[C],
+    )
 
 
 def _z(x: np.ndarray) -> np.ndarray:
@@ -905,6 +927,38 @@ def _reasons(dec: Decision, w: np.ndarray) -> list[str]:
     contribution = np.stack([dec.X[:, _REASON_COLUMNS[k]] @ w[_REASON_COLUMNS[k]] for k in kinds], axis=1)
     best = contribution.argmax(axis=1)
     return [kinds[b] if contribution[i, b] > 0 else "popular" for i, b in enumerate(best)]
+
+
+_AGE, _FINALE = COLUMN["F8_age_propensity"], COLUMN["F10_finale_propensity"]
+
+
+# The age tier a fresh pick names: by release-age bucket, and for a finale over a month back by
+# the days since it, cut at a year and then where `ERA_DAYS` cuts release age.
+_AGE_TIER = ("year", "year", "2y", "5y", "10y", "old")
+_FINALE_TIER = ("year", "2y", "5y", "10y", "old")
+_FINALE_TIER_DAYS = (FINALE_EDGES[3], *ERA_DAYS)
+
+
+def fresh_detail(dec: Decision, w: np.ndarray, i: int, t: float) -> str | None:
+    """What a fresh pick is fresh by, for its detail: its release age or its finale, whichever
+    adds more to its score — `started-<tier>` or `finished-<tier>`, the tiers running `month`,
+    `year`, `2y`, `5y`, `10y`, `old`. Besides those: `airing`; a finale due within the week,
+    `soon` when dated and `expected` when estimated; a dated finale in the last month,
+    `finished:` and its day. None when unknown."""
+    if w[_AGE] * dec.X[i, _AGE] >= w[_FINALE] * dec.X[i, _FINALE]:
+        bucket = int(dec.age[i])
+        return None if bucket == 6 else f"started-{_AGE_TIER[bucket]}"
+    day, dated = float(dec.finale_day[i]), bool(dec.finale_dated[i])
+    since = _day(t) - day
+    if math.isnan(since):
+        return None
+    if since <= FINALE_EDGES[0]:
+        return "airing"
+    if since <= 0:
+        return "soon" if dated else "expected"
+    if since <= FINALE_EDGES[1]:
+        return f"finished:{EPOCH + timedelta(days=int(day))}" if dated else "finished-month"
+    return f"finished-{_FINALE_TIER[bisect_left(_FINALE_TIER_DAYS, since)]}"
 
 
 def slate(score: np.ndarray, dec: Decision, cat: Catalogue, listed_cap: int, cont_cap: int) -> tuple[np.ndarray, np.ndarray]:
@@ -989,6 +1043,6 @@ def recommend(
             ref = int(cat.anime_id[dec.nearest_recent[i]])
         elif kind == "favourite" and dec.nearest_favourite[i] >= 0:
             ref = int(cat.anime_id[dec.nearest_favourite[i]])
-        detail = f"P{dec.priority[i]}" if kind == "watchlist" else None
+        detail = f"P{dec.priority[i]}" if kind == "watchlist" else fresh_detail(dec, w, i, now) if kind == "fresh" else None
         picks.append(Pick(int(cat.anime_id[dec.rows[i]]), rank, kind, ref, detail))
     return picks

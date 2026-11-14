@@ -4,6 +4,7 @@ stated rule, and the row's caps. The prod numbers behind the constants are a stu
 test."""
 
 import json
+import math
 from datetime import UTC, date, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -411,6 +412,54 @@ def test_a_continuation_reads_continue_even_when_listed():
     cat = _franchise_catalogue()
     led = _ledger(cat, [_rating(20, T0 - 10 * DAY)], [rc.ListingRow(21, 1, T0 - DAY, None)])
     assert {p.anime_id: p.kind for p in rc.recommend(cat, led, T0)}[2] == "continue"
+
+
+def test_a_fresh_pick_names_what_made_it_fresh():
+    """Release age or finale, whichever adds more: rows 0-2 lead on age, the rest on their
+    finale, so swapping the comparison swaps the answers. A finale due this week reads as due
+    for certain, and one in the last month names its day, only when dated; older ones take their
+    tier from their own day. Unknown names nothing."""
+    today = rc._day(T0)
+    rows = [  # (release-age bucket, finale day, dated), then what it names
+        ((2, 0.0, True), "started-2y"),
+        ((5, 0.0, True), "started-old"),
+        ((6, 0.0, True), None),
+        ((0, math.inf, False), "airing"),
+        ((0, today + 3, True), "soon"),
+        ((0, today + 3, False), "expected"),
+        ((0, today - 1, True), "finished:2026-09-30"),
+        ((0, today - 10, False), "finished-month"),
+        ((0, today - 200, True), "finished-year"),
+        ((0, today - 500, True), "finished-2y"),
+        ((0, today - 1000, True), "finished-5y"),
+        ((0, today - 3000, True), "finished-10y"),
+        ((0, today - 4000, True), "finished-old"),
+        ((0, math.nan, True), None),
+    ]
+    cat = _wide_catalogue(n=len(rows))
+    dec = rc.decide(cat, _ledger(cat, []), T0)
+    X = np.zeros_like(dec.X)
+    X[:3, rc.COLUMN["F8_age_propensity"]] = 1.0
+    X[3:, rc.COLUMN["F10_finale_propensity"]] = 1.0
+    age, day, dated = (np.array(column) for column in zip(*(r for r, _ in rows), strict=True))
+    dec = dec._replace(X=X, age=age, finale_day=day.astype(float), finale_dated=dated)
+    w = rc.weight_vector(rc.WEIGHTS)
+    assert [rc.fresh_detail(dec, w, i, T0) for i in range(len(rows))] == [named for _, named in rows]
+
+
+def test_a_commitment_s_finale_is_dated_when_its_last_media_s_is():
+    """A single episode with only its start date is dated; an airing season without an end
+    date after an old dated movie is not, since it is the last."""
+    movie = {"episodes": 1}
+    media = [
+        _media(10, 1, aired_from=date(2026, 4, 1), aired_to=date(2026, 6, 20)),
+        _media(11, 1, **movie, aired_from=date(2026, 9, 25)),
+        _media(20, 2, **movie, aired_from=date(2020, 1, 1), aired_to=date(2020, 1, 1)),
+        _media(21, 2, airing=True, aired_from=date(2026, 9, 1)),
+    ]
+    cat = _catalogue([_star(a, [0.0]) for a in (1, 2)], media)
+    dated = rc.state(cat, T0, *NO_RATINGS).finale_dated
+    assert [bool(dated[cat.row_of[a]]) for a in (1, 2)] == [True, False]
 
 
 def test_a_new_user_gets_the_catalogue_s_popular_picks():

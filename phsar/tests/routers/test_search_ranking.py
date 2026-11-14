@@ -33,7 +33,7 @@ import pytest
 from sqlalchemy import select, update
 
 from app.core.config import settings
-from app.daos import search_filters
+from app.daos import recommendation_dao, search_filters
 from app.daos.anime_dao import AnimeDAO
 from app.daos.media_dao import MediaDAO
 from app.daos.rating_dao import RatingDAO, _note_distance, note_cutoff
@@ -1792,10 +1792,12 @@ async def test_for_you_rows_carry_their_reason(client, user_auth_headers, ranked
 
 
 @pytest.mark.parametrize(("url", "held", "rest"), [
-    (ANIME_SEARCH_URL, {"Fy First", "Fy Second", "Fy Third"}, {"Fy Unranked"}),
-    (MEDIA_SEARCH_URL, {"Fy First", "Fy First S2", "Fy Second", "Fy Third"}, {"Fy Unranked", "Fy Unranked S2"}),
+    (ANIME_SEARCH_URL, {"Fy First", "Fy Second"}, {"Fy Third", "Fy Unranked"}),
+    (MEDIA_SEARCH_URL, {"Fy First", "Fy First S2", "Fy Second"}, {"Fy Third", "Fy Unranked", "Fy Unranked S2"}),
 ], ids=["anime", "media"])
-async def test_recommended_keeps_the_rows_the_ranking_holds(client, user_auth_headers, ranked, url, held, rest):
+async def test_recommended_keeps_the_top_of_the_ranking(client, user_auth_headers, ranked, monkeypatch, url, held, rest):
+    """The top `RECOMMENDED`, cut at two so a ranked anime falls past it."""
+    monkeypatch.setattr(recommendation_dao, "RECOMMENDED", 2)
     await _fixture_rows(client, user_auth_headers, url=url, expect=held, recommended=True)
     await _fixture_rows(client, user_auth_headers, url=url, expect=rest, recommended=False)
 

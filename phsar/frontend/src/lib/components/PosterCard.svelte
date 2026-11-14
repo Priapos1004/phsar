@@ -4,18 +4,20 @@
 	// follows `RatedAnimeCard`. At the media grain the cover, bookmark and band are
 	// `MediaInfo`'s: behind the spoiler guard, and rated or not.
 	import SpoilerGuard from '$lib/components/SpoilerGuard.svelte';
+	import Tooltip from '$lib/components/Tooltip.svelte';
 	import WatchlistBookmarkIcon from '$lib/components/WatchlistBookmarkIcon.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { ratingCoverage } from '$lib/stores/ratingCoverage';
 	import { visibleMediaSet } from '$lib/stores/spoilerVisibility';
 	import { userSettings } from '$lib/stores/userSettings';
-	import { watchlistAnimeColors, watchlistTags } from '$lib/stores/watchlist';
+	import { watchlistAnimeColors, watchlistAnimeLists, watchlistTags } from '$lib/stores/watchlist';
 	import * as cls from '$lib/styles/classes';
 	import { Star } from 'lucide-svelte';
 	import type { AnimeSearchResult, MediaSearchResult } from '$lib/types/api';
 	import { formatMediaType, resolveTitle } from '$lib/utils/formatString';
 	import { isAnimeResult, sortLine, unusualAnnouncedType, type SortKey } from '$lib/utils/search';
 	import { COVERAGE_STYLE } from '$lib/utils/ratingCoverage';
+	import { REASON_STYLE } from '$lib/utils/recommendation';
 
 	interface Props {
 		row: AnimeSearchResult | MediaSearchResult;
@@ -33,6 +35,14 @@
 	// Shows only under the announced sort, the one that fills `announced_type`; anime only,
 	// since a media has no franchise to differ from.
 	let badge = $derived(isAnimeResult(row) ? unusualAnnouncedType(row) : null);
+	// Under the `for_you` sort alone, where the badge above never shows, so the corner is free.
+	let reason = $derived.by(() => {
+		if (!row.reason) return null;
+		const { colour, label, because } = REASON_STYLE[row.reason];
+		// Only a watchlist reason names lists, so only it follows the watchlist.
+		const lists = row.reason === 'watchlist' ? ($watchlistAnimeLists.get(isAnimeResult(row) ? row.uuid : row.anime_uuid) ?? []) : [];
+		return { colour, label, ...because(row.reason_name ?? null, [...lists]) };
+	});
 
 	let title = $derived(resolveTitle(row.title, row.name_eng, row.name_jap, nameLanguage));
 	let bookmarkColors = $derived.by(() => {
@@ -73,6 +83,22 @@
 				<Badge variant="secondary" class="absolute top-1.5 left-1.5 text-[10px] h-5 {cls.badgeMediaTypeColor}">
 					{formatMediaType(badge)}
 				</Badge>
+			{/if}
+			{#if reason}
+				<!-- A tap opens the tooltip rather than the anime: the tile's one way to say why.
+				     The name ends the sentence as one inline block, so a line break moves it whole. -->
+				<div class="absolute top-1.5 left-1.5">
+					<Tooltip insideLink class="relative block {cls.hitArea}">
+						{#snippet content()}
+							<div class="space-y-0.5">
+								<p class="font-semibold">{reason.label}</p>
+								<p>{reason.text}{#if reason.name}<span class="inline-block">{reason.name}</span>{/if}</p>
+							</div>
+						{/snippet}
+						<span class="block size-3 rounded-full ring-2 ring-white/60 shadow" style:background={reason.colour}></span>
+						<span class="sr-only">{reason.label}: {reason.text}{reason.name}</span>
+					</Tooltip>
+				</div>
 			{/if}
 			{#if bookmarkColors.length > 0}
 				<div class={cls.coverBookmark}>

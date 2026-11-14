@@ -47,7 +47,7 @@ from app.models.recommendation import (
 from app.models.tag import Tag
 from app.models.user_settings import NameLanguage, UserSettings
 from app.models.watchlist_event import WatchlistEvent
-from app.services.recommender_compute import ROW, MediaRow, Pick, StarRow
+from app.services.recommender_compute import RECOMMENDED, ROW, MediaRow, Pick, StarRow
 
 # A recommender genre set is the anime's genres and themes, the tags the app lists together.
 _GENRE_KINDS = (GenreType.Genres, GenreType.Themes)
@@ -206,8 +206,10 @@ class RecommendationDAO:
         await db.execute(update(RecommendationState).where(RecommendationState.user_id == user_id).values(inputs_key=key))
 
     async def ranked_ids(self, db: AsyncSession, user_id: int, *, per_anime: bool) -> set[int]:
-        """The anime the caller's ranking holds or, per media, their media."""
-        ranked = select(Recommendation.anime_id).where(Recommendation.user_id == user_id)
+        """The caller's top `RECOMMENDED` anime or, per media, their media."""
+        ranked = select(Recommendation.anime_id).where(
+            Recommendation.user_id == user_id, Recommendation.rank <= RECOMMENDED,
+        )
         if not per_anime:
             ranked = select(Media.id).where(Media.anime_id.in_(ranked))
         return set((await db.execute(ranked)).scalars())

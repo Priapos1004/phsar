@@ -33,7 +33,7 @@ const number = (raw: unknown) => (typeof raw === 'number' && Number.isFinite(raw
 
 // Every field the sanitizer reads, or leaves out on purpose: a new filter fails to compile
 // here until it joins one or the other, rather than vanishing on the next reload.
-type Read = ListFilterKey | ModeKey | RangeParam | 'top_percent' | 'upcoming_main' | 'rated' | 'watchlisted' | 'genres'
+type Read = ListFilterKey | ModeKey | RangeParam | 'top_percent' | 'upcoming_main' | 'rated' | 'watchlisted' | 'recommended' | 'genres'
 	| 'your_score_min' | 'your_score_max' | 'your_top_percent';
 type LeftOut = 'query' | 'search_type' | 'view_type' | 'sort' | 'sort_dir';
 const EVERY_FIELD: Exclude<keyof MediaSearchFilters, Read | LeftOut> extends never ? true : never = true;
@@ -65,6 +65,7 @@ export function sanitizeFilters(raw: unknown): MediaSearchFilters {
 	const rated = pickStrings(r.rated).filter((s): s is RatedState => Object.hasOwn(STATES, s));
 	if (rated.length) out.rated = rated;
 	if (typeof r.watchlisted === 'boolean') out.watchlisted = r.watchlisted;
+	if (typeof r.recommended === 'boolean') out.recommended = r.recommended;
 	const genres = r.genres as { mode?: unknown; groups?: unknown } | null | undefined;
 	if (genres && Array.isArray(genres.groups)) {
 		const groups = genres.groups.slice(0, MAX_GENRE_GROUPS).map(

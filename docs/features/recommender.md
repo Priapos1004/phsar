@@ -133,7 +133,10 @@ A user with no ratings gets the catalogue's popular picks around the explore slo
 **Each pick names its reason**: `continue` for a continuation, listed or not, else the feature
 group contributing most to its score — watchlist, fresh, recent, favourite or popular — or
 `explore` for a slot. A recent or
-favourite reason also names the anime it is nearest.
+favourite reason also names the anime it is nearest, a watchlist one its priority, an explore
+one its region. A fresh one
+names when it aired, by its release age or its finale, whichever weighed more
+(`fresh_detail`).
 
 ## The watchlist's history
 
@@ -160,6 +163,9 @@ computed from (`recommendation_state`): the user's ratings' and log events' coun
 and the sum of their media's anime ids (a merge or split moves media between anime without
 touching those rows), the map's stars — a refit replaces every one — the recommender settings,
 `recommender_compute.version()` and the UTC date. A note edit touches none of them.
+
+**Home's recommendation row is a search over the ranking**, seeded as a carousel
+([browse](browse.md)): its top, in its order.
 
 **It recomputes on read.** A search that reads the ranking — the `for_you` sort or the
 `recommended` filter ([search](search.md#personal-filters-and-sort)) — compares the key first;

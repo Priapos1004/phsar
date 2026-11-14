@@ -65,7 +65,13 @@ export interface SortValues {
 	announced_at?: string | null;
 	announced_type?: string | null;
 	your_rating?: number | null;
+	/** Under the `for_you` sort, a ranked row's reason, and the anime, detail or region it names. */
+	reason?: RecommendationKind | null;
+	reason_name?: string | null;
 }
+
+/** Why an anime is in the caller's ranking: docs/features/recommender.md, "The row". */
+export type RecommendationKind = 'continue' | 'watchlist' | 'fresh' | 'recent' | 'favourite' | 'popular' | 'explore';
 
 // How far the caller has got with one anime (GET /ratings/coverage); the states are in
 // docs/features/ratings.md. An anime the caller has not rated is absent.

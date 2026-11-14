@@ -32,6 +32,14 @@ export const watchlistAnimeColors = derived(watchlistTags, ($map) => {
 	return byAnime;
 });
 
+// anime UUID → the names of the lists its entries sit on, first seen first: a watchlist
+// recommendation's tooltip.
+export const watchlistAnimeLists = derived(watchlistTags, ($map) => {
+	const byAnime = new Map<string, Set<string>>();
+	for (const e of $map.values()) byAnime.set(e.anime_uuid, (byAnime.get(e.anime_uuid) ?? new Set<string>()).add(e.tag_name));
+	return byAnime;
+});
+
 // anime UUID → the best priority among its entries (1 is high): the galaxy's Find picks.
 export const watchlistAnimePriority = derived(watchlistTags, ($map) => {
 	const best = new Map<string, number>();

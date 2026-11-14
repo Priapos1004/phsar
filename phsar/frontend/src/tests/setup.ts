@@ -68,6 +68,10 @@ vi.mock('$lib/config', () => ({
 	API_URL: 'http://localhost:8000',
 }));
 
+// jsdom has no Range.getClientRects, which `hugLines` measures with; no rects reads as text
+// on one line, which it leaves alone.
+Range.prototype.getClientRects ??= () => [] as unknown as DOMRectList;
+
 // jsdom has no ResizeObserver, which Svelte's `bind:clientHeight` needs; a size never
 // changes without layout anyway, so an observer that never fires is the faithful stand-in.
 globalThis.ResizeObserver ??= class {

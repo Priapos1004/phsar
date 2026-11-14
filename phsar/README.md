@@ -277,7 +277,6 @@ phsar/
 │   │   │   │   ├── RemoveFromWatchlistToggle.svelte
 │   │   │   │   ├── ScoreDial.svelte
 │   │   │   │   ├── ScorePercentile.svelte
-│   │   │   │   ├── ScrollableCard.svelte
 │   │   │   │   ├── ScrollRow.svelte
 │   │   │   │   ├── SeeAllResults.svelte
 │   │   │   │   ├── SegmentedControl.svelte
@@ -386,6 +385,7 @@ phsar/
 │   │   │       ├── ratingLimits.ts
 │   │   │       ├── ratingNeighbors.ts
 │   │   │       ├── ratingStats.ts
+│   │   │       ├── recommendation.ts
 │   │   │       ├── relations.ts
 │   │   │       ├── resumeSession.ts
 │   │   │       ├── returnTo.ts
@@ -437,6 +437,7 @@ phsar/
 │   │   └── tests/
 │   │       ├── setup.ts
 │   │       ├── SpoilerGuardTest.svelte
+│   │       ├── TooltipLinkTest.svelte
 │   │       ├── fixtures/
 │   │       │   ├── jwt.ts
 │   │       │   ├── readiness-cases.json
@@ -466,6 +467,7 @@ phsar/
 │   │       ├── galaxy-view.test.ts
 │   │       ├── galaxy.test.ts
 │   │       ├── genre-badges.test.ts
+│   │       ├── hug-lines.test.ts
 │   │       ├── job-bell.test.ts
 │   │       ├── job-detail-counters.test.ts
 │   │       ├── job-health.test.ts

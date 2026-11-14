@@ -69,6 +69,9 @@ def _about(query: str) -> dict[str, Any]:
 
 
 CAROUSELS = [
+    # The caller's ranking. Sortable: `recommended` alone holds the
+    # set to the ranking's top `RECOMMENDED`, whatever the order.
+    _carousel("recommended", "Shit You Might Dig", {"sort": "for_you", "recommended": True}, 1000, sortable=True),
     _carousel(
         "announced-continuations", "Announced continuations",
         {"upcoming_main": True, "rated": ["in_progress", "on_hold", "main", "all"], "sort": "release"},
