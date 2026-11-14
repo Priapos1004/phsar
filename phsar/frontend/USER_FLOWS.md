@@ -109,7 +109,7 @@ rely on a specific claim — then correct it here, and narrow this note as secti
 | `/media?uuid=<uuid>` | Media detail + rating | Yes |
 | `/ratings?tab=ratings\|stats` | Your ratings: anime-level list (`ratings`, default) + ECharts statistics (`stats`) | Yes |
 | `/watchlist?tab=watchlists\|tags` | Your watchlist: entries view (`watchlists`, default) + list (tag) management (`tags`) | Yes (not available to restricted users) |
-| `/settings` | User preferences (theme, language, rating step, spoiler level, data export, account deletion) | Yes |
+| `/settings?tab=general\|recommendations` | Your settings: preferences and account (`general`, default) + what recommendations learn from (`recommendations`, 10.4) | Yes |
 | `/library/add` | Add anime via MAL query + recent additions panel | Yes (form disabled for restricted users) |
 | `/admin` | Admin sections behind a `?tab=` switcher (Overview / Jobs Log / Tokens / Curation / Completion / Backups) | Yes (admin) |
 | `/admin/jobs/[uuid]` | Per-job inspection page for update_sweep v2+ rows (per-media field diffs, umbrella reclassifications) | Yes (admin) |
@@ -560,6 +560,8 @@ own.
 
 ## 10. Settings Page
 
+Tabs under the title, **General** (default) and **Recommendations**, kept in the link as `?tab=`; an unknown one opens General. General holds the cards below, the preferences and the data export among them; Recommendations holds 10.4.
+
 ### 10.1 Theme
 - "Theme" card with "Design your lobby" subtitle
 - Horizontal row of theme cards (snap scrolling), paged by arrows as a Browse row is (3a)
@@ -595,6 +597,15 @@ own.
 - On success: non-dismissible farewell dialog ("Thank you for using PHSAR...") with "Continue to login" button
 - "Continue to login" clears token and settings, redirects to `/login`
 - **API call**: `DELETE /users/account` with `{ password }` body
+
+### 10.4 Recommendations (Recommendations tab)
+- "Recommendations" card, "What your recommendations learn from"
+- **Rating history starts** ⓘ: the rating your own watching order starts at, so the ratings you added in bulk when you joined don't read as an order; ratings before it still count for your taste. A row shows the start in use: cover, title, the day it was finished, and "detected" or "your pick"
+  - **Change** opens a search over every rating, newest first, under day headings, each with its cover and **Start here**. It opens at the start in use, and what is older than it is dimmed. **Close**, or a pick, folds it away; the button keeps its width either way
+  - Picking the detected rating, or **Use detected** (shown beside a pick of another), returns to the detected start. After a pick, the detected rating carries a "detected" tag in the list
+  - On a phone the row's buttons take a line of their own under the cover and title
+- **Recommend hot anime** ⓘ: a switch, on by default. Off, an anime the watchlist would call Hot (9.2.1) isn't recommended
+- **Guests**: "Guest accounts get no recommendations"; the history-start picker isn't shown and the switch is disabled, each setting's sub-line reading "Off for guest accounts"
 
 ---
 
@@ -792,6 +803,8 @@ own.
 | `/ratings/bulk-delete` | POST | Bulk delete ratings from anime detail |
 | `/ratings/{uuid}` | DELETE | Delete a rating |
 | `/ratings/spoiler-visibility` | GET | Layout auth (fetch visible media UUIDs for spoiler protection) |
+| `/ratings/history-start` | GET | Settings page, Recommendations tab (non-guests): every rating in the order finished, with the detected and the chosen history start (10.4) |
+| `/ratings/history-start` | PUT | Settings page, Recommendations tab: start the history at a rating, or `null` for the detected start; answers as the GET does |
 | `/watchlist/media-tags` | GET | Layout auth + after any watchlist mutation (bookmark icon-state + per-media list color); the Galaxy's Find picks read its priority |
 | `/watchlist/tags` | GET | Login (layout) + the watchlist **Lists** tab on mount + dialogs. Not on every `/watchlist` visit: only that tab reads the per-list entry counts, and it mounts on demand |
 | `/watchlist/tags` | POST | Watchlist Lists tab (create a list) |

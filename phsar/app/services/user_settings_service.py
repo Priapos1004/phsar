@@ -13,20 +13,22 @@ logger = logging.getLogger(__name__)
 user_settings_dao = UserSettingsDAO()
 
 
-async def get_settings(db: AsyncSession, user_id: int) -> UserSettingsOut:
+async def settings_row(db: AsyncSession, user_id: int) -> UserSettings:
+    """The user's settings row; every user has one (`auth_service.create_user`)."""
     settings = await user_settings_dao.get_by_user_id(db, user_id)
     if not settings:
         raise UserSettingsNotFoundError()
-    return UserSettingsOut.model_validate(settings)
+    return settings
+
+
+async def get_settings(db: AsyncSession, user_id: int) -> UserSettingsOut:
+    return UserSettingsOut.model_validate(await settings_row(db, user_id))
 
 
 async def update_settings(
     db: AsyncSession, user_id: int, data: UserSettingsUpdate, *, role: RoleType,
 ) -> UserSettingsOut:
-    settings = await user_settings_dao.get_by_user_id(db, user_id)
-    if not settings:
-        raise UserSettingsNotFoundError()
-
+    settings = await settings_row(db, user_id)
     updates = data.model_dump(exclude_unset=True)
     # Restricted (guest) users are pinned to spoiler=off — they can't rate,
     # so a frontier would freeze at the first episode of every anime and

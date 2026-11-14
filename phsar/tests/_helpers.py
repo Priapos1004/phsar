@@ -75,13 +75,14 @@ async def default_tag_uuid(client, headers) -> str:
 
 async def rate_media(
     client, headers, media_uuid, status: str = "completed", rating: float = 8.0, note: str | None = None,
-) -> None:
-    """Rate one media as the caller, through the real endpoint."""
+) -> str:
+    """Rate one media as the caller, through the real endpoint: the rating's uuid."""
     resp = await client.put(
         f"/ratings/media/{media_uuid}", json={"rating": rating, "watch_status": status, "note": note},
         headers=headers,
     )
     assert resp.status_code == 200, resp.text
+    return resp.json()["uuid"]
 
 
 async def list_media(client, headers, *media_uuids) -> None:

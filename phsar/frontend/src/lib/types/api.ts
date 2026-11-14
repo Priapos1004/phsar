@@ -431,9 +431,27 @@ export interface UserSettings {
 	default_search_view: 'anime' | 'media';
 	rating_step: '0.5' | '0.25' | '0.1' | '0.01';
 	spoiler_level: 'off' | 'blur' | 'hide';
+	recommend_hot: boolean;
 }
 
 export type UserSettingsUpdate = Partial<UserSettings>;
+
+/** `/ratings/history-start` (`HistoryStart` in rating_schema.py). */
+export interface HistoryStart {
+	detected: string | null;
+	chosen: string | null;
+	ratings: HistoryStartRating[];
+}
+
+export interface HistoryStartRating {
+	uuid: string;
+	title: string;
+	name_eng: string | null;
+	name_jap: string | null;
+	cover_image: string | null;
+	/** When it was finished: a timestamp. */
+	at: string;
+}
 
 // Spoiler visibility
 export interface SpoilerVisibility {

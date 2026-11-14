@@ -11,6 +11,7 @@ function setSettings(spoiler_level: 'off' | 'blur' | 'hide') {
 		default_search_view: 'anime',
 		rating_step: '0.5',
 		spoiler_level,
+		recommend_hot: true,
 	});
 }
 

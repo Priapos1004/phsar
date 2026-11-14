@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -180,7 +180,25 @@ class AnimeRatingCoverage(BaseModel):
     top_percent: int
 
 
+class HistoryStartRating(BaseModel):
+    """One rating the history can start at: its media's titles and cover, and when it was
+    finished (`recommender_compute.event_time`)."""
+    uuid: UUID
+    title: str
+    name_eng: str | None
+    name_jap: str | None
+    cover_image: str | None
+    at: datetime
+
+
 class HistoryStart(BaseModel):
-    """`GET /ratings/history-start`; `chosen` is null when the user chose none."""
-    detected: date | None
-    chosen: date | None
+    """`/ratings/history-start`: every rating in the order finished, the first one the import
+    rule counts in the user's own order, and the one the user chose (null for none)."""
+    detected: UUID | None
+    chosen: UUID | None
+    ratings: list[HistoryStartRating]
+
+
+class HistoryStartChoice(BaseModel):
+    """`PUT /ratings/history-start`: the rating to start at; null returns to the detected one."""
+    rating: UUID | None

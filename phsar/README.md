@@ -272,6 +272,7 @@ phsar/
 │   │   │   │   │   ├── RatingsTable.svelte
 │   │   │   │   │   ├── RatingsTagChart.svelte
 │   │   │   │   │   └── types.ts
+│   │   │   │   ├── RecommendationSettings.svelte
 │   │   │   │   ├── RelatedMediaCarousel.svelte
 │   │   │   │   ├── RemoveFromWatchlistToggle.svelte
 │   │   │   │   ├── ScoreDial.svelte
@@ -286,6 +287,7 @@ phsar/
 │   │   │   │   ├── ShareDialog.svelte
 │   │   │   │   ├── SpoilerGuard.svelte
 │   │   │   │   ├── SearchBar.svelte
+│   │   │   │   ├── SearchInput.svelte
 │   │   │   │   ├── SearchLinks.svelte
 │   │   │   │   ├── SkeletonMediaInfo.svelte
 │   │   │   │   ├── SortControl.svelte
@@ -329,6 +331,7 @@ phsar/
 │   │   │   │       ├── separator/
 │   │   │   │       ├── sheet/
 │   │   │   │       ├── slider/
+│   │   │   │       ├── switch/
 │   │   │   │       ├── textarea/
 │   │   │   │       └── tooltip/
 │   │   │   ├── stores/
@@ -490,11 +493,13 @@ phsar/
 │   │       ├── return-to.test.ts
 │   │       ├── scroll-focus.test.ts
 │   │       ├── search-links.test.ts
+│   │       ├── search-input.test.ts
 │   │       ├── search-utils.test.ts
 │   │       ├── searchbar.test.ts
 │   │       ├── see-all-results.test.ts
 │   │       ├── segmented-control.test.ts
 │   │       ├── session-timeout.test.ts
+│   │       ├── settings-recommendations.test.ts
 │   │       ├── share-card.test.ts
 │   │       ├── share-content.test.ts
 │   │       ├── share-image.test.ts
@@ -673,6 +678,7 @@ erDiagram
     media ||--o| media_freshness : "media_id CASCADE"
     media ||--o| media_relation_edges : "media_id CASCADE"
     media ||--o| media_search : "media_id CASCADE"
+    ratings |o--o{ user_settings : "history_start_rating_id SET NULL"
     ratings ||--o| rating_search : "rating_id CASCADE"
     studio |o--o{ media_studio : "studio_id CASCADE"
     tag |o--o{ watchlist_events : "tag_id SET NULL"
@@ -958,7 +964,7 @@ erDiagram
         defaultsearchview default_search_view
         ratingstep rating_step
         spoilerlevel spoiler_level
-        date history_start
+        integer history_start_rating_id FK
         boolean recommend_hot
     }
     user_visible_media {

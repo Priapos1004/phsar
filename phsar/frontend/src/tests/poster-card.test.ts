@@ -16,7 +16,7 @@ const tile = (row: AnimeSearchResult | MediaSearchResult) =>
 	render(PosterCard, { props: { row, href: '/x', sort: null } });
 
 beforeEach(() => {
-	userSettings.set({ theme: 'default', name_language: 'english', default_search_view: 'anime', rating_step: '0.5', spoiler_level: 'blur' });
+	userSettings.set({ theme: 'default', name_language: 'english', default_search_view: 'anime', rating_step: '0.5', spoiler_level: 'blur', recommend_hot: true });
 	spoilerVisibility.set({ visible_media_uuids: [] });
 });
 

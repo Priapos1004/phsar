@@ -414,34 +414,51 @@ def natural_days(days: dict[int, tuple[float, int]], override: int | None) -> tu
     return {d for d in order if d >= first and d not in skip} if first is not None else set(), first
 
 
+def watch_hours(watched: np.ndarray, episodes: np.ndarray, duration: np.ndarray) -> np.ndarray:
+    """The hours each rating stands for: the episodes watched, else the media's, times its
+    episode length. NaN marks unknown, which counts as none."""
+    return np.nan_to_num(np.where(np.isnan(watched), episodes, watched)) * np.nan_to_num(duration) / 3600
+
+
+def natural_ratings(
+    t: np.ndarray, hours: np.ndarray, anime: list[int], override: float | None,
+) -> tuple[np.ndarray, int | None]:
+    """Which ratings are in the user's own order, and its first day: `natural_days` over each
+    day's watch time and distinct anime. `override` is the event time of the rating the user
+    chose to start at; docs/features/recommender.md, "The natural history", gives the rule."""
+    ordered = t >= (-math.inf if override is None else override)
+    day_of = np.floor(t / DAY).astype(np.int64)
+    days: dict[int, list] = defaultdict(lambda: [0.0, set()])
+    for i in np.flatnonzero(ordered).tolist():
+        days[int(day_of[i])][0] += hours[i]
+        days[int(day_of[i])][1].add(anime[i])
+    natural, start = natural_days(
+        {d: (h, len(a)) for d, (h, a) in days.items()},
+        math.floor(override / DAY) if override is not None else None,
+    )
+    return ordered & np.isin(day_of, list(natural)), start
+
+
 def ledger(
     cat: Catalogue, ratings: list[RatingRow], listings: list[ListingRow],
-    override: date | None = None, franchise: dict[int, tuple[bool, int | None]] | None = None,
+    override: float | None = None, franchise: dict[int, tuple[bool, int | None]] | None = None,
     listed_from: float = math.inf,
 ) -> Ledger:
-    """`franchise` maps anime ids to `franchise_signals`; the backtest replays them as they
-    stand today. `listed_from` is when `listings` start to hold the whole watchlist history:
-    a pick before it, or with no such history, has an unknown listing."""
+    """`override` is the chosen start's event time (`natural_ratings`). `franchise` maps anime
+    ids to `franchise_signals`; the backtest replays them as they stand today. `listed_from` is
+    when `listings` start to hold the whole watchlist history: a pick before it, or with no
+    such history, has an unknown listing."""
     rated = [r for r in ratings if r.media_id in cat.position_of]
     position = np.array([cat.position_of[r.media_id] for r in rated], dtype=np.int64)
     t = np.array([event_time(r) for r in rated], dtype=float)
     watched = np.array([np.nan if r.episodes_watched is None else r.episodes_watched for r in rated], dtype=float)
-    hours = np.nan_to_num(np.where(np.isnan(watched), cat.raw_episodes[position], watched)) * np.nan_to_num(
-        cat.raw_duration[position]) / 3600
+    hours = watch_hours(watched, cat.raw_episodes[position], cat.raw_duration[position])
     day_of = np.floor(t / DAY).astype(np.int64).tolist()
     row_of = cat.media_row[position].tolist()
-    days: dict[int, list] = defaultdict(lambda: [0.0, set()])
-    for i, d in enumerate(day_of):
-        days[d][0] += hours[i]
-        days[d][1].add(row_of[i])
-    natural, start = natural_days(
-        {d: (h, len(a)) for d, (h, a) in days.items()},
-        (override - EPOCH).days if override else None,
-    )
+    keep, start = natural_ratings(t, hours, row_of, override)
     grouped: dict[tuple[int, int], list[int]] = defaultdict(list)
-    for i, d in enumerate(day_of):
-        if d in natural:
-            grouped[(row_of[i], d)].append(i)
+    for i in np.flatnonzero(keep).tolist():
+        grouped[(row_of[i], day_of[i])].append(i)
     ratings_ = np.array([r.rating for r in rated], dtype=float)
     events = sorted(
         Event(t=float(t[ix].min()), row=row, hours=float(hours[ix].sum()),

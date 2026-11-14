@@ -4,9 +4,9 @@
 	import { Button } from '$lib/components/ui/button';
 	import * as Card from '$lib/components/ui/card';
 	import * as Select from '$lib/components/ui/select';
-	import { Input } from '$lib/components/ui/input';
+	import SearchInput from '$lib/components/SearchInput.svelte';
 	import Tooltip from '$lib/components/Tooltip.svelte';
-	import { Check, CheckCircle2, RefreshCw, Search, X } from 'lucide-svelte';
+	import { Check, CheckCircle2, RefreshCw, X } from 'lucide-svelte';
 	import { fetchAnimeSearchResults } from '$lib/utils/search';
 	import { resolveTitle, formatShortDate } from '$lib/utils/formatString';
 	import { buildDetailHref } from '$lib/utils/navigation';
@@ -83,12 +83,6 @@
 			return;
 		}
 		debounceTimer = setTimeout(() => runSearch(q), 300);
-	}
-
-	function clearSearch() {
-		clearTimeout(debounceTimer);
-		query = '';
-		results = [];
 	}
 
 	async function runSearch(q: string) {
@@ -189,25 +183,7 @@
 	<Card.Content class="space-y-4">
 		<!-- Search to mark a new anime -->
 		<div class="space-y-2">
-			<div class="relative">
-				<Search class="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-				<Input
-					class="pl-8 pr-8"
-					placeholder="Search anime…"
-					bind:value={query}
-					oninput={onQueryInput}
-				/>
-				{#if query}
-					<button
-						type="button"
-						onclick={clearSearch}
-						aria-label="Clear search"
-						class="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-card-foreground {cls.hitArea}"
-					>
-						<X class="size-4" />
-					</button>
-				{/if}
-			</div>
+			<SearchInput bind:value={query} placeholder="Search anime…" oninput={onQueryInput} />
 			{#if query.trim() && !searching}
 				<div class="rounded-lg border border-border divide-y divide-border max-h-72 overflow-y-auto">
 					{#each results as r (r.uuid)}

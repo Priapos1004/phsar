@@ -7,7 +7,6 @@ from app.core.dependencies import get_db, require_user_or_admin
 from app.schemas import rating_schema
 from app.services import rating_service, recommender_service
 from app.services.spoiler_service import get_spoiler_visibility
-from app.services.user_settings_service import get_settings
 
 router = APIRouter(prefix="/ratings", tags=["ratings"])
 
@@ -82,12 +81,18 @@ async def get_history_start(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(require_user_or_admin),
 ):
-    """Where the recommender reads the caller's own watching order from: the day it detects
-    and the day they chose, which `PUT /users/settings` sets."""
-    settings = await get_settings(db, current_user.id)
-    return rating_schema.HistoryStart(
-        detected=await recommender_service.detected_history_start(db, current_user.id), chosen=settings.history_start,
-    )
+    """Where the recommender reads the caller's own watching order from."""
+    return await recommender_service.history_start(db, current_user.id)
+
+
+@router.put("/history-start", response_model=rating_schema.HistoryStart)
+async def choose_history_start(
+    data: rating_schema.HistoryStartChoice,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_user_or_admin),
+):
+    """Start the caller's own watching order at one of their ratings, or at the detected one."""
+    return await recommender_service.choose_history_start(db, current_user.id, data.rating)
 
 
 @router.post("/{rating_uuid}/rewatch", response_model=rating_schema.RatingOut)

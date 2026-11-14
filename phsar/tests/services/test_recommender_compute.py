@@ -93,10 +93,20 @@ def test_an_override_replaces_the_detected_start():
     assert natural == {9}
 
 
-def test_the_override_date_feeds_the_ledger():
+def test_the_override_moment_feeds_the_ledger():
     cat = _franchise_catalogue()
-    led = rc.ledger(cat, [_rating(10, T0), _rating(20, T0 + 60)], [], override=date(2026, 9, 1))
-    assert led.start == (date(2026, 9, 1) - rc.EPOCH).days
+    led = rc.ledger(cat, [_rating(10, T0), _rating(20, T0 + 30 * DAY)], [], override=T0 + 30 * DAY)
+    assert led.start == int(T0 // DAY) + 30
+
+
+def test_a_start_chosen_on_an_import_day_counts_that_day_from_the_chosen_rating_on():
+    """The first natural pick shares its day with the import's last ratings, which stay out of
+    the order."""
+    cat = _catalogue([_star(a, [float(a), 0.0]) for a in range(1, 7)], [_media(a * 10, a) for a in range(1, 7)])
+    ratings = [*(_rating(a * 10, T0 + a * 60) for a in range(1, 6)), _rating(60, T0 + 3600)]
+    assert rc.ledger(cat, ratings, []).natural == []  # six anime, 29 h: the day reads as the import
+    led = rc.ledger(cat, ratings, [], override=T0 + 3600)
+    assert [int(cat.anime_id[e.row]) for e in led.natural] == [6]
 
 
 def test_a_pick_is_listed_when_its_anime_was_on_the_list_at_the_time():

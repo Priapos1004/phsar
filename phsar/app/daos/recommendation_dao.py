@@ -139,13 +139,17 @@ class RecommendationDAO:
     async def inputs(self, db: AsyncSession, user_id: int) -> Row:
         """Everything a user's ranking is computed from, short of the date and the model's own
         version: docs/features/recommender.md, "Serving". Carries the recommender settings
-        by name (`history_start`, `recommend_hot`)."""
+        by name: `history_start`, the media whose rating the user's own order starts at (one
+        rating per media), and `recommend_hot`."""
         ratings, log = _changes(Ratings, user_id), _changes(WatchlistEvent, user_id)
         stars = select(func.count().label("n"), func.max(GalaxyStar.id).label("newest")).subquery()
         # One-row aggregates beside the settings row: the join is deliberately on nothing.
         stmt = (
-            select(*ratings.c, *log.c, *stars.c, UserSettings.history_start, UserSettings.recommend_hot)
+            select(
+                *ratings.c, *log.c, *stars.c, Ratings.media_id.label("history_start"), UserSettings.recommend_hot,
+            )
             .select_from(UserSettings).join(ratings, true()).join(log, true()).join(stars, true())
+            .outerjoin(Ratings, Ratings.id == UserSettings.history_start_rating_id)
             .where(UserSettings.user_id == user_id)
         )
         return (await db.execute(stmt)).one()

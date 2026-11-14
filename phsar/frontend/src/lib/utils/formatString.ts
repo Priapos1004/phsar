@@ -290,12 +290,12 @@ export function formatAirDate(ymd: string, now: Date = new Date()): string {
 	});
 }
 
+// One formatter, built once: `toLocaleDateString` with options builds a new one per call,
+// which a list of hundreds of dates pays for every row.
+const SHORT_DATE = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
 export function formatShortDate(iso: string): string {
-	return new Date(iso).toLocaleDateString('en-US', {
-		month: 'short',
-		day: 'numeric',
-		year: 'numeric',
-	});
+	return SHORT_DATE.format(new Date(iso));
 }
 
 /** "Oct 10": a timestamp's day without its year, for a list ordered by that date,

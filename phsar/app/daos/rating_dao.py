@@ -22,6 +22,7 @@ from app.daos.search_filters import (
     top_percent_of,
 )
 from app.models.anime import Anime
+from app.models.galaxy import GalaxyStar
 from app.models.media import MAIN_STORY_RELATIONS, Media
 from app.models.rating_search import RatingSearch
 from app.models.ratings import Ratings, WatchStatus
@@ -195,18 +196,23 @@ class RatingDAO(BaseDAO[Ratings]):
 
     async def history(self, db: AsyncSession, user_id: int) -> list[Row]:
         """Every rating of the user with its first watch event, which says when a completed
-        media was finished (`recommender_compute.event_time` reads both)."""
+        media was finished (`recommender_compute.event_time` reads both), and what the import
+        rule and the history-start picker read of its media."""
         first_watch = (
             select(WatchEvent.media_id, func.min(WatchEvent.watched_at).label("watched_at"))
             .where(WatchEvent.user_id == user_id)
             .group_by(WatchEvent.media_id)
             .subquery()
         )
+        on_map = select(GalaxyStar.anime_id).where(GalaxyStar.anime_id == Media.anime_id).exists()
         stmt = (
             select(
-                Ratings.media_id, Ratings.rating, Ratings.watch_status, Ratings.created_at,
+                Ratings.id, Ratings.uuid, Ratings.media_id, Ratings.rating, Ratings.watch_status, Ratings.created_at,
                 first_watch.c.watched_at, Ratings.episodes_watched,
+                Media.anime_id, Media.episodes, Media.duration_seconds, on_map.label("on_map"),
+                Media.title, Media.name_eng, Media.name_jap, Media.cover_image,
             )
+            .join(Media, Media.id == Ratings.media_id)
             .outerjoin(first_watch, first_watch.c.media_id == Ratings.media_id)
             .where(Ratings.user_id == user_id)
         )

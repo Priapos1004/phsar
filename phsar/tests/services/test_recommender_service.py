@@ -3,7 +3,7 @@ ranking itself is stubbed: what it computes is `recommender_compute`'s, tested t
 
 import asyncio
 import time
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import delete, func, select, update
@@ -74,7 +74,8 @@ async def test_the_ranking_recomputes_once_per_change_of_its_inputs(world, monke
 
     assert await fresh() == 1
     assert await fresh() == 1
-    db.add(Ratings(user_id=user.id, media_id=media[0].id, rating=7.0, watch_status=WatchStatus.completed))
+    rated = Ratings(user_id=user.id, media_id=media[0].id, rating=7.0, watch_status=WatchStatus.completed)
+    db.add(rated)
     await db.flush()
     assert await fresh() == 2
     db.add(Watchlist(user_id=user.id, media_id=media[1].id, tag_id=tag.id, priority=2))
@@ -82,7 +83,7 @@ async def test_the_ranking_recomputes_once_per_change_of_its_inputs(world, monke
     assert await fresh() == 3
     await db.execute(update(UserSettings).where(UserSettings.user_id == user.id).values(recommend_hot=False))
     assert await fresh() == 4
-    await db.execute(update(UserSettings).where(UserSettings.user_id == user.id).values(history_start=date(2026, 1, 1)))
+    await db.execute(update(UserSettings).where(UserSettings.user_id == user.id).values(history_start_rating_id=rated.id))
     assert await fresh() == 5
     # A merge moves a rated media to another anime without touching the rating.
     await db.execute(update(Media).where(Media.id == media[0].id).values(anime_id=anime[2].id))
@@ -102,6 +103,41 @@ async def test_the_ranking_recomputes_once_per_change_of_its_inputs(world, monke
     monkeypatch.setattr(recommender_service, "utc_today", lambda: date(2099, 1, 1))
     assert await fresh() == 8
     assert await fresh() == 8
+
+
+async def test_the_history_start_lists_every_rating_in_order_with_the_detected_start(world):
+    """Six anime of a 12 × 24-minute season in one morning read as the import, so the next
+    day's rating is the detected start. Inserted newest first, so the order is the event
+    times', not the ids'. An anime off the map is listed but never detected."""
+    db, user, _, _, _, _ = world
+    anime = [Anime(mal_id=-92100 - i, title=f"A-9210{i}-start") for i in range(8)]
+    db.add_all(anime)
+    await db.flush()
+    media = [Media(**media_kwargs(a.id, a.mal_id, episodes=12, duration_seconds=1440)) for a in anime]
+    db.add_all(media)
+    fit = GalaxyFit(models=b"", params={})
+    db.add(fit)
+    await db.flush()
+    sector = GalaxyGroup(fit_id=fit.id, number=0, auto_name="Sector", x=0.0, y=0.0)
+    db.add(sector)
+    await db.flush()
+    db.add_all(GalaxyStar(
+        anime_id=a.id, sector_id=sector.id, region_id=sector.id, x=0.0, y=0.0, z10=[0.0] * 10,
+        features=[0.0], uncertainty=0.0, between=False, trained=True,
+    ) for a in anime[:7])
+    morning = datetime(2026, 3, 3, 9, tzinfo=UTC)
+    at = [morning + timedelta(minutes=i) for i in range(6)] + [morning + timedelta(days=1), morning + timedelta(hours=20)]
+    ratings = [Ratings(user_id=user.id, media_id=m.id, rating=7.0, watch_status=WatchStatus.completed, created_at=t)
+               for m, t in zip(media, at, strict=True)]
+    for r in reversed(ratings):
+        db.add(r)
+        await db.flush()
+
+    start = await recommender_service.history_start(db, user.id)
+    assert [r.uuid for r in start.ratings] == [r.uuid for r in [*ratings[:6], ratings[7], ratings[6]]]
+    assert (start.detected, start.chosen) == (ratings[6].uuid, None)
+    chosen = await recommender_service.choose_history_start(db, user.id, ratings[5].uuid)
+    assert chosen.chosen == ratings[5].uuid
 
 
 async def _stretches(db, user):

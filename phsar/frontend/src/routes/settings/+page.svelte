@@ -1,5 +1,6 @@
 <script lang="ts">
     import { onMount, getContext } from 'svelte';
+    import { page } from '$app/state';
     import { api, ApiError } from '$lib/api';
     import { Button } from '$lib/components/ui/button';
     import * as Card from '$lib/components/ui/card';
@@ -12,6 +13,9 @@
     import DangerZone from '$lib/components/DangerZone.svelte';
     import ScrollRow from '$lib/components/ScrollRow.svelte';
     import InfoTip from '$lib/components/InfoTip.svelte';
+    import RecommendationSettings from '$lib/components/RecommendationSettings.svelte';
+    import TabNav, { activeTab } from '$lib/components/TabNav.svelte';
+    import { dropPersonalRows } from '$lib/stores/browseRows';
     import { pushToast } from '$lib/stores/toast';
     import { THEMES, isValidTheme, themeArt } from '$lib/themes';
     import * as cls from '$lib/styles/classes';
@@ -19,6 +23,14 @@
     import type { UserSettings, UserSettingsUpdate } from '$lib/types/api';
 
     const themeEntries = Object.entries(THEMES) as [ThemeKey, typeof THEMES[ThemeKey]][];
+
+    // General holds the app's look and the account; a tab of its own keeps the settings that
+    // tune what the app suggests together as they grow.
+    const TABS: { key: 'general' | 'recommendations'; label: string }[] = [
+        { key: 'general', label: 'General' },
+        { key: 'recommendations', label: 'Recommendations' },
+    ];
+    let active = $derived(activeTab(page.url, TABS, 'general'));
 
     const getUserRole = getContext<() => string | null>('userRole');
 
@@ -38,11 +50,14 @@
         }
     });
 
+    // A setting can change what a cached personal row shows (the recommender reads its own,
+    // and names a reason in the name language), so those rows reload.
     async function saveSetting(update: UserSettingsUpdate) {
         if (!settings) return;
         try {
             const updated = await api.put<UserSettings>('/users/settings', update);
             userSettings.set(updated);
+            dropPersonalRows();
             pushToast('Settings updated');
         } catch (err) {
             if (err instanceof ApiError) error = err.detail;
@@ -81,7 +96,11 @@
         <p class="text-destructive text-sm">{error}</p>
     {/if}
 
-    {#if settings}
+    <TabNav tabs={TABS} {active} basePath="/settings" ariaLabel="Settings sections" />
+
+    {#if settings && active === 'recommendations'}
+        <RecommendationSettings {settings} {isRestricted} onSave={saveSetting} />
+    {:else if settings}
         <!-- Theme -->
         <Card.Root>
             <Card.Header>

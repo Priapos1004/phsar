@@ -32,9 +32,12 @@ after the previous one. Without one, the history starts at the first rating. A l
 implausible day is left out of the order as well. Every rated anime still counts for taste,
 import or not.
 
-A slow import, a few anime a day, is indistinguishable from watching. An explicit start date,
-the user's `history_start` setting, replaces the detected one; `GET /ratings/history-start`
-returns both.
+A slow import, a few anime a day, is indistinguishable from watching, so the user can pick the
+rating their history starts at (`history_start_rating_id`); deleting that rating returns them to
+the detected start. A rating rather than a day, because the first natural rating can share its
+day with the import's last: under a pick, ratings before it count for taste only, and its own
+day is judged from it on. `/ratings/history-start` reads and sets it, over the ledger's own
+import rule (`natural_ratings`).
 
 ## Candidates
 
