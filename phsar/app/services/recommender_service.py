@@ -81,6 +81,13 @@ async def load_inputs(
     return cat, await anyio.to_thread.run_sync(led)
 
 
+async def live_weights(db: AsyncSession) -> tuple[UUID | None, dict[str, float]]:
+    """The weights the ranking reads and the fit they are, None for the committed `WEIGHTS`:
+    docs/features/recommender.md, "The ranking"."""
+    fit = await recommendation_dao.live_fit(db)
+    return (fit.uuid, fit.weights) if fit is not None else (None, rc.WEIGHTS)
+
+
 async def ensure_fresh(db: AsyncSession, user_id: int) -> None:
     """Recompute the user's stored ranking when anything it reads has changed since:
     docs/features/recommender.md, "Serving". Commits whenever it took the lock."""
@@ -92,8 +99,9 @@ async def ensure_fresh(db: AsyncSession, user_id: int) -> None:
         await db.commit()  # releases the lock
         return
     cat, led = await load_inputs(db, user_id, history_start=inputs.history_start)
+    _, weights = await live_weights(db)
     now = time.time()
-    picks = await anyio.to_thread.run_sync(partial(rc.recommend, cat, led, now, hot=inputs.recommend_hot))
+    picks = await anyio.to_thread.run_sync(partial(rc.recommend, cat, led, now, weights, hot=inputs.recommend_hot))
     await recommendation_dao.replace(db, user_id, picks, key, datetime.fromtimestamp(now, UTC))
     await db.commit()
 

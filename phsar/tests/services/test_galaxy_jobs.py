@@ -10,11 +10,11 @@ from sqlalchemy import delete, func, select
 
 from app.core.maintenance import count_restore
 from app.daos.job_dao import JobDAO
-from app.exceptions import GalaxyRestoredError, GalaxyVectorsStaleError
+from app.exceptions import ComputeRestoredError, GalaxyVectorsStaleError
 from app.models.anime import Anime
 from app.models.galaxy import GalaxyFit, GalaxyGroup, GalaxyStar
 from app.models.job import Job, JobKind
-from app.services import galaxy_compute, galaxy_service
+from app.services import child_process, galaxy_compute, galaxy_service
 from app.services.anime_search_service import anime_title_texts
 from app.services.galaxy_dispatcher import galaxy_rebuild_dispatcher
 from app.services.vector_embedding_service import MODEL_NAME, create_anime_embedding
@@ -29,7 +29,7 @@ def stub_fit(monkeypatch):
         assert fn is galaxy_compute.fit
         return fake_galaxy_fit(*args)
 
-    monkeypatch.setattr(galaxy_service, "run_in_child", in_process)
+    monkeypatch.setattr(child_process, "run_in_child", in_process)
 
 
 async def _embedded_anime(db_session, mal_id: int, title: str, description: str) -> Anime:
@@ -75,7 +75,7 @@ async def test_a_rename_made_during_the_fit_carries(db_session, catalogue, stub_
         await galaxy_service.rename_group(db_session, sector.uuid, "Isekai Sprawl")
         return fake_galaxy_fit(*args)
 
-    monkeypatch.setattr(galaxy_service, "run_in_child", renamed_meanwhile)
+    monkeypatch.setattr(child_process, "run_in_child", renamed_meanwhile)
     summary = await galaxy_rebuild_dispatcher(db_session, fake_job())
 
     assert summary["names_carried"] == 1
@@ -109,7 +109,7 @@ async def test_a_rebuild_lists_the_names_it_dropped(db_session, catalogue, stub_
     async def in_process(fn, *args):
         return diluted(*args)
 
-    monkeypatch.setattr(galaxy_service, "run_in_child", in_process)
+    monkeypatch.setattr(child_process, "run_in_child", in_process)
     summary = await galaxy_rebuild_dispatcher(db_session, fake_job())
 
     assert summary["names_carried"] == 0
@@ -135,7 +135,7 @@ async def test_a_rebuild_starts_cold_only_after_the_vectors_changed(db_session, 
         await galaxy_rebuild_dispatcher(db_session, fake_job())
 
     await galaxy_rebuild_dispatcher(db_session, fake_job())
-    monkeypatch.setattr(galaxy_service, "run_in_child", in_process)
+    monkeypatch.setattr(child_process, "run_in_child", in_process)
     await rebuild_after({"numpy": "0"})
     await rebuild_after({"vectors": "0"})
     assert starts == [True, False]
@@ -157,7 +157,7 @@ async def test_a_failed_fit_keeps_the_live_map(db_session, catalogue, stub_fit, 
     async def fails(*_args):
         raise RuntimeError("fit died")
 
-    monkeypatch.setattr(galaxy_service, "run_in_child", fails)
+    monkeypatch.setattr(child_process, "run_in_child", fails)
     with pytest.raises(RuntimeError, match="fit died"):
         await galaxy_rebuild_dispatcher(db_session, fake_job())
     assert (await db_session.execute(select(GalaxyFit.id))).scalar_one() == live
@@ -175,7 +175,7 @@ async def test_new_anime_are_placed_onto_the_live_map(db_session, catalogue, stu
         placed.extend(a.anime_id for a in anime)
         return [{**star, "trained": False} for star in fake_galaxy_fit(anime, media, {})["stars"]]
 
-    monkeypatch.setattr(galaxy_service, "run_in_child", in_process)
+    monkeypatch.setattr(child_process, "run_in_child", in_process)
     assert await galaxy_service.place_unplaced(db_session) == 1
     assert placed == [newcomer.id]
     star = (await db_session.execute(select(GalaxyStar).where(GalaxyStar.anime_id == newcomer.id))).scalar_one()
@@ -202,7 +202,7 @@ async def test_nothing_is_placed_onto_a_map_on_its_way_out(db_session, catalogue
     async def never(*_args):
         raise AssertionError("no child for a map on its way out")
 
-    monkeypatch.setattr(galaxy_service, "run_in_child", never)
+    monkeypatch.setattr(child_process, "run_in_child", never)
     assert await galaxy_service.place_unplaced(db_session) == 0
 
 
@@ -263,12 +263,12 @@ def test_the_refit_date_is_the_latest_quarterly_fifteenth(now, refit):
 async def test_compute_runs_in_a_spawned_child():
     """The child imports `galaxy_compute` alone; this fails if the module drags the app
     (or the model) in, or cannot be imported from a fresh interpreter."""
-    assert await galaxy_service.run_in_child(galaxy_compute.carry_names, [], []) == ({}, [])
+    assert await child_process.run_in_child(galaxy_compute.carry_names, [], []) == ({}, [])
 
 
 async def test_a_restore_while_the_child_runs_discards_its_answer():
-    child = asyncio.create_task(galaxy_service.run_in_child(galaxy_compute.carry_names, [], []))
+    child = asyncio.create_task(child_process.run_in_child(galaxy_compute.carry_names, [], []))
     await asyncio.sleep(0)  # the task reads the count, then waits on the child
     count_restore()
-    with pytest.raises(GalaxyRestoredError):
+    with pytest.raises(ComputeRestoredError):
         await child

@@ -19,6 +19,7 @@ from app.models.recommendation import (
     Recommendation,
     RecommendationExposure,
     RecommendationState,
+    RecommenderFit,
 )
 from app.models.tag import Tag
 from app.models.user_settings import UserSettings
@@ -43,6 +44,7 @@ class Ranking:
 
     def __call__(self, *args, **kwargs):
         self.calls += 1
+        self.weights = args[3]
         time.sleep(self.delay)
         return self.picks
 
@@ -103,6 +105,14 @@ async def test_the_ranking_recomputes_once_per_change_of_its_inputs(world, monke
     monkeypatch.setattr(recommender_service, "utc_today", lambda: date(2099, 1, 1))
     assert await fresh() == 8
     assert await fresh() == 8
+    # A refit for other code isn't live, so it changes nothing; one for this code is.
+    db.add(RecommenderFit(weights={"F5_mal": 1.0}, built_for="an older version"))
+    await db.flush()
+    assert await fresh() == 8
+    db.add(RecommenderFit(weights={"F5_mal": 2.0}, built_for=rc.version()))
+    await db.flush()
+    assert await fresh() == 9
+    assert ranking.weights == {"F5_mal": 2.0}
 
 
 async def test_the_history_start_lists_every_rating_in_order_with_the_detected_start(world):

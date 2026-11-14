@@ -36,6 +36,7 @@ from app.services.backup_dispatcher import backup_dispatcher
 from app.services.galaxy_dispatcher import galaxy_rebuild_dispatcher
 from app.services.job_worker import job_worker
 from app.services.merge_detection_service import backfill_merge_candidates
+from app.services.recommender_dispatcher import recommender_eval_dispatcher
 from app.services.scrape_dispatcher import (
     update_sweep_dispatcher,
     user_scrape_dispatcher,
@@ -164,6 +165,7 @@ async def lifespan(app: FastAPI):
     job_worker.register_dispatcher(JobKind.upcoming_sweep, seasonal_sweep_dispatcher)
     job_worker.register_dispatcher(JobKind.backup, backup_dispatcher)
     job_worker.register_dispatcher(JobKind.galaxy_rebuild, galaxy_rebuild_dispatcher)
+    job_worker.register_dispatcher(JobKind.recommender_eval, recommender_eval_dispatcher)
     await job_worker.start()
 
     backfill_task = asyncio.create_task(_post_yield_backfills())

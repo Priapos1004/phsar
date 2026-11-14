@@ -6,7 +6,7 @@ decisions are in the linked compound-docs.
 **Code**: `services/job_submission_service.py` (user submission) →
 `services/job_worker.py` (the worker) → `services/scrape_dispatcher.py`,
 `services/seasonal_sweep_dispatcher.py`, `services/backup_dispatcher.py`,
-`services/galaxy_dispatcher.py` (handlers)
+`services/galaxy_dispatcher.py`, `services/recommender_dispatcher.py` (handlers)
 → `services/progress_reporter.py` (progress) → `models/job.py`, `daos/job_dao.py`.
 
 ## The worker
@@ -46,6 +46,7 @@ row to `failed`, so a mid-job restart can't strand a row forever.
 | `backup` | `pg_dump` + verify + retention | no |
 | `restore` | Restores a dump | yes (request-scoped) |
 | `galaxy_rebuild` | Refits the [galaxy](galaxy.md) map in a child process and swaps it in | no |
+| `recommender_eval` | Measures the [recommender](recommender.md#the-weekly-job) in a child process and applies its weekly refit unless a guard holds it back | no |
 
 `restore` has no dispatcher and is never queued or drained: its row is written
 afterwards with its final status already set, as an audit record. Every other kind

@@ -869,7 +869,8 @@ Tabs under the title, **General** (default) and **Recommendations**, kept in the
 | `/admin/jobs/schedule-sweep` | POST | Coolify cron only — bearer token authenticated, enqueues a delayed `update_sweep` |
 | `/admin/jobs/schedule-seasonal` | POST | Coolify cron only — bearer token authenticated, enqueues a delayed `seasonal_sweep` |
 | `/admin/jobs/schedule-upcoming` | POST | Coolify cron only — bearer token authenticated, enqueues a delayed `upcoming_sweep` (next season) |
-| `/admin/jobs/schedule-nightly` | POST | Coolify cron only — bearer token authenticated, combined daily entry: enqueues `backup` (immediate) + delayed `update_sweep` + (Sundays UTC) delayed `seasonal_sweep` + (Wednesdays UTC in Mar/Jun/Sep/Dec) delayed `upcoming_sweep` |
+| `/admin/jobs/schedule-recommender-eval` | POST | Coolify cron only — bearer token authenticated, enqueues a `recommender_eval` (no delay by default) |
+| `/admin/jobs/schedule-nightly` | POST | Coolify cron only — bearer token authenticated, combined daily entry: enqueues `backup` (immediate) + delayed `update_sweep` + (Sundays UTC) delayed `seasonal_sweep` + (Wednesdays UTC in Mar/Jun/Sep/Dec) delayed `upcoming_sweep` + (when the map is due) delayed `galaxy_rebuild` + (Mondays UTC) delayed `recommender_eval` |
 
 ---
 

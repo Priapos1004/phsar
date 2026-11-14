@@ -67,9 +67,9 @@ class Settings(BaseSettings):
     BACKUP_RESTORE_TIMEOUT_SECONDS: int = 600
 
     # Content pipeline jobs
-    # Shared bearer for every cron-authed endpoint (the three individual
-    # schedulers AND the combined /admin/jobs/schedule-nightly). Empty value
-    # disables those endpoints — they all fail closed.
+    # Shared bearer for every cron-authed endpoint (the individual schedulers
+    # AND the combined /admin/jobs/schedule-nightly). Empty value disables
+    # those endpoints — they all fail closed.
     JOBS_CRON_TOKEN: str = ""
     JOBS_PER_USER_LIMIT: int = 4  # max queued+running scrape jobs per user
     # Rolling 24h cap on user_scrape submissions per user. The per-user limit

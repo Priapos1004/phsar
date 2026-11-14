@@ -3,7 +3,7 @@ sectors, Ward regions inside each sector, a 2-D layout of the 10-D space) and pl
 new anime onto a fitted map.
 
 It imports nothing from the app, and the fitting libraries only inside `fit` and `place`,
-so a spawned child (`galaxy_service.run_in_child`) can load it alone and the web process
+so a spawned child (`child_process.run_in_child`) can load it alone and the web process
 can import its row types and `carry_names` without loading them. The rows arrive with the
 app's own definitions already resolved (`GalaxyDAO.load_catalogue`).
 

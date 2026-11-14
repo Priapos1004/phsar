@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer, selectinload
 from sqlalchemy.orm.attributes import set_committed_value
 
-from app.core.job_versions import LIST_OMITTED_SUMMARY_KEYS
+from app.core.job_versions import JOB_KIND_VERSIONS, LIST_OMITTED_SUMMARY_KEYS
 from app.daos.base_dao import BaseDAO, recency_order
 from app.models.job import Job, JobKind, JobStatus
 
@@ -124,6 +124,19 @@ class JobDAO(BaseDAO[Job]):
             .where(Job.status.in_(self._ACTIVE_STATUSES))
         )
         return (await db.execute(stmt)).scalar_one()
+
+    async def latest_summaries(self, db: AsyncSession, kind: JobKind, limit: int) -> list[dict]:
+        """The `result_summary` of the kind's latest succeeded runs in its current shape
+        (`JOB_KIND_VERSIONS`), newest first."""
+        stmt = (
+            select(Job.result_summary)
+            .where(
+                Job.kind == kind, Job.version == JOB_KIND_VERSIONS[kind], Job.status == JobStatus.succeeded,
+                Job.result_summary.is_not(None),
+            )
+            .order_by(*recency_order(Job, "created_at")).limit(limit)
+        )
+        return list((await db.execute(stmt)).scalars())
 
     async def count_active_by_kind(self, db: AsyncSession, kind: JobKind) -> int:
         """Counts queued + running jobs of one kind, regardless of requester.

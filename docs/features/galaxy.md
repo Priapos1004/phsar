@@ -97,13 +97,13 @@ The job reports the movement as `median_movement`.
    why); the pass doing it asks for the rebuild once it ends;
 2. loads the catalogue and the live map's coordinates (when its vectors still match);
 3. commits, so no transaction stays open across the fit;
-4. runs the fit in a spawned child (`galaxy_service.run_in_child` says why);
+4. runs the fit in a spawned child (`child_process.run_in_child` says why);
 5. reads the hand names, after the fit (`galaxy_rebuild_dispatcher` says why);
 6. swaps the old fit for the new one in a single transaction (`replace_fit`).
 
 A failed fit writes nothing and leaves the live map in place. A restore while the child runs
 fails the rebuild, and a placement alike, rather than letting it write
-(`galaxy_service.run_in_child` says why). The job has no maintenance bracket, because it
+(`child_process.run_in_child` says why). The job has no maintenance bracket, because it
 writes only its own tables.
 
 ### When the map is rebuilt

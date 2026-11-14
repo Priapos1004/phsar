@@ -10,7 +10,7 @@ and compares anime on the [galaxy map](galaxy.md)'s distance.
 (the catalogue as the map sees it, the franchise signals readiness reads, the stored ranking
 and the watchlist's log), `RatingDAO.history`. `models/recommendation.py` and
 `models/watchlist_event.py` hold what is stored; `services/recommender_eval.py` fits and
-measures it. Search serves it.
+measures it, and `services/recommender_dispatcher.py` runs that weekly. Search serves it.
 
 ## The natural history
 
@@ -50,7 +50,8 @@ An anime is a candidate when it has an aired main-story media and is one of:
 - listed with an aired media, whatever its state: the list is explicit intent, a planned
   rewatch included.
 
-Finished, unlisted anime are not ranked: complete rewatches are too hard to predict yet.
+Finished, unlisted anime are not ranked: complete rewatches are too hard to predict yet, so
+the [weekly job](#the-weekly-job) only measures them.
 
 **Readiness gates them.** A candidate takes the [readiness](readiness.md) verdict: over what
 the user listed of it, on every list, once some of that has aired; otherwise over its whole
@@ -110,8 +111,11 @@ from one fit to the next.
 
 **The final score adds an enjoyment tilt**, `ALPHA` times the kNN estimate.
 
-**`WEIGHTS` are a reviewed fit**: the harness's pooled fit over every user's natural picks
-(below), committed as constants and refit as the data grows.
+**The weights are the live fit**: the newest refit the [weekly job](#the-weekly-job) applied
+(`recommender_fits`) that was fitted for this code's `version()`, else the committed `WEIGHTS`,
+a reviewed fit. So a commit that changes the model ranks by its own weights until the job next
+refits, and deleting the newest fit rolls back to the one before. Which features rank stays a
+commit's choice: the job refits only the weights `WEIGHTS` names.
 
 ## The row
 
@@ -161,8 +165,8 @@ entries listed then, each as found, so one listed and removed earlier is absent.
 Each user's ranking is stored whole (`recommendations`) beside the key of everything it was
 computed from (`recommendation_state`): the user's ratings' and log events' count, latest change
 and the sum of their media's anime ids (a merge or split moves media between anime without
-touching those rows), the map's stars — a refit replaces every one — the recommender settings,
-`recommender_compute.version()` and the UTC date. A note edit touches none of them.
+touching those rows), the map's stars — a refit replaces every one — the live fit, the
+recommender settings, `recommender_compute.version()` and the UTC date. A note edit touches none of them.
 
 **Home's recommendation row is a search over the ranking**, seeded as a carousel
 ([browse](browse.md)): its top, in its order.
@@ -205,6 +209,43 @@ pick that was no candidate then — a side story alone — has nothing to rank.
 
 `scripts/backtest_recommender.py` prints the report, and can rebuild the watchlist's past from
 the backups, back before the log began.
+
+### The weekly job
+
+`recommender_eval` runs the harness on the live weights in a spawned child
+(`child_process.run_in_child` says why), refits, and applies the refit unless something holds
+it back. `schedule-nightly` enqueues it weekly and `schedule-recommender-eval` on demand
+([scheduled jobs](../../CLAUDE.md#scheduled-jobs)). It has no maintenance bracket, because it
+writes only its own table. Its summary is read on its Jobs Log page (`recommender_eval.weekly`
+builds it). Beyond the harness's report it measures:
+
+- **complete rewatches**: each natural rewatch of an anime the user had finished and not
+  listed, among their other such anime. Natural means on a day of their own order, not an
+  import day, and not straight after a pick of the same anime. The family ranks them by own
+  score, closeness to the recent picks and their genres, and an earlier rewatch, fitted per
+  split as the ranking is, against plain own-score order at hit@`REWATCH_TOP`;
+- **the row's watch-through**: of the stretches the exposure log holds, the share whose anime
+  was among the user's next `PICKS_AFTER` natural picks, per reason. Counted in picks, not
+  days, so a slow watcher or a holiday doesn't read as ignoring the row; a stretch with fewer
+  picks since waits;
+- **"would help now"**: a left-out family — harness-only, unranked features, or complete
+  rewatches — that helped beyond noise on both splits in `HELP_RUNS` runs in a row.
+
+**A refit applies unless**:
+
+- **the log is short**: fewer than `MIN_LOG_PICKS` decisions see the watchlist, or fewer than
+  `MIN_USER_LOG_PICKS` from a user with any. Before the log began every list reads empty, so a
+  refit on few such decisions pulls the watchlist's weights toward zero, and on one user's
+  alone fits them to that user. The run still measures everything, and reads `waiting`;
+- **held-out NLL rose beyond noise** since the previous run, on either split, over the
+  decisions both runs tested: by more than `NOISE_SE` standard errors of the change and at
+  least `NOISE_FLOOR`. Paired, because one decision's NLL varies far more than a week moves
+  the mean, while consecutive runs share nearly every decision;
+- **a live weight above `FLIP_ABOVE` changes sign**.
+
+A run compares only with runs of the same code (`version()`), for the NLL and for "would
+help now" alike: a commit that changes the model starts both afresh. Held back, the live weights stay and the run reads `held`. λ stays at `LAMBDA` and the weights
+at two decimals, and a refit equal to the live weights writes nothing.
 
 ---
 

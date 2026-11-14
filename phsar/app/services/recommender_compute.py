@@ -11,6 +11,7 @@ The tuned constants below were measured on the prod data:
 compound-docs/2026-11-12-v0.16.6-recommender.md.
 """
 
+import functools
 import hashlib
 import math
 from bisect import bisect_left
@@ -129,9 +130,11 @@ EPOCH = date(1970, 1, 1)
 DAY = 86400.0
 
 
+@functools.cache
 def version() -> str:
     """What a ranking is computed with: `VERSION` and every module constant, the weights
-    included."""
+    included. Cached: the constants never change while the process runs, and every search that
+    reads the ranking asks."""
     constants = sorted((k, repr(v)) for k, v in globals().items() if k.isupper())
     return f"{VERSION}-{hashlib.sha256(repr(constants).encode()).hexdigest()[:12]}"
 
@@ -607,6 +610,7 @@ class State(NamedTuple):
     start: np.ndarray  # the day that commitment's earliest season starts, NaN when unknown
     finale: np.ndarray  # the day its last season ends
     finale_dated: np.ndarray  # whether that day is dated (`Catalogue.finale_dated`)
+    finished: np.ndarray  # every aired main-story media completed, none dropped: what a complete rewatch picks from
 
 
 def state(
@@ -633,6 +637,7 @@ def state(
     dropped_main = per_star(cat.main & flag(rated[status == "dropped"])) > 0
     continuation = touched & ~dropped_main & (per_star(unwatched) > 0)
     candidate = (has_main & ~touched) | continuation
+    finished = touched & has_main & ~dropped_main & ~continuation
     commit = unwatched
     planned = np.zeros(n, dtype=bool)
     if listed is not None:
@@ -640,10 +645,10 @@ def state(
         planned = per_star(on_list) > 0
         candidate = candidate | (planned & has_main)
         commit = np.where(planned[cat.media_row], on_list, unwatched)
-    return State(candidate, continuation, planned, *_commitment(cat, commit, n))
+    return State(candidate, continuation, planned, *_commitment(cat, commit, n), finished)
 
 
-def _commitment(cat: Catalogue, mask: np.ndarray, n: int) -> tuple[np.ndarray, ...]:
+def _commitment(cat: Catalogue, mask: np.ndarray, n: int) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Per star, the hours, earliest start, last finale, and whether that finale is dated, of the media picking it starts:
     walking its masked media in order, everything up to the first standalone media, or that
     media alone when it comes first."""
@@ -741,6 +746,39 @@ def _due(values: list[list[int]], times: np.ndarray, t: float, candidate: list[l
     return out[:, 0], out[:, 1], out[:, 2]
 
 
+def own_percentiles(cat: Catalogue, rated: np.ndarray, scores: np.ndarray, dropped: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """The anime the user rated (star rows), and per star their mean score as an own
+    percentile — a dropped media held to their tenth percentile, an unrated anime at 0.5."""
+    own = np.full(len(cat.anime_id), 0.5)
+    if len(scores):
+        scores = np.where(dropped, np.minimum(scores, np.percentile(scores, 10)), scores)
+    RA, rated_at = np.unique(cat.media_row[rated], return_inverse=True)
+    if len(RA):
+        mean_score = np.bincount(rated_at, weights=scores) / np.bincount(rated_at)
+        own[RA] = (_rank(mean_score) - 0.5) / len(RA)
+    return RA, own
+
+
+def recent_ranks(D: np.ndarray, latest: np.ndarray, C: np.ndarray) -> list[np.ndarray]:
+    """Each recent pick's (`latest`, newest first) closeness rank over the candidates `C`, from
+    their distances `D`. Continuing or rewatching a pick is the closest thing to it, marked in
+    `D` itself so its argmin finds that too."""
+    D[latest[:, None] == C[None, :]] = -1
+    return [_simrank(d) for d in D]
+
+
+def decayed(recent: list[np.ndarray]) -> np.ndarray:
+    """`recent_ranks` averaged over the picks, each weighing half the one after it every
+    `RECENT_HALF_LIFE` picks back."""
+    return np.average(recent, axis=0, weights=0.5 ** (np.arange(len(recent)) / RECENT_HALF_LIFE))
+
+
+def genre_jaccard(G: np.ndarray, genres: np.ndarray) -> np.ndarray:
+    """The overlap of each candidate's genres (rows of `G`) with one anime's `genres`."""
+    inter = G[:, genres].sum(axis=1)
+    return inter / np.maximum(G.sum(axis=1) + genres.sum() - inter, 1)
+
+
 def decide(cat: Catalogue, led: Ledger, t: float, *, hot: bool = True, harness: bool = False) -> Decision:
     """The candidates at `t` and their features, from the history before it. Who is one:
     docs/features/recommender.md, "Candidates". `harness` also computes the families the
@@ -770,18 +808,8 @@ def decide(cat: Catalogue, led: Ledger, t: float, *, hot: bool = True, harness: 
     len_c, age_c = length_bucket(hours_c), age_bucket(s.start[C], t)
     finale_c = finale_bucket(s.finale[C], t)
 
-    # Taste: the user's anime-level mean scores as own percentiles, a dropped media held to
-    # their tenth percentile.
-    scores = led.rating[before]
-    if len(scores):
-        scores[dropped] = np.minimum(scores[dropped], np.percentile(scores, 10))
-    RA, rated_at = np.unique(cat.media_row[rated], return_inverse=True)
-    pct = np.zeros(0)
-    if len(RA):
-        mean_score = np.bincount(rated_at, weights=scores) / np.bincount(rated_at)
-        pct = (_rank(mean_score) - 0.5) / len(RA)
-    own_pct = np.full(len(cat.anime_id), 0.5)
-    own_pct[RA] = pct
+    RA, own_pct = own_percentiles(cat, rated, led.rating[before], dropped)
+    pct = own_pct[RA]
 
     # Every rated anime against every candidate. A natural pick is always rated before `t`,
     # so the recent picks are rows of the same block.
@@ -789,26 +817,23 @@ def decide(cat: Catalogue, led: Ledger, t: float, *, hot: bool = True, harness: 
     D[RA[:, None] == C[None, :]] = math.inf
     latest = hist_rows[::-1][:RECENT]
 
-    # The recent picks, nearest first; continuing a pick is the closest thing to it.
+    # The recent picks, newest first.
     DH = D[np.searchsorted(RA, latest)]
-    DH[latest[:, None] == C[None, :]] = -1
-    recent = [_simrank(d) for d in DH]
+    recent = recent_ranks(DH, latest, C)
     for k in range(min(LAGS, nh)):
         X[:, COLUMN[f"F1_sim_lag{k + 1}"]] = recent[k]
     if recent:
-        w = 0.5 ** (np.arange(len(recent)) / RECENT_HALF_LIFE)
-        X[:, COLUMN["F1_sim_decay10"]] = np.average(recent, axis=0, weights=w)
+        X[:, COLUMN["F1_sim_decay10"]] = decayed(recent)
     nearest_recent = latest[DH.argmin(axis=0)] if nh else np.full(n, -1, dtype=np.int64)
 
     G, S = cat.genres[C], cat.studios[C]
     G_size = G.sum(axis=1)
     for k in range(min(LAGS, nh)):
         p = hist_rows[-1 - k]
-        inter = G[:, cat.genres[p]].sum(axis=1)
         lag = k + 1
         X[:, COLUMN[f"F2_sector_lag{lag}"]] = cat.sector[C] == cat.sector[p]
         X[:, COLUMN[f"F2_region_lag{lag}"]] = cat.region[C] == cat.region[p]
-        X[:, COLUMN[f"F2_genreJac_lag{lag}"]] = inter / np.maximum(G_size + cat.genres[p].sum() - inter, 1)
+        X[:, COLUMN[f"F2_genreJac_lag{lag}"]] = genre_jaccard(G, cat.genres[p])
         X[:, COLUMN[f"F2_studio_lag{lag}"]] = S[:, cat.studios[p]].any(axis=1)
         X[:, COLUMN[f"F2_len_lag{lag}"]] = len_c == lengths[-1 - k]
         X[:, COLUMN[f"F2_age_lag{lag}"]] = age_c == ages[-1 - k]

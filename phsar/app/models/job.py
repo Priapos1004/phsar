@@ -41,6 +41,8 @@ class JobKind(str, enum.Enum):
     restore = "restore"
     # Refits the galaxy map; docs/features/galaxy.md says when.
     galaxy_rebuild = "galaxy_rebuild"
+    # Measures the recommender and applies its weekly refit; docs/features/recommender.md.
+    recommender_eval = "recommender_eval"
 
 
 class JobStatus(str, enum.Enum):

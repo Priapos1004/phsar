@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +20,17 @@ class WatchEventDAO(BaseDAO[WatchEvent]):
         ).limit(1)
         result = await db.execute(stmt)
         return result.first() is not None
+
+    async def by_user(self, db: AsyncSession) -> dict[int, list[tuple[int, float]]]:
+        """Every user's watch events in order, `(media_id, watched_at)` in epoch seconds: the
+        recommender's eval reads rewatches from them."""
+        stmt = select(WatchEvent.user_id, WatchEvent.media_id, WatchEvent.watched_at).order_by(
+            WatchEvent.user_id, WatchEvent.watched_at, WatchEvent.id,
+        )
+        out: dict[int, list[tuple[int, float]]] = defaultdict(list)
+        for user_id, media_id, at in (await db.execute(stmt)).tuples():
+            out[user_id].append((media_id, at.timestamp()))
+        return dict(out)
 
     async def create_event(self, db: AsyncSession, user_id: int, media_id: int) -> WatchEvent:
         """Append one watch event (server_default stamps watched_at = now())."""

@@ -16,11 +16,13 @@ import contextlib
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
+from typing import Any
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import async_session_maker
+from app.core.job_versions import make_job
 from app.core.maintenance import (
     get_scheduled_at,
     is_maintenance_active,
@@ -34,7 +36,8 @@ from app.exceptions import (
     PermanentPhsarError,
     TransientUpstreamError,
 )
-from app.models.job import Job, JobKind
+from app.models.job import Job, JobKind, JobStatus
+from app.schemas.admin_schema import JobEnqueuedResponse
 
 logger = logging.getLogger(__name__)
 
@@ -318,3 +321,13 @@ class JobWorker:
 # Module-level singleton for the app's lifespan to use. Tests instantiate
 # their own JobWorker() so they can register isolated fake dispatchers.
 job_worker = JobWorker()
+
+
+async def enqueue(db: AsyncSession, kind: JobKind, **kwargs: Any) -> JobEnqueuedResponse:
+    """Queue a job of `kind` (`make_job`'s other arguments as given) and wake the worker.
+    Commits, because the row must be durable before `notify()` points the worker at it."""
+    job = make_job(kind, status=JobStatus.queued, **kwargs)
+    db.add(job)
+    await db.commit()
+    job_worker.notify()
+    return JobEnqueuedResponse(job_uuid=job.uuid)

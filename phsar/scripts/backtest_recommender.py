@@ -1,5 +1,6 @@
 """Replay every user's natural history through the recommender and print the harness's report
-(`recommender_eval.evaluate`) as JSON.
+(`recommender_eval.evaluate`) as JSON, for the weights the ranking reads now
+(`recommender_service.live_weights`).
 
 `--fit` refits too; its pooled weights are the values `WEIGHTS` takes after review.
 
@@ -119,6 +120,7 @@ async def main(fit: bool, dumps: Path | None, lam: float) -> None:
         cat = await recommender_service.load_catalogue(db)
         histories = await recommender_service.load_histories(db)
         listed_from = await recommender_service.load_log_start(db)
+        _, weights = await recommender_service.live_weights(db)
     listings = {u: h.listings for u, h in histories.items()}
     if dumps:
         rated_at = {(u, r.media_id): rc.event_time(r) for u, h in histories.items() for r in h.ratings}
@@ -131,7 +133,7 @@ async def main(fit: bool, dumps: Path | None, lam: float) -> None:
         u: rc.ledger(cat, h.ratings, listings[u], franchise=h.franchise, listed_from=listed_from)
         for u, h in histories.items()
     }
-    print(json.dumps(recommender_eval.evaluate(cat, ledgers, rc.WEIGHTS, refit=fit, lam=lam), indent=1))
+    print(json.dumps(recommender_eval.evaluate(cat, ledgers, weights, refit=fit, lam=lam), indent=1))
 
 
 if __name__ == "__main__":

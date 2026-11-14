@@ -145,6 +145,7 @@ phsar/
 │       ├── backup_dispatcher.py
 │       ├── backup_service.py
 │       ├── browse_service.py
+│       ├── child_process.py
 │       ├── completion_service.py
 │       ├── delete_candidate_service.py
 │       ├── export_service.py
@@ -163,6 +164,7 @@ phsar/
 │       ├── progress_reporter.py
 │       ├── rating_service.py
 │       ├── recommender_compute.py
+│       ├── recommender_dispatcher.py
 │       ├── recommender_eval.py
 │       ├── recommender_service.py
 │       ├── relation_classifier.py
@@ -620,6 +622,7 @@ phsar/
         ├── test_rating_coverage.py
         ├── test_recommender_compute.py
         ├── test_recommender_eval.py
+        ├── test_recommender_jobs.py
         ├── test_recommender_service.py
         ├── test_relation_classifier.py
         ├── test_save_service.py
@@ -930,6 +933,11 @@ erDiagram
         integer ref_anime_id FK
         varchar detail
     }
+    recommender_fits {
+        integer id PK
+        jsonb weights
+        varchar built_for
+    }
     registration_token {
         integer id PK
         varchar token UK
@@ -1123,7 +1131,7 @@ bun run test
 
 The backend's cron-authed endpoints all share the same `JOBS_CRON_TOKEN` bearer.
 
-**Recommended (one daily task):** point your cron at the combined nightly endpoint. It enqueues a backup immediately (pg_dump is MVCC-snapshot, no maintenance window needed), an `update_sweep` after `delay_minutes`, on Sunday UTC a `seasonal_sweep` with the same delay so the weekly catalog pickup piggybacks on the maintenance window, and on Wednesday UTC in the last month of a quarter (Mar/Jun/Sep/Dec) an `upcoming_sweep` so next-quarter shows can be added about a month early.
+**Recommended (one daily task):** point your cron at the combined nightly endpoint. It enqueues a backup immediately (pg_dump is MVCC-snapshot, no maintenance window needed), an `update_sweep` after `delay_minutes`, on Sunday UTC a `seasonal_sweep` with the same delay so the weekly catalog pickup piggybacks on the maintenance window, on Wednesday UTC in the last month of a quarter (Mar/Jun/Sep/Dec) an `upcoming_sweep` so next-quarter shows can be added about a month early, a `galaxy_rebuild` on nights the map is due, and on Monday UTC a `recommender_eval` that measures the recommendations and refits their weights.
 
 ```sh
 curl -fsS -X POST -H "Authorization: Bearer $JOBS_CRON_TOKEN" \
@@ -1136,6 +1144,7 @@ curl -fsS -X POST -H "Authorization: Bearer $JOBS_CRON_TOKEN" \
 - `POST /admin/jobs/schedule-sweep?delay_minutes=N` — `update_sweep` only
 - `POST /admin/jobs/schedule-seasonal?delay_minutes=N[&season=Winter&year=2025]` — `seasonal_sweep` only
 - `POST /admin/jobs/schedule-upcoming?delay_minutes=N` — `upcoming_sweep` only
+- `POST /admin/jobs/schedule-recommender-eval?delay_minutes=N` — `recommender_eval` only, at once by default (it opens no maintenance window)
 
 `delay_minutes` is bound to `[0, 1440]` on every sweep endpoint and drives the frontend's maintenance-banner countdown.
 

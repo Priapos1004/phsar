@@ -92,6 +92,7 @@ JOB_HEALTH_WINDOW_DAYS: dict[JobKind, int] = {
     JobKind.upcoming_sweep: 90,
     JobKind.restore: 90,
     JobKind.galaxy_rebuild: 90,
+    JobKind.recommender_eval: 90,
 }
 
 

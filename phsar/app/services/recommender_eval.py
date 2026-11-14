@@ -1,18 +1,22 @@
 """The recommender's harness: every user's natural history replayed pick by pick, the pooled
 weights fitted, and both measured out of sample (docs/features/recommender.md, "Measuring
-it"). `scripts/backtest_recommender.py` runs it.
+it"). `scripts/backtest_recommender.py` runs it, and the weekly `recommender_eval` job runs
+`weekly`, which adds what only the job reports.
 
 App-free like `recommender_compute`, for the same reason.
 """
 
 import math
 import time
+from bisect import bisect_right
 from collections import Counter, defaultdict
+from collections.abc import Sequence
 from typing import Any, NamedTuple
 
 import numpy as np
 
 from app.services import recommender_compute as rc
+from app.services.galaxy_compute import distances
 
 LAMBDA = 10.0  # L2 strength: the bake-off's inner CV chose it in every outer split
 TRAIN_SHARE = 0.6  # each user's earliest decisions, which the time split trains on
@@ -20,6 +24,18 @@ PER_USER_LAMBDAS = (10.0, 100.0)  # how hard a per-user fit is pulled toward the
 FLIPS = 10_000  # random sign flips behind an ablation's p
 AGE_EDGES = (7, 30, 90)  # days: the watchlist metrics' entry-age buckets
 AGE_LABELS = ("<=7d", "8-30d", "31-90d", ">90d")
+REWATCH_FEATURES = ("own_pct", "recent_sim", "recent_genres", "rewatched")  # the rewatch family's columns
+REWATCH_TOP = 10  # a complete rewatch's hit@k: a rewatch slot would be a few tiles of the row
+PICKS_AFTER = 5  # the user's next picks a shown anime is judged within (`online`)
+
+# --- The weekly job: docs/features/recommender.md, "The weekly job". Measured on the prod
+# history: the compound doc.
+MIN_LOG_PICKS, MIN_USER_LOG_PICKS = 30, 14  # decisions that see the watchlist, in all and per user with any
+FLIP_ABOVE = 0.2  # a live weight this large must not change sign
+# How far held-out NLL may rise over the decisions two runs share. The floor because those runs
+# share nearly every decision, so the standard error alone shrinks until ordinary drift trips it.
+NOISE_SE, NOISE_FLOOR = 2, 0.05
+HELP_RUNS, HELP_P = 3, 0.05  # "would help now": beyond noise in this many runs in a row
 
 
 _FAMILY = np.array([rc.family(n) for n in rc.NAMES])
@@ -54,13 +70,13 @@ def cases(cat: rc.Catalogue, ledgers: dict[int, rc.Ledger], harness: bool = True
     return out
 
 
-def fit(chosen: list[Case], columns: np.ndarray, lam: float = LAMBDA, prior: np.ndarray | None = None) -> np.ndarray:
-    """Conditional-logit weights over `columns`: the full softmax over each decision's
-    candidates, plus `lam` · ‖w − prior‖² (prior zero, or the pooled weights for a per-user
-    fit)."""
+def fit(chosen: Sequence["Case | Rewatch"], columns: np.ndarray, lam: float = LAMBDA, prior: np.ndarray | None = None) -> np.ndarray:
+    """Conditional-logit weights over `columns`, a mask over the decisions' features: the full
+    softmax over each decision's candidates, plus `lam` · ‖w − prior‖² (prior zero, or the
+    pooled weights for a per-user fit)."""
     from scipy.optimize import minimize
 
-    w = np.zeros(len(rc.NAMES)) if prior is None else prior.copy()
+    w = np.zeros(len(columns)) if prior is None else prior.copy()
     if not chosen:
         return w
     X = np.vstack([c.dec.X[:, columns] for c in chosen])
@@ -109,7 +125,7 @@ def metrics(r: np.ndarray, liked: np.ndarray) -> dict[str, Any]:
     }
 
 
-def splits(chosen: list[Case]) -> dict[str, list[tuple[np.ndarray, np.ndarray]]]:
+def splits(chosen: Sequence["Case | Rewatch"]) -> dict[str, list[tuple[np.ndarray, np.ndarray]]]:
     """Train and test indices per split: docs/features/recommender.md, "Measuring it"."""
     users = np.array([c.user for c in chosen])
     out: dict[str, list[tuple[np.ndarray, np.ndarray]]] = {"time": [], "louo": []}
@@ -146,10 +162,16 @@ def held_out(cat, chosen, folds, weights_of, row: bool = True) -> HeldOut:
     return HeldOut(np.array(test, dtype=np.int64), r[:, 0], r[:, 1], r[:, 2], np.array(losses))
 
 
+def _se(x: np.ndarray) -> float:
+    """The standard error of `x`'s mean."""
+    return float(x.std(ddof=1) / math.sqrt(len(x)))
+
+
 def _report(h: HeldOut, liked: np.ndarray) -> dict[str, Any]:
     out = {
         "logit": metrics(h.logit, liked[h.test]), "score": metrics(h.score, liked[h.test]),
         "nll": round(float(h.nll.mean()), 4) if len(h.nll) else None,
+        "nll_se": round(_se(h.nll), 4) if len(h.nll) > 1 else None,
     }
     if h.row.any():  # ranked in the row too
         out["row"] = metrics(h.row, liked[h.test])
@@ -175,9 +197,13 @@ def evaluate(
     seconds = {"decisions": round(time.perf_counter() - clock, 1)}
     liked = np.array([c.liked for c in chosen], dtype=bool)
     folds = splits(chosen)
-    users = [c.user for c in chosen]
+    def per_user(users: list[int]) -> dict[str, int]:
+        return {"total": len(users), **{str(u): n for u, n in Counter(users).items()}}
+
     report: dict[str, Any] = {
-        "decisions": {"total": len(chosen), **{str(u): users.count(u) for u in dict.fromkeys(users)}},
+        "decisions": per_user([c.user for c in chosen]),
+        # Those that see the watchlist: only they say anything about its weights.
+        "logged": per_user([c.user for c in chosen if c.t >= ledgers[c.user].listed_from]),
         "candidates_mean": round(float(np.mean([len(c.dec.rows) for c in chosen])), 1) if chosen else 0,
         "given": {}, "baseline": {},
     }
@@ -201,7 +227,12 @@ def _refit(cat, chosen, folds, liked, lam) -> dict[str, Any]:
     out: dict[str, Any] = {"refit": {}, "ablations": {}, "per_user": {}}
     full = {split: held_out(cat, chosen, fs, by(SHIPPED)) for split, fs in folds.items()}
     for split, h in full.items():
-        out["refit"][split] = _report(h, liked)
+        # Each test decision's NLL by who picked when, so the next run can compare the decisions
+        # both tested (`guards`).
+        per_decision = {
+            f"{chosen[i].user}:{round(chosen[i].t)}": round(float(v), 4) for i, v in zip(h.test.tolist(), h.nll, strict=True)
+        }
+        out["refit"][split] = {**_report(h, liked), "per_decision": per_decision}
 
     def fitted(columns, split):
         if np.array_equal(columns, SHIPPED):
@@ -318,3 +349,227 @@ def watchlist_metrics(cat: rc.Catalogue, ledgers: dict[int, rc.Ledger], chosen: 
             "lift": lift, "hazard": hazard,
         }
     return out
+
+
+# --- Complete rewatches ----------------------------------------------------------------------
+
+class Scored(NamedTuple):
+    """A decision as `fit` and `nll` read it."""
+    rows: np.ndarray
+    X: np.ndarray
+
+
+class Rewatch(NamedTuple):
+    """One complete rewatch and the user's finished, unlisted anime at its moment."""
+    user: int
+    t: float
+    dec: Scored  # its columns are `REWATCH_FEATURES`
+    target: int
+
+
+def rewatch_runs(cat: rc.Catalogue, led: rc.Ledger, watches: list[tuple[int, float]]) -> tuple[list[tuple[float, int]], list[tuple[float, int]]]:
+    """A user's rewatches as (time, star row), from their watch events `(media_id, at)` in order:
+    every watch of a media after its first. The natural ones as runs, a rewatch right after a
+    pick of the same anime merged into it (which are natural: docs/features/recommender.md,
+    "The weekly job"), and every one, an import's included, which says only that it was
+    rewatched by then."""
+    seen: set[int] = set()
+    every = []
+    for media_id, at in watches:
+        if media_id in seen and media_id in cat.position_of:
+            every.append((at, int(cat.media_row[cat.position_of[media_id]])))
+        seen.add(media_id)
+    if led.start is None:
+        return [], every
+    natural_days = {rc._day(e.t) for e in led.natural}
+    imports = {d for d in np.floor(led.t / rc.DAY).astype(np.int64).tolist() if d >= led.start} - natural_days
+    picks = sorted(
+        [(e.t, e.row, False) for e in led.natural]
+        + [(t, row, True) for t, row in every if (d := rc._day(t)) >= led.start and d not in imports]
+    )
+    runs = []
+    for (t, row, rewatch), previous in zip(picks, [None, *picks[:-1]], strict=True):
+        if rewatch and (previous is None or previous[1] != row):
+            runs.append((t, row))
+    return runs, every
+
+
+def rewatch_cases(
+    cat: rc.Catalogue, ledgers: dict[int, rc.Ledger],
+    runs: dict[int, tuple[list[tuple[float, int]], list[tuple[float, int]]]],
+) -> list[Rewatch]:
+    """Each complete rewatch as a decision among its candidates; which count:
+    docs/features/recommender.md, "The weekly job". A refresh before a sequel is a continuation
+    and a listed rewatch is in the ranking, so neither is one."""
+    out = []
+    for user, led in ledgers.items():
+        natural, every = runs.get(user, ([], []))
+        every_t = np.array([t for t, _ in every], dtype=float)
+        every_row = np.array([row for _, row in every], dtype=np.int64)
+        for t, row in natural:
+            before = led.t < t
+            rated, status = led.position[before], led.status[before]
+            _, priority, _ = rc.listing(cat, led, t)
+            C = np.flatnonzero(rc.state(cat, t, rated, status).finished & (priority == 0))
+            hit = np.flatnonzero(row == C)
+            if not len(hit):
+                continue
+            _, own = rc.own_percentiles(cat, rated, led.rating[before], status == "dropped")
+            X = np.zeros((len(C), len(REWATCH_FEATURES)))
+            X[:, 0] = own[C]
+            latest = np.array([e.row for e in led.natural if e.t < t][::-1][:rc.RECENT], dtype=np.int64)
+            if len(latest):
+                D = distances(cat.features[latest], cat.uncertainty[latest], cat.features[C], cat.uncertainty[C])
+                X[:, 1] = rc.decayed(rc.recent_ranks(D, latest, C))
+                X[:, 2] = np.mean([rc.genre_jaccard(cat.genres[C], cat.genres[p]) for p in latest], axis=0)
+            X[:, 3] = np.isin(C, every_row[every_t < t])
+            out.append(Rewatch(user, t, Scored(C, np.stack([rc._z(x) for x in X.T], axis=1)), int(hit[0])))
+    return out
+
+
+def rewatch_report(chosen: list[Rewatch]) -> dict[str, Any]:
+    """The rewatch family fitted on each split's training rewatches, against plain own-score
+    order on its test ones: hit@`REWATCH_TOP`, median rank, and a paired sign-flip p on the
+    log ranks."""
+    out: dict[str, Any] = {
+        "decisions": len(chosen),
+        "candidates_mean": round(float(np.mean([len(c.dec.rows) for c in chosen])), 1) if chosen else 0,
+    }
+
+    def top(r: np.ndarray) -> dict[str, float]:
+        return {"hit10": round(float((r <= REWATCH_TOP).mean()), 3), "median_rank": float(np.median(r))}
+
+    def rank(s: np.ndarray, target: int) -> float:
+        """The target's place with ties at their mean: own scores tie a lot, and breaking
+        every tie its way would flatter the plain order."""
+        return float(rc._rank(-s)[target])
+
+    for split, folds in splits(chosen).items():
+        family, plain = [], []
+        for train, test in folds:
+            w = fit([chosen[i] for i in train], np.ones(len(REWATCH_FEATURES), dtype=bool))
+            for i in test.tolist():
+                c = chosen[i]
+                family.append(rank(c.dec.X @ w, c.target))
+                plain.append(rank(c.dec.X[:, 0], c.target))  # own percentile alone: the plain order
+        f, p = np.array(family), np.array(plain)
+        out[split] = {
+            "n": len(f), "family": top(f), "own_score": top(p), "p": round(sign_flip_p(np.log(p) - np.log(f)), 3),
+        } if len(f) else {"n": 0}
+    return out
+
+
+# --- Online --------------------------------------------------------------------------------------
+
+def online(
+    cat: rc.Catalogue, ledgers: dict[int, rc.Ledger], runs: dict[int, list[tuple[float, int]]],
+    exposure: list[tuple[int, int, str, float]],
+) -> dict[str, Any]:
+    """The row's watch-through by reason, over the stretches `exposure` logged — `(user,
+    anime, kind, opened at)` — and each user's natural picks, first watches and rewatch runs
+    alike."""
+    picks = {u: sorted([(e.t, e.row) for e in led.natural] + runs.get(u, [])) for u, led in ledgers.items()}
+    times = {u: [t for t, _ in ps] for u, ps in picks.items()}
+    tally: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    waiting = 0
+    for user, anime_id, kind, opened in exposure:
+        row = cat.row_of.get(anime_id)
+        if row is None:
+            continue
+        i = bisect_right(times.get(user, []), opened)
+        after = [r for _, r in picks.get(user, [])[i:i + PICKS_AFTER]]
+        if row not in after and len(after) < PICKS_AFTER:
+            waiting += 1
+            continue
+        tally[kind][0] += 1
+        tally[kind][1] += row in after
+    return {
+        "judged": sum(j for j, _ in tally.values()), "waiting": waiting,
+        "by_reason": {k: {"judged": j, "watched": w, "share": round(w / j, 3)} for k, (j, w) in sorted(tally.items())},
+    }
+
+
+# --- The weekly job ------------------------------------------------------------------------------
+
+def guards(report: dict[str, Any], live: dict[str, float], previous: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """What holds a refit back. The NLL checks are listed whether they trip or not, to show how
+    near a run came; a flip only when it trips, since the summary's weights show the rest."""
+    out: list[dict[str, Any]] = []
+    before = previous["report"]["refit"] if previous else {}
+    for split, now in report["refit"].items():
+        mine, then = now["per_decision"], before.get(split, {}).get("per_decision", {})
+        d = np.array([mine[k] - then[k] for k in sorted(mine.keys() & then.keys())])
+        if len(d) < 2:
+            continue
+        change = float(d.mean())
+        margin = max(NOISE_SE * _se(d), NOISE_FLOOR)
+        out.append({
+            "kind": "nll", "split": split, "change": round(change, 4), "margin": round(margin, 4), "n": len(d),
+            "tripped": change > margin,
+        })
+    for name, w in report["weights"]["refit"].items():
+        old = live.get(name, 0.0)
+        if abs(old) > FLIP_ABOVE and old * w < 0:
+            out.append({"kind": "flip", "name": name, "live": old, "refit": w, "tripped": True})
+    return out
+
+
+def _helped(report: dict[str, Any]) -> set[str]:
+    """The left-out families this run found helping beyond noise on both splits."""
+    out = set()
+    for name, by_split in report["ablations"].items():
+        added = name in rc.HARNESS or name.endswith("_unranked")
+        if added and all(s["nll"] > 0 and s["p"] < HELP_P for s in by_split.values()):
+            out.add(name)
+    rewatch = [report["rewatch"][split] for split in ("time", "louo")]
+    if all(s["n"] and s["family"]["hit10"] > s["own_score"]["hit10"] and s["p"] < HELP_P for s in rewatch):
+        out.add("rewatch")
+    return out
+
+
+def would_help(report: dict[str, Any], previous: list[dict[str, Any]]) -> list[str]:
+    """The left-out families that helped beyond noise in this run and the `HELP_RUNS` − 1 before
+    it (`previous`, their reports, newest first): one good run is noise, a streak is a case for
+    shipping the family."""
+    if len(previous) < HELP_RUNS - 1:
+        return []
+    return sorted(set.intersection(*(_helped(r) for r in [report, *previous[:HELP_RUNS - 1]])))
+
+
+def weekly(
+    cat: rc.Catalogue, histories: dict[int, tuple[list[rc.RatingRow], list[rc.ListingRow], dict]], listed_from: float,
+    watches: dict[int, list[tuple[int, float]]], exposure: list[tuple[int, int, str, float]],
+    live: dict[str, float], previous: list[dict[str, Any]], now: float,
+) -> dict[str, Any]:
+    """The weekly job's summary: the harness's report on the live weights with a refit, the
+    rewatch family and the row's watch-through, the guards over the refit, and the verdict.
+    `histories` are each user's ratings, listings and franchise signals as
+    `rc.ledger` takes them; `previous` the last runs' summaries, newest first, of which only
+    those for this code compare."""
+    ledgers = {
+        u: rc.ledger(cat, ratings, listings, franchise=franchise, listed_from=listed_from)
+        for u, (ratings, listings, franchise) in histories.items()
+    }
+    previous = [p for p in previous if p.get("built_for") == rc.version()]
+    report = evaluate(cat, ledgers, live, refit=True, now=now)
+    clock = time.perf_counter()
+    runs = {u: rewatch_runs(cat, led, watches.get(u, [])) for u, led in ledgers.items()}
+    report["rewatch"] = rewatch_report(rewatch_cases(cat, ledgers, runs))
+    report["online"] = online(cat, ledgers, {u: natural for u, (natural, _) in runs.items()}, exposure)
+    report["seconds"]["rewatch_online"] = round(time.perf_counter() - clock, 1)
+    report["weights"] = {"live": dict(live), "refit": report["weights"]}
+    logged = report.pop("logged")
+    total = logged.pop("total")
+    checks = guards(report, live, previous[0] if previous else None)
+    if total < MIN_LOG_PICKS or any(k < MIN_USER_LOG_PICKS for k in logged.values()):
+        verdict = "waiting"
+    elif any(g["tripped"] for g in checks):
+        verdict = "held"
+    else:
+        verdict = "applied"
+    return {
+        "verdict": verdict, "guards": checks, "built_for": rc.version(),
+        "log": {"picks": total, "needed": MIN_LOG_PICKS, "per_user": logged, "per_user_needed": MIN_USER_LOG_PICKS},
+        "would_help": would_help(report, [p["report"] for p in previous]),
+        "report": report,
+    }

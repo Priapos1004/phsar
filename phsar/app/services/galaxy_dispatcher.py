@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.exceptions import GalaxyVectorsStaleError
 from app.models.job import Job
 from app.seeders.embedding_backfiller import embeddings_are_stale
-from app.services import galaxy_compute, galaxy_service
+from app.services import child_process, galaxy_compute, galaxy_service
 from app.services.galaxy_service import galaxy_dao
 from app.services.progress_reporter import ProgressReporter
 
@@ -32,7 +32,7 @@ async def galaxy_rebuild_dispatcher(session: AsyncSession, job: Job) -> dict[str
     await session.commit()
 
     await progress.update(stage="Fitting the map", force=True)
-    result = await galaxy_service.run_in_child(galaxy_compute.fit, anime, media, previous)
+    result = await child_process.run_in_child(galaxy_compute.fit, anime, media, previous)
     # Read after the fit, so a rename made while it ran carries too.
     named = await galaxy_dao.named_groups(session)
     groups = result["groups"]

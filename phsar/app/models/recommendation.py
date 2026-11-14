@@ -1,5 +1,5 @@
-"""A user's stored recommendation ranking, the key it was computed for, and the stretches
-each pick spent in the row — docs/features/recommender.md."""
+"""A user's stored recommendation ranking, the key it was computed for, the stretches each
+pick spent in the row, and the ranking's applied weights — docs/features/recommender.md."""
 
 import enum
 
@@ -11,6 +11,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -76,3 +77,15 @@ class RecommendationExposure(BaseModel):
 
 
 Index("ix_recommendation_exposure_user_anime", RecommendationExposure.user_id, RecommendationExposure.anime_id)
+
+
+class RecommenderFit(BaseModel):
+    """One refit of the ranking's weights, applied by the weekly `recommender_eval` job and
+    kept after the next; which one ranks: docs/features/recommender.md, "The ranking"."""
+
+    __tablename__ = "recommender_fits"
+
+    # Feature name → weight, over the names `recommender_compute.WEIGHTS` ranks.
+    weights: Mapped[dict[str, float]] = mapped_column(JSONB, nullable=False)
+    # `recommender_compute.version()` when it was fitted.
+    built_for: Mapped[str] = mapped_column(String, nullable=False)

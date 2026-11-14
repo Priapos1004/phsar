@@ -59,6 +59,9 @@ JOB_KIND_VERSIONS: dict[JobKind, int] = {
     #       above. Not omitted from the Jobs Log list, which counts it, and the bell ships
     #       it whole too: a few hundred bytes on a usual refit, and the rows are rare.
     JobKind.galaxy_rebuild: 2,
+    # {verdict, guards[], built_for, log, fit, would_help[], report}: `recommender_eval.weekly`
+    # builds it and the dispatcher adds `fit`.
+    JobKind.recommender_eval: 1,
 }
 
 # result_summary keys the Jobs Log *list* never reads — only the
@@ -91,6 +94,7 @@ LIST_OMITTED_SUMMARY_KEYS: tuple[str, ...] = (
     "probe_attached_anime",    # update_sweep v6
     "hentai_removed",          # update_sweep v7
     "gone_upstream",           # update_sweep v9
+    "report",                  # recommender_eval v1: the harness's whole report
 )
 
 

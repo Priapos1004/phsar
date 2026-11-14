@@ -1,7 +1,6 @@
-"""Cron-authed scheduler endpoints (sweeps + auto-backup).
+"""Cron-authed scheduler endpoints (sweeps, the recommender's eval, auto-backup).
 
-All five endpoints (schedule-sweep, -seasonal, -upcoming, -nightly, and
-backups/auto) share `JOBS_CRON_TOKEN` via `require_jobs_cron_token` and are
+Every endpoint here shares `JOBS_CRON_TOKEN` via `require_jobs_cron_token` and is
 mounted under `/admin` by the parent admin router. They sit on a
 separate router (no router-level admin dep) so the cron token is the only
 auth they require — the JWT admin chain doesn't apply to machine-only
@@ -20,15 +19,14 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_db, require_jobs_cron_token
-from app.core.job_versions import make_job
 from app.core.maintenance import set_scheduled_at
 from app.exceptions import IncompleteSeasonTargetError
-from app.models.job import JobKind, JobStatus
+from app.models.job import JobKind
 from app.models.media import SeasonType
 from app.schemas import admin_schema, backup_schema
 from app.services import galaxy_service
 from app.services.backup_service import enqueue_backup_job
-from app.services.job_worker import job_worker
+from app.services.job_worker import enqueue
 
 router = APIRouter()
 
@@ -44,20 +42,9 @@ async def _enqueue_scheduled_sweep(
     re-checks not_before_at on wake and sleeps if the job isn't due
     yet (the 60s wakeup fallback would catch it anyway)."""
     not_before = datetime.now(timezone.utc) + timedelta(minutes=delay_minutes)
-    job = make_job(
-        kind,
-        status=JobStatus.queued,
-        payload=payload or {},
-        not_before_at=not_before,
-    )
-    db.add(job)
-    await db.commit()
-    await db.refresh(job)
+    job = await enqueue(db, kind, payload=payload or {}, not_before_at=not_before)
     set_scheduled_at(not_before)
-    job_worker.notify()
-    return admin_schema.ScheduledSweepResponse(
-        job_uuid=job.uuid, scheduled_at=not_before,
-    )
+    return admin_schema.ScheduledSweepResponse(job_uuid=job.job_uuid, scheduled_at=not_before)
 
 
 # `delay_minutes` upper bound is 24h — anything longer is almost certainly
@@ -120,8 +107,7 @@ async def schedule_upcoming(
 
 # Combined daily cron entry — one Coolify scheduled task hits this and the
 # endpoint decides which jobs to enqueue. Routes through the same per-kind
-# helpers as the individual schedulers so the post-commit ceremony
-# (set_scheduled_at + job_worker.notify) is centralized.
+# helpers as the individual schedulers, so each job is enqueued one way.
 @router.post(
     "/jobs/schedule-nightly",
     response_model=admin_schema.NightlyScheduleResponse,
@@ -144,7 +130,8 @@ async def schedule_nightly(
 
     A galaxy rebuild joins them on the nights the map is due
     (`galaxy_service.ensure_map`), queued behind the sweeps so it reads their
-    refreshed scores."""
+    refreshed scores. The recommender's eval joins them on Mondays (UTC), queued
+    behind the sweeps and the rebuild so it reads the night's map."""
     now = datetime.now(timezone.utc)
     backup = await enqueue_backup_job(
         db, backup_schema.BackupSource.cron, label=None, requested_by_user_id=None,
@@ -162,6 +149,9 @@ async def schedule_nightly(
         )
 
     galaxy = await galaxy_service.ensure_map(db, now=now, not_before_at=sweep.scheduled_at)
+    evaluation: admin_schema.JobEnqueuedResponse | None = None
+    if now.weekday() == calendar.MONDAY:
+        evaluation = await enqueue(db, JobKind.recommender_eval, not_before_at=sweep.scheduled_at)
 
     return admin_schema.NightlyScheduleResponse(
         backup_uuid=backup.job_uuid,
@@ -169,8 +159,24 @@ async def schedule_nightly(
         seasonal_sweep_uuid=seasonal.job_uuid if seasonal is not None else None,
         upcoming_sweep_uuid=upcoming.job_uuid if upcoming is not None else None,
         galaxy_rebuild_uuid=galaxy.job_uuid if galaxy is not None else None,
+        recommender_eval_uuid=evaluation.job_uuid if evaluation is not None else None,
         scheduled_at=sweep.scheduled_at,
     )
+
+
+# The weekly eval on demand. No banner: it writes only its own table, so it needs no maintenance
+# window and runs at once by default.
+@router.post(
+    "/jobs/schedule-recommender-eval",
+    response_model=admin_schema.JobEnqueuedResponse,
+    dependencies=[Depends(require_jobs_cron_token)],
+)
+async def schedule_recommender_eval(
+    delay_minutes: int = Query(0, ge=0, le=1440),
+    db: AsyncSession = Depends(get_db),
+):
+    not_before = datetime.now(timezone.utc) + timedelta(minutes=delay_minutes)
+    return await enqueue(db, JobKind.recommender_eval, not_before_at=not_before)
 
 
 # Cron-authed endpoint — kept on this sub-router so it doesn't inherit the

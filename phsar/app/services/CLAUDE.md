@@ -17,15 +17,17 @@ there is one copy to keep correct.
 | `backup_dispatcher.py`, `backup_service.py` | [backups](../../../docs/features/backups.md) |
 | `browse_service.py` (and `seeders/browse_seeder.py`) | [browse](../../../docs/features/browse.md) |
 | `galaxy_compute.py`, `galaxy_dispatcher.py`, `galaxy_service.py` | [galaxy](../../../docs/features/galaxy.md) |
-| `recommender_compute.py`, `recommender_eval.py`, `recommender_service.py` | [recommender](../../../docs/features/recommender.md) |
+| `recommender_compute.py`, `recommender_eval.py`, `recommender_service.py`, `recommender_dispatcher.py` | [recommender](../../../docs/features/recommender.md) |
 | `vector_embedding_service.py` | [search](../../../docs/features/search.md) |
 | `media_search_service.py`, `anime_search_service.py`, `filter_service.py` | [search](../../../docs/features/search.md) |
 | `spoiler_service.py` | [spoilers](../../../docs/features/spoilers.md) |
 | `rating_service.py` | [ratings](../../../docs/features/ratings.md) |
 | `watchlist_service.py`, `tag_service.py` | [watchlist](../../../docs/features/watchlist.md) |
 
-Two small helpers with no feature doc of their own:
+Small helpers with no feature doc of their own:
 
+- **`child_process.py`** — `run_in_child` runs a job's CPU-heavy compute in a spawned
+  process; its docstring says why, and what a restore meanwhile does to the answer.
 - **`anime_summary.py`** — `summarize_anime(anime, rating_count)` renders the
   side-by-side anime card shared by the merge and split queues, so a future field
   addition lands in one place.

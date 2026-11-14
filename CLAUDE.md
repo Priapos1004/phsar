@@ -48,7 +48,7 @@ that touches its area, before settling on an approach.
 | [browse](docs/features/browse.md) | Carousel definitions and filter sets, the resolver, page layouts |
 | [navigation](docs/features/navigation.md) | What survives leaving a page and coming back: route, origin, scroll position, filters — and when each resets |
 | [galaxy](docs/features/galaxy.md) | The fitted map of every anime: feature blocks, the fit and the warm refit, the rebuild job and its triggers, sector and region names |
-| [recommender](docs/features/recommender.md) | The per-user ranking: natural history and imports, candidates and readiness, what a pick commits to, the pooled model's features, the calibrated row, the watchlist's history log, serving, the harness that fits and measures it |
+| [recommender](docs/features/recommender.md) | The per-user ranking: natural history and imports, candidates and readiness, what a pick commits to, the pooled model's features, the calibrated row, the watchlist's history log, serving, the harness that fits and measures it, the weekly job that applies its refit behind guards |
 
 **`compound-docs/`** — why something changed, dated and frozen; feature docs say how
 it works now. [INDEX.md](compound-docs/INDEX.md) lists them by subsystem and by date.
@@ -278,7 +278,7 @@ Behaviour (retention pools, the restorability verdict, restart-triggered dumps) 
 
 ### Scheduled jobs
 
-Every cron-authed endpoint shares `JOBS_CRON_TOKEN` (Coolify backend env — empty disables all of them, fail closed). The sweep schedulers are allowlisted through the maintenance gate, so a cron retry mid-sweep authenticates instead of 503'ing; `/admin/backups/auto` is not, because a sweep-window 503 there is a benign no-op. `delay_minutes` is bound to `Query(20, ge=0, le=1440)`.
+Every cron-authed endpoint shares `JOBS_CRON_TOKEN` (Coolify backend env — empty disables all of them, fail closed). The sweep schedulers are allowlisted through the maintenance gate, so a cron retry mid-sweep authenticates instead of 503'ing; `/admin/backups/auto` is not, because a sweep-window 503 there is a benign no-op. `delay_minutes` is bound to `ge=0, le=1440`, defaulting to 20 — 0 for `schedule-recommender-eval`, whose job brackets no maintenance ([jobs](docs/features/jobs.md#job-kinds)).
 
 **Recommended Coolify setup — one daily task (~02:30 UTC):**
 
@@ -294,14 +294,16 @@ same delay **on Wednesdays in the last month of the quarter** (Mar/Jun/Sep/Dec),
 next-quarter shows surface about a month early. The two season sweeps sit on
 different weekdays so one nightly run never fires both. On a night the galaxy map is
 due ([galaxy](docs/features/galaxy.md) says when) it also enqueues a `galaxy_rebuild` at
-the same delay, created last so FIFO runs it after the sweeps.
+the same delay, created after the sweeps so FIFO runs it after them. **On Mondays** a
+`recommender_eval` follows at the same delay, created after the sweeps and any rebuild so it
+reads the night's map ([recommender](docs/features/recommender.md#the-weekly-job)).
 
 The sweeps share `not_before_at`; the worker drains the backup first, then takes
 whichever sweep is next by FIFO. Ordering between them is undefined and immaterial —
 all run inside the maintenance window with a sub-second flag bounce.
 
 Individual endpoints stay available for ad-hoc triggers: `POST /admin/backups/auto`,
-and `POST /admin/jobs/schedule-{sweep,seasonal,upcoming}?delay_minutes=N`.
+and `POST /admin/jobs/schedule-{sweep,seasonal,upcoming,recommender-eval}?delay_minutes=N`.
 
 ## CI
 

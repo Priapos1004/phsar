@@ -20,6 +20,7 @@ from sqlalchemy.engine import Row
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
+from app.daos.base_dao import recency_order
 from app.daos.search_filters import (
     SEASON_KEY,
     anime_genre_majority_relation,
@@ -43,11 +44,19 @@ from app.models.recommendation import (
     RecommendationExposure,
     RecommendationKind,
     RecommendationState,
+    RecommenderFit,
 )
 from app.models.tag import Tag
 from app.models.user_settings import NameLanguage, UserSettings
 from app.models.watchlist_event import WatchlistEvent
-from app.services.recommender_compute import RECOMMENDED, ROW, MediaRow, Pick, StarRow
+from app.services.recommender_compute import (
+    RECOMMENDED,
+    ROW,
+    MediaRow,
+    Pick,
+    StarRow,
+    version,
+)
 
 # A recommender genre set is the anime's genres and themes, the tags the app lists together.
 _GENRE_KINDS = (GenreType.Genres, GenreType.Themes)
@@ -66,6 +75,14 @@ def for_you_key(*, per_anime: bool) -> tuple:
         return func.min(Recommendation.rank), ()
     ranked = Recommendation.rank.is_not(None)
     return Recommendation.rank, (case((ranked, SEASON_KEY)).asc().nulls_last(), case((ranked, Media.mal_id)).asc())
+
+
+def _live_fit():
+    """The newest applied refit fitted for this code (`recommender_service.live_weights`)."""
+    return (
+        select(RecommenderFit).where(RecommenderFit.built_for == version())
+        .order_by(*recency_order(RecommenderFit, "created_at")).limit(1)
+    )
 
 
 def _changes(model, user_id: int):
@@ -138,21 +155,41 @@ class RecommendationDAO:
 
     async def inputs(self, db: AsyncSession, user_id: int) -> Row:
         """Everything a user's ranking is computed from, short of the date and the model's own
-        version: docs/features/recommender.md, "Serving". Carries the recommender settings
-        by name: `history_start`, the media whose rating the user's own order starts at (one
-        rating per media), and `recommend_hot`."""
+        version: docs/features/recommender.md, "Serving". Carries by name the live fit's uuid
+        (`fit`) and the recommender settings: `history_start`, the media whose rating the user's
+        own order starts at (one rating per media), and `recommend_hot`."""
         ratings, log = _changes(Ratings, user_id), _changes(WatchlistEvent, user_id)
         stars = select(func.count().label("n"), func.max(GalaxyStar.id).label("newest")).subquery()
+        fit = _live_fit().with_only_columns(RecommenderFit.uuid).scalar_subquery()
         # One-row aggregates beside the settings row: the join is deliberately on nothing.
         stmt = (
             select(
-                *ratings.c, *log.c, *stars.c, Ratings.media_id.label("history_start"), UserSettings.recommend_hot,
+                *ratings.c, *log.c, *stars.c, fit.label("fit"),
+                Ratings.media_id.label("history_start"), UserSettings.recommend_hot,
             )
             .select_from(UserSettings).join(ratings, true()).join(log, true()).join(stars, true())
             .outerjoin(Ratings, Ratings.id == UserSettings.history_start_rating_id)
             .where(UserSettings.user_id == user_id)
         )
         return (await db.execute(stmt)).one()
+
+    async def live_fit(self, db: AsyncSession) -> RecommenderFit | None:
+        return await db.scalar(_live_fit())
+
+    async def add_fit(self, db: AsyncSession, weights: dict[str, float]) -> RecommenderFit:
+        fit = RecommenderFit(weights=weights, built_for=version())
+        db.add(fit)
+        await db.flush()
+        return fit
+
+    async def exposure(self, db: AsyncSession) -> list[tuple[int, int, str, float]]:
+        """Every user's row exposure: each stretch's user, anime, reason then and opening, in
+        epoch seconds."""
+        stmt = select(
+            RecommendationExposure.user_id, RecommendationExposure.anime_id, RecommendationExposure.kind,
+            RecommendationExposure.created_at,
+        )
+        return [(u, a, kind.value, at.timestamp()) for u, a, kind, at in (await db.execute(stmt)).tuples()]
 
     async def stored_key(self, db: AsyncSession, user_id: int) -> str | None:
         return await db.scalar(select(RecommendationState.inputs_key).where(RecommendationState.user_id == user_id))

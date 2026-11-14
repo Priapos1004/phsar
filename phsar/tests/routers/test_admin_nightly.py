@@ -1,18 +1,14 @@
-"""POST /admin/jobs/schedule-nightly — combined daily cron entry point.
+"""POST /admin/jobs/schedule-nightly — combined daily cron entry point — and the
+recommender eval's on-demand endpoint.
 
-The endpoint enqueues three things from one call:
-  - a `backup` job (no `not_before_at`, runs immediately)
-  - an `update_sweep` job with `not_before_at = now + delay_minutes`
-  - on Sundays UTC only, a `seasonal_sweep` job with the same delay
+What the nightly call enqueues on which day is `NightlyScheduleResponse`'s docstring.
+Tests pin the auth surface, the schema, the weekday branches, and the
+maintenance-allowlist that keeps a cron retry mid-window from 503ing. The clock is
+monkey-patched on the router module so each weekday's branch is reachable without
+waiting for that weekday.
 
-Tests pin the auth surface, the schema, the Sunday/weekday branch, and
-the maintenance-allowlist that keeps a cron retry mid-window from 503ing.
-The clock is monkey-patched on the router module so the Sunday branch is
-reachable without waiting for an actual Sunday.
-
-Auth uses the shared JOBS_CRON_TOKEN — the same bearer the two individual
-sweep schedulers AND /backups/auto consume after the v0.14.0 token
-consolidation.
+Auth uses the shared JOBS_CRON_TOKEN, the same bearer as the individual schedulers
+and /backups/auto.
 """
 
 from datetime import datetime, timezone
@@ -33,6 +29,7 @@ URL = "/admin/jobs/schedule-nightly"
 # Both are exact midnight UTC so any delay_minutes math stays clean.
 SUNDAY_FIXED = datetime(2026, 5, 17, 0, 0, 0, tzinfo=timezone.utc)  # weekday() == 6
 MONDAY_FIXED = datetime(2026, 5, 18, 0, 0, 0, tzinfo=timezone.utc)  # weekday() == 0
+TUESDAY_FIXED = datetime(2026, 5, 19, 0, 0, 0, tzinfo=timezone.utc)  # weekday() == 1
 
 
 @pytest.fixture
@@ -72,12 +69,13 @@ async def test_schedule_nightly_rejects_wrong_token(cron_client):
 async def test_schedule_nightly_weekday_enqueues_backup_and_sweep_only(
     cron_client, db_session, freeze_admin_clock,
 ):
-    """Monday → backup + update_sweep only; seasonal_sweep_uuid is null.
+    """Tuesday → backup + update_sweep only; seasonal_sweep_uuid and
+    recommender_eval_uuid are null.
 
     Backup is enqueued without `not_before_at` so the worker drains it
     first; update_sweep gets the delay so the banner has time to warm up
     before maintenance actually opens."""
-    freeze_admin_clock(MONDAY_FIXED)
+    freeze_admin_clock(TUESDAY_FIXED)
 
     resp = await cron_client.post(URL + "?delay_minutes=20", headers=GOOD_HEADER)
     assert resp.status_code == 200, resp.text
@@ -85,9 +83,10 @@ async def test_schedule_nightly_weekday_enqueues_backup_and_sweep_only(
     assert "backup_uuid" in body
     assert "update_sweep_uuid" in body
     assert body["seasonal_sweep_uuid"] is None
+    assert body["recommender_eval_uuid"] is None
 
     scheduled_at = datetime.fromisoformat(body["scheduled_at"])
-    assert (scheduled_at - MONDAY_FIXED).total_seconds() == pytest.approx(20 * 60)
+    assert (scheduled_at - TUESDAY_FIXED).total_seconds() == pytest.approx(20 * 60)
 
     backup = (await db_session.execute(
         select(Job).where(Job.uuid == body["backup_uuid"])
@@ -176,6 +175,44 @@ async def test_schedule_nightly_refits_the_galaxy_when_the_map_is_due(
         assert galaxy.requested_by_user_id is None
         assert galaxy.not_before_at == sweep.not_before_at
         assert galaxy.id > sweep.id
+
+
+async def test_schedule_nightly_measures_the_recommender_on_mondays(
+    cron_client, db_session, freeze_admin_clock, monkeypatch,
+):
+    """Queued with the sweeps' `not_before_at` and created after them and a due galaxy
+    rebuild, so FIFO runs it on the night's map and catalogue."""
+    freeze_admin_clock(MONDAY_FIXED)
+    monkeypatch.setattr(galaxy_compute, "MIN_CATALOGUE", 0)
+    await db_session.execute(delete(Job).where(Job.kind == JobKind.galaxy_rebuild))
+    await db_session.execute(delete(GalaxyFit))
+
+    resp = await cron_client.post(URL + "?delay_minutes=20", headers=GOOD_HEADER)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    jobs = {
+        key: (await db_session.execute(select(Job).where(Job.uuid == body[key]))).scalar_one()
+        for key in ("recommender_eval_uuid", "update_sweep_uuid", "backup_uuid", "galaxy_rebuild_uuid")
+    }
+    evaluation = jobs["recommender_eval_uuid"]
+    assert evaluation.kind is JobKind.recommender_eval
+    assert evaluation.requested_by_user_id is None
+    assert evaluation.not_before_at == jobs["update_sweep_uuid"].not_before_at
+    assert evaluation.id == max(job.id for job in jobs.values())
+
+
+async def test_the_recommender_eval_runs_on_demand(cron_client, db_session, freeze_admin_clock):
+    """Behind the cron token like the rest; with no delay it is due at once, and it opens
+    no maintenance banner."""
+    freeze_admin_clock(MONDAY_FIXED)
+    url = "/admin/jobs/schedule-recommender-eval"
+    assert (await cron_client.post(url)).status_code == 401
+
+    resp = await cron_client.post(url, headers=GOOD_HEADER)
+    assert resp.status_code == 200, resp.text
+    job = (await db_session.execute(select(Job).where(Job.uuid == resp.json()["job_uuid"]))).scalar_one()
+    assert (job.kind, job.status, job.not_before_at) == (JobKind.recommender_eval, JobStatus.queued, MONDAY_FIXED)
+    assert maintenance.get_scheduled_at() is None
 
 
 @pytest.mark.asyncio
