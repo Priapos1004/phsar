@@ -225,6 +225,19 @@ def test_a_listed_unaired_sequel_leaves_the_aired_season_a_candidate():
     assert [p.anime_id for p in rc.recommend(cat, led, T0)] == [1]
 
 
+def test_a_hot_anime_with_nothing_to_start_now_waits():
+    """Season one watched and listed again beside a sequel due next season: the watchlist
+    calls it Hot, but all there is to start now is the rewatch, months early — so it is no
+    candidate until the sequel airs."""
+    media = [_media(10, 1, year=2026, season="Summer"), _media(11, 1, unaired=True, year=2027, season="Winter")]
+    cat = _catalogue([_star(1, [0.0])], media)
+    listing = [rc.ListingRow(10, 1, T0 - DAY, None), rc.ListingRow(11, 1, T0 - DAY, None)]
+    led = _ledger(cat, [_rating(10, T0 - 30 * DAY)], listing)
+    items = [cat.ready[cat.position_of[m]]._replace(watch_status=s) for m, s in ((10, "completed"), (11, None))]
+    assert rc.readiness(items, False, None, rc.next_season_key(T0)) == "hot"
+    assert rc.recommend(cat, led, T0) == []
+
+
 def test_the_franchise_signals_reach_the_verdict():
     """A listed season is Hot when the franchise has an unlisted season airing — the signal
     the watchlist's own query computes, dropped seasons already excused."""
@@ -367,6 +380,27 @@ def test_a_region_holds_at_most_three_tiles_per_window():
     assert crowded.sum() == 4
     assert crowded[order[: rc.ROW]].sum() == rc.REGION_CAP
     assert crowded[order[rc.ROW : 2 * rc.ROW]].sum() == 1
+
+
+def test_the_explore_slots_lean_toward_the_users_lengths():
+    """Explore candidates alike but for the user's taste for their length: the one whose
+    length bucket they pick most often takes the first slot."""
+    cat = _wide_catalogue()
+    dec = rc.decide(cat, _ledger(cat, []), T0)
+    pool = np.flatnonzero(cat.region[dec.rows] == 0)
+    X = dec.X.copy()
+    X[:, rc.COLUMN["F9_len_propensity"]] = 0.0
+    X[pool[-1], rc.COLUMN["F9_len_propensity"]] = 1.0
+    dec = dec._replace(X=X, coverage=np.where(cat.region == 0, 0.0, 0.5))
+    order, _ = rc.slate(np.linspace(1, 0, len(dec.rows)), dec, cat, listed_cap=rc.ROW, cont_cap=rc.ROW)
+    assert order[rc.EXPLORE_SLOTS[0] - 1] == pool[-1]
+
+
+def test_a_continuation_reads_continue_even_when_listed():
+    """A listed continuation reads continue, not watchlist."""
+    cat = _franchise_catalogue()
+    led = _ledger(cat, [_rating(20, T0 - 10 * DAY)], [rc.ListingRow(21, 1, T0 - DAY, None)])
+    assert {p.anime_id: p.kind for p in rc.recommend(cat, led, T0)}[2] == "continue"
 
 
 def test_a_new_user_gets_the_catalogue_s_popular_picks():

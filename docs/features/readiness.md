@@ -2,7 +2,7 @@
 
 What "can I start this anime tonight?" means, and where the answer is computed. The
 watchlist shows it — its **Status** filter and the badges beside it — and the
-[recommender](recommender.md) gates its candidates on it. The verdict is a property of an
+[recommender](recommender.md#candidates) gates its candidates on it. The verdict is a property of an
 anime plus a user, not of any page that shows it, so it is written down here. The watchlist itself — entries, lists,
 priorities — is in [watchlist.md](watchlist.md).
 

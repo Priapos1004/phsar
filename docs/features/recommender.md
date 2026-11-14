@@ -50,10 +50,12 @@ Finished, unlisted anime are not ranked: complete rewatches are too hard to pred
 the user listed of it, on every list, once some of that has aired; otherwise over its whole
 main story as though it were listed — so an airing season or one due next season makes it hot.
 A list holding only an unannounced sequel commits to nothing yet, so the season the user has
-left can read ready here where the watchlist reads Waiting. A `waiting` anime — nothing
-to watch until a sequel lands — is never a candidate. A `hot` one is left out when the ranking
-is asked to (`hot=False`): ratings land at the finale, so a weekly watcher and a finale-week
-binge look the same in the data, and only the user can say which they are.
+left can read ready here where the watchlist reads Waiting. A `waiting` anime — nothing to
+watch until a sequel lands — is never a candidate, nor is a `hot` one with nothing to start
+now: its rewatch belongs to when the sequel lands, though the watchlist shows it Hot. Any other
+`hot` one is left out when the ranking is asked to (`hot=False`): ratings land at the finale,
+so a weekly watcher and a finale-week binge look the same in the data, and only the user can
+say which they are.
 
 ## What a pick commits to
 
@@ -116,14 +118,16 @@ The order walks the scores in windows of `ROW`:
   moment, which is known only from `listed_from` on. A list is the strongest single signal,
   so uncapped it would fill the row with the anime the user is likeliest to start anyway.
 - **`EXPLORE_SLOTS`** go to new territory: the best-rated candidates from the regions the user
-  has covered least. Exploration predicts nothing, so it takes slots rather than competing
-  in the score.
+  has covered least, weighed by the user's own preference for their length, so a long run
+  sinks for someone who rarely picks one. Exploration predicts nothing, so it takes slots
+  rather than competing in the score.
 - **At most `REGION_CAP` per galaxy region** in a window.
 
 A user with no ratings gets the catalogue's popular picks around the explore slots.
 
-**Each pick names its reason**: the feature group contributing most to its score — continue,
-watchlist, fresh, recent, favourite or popular — or `explore` for a slot. A recent or
+**Each pick names its reason**: `continue` for a continuation, listed or not, else the feature
+group contributing most to its score — watchlist, fresh, recent, favourite or popular — or
+`explore` for a slot. A recent or
 favourite reason also names the anime it is nearest.
 
 ## Measuring it

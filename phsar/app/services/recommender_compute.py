@@ -97,7 +97,7 @@ SCALED = np.array([family(name) not in ("F6x", "W") for name in NAMES])
 # absent from this map never leads a reason.
 REASON_OF = {
     "F1": "recent", "F2": "recent", "F5_top20_sim": "favourite", "F5_mal": "popular",
-    "F5_mal_missing": "popular", "F5_logvotes": "popular", "F7": "continue",
+    "F5_mal_missing": "popular", "F5_logvotes": "popular",
     "F8": "fresh", "F10": "fresh", "W": "watchlist",
 }
 _REASON_COLUMNS: dict[str, list[int]] = defaultdict(list)
@@ -115,7 +115,7 @@ WEIGHTS: dict[str, float] = {
     "F5_top20_sim": 0.65, "F5_mal": -0.09, "F5_mal_missing": -0.14, "F5_logvotes": 0.45,
     "F6_loglen": -0.13, "F6_long": -0.24, "F7_is_cont": 0.06, "F8_age_propensity": 0.23,
     "F9_len_propensity": 0.22, "W_p1": 0.57, "W_p2": 0.11, "W_p3": -0.31, "W_log_age": 0.08,
-    "W_backlog": 0.77, "F10_finale_propensity": 0.44,
+    "W_backlog": 0.77, "F10_finale_propensity": 0.43,
 }
 
 VERSION = 1
@@ -516,19 +516,26 @@ def media_class(item: ReadyItem, next_key: int) -> str:
     return "soon" if item.season_key <= next_key else "later"
 
 
+def something_to_watch(items: list[ReadyItem], next_key: int) -> bool:
+    """Test A of docs/features/readiness.md, "The verdict" — on its own because the
+    recommender applies it whatever the verdict."""
+    classes = [media_class(i, next_key) for i in items]
+    waiting_on_unaired = any(c in ("soon", "later", "tba") for c in classes)
+    return not waiting_on_unaired or any(
+        c == "aired" and i.watch_status != "completed" for i, c in zip(items, classes, strict=True)
+    )
+
+
 def readiness(items: list[ReadyItem], franchise_airing: bool, franchise_upcoming_key: int | None, next_key: int) -> str:
     """ready, standalone, hot or waiting: tests A, B1 and B2 and the standalone rule."""
     classes = [media_class(i, next_key) for i in items]
-    waiting_on_unaired = any(c in ("soon", "later", "tba") for c in classes)
-    fresh = any(c == "aired" and i.watch_status != "completed" for i, c in zip(items, classes, strict=True))
-    something_to_watch = not waiting_on_unaired or fresh
     governing = [c for i, c in zip(items, classes, strict=True) if i.main] or classes
     nothing_listed_pending = not any(c in ("airing", "soon") for c in governing)
     franchise_blocks = franchise_airing or (franchise_upcoming_key is not None and franchise_upcoming_key <= next_key)
     standalone = franchise_blocks and any((i.total_watch_time or 0) >= STANDALONE_SECONDS for i in items)
     if not nothing_listed_pending or (franchise_blocks and not standalone):
         return "hot"
-    if not something_to_watch:
+    if not something_to_watch(items, next_key):
         return "waiting"
     return "standalone" if standalone else "ready"
 
@@ -536,8 +543,7 @@ def readiness(items: list[ReadyItem], franchise_airing: bool, franchise_upcoming
 def _verdicts(
     cat: Catalogue, C: np.ndarray, led: Ledger, listed: np.ndarray, planned: np.ndarray, status_of: dict[int, str], t: float,
 ) -> np.ndarray:
-    """Each candidate's verdict, over the selection docs/features/recommender.md,
-    "Candidates", gives."""
+    """Each candidate's verdict, as docs/features/recommender.md, "Candidates", gives it."""
     selection: dict[int, list[int]] = defaultdict(list)
     for p in listed.tolist():
         selection[int(cat.media_row[p])].append(p)
@@ -545,7 +551,7 @@ def _verdicts(
     out = []
     for r in C.tolist():
         items = [cat.ready[p]._replace(watch_status=status_of.get(p)) for p in (selection[r] if planned[r] else cat.main_of[r])]
-        out.append(readiness(items, *led.franchise.get(r, (False, None)), next_key))
+        out.append(readiness(items, *led.franchise.get(r, (False, None)), next_key) if something_to_watch(items, next_key) else "waiting")
     return np.array(out, dtype="U10")
 
 
@@ -686,9 +692,9 @@ def _due(values: list[list[int]], times: np.ndarray, t: float, candidate: list[l
 
 
 def decide(cat: Catalogue, led: Ledger, t: float, *, hot: bool = True, harness: bool = False) -> Decision:
-    """The candidates at `t` and their features, from the history before it. An anime the
-    watchlist would call `waiting` is never one, and without `hot` neither is a `hot` one
-    (`readiness`). `harness` also computes the families the ranking doesn't read."""
+    """The candidates at `t` and their features, from the history before it. Who is one:
+    docs/features/recommender.md, "Candidates". `harness` also computes the families the
+    ranking doesn't read."""
     before = led.t < t
     rated, status = led.position[before], led.status[before]
     dropped = status == "dropped"
@@ -878,7 +884,7 @@ def slate(score: np.ndarray, dec: Decision, cat: Catalogue, listed_cap: int, con
     is_listed, is_cont = dec.listed.tolist(), dec.continuation.tolist()
     low = dec.coverage[dec.rows] <= np.quantile(np.unique(dec.coverage), EXPLORE_COVERAGE)
     pool = np.flatnonzero(~dec.listed & ~dec.continuation & low)
-    enjoyment = _z(dec.raw_knn[pool]) + _z(cat.mal[dec.rows[pool]])
+    enjoyment = _z(dec.raw_knn[pool]) + _z(cat.mal[dec.rows[pool]]) + _z(dec.X[pool, COLUMN["F9_len_propensity"]])
     explore_order = pool[np.argsort(-enjoyment, kind="stable")].tolist()
     placed = [False] * n
     explored = np.zeros(n, dtype=bool)
@@ -943,7 +949,7 @@ def recommend(
     order, explored = slate(score, dec, cat, *caps(led))
     picks = []
     for rank, (i, explore) in enumerate(zip(order.tolist(), explored.tolist(), strict=True), start=1):
-        kind = "explore" if explore else reasons[i]
+        kind = "explore" if explore else "continue" if dec.continuation[i] else reasons[i]
         ref = None
         if kind == "recent" and dec.nearest_recent[i] >= 0:
             ref = int(cat.anime_id[dec.nearest_recent[i]])
