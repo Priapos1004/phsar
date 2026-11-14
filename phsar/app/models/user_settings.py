@@ -1,7 +1,8 @@
 import enum
+from datetime import date
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Enum, ForeignKey, Integer
+from sqlalchemy import Boolean, Date, Enum, ForeignKey, Integer, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
@@ -51,6 +52,10 @@ class UserSettings(BaseModel):
     default_search_view: Mapped[DefaultSearchView] = mapped_column(Enum(DefaultSearchView), nullable=False, default=DefaultSearchView.anime)
     rating_step: Mapped[RatingStep] = mapped_column(Enum(RatingStep), nullable=False, default=RatingStep.half)
     spoiler_level: Mapped[SpoilerLevel] = mapped_column(Enum(SpoilerLevel), nullable=False, default=SpoilerLevel.off)
+    # The recommender's: where the user's own watching order starts (None detects it), and
+    # whether hot anime may be recommended (docs/features/recommender.md).
+    history_start: Mapped[date | None] = mapped_column(Date, nullable=True)
+    recommend_hot: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
 
     # Relationships
     users: Mapped["Users"] = relationship("Users", back_populates="settings", lazy="raise")

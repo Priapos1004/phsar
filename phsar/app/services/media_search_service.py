@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.media_dao import MediaDAO
 from app.daos.rating_dao import RatingDAO
+from app.daos.recommendation_dao import RecommendationDAO
 from app.daos.watchlist_dao import WatchlistDAO
 from app.exceptions import MediaNotFoundError
 from app.models.media import Media
@@ -23,11 +24,13 @@ from app.services.filter_service import (
     personal_scope,
     sort_values,
 )
+from app.services.recommender_service import ensure_fresh_for
 
 logger = logging.getLogger(__name__)
 
 media_dao = MediaDAO()
 rating_dao = RatingDAO()
+recommendation_dao = RecommendationDAO()
 watchlist_dao = WatchlistDAO()
 
 
@@ -94,6 +97,7 @@ async def search_media_by_query(
     logger.info(f"Query: {query}")
     logger.info(f"Filters: {filters.model_dump()}")
     logger.info(f"Search type: {search_type}")
+    await ensure_fresh_for(db, user_id, sort, filters)
     states = {
         media_id: RatedState(status.value)
         for media_id, status in (await rating_dao.get_watch_status_by_media_id(db, user_id)).items()
@@ -103,6 +107,7 @@ async def search_media_by_query(
         await watchlist_dao.get_listed_ids(db, user_id, per_anime=False) if filters.watchlisted is not None else set(),
         include=visible_media_ids,
         scored=await own_scored_ids(db, filters, user_id, per_anime=False),
+        ranked=await recommendation_dao.ranked_ids(db, user_id, per_anime=False) if filters.recommended is not None else set(),
     )
     if include is not None and not include:
         return []
@@ -126,7 +131,7 @@ async def search_media_by_query(
     ids = [m.id for m in media_list]
     rated = await rating_dao.notes_by_rated_media_id(db, user_id, ids)
     quote = bool(query) and search_type == SearchType.RATING_NOTES
-    shown = await sort_values(db, sort, query, ids, user_id, per_anime=False)
+    shown = await sort_values(db, sort, query, ids, user_id, per_anime=False, name_language=name_language)
     return [
         MediaSearchResult(
             **media_to_dict(m), is_rated=m.id in rated, added_at=m.created_at,

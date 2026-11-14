@@ -17,6 +17,7 @@ from app.models.media_studio import MediaStudio
 from app.models.media_unwanted import MediaUnwanted
 from app.models.merge_candidate import MergeCandidate
 from app.models.rating_search import RatingSearch
+from app.models.recommendation import Recommendation, RecommendationExposure, RecommendationState
 from app.models.ratings import Ratings
 from app.models.registration_token import RegistrationToken
 from app.models.split_candidate import SplitCandidate
@@ -27,3 +28,4 @@ from app.models.user_visible_media import UserVisibleMedia
 from app.models.users import Users
 from app.models.watch_event import WatchEvent
 from app.models.watchlist import Watchlist
+from app.models.watchlist_event import WatchlistEvent

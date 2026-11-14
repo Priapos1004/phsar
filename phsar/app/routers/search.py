@@ -57,15 +57,17 @@ async def get_sort(
         default=SortKey.RELEVANCE,
         description="Result order. `relevance` is the query's own match order, and `top_rated` "
         "without a query. Any other sort orders the same matching rows. `your_rating` is your "
-        "rating of a media, or the mean over an anime's rated media; unrated last. `release` is the "
+        "rating of a media, or the mean over an anime's rated media; unrated last. `for_you` is your "
+        "recommendations' order, a media at its anime's place and in watching order within it; "
+        "unranked last. `release` is the "
         "next announced season, else the latest aired; `aired` the latest finished main season, "
         "else the airing one, else the next announced. `announced` is when the newest announced "
         "main-story entry was added; nothing announced last.",
     ),
     current_user: Users = Depends(get_current_user),
 ) -> SortKey:
-    # Your ratings gate like the endpoints that read them (rules/backend.md, Roles).
-    if sort == SortKey.YOUR_RATING:
+    # A sort by your own data gates like the endpoints that read it (rules/backend.md, Roles).
+    if sort in (SortKey.YOUR_RATING, SortKey.FOR_YOU):
         await require_user_or_admin(current_user)
     return sort
 
@@ -154,6 +156,10 @@ async def get_catalogue_filters(
         default=None, description="Keep the rows on your watchlist, or the rows off it; an anime is on it "
         "when any of its media is.",
     ),
+    recommended: bool | None = Query(
+        default=None, description="Keep the rows your recommendations hold, or the rows they don't; a "
+        "media is held when its anime is.",
+    ),
     your_score_min: float | None = Query(
         default=None, description="Keep the rows you scored this or higher: a media's own rating, an "
         "anime's mean over its rated media. Unrated rows never pass.",
@@ -167,9 +173,10 @@ async def get_catalogue_filters(
 ) -> CatalogueSearchFilters:
     filters = CatalogueSearchFilters(
         **media_filters.model_dump(), upcoming_main=upcoming_main, rated=rated, watchlisted=watchlisted,
+        recommended=recommended,
         your_score_min=your_score_min, your_score_max=your_score_max, your_top_percent=your_top_percent,
     )
-    if filters.rated or filters.watchlisted is not None or filters.own_score_set:
+    if filters.rated or filters.watchlisted is not None or filters.recommended is not None or filters.own_score_set:
         await require_user_or_admin(current_user)
     return filters
 

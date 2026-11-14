@@ -260,11 +260,6 @@ class WatchlistDAO(BaseDAO[Watchlist]):
         )
         return list((await db.execute(stmt)).all())
 
-    async def priorities(self, db: AsyncSession, user_id: int) -> list[Row]:
-        """Each listed media's priority and when it was listed or last changed."""
-        stmt = select(Watchlist.media_id, Watchlist.priority, Watchlist.modified_at).where(Watchlist.user_id == user_id)
-        return list((await db.execute(stmt)).all())
-
     async def get_listed_ids(self, db: AsyncSession, user_id: int, *, per_anime: bool) -> set[int]:
         """The media the user has listed or, `per_anime`, the anime with any media
         listed — the bookmark's reading. What search's `watchlisted` filter selects."""

@@ -19,7 +19,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import BaseModel
+from app.models.base import BaseModel, enum_values
 
 if TYPE_CHECKING:
     from app.models.anime import Anime
@@ -110,12 +110,6 @@ class OriginalSource(str, enum.Enum):
     Other = "Other"
 
 
-def _enum_values(enum_cls: type[enum.Enum]) -> list[str]:
-    """`values_callable` that persists an enum's values rather than its member names
-    (rules/database.md)."""
-    return [m.value for m in enum_cls]
-
-
 # Chronological rank of a season within its year. Lives beside the enum rather than in
 # one of its consumers because both layers need it: services sort by it in Python,
 # `search_filters.SEASON_KEY` builds a SQL CASE from it. Keyed by members, but the
@@ -173,9 +167,9 @@ class Media(BaseModel):
     other_names: Mapped[list[str] | None] = mapped_column(JSONB, default=list)
     media_type: Mapped[MediaType] = mapped_column(Enum(MediaType), nullable=False)
     relation_type: Mapped[RelationType] = mapped_column(Enum(RelationType), nullable=False)
-    age_rating: Mapped[AgeRating | None] = mapped_column(Enum(AgeRating, values_callable=_enum_values))
+    age_rating: Mapped[AgeRating | None] = mapped_column(Enum(AgeRating, values_callable=enum_values))
     description: Mapped[str | None] = mapped_column(String)
-    original_source: Mapped[OriginalSource | None] = mapped_column(Enum(OriginalSource, values_callable=_enum_values))
+    original_source: Mapped[OriginalSource | None] = mapped_column(Enum(OriginalSource, values_callable=enum_values))
     cover_image: Mapped[str | None] = mapped_column(String)
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
     scored_by: Mapped[int] = mapped_column(Integer, nullable=False)

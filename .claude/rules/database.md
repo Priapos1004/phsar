@@ -13,9 +13,9 @@ row's behaviour diverges from what its content suggests, when it was inserted
 versus last touched is sometimes the only evidence available, and consistency
 across every table beats per-table justification.
 
-`user_visible_media` is the one table on bare `Base`; its docstring argues the
-case for a pure cache table. Treat that as the exception that needs arguing, not
-the default — and if a new table has the same case, raise it rather than deciding
+The tables on bare `Base` are pure caches rewritten wholesale (`user_visible_media`,
+`recommendations`), each arguing the case in its docstring. Treat that as the exception that
+needs arguing, not the default — and if a new table has the same case, raise it rather than deciding
 alone.
 
 ## A column is `Mapped[T] = mapped_column(...)`, and the annotation follows the DDL
@@ -132,6 +132,19 @@ doesn't show it, only a real database does.
 
 `pg_restore --clean` only drops what the dump contains, so restoring a dump older than
 the object leaves it orphaned, and a bare `CREATE` then fails the next boot's upgrade.
+
+## A trigger lives in its migration, and a test is its only guard
+
+A trigger's function is written inside the migration that creates it, which makes the
+migration its source: changing it is a new migration that replaces the function, never an edit
+to a landed one. `alembic check` compares neither functions nor triggers, so a trigger dropped
+or altered by hand ships green — the tests that write through it, against the database the
+migration chain built, are what notices (`watchlist_events_log`:
+`tests/services/test_watchlist_events.py`).
+
+**A trigger that writes child rows checks their parents still exist.** Deleting a user or a
+media cascades through `watchlist`, and each cascaded row fires the trigger after its parent
+is already gone; a row it then inserts fails its foreign key and with it the whole deletion.
 
 ## A migration docstring is frozen, so it may narrate
 

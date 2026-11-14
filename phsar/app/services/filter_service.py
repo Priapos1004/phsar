@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.daos.genre_dao import GenreDAO
 from app.daos.media_dao import MediaDAO
 from app.daos.rating_dao import RatingDAO
+from app.daos.recommendation_dao import RecommendationDAO
 from app.daos.search_filters import (
     SEASON_SORT_KEYS,
     anime_genre_majority_relation,
@@ -24,6 +25,7 @@ from app.models.media import (
     MediaType,
     RelationType,
 )
+from app.models.user_settings import NameLanguage
 from app.schemas.genre_schema import GenreOut
 from app.schemas.media_filter_schema import (
     CatalogueSearchFilters,
@@ -38,11 +40,13 @@ logger = logging.getLogger(__name__)
 media_dao = MediaDAO()
 genre_dao = GenreDAO()
 rating_dao = RatingDAO()
+recommendation_dao = RecommendationDAO()
 studio_dao = StudioDAO()
 
 
 async def sort_values(
     db: AsyncSession, sort: SortKey, query: str, ids: list[int], user_id: int, *, per_anime: bool,
+    name_language: NameLanguage,
 ) -> dict[int, SortValueFields]:
     """Each of `ids`' value under the search's sort: docs/features/search.md#sorting."""
     ranked = ranked_by(sort, query)
@@ -55,12 +59,18 @@ async def sort_values(
         await rating_dao.your_rating_by_id(db, user_id, ids, per_anime=per_anime)
         if ranked == SortKey.YOUR_RATING else {}
     )
+    reasons = (
+        await recommendation_dao.reasons(db, user_id, ids, per_anime=per_anime, name_language=name_language)
+        if ranked == SortKey.FOR_YOU else {}
+    )
 
     def fields(id_: int) -> SortValueFields:
         at, kind = announced.get(id_, (None, None))
+        reason, reason_name = reasons.get(id_, (None, None))
         return SortValueFields(
             score_top_percent=top.get(id_), sort_season=season.get(id_),
             announced_at=at, announced_type=kind, your_rating=yours.get(id_),
+            reason=reason, reason_name=reason_name,
         )
 
     return {id_: fields(id_) for id_ in ids}
@@ -111,10 +121,12 @@ def personal_scope(
     listed: set[int],
     include: set[int] | None = None,
     scored: set[int] | None = None,
+    *,
+    ranked: set[int],
 ) -> tuple[set[int] | None, set[int]]:
     """The `(include, exclude)` ids the caller's personal filters leave, at whichever
-    grain `states` (the rated rows), `listed` and `scored` (the rows their own-score
-    filters pass, None without one) are keyed by. `include` is a scope already in force —
+    grain `states` (the rated rows), `listed`, `ranked` (the rows their recommendations hold)
+    and `scored` (the rows their own-score filters pass, None without one) are keyed by. `include` is a scope already in force —
     the spoiler frontier — and None means no restriction.
 
     States are a union: with `none` selected the unrated rows pass, so the rated rows
@@ -129,10 +141,11 @@ def personal_scope(
             exclude |= states.keys() - selected
         else:
             include = selected if include is None else include & selected
-    if filters.watchlisted is True:
-        include = listed if include is None else include & listed
-    elif filters.watchlisted is False:
-        exclude |= listed
+    for wanted, ids in ((filters.watchlisted, listed), (filters.recommended, ranked)):
+        if wanted is True:
+            include = ids if include is None else include & ids
+        elif wanted is False:
+            exclude |= ids
     if include is None:
         return None, exclude
     return include - exclude, set()

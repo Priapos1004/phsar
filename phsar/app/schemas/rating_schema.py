@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -178,3 +178,9 @@ class AnimeRatingCoverage(BaseModel):
     state: RatedState
     score: float
     top_percent: int
+
+
+class HistoryStart(BaseModel):
+    """`GET /ratings/history-start`; `chosen` is null when the user chose none."""
+    detected: date | None
+    chosen: date | None

@@ -5,8 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_db, require_user_or_admin
 from app.schemas import rating_schema
-from app.services import rating_service
+from app.services import rating_service, recommender_service
 from app.services.spoiler_service import get_spoiler_visibility
+from app.services.user_settings_service import get_settings
 
 router = APIRouter(prefix="/ratings", tags=["ratings"])
 
@@ -74,6 +75,19 @@ async def get_rating_coverage(
     for it. Only anime with at least one rating are returned; everything else is absent
     rather than listed as untouched."""
     return await rating_service.get_rating_coverage(db, current_user.id)
+
+
+@router.get("/history-start", response_model=rating_schema.HistoryStart)
+async def get_history_start(
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(require_user_or_admin),
+):
+    """Where the recommender reads the caller's own watching order from: the day it detects
+    and the day they chose, which `PUT /users/settings` sets."""
+    settings = await get_settings(db, current_user.id)
+    return rating_schema.HistoryStart(
+        detected=await recommender_service.detected_history_start(db, current_user.id), chosen=settings.history_start,
+    )
 
 
 @router.post("/{rating_uuid}/rewatch", response_model=rating_schema.RatingOut)

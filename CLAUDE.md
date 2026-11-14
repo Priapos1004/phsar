@@ -48,7 +48,7 @@ that touches its area, before settling on an approach.
 | [browse](docs/features/browse.md) | Carousel definitions and filter sets, the resolver, page layouts |
 | [navigation](docs/features/navigation.md) | What survives leaving a page and coming back: route, origin, scroll position, filters — and when each resets |
 | [galaxy](docs/features/galaxy.md) | The fitted map of every anime: feature blocks, the fit and the warm refit, the rebuild job and its triggers, sector and region names |
-| [recommender](docs/features/recommender.md) | The per-user ranking: natural history and imports, candidates and readiness, what a pick commits to, the pooled model's features, the calibrated row, the harness that fits and measures it |
+| [recommender](docs/features/recommender.md) | The per-user ranking: natural history and imports, candidates and readiness, what a pick commits to, the pooled model's features, the calibrated row, the watchlist's history log, serving, the harness that fits and measures it |
 
 **`compound-docs/`** — why something changed, dated and frozen; feature docs say how
 it works now. [INDEX.md](compound-docs/INDEX.md) lists them by subsystem and by date.
@@ -153,7 +153,7 @@ several `admin_*` modules). The live contract is FastAPI's own
 | `/browse` | page carousels, one carousel with its filter sets switched, Discover's moods, the day's spin and an admin's preview of any mood, the galaxy map and a star's neighbours |
 | `/search` | `/media` per-entry, `/anime` aggregated, `/anime/uuids` every match, `/mal` |
 | `/media` | media + anime detail |
-| `/ratings` | rating CRUD, rewatch, scores projection, rated coverage, spoiler visibility |
+| `/ratings` | rating CRUD, rewatch, scores projection, rated coverage, spoiler visibility, the recommender's history start |
 | `/watchlist` | entries + lists (a "list" is a tag) |
 | `/users` | settings, export, account deletion |
 | `/jobs` | user-triggered scrapes, own-job polling |
@@ -176,7 +176,7 @@ on a `DeclarativeBase` root). Alongside the canonical tables sit the deliberate
 shapes covered by `rules/database.md`: **1:1 sidecars** for operational state
 (e.g. `anime_freshness`, `media_relation_edges`, `discover_progress`),
 **search tables** holding pgvector embeddings (`anime_search`, `media_search`,
-`rating_search`), and **caches** (`user_visible_media`).
+`rating_search`), and **caches** (`user_visible_media`, `recommendations`).
 
 **`core/`** — cross-cutting infrastructure: `config.py` (env), `db.py` (engine),
 `dependencies.py` (JWT user dep + `require_roles()` + the cron-bearer factory),

@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.daos.base_mal_id_dao import MalIdDAO
 from app.daos.rating_dao import note_passes, rating_of, your_rating_key
+from app.daos.recommendation_dao import for_you_key, recommendation_of
 from app.daos.search_filters import (
     apply_media_filters,
     description_passes,
@@ -23,6 +24,7 @@ from app.models.media import Media
 from app.models.media_genre import MediaGenre
 from app.models.media_studio import MediaStudio
 from app.models.ratings import Ratings
+from app.models.recommendation import Recommendation
 from app.models.user_settings import NameLanguage
 from app.schemas.media_filter_schema import (
     CatalogueSearchFilters,
@@ -97,7 +99,12 @@ class MediaDAO(MalIdDAO[Media]):
         notes = bool(query) and search_type == SearchType.RATING_NOTES
         if sort == SortKey.YOUR_RATING or notes:
             stmt = stmt.outerjoin(Ratings, rating_of(user_id))
-        your_rating = your_rating_key(per_anime=False) if sort == SortKey.YOUR_RATING else None
+        if sort == SortKey.FOR_YOU:
+            stmt = stmt.outerjoin(Recommendation, recommendation_of(user_id, Media.anime_id))
+        personal, tiebreak = (
+            (your_rating_key(per_anime=False), ()) if sort == SortKey.YOUR_RATING
+            else for_you_key(per_anime=False) if sort == SortKey.FOR_YOU else (None, ())
+        )
 
         stmt = stmt.options(*self._media_eager_options()).limit(limit)
 
@@ -115,5 +122,5 @@ class MediaDAO(MalIdDAO[Media]):
         else:
             passes = [stmt]
 
-        order = sort_order(sort, sort_dir, name_language, query=query, your_rating=your_rating)
+        order = sort_order(sort, sort_dir, name_language, query=query, personal=personal, tiebreak=tiebreak)
         return await fetch_search_results(db, *passes, order=order)

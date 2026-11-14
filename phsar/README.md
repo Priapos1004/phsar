@@ -74,6 +74,7 @@ phsar/
 │   │   ├── merge_candidate.py
 │   │   ├── rating_search.py
 │   │   ├── ratings.py
+│   │   ├── recommendation.py
 │   │   ├── registration_token.py
 │   │   ├── split_candidate.py
 │   │   ├── studio.py
@@ -82,7 +83,8 @@ phsar/
 │   │   ├── user_visible_media.py
 │   │   ├── users.py
 │   │   ├── watch_event.py
-│   │   └── watchlist.py
+│   │   ├── watchlist.py
+│   │   └── watchlist_event.py
 │   ├── routers/
 │   │   ├── admin.py
 │   │   ├── admin_completion.py
@@ -572,6 +574,7 @@ phsar/
     │   ├── test_rating_coverage.py
     │   ├── test_rating_scores.py
     │   ├── test_ratings.py
+    │   ├── test_recommender_settings.py
     │   ├── test_save.py
     │   ├── test_search_anime.py
     │   ├── test_search_anime_filters.py
@@ -610,6 +613,7 @@ phsar/
         ├── test_rating_coverage.py
         ├── test_recommender_compute.py
         ├── test_recommender_eval.py
+        ├── test_recommender_service.py
         ├── test_relation_classifier.py
         ├── test_save_service.py
         ├── test_score_percentile.py
@@ -621,6 +625,7 @@ phsar/
         ├── test_tag_service.py
         ├── test_update_sweep.py
         ├── test_vector_embedding_service.py
+        ├── test_watchlist_events.py
         └── test_watchlist_service.py
 ```
 </details>
@@ -633,14 +638,17 @@ phsar/
 <!-- schema:start -->
 ```mermaid
 ---
-title: Every table but user_visible_media also carries created_at, modified_at, uuid
+title: Every table but recommendations, user_visible_media also carries created_at, modified_at, uuid
 config:
   layout: elk
 ---
 erDiagram
+    anime |o--o{ recommendations : "ref_anime_id SET NULL"
     anime ||--o{ media : "anime_id CASCADE"
     anime ||--o{ merge_candidates : "anime_a_id CASCADE"
     anime ||--o{ merge_candidates : "anime_b_id CASCADE"
+    anime ||--o{ recommendation_exposure : "anime_id CASCADE"
+    anime ||--o{ recommendations : "anime_id CASCADE"
     anime ||--o{ split_candidates : "anime_id CASCADE"
     anime ||--o| anime_completion : "anime_id CASCADE"
     anime ||--o| anime_freshness : "anime_id CASCADE"
@@ -661,22 +669,28 @@ erDiagram
     media ||--o{ user_visible_media : "media_id CASCADE"
     media ||--o{ watch_events : "media_id CASCADE"
     media ||--o{ watchlist : "media_id CASCADE"
+    media ||--o{ watchlist_events : "media_id CASCADE"
     media ||--o| media_freshness : "media_id CASCADE"
     media ||--o| media_relation_edges : "media_id CASCADE"
     media ||--o| media_search : "media_id CASCADE"
     ratings ||--o| rating_search : "rating_id CASCADE"
     studio |o--o{ media_studio : "studio_id CASCADE"
+    tag |o--o{ watchlist_events : "tag_id SET NULL"
     tag ||--o{ watchlist : "tag_id CASCADE"
     users |o--o{ anime_completion : "marked_by_user_id SET NULL"
     users |o--o{ jobs : "requested_by_user_id SET NULL"
     users |o--o{ registration_token : "created_by_user_id SET NULL"
     users |o--o{ registration_token : "was_used_for_user_id SET NULL"
     users ||--o{ ratings : "user_id CASCADE"
+    users ||--o{ recommendation_exposure : "user_id CASCADE"
+    users ||--o{ recommendations : "user_id CASCADE"
     users ||--o{ tag : "user_id CASCADE"
     users ||--o{ user_visible_media : "user_id CASCADE"
     users ||--o{ watch_events : "user_id CASCADE"
     users ||--o{ watchlist : "user_id CASCADE"
+    users ||--o{ watchlist_events : "user_id CASCADE"
     users ||--o| discover_progress : "user_id CASCADE"
+    users ||--o| recommendation_state : "user_id CASCADE"
     users ||--o| user_settings : "user_id CASCADE"
     anime {
         integer id PK
@@ -887,6 +901,27 @@ erDiagram
         storyquality story_quality
         originality originality
     }
+    recommendation_exposure {
+        integer id PK
+        integer user_id FK
+        integer anime_id FK
+        integer best_rank
+        recommendation_kind kind
+    }
+    recommendation_state {
+        integer id PK
+        integer user_id FK, UK
+        varchar inputs_key
+    }
+    recommendations {
+        integer id PK
+        integer user_id FK
+        integer anime_id FK
+        integer rank
+        recommendation_kind kind
+        integer ref_anime_id FK
+        varchar detail
+    }
     registration_token {
         integer id PK
         varchar token UK
@@ -923,6 +958,8 @@ erDiagram
         defaultsearchview default_search_view
         ratingstep rating_step
         spoilerlevel spoiler_level
+        date history_start
+        boolean recommend_hot
     }
     user_visible_media {
         integer id PK
@@ -948,6 +985,15 @@ erDiagram
         integer tag_id FK
         varchar(1000) note
         integer priority
+    }
+    watchlist_events {
+        integer id PK
+        integer user_id FK
+        integer media_id FK
+        watchlist_event_kind kind
+        integer priority
+        integer tag_id FK
+        timestamp_with_time_zone at
     }
 ```
 <!-- schema:end -->

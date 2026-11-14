@@ -771,7 +771,7 @@ def utc_today() -> date:
 # The keys that ascend unless a direction is given; the rest descend. The search menu's
 # `ASCENDING_SORTS` (frontend lib/utils/search.ts) mirrors it, pinned by
 # `test_the_search_menu_knows_which_sorts_ascend`.
-ASCENDING_SORTS = frozenset({SortKey.TITLE, SortKey.RELEASE})
+ASCENDING_SORTS = frozenset({SortKey.TITLE, SortKey.RELEASE, SortKey.FOR_YOU})
 
 
 def ranked_by(sort: SortKey, query: str) -> SortKey:
@@ -783,7 +783,7 @@ def ranked_by(sort: SortKey, query: str) -> SortKey:
 
 def sort_order(
     sort: SortKey, sort_dir: SortDir | None, name_language: NameLanguage, *, query: str,
-    having: bool = False, your_rating=None,
+    having: bool = False, personal=None, tiebreak: tuple = (),
 ) -> list | None:
     """ORDER BY for `sort` over Media rows, or over the anime grain's grouped rows with
     `having` (aggregates and Anime columns only, both valid under its GROUP BY).
@@ -797,8 +797,9 @@ def sort_order(
 
     RELEVANCE with a query returns None, so each pass keeps its own match order.
 
-    YOUR_RATING orders by `your_rating`, which the DAO that joins the caller's ratings
-    passes (docs/features/search.md, Personal filters and sort)."""
+    The personal sorts order by `personal`, the key the DAO that joins the caller's own rows
+    passes (docs/features/search.md, Personal filters and sort), and break its ties by
+    `tiebreak` first."""
     ranked = ranked_by(sort, query)
     if ranked == SortKey.RELEVANCE:
         return None
@@ -826,14 +827,14 @@ def sort_order(
             key = display_title(model, name_language)
         case SortKey.RANDOM:
             key = func.md5(cast(model.uuid, Text) + utc_today().isoformat())
-        case SortKey.YOUR_RATING:
-            assert your_rating is not None
-            key = your_rating
+        case SortKey.YOUR_RATING | SortKey.FOR_YOU:
+            assert personal is not None
+            key = personal
         case SortKey.TOP_RATED:
             key = weighted
     ascending = sort_dir == SortDir.ASC if sort_dir else sort in ASCENDING_SORTS
     direction = asc if ascending else desc
-    return [direction(key).nulls_last(), weighted.desc().nulls_last(), direction(model.id)]
+    return [direction(key).nulls_last(), *tiebreak, weighted.desc().nulls_last(), direction(model.id)]
 
 
 def per_owner(*columns, ids: list[int], per_anime: bool):

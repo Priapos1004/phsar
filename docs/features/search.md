@@ -249,7 +249,8 @@ and the [Anime-view filters](#anime-view-filters) invariant depend on that. The 
 resolves the personal filters to ids (`filter_service.personal_scope`) and the DAOs select rows
 by them, `IN` / `NOT IN` on the primary key, so the grouped media and every aggregate stay
 whole. `your_rating` reaches `sort_order` as a key the DAO builds over its own outer join
-onto the caller's ratings, and notes search matches over the same join
+onto the caller's ratings, `for_you` as one over their stored ranking
+(`recommendation_dao.recommendation_of`), and notes search matches over the ratings join
 (`rating_dao.note_passes`). Pinned by `test_personal_filters_and_sort_do_not_rescope_the_aggregates`.
 
 - **States are a union.** The anime grain takes the [rated states](ratings.md#rated-state-and-coverage);
@@ -260,6 +261,12 @@ onto the caller's ratings, and notes search matches over the same join
   it among the caller's rated rows by the badge's rule (`rating_dao.own_score_ranking`). The
   rows they pass are an include (`personal_scope`'s `scored`), so an unrated row never
   passes, even with `rated` taking `none`.
+- **For you is the caller's [ranking](recommender.md#serving)**: an anime at its rank, a media
+  at its anime's, one anime's media in watching order (`recommendation_dao.for_you_key`, the
+  SQL form of [`chronological_media_key`](#ordering-media-within-an-anime)), unranked rows last
+  in the sort's own tiebreak. It ascends by default. A result carries its reason and what that
+  names (`reason`, `reason_name`). `recommended` keeps the rows the ranking holds — every
+  candidate, not just the Home row — or, false, the rest; a media is held when its anime is.
 - **They narrow the spoiler scope, never replace it**: in hide mode the media grain
   starts from the visible set.
 - **A guest gets 403** for any of them, `watchlisted=false` and the notes mode without a

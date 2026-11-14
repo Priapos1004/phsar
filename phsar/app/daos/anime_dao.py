@@ -10,6 +10,7 @@ from app.daos.base_dao import recency_order
 from app.daos.base_mal_id_dao import MalIdDAO
 from app.daos.delete_candidate_dao import awaiting_review_mal_ids
 from app.daos.rating_dao import note_passes, rating_of, your_rating_key
+from app.daos.recommendation_dao import for_you_key, recommendation_of
 from app.daos.search_filters import (
     apply_anime_having_filters,
     apply_anime_pre_filters,
@@ -29,6 +30,7 @@ from app.models.media_freshness import MediaFreshness
 from app.models.media_genre import MediaGenre
 from app.models.media_studio import MediaStudio
 from app.models.ratings import Ratings
+from app.models.recommendation import Recommendation
 from app.models.user_settings import NameLanguage
 from app.schemas.media_filter_schema import (
     CatalogueSearchFilters,
@@ -534,7 +536,12 @@ class AnimeDAO(MalIdDAO[Anime]):
         notes = bool(query) and search_type == SearchType.RATING_NOTES
         if sort == SortKey.YOUR_RATING or notes:
             stmt = stmt.outerjoin(Ratings, rating_of(user_id))
-        your_rating = your_rating_key(per_anime=True) if sort == SortKey.YOUR_RATING else None
+        if sort == SortKey.FOR_YOU:
+            stmt = stmt.outerjoin(Recommendation, recommendation_of(user_id, Anime.id))
+        personal, tiebreak = (
+            (your_rating_key(per_anime=True), ()) if sort == SortKey.YOUR_RATING
+            else for_you_key(per_anime=True) if sort == SortKey.FOR_YOU else (None, ())
+        )
         stmt = stmt.limit(limit)
 
         if query and search_type == SearchType.TITLE:
@@ -559,7 +566,7 @@ class AnimeDAO(MalIdDAO[Anime]):
         else:
             passes = [stmt]
 
-        order = sort_order(sort, sort_dir, name_language, query=query, having=True, your_rating=your_rating)
+        order = sort_order(sort, sort_dir, name_language, query=query, having=True, personal=personal, tiebreak=tiebreak)
         anime_ids = await fetch_search_results(db, *passes, order=order)
         if not anime_ids:
             return []

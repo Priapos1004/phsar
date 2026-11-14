@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.daos.anime_dao import AnimeDAO
 from app.daos.rating_dao import RatingDAO
+from app.daos.recommendation_dao import RecommendationDAO
 from app.daos.watchlist_dao import WatchlistDAO
 from app.exceptions import AnimeNotFoundByUuidError
 from app.models.media import (
@@ -41,11 +42,13 @@ from app.services.filter_service import (
     sort_values,
 )
 from app.services.rating_service import rated_states_by_anime_id
+from app.services.recommender_service import ensure_fresh_for
 
 logger = logging.getLogger(__name__)
 
 anime_dao = AnimeDAO()
 rating_dao = RatingDAO()
+recommendation_dao = RecommendationDAO()
 watchlist_dao = WatchlistDAO()
 
 
@@ -247,10 +250,12 @@ async def _personal_anime_scope(
         await rated_states_by_anime_id(db, user_id) if filters.rated else {},
         await watchlist_dao.get_listed_ids(db, user_id, per_anime=True) if filters.watchlisted is not None else set(),
         scored=await own_scored_ids(db, filters, user_id, per_anime=True),
+        ranked=await recommendation_dao.ranked_ids(db, user_id, per_anime=True) if filters.recommended is not None else set(),
     )
 
 
 async def matching_anime_uuids(db: AsyncSession, filters: CatalogueSearchFilters, user_id: int) -> list[UUID]:
+    await ensure_fresh_for(db, user_id, None, filters)
     include, exclude = await _personal_anime_scope(db, filters, user_id)
     if include is not None and not include:
         return []
@@ -269,6 +274,7 @@ async def search_anime_by_query(
     limit: int,
     user_id: int,
 ) -> list[AnimeSearchResult]:
+    await ensure_fresh_for(db, user_id, sort, filters)
     include, exclude = await _personal_anime_scope(db, filters, user_id)
     if include is not None and not include:
         return []
@@ -281,7 +287,7 @@ async def search_anime_by_query(
     notes = await rating_dao.best_note_by_anime_id(
         db, user_id, query, ids,
     ) if query and search_type == SearchType.RATING_NOTES else {}
-    shown = await sort_values(db, sort, query, ids, user_id, per_anime=True)
+    shown = await sort_values(db, sort, query, ids, user_id, per_anime=True, name_language=name_language)
 
     results = []
     for anime in anime_list:

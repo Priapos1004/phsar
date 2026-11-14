@@ -5,10 +5,12 @@ there. The ranking reads the user's own history and watchlist
 and compares anime on the [galaxy map](galaxy.md)'s distance.
 
 **Code**: `services/recommender_compute.py` (the numerics, app-free) ←
-`services/recommender_service.py` (`load_inputs`) ← `daos/recommendation_dao.py` (the
-catalogue as the map sees it, and the franchise signals readiness reads),
-`RatingDAO.history`, `WatchlistDAO.priorities`. `services/recommender_eval.py` fits and
-measures it. Nothing serves the ranking yet.
+`services/recommender_service.py` (its inputs, and the stored ranking's refresh) ←
+`daos/recommendation_dao.py`
+(the catalogue as the map sees it, the franchise signals readiness reads, the stored ranking
+and the watchlist's log), `RatingDAO.history`. `models/recommendation.py` and
+`models/watchlist_event.py` hold what is stored; `services/recommender_eval.py` fits and
+measures it. Search serves it.
 
 ## The natural history
 
@@ -30,8 +32,9 @@ after the previous one. Without one, the history starts at the first rating. A l
 implausible day is left out of the order as well. Every rated anime still counts for taste,
 import or not.
 
-A slow import, a few anime a day, is indistinguishable from watching. An explicit start date
-(`ledger`'s `override`) replaces the detected one.
+A slow import, a few anime a day, is indistinguishable from watching. An explicit start date,
+the user's `history_start` setting, replaces the detected one; `GET /ratings/history-start`
+returns both.
 
 ## Candidates
 
@@ -53,7 +56,7 @@ A list holding only an unannounced sequel commits to nothing yet, so the season 
 left can read ready here where the watchlist reads Waiting. A `waiting` anime — nothing to
 watch until a sequel lands — is never a candidate, nor is a `hot` one with nothing to start
 now: its rewatch belongs to when the sequel lands, though the watchlist shows it Hot. Any other
-`hot` one is left out when the ranking is asked to (`hot=False`): ratings land at the finale,
+`hot` one is left out when the user turns `recommend_hot` off: ratings land at the finale,
 so a weekly watcher and a finale-week binge look the same in the data, and only the user can
 say which they are.
 
@@ -93,10 +96,9 @@ The families (`NAMES`), each read from the history before the moment ranked:
 - **the watchlist**: priority, how long ago the entry was listed or last changed, and how
   much watching the list holds.
 
-**The list is known from the ledger's `listed_from` on**, and reads as empty before it. Today's
-list replayed at a past moment holds only what was not picked since, so it would teach the
-model that listed means not picked. The live ranking reads today's list, so its history
-starts now.
+**The list is known from the ledger's `listed_from` on** — the [log](#the-watchlists-history)'s
+start — and reads as empty before it. Today's list replayed at a past moment holds only what
+was not picked since, so it would teach the model that listed means not picked.
 
 Due-ness, trends and watch intensity are computed only on request (`harness`), for measuring
 rather than ranking. So are the features of the ranked families that `WEIGHTS` leaves out:
@@ -130,6 +132,44 @@ group contributing most to its score — watchlist, fresh, recent, favourite or 
 `explore` for a slot. A recent or
 favourite reason also names the anime it is nearest.
 
+## The watchlist's history
+
+`watchlist_events` records every entry added, changed (its priority or list) or removed: the
+entry's state after the event, and for a removal the state it removed. A row trigger on
+`watchlist` writes it, defined in the migration that created the table, so no write path can
+skip it; the ledger turns it into the listing stretches the features read
+(`listings_from_log`).
+
+**It merges churn.** A write within three days of the entry's last event folds into that
+event — dated at the write, as the change from the state before it — or deletes it when the
+entry is back where it was. A toggle or a priority changed and changed back leaves nothing, and
+churn leaves at most one row per entry. A rating or watch of the media anywhere in the span
+the merge would rewrite, or within three hours before it, keeps every event: a watch and the
+removal it caused belong together. A relisting after the window is an event of its own.
+
+**The log is whole only from `listed_from`**, its first rows' `created_at`: it starts from the
+entries listed then, each as found, so one listed and removed earlier is absent.
+
+## Serving
+
+Each user's ranking is stored whole (`recommendations`) beside the key of everything it was
+computed from (`recommendation_state`): the user's ratings' and log events' count, latest change
+and the sum of their media's anime ids (a merge or split moves media between anime without
+touching those rows), the map's stars — a refit replaces every one — the recommender settings,
+`recommender_compute.version()` and the UTC date. A note edit touches none of them.
+
+**It recomputes on read.** A search that reads the ranking — the `for_you` sort or the
+`recommended` filter ([search](search.md#personal-filters-and-sort)) — compares the key first;
+when it changed, it takes a lock on the user's state row, checks again, computes in a thread,
+replaces the rows and commits. A second request arriving meanwhile waits on the lock and finds
+the ranking fresh.
+
+**The row's exposure is logged as stretches** (`recommendation_exposure`): an anime entering
+the top `ROW` opens one, staying there extends it — its `modified_at` and best rank — and
+leaving it ends it by not being extended. A recompute that changes nothing in the top writes
+no row, so the log grows with turnover, not with reads, and keeps what was shown and not
+picked beside what was.
+
 ## Measuring it
 
 `recommender_eval` replays every user's natural history: each pick after the first `LAGS` is a
@@ -155,7 +195,7 @@ pick that was no candidate then — a side story alone — has nothing to rank.
   and firm up as the history grows.
 
 `scripts/backtest_recommender.py` prints the report, and can rebuild the watchlist's past from
-the backups.
+the backups, back before the log began.
 
 ---
 

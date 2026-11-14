@@ -1,3 +1,4 @@
+import enum
 import uuid
 from datetime import datetime
 from uuid import UUID as PyUUID
@@ -20,3 +21,9 @@ class BaseModel(Base):
     uuid: Mapped[PyUUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False) # Public safe identifier
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False) # When inserted
     modified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False) # When updated
+
+
+def enum_values(enum_cls: type[enum.Enum]) -> list[str]:
+    """`values_callable` that persists an enum's values rather than its member names
+    (rules/database.md)."""
+    return [m.value for m in enum_cls]

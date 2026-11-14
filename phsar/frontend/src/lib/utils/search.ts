@@ -19,7 +19,7 @@ export const MATCH_MODES = [{ value: 'any' as const, label: 'Any' }, { value: 'a
 export type RatedState = 'none' | 'in_progress' | 'on_hold' | 'dropped' | 'main' | 'all' | 'completed';
 export type SortKey =
 	| 'relevance' | 'top_rated' | 'score' | 'popularity' | 'added' | 'release' | 'aired' | 'title' | 'random'
-	| 'your_rating' | 'announced';
+	| 'your_rating' | 'announced' | 'for_you';
 export type SortDir = 'asc' | 'desc';
 
 /** `GenreGroup` in media_filter_schema.py. */
@@ -238,7 +238,7 @@ export const SORT_OPTIONS: SortOption[] = [
 
 // The keys the backend ascends unless told otherwise; the rest descend. One line, because
 // a backend test reads it against `search_filters.ASCENDING_SORTS`.
-export const ASCENDING_SORTS: SortKey[] = ['title', 'release'];
+export const ASCENDING_SORTS: SortKey[] = ['title', 'release', 'for_you'];
 
 /** The sorts the menu offers: Best match only with a query to match. */
 export function offeredSorts(params: MediaSearchFilters): SortOption[] {

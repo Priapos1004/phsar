@@ -90,6 +90,8 @@ shape on purpose.
 - **Curation** — a media delete cascades to its entries: [curation.md](curation.md).
 - **Search** — `watchlisted` filters by the entries: [search.md](search.md#personal-filters-and-sort).
 - **Galaxy** — Find's daily picks prefer high-priority entries: [galaxy.md](galaxy.md#the-tab).
+- **Recommender** — every add, change and removal is logged by a trigger, and the ranking
+  reads the entries: [recommender.md](recommender.md#the-watchlists-history).
 
 ---
 

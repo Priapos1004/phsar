@@ -182,6 +182,21 @@ class ListingRow(NamedTuple):
     tag: str | None = None  # the list's name
 
 
+def listings_from_log(events: list[tuple[int, str, int, str | None, float]]) -> list[ListingRow]:
+    """Each entry's stretches from the watchlist's log, `(media_id, kind, priority, tag, at)` in
+    order: an add or a change opens one, closing the one before, and a removal closes it."""
+    current: dict[int, tuple[int, float, str | None]] = {}
+    out = []
+    for media_id, kind, priority, tag, at in events:
+        if media_id in current:
+            prio, since, list_ = current.pop(media_id)
+            out.append(ListingRow(media_id, prio, since, at, list_))
+        if kind != "removed":
+            current[media_id] = (priority, at, tag)
+    out.extend(ListingRow(m, prio, since, None, list_) for m, (prio, since, list_) in current.items())
+    return out
+
+
 class Pick(NamedTuple):
     anime_id: int
     rank: int
@@ -451,6 +466,8 @@ def ledger(
         (cat.position_of[x.media_id], x.priority, x.since, math.inf if x.until is None else x.until, x.tag)
         for x in listings if x.media_id in cat.position_of
     ]
+    # Every stretch for every pick since the log began: index the stretches by anime if a long
+    # log ever makes this show in a recompute.
     pick_listed = np.array([
         float(any(cat.media_row[p] == e.row for p, *_ in _active(listed, listed_from, e.t))) if e.t >= listed_from
         else math.nan

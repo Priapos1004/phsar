@@ -32,6 +32,7 @@ from uuid import UUID
 import pytest
 from sqlalchemy import select, update
 
+from app.core.config import settings
 from app.daos import search_filters
 from app.daos.anime_dao import AnimeDAO
 from app.daos.media_dao import MediaDAO
@@ -44,6 +45,7 @@ from app.daos.search_filters import (
     weighted_mean_votes_expr,
     weighted_score_expr,
 )
+from app.daos.user_dao import UserDAO
 from app.models.anime import Anime
 from app.models.genre import Genre, GenreType
 from app.models.media import (
@@ -59,10 +61,11 @@ from app.models.media_search import MediaSearch
 from app.models.media_studio import MediaStudio
 from app.models.rating_search import RatingSearch
 from app.models.ratings import Ratings
+from app.models.recommendation import Recommendation, RecommendationKind
 from app.models.studio import Studio
 from app.routers.search import MAX_SEARCH_LIMIT
 from app.schemas.media_filter_schema import MAX_GENRE_GROUPS
-from app.services import anime_search_service, media_search_service
+from app.services import anime_search_service, media_search_service, recommender_service
 from app.services.media_search_service import media_title_texts
 from app.services.vector_embedding_service import (
     create_media_embedding,
@@ -1499,8 +1502,11 @@ async def test_rated_state_of_the_other_grain_is_rejected(client, user_auth_head
     ({"search_type": "rating_notes"}, 403),
     ({"your_score_min": 5}, 403),
     ({"your_top_percent": 10}, 403),
+    ({"sort": "for_you"}, 403),
+    ({"recommended": True}, 403),
+    ({"recommended": False}, 403),
 ], ids=["plain", "rated", "watchlisted", "not_watchlisted", "your_rating", "notes", "notes_no_query", "your_score",
-        "your_top"])
+        "your_top", "for_you", "recommended", "not_recommended"])
 async def test_personal_filters_and_sort_are_closed_to_guests(
     client, restricted_user_auth_headers, url, params, status,
 ):
@@ -1709,3 +1715,101 @@ def test_escape_like_neutralises_wildcards():
 
 def test_escape_like_handles_combined_wildcards():
     assert _escape_like("50%_off\\sale") == "50\\%\\_off\\\\sale"
+
+
+# ---------------------------------------------------------------------------
+# For you: the caller's stored ranking as a sort, a filter and a reason
+# ---------------------------------------------------------------------------
+
+# First's two media score 6 then 9, so the weighted tiebreak would put its sequel first;
+# Unranked scores best of all and still comes last, its media top-rated first — the sort's
+# own tiebreak — where watching order would lead with its first season.
+_FOR_YOU = {
+    "Fy Second": [("Fy Second", {"score": 8.0})],
+    "Fy First": [("Fy First", {"score": 6.0}), ("Fy First S2", {"score": 9.0})],
+    "Fy Unranked": [("Fy Unranked", {"score": 7.5}), ("Fy Unranked S2", {"score": 9.5})],
+    "Fy Third": [("Fy Third", {"score": 7.0})],
+}
+
+
+@pytest.fixture
+async def ranked(db_session, user_auth_headers, monkeypatch):
+    """`_FOR_YOU` with the caller's ranking stored as First, Second, Third — Unranked left
+    out — and the recompute stubbed so the stored rows stand. The admin's ranking runs the
+    other way and holds Unranked, so a search reading anyone's but the caller's shows."""
+    async def keep(db, user_id):
+        return None
+    monkeypatch.setattr(recommender_service, "ensure_fresh", keep)
+    await _make_franchises(db_session, {
+        anime: [(title, {**columns, "scored_by": 100_000}) for title, columns in media] for anime, media in _FOR_YOU.items()
+    }, mal_id=87901)
+    user_id = (await UserDAO().get_by_username(db_session, "normaluser")).id
+    ids = dict((await db_session.execute(select(Anime.title, Anime.id).where(Anime.title.like("Fy %")))).tuples().all())
+    db_session.add_all([
+        Recommendation(user_id=user_id, anime_id=ids["Fy First"], rank=1, kind=RecommendationKind.CONTINUE),
+        Recommendation(user_id=user_id, anime_id=ids["Fy Second"], rank=2, kind=RecommendationKind.RECENT,
+                       ref_anime_id=ids["Fy Third"]),
+        Recommendation(user_id=user_id, anime_id=ids["Fy Third"], rank=3, kind=RecommendationKind.WATCHLIST, detail="P1"),
+    ])
+    admin_id = (await UserDAO().get_by_username(db_session, settings.ADMIN_USERNAME)).id
+    db_session.add_all(
+        Recommendation(user_id=admin_id, anime_id=ids[title], rank=rank, kind=RecommendationKind.EXPLORE)
+        for rank, title in enumerate(["Fy Unranked", "Fy Third", "Fy Second", "Fy First"], start=1)
+    )
+    await db_session.flush()
+
+
+@pytest.mark.parametrize(("url", "sort_dir", "ranked_order"), [
+    (ANIME_SEARCH_URL, None, ["Fy First", "Fy Second", "Fy Third"]),
+    (ANIME_SEARCH_URL, "desc", ["Fy Third", "Fy Second", "Fy First"]),
+    (MEDIA_SEARCH_URL, None, ["Fy First", "Fy First S2", "Fy Second", "Fy Third"]),
+    (MEDIA_SEARCH_URL, "desc", ["Fy Third", "Fy Second", "Fy First", "Fy First S2"]),
+], ids=["anime", "anime_desc", "media", "media_desc"])
+async def test_for_you_follows_the_stored_ranking(client, user_auth_headers, ranked, url, sort_dir, ranked_order):
+    """Rank order by default, unranked last either way; at the media grain one anime's media
+    keep their watching order within its place, whichever way the ranks run."""
+    params = {"sort": "for_you"} | ({"sort_dir": sort_dir} if sort_dir else {})
+    expected = [*ranked_order, *(["Fy Unranked S2", "Fy Unranked"] if url == MEDIA_SEARCH_URL else ["Fy Unranked"])]
+    assert await _ordered_fixture_titles(client, user_auth_headers, url=url, expect=set(expected), **params) == expected
+
+
+@_BOTH_VIEWS
+async def test_for_you_rows_carry_their_reason(client, user_auth_headers, ranked, url):
+    """The reason and what it names: the reference anime's title, the pick's detail, or
+    nothing; a media carries its anime's."""
+    rows = await _fixture_rows(
+        client, user_auth_headers, url=url, sort="for_you",
+        expect={"Fy First", "Fy Second", "Fy Third", "Fy Unranked"}
+        | ({"Fy First S2", "Fy Unranked S2"} if url == MEDIA_SEARCH_URL else set()),
+    )
+    reasons = {row["title"]: (row["reason"], row["reason_name"]) for row in rows}
+    assert reasons["Fy First"] == ("continue", None)
+    assert reasons["Fy Second"] == ("recent", "Fy Third")
+    assert reasons["Fy Third"] == ("watchlist", "P1")
+    assert reasons["Fy Unranked"] == (None, None)
+    if url == MEDIA_SEARCH_URL:
+        assert reasons["Fy First S2"] == ("continue", None)
+
+
+@pytest.mark.parametrize(("url", "held", "rest"), [
+    (ANIME_SEARCH_URL, {"Fy First", "Fy Second", "Fy Third"}, {"Fy Unranked"}),
+    (MEDIA_SEARCH_URL, {"Fy First", "Fy First S2", "Fy Second", "Fy Third"}, {"Fy Unranked", "Fy Unranked S2"}),
+], ids=["anime", "media"])
+async def test_recommended_keeps_the_rows_the_ranking_holds(client, user_auth_headers, ranked, url, held, rest):
+    await _fixture_rows(client, user_auth_headers, url=url, expect=held, recommended=True)
+    await _fixture_rows(client, user_auth_headers, url=url, expect=rest, recommended=False)
+
+
+@_BOTH_VIEWS
+@pytest.mark.parametrize(("params", "refreshes"), [
+    ({}, False), ({"sort": "your_rating"}, False), ({"sort": "for_you"}, True), ({"recommended": True}, True),
+], ids=["plain", "your_rating", "for_you", "recommended"])
+async def test_only_a_search_reading_the_ranking_refreshes_it(client, user_auth_headers, monkeypatch, url, params, refreshes):
+    calls = []
+
+    async def spy(db, user_id):
+        calls.append(user_id)
+    monkeypatch.setattr(recommender_service, "ensure_fresh", spy)
+    resp = await client.get(url, params={"anime_season": _RANK_SEASON.filter, **params}, headers=user_auth_headers)
+    assert resp.status_code == 200, resp.text
+    assert bool(calls) is refreshes

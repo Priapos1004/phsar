@@ -4,8 +4,8 @@
 `--fit` refits too; its pooled weights are the values `WEIGHTS` takes after review.
 
 `--dumps DIR` rebuilds each user's past watchlist from the backups in DIR by diffing them, read
-straight out of the archives (`pg_restore --data-only --file=-`), never restored. Without it
-there is no watchlist history (docs/features/recommender.md, "The ranking"). It reads the archives with whichever `pg_restore` is on PATH, so it must be PostgreSQL 17's
+straight out of the archives (`pg_restore --data-only --file=-`), never restored: it reaches
+back before the watchlist's own log began. Without it the history is the log's. It reads the archives with whichever `pg_restore` is on PATH, so it must be PostgreSQL 17's
 (scripts/CLAUDE.md says why).
 
 Read-only. Usage (from `phsar/`):
@@ -16,7 +16,6 @@ Read-only. Usage (from `phsar/`):
 import argparse
 import asyncio
 import json
-import math
 import re
 import subprocess
 from collections import defaultdict
@@ -119,8 +118,8 @@ async def main(fit: bool, dumps: Path | None, lam: float) -> None:
     async with async_session_maker() as db:
         cat = await recommender_service.load_catalogue(db)
         histories = await recommender_service.load_histories(db)
+        listed_from = await recommender_service.load_log_start(db)
     listings = {u: h.listings for u, h in histories.items()}
-    listed_from = math.inf  # no watchlist history
     if dumps:
         rated_at = {(u, r.media_id): rc.event_time(r) for u, h in histories.items() for r in h.ratings}
         found = snapshots(dumps)

@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 from app.core.config import settings
 from app.models.media import AgeRating, MediaType, OriginalSource, RelationType
 from app.models.ratings import WatchStatus
+from app.models.recommendation import RecommendationKind
 
 # A search query, stripped where it enters (route params and the search token):
 # padding would otherwise become part of the title-match pattern. Capped because
@@ -36,6 +37,7 @@ class SortKey(str, Enum):
     TITLE = "title"
     RANDOM = "random"
     YOUR_RATING = "your_rating"
+    FOR_YOU = "for_you"
     ANNOUNCED = "announced"
 
 
@@ -52,6 +54,9 @@ class SortValueFields(BaseModel):
     announced_at: datetime | None = None
     announced_type: MediaType | None = None
     your_rating: float | None = None
+    # Under `for_you`: why the pick is there, and the anime, detail or region it names.
+    reason: RecommendationKind | None = None
+    reason_name: str | None = None
 
 
 class MatchMode(str, Enum):
@@ -147,6 +152,7 @@ class CatalogueSearchFilters(MediaSearchFilters):
     # with its rank among theirs (None filters nothing).
     rated: list[RatedState] | None = None
     watchlisted: bool | None = None
+    recommended: bool | None = None
     your_score_min: float | None = None
     your_score_max: float | None = None
     your_top_percent: int | None = Field(default=None, ge=1, le=100)
