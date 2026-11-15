@@ -6,10 +6,12 @@
  * eras, which drifts silently while it can only be exercised by clicking. */
 
 import { formatBytes } from '$lib/utils/formatString';
+import { describe, VERDICT } from '$lib/utils/recommenderEval';
 import type {
 	AdminJobResponse,
 	BackupResultSummary,
 	GalaxyRebuildSummary,
+	RecommenderEvalSummary,
 	RestoreResultSummary,
 } from '$lib/types/api';
 
@@ -58,6 +60,15 @@ const SUMMARY: Record<AdminJobResponse['kind'], (row: AdminJobResponse) => strin
 			parts.push(`moved ${Math.round(s.median_movement * 100)}%`);
 		}
 		return parts.join(' · ');
+	},
+	// The verdict only: a held run's guards get the row's amber subline (`heldGuards`).
+	recommender_eval: (row) => {
+		const s = row.result_summary as RecommenderEvalSummary | null;
+		if (row.status !== 'succeeded' || !s?.verdict) return '';
+		const head = s.verdict === 'waiting'
+			? `Measuring: the watchlist log covers ${num(s.log?.picks)} of ${num(s.log?.needed)} picks`
+			: VERDICT[s.verdict];
+		return s.would_help?.length ? `${head} · would help: ${s.would_help.map(describe).join(', ')}` : head;
 	},
 	update_sweep: (row) => updateSweepSummary(row),
 	seasonal_sweep: (row) => seasonSweepSummary(row),
@@ -164,9 +175,20 @@ export function deleteCandidatesRaised(row: AdminJobResponse): number {
 	return num(counters?.delete_candidates_raised);
 }
 
+/** What held a recommender eval's refit back, one phrase per tripped guard; empty unless
+ * the run was held. Amber like the seeding signals: the live weights stayed, and someone
+ * should look at why. */
+export function heldGuards(row: AdminJobResponse): string[] {
+	const s = row.result_summary as RecommenderEvalSummary | null;
+	if (row.kind !== 'recommender_eval' || s?.verdict !== 'held') return [];
+	return (s.guards ?? [])
+		.filter((g) => g.tripped)
+		.map((g) => (g.kind === 'nll' ? `NLL rose on the ${g.split} split` : `${g.name} flipped sign`));
+}
+
 /** Mutually-exclusive row tint in priority order: hentai-removal (rose,
  * destructive) > delete-candidates (violet, needs a decision) > unknown genre
- * tags or MAL values (amber, needs seeding or an enum member) > probe-attach
+ * tags or MAL values, or a held refit (amber, needs a look) > probe-attach
  * (blue, informational).
  *
  * Violet outranks amber because a pending destructive decision is worth more of
@@ -177,13 +199,13 @@ export function deleteCandidatesRaised(row: AdminJobResponse): number {
  * background tint is single-winner. */
 export function rowTintClass(
 	hentaiCount: number,
-	unknownCount: number,
+	amberCount: number,
 	probeMedia: number,
 	deleteCandidates: number,
 ): string {
 	if (hentaiCount > 0) return 'bg-rose-500/15 border-l-2 border-l-rose-400';
 	if (deleteCandidates > 0) return 'bg-violet-500/15 border-l-2 border-l-violet-400';
-	if (unknownCount > 0) return 'bg-amber-500/15 border-l-2 border-l-amber-400';
+	if (amberCount > 0) return 'bg-amber-500/15 border-l-2 border-l-amber-400';
 	if (probeMedia > 0) return 'bg-blue-500/10 border-l-2 border-l-blue-400';
 	return '';
 }

@@ -216,6 +216,25 @@ payload under `mal_id`, so each child's BFS skips the fuzzy lookup.
 Bulk insert rather than per-row commit: the enqueue loop does no MAL I/O, so the
 crash-safety argument doesn't apply and a shorter maintenance window wins.
 
+## Scheduling
+
+One cron call a night, `POST /admin/jobs/schedule-nightly` (root `CLAUDE.md` has the
+setup), decides what runs:
+
+| Job | When | Queued |
+|---|---|---|
+| `backup` | every night | at once — `pg_dump` reads an MVCC snapshot, so it needs no banner |
+| `update_sweep` | every night | at `now + delay_minutes` |
+| `seasonal_sweep` | Sundays (UTC) | with the update sweep |
+| `upcoming_sweep` | Wednesdays (UTC) in Mar/Jun/Sep/Dec | with the update sweep, so next-quarter shows surface about a month early |
+| `galaxy_rebuild` | nights the map is due ([galaxy](galaxy.md) says when) | with the sweeps, created after them |
+| `recommender_eval` | Mondays (UTC) | with the sweeps, created last, so it reads the night's map ([recommender](recommender.md#the-weekly-job)) |
+
+The two season sweeps sit on different weekdays so one night never runs both. The
+worker drains the backup first, then the rest by FIFO; the sweeps' order among
+themselves is immaterial — all run inside one maintenance window, the flag bouncing for
+under a second between them.
+
 ## Progress
 
 `ProgressReporter` writes `(stage, items_done, items_total)` in short autocommit

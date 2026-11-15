@@ -61,6 +61,7 @@ export const JOB_KIND_LABELS: Record<JobKind, string> = {
 	backup: 'Backup',
 	restore: 'Restore',
 	galaxy_rebuild: 'Galaxy rebuild',
+	recommender_eval: 'Recommender eval',
 };
 
 /** The kinds served by `seasonal_sweep_dispatcher` — defined by that shared origin

@@ -702,7 +702,8 @@ export type JobKind =
 	| 'upcoming_sweep'
 	| 'backup'
 	| 'restore'
-	| 'galaxy_rebuild';
+	| 'galaxy_rebuild'
+	| 'recommender_eval';
 export type JobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 
 // Mirrors backend `job_worker.ERROR_CATEGORY_*`. Keep both sides in sync —
@@ -750,6 +751,87 @@ export interface GalaxyRebuildSummary extends JobResultSummary {
 	}[];
 	// Only on a refit: how far the median star moved, as a share of the map's span.
 	median_movement?: number | null;
+}
+
+// The recommender's weekly eval (`recommender_eval.weekly`, docs/features/recommender.md "The
+// weekly job"). Aggregates only; splits are `time` and `louo`.
+export interface EvalRanks {
+	n: number;
+	median_rank?: number;
+	hit25?: number;
+	liked_hit25?: number | null;
+	n_liked?: number;
+}
+
+export interface EvalHeldOut {
+	logit: EvalRanks;
+	score: EvalRanks;
+	row?: EvalRanks;
+	nll: number | null;
+	nll_se: number | null;
+	// The refit's and the per-user fits': how unevenly users are served, SD across users.
+	users?: number;
+	hit25_sd?: number;
+	nll_sd?: number;
+}
+
+// A per-user fit, pulled toward the pooled weights by `lam`: every weight (`all`) or one family's,
+// measured over every user on the time split. `gain` is the pooled refit's NLL minus its own.
+export interface EvalPerUser extends EvalHeldOut {
+	weights: string;
+	lam: number;
+	gain: number | null;
+	p: number;
+}
+
+export type EvalGuard =
+	| { kind: 'nll'; split: string; change: number; margin: number; n: number; tripped: boolean }
+	| { kind: 'flip'; name: string; live: number; refit: number; tripped: boolean };
+
+export interface EvalTop {
+	hit10: number;
+	median_rank: number;
+}
+
+export interface EvalWatchlistGroup {
+	picks: number;
+	listed_share: number | null;
+	lift: Record<string, Record<string, { lift: number | null; picks: number }>>;
+	hazard: Record<string, Record<string, { per_100_days: number; picks: number; days: number }>>;
+}
+
+export interface RecommenderEvalReport {
+	decisions: { total: number };
+	candidates_mean: number;
+	given: Record<string, EvalHeldOut>;
+	refit: Record<string, EvalHeldOut>;
+	baseline: Record<string, EvalHeldOut>;
+	weights: { live: Record<string, number>; refit: Record<string, number> };
+	ablations: Record<string, Record<string, { hit25: number; nll: number; p: number }>>;
+	per_user: EvalPerUser[];
+	rewatch: {
+		decisions: number;
+		candidates_mean: number;
+		[split: string]: number | { n: number; family?: EvalTop; own_score?: EvalTop; p?: number };
+	};
+	online: {
+		judged: number;
+		waiting: number;
+		by_reason: Record<string, { judged: number; watched: number; share: number }>;
+	};
+	watchlist: EvalWatchlistGroup | null;
+	seconds: Record<string, number>;
+}
+
+export interface RecommenderEvalSummary extends JobResultSummary {
+	verdict?: 'applied' | 'held' | 'waiting';
+	guards?: EvalGuard[];
+	// `users`: how many users have the `per_user_needed` logged picks to count.
+	log?: { picks: number; needed: number; users: number; users_needed: number; per_user_needed: number };
+	// The fit ranking after this run; null while the committed weights rank.
+	fit?: string | null;
+	would_help?: string[];
+	report?: RecommenderEvalReport;
 }
 
 // One field's before/after on the update_sweep detail page. `old`/`new`

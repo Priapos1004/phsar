@@ -14,10 +14,12 @@
 	import JobDetailCounters from '$lib/components/admin/JobDetailCounters.svelte';
 	import MediaChangeCard from '$lib/components/admin/MediaChangeCard.svelte';
 	import AnimeUmbrellaCard from '$lib/components/admin/AnimeUmbrellaCard.svelte';
+	import RecommenderEvalSection from '$lib/components/admin/RecommenderEvalSection.svelte';
 	import Notice from '$lib/components/Notice.svelte';
 	import * as cls from '$lib/styles/classes';
 	import type {
 		AdminJobResponse,
+		RecommenderEvalSummary,
 		UpdateSweepResultSummary,
 		UpdateSweepMediaChange,
 		UpdateSweepStep1Failure,
@@ -469,9 +471,10 @@
 				</Card.Root>
 			{/if}
 
+		{:else if job.kind === 'recommender_eval' && job.result_summary}
+			<RecommenderEvalSection summary={job.result_summary as RecommenderEvalSummary} />
 		{:else}
-			<!-- Non-update_sweep detail view: header is the full story for now;
-				 the Jobs Log entry shouldn't have been clickable anyway. -->
+			<!-- Any other kind, or an eval with no report yet: the header is the full story. -->
 			<Notice>
 				<p>This job kind doesn't carry a per-media diff. The Jobs Log row already shows everything captured for {job.kind}.</p>
 			</Notice>

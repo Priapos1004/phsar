@@ -83,7 +83,7 @@ async def test_the_eval_measures_a_seeded_history_and_waits_for_the_log(db_sessi
     assert summary["verdict"] == "waiting"
     assert summary["log"]["picks"] == 0
     report = summary["report"]
-    assert report["decisions"] == {"total": 5, str(user.id): 5}
+    assert report["decisions"] == {"total": 5}
     assert report["rewatch"]["decisions"] == 1
     assert report["online"]["by_reason"] == {"fresh": {"judged": 1, "watched": 1, "share": 1.0}}
     assert summary["fit"] is None

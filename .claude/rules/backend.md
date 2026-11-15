@@ -146,6 +146,14 @@ admin-gated and not even bearer-gated — the decorator has to carry its own
 Compare with the `RoleType` enum, never a `.value` string — `.value` belongs
 only at a serialization boundary, such as a JWT claim or a log line.
 
+## The admin panel shows aggregates
+
+Nothing an admin endpoint returns names one user's own figures — counts, rates, metrics
+or the names they chose (a list, say). A breakdown is over every user: a total, a pooled
+figure, a spread across users, a count of users past a line. The exception is a username
+kept for auditing — who requested a job, marked an anime, created or redeemed a token. A
+stored summary the panel reads holds to the same rule.
+
 ## Triggering operational jobs
 
 Sweeps, backups and scrapes run through the **running backend API**, never a

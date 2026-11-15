@@ -7,6 +7,7 @@ import {
 	hentaiRemoved,
 	deleteCandidatesRaised,
 	rowTintClass,
+	heldGuards,
 } from '$lib/utils/jobSummary';
 import type { AdminJobResponse, JobKind, JobResultSummary, JobStatus } from '$lib/types/api';
 
@@ -245,5 +246,36 @@ describe('row-level signals', () => {
 		});
 		expect(deleteCandidatesRaised(v7)).toBe(0);
 		expect(deleteCandidatesRaised(row({ kind: 'update_sweep' }))).toBe(0);
+	});
+});
+
+describe('payloadSummary — recommender_eval', () => {
+	const held = {
+		verdict: 'held',
+		guards: [
+			{ kind: 'nll', split: 'time', change: 0.31, margin: 0.05, n: 80, tripped: true },
+			{ kind: 'nll', split: 'louo', change: 0.01, margin: 0.05, n: 88, tripped: false },
+			{ kind: 'flip', name: 'F5_top20_sim', live: 0.65, refit: -0.12, tripped: true },
+		],
+	};
+
+	it('says what the run did with its refit', () => {
+		expect(payloadSummary(row({ kind: 'recommender_eval', result_summary: { verdict: 'applied' } }))).toBe('Refit applied');
+		expect(payloadSummary(row({ kind: 'recommender_eval', result_summary: held }))).toBe('Refit held back');
+		expect(
+			payloadSummary(row({
+				kind: 'recommender_eval', result_summary: { verdict: 'waiting', log: { picks: 12, needed: 30 }, would_help: ['F3'] },
+			})),
+		).toBe('Measuring: the watchlist log covers 12 of 30 picks · would help: Due-ness');
+	});
+
+	it('names the guards a held run tripped, and tints it amber', () => {
+		const r = row({ kind: 'recommender_eval', result_summary: held });
+		expect(heldGuards(r)).toEqual(['NLL rose on the time split', 'F5_top20_sim flipped sign']);
+		expect(rowTintClass(0, heldGuards(r).length, 0, 0)).toContain('amber');
+	});
+
+	it('flags nothing on a run that applied or waits', () => {
+		expect(heldGuards(row({ kind: 'recommender_eval', result_summary: { ...held, verdict: 'waiting' } }))).toEqual([]);
 	});
 });

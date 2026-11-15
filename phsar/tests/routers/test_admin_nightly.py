@@ -1,7 +1,7 @@
 """POST /admin/jobs/schedule-nightly — combined daily cron entry point — and the
 recommender eval's on-demand endpoint.
 
-What the nightly call enqueues on which day is `NightlyScheduleResponse`'s docstring.
+What the nightly call enqueues on which day is docs/features/jobs.md, "Scheduling".
 Tests pin the auth surface, the schema, the weekday branches, and the
 maintenance-allowlist that keeps a cron retry mid-window from 503ing. The clock is
 monkey-patched on the router module so each weekday's branch is reachable without

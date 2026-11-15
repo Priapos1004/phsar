@@ -197,11 +197,15 @@ pick that was no candidate then — a side story alone — has nothing to rank.
   median and hit@`ROW`, also over the picks the user rated at or above their median — and the
   held-out NLL, for given weights and a fresh fit — and on the logit alone for the similarity
   baseline.
-- **Ablations**: what each family adds, the shipped set fitted with and without it, with a
-  paired sign-flip p on the NLL. The harness-only families and the unranked features are
-  measured as additions, and `W_backlog` alone as well: it ships only while removing it raises
-  the held-out NLL in every split.
-- **Per-user weights**, pulled toward the pooled ones, on the time split.
+- **Ablations**: what each shipped family and each shipped weight adds, the shipped set fitted
+  with and without it, with a paired sign-flip p on the NLL. The harness-only families, and
+  every unranked feature alone, are measured as additions. `W_backlog` ships only while
+  removing it raises the held-out NLL in every split.
+- **Per-user weights**, pulled toward the pooled ones, on the time split: every weight at
+  `PER_USER_LAMBDAS`, and each shipped family alone at `PER_FAMILY_LAMBDA`, where users could
+  come to differ, each with its gain over the pooled refit on the same picks.
+- **How evenly users are served**: the spread across users of their own top-25 share and
+  NLL.
 - **The watchlist**: from `listed_from` on, the share of picks listed at the time, their lift
   by priority, entry age and list over what choosing at random among the candidates gives,
   and the conversion hazard per listed-anime-day. Each figure carries its n: they arrive thin
@@ -215,7 +219,7 @@ the backups, back before the log began.
 `recommender_eval` runs the harness on the live weights in a spawned child
 (`child_process.run_in_child` says why), refits, and applies the refit unless something holds
 it back. `schedule-nightly` enqueues it weekly and `schedule-recommender-eval` on demand
-([scheduled jobs](../../CLAUDE.md#scheduled-jobs)). It has no maintenance bracket, because it
+([jobs](jobs.md#scheduling)). It has no maintenance bracket, because it
 writes only its own table. Its summary is read on its Jobs Log page (`recommender_eval.weekly`
 builds it). Beyond the harness's report it measures:
 
@@ -228,15 +232,21 @@ builds it). Beyond the harness's report it measures:
   was among the user's next `PICKS_AFTER` natural picks, per reason. Counted in picks, not
   days, so a slow watcher or a holiday doesn't read as ignoring the row; a stretch with fewer
   picks since waits;
-- **"would help now"**: a left-out family — harness-only, unranked features, or complete
-  rewatches — that helped beyond noise on both splits in `HELP_RUNS` runs in a row.
+- **"would help now"**: what helped beyond noise in `HELP_RUNS` runs in a row — adding a
+  left-out family or feature, dropping a shipped one, or complete rewatches, on both splits;
+  or a per-user fit over the pooled one, on the time split. It flags; a commit switches.
+
+The summary follows `rules/backend.md`'s aggregates rule; the NLL checks' per-pick values are
+keyed by a digest that names no one.
 
 **A refit applies unless**:
 
 - **the log is short**: fewer than `MIN_LOG_PICKS` decisions see the watchlist, or fewer than
-  `MIN_USER_LOG_PICKS` from a user with any. Before the log began every list reads empty, so a
-  refit on few such decisions pulls the watchlist's weights toward zero, and on one user's
-  alone fits them to that user. The run still measures everything, and reads `waiting`;
+  `MIN_LOG_USERS` users have `MIN_USER_LOG_PICKS` of them. Before the log began every list
+  reads empty, so a refit on few such decisions pulls the watchlist's weights toward zero, and
+  on one user's alone fits them to that user. A user below the line doesn't count, so one who
+  rates rarely never holds a refit back. The run still measures everything, and reads
+  `waiting`;
 - **held-out NLL rose beyond noise** since the previous run, on either split, over the
   decisions both runs tested: by more than `NOISE_SE` standard errors of the change and at
   least `NOISE_FLOOR`. Paired, because one decision's NLL varies far more than a week moves

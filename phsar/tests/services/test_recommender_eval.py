@@ -61,6 +61,39 @@ def test_a_per_user_fit_shrinks_toward_its_prior_not_zero():
     assert ev.fit(_drawn(np.zeros(len(rc.NAMES)), n=40), LIVE, lam=1e6, prior=prior) == pytest.approx(prior, abs=1e-3)
 
 
+def test_a_fit_on_some_columns_scores_the_rest_at_the_prior():
+    """A per-family fit moves its own columns only, and the others still score at the prior's
+    values: with the second feature tracking the first, leaving it out would read the first as
+    worthless."""
+    rng = np.random.default_rng(1)
+    w_true = np.zeros(len(rc.NAMES))
+    w_true[:2] = [1.0, -1.0]
+    chosen = []
+    for _ in range(400):
+        X = np.zeros((30, len(rc.NAMES)))
+        X[:, 0] = rng.standard_normal(30)
+        X[:, 1] = X[:, 0] + 0.5 * rng.standard_normal(30)
+        p = np.exp(X @ w_true)
+        chosen.append(_case(X, int(rng.choice(30, p=p / p.sum()))))
+    prior = np.zeros(len(rc.NAMES))
+    prior[1] = -1.0
+    first = np.zeros(len(rc.NAMES), dtype=bool)
+    first[0] = True
+    w = ev.fit(chosen, first, lam=0.1, prior=prior)
+    assert w[0] == pytest.approx(1.0, abs=0.25) and w[1] == -1.0
+
+
+def test_the_spread_is_across_users_not_picks():
+    """User 1 has 3 picks in the top 25 of 4, user 2 none of 2: the SD of 0.75 and 0 is 0.375,
+    whatever the picks' own spread."""
+    chosen = [_case(np.zeros((2, len(rc.NAMES))), user=u) for u in (1, 1, 1, 1, 2, 2)]
+    h = ev.HeldOut(
+        np.arange(6), np.array([1, 5, 9, 99, 30, 40]), np.zeros(6), np.zeros(6), np.array([2.0, 2.0, 2.0, 2.0, 6.0, 6.0]),
+    )
+    assert ev._spread(h, chosen) == {"users": 2, "hit25_sd": 0.375, "nll_sd": 2.0}
+    assert ev._spread(ev.HeldOut(*(x[:4] for x in h)), chosen) == {"users": 1}
+
+
 def test_no_test_decision_is_trained_on():
     """The time split tests each user's latest 40% on a fit to their earlier decisions and
     everyone else's; leave-one-user-out on a fit to the others alone."""
@@ -130,13 +163,23 @@ def test_the_whole_report_runs_on_two_users():
     histories = {u: ([_rating(m, T0 + d * DAY) for d, m in enumerate(range(first, first + 8))], [], {}) for u, first in ((1, 1), (2, 20))}
     summary = json.loads(json.dumps(ev.weekly(cat, histories, math.inf, {}, [], rc.WEIGHTS, [], T0 + 10 * DAY)))
     report = summary["report"]
-    assert report["decisions"] == {"total": 10, "1": 5, "2": 5}
-    unranked = {f"{rc.family(n)}_unranked" for n in rc.NAMES if n not in rc.WEIGHTS and rc.family(n) not in rc.HARNESS}
-    assert set(report["ablations"]) == {*dict.fromkeys(ev._FAMILY), "W_backlog", *unranked}
+    assert report["decisions"] == {"total": 10}
+    unranked = {n for n in rc.NAMES if n not in rc.WEIGHTS and rc.family(n) not in rc.HARNESS}
+    shipped = {rc.family(n) for n in rc.WEIGHTS}
+    assert set(report["ablations"]) == {*shipped, *rc.WEIGHTS, *rc.HARNESS, *unranked}
+    # A one-weight family and its weight are the same variant (whether it is fitted once is not
+    # visible from here: the two fits would agree anyway).
+    assert report["ablations"]["F10"] == report["ablations"]["F10_finale_propensity"]
+    assert report["refit"]["louo"]["users"] == 2 and {"hit25_sd", "nll_sd"} <= set(report["refit"]["louo"])
     assert set(report["weights"]["refit"]) == set(rc.WEIGHTS)
     assert report["refit"]["louo"]["row"]["n"] == 10
     assert len(report["refit"]["louo"]["per_decision"]) == 10
+    assert not any(":" in key for key in report["refit"]["louo"]["per_decision"])  # no user id in sight
     assert summary["verdict"] == "waiting" and summary["log"]["picks"] == 0
+    assert [e["weights"] for e in report["per_user"]] == ["all"] * len(ev.PER_USER_LAMBDAS) + sorted(
+        shipped, key=[rc.family(n) for n in rc.NAMES].index,
+    )
+    assert all(set(e) >= {"lam", "gain", "p", "nll"} for e in report["per_user"])
 
 
 # --- The weekly job -------------------------------------------------------------------------------
@@ -179,12 +222,21 @@ def _rewatch(family, own, p):
     return {split: {"n": 5, "family": {"hit10": family}, "own_score": {"hit10": own}, "p": p} for split in ("time", "louo")}
 
 
-def test_a_left_out_family_would_help_only_after_three_runs_in_a_row():
-    """F3 and the rewatch family help beyond noise on both splits in all three runs; a shipped
-    family's removal ablation never counts as left out."""
-    good = {"ablations": {"F3": _both(0.1, 0.01), "F1": _both(0.2, 0.001)}, "rewatch": _rewatch(0.5, 0.2, 0.01)}
-    assert ev.would_help(good, [good, good]) == ["F3", "rewatch"]
-    one_split = {"ablations": {"F3": _both(0.1, 0.01, louo_p=0.2)}, "rewatch": _rewatch(0.5, 0.2, 0.2)}
+def test_what_helps_counts_only_after_three_runs_in_a_row():
+    """Beyond noise in this run and the two before, and only in the direction that helps."""
+    good = {
+        "ablations": {
+            "F3": _both(0.1, 0.01), "F2_sector_lag2": _both(0.1, 0.01), "F1": _both(0.2, 0.001),
+            "F5_mal_missing": _both(-0.1, 0.01), "F6": _both(-0.1, 0.01, louo_p=0.3),
+        },
+        "rewatch": _rewatch(0.5, 0.2, 0.01),
+        "per_user": [{"weights": "W", "lam": 3.0, "gain": 0.1, "p": 0.01}, {"weights": "F5", "lam": 3.0, "gain": -0.1, "p": 0.01}],
+    }
+    assert ev.would_help(good, [good, good]) == ["F2_sector_lag2", "F3", "drop F5_mal_missing", "per-user W@3", "rewatch"]
+    one_split = {
+        "ablations": {"F3": _both(0.1, 0.01, louo_p=0.2)}, "rewatch": _rewatch(0.5, 0.2, 0.2),
+        "per_user": [{"weights": "W", "lam": 3.0, "gain": 0.1, "p": 0.2}],
+    }
     assert ev.would_help(good, [one_split, good]) == []
     assert ev.would_help(good, [good]) == []
 
@@ -260,11 +312,13 @@ def test_the_row_is_judged_on_the_users_next_picks_not_on_days():
 
 @pytest.fixture
 def stub_report(monkeypatch):
-    """`evaluate` reduced to what `weekly` reads: 30 logged decisions, 16 and 14 per user."""
+    """`evaluate` reduced to what `weekly` reads: 30 logged decisions, 16, 14 and 2 per user."""
     def evaluate(cat, ledgers, weights, *, refit, now):
         return {
             "refit": {"time": {"per_decision": {"1:1": 5.0, "1:2": 5.0}}, "louo": {"per_decision": {}}},
-            "weights": {"F5_mal": 0.1}, "logged": {"total": 30, "1": 16, "2": 14}, "seconds": {},
+            "weights": {"F5_mal": 0.1}, "logged": {"total": 30, "1": 16, "2": 14, "3": 2}, "seconds": {},
+            "decisions": {"total": 40, "1": 25, "2": 15},
+            "watchlist": {"pooled": {"picks": 30, "lift": {"priority": {}, "list": {"My list": {}}}}, "1": {"picks": 16}},
         }
 
     monkeypatch.setattr(ev, "evaluate", evaluate)
@@ -272,18 +326,28 @@ def stub_report(monkeypatch):
 
 @pytest.mark.parametrize("previous, minimums, verdict", [
     ([], (30, 14), "applied"),
-    ([{"built_for": rc.version(), "report": _refit({"1:1": 4.0, "1:2": 4.0})}], (30, 14), "held"),
-    ([{"built_for": "older code", "report": _refit({"1:1": 4.0, "1:2": 4.0})}], (30, 14), "applied"),
+    ([{"built_for": rc.version(), "report": _refit({ev._digest("1:1"): 4.0, ev._digest("1:2"): 4.0})}], (30, 14), "held"),
+    ([{"built_for": "older code", "report": _refit({ev._digest("1:1"): 4.0, ev._digest("1:2"): 4.0})}], (30, 14), "applied"),
     ([], (31, 14), "waiting"),
     ([], (30, 15), "waiting"),
 ])
 def test_the_weekly_verdict(stub_report, monkeypatch, previous, minimums, verdict):
-    """Applied with nothing tripped; held when NLL rose by a whole nat since a run of this
-    code, but not since one of older code; waiting while the log is short in all, or for any
-    user with logged picks."""
+    """Applied with nothing tripped, the user with 2 logged picks not counting; held when NLL
+    rose by a whole nat since a run of this code, but not since one of older code; waiting
+    while the log is short in all, or has fewer than two users with enough."""
     monkeypatch.setattr(ev, "MIN_LOG_PICKS", minimums[0])
     monkeypatch.setattr(ev, "MIN_USER_LOG_PICKS", minimums[1])
     summary = ev.weekly(_anime(), {}, math.inf, {}, [], {"F5_mal": 0.2}, previous, T0)
     assert summary["verdict"] == verdict
-    assert summary["log"] == {"picks": 30, "needed": minimums[0], "per_user": {"1": 16, "2": 14}, "per_user_needed": minimums[1]}
+    users = 2 if minimums[1] == 14 else 1
+    assert summary["log"] == {"picks": 30, "needed": minimums[0], "users": users, "users_needed": 2, "per_user_needed": minimums[1]}
     assert summary["report"]["weights"] == {"live": {"F5_mal": 0.2}, "refit": {"F5_mal": 0.1}}
+
+
+def test_the_summary_holds_no_per_user_figures(stub_report):
+    """The admin panel shows aggregates only: decisions as a total, the watchlist pooled and not by
+    list (a list's name is one user's own), the log by how many users count, never by user."""
+    summary = ev.weekly(_anime(), {}, math.inf, {}, [], {}, [], T0)
+    assert summary["report"]["decisions"] == {"total": 40}
+    assert summary["report"]["watchlist"] == {"picks": 30, "lift": {"priority": {}}}
+    assert summary["log"]["users"] == 2 and "per_user" not in summary["log"]

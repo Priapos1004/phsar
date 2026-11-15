@@ -217,6 +217,7 @@ phsar/
 │   │   │   │   │   ├── JobDetailCounters.svelte
 │   │   │   │   │   ├── JobDetailHeader.svelte
 │   │   │   │   │   ├── MediaChangeCard.svelte
+│   │   │   │   │   ├── RecommenderEvalSection.svelte
 │   │   │   │   │   ├── RegistrationTokensCard.svelte
 │   │   │   │   │   ├── SweepTiersCard.svelte
 │   │   │   │   │   └── types.ts
@@ -388,6 +389,7 @@ phsar/
 │   │   │       ├── ratingNeighbors.ts
 │   │   │       ├── ratingStats.ts
 │   │   │       ├── recommendation.ts
+│   │   │       ├── recommenderEval.ts
 │   │   │       ├── relations.ts
 │   │   │       ├── resumeSession.ts
 │   │   │       ├── returnTo.ts
@@ -493,6 +495,7 @@ phsar/
 │   │       ├── rating-neighbors.test.ts
 │   │       ├── rating-scores-store.test.ts
 │   │       ├── rating-stats.test.ts
+│   │       ├── recommender-eval-section.test.ts
 │   │       ├── resume-session.test.ts
 │   │       ├── return-to.test.ts
 │   │       ├── scroll-focus.test.ts
@@ -1131,7 +1134,7 @@ bun run test
 
 The backend's cron-authed endpoints all share the same `JOBS_CRON_TOKEN` bearer.
 
-**Recommended (one daily task):** point your cron at the combined nightly endpoint. It enqueues a backup immediately (pg_dump is MVCC-snapshot, no maintenance window needed), an `update_sweep` after `delay_minutes`, on Sunday UTC a `seasonal_sweep` with the same delay so the weekly catalog pickup piggybacks on the maintenance window, on Wednesday UTC in the last month of a quarter (Mar/Jun/Sep/Dec) an `upcoming_sweep` so next-quarter shows can be added about a month early, a `galaxy_rebuild` on nights the map is due, and on Monday UTC a `recommender_eval` that measures the recommendations and refits their weights.
+**Recommended (one daily task):** point your cron at the combined nightly endpoint. What it enqueues on which night is in [docs/features/jobs.md](../docs/features/jobs.md#scheduling).
 
 ```sh
 curl -fsS -X POST -H "Authorization: Bearer $JOBS_CRON_TOKEN" \

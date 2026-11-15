@@ -16,7 +16,7 @@ the way it is sits in the page itself.
 | `/ratings`, `/watchlist` | a `?tab=` switcher over a list tab and a Statistics tab. The page owns the fetches, so a tab switch never refetches. Whether a tab stays mounted or remounts differs between the two on purpose — each page states which and why |
 | `/admin` | `?tab=` again, tabs eager-rendered and kept mounted. `AdminTabKey` in `lib/components/admin/types.ts` lists what adding one touches |
 | `/settings` | `?tab=` once more, its tabs in the page's `TABS`. `RecommendationSettings.svelte` carries the history-start picker's reasoning |
-| `/admin/jobs/[uuid]` | the sweep audit trail, rendered per `result_summary` version — the versions themselves are in [jobs](../../docs/features/jobs.md) |
+| `/admin/jobs/[uuid]` | the sweep audit trail, rendered per `result_summary` version — the versions themselves are in [jobs](../../docs/features/jobs.md) — and the recommender eval's report (`RecommenderEvalSection`, its copy and grouping in `utils/recommenderEval.ts`) |
 | `/browse` | rows of anime; `BrowseCarousel.svelte` states why a row loads lazily. `/browse/[key]` and `/search/all` are the see-all pages, both over `SeeAllResults.svelte` |
 | `/search` | `SearchBar.svelte`'s header states the one-source rule the page, the sheet and the chips follow; what survives an anime↔media switch is `carryAcrossView` in `lib/utils/search.ts` |
 | `/library/add` | enqueues a scrape; the navbar bell owns everything after that |

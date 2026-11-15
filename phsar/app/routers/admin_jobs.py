@@ -117,21 +117,8 @@ async def schedule_nightly(
     delay_minutes: int = Query(20, ge=0, le=1440),
     db: AsyncSession = Depends(get_db),
 ):
-    """Backup (immediate) + update_sweep (delayed) + seasonal_sweep
-    (delayed, Sundays UTC only) + upcoming_sweep (delayed, Wednesdays UTC in
-    the last month of the quarter). The sweeps piggyback on the same
-    `not_before_at` as update_sweep so the maintenance windows coincide.
-
-    Seasonal (Sun) and upcoming (Wed) run on different weekdays by design, so
-    they never share a nightly run — a Wednesday-in-March never overloads the
-    window with two season sweeps. Upcoming fires only in the LAST month of
-    each quarter (`month % 3 == 0` → Mar/Jun/Sep/Dec) so next-quarter shows
-    surface roughly a month before the season starts, not the whole quarter.
-
-    A galaxy rebuild joins them on the nights the map is due
-    (`galaxy_service.ensure_map`), queued behind the sweeps so it reads their
-    refreshed scores. The recommender's eval joins them on Mondays (UTC), queued
-    behind the sweeps and the rebuild so it reads the night's map."""
+    """The night's jobs: what runs when, and why in this order, is
+    docs/features/jobs.md, "Scheduling"."""
     now = datetime.now(timezone.utc)
     backup = await enqueue_backup_job(
         db, backup_schema.BackupSource.cron, label=None, requested_by_user_id=None,

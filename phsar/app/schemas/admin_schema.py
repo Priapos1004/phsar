@@ -217,14 +217,9 @@ class JobEnqueuedResponse(BaseModel):
 
 
 class NightlyScheduleResponse(BaseModel):
-    """Returned by POST /admin/jobs/schedule-nightly. The combined cron
-    endpoint enqueues a backup (immediate), an update_sweep (delayed so the
-    banner can warm up), a seasonal_sweep (Sundays UTC only), an
-    upcoming_sweep (Wednesdays UTC in the last month of the quarter), a
-    galaxy_rebuild (when the map is due, `galaxy_service.ensure_map`) and a
-    recommender_eval (Mondays UTC). The optional uuids
-    are null on days their job doesn't run so callers can distinguish 'didn't
-    run today' from 'failed to enqueue'."""
+    """Returned by POST /admin/jobs/schedule-nightly: what it enqueued, and when
+    (docs/features/jobs.md, "Scheduling"). A uuid is null on a night its job doesn't
+    run, so a caller can tell "didn't run today" from "failed to enqueue"."""
     backup_uuid: UUID
     update_sweep_uuid: UUID
     seasonal_sweep_uuid: UUID | None = None

@@ -6,6 +6,7 @@ it"). `scripts/backtest_recommender.py` runs it, and the weekly `recommender_eva
 App-free like `recommender_compute`, for the same reason.
 """
 
+import hashlib
 import math
 import time
 from bisect import bisect_right
@@ -20,7 +21,8 @@ from app.services.galaxy_compute import distances
 
 LAMBDA = 10.0  # L2 strength: the bake-off's inner CV chose it in every outer split
 TRAIN_SHARE = 0.6  # each user's earliest decisions, which the time split trains on
-PER_USER_LAMBDAS = (10.0, 100.0)  # how hard a per-user fit is pulled toward the pooled weights
+PER_USER_LAMBDAS = (10.0, 100.0)  # how hard a per-user fit of every weight is pulled toward the pooled ones
+PER_FAMILY_LAMBDA = 3.0  # the same for one family's weights alone: where the families came closest
 FLIPS = 10_000  # random sign flips behind an ablation's p
 AGE_EDGES = (7, 30, 90)  # days: the watchlist metrics' entry-age buckets
 AGE_LABELS = ("<=7d", "8-30d", "31-90d", ">90d")
@@ -30,7 +32,9 @@ PICKS_AFTER = 5  # the user's next picks a shown anime is judged within (`online
 
 # --- The weekly job: docs/features/recommender.md, "The weekly job". Measured on the prod
 # history: the compound doc.
-MIN_LOG_PICKS, MIN_USER_LOG_PICKS = 30, 14  # decisions that see the watchlist, in all and per user with any
+# Decisions that see the watchlist, in all and from at least `MIN_LOG_USERS` users with
+# `MIN_USER_LOG_PICKS` each.
+MIN_LOG_PICKS, MIN_USER_LOG_PICKS, MIN_LOG_USERS = 30, 14, 2
 FLIP_ABOVE = 0.2  # a live weight this large must not change sign
 # How far held-out NLL may rise over the decisions two runs share. The floor because those runs
 # share nearly every decision, so the standard error alone shrinks until ordinary drift trips it.
@@ -80,13 +84,15 @@ def fit(chosen: Sequence["Case | Rewatch"], columns: np.ndarray, lam: float = LA
     if not chosen:
         return w
     X = np.vstack([c.dec.X[:, columns] for c in chosen])
+    # The weights outside `columns` keep the prior's values and still score every candidate.
+    offset = np.concatenate([c.dec.X[:, ~columns] @ w[~columns] for c in chosen]) if prior is not None else 0.0
     sizes = np.array([len(c.dec.rows) for c in chosen])
     starts = np.r_[0, np.cumsum(sizes)[:-1]]
     picked = X[starts + np.array([c.target for c in chosen])].sum(axis=0)
     p0 = w[columns]
 
     def objective(v: np.ndarray) -> tuple[float, np.ndarray]:
-        s = X @ v
+        s = X @ v + offset
         top = np.maximum.reduceat(s, starts)
         e = np.exp(s - np.repeat(top, sizes))
         z = np.add.reduceat(e, starts)
@@ -178,6 +184,17 @@ def _report(h: HeldOut, liked: np.ndarray) -> dict[str, Any]:
     return out
 
 
+def _spread(h: HeldOut, chosen: Sequence["Case | Rewatch"]) -> dict[str, Any]:
+    """How unevenly the fit serves its users: the SD across users of each one's own top-25
+    share and mean NLL. An aggregate, like the admin panel's other counts."""
+    users = np.array([chosen[i].user for i in h.test.tolist()])
+    own = [(float((h.logit[users == u] <= rc.ROW).mean()), float(h.nll[users == u].mean())) for u in np.unique(users)]
+    if len(own) < 2:
+        return {"users": len(own)}
+    hit, nll_ = np.array(own).T
+    return {"users": len(own), "hit25_sd": round(float(hit.std()), 3), "nll_sd": round(float(nll_.std()), 4)}
+
+
 def sign_flip_p(d: np.ndarray) -> float:
     """Two-sided p that paired differences `d` average zero."""
     if not len(d) or not d.any():
@@ -224,7 +241,7 @@ def _refit(cat, chosen, folds, liked, lam) -> dict[str, Any]:
     def by(columns):
         return lambda train, _: fit([chosen[i] for i in train], columns, lam)
 
-    out: dict[str, Any] = {"refit": {}, "ablations": {}, "per_user": {}}
+    out: dict[str, Any] = {"refit": {}, "ablations": {}}
     full = {split: held_out(cat, chosen, fs, by(SHIPPED)) for split, fs in folds.items()}
     for split, h in full.items():
         # Each test decision's NLL by who picked when, so the next run can compare the decisions
@@ -232,19 +249,24 @@ def _refit(cat, chosen, folds, liked, lam) -> dict[str, Any]:
         per_decision = {
             f"{chosen[i].user}:{round(chosen[i].t)}": round(float(v), 4) for i, v in zip(h.test.tolist(), h.nll, strict=True)
         }
-        out["refit"][split] = {**_report(h, liked), "per_decision": per_decision}
+        out["refit"][split] = {**_report(h, liked), **_spread(h, chosen), "per_decision": per_decision}
+
+    # A family of one weight is that weight's variant too: each column set is fitted once.
+    done: dict[tuple[bytes, str], HeldOut] = {(SHIPPED.tobytes(), split): h for split, h in full.items()}
 
     def fitted(columns, split):
-        if np.array_equal(columns, SHIPPED):
-            return full[split]
-        return held_out(cat, chosen, folds[split], by(columns), row=False)
+        key = (columns.tobytes(), split)
+        if key not in done:
+            done[key] = held_out(cat, chosen, folds[split], by(columns), row=False)
+        return done[key]
 
-    variants = {f: (SHIPPED & (f != _FAMILY), SHIPPED) for f in dict.fromkeys(_FAMILY[SHIPPED])}
-    variants["W_backlog"] = (SHIPPED & (np.array(rc.NAMES) != "W_backlog"), SHIPPED)
-    variants.update({
-        f if f in rc.HARNESS else f"{f}_unranked": (SHIPPED, SHIPPED | (f == _FAMILY))
-        for f in dict.fromkeys(_FAMILY[~SHIPPED])
-    })
+    # A shipped family and each shipped weight by its removal; a harness-only family as one
+    # addition, and every other unranked feature as an addition of its own.
+    names, shipped_families = np.array(rc.NAMES), list(dict.fromkeys(_FAMILY[SHIPPED]))
+    variants = {f: (SHIPPED & (f != _FAMILY), SHIPPED) for f in shipped_families}
+    variants.update({n: (SHIPPED & (names != n), SHIPPED) for n in names[SHIPPED]})
+    variants.update({f: (SHIPPED, SHIPPED | (f == _FAMILY)) for f in rc.HARNESS})
+    variants.update({n: (SHIPPED, SHIPPED | (names == n)) for n in names[~SHIPPED & ~np.isin(_FAMILY, rc.HARNESS)]})
     for name, (without, with_) in variants.items():
         out["ablations"][name] = {}
         for split in folds:
@@ -253,13 +275,30 @@ def _refit(cat, chosen, folds, liked, lam) -> dict[str, Any]:
                 "hit25": round(float((b.logit <= rc.ROW).mean() - (a.logit <= rc.ROW).mean()), 3),
                 "nll": round(float((a.nll - b.nll).mean()), 4), "p": round(sign_flip_p(a.nll - b.nll), 3),
             }
-    for lam_u in PER_USER_LAMBDAS:
-        def per_user(train, test, lam_u=lam_u):
-            own = [chosen[i] for i in train if chosen[i].user == chosen[test[0]].user]
-            return fit(own, SHIPPED, lam_u, prior=fit([chosen[i] for i in train], SHIPPED, lam))
+    # Per-user weights, pulled toward the pooled fit: every weight, and each family alone, where
+    # users could come to differ. The time split only, since leaving a user out leaves no own
+    # picks; each with its paired gain over the pooled refit on the same picks.
+    time_folds = [f for f in folds["time"] if len(f[1])]
+    pooled = {int(te[0]): fit([chosen[i] for i in tr], SHIPPED, lam) for tr, te in time_folds}
+    base = dict(zip(full["time"].test.tolist(), full["time"].nll.tolist(), strict=True))
 
-        h = held_out(cat, chosen, [f for f in folds["time"] if len(f[1])], per_user, row=False)
-        out["per_user"][str(lam_u)] = _report(h, liked)
+    def per_user(columns: np.ndarray, lam_u: float) -> dict[str, Any]:
+        def weights_of(train, test):
+            own = [chosen[i] for i in train if chosen[i].user == chosen[test[0]].user]
+            return fit(own, columns, lam_u, prior=pooled[int(test[0])])
+
+        h = held_out(cat, chosen, time_folds, weights_of, row=False)
+        d = np.array([base[i] - v for i, v in zip(h.test.tolist(), h.nll.tolist(), strict=True)])
+        return {
+            **_report(h, liked), **_spread(h, chosen),
+            "gain": round(float(d.mean()), 4) if len(d) else None, "p": round(sign_flip_p(d), 3),
+        }
+
+    out["per_user"] = [
+        *({"weights": "all", "lam": lam_u, **per_user(SHIPPED, lam_u)} for lam_u in PER_USER_LAMBDAS),
+        *({"weights": f, "lam": PER_FAMILY_LAMBDA, **per_user(SHIPPED & (f == _FAMILY), PER_FAMILY_LAMBDA)}
+          for f in shipped_families),
+    ]
     w = fit(chosen, SHIPPED, lam)
     # Two decimals: rounding there moves no held-out metric, and the digits below are noise.
     out["weights"] = {name: round(float(v), 2) for name, v in zip(rc.NAMES, w, strict=True) if SHIPPED[rc.COLUMN[name]]}
@@ -491,6 +530,12 @@ def online(
 
 # --- The weekly job ------------------------------------------------------------------------------
 
+def _digest(key: str) -> str:
+    """A decision's "user:time" key as the summary stores it: it still pairs two runs'
+    decisions, and names no one."""
+    return hashlib.sha256(key.encode()).hexdigest()[:16]
+
+
 def guards(report: dict[str, Any], live: dict[str, float], previous: dict[str, Any] | None) -> list[dict[str, Any]]:
     """What holds a refit back. The NLL checks are listed whether they trip or not, to show how
     near a run came; a flip only when it trips, since the summary's weights show the rest."""
@@ -515,15 +560,22 @@ def guards(report: dict[str, Any], live: dict[str, float], previous: dict[str, A
 
 
 def _helped(report: dict[str, Any]) -> set[str]:
-    """The left-out families this run found helping beyond noise on both splits."""
+    """What this run found helping beyond noise: adding a left-out family or feature, or dropping
+    a shipped one (`drop …`), on both splits; and a per-user fit over the pooled refit on the
+    time split, the only one it has."""
     out = set()
     for name, by_split in report["ablations"].items():
-        added = name in rc.HARNESS or name.endswith("_unranked")
+        added = name in rc.HARNESS or (name in rc.COLUMN and name not in rc.WEIGHTS)
         if added and all(s["nll"] > 0 and s["p"] < HELP_P for s in by_split.values()):
             out.add(name)
+        elif not added and all(s["nll"] < 0 and s["p"] < HELP_P for s in by_split.values()):
+            out.add(f"drop {name}")
     rewatch = [report["rewatch"][split] for split in ("time", "louo")]
     if all(s["n"] and s["family"]["hit10"] > s["own_score"]["hit10"] and s["p"] < HELP_P for s in rewatch):
         out.add("rewatch")
+    for entry in report["per_user"]:
+        if entry["gain"] is not None and entry["gain"] > 0 and entry["p"] < HELP_P:
+            out.add(f"per-user {entry['weights']}@{entry['lam']:g}")
     return out
 
 
@@ -560,8 +612,16 @@ def weekly(
     report["weights"] = {"live": dict(live), "refit": report["weights"]}
     logged = report.pop("logged")
     total = logged.pop("total")
+    # Aggregates only (rules/backend.md).
+    report["decisions"] = {"total": report["decisions"]["total"]}
+    for split in report["refit"].values():
+        split["per_decision"] = {_digest(k): v for k, v in split["per_decision"].items()}
+    report["watchlist"] = report["watchlist"].get("pooled")
+    if report["watchlist"]:
+        report["watchlist"]["lift"].pop("list", None)
     checks = guards(report, live, previous[0] if previous else None)
-    if total < MIN_LOG_PICKS or any(k < MIN_USER_LOG_PICKS for k in logged.values()):
+    users = sum(k >= MIN_USER_LOG_PICKS for k in logged.values())
+    if total < MIN_LOG_PICKS or users < MIN_LOG_USERS:
         verdict = "waiting"
     elif any(g["tripped"] for g in checks):
         verdict = "held"
@@ -569,7 +629,10 @@ def weekly(
         verdict = "applied"
     return {
         "verdict": verdict, "guards": checks, "built_for": rc.version(),
-        "log": {"picks": total, "needed": MIN_LOG_PICKS, "per_user": logged, "per_user_needed": MIN_USER_LOG_PICKS},
+        "log": {
+            "picks": total, "needed": MIN_LOG_PICKS,
+            "users": users, "users_needed": MIN_LOG_USERS, "per_user_needed": MIN_USER_LOG_PICKS,
+        },
         "would_help": would_help(report, [p["report"] for p in previous]),
         "report": report,
     }

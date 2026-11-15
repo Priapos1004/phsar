@@ -287,20 +287,7 @@ curl -fsS -X POST -H "Authorization: Bearer $JOBS_CRON_TOKEN" \
   "http://localhost:8000/admin/jobs/schedule-nightly?delay_minutes=20"
 ```
 
-`schedule-nightly` enqueues a `backup` immediately (no delay — `pg_dump` is
-MVCC-snapshot, so no banner is needed), an `update_sweep` at `now + delay_minutes`,
-a `seasonal_sweep` at the same delay **on Sundays**, and an `upcoming_sweep` at the
-same delay **on Wednesdays in the last month of the quarter** (Mar/Jun/Sep/Dec), so
-next-quarter shows surface about a month early. The two season sweeps sit on
-different weekdays so one nightly run never fires both. On a night the galaxy map is
-due ([galaxy](docs/features/galaxy.md) says when) it also enqueues a `galaxy_rebuild` at
-the same delay, created after the sweeps so FIFO runs it after them. **On Mondays** a
-`recommender_eval` follows at the same delay, created after the sweeps and any rebuild so it
-reads the night's map ([recommender](docs/features/recommender.md#the-weekly-job)).
-
-The sweeps share `not_before_at`; the worker drains the backup first, then takes
-whichever sweep is next by FIFO. Ordering between them is undefined and immaterial —
-all run inside the maintenance window with a sub-second flag bounce.
+What it enqueues on which night, and in what order: [jobs](docs/features/jobs.md#scheduling).
 
 Individual endpoints stay available for ad-hoc triggers: `POST /admin/backups/auto`,
 and `POST /admin/jobs/schedule-{sweep,seasonal,upcoming,recommender-eval}?delay_minutes=N`.

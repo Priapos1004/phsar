@@ -12,7 +12,7 @@
 	import { ChevronRight } from 'lucide-svelte';
 	import { JOB_KIND_LABELS, SEASON_SWEEP_KINDS, formatJobDuration, formatJobKind, formatShortDateTime } from '$lib/utils/formatString';
 	import { STATUS_BADGE } from '$lib/utils/jobBadges';
-	import { deleteCandidatesRaised, hentaiRemoved, payloadSummary, probeAttachedMedia, rowTintClass, unknownGenreTags, unknownMalValues } from '$lib/utils/jobSummary';
+	import { deleteCandidatesRaised, heldGuards, hentaiRemoved, payloadSummary, probeAttachedMedia, rowTintClass, unknownGenreTags, unknownMalValues } from '$lib/utils/jobSummary';
 	import { jobsFilter, sanitizeKind, sanitizeStatus } from '$lib/stores/adminJobsFilter';
 	import { consumeFocus, revealFocused } from '$lib/utils/scrollFocus';
 	import type { AdminJobResponse, AdminJobsPage, JobKind, JobStatus } from '$lib/types/api';
@@ -220,12 +220,11 @@
 		return formatJobDuration(row.started_at, row.finished_at, now);
 	}
 
-	// A row is clickable when its detail page actually has more to show
-	// than the row itself — today only update_sweep ≥ v2 (per-media diff
-	// inspector). v1 sweep rows would land on a "predates the rework"
-	// notice, so the click affordance stays off for them.
+	// A row is clickable when its detail page has more to show than the row itself. A v1
+	// sweep row would land on a "predates the rework" notice, and an eval that hasn't
+	// succeeded has no report yet.
 	function isClickableJob(row: AdminJobResponse): boolean {
-		return row.kind === 'update_sweep' && row.version >= 2;
+		return (row.kind === 'update_sweep' && row.version >= 2) || (row.kind === 'recommender_eval' && row.status === 'succeeded');
 	}
 
 	function clickableNavProps(uuid: string) {
@@ -305,9 +304,10 @@
 								{@const probeMedia = probeAttachedMedia(row)}
 								{@const hentaiCount = hentaiRemoved(row)}
 								{@const deleteCandidates = deleteCandidatesRaised(row)}
+								{@const held = heldGuards(row)}
 								<tr
 									data-focus-uuid={row.uuid}
-									class="border-b border-border/50 align-top {clickable ? 'cursor-pointer hover:bg-muted/20 transition-colors' : ''} {rowTintClass(hentaiCount, unknownTags.length + unknownMal.length, probeMedia, deleteCandidates)}"
+									class="border-b border-border/50 align-top {clickable ? 'cursor-pointer hover:bg-muted/20 transition-colors' : ''} {rowTintClass(hentaiCount, unknownTags.length + unknownMal.length + held.length, probeMedia, deleteCandidates)}"
 									{...(clickable ? clickableNavProps(row.uuid) : {})}
 								>
 									<td class="py-2 pr-2 w-6">
@@ -351,6 +351,11 @@
 												<div class="mt-1 text-xs font-medium text-amber-300">
 													⚠ MAL {unknownMal.length === 1 ? 'value needs' : 'values need'} an enum member:
 													<span class="font-mono">{unknownMal.join(', ')}</span>
+												</div>
+											{/if}
+											{#if held.length > 0}
+												<div class="mt-1 text-xs font-medium text-amber-300">
+													⚠ Live weights kept: {held.join(' · ')}
 												</div>
 											{/if}
 											{#if probeMedia > 0}
