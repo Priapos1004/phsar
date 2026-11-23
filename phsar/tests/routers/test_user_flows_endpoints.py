@@ -55,11 +55,12 @@ def _table_rows() -> list[str]:
 
 
 def _actual_endpoints() -> set[tuple[str, str]]:
+    """OpenAPI paths, not `.routes`, which keeps an included router's endpoints nested
+    inside it. A route with `include_in_schema=False` drops out here and fails as missing."""
     return {
-        (_normalise(route.path), method)
-        for route in create_app().routes
-        if getattr(route, "methods", None)
-        for method in route.methods
+        (_normalise(path), method.upper())
+        for path, operations in create_app().openapi()["paths"].items()
+        for method in operations
     }
 
 

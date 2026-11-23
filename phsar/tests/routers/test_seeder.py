@@ -12,8 +12,8 @@ entry, so an ungated call is an unauthenticated scrape trigger.
 
 These three cover the one route that exists. They cannot catch a *new* unguarded
 handler added beside it, which is the hazard `.claude/rules/backend.md` names for
-this module and for admin_jobs; a route-table walk over `create_app().routes`
-would, and belongs with both.
+this module and for admin_jobs; a walk over `seeder.router.routes` and
+`admin_jobs.router.routes` would, and belongs with both.
 """
 
 URL = "/seed/media"

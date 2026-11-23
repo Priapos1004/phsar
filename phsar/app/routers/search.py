@@ -107,7 +107,8 @@ def get_media_filters(
         default=None, ge=1, le=100,
         description="Keep the rows whose \"Top N%\" badge reads this percentage or better.",
     ),
-    genres: Annotated[Json[GenreFilter] | None, Query(
+    # `Json()` as outer `Annotated` metadata: FastAPI rejects `Json[X] | None` at import.
+    genres: Annotated[GenreFilter | None, Json(), Query(
         description="Genre groups as JSON, `{mode, groups: [{mode, include, exclude_mode, exclude}]}`: "
         "a group needs any or all of `include`, and not any or not all of `exclude`; `mode` joins the "
         "groups. An anime carries a genre when most of its media do.",

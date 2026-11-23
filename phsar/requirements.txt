@@ -3,7 +3,7 @@ numpy==2.5.3
 # architectures — not macOS arm64, so dropping it passes CI and breaks a Mac.
 SQLAlchemy[asyncio]==2.0.40
 pydantic-settings==2.9.1
-fastapi==0.115.12
+fastapi==0.165.0
 uvicorn==0.34.2
 asyncpg==0.30.0
 alembic==1.15.2
