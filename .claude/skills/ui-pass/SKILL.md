@@ -98,7 +98,7 @@ already occur in the source, or Tailwind never generated them.
 
 - **Order pages shared-components first**, siblings back to back (the pairs in
   `rules/frontend.md`, "Parallel pages stay parallel"), so later pages arrive partly fixed.
-- **Per page**: every width with the user's verdict, then `/ship` and one commit block
+- **Per page**: every width with the user's verdict, then `/ship-block` and one commit block
   (`workflow.md`, "Commit blocks"); small sibling pages share a block.
 - **Track** progress in the version's working roadmap, and decisions plus carry-forwards
   (a fix that should reach a page not yet visited) in its provisional compound doc.

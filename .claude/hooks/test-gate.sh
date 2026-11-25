@@ -175,14 +175,14 @@ setup
 echo "x = 1" > phsar/app/doomed.py; git add -A >/dev/null; git commit -qm base
 git rm -q phsar/app/doomed.py
 .claude/hooks/mark-reviewed.sh >/dev/null 2>&1
-check "deletion-only, after /ship, can actually commit"   ALLOW "$(run 'git commit -m x')"
+check "deletion-only, after the stamp, can actually commit" ALLOW "$(run 'git commit -m x')"
 
 echo "=== NON-ASCII PATHS MUST NOT DENY FOREVER (fail-closed regression) ==="
 setup
 echo "x = 1" > "phsar/app/ümlaut.py"
 .claude/hooks/mark-reviewed.sh >/dev/null 2>&1
 git add -A >/dev/null
-check "non-ASCII path after /ship"                        ALLOW "$(run 'git commit -m x')"
+check "non-ASCII path after the stamp"                    ALLOW "$(run 'git commit -m x')"
 
 echo "=== UNHASHABLE PATHS MUST DENY, NOT ZERO THE CHECK ==="
 # hash_paths is all-or-nothing, so one bad path empties the whole worktree half.
@@ -210,7 +210,7 @@ before=$(cat .claude/.state/reviewed-ok)
 git commit -qm base                                          # tree now clean
 .claude/hooks/mark-reviewed.sh >/dev/null 2>&1 || true       # must fail, not wipe
 after=$(cat .claude/.state/reviewed-ok 2>/dev/null || echo MISSING)
-check "clean-tree /ship leaves the previous marker intact" "$before" "$after"
+check "clean-tree stamp leaves the previous marker intact" "$before" "$after"
 setup
 rm -rf .git; git init -q .; git config user.email t@t; git config user.name t
 .claude/hooks/mark-pr-ready.sh >/dev/null 2>&1 || true       # unborn HEAD

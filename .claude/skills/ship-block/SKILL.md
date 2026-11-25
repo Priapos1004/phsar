@@ -1,6 +1,6 @@
 ---
-name: ship
-description: Run the pre-commit pipeline on the current block of work — docs, simplify, lint — then present a commit plan for approval. Use before every commit; review-gate.sh blocks commits without it.
+name: ship-block
+description: Run the pre-commit review pipeline on the current block of work, then present a commit plan for approval. Use before every commit; review-gate.sh blocks commits without it.
 argument-hint: [optional note about the block being shipped]
 ---
 

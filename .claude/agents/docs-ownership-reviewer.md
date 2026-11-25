@@ -10,7 +10,7 @@ assistant: "I'll run the docs-ownership-reviewer agent to check whether either c
 </example>
 <example>
 Context: About to commit, prose was touched in several files.
-user: "run the ship pipeline"
+user: "run the ship-block pipeline"
 assistant: "Step 4 launches the docs-ownership-reviewer agent over the added prose to catch duplication before it drifts."
 </example>
 model: opus

@@ -10,7 +10,7 @@ assistant: "I'll run the docs-decay-reviewer agent — a list of members decays 
 </example>
 <example>
 Context: About to commit, docstrings and comments were added.
-user: "run the ship pipeline"
+user: "run the ship-block pipeline"
 assistant: "Step 4 launches the docs-decay-reviewer agent to catch stale-prone facts and narration before they land."
 </example>
 model: opus

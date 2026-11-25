@@ -4,7 +4,7 @@
 # The writer and the reader have to agree byte-for-byte on how a file is
 # fingerprinted, and on where the marker lives. Implemented separately they
 # drift, and the failure is nasty: the gate reports "files have changed since
-# /ship last reviewed them" on a tree that was just shipped, and the remedy it
+# /ship-block last reviewed them" on a tree that was just shipped, and the remedy it
 # names re-stamps with the *other* convention and fails again. One definition,
 # sourced by all three.
 #
@@ -14,8 +14,8 @@
 #
 # Blank lines are dropped with `sed '/^$/d'`, never `grep -v '^$'`. grep exits 1
 # when nothing matches, and under the callers' `set -e` + `pipefail` an empty
-# result is a perfectly normal state that would abort the pipeline mid-way —
-# which is how a deletion-only /ship silently wrote an empty marker.
+# result (a deletion-only change set has no content paths) is a perfectly normal
+# state that would abort the pipeline mid-way.
 
 state_dir()       { printf '%s/.claude/.state' "$(git rev-parse --show-toplevel)"; }
 reviewed_marker() { printf '%s/reviewed-ok' "$(state_dir)"; }
@@ -27,7 +27,7 @@ pr_marker()       { printf '%s/pr-ok' "$(state_dir)"; }
 # The path is carried, not just the hash. A bare hash set lets any brand-new or
 # renamed file validate against some unrelated file's reviewed content — and an
 # empty new file passes permanently, since the empty blob enters the marker the
-# first time /ship ever runs over one.
+# first time /ship-block ever runs over one.
 #
 # Prints nothing on any failure, so callers test for empty output rather than
 # needing a distinct sentinel.

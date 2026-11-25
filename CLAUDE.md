@@ -15,7 +15,7 @@ the places below, each with one job.
 
 | Rule | Loads when |
 |---|---|
-| `workflow.md` — approval, commit blocks, `/ship`, authoring style | always |
+| `workflow.md` — approval, commit blocks, `/ship-block`, authoring style | always |
 | `docs.md` — where a fact belongs, how to write it | editing any `.md` |
 | `backend.md` — layering, async session, exceptions | backend / test / script Python |
 | `database.md` — models, sidecars, indexes, migrations | models / DAOs / alembic |
@@ -25,7 +25,7 @@ the places below, each with one job.
 
 **`.claude/agents/`** — the rubrics a pipeline fans out to, one per reviewer.
 Changing what a review looks for means editing the rubric, not the skill that
-calls it. The prose reviewers `/ship` runs enforce `docs.md` and `workflow.md`
+calls it. The prose reviewers `/ship-block` runs enforce `docs.md` and `workflow.md`
 and cite the rule behind every finding, so extend those rules first and the
 rubric second.
 
@@ -229,12 +229,12 @@ assumption, with a file sentinel or DB row as the documented upgrade path.
 
 ## Working With Me
 
-The working contract — approval, commit blocks, the `/ship` pipeline, authoring
+The working contract — approval, commit blocks, the `/ship-block` pipeline, authoring
 style — is in [.claude/rules/workflow.md](.claude/rules/workflow.md), loaded every
 session. Two points govern the rest:
 
 - **Ask before changing the repo**: commits, pushes, issues, milestones, releases.
-- **Every commit goes through `/ship`**, enforced by `.claude/hooks/review-gate.sh`.
+- **Every commit goes through `/ship-block`**, enforced by `.claude/hooks/review-gate.sh`.
 
 ## Configuration
 

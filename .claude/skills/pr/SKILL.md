@@ -1,6 +1,6 @@
 ---
 name: pr
-description: Open a pull request — full test run, ISO 25010 review panel, re-ship if the review changed anything substantial, compound doc, then stop for approval before pushing.
+description: Open a pull request — full test run, ISO 25010 review panel, re-run /ship-block if the review changed anything substantial, compound doc, then stop for approval before pushing.
 argument-hint: [PR title or focus]
 disable-model-invocation: true
 ---
@@ -32,7 +32,7 @@ Everything below reviews `<base>...HEAD`, not just the last commit; getting this
 wrong feeds the panel hundreds of lines of already-reviewed parent-branch code
 and stamps `pr-ok` over a range nobody reviewed.
 
-If the working tree is dirty, `/ship` it into a commit first — the review must
+If the working tree is dirty, run `/ship-block` and commit first — the review must
 cover what will actually merge. A provisional compound doc for this branch is the
 one expected exception; step 5 rewrites and commits it.
 
@@ -43,7 +43,7 @@ one expected exception; step 5 rewrites and commits it.
 (cd phsar/frontend && bun run test)
 ```
 
-`/ship` deliberately skips these — they need the database container, so they are a
+`/ship-block` deliberately skips these — they need the database container, so they are a
 poor fit for a per-commit gate. PR time is when the container is expected to be up
 and when a full run has to pass. **Do not skip them.** If the container isn't
 running, say so and stop rather than opening a PR on unrun tests.
@@ -78,14 +78,13 @@ Dedupe findings that point at the same line or mechanism, then fix them. Skip an
 whose fix would change intended behaviour or reach well outside the diff — **state
 the skip and why**, don't argue with it silently.
 
-## 4. If the review changed anything substantial, ship again
+## 4. If the review changed anything substantial, run `/ship-block` again
 
 Review fixes are new, unreviewed code. When step 3 produced more than trivial
-edits, **run `/ship` over them** — docs, simplify, lint — and commit before going on.
+edits, **run `/ship-block` over them** and commit before going on.
 
 This is not optional tidiness: the ISO panel routinely lands real changes, and
-without this they would reach the PR having had neither the simplify pass nor a
-docs update. Repeat until a review round produces nothing substantial.
+without this they would reach the PR unreviewed. Repeat until a review round produces nothing substantial.
 
 ## 5. Compound doc
 
@@ -116,7 +115,7 @@ Add it to `compound-docs/INDEX.md` in **both** groupings.
 **When the base from step 1 is `main`, tick the release's row** in the
 `docs/ROADMAP.md` version table (`✓ <title>`) — `/update-docs` leaves it to this step.
 
-Then `/ship` this doc and the tick as their own commit.
+Then run `/ship-block` over this doc and the tick, as their own commit.
 
 ## 6. Stamp the PR marker
 
@@ -124,7 +123,7 @@ Then `/ship` this doc and the tick as their own commit.
 cd "$(git rev-parse --show-toplevel)" && .claude/hooks/mark-pr-ready.sh
 ```
 
-The `cd` is load-bearing — see `/ship`'s stamping step for why a bare relative
+The `cd` is load-bearing — see `/ship-block`'s stamping step for why a bare relative
 path breaks after any earlier `cd`. Last, after the compound doc is committed — it records the branch tip SHA, and
 `review-gate.sh` refuses `gh pr create` when that SHA isn't the current one. Stamping
 before the commits in steps 4 and 5 would vouch for a tip that didn't exist yet.

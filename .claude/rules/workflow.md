@@ -26,7 +26,7 @@ beside this file; doc placement lives in `docs.md`.
   timing so they can tag first, batch several commits, or hold one back —
   an auto-push also fires CI mid-stream.
 - **The user's visual verdict gates the docs.** On a UI-touching change it is a
-  precondition for entering `/ship`, not a step inside it — the placement that
+  precondition for entering `/ship-block`, not a step inside it — the placement that
   survives the pipeline never being started. Their feedback routinely changes the
   behaviour the docs would have described, so prose written ahead of it gets
   reverted. How to hand off is in `frontend.md`.
@@ -38,12 +38,12 @@ Work is committed in **blocks**: one coherent, reviewable change each.
 - **Bundle upward.** Three small fixes are one block, not three pipeline runs.
   ~100 LOC is a reasonable floor; it is judgment, not arithmetic.
 - **Never carry an unreviewed block into the next step of a plan.** Finish a
-  block → `/ship` → commit → *then* start the next. Deferring review to the end
+  block → `/ship-block` → commit → *then* start the next. Deferring review to the end
   forces untangling of intermixed changes, which is the failure this prevents.
 - **Plans declare their commit blocks up front**, so boundaries are agreed
   before implementation rather than negotiated over a dirty tree.
 
-## Every commit goes through `/ship`
+## Every commit goes through `/ship-block`
 
 `.claude/hooks/review-gate.sh` enforces it. The skill owns the steps; the
 hook owns the exemptions.
@@ -59,9 +59,9 @@ own header lists the gaps. Rely on it to catch drift, not evasion.
 ## Opening a PR
 
 `/pr` runs what only makes sense once per branch: the full test suite, the ISO 25010
-review panel, a re-`/ship` when that review changed anything substantial, and the
-compound doc. It **stops before pushing** — push and PR creation need approval like
-any other repo change.
+review panel, another `/ship-block` run when that review changed anything
+substantial, and the compound doc. It **stops before pushing** — push and PR
+creation need approval like any other repo change.
 
 ## Commit messages
 

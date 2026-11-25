@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # PreToolUse(Bash) gate for the two outward-facing actions:
-#   git commit    — needs /ship (lint + review) against this exact content
+#   git commit    — needs /ship-block (lint + review) against this exact content
 #   gh pr create  — needs /pr (tests + ISO review + compound doc) on this tip
 #
 # Guidance in CLAUDE.md is advisory — an agent under context pressure can talk
-# itself past it. This hook makes the ordinary commit shapes go through /ship
+# itself past it. This hook makes the ordinary commit shapes go through /ship-block
 # instead. It is a speed bump, not a boundary, and the difference decides what
 # may be relied on:
 #
 #   - It sees only Claude's own tool calls. A terminal commit is unaffected.
 #   - It reads the tree as it stands WHEN THE HOOK FIRES, so whatever the same
 #     command mutates first is invisible to it: `echo x >> f && git commit -a`
-#     commits content no /ship ever saw. No amount of state inspection fixes
+#     commits content no /ship-block ever saw. No amount of state inspection fixes
 #     that — the hook runs before the mutation — so it would take refusing any
 #     commit chained after a content-mutating segment.
 #   - The parser resolves `git` in first position only. A shell keyword, wrapper
@@ -179,11 +179,11 @@ cd "$repo_root" || { echo "review-gate: cannot enter the repo root." >&2; exit 2
 # because the hook fires first. Every attempt to detect those has missed a form,
 # and each miss is a silent allow. The union needs no detection: it is a superset
 # of every variant, and mark-reviewed.sh stamps the same union, so after a real
-# /ship the two match exactly.
+# /ship-block the two match exactly.
 #
 # The cost is strictness — an unreviewed edit to a file you are *not* committing
 # also denies. That is the intended direction: this gate's every historical
-# defect has been fail-open, and /ship covers the whole block anyway.
+# defect has been fail-open, and /ship-block covers the whole block anyway.
 index_pairs() {
   if git rev-parse --verify -q HEAD >/dev/null; then
     # Plumbing, so it ignores diff.renames and never emits the two-path R form.
@@ -206,7 +206,7 @@ staged_pairs=$(index_pairs) || fingerprint_failed=1
 # does the same to the staged half. Both then look exactly like "no files to
 # check", which exits 0 and lets everything else in the tree ride along.
 if (( fingerprint_failed )); then
-  emit_deny "review-gate: could not fingerprint the working tree, so nothing can be verified."$'\n'"Usually a dangling symlink, an unreadable file, a nested git repo or a dirty submodule. Remove or fix it, then re-run /ship."$'\n\n'"Bypass for a genuinely trivial change: GATE_BYPASS=1 git commit ..."
+  emit_deny "review-gate: could not fingerprint the working tree, so nothing can be verified."$'\n'"Usually a dangling symlink, an unreadable file, a nested git repo or a dirty submodule. Remove or fix it, then re-run /ship-block."$'\n\n'"Bypass for a genuinely trivial change: GATE_BYPASS=1 git commit ..."
 fi
 
 pairs=$(printf '%s\n%s\n' "$staged_pairs" "$worktree_pairs" | sed '/^$/d' | sort -u)
@@ -226,7 +226,7 @@ notes=""
 
 # ------------------------------------------------------------- review pipeline
 # Checked BEFORE lint: this costs milliseconds and lint costs seconds, and the
-# remedy for a stale marker is /ship, which lints anyway.
+# remedy for a stale marker is /ship-block, which lints anyway.
 if grep -qvE '\.md$' <<<"$touched"; then
   review_required=1                       # any real code
 else
@@ -250,24 +250,24 @@ fi
 if (( review_required )); then
   marker=$(reviewed_marker)
   if [[ ! -s "$marker" ]]; then
-    fail+="/ship has not run for this working tree."$'\n'
+    fail+="/ship-block has not run for this working tree."$'\n'
   elif [[ -z "$verify" ]]; then
     # hash_paths prints nothing on either failure path, so an empty set here
     # means the fingerprinting broke, not that there is nothing to check.
     fail+="Could not fingerprint what this commit contains — review not verified."$'\n'
   else
     # Every "<sha> <path>" (or "- <path>" for a deletion) the commit carries must
-    # be one /ship signed off on. Comparing pairs rather than bare hashes is what
+    # be one /ship-block signed off on. Comparing pairs rather than bare hashes is what
     # stops a new or renamed path validating against an unrelated file's content.
     while IFS= read -r pair; do
       [[ -n "$pair" ]] || continue
       # `--` is load-bearing: a deletion line begins "- ", which grep otherwise
       # parses as an option and errors on, denying every deletion forever.
       grep -qxF -- "$pair" "$marker" || {
-        fail+="Files have changed since /ship last reviewed them."$'\n'; break; }
+        fail+="Files have changed since /ship-block last reviewed them."$'\n'; break; }
     done <<<"$verify"
   fi
-  [[ -n "$fail" ]] && fail+="Run /ship (update-docs -> simplify -> lint), then commit."$'\n\n'
+  [[ -n "$fail" ]] && fail+="Run /ship-block, then commit."$'\n\n'
 fi
 
 # ---------------------------------------------------------------------- lint

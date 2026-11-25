@@ -34,6 +34,6 @@ credentials in `phsar/.env`.
    name back to the auto label) and run
    `.venv/bin/python .claude/skills/galaxy-names/galaxy_names.py apply --api <url> --out <dir> <renames.json>`.
 6. **Record.** Rewrite [names.md](names.md) whole from the final map — every group, its
-   stars, name, anchors and why, the fit date at the top — and `/ship` it, the commit
-   message saying what the pass changed. A rule the pass settled goes into
+   stars, name, anchors and why, the fit date at the top — and run `/ship-block` over it,
+   the commit message saying what the pass changed. A rule the pass settled goes into
    [conventions.md](conventions.md) in the same commit.
